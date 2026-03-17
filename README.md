@@ -1,24 +1,185 @@
-# ZERO AI - 自主工程代理人 (Autonomous Engineering Agent)
+ZERO AI
 
-ZERO 是一個基於本地語言模型 (LLM) 的自主 AI 系統。它不僅能理解對話，更具備執行計畫、編寫程式碼與自動化操作本地檔案的能力。
+Autonomous Engineering Agent (Local AI System)
 
-## 🚀 核心亮點
-- **100% 本地化隱私**：基於 Ollama 運行，數據不外流。
-- **自主執行環 (Self-Execution Loop)**：AI 能夠將複雜任務拆解為多個步驟，並自動調用工具執行。
-- **沙盒工作區 (Sandbox)**：所有操作限制在 `zero_workspace` 內，兼顧功能與系統安全。
-- **自動化維運**：已實測可自主編寫 Python 監控腳本並回傳實時系統數據 (如 CPU 使用率)。
+ZERO is a local-first autonomous engineering assistant designed to help users complete engineering tasks such as coding, file operations, and tool execution using local large language models.
 
-## 🛠️ 技術架構
-- **大腦 (Core)**：採用 ReAct 推理框架 (Planner + Executor)。
-- **後端 (Server)**：Flask API 驅動的工具註冊表 (Tool Registry)。
-- **模型**：支援 Qwen, Llama 3 等本地高性能模型。
+The system focuses on local privacy, tool execution, and modular AI architecture, allowing an AI agent to plan tasks and interact with real system tools.
 
-## 📂 專案結構
-- `core/`: AI 的決策中心與計畫引擎。
-- `tools/`: 各式執行工具（檔案讀寫、Python 腳本執行）。
-- `zero_workspace/`: AI 的專屬實驗室。
+Core Philosophy
 
-## 📈 未來展望
-- 增加 Web 爬蟲工具組。
-- 實現報錯自動修復 (Self-Healing) 機制。
-- 支援更複雜的數據分析與視覺化報表生成。
+ZERO is designed around three principles:
+
+Local First – Runs entirely on local LLMs (Ollama)
+
+Engineering Workflow – AI assists real engineering tasks
+
+Tool-Driven Execution – AI interacts with system tools instead of only chatting
+
+Current System Architecture
+User
+  ↓
+Router
+  ↓
+Tool Router
+  ↓
+Tool Execution
+  ↓
+Workspace (Sandbox)
+Components
+
+Router
+
+Determines how user input should be processed.
+
+Example routes:
+
+help
+
+tools
+
+memory
+
+tool execution
+
+normal chat
+
+Tool Router
+
+Maps commands to actual system tools.
+
+Example:
+
+echo hello
+list files
+read file example.txt
+run python script.py
+
+Tools
+
+Tools are executable system capabilities.
+
+Examples:
+
+read_file
+write_file
+list_files
+run_python
+
+Each tool is implemented as a Python module.
+
+Workspace
+
+All file operations are restricted to:
+
+zero_workspace/
+
+This acts as a sandbox environment for the AI system.
+
+Project Structure
+zero_ai/
+
+core/
+    router.py
+    tool_router.py
+    executor.py
+
+tools/
+    read_file.py
+    write_file.py
+    list_files.py
+    run_python.py
+
+workspace/
+    zero_workspace/
+
+app.py
+Installation
+
+Clone the repository
+
+git clone https://github.com/yourname/zero-ai
+cd zero-ai
+
+Install Python dependencies
+
+pip install -r requirements.txt
+
+Install local model (Ollama)
+
+ollama pull qwen2.5
+Run the system
+
+Start the API server
+
+python app.py
+
+Then send requests to:
+
+http://127.0.0.1:5000
+Example Commands
+
+Example interaction:
+
+User input
+
+echo hello world
+
+System response
+
+hello world
+
+Another example:
+
+list files
+
+Returns file list from the workspace.
+
+Roadmap
+
+Planned system evolution:
+
+Phase 1 (Current)
+
+Router
+Tool system
+Execution engine
+Sandbox workspace
+
+Phase 2
+
+Agent Loop
+
+plan → tool → execute → observe → repeat
+
+The AI will be able to plan multi-step engineering tasks.
+
+Phase 3
+
+Memory system
+Web crawler tools
+Self-repair capability
+
+Phase 4
+
+Vision system
+Hardware control
+Autonomous engineering workflows
+
+Long Term Vision
+
+ZERO aims to become a personal engineering AI assistant capable of helping with:
+
+software development
+
+hardware prototyping
+
+automation workflows
+
+engineering research
+
+while remaining fully local and privacy-preserving.
+
+License
+
+MIT License
