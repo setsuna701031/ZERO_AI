@@ -1,9 +1,11 @@
 from flask import Flask, jsonify, request
-from core.ai_handler import handle_ai_ask
-from core.tool_router import get_available_tools
-from core.llm_client import OLLAMA_BASE_URL, OLLAMA_MODEL
+
+from core.project_agent import ProjectAgent
+from core.tool_router import get_available_tools, run_tool
 
 app = Flask(__name__)
+
+agent = ProjectAgent(model="qwen:7b")
 
 
 @app.route("/", methods=["GET"])
@@ -24,13 +26,10 @@ def health():
 @app.route("/status", methods=["GET"])
 def status():
     return jsonify({
-        "zero_core": "running",
-        "flask": "ok",
-        "version": "v0.1.0",
-        "tools": get_available_tools(),
-        "llm_backend": "ollama",
-        "llm_base_url": OLLAMA_BASE_URL,
-        "llm_model": OLLAMA_MODEL,
+        "status": "running",
+        "available_tools": get_available_tools(),
+        "agent_ready": True,
+        "agent_model": "qwen:7b"
     })
 
 
@@ -42,14 +41,45 @@ def echo():
     })
 
 
-@app.route("/ai/ask", methods=["POST"])
-def ai_ask():
+@app.route("/tools/run", methods=["POST"])
+def tools_run():
     data = request.get_json(silent=True) or {}
-    result = handle_ai_ask(data)
+
+    tool_name = str(data.get("tool", "")).strip()
+    args = data.get("args", {}) or {}
+
+    if not tool_name:
+        return jsonify({
+            "tool": "",
+            "success": False,
+            "data": {
+                "message": "tool is required",
+                "available_tools": get_available_tools()
+            }
+        }), 400
+
+    result = run_tool(tool_name, args)
     return jsonify(result)
 
 
-# ZERO_AUTO_ROUTES_START
+@app.route("/agent/run", methods=["POST"])
+def agent_run():
+    data = request.get_json(silent=True) or {}
+    user_input = str(data.get("input", "")).strip()
+
+    if not user_input:
+        return jsonify({
+            "success": False,
+            "mode": "agent_loop",
+            "input": "",
+            "plan": [],
+            "results": [],
+            "observations": [],
+            "final_answer": "input is required"
+        }), 400
+
+    result = agent.run(user_input)
+    return jsonify(result)
 
 
 @app.route("/hello", methods=["GET"])
@@ -58,26 +88,6 @@ def zero_route_hello():
         "route": "hello",
         "message": "ZERO auto route hello is running"
     })
-
-
-@app.route("/test_verify", methods=["GET"])
-def zero_route_test_verify():
-    return jsonify({
-        "route": "test_verify",
-        "message": "ZERO 自動路由 test_verify 正在執行"
-    })
-
-
-@app.route("/echo_data", methods=["POST"])
-def zero_post_route_echo_data():
-    data = request.get_json(silent=True) or {}
-    return jsonify({
-        "route": "echo_data",
-        "received": data
-    })
-
-
-# ZERO_AUTO_ROUTES_END
 
 
 if __name__ == "__main__":

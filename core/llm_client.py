@@ -5,24 +5,26 @@ import urllib.error
 
 
 OLLAMA_BASE_URL = os.environ.get("ZERO_OLLAMA_BASE_URL", "http://127.0.0.1:11434/api")
-OLLAMA_MODEL = os.environ.get("ZERO_OLLAMA_MODEL", "llama3.1")
+DEFAULT_OLLAMA_MODEL = os.environ.get("ZERO_OLLAMA_MODEL", "llama3.1")
 OLLAMA_TIMEOUT = int(os.environ.get("ZERO_OLLAMA_TIMEOUT", "120"))
 
 
-def ask_local_llm(question: str) -> dict:
+def ask_local_llm(question: str, model_name: str | None = None) -> dict:
     question = (question or "").strip()
+    model_name = (model_name or DEFAULT_OLLAMA_MODEL).strip()
+
     if not question:
         return {
             "success": False,
             "backend": "ollama",
-            "model": OLLAMA_MODEL,
+            "model": model_name,
             "message": "question is empty",
         }
 
     url = f"{OLLAMA_BASE_URL.rstrip('/')}/generate"
 
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model_name,
         "prompt": question,
         "stream": False,
     }
@@ -43,7 +45,7 @@ def ask_local_llm(question: str) -> dict:
         return {
             "success": True,
             "backend": "ollama",
-            "model": result.get("model", OLLAMA_MODEL),
+            "model": result.get("model", model_name),
             "answer": result.get("response", "").strip(),
             "raw": result,
         }
@@ -56,7 +58,7 @@ def ask_local_llm(question: str) -> dict:
         return {
             "success": False,
             "backend": "ollama",
-            "model": OLLAMA_MODEL,
+            "model": model_name,
             "message": f"http error: {exc.code}",
             "details": body,
         }
@@ -65,7 +67,7 @@ def ask_local_llm(question: str) -> dict:
         return {
             "success": False,
             "backend": "ollama",
-            "model": OLLAMA_MODEL,
+            "model": model_name,
             "message": f"url error: {exc}",
         }
 
@@ -73,6 +75,6 @@ def ask_local_llm(question: str) -> dict:
         return {
             "success": False,
             "backend": "ollama",
-            "model": OLLAMA_MODEL,
+            "model": model_name,
             "message": f"llm request failed: {exc}",
         }

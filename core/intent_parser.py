@@ -9,15 +9,15 @@ def parse_intent(question: str) -> dict:
             "args": {}
         }
 
-    # list routes
-    if "flask" in lower and ("route" in lower or "routes" in lower):
+    # list flask routes
+    if "list flask routes" in lower:
         return {
             "intent": "tool_call",
             "tool": "list_routes",
             "args": {}
         }
 
-    if "list routes" in lower:
+    if "flask" in lower and ("route" in lower or "routes" in lower):
         return {
             "intent": "tool_call",
             "tool": "list_routes",
@@ -39,9 +39,9 @@ def parse_intent(question: str) -> dict:
             "args": {}
         }
 
-    # read file
-    if "read " in lower:
-        file_path = text.split(" ", 1)[1].strip()
+    # read_file：只接受明確的檔案讀取指令
+    if text.startswith("讀取 "):
+        file_path = text.replace("讀取 ", "", 1).strip()
         return {
             "intent": "tool_call",
             "tool": "read_file",
@@ -50,12 +50,53 @@ def parse_intent(question: str) -> dict:
             }
         }
 
-    if "docs/" in lower:
+    if text.startswith("讀檔 "):
+        file_path = text.replace("讀檔 ", "", 1).strip()
         return {
             "intent": "tool_call",
             "tool": "read_file",
             "args": {
-                "file_path": text
+                "file_path": file_path
+            }
+        }
+
+    if lower.startswith("read file "):
+        file_path = text[len("read file "):].strip()
+        return {
+            "intent": "tool_call",
+            "tool": "read_file",
+            "args": {
+                "file_path": file_path
+            }
+        }
+
+    if lower.startswith("read docs/"):
+        file_path = text[len("read "):].strip()
+        return {
+            "intent": "tool_call",
+            "tool": "read_file",
+            "args": {
+                "file_path": file_path
+            }
+        }
+
+    if lower.startswith("read core/"):
+        file_path = text[len("read "):].strip()
+        return {
+            "intent": "tool_call",
+            "tool": "read_file",
+            "args": {
+                "file_path": file_path
+            }
+        }
+
+    if lower.startswith("read app.py"):
+        file_path = text[len("read "):].strip()
+        return {
+            "intent": "tool_call",
+            "tool": "read_file",
+            "args": {
+                "file_path": file_path
             }
         }
 

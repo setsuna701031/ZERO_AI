@@ -205,3 +205,8 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# --- ZERO Project Custom Rules ---
+zero_workspace/
+flask_server.pid
+*.log
