@@ -1,185 +1,306 @@
-ZERO AI
+\# ZERO AI
 
-Autonomous Engineering Agent (Local AI System)
 
-ZERO is a local-first autonomous engineering assistant designed to help users complete engineering tasks such as coding, file operations, and tool execution using local large language models.
 
-The system focuses on local privacy, tool execution, and modular AI architecture, allowing an AI agent to plan tasks and interact with real system tools.
+Local Tool-Driven Engineering Agent
 
-Core Philosophy
 
-ZERO is designed around three principles:
 
-Local First – Runs entirely on local LLMs (Ollama)
+ZERO AI is a local-first engineering assistant focused on tool execution, modular architecture, and privacy-preserving workflows.  
 
-Engineering Workflow – AI assists real engineering tasks
+It is designed to run on a local machine and evolve from a simple tool-routed assistant into a more complete engineering agent system.
 
-Tool-Driven Execution – AI interacts with system tools instead of only chatting
 
-Current System Architecture
-User
-  ↓
-Router
-  ↓
-Tool Router
-  ↓
-Tool Execution
-  ↓
-Workspace (Sandbox)
-Components
 
-Router
+\---
 
-Determines how user input should be processed.
 
-Example routes:
 
-help
+\## Current Status
 
-tools
 
-memory
 
-tool execution
+Current working version:
 
-normal chat
 
-Tool Router
 
-Maps commands to actual system tools.
+\- Flask API running
 
-Example:
+\- Agent Loop running
 
-echo hello
-list files
-read file example.txt
-run python script.py
+\- Router working
 
-Tools
+\- Tool Registry working
 
-Tools are executable system capabilities.
+\- Local web search tool callable
 
-Examples:
+\- Local SearxNG integrated
 
-read_file
-write_file
-list_files
-run_python
+\- `/chat` can perform real search requests
 
-Each tool is implemented as a Python module.
 
-Workspace
 
-All file operations are restricted to:
+This means ZERO has moved beyond a static tool skeleton and is now functioning as a real local tool-based Agent v1.
 
-zero_workspace/
 
-This acts as a sandbox environment for the AI system.
 
-Project Structure
-zero_ai/
+\---
 
-core/
-    router.py
-    tool_router.py
-    executor.py
 
-tools/
-    read_file.py
-    write_file.py
-    list_files.py
-    run_python.py
 
-workspace/
-    zero_workspace/
+\## Current Active Architecture
+
+
+
+Current main execution path:
+
+
+
+```text
 
 app.py
-Installation
 
-Clone the repository
+→ agent\_loop.py
 
-git clone https://github.com/yourname/zero-ai
-cd zero-ai
+→ router.py
 
-Install Python dependencies
+→ tool\_registry.py
 
-pip install -r requirements.txt
+→ tools/
 
-Install local model (Ollama)
+→ services/
 
-ollama pull qwen2.5
-Run the system
 
-Start the API server
 
-python app.py
+\## Main Components
 
-Then send requests to:
 
-http://127.0.0.1:5000
-Example Commands
 
-Example interaction:
+\### `app.py`
 
-User input
+Current API entry point.
 
-echo hello world
 
-System response
 
-hello world
+Runs the Flask server and exposes routes such as:
 
-Another example:
 
-list files
 
-Returns file list from the workspace.
+\- `/`
 
-Roadmap
+\- `/health`
 
-Planned system evolution:
+\- `/chat`
 
-Phase 1 (Current)
+\- `/route`
 
-Router
-Tool system
-Execution engine
-Sandbox workspace
+\- `/tools`
 
-Phase 2
+\- `/tools/<tool\_name>`
 
-Agent Loop
 
-plan → tool → execute → observe → repeat
 
-The AI will be able to plan multi-step engineering tasks.
+\### `agent\_loop.py`
 
-Phase 3
+Current main agent execution loop.
 
-Memory system
-Web crawler tools
-Self-repair capability
 
-Phase 4
 
-Vision system
-Hardware control
-Autonomous engineering workflows
+Responsibilities:
 
-Long Term Vision
 
-ZERO aims to become a personal engineering AI assistant capable of helping with:
 
-software development
+\- receive user input
 
-hardware prototyping
+\- call router
 
-automation workflows
+\- dispatch tool execution
 
-engineering research
+\- handle normal chat fallback
 
-while remaining fully local and privacy-preserving.
+\- format final result output
 
-License
 
-MIT License
+
+\### `router.py`
+
+Determines whether a request should go to:
+
+
+
+\- normal chat
+
+\- tool execution
+
+
+
+\### `tool\_registry.py`
+
+Registers tools and executes them by name.
+
+
+
+\### `tools/`
+
+Contains callable tools.
+
+
+
+Current and planned examples include:
+
+
+
+\- web search
+
+\- file tools
+
+\- terminal tools
+
+\- project tools
+
+\- code search tools
+
+
+
+\### `services/`
+
+Contains lower-level service implementations.
+
+
+
+For example:
+
+
+
+\- SearxNG-backed web search service
+
+
+
+\### `config.py`
+
+Stores project configuration.
+
+
+
+\### `llm\_client.py`
+
+Reserved for local LLM integration and future chat generation improvements.
+
+
+
+\---
+
+
+
+\## Current API Routes
+
+
+
+\### `GET /`
+
+Basic service info and available routes.
+
+
+
+\### `GET /health`
+
+Health check endpoint.
+
+
+
+\### `POST /chat`
+
+Main user interaction route.
+
+
+
+Example request body:
+
+
+
+```json
+
+{
+
+&#x20; "message": "查一下台北今天天氣"
+
+}
+
+
+
+\---
+
+
+
+\## Project Structure
+
+
+
+```text
+
+zero\_ai/
+
+├─ app.py
+
+├─ agent\_loop.py
+
+├─ router.py
+
+├─ tool\_registry.py
+
+├─ planner.py
+
+├─ llm\_client.py
+
+├─ config.py
+
+├─ main.py
+
+├─ zero.py
+
+├─ zero\_v8.py
+
+├─ requirements.txt
+
+├─ README.md
+
+├─ tools/
+
+├─ services/
+
+├─ core/
+
+├─ brain/
+
+├─ memory/
+
+├─ schemas/
+
+├─ utils/
+
+├─ ui/
+
+├─ docs/
+
+├─ data/
+
+└─ config/
+
+
+
+\---
+
+
+
+\## Example Usage
+
+
+
+\### Health check
+
+
+
+```bash
+
+curl http://127.0.0.1:5000/health
+
