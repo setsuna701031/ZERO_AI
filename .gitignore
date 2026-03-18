@@ -210,3 +210,7 @@ __marimo__/
 zero_workspace/
 flask_server.pid
 *.log
+run/
+logs/
+.vscode/
+.idea/
