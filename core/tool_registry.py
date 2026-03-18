@@ -5,6 +5,10 @@ from core.llm import LLMClient
 from core.workspace_manager import safe_path
 
 
+# -----------------------------
+# Flask tools
+# -----------------------------
+
 def tool_list_routes(args: dict | None = None) -> dict:
     result = list_flask_routes()
     return {
@@ -23,6 +27,10 @@ def tool_restart_flask(args: dict | None = None) -> dict:
     }
 
 
+# -----------------------------
+# Filesystem tools
+# -----------------------------
+
 def tool_list_files(args: dict | None = None) -> dict:
     args = args or {}
     path = str(args.get("path", ".")).strip()
@@ -34,34 +42,15 @@ def tool_list_files(args: dict | None = None) -> dict:
             return {
                 "tool": "list_files",
                 "success": False,
-                "data": {
-                    "message": f"path not found: {path}",
-                    "path": path
-                }
+                "data": {"message": f"path not found: {path}"}
             }
 
-        if not target_path.is_dir():
-            return {
-                "tool": "list_files",
-                "success": False,
-                "data": {
-                    "message": f"not a directory: {path}",
-                    "path": path
-                }
-            }
-
-        root_path = safe_path(".")
         items = []
 
-        for item in sorted(target_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-            try:
-                rel_path = str(item.relative_to(root_path)).replace("\\", "/")
-            except Exception:
-                rel_path = str(item).replace("\\", "/")
-
+        for item in sorted(target_path.iterdir()):
             items.append({
                 "name": item.name,
-                "path": rel_path,
+                "path": str(item).replace("\\", "/"),
                 "type": "dir" if item.is_dir() else "file"
             })
 
@@ -70,8 +59,7 @@ def tool_list_files(args: dict | None = None) -> dict:
             "success": True,
             "data": {
                 "path": path,
-                "items": items,
-                "count": len(items)
+                "items": items
             }
         }
 
@@ -79,10 +67,7 @@ def tool_list_files(args: dict | None = None) -> dict:
         return {
             "tool": "list_files",
             "success": False,
-            "data": {
-                "message": str(exc),
-                "path": path
-            }
+            "data": {"message": str(exc)}
         }
 
 
@@ -90,49 +75,11 @@ def tool_read_file(args: dict | None = None) -> dict:
     args = args or {}
     path = str(args.get("path", "")).strip()
 
-    if not path:
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": "path is required"
-            }
-        }
-
     try:
         file_path = safe_path(path)
-    except Exception as exc:
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": str(exc),
-                "path": path
-            }
-        }
 
-    if not file_path.exists():
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": f"file not found: {path}",
-                "path": path
-            }
-        }
-
-    if not file_path.is_file():
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": f"not a file: {path}",
-                "path": path
-            }
-        }
-
-    try:
         content = file_path.read_text(encoding="utf-8")
+
         return {
             "tool": "read_file",
             "success": True,
@@ -141,34 +88,25 @@ def tool_read_file(args: dict | None = None) -> dict:
                 "content": content
             }
         }
+
     except Exception as exc:
         return {
             "tool": "read_file",
             "success": False,
-            "data": {
-                "message": f"read file failed: {exc}",
-                "path": path
-            }
+            "data": {"message": str(exc)}
         }
 
 
 def tool_write_file(args: dict | None = None) -> dict:
     args = args or {}
+
     path = str(args.get("path", "")).strip()
     content = str(args.get("content", ""))
-
-    if not path:
-        return {
-            "tool": "write_file",
-            "success": False,
-            "data": {
-                "message": "path is required"
-            }
-        }
 
     try:
         file_path = safe_path(path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
+
         file_path.write_text(content, encoding="utf-8")
 
         return {
@@ -179,65 +117,35 @@ def tool_write_file(args: dict | None = None) -> dict:
                 "path": path
             }
         }
+
     except Exception as exc:
         return {
             "tool": "write_file",
             "success": False,
-            "data": {
-                "message": str(exc),
-                "path": path
-            }
+            "data": {"message": str(exc)}
         }
 
+
+# -----------------------------
+# Python execution
+# -----------------------------
 
 def tool_run_python(args: dict | None = None) -> dict:
     args = args or {}
     path = str(args.get("path", "")).strip()
 
-    if not path:
-        return {
-            "tool": "run_python",
-            "success": False,
-            "data": {
-                "message": "path is required"
-            }
-        }
-
     try:
         file_path = safe_path(path)
-
-        if not file_path.exists():
-            return {
-                "tool": "run_python",
-                "success": False,
-                "data": {
-                    "message": f"file not found: {path}",
-                    "path": path
-                }
-            }
-
-        if not file_path.is_file():
-            return {
-                "tool": "run_python",
-                "success": False,
-                "data": {
-                    "message": f"not a file: {path}",
-                    "path": path
-                }
-            }
 
         result = subprocess.run(
             ["python", str(file_path)],
             capture_output=True,
-            text=True,
-            timeout=30
+            text=True
         )
-
-        success = result.returncode == 0
 
         return {
             "tool": "run_python",
-            "success": success,
+            "success": result.returncode == 0,
             "data": {
                 "path": path,
                 "stdout": result.stdout,
@@ -250,107 +158,157 @@ def tool_run_python(args: dict | None = None) -> dict:
         return {
             "tool": "run_python",
             "success": False,
-            "data": {
-                "message": str(exc),
-                "path": path
-            }
+            "data": {"message": str(exc)}
         }
 
+
+# -----------------------------
+# Code generation
+# -----------------------------
 
 def tool_generate_python(args: dict | None = None) -> dict:
     args = args or {}
 
     task = str(args.get("task", "")).strip()
     filename = str(args.get("filename", "")).strip()
-    model = str(args.get("model", "qwen:7b")).strip() or "qwen:7b"
 
-    if not task:
-        return {
-            "tool": "generate_python",
-            "success": False,
-            "data": {
-                "message": "task is required"
-            }
-        }
-
-    llm = LLMClient(model=model)
+    llm = LLMClient()
 
     prompt = f"""
-You are a Python code generator.
+Write a complete Python script.
 
 Task:
 {task}
 
-Target filename:
-{filename if filename else "unknown"}
-
 Rules:
-1. Return ONLY full Python code.
-2. Do not explain anything.
-3. Do not use markdown.
-4. Do not use code fences.
-5. The code must run directly as a complete .py file.
-6. Keep the program simple and practical.
-7. Prefer only Python standard library unless the task clearly requires something else.
-8. If the request is just to print text, return a minimal runnable script.
+- Return ONLY Python code
+- No explanations
+- No markdown
+- Must run directly
 
-Example valid output:
+Example:
 print("hello world")
+"""
 
-Return Python code only.
-""".strip()
+    raw = llm.generate(prompt)
 
-    code = llm.generate(prompt).strip()
-
-    if not code:
-        return {
-            "tool": "generate_python",
-            "success": False,
-            "data": {
-                "message": "LLM returned empty code"
-            }
-        }
-
-    if code.startswith("LLM_ERROR:"):
-        return {
-            "tool": "generate_python",
-            "success": False,
-            "data": {
-                "message": code
-            }
-        }
-
-    if "```" in code:
-        code = code.replace("```python", "")
-        code = code.replace("```", "").strip()
-
-    if not code.strip():
-        return {
-            "tool": "generate_python",
-            "success": False,
-            "data": {
-                "message": "generated code became empty after cleanup"
-            }
-        }
+    code = llm.extract_python_code(raw)
 
     return {
         "tool": "generate_python",
         "success": True,
         "data": {
-            "task": task,
             "filename": filename,
             "code": code,
-            "model": model
+            "raw": raw
         }
     }
 
 
+# -----------------------------
+# NEW: shell tool
+# -----------------------------
+
+def tool_shell(args: dict | None = None) -> dict:
+    args = args or {}
+
+    cmd = str(args.get("cmd", "")).strip()
+
+    if not cmd:
+        return {
+            "tool": "shell",
+            "success": False,
+            "data": {"message": "cmd required"}
+        }
+
+    try:
+
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+
+        return {
+            "tool": "shell",
+            "success": result.returncode == 0,
+            "data": {
+                "cmd": cmd,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "returncode": result.returncode
+            }
+        }
+
+    except Exception as exc:
+
+        return {
+            "tool": "shell",
+            "success": False,
+            "data": {"message": str(exc)}
+        }
+
+
+# -----------------------------
+# NEW: pip install tool
+# -----------------------------
+
+def tool_pip_install(args: dict | None = None) -> dict:
+    args = args or {}
+
+    package = str(args.get("package", "")).strip()
+
+    if not package:
+        return {
+            "tool": "pip_install",
+            "success": False,
+            "data": {"message": "package required"}
+        }
+
+    try:
+
+        result = subprocess.run(
+            ["pip", "install", package],
+            capture_output=True,
+            text=True
+        )
+
+        return {
+            "tool": "pip_install",
+            "success": result.returncode == 0,
+            "data": {
+                "package": package,
+                "stdout": result.stdout,
+                "stderr": result.stderr
+            }
+        }
+
+    except Exception as exc:
+
+        return {
+            "tool": "pip_install",
+            "success": False,
+            "data": {"message": str(exc)}
+        }
+
+
+# -----------------------------
+# Tool registry
+# -----------------------------
+
 TOOL_REGISTRY = {
+
     "list_routes": tool_list_routes,
     "restart_flask": tool_restart_flask,
+
     "list_files": tool_list_files,
     "read_file": tool_read_file,
     "write_file": tool_write_file,
+
     "run_python": tool_run_python,
     "generate_python": tool_generate_python,
+
+    "shell": tool_shell,
+    "pip_install": tool_pip_install,
 }

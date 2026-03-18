@@ -9,7 +9,7 @@ class ProjectAgent:
     def __init__(
         self,
         model: str = "qwen:7b",
-        max_steps: int = 12,
+        max_steps: int = 20,
         max_fix_attempts: int = 3
     ):
         self.model = model
@@ -19,15 +19,7 @@ class ProjectAgent:
         self.llm = LLMClient(model=model)
 
     def cleanup_code_block(self, text: str) -> str:
-        code = str(text or "").strip()
-
-        if "```" in code:
-            code = code.replace("```python", "")
-            code = code.replace("```py", "")
-            code = code.replace("```", "")
-            code = code.strip()
-
-        return code
+        return self.llm.extract_python_code(text)
 
     def build_final_answer(self, results: list) -> str:
         if not results:
@@ -88,6 +80,41 @@ class ProjectAgent:
             filename = data.get("filename", "")
             return f"Python code generated for: {filename}"
 
+        if tool_name == "shell":
+            cmd = data.get("cmd", "")
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+            returncode = data.get("returncode", None)
+
+            lines = [f"Shell command: {cmd}", f"returncode: {returncode}"]
+
+            if stdout:
+                lines.append("stdout:")
+                lines.append(stdout.rstrip())
+
+            if stderr:
+                lines.append("stderr:")
+                lines.append(stderr.rstrip())
+
+            return "\n".join(lines)
+
+        if tool_name == "pip_install":
+            package = data.get("package", "")
+            stdout = data.get("stdout", "")
+            stderr = data.get("stderr", "")
+
+            lines = [f"pip install: {package}"]
+
+            if stdout:
+                lines.append("stdout:")
+                lines.append(stdout.rstrip())
+
+            if stderr:
+                lines.append("stderr:")
+                lines.append(stderr.rstrip())
+
+            return "\n".join(lines)
+
         if tool_name == "list_routes":
             return f"Routes: {data}"
 
@@ -141,15 +168,15 @@ Return corrected full Python code only.
             stderr=stderr
         )
 
-        fixed_code = self.llm.generate(prompt).strip()
+        raw = self.llm.generate(prompt).strip()
 
-        if not fixed_code:
+        if not raw:
             return None
 
-        if fixed_code.startswith("LLM_ERROR:"):
+        if raw.startswith("LLM_ERROR:"):
             return None
 
-        fixed_code = self.cleanup_code_block(fixed_code)
+        fixed_code = self.cleanup_code_block(raw)
 
         if not fixed_code:
             return None
@@ -296,6 +323,17 @@ Return corrected full Python code only.
             return raw_plan
 
         if isinstance(raw_plan, dict):
+            action = raw_plan.get("action")
+
+            if action in ["multi_step", "multi_step_execution"]:
+                steps = raw_plan.get("steps", [])
+                if isinstance(steps, list):
+                    return steps
+                return [{
+                    "action": "reply",
+                    "message": f"{action} plan has invalid steps"
+                }]
+
             return [raw_plan]
 
         return [{
@@ -317,7 +355,8 @@ Return corrected full Python code only.
                 "final_answer": "input is required"
             }
 
-        initial_plan = self.normalize_plan(self.planner.build_plan(user_input))
+        planner_output = self.planner.build_plan(user_input)
+        initial_plan = self.normalize_plan(planner_output)
 
         queue = list(initial_plan)
         executed_plan = []

@@ -1,93 +1,127 @@
 from flask import Flask, jsonify, request
 
-from core.project_agent import ProjectAgent
-from core.tool_router import get_available_tools, run_tool
+from agent_loop import AgentLoop
 
 app = Flask(__name__)
 
-agent = ProjectAgent(model="qwen:7b")
+agent = AgentLoop()
 
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "message": "ZERO Flask API is running",
-        "status": "ok"
+        "status": "ok",
+        "service": "ZERO Agent",
+        "version": "v1",
+        "available_routes": [
+            "/",
+            "/health",
+            "/chat",
+            "/route",
+            "/tools",
+        ]
     })
 
 
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
-        "health": "good"
+        "status": "healthy",
+        "agent": "ZERO",
+        "router": "loaded",
+        "tool_registry": "loaded",
     })
 
 
-@app.route("/status", methods=["GET"])
-def status():
-    return jsonify({
-        "status": "running",
-        "available_tools": get_available_tools(),
-        "agent_ready": True,
-        "agent_model": "qwen:7b"
-    })
-
-
-@app.route("/echo", methods=["POST"])
-def echo():
+@app.route("/chat", methods=["POST"])
+def chat():
+    """
+    POST /chat
+    body:
+    {
+        "message": "查一下台北今天天氣"
+    }
+    """
     data = request.get_json(silent=True) or {}
-    return jsonify({
-        "you_sent": data
-    })
-
-
-@app.route("/tools/run", methods=["POST"])
-def tools_run():
-    data = request.get_json(silent=True) or {}
-
-    tool_name = str(data.get("tool", "")).strip()
-    args = data.get("args", {}) or {}
-
-    if not tool_name:
-        return jsonify({
-            "tool": "",
-            "success": False,
-            "data": {
-                "message": "tool is required",
-                "available_tools": get_available_tools()
-            }
-        }), 400
-
-    result = run_tool(tool_name, args)
-    return jsonify(result)
-
-
-@app.route("/agent/run", methods=["POST"])
-def agent_run():
-    data = request.get_json(silent=True) or {}
-    user_input = str(data.get("input", "")).strip()
+    user_input = str(data.get("message", "")).strip()
 
     if not user_input:
         return jsonify({
             "success": False,
-            "mode": "agent_loop",
-            "input": "",
-            "plan": [],
-            "results": [],
-            "observations": [],
-            "final_answer": "input is required"
+            "error": "Missing required field: message"
         }), 400
 
     result = agent.run(user_input)
-    return jsonify(result)
 
-
-@app.route("/hello", methods=["GET"])
-def zero_route_hello():
     return jsonify({
-        "route": "hello",
-        "message": "ZERO auto route hello is running"
+        "success": result.get("success", False),
+        "type": result.get("type"),
+        "user_input": result.get("user_input"),
+        "final_answer": result.get("final_answer"),
+        "route_result": result.get("route_result"),
+        "tool_name": result.get("tool_name"),
+        "tool_params": result.get("tool_params"),
+        "tool_result": result.get("tool_result"),
+        "error": result.get("error"),
     })
+
+
+@app.route("/route", methods=["POST"])
+def route_only():
+    """
+    只看 Router 判斷結果，不執行工具
+    POST /route
+    body:
+    {
+        "message": "搜尋 Python requests 教學"
+    }
+    """
+    data = request.get_json(silent=True) or {}
+    user_input = str(data.get("message", "")).strip()
+
+    if not user_input:
+        return jsonify({
+            "success": False,
+            "error": "Missing required field: message"
+        }), 400
+
+    route_result = agent.router.route(user_input)
+
+    return jsonify({
+        "success": True,
+        "user_input": user_input,
+        "route_result": route_result,
+    })
+
+
+@app.route("/tools", methods=["GET"])
+def list_tools():
+    return jsonify({
+        "success": True,
+        "tools": agent.tool_registry.list_tool_names(),
+        "tool_definitions": agent.tool_registry.list_tool_definitions(),
+    })
+
+
+@app.route("/tools/<tool_name>", methods=["POST"])
+def execute_tool(tool_name):
+    """
+    直接執行指定工具
+    POST /tools/web_search
+    body:
+    {
+        "query": "RTX 3060 VRAM 幾 GB",
+        "max_results": 3,
+        "category": "general"
+    }
+    """
+    data = request.get_json(silent=True) or {}
+
+    result = agent.tool_registry.execute_tool(tool_name, data)
+
+    status_code = 200 if result.get("success", False) else 400
+    return jsonify(result), status_code
 
 
 if __name__ == "__main__":

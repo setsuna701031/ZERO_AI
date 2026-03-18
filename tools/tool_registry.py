@@ -1,193 +1,43 @@
-from pathlib import Path
-import subprocess
-
-from core.flask_manager import list_flask_routes, restart_flask_internal
-from core.workspace_manager import safe_path
-
-
-def tool_list_routes(args: dict | None = None) -> dict:
-    result = list_flask_routes()
-    return {
-        "tool": "list_routes",
-        "success": result.get("success", False),
-        "data": result
-    }
+from tools.terminal_tool import TerminalTool
+from tools.project_tool import ProjectTool
+from tools.web_search_tool import WebSearchTool
+from tools.search_code_tool import SearchCodeTool
+from tools.read_file_tool import ReadFileTool
+from tools.write_file_tool import WriteFileTool
 
 
-def tool_restart_flask(args: dict | None = None) -> dict:
-    result = restart_flask_internal()
-    return {
-        "tool": "restart_flask",
-        "success": result.get("success", False),
-        "data": result
-    }
-
-
-def tool_read_file(args: dict | None = None) -> dict:
-    args = args or {}
-    file_path = str(args.get("file_path", "")).strip()
-
-    if not file_path:
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": "file_path is required"
-            }
+class ToolRegistry:
+    def __init__(self):
+        self.tools = {
+            "terminal": TerminalTool(),
+            "project": ProjectTool(),
+            "web_search": WebSearchTool(),
+            "search_code": SearchCodeTool(),
+            "read_file": ReadFileTool(),
+            "write_file": WriteFileTool()
         }
 
-    try:
-        full_path = safe_path(file_path)
-    except Exception as exc:
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": str(exc)
-            }
-        }
+    def execute(self, tool_name: str, action: str, **kwargs):
+        tool = self.tools.get(tool_name)
 
-    if not full_path.exists():
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": f"file not found: {file_path}"
-            }
-        }
-
-    if not full_path.is_file():
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": f"not a file: {file_path}"
-            }
-        }
-
-    try:
-        content = full_path.read_text(encoding="utf-8")
-        return {
-            "tool": "read_file",
-            "success": True,
-            "data": {
-                "file_path": file_path,
-                "content": content
-            }
-        }
-    except Exception as exc:
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {
-                "message": f"read file failed: {exc}"
-            }
-        }
-
-
-def tool_write_file(args: dict | None = None) -> dict:
-    args = args or {}
-    path = str(args.get("path", "")).strip()
-    content = str(args.get("content", ""))
-
-    if not path:
-        return {
-            "tool": "write_file",
-            "success": False,
-            "data": {
-                "message": "path is required"
-            }
-        }
-
-    try:
-        file_path = safe_path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        file_path.write_text(content, encoding="utf-8")
-
-        return {
-            "tool": "write_file",
-            "success": True,
-            "data": {
-                "message": f"file written: {path}",
-                "path": path
-            }
-        }
-    except Exception as exc:
-        return {
-            "tool": "write_file",
-            "success": False,
-            "data": {
-                "message": str(exc)
-            }
-        }
-
-
-def tool_run_python(args: dict | None = None) -> dict:
-    args = args or {}
-    path = str(args.get("path", "")).strip()
-
-    if not path:
-        return {
-            "tool": "run_python",
-            "success": False,
-            "data": {
-                "message": "path is required"
-            }
-        }
-
-    try:
-        file_path = safe_path(path)
-
-        if not file_path.exists():
+        if not tool:
             return {
-                "tool": "run_python",
-                "success": False,
-                "data": {
-                    "message": f"file not found: {path}"
-                }
+                "ok": False,
+                "error": f"Tool not found: {tool_name}"
             }
 
-        if not file_path.is_file():
+        method = getattr(tool, action, None)
+
+        if not method:
             return {
-                "tool": "run_python",
-                "success": False,
-                "data": {
-                    "message": f"not a file: {path}"
-                }
+                "ok": False,
+                "error": f"Action not found: {action}"
             }
 
-        result = subprocess.run(
-            ["python", str(file_path)],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-
-        return {
-            "tool": "run_python",
-            "success": True,
-            "data": {
-                "path": path,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
+        try:
+            return method(**kwargs)
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"{type(e).__name__}: {e}"
             }
-        }
-
-    except Exception as exc:
-        return {
-            "tool": "run_python",
-            "success": False,
-            "data": {
-                "message": str(exc)
-            }
-        }
-
-
-TOOL_REGISTRY = {
-    "list_routes": tool_list_routes,
-    "restart_flask": tool_restart_flask,
-    "read_file": tool_read_file,
-    "write_file": tool_write_file,
-    "run_python": tool_run_python,
-}

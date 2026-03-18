@@ -1,39 +1,16 @@
-from pathlib import Path
+import os
+from dataclasses import dataclass
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-LOG_DIR = DATA_DIR / "logs"
-MEMORY_DIR = DATA_DIR / "memory"
-BACKUP_DIR = DATA_DIR / "backups"
-WORKSPACE_DIR = DATA_DIR / "workspace"
 
-for folder in [DATA_DIR, LOG_DIR, MEMORY_DIR, BACKUP_DIR, WORKSPACE_DIR]:
-    folder.mkdir(parents=True, exist_ok=True)
+@dataclass
+class Settings:
+    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3.1:latest")
+    searxng_url: str = os.getenv("SEARXNG_URL", "http://127.0.0.1:8888")
+    max_file_chars: int = int(os.getenv("MAX_FILE_CHARS", "12000"))
+    max_observation_chars: int = int(os.getenv("MAX_OBSERVATION_CHARS", "16000"))
+    project_scan_limit: int = int(os.getenv("PROJECT_SCAN_LIMIT", "200"))
+    request_timeout: int = int(os.getenv("REQUEST_TIMEOUT", "90"))
 
-APP_NAME = "ZERO AI"
-APP_VERSION = "0.1.0"
 
-# 本地模型設定（預設 Ollama 相容接口）
-LLM_ENABLED = True
-LLM_API_URL = "http://127.0.0.1:11434/api/generate"
-LLM_MODEL = "qwen:7b"
-LLM_TIMEOUT = 120
-
-# 寫檔 / 執行安全限制
-SAFE_MODE = True
-ALLOWED_WRITE_DIRS = [
-    str(WORKSPACE_DIR.resolve()),
-]
-ALLOWED_RUN_DIRS = [
-    str(WORKSPACE_DIR.resolve()),
-]
-MAX_READ_CHARS = 20000
-MAX_SEARCH_RESULTS = 20
-PYTHON_EXEC_TIMEOUT = 20
-
-# 記憶
-MEMORY_FILE = MEMORY_DIR / "summaries.json"
-HISTORY_FILE = MEMORY_DIR / "history.json"
-
-# CLI
-CLI_PROMPT = "ZERO> "
+settings = Settings()

@@ -1,52 +1,76 @@
 class Router:
-    def route(self, text: str) -> dict:
+
+    def route(self, text: str):
+
         text = text.strip()
 
-        if not text:
-            return {"type": "empty"}
+        # ----------------
+        # built-in tools
+        # ----------------
 
-        if text == "help":
-            return {"type": "help"}
+        if text.startswith("shell "):
 
-        if text == "exit":
-            return {"type": "exit"}
+            cmd = text.replace("shell ", "", 1)
 
-        if text == "restart flask":
-            return {"type": "command", "action": "restart_flask"}
-
-        if text == "stop flask api":
-            return {"type": "command", "action": "stop_flask"}
-
-        if text == "build flask api":
-            return {"type": "command", "action": "build_flask_api"}
-
-        if text == "list flask routes":
-            return {"type": "command", "action": "list_flask_routes"}
-
-        if text.startswith("add flask post route "):
-            route_name = text.replace("add flask post route ", "", 1).strip()
             return {
-                "type": "command",
-                "action": "add_flask_route",
-                "route_name": route_name,
-                "method": "POST",
+                "type": "tool",
+                "tool": "shell",
+                "args": {
+                    "cmd": cmd
+                }
             }
 
-        if text.startswith("add flask route "):
-            route_name = text.replace("add flask route ", "", 1).strip()
+        if text.startswith("pip_install "):
+
+            pkg = text.replace("pip_install ", "", 1)
+
             return {
-                "type": "command",
-                "action": "add_flask_route",
-                "route_name": route_name,
-                "method": "GET",
+                "type": "tool",
+                "tool": "pip_install",
+                "args": {
+                    "package": pkg
+                }
             }
 
-        if text.startswith("remove flask route "):
-            route_name = text.replace("remove flask route ", "", 1).strip()
+        if text == "list files":
+
             return {
-                "type": "command",
-                "action": "remove_flask_route",
-                "route_name": route_name,
+                "type": "tool",
+                "tool": "list_files",
+                "args": {
+                    "path": "."
+                }
             }
 
-        return {"type": "unknown", "text": text}
+        if text.startswith("read "):
+
+            path = text.replace("read ", "", 1)
+
+            return {
+                "type": "tool",
+                "tool": "read_file",
+                "args": {
+                    "path": path
+                }
+            }
+
+        if text.startswith("run "):
+
+            path = text.replace("run ", "", 1)
+
+            return {
+                "type": "tool",
+                "tool": "run_python",
+                "args": {
+                    "path": path
+                }
+            }
+
+        # ----------------
+        # fallback
+        # ----------------
+
+        return {
+            "type": "chat",
+            "text": text
+        }

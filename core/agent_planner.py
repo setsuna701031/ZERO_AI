@@ -17,6 +17,26 @@ class AgentPlanner:
                 "message": "input is required"
             }]
 
+        if lower.startswith("shell "):
+            cmd = text[6:].strip()
+            return [{
+                "action": "tool",
+                "tool": "shell",
+                "args": {
+                    "cmd": cmd
+                }
+            }]
+
+        if lower.startswith("pip_install "):
+            package = text[len("pip_install "):].strip()
+            return [{
+                "action": "tool",
+                "tool": "pip_install",
+                "args": {
+                    "package": package
+                }
+            }]
+
         if (
             "list files" in lower
             or "show files" in lower

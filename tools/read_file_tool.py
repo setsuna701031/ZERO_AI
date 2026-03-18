@@ -1,19 +1,47 @@
 import os
 
 
-def read_file_tool(file_path: str):
-    """
-    讀取指定檔案內容
-    """
+class ReadFileTool:
+    name = "read_file"
 
-    if not os.path.exists(file_path):
-        return f"File not found: {file_path}"
+    def run(self, path: str, max_chars: int = 20000):
+        if not path or not isinstance(path, str):
+            return {
+                "ok": False,
+                "summary": "read_file 失敗：path 無效",
+                "raw": None
+            }
 
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        if not os.path.isfile(path):
+            return {
+                "ok": False,
+                "summary": f"read_file 失敗：找不到檔案 {path}",
+                "raw": None
+            }
 
-        return content
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read(max_chars)
 
-    except Exception as e:
-        return f"Error reading file: {str(e)}"
+            summary = (
+                f"=== 檔案內容 ===\n"
+                f"檔案: {path}\n"
+                f"字元數上限: {max_chars}\n"
+                f"內容如下:\n\n{content}"
+            )
+
+            return {
+                "ok": True,
+                "summary": summary,
+                "raw": {
+                    "path": path,
+                    "content": content
+                }
+            }
+
+        except Exception as e:
+            return {
+                "ok": False,
+                "summary": f"read_file 失敗：{type(e).__name__}: {e}",
+                "raw": None
+            }
