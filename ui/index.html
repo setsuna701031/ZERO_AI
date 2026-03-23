@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZERO Local Agent</title>
+    <style>
+        :root {
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: #05070b;
+            color: #f3f6fb;
+            font-family: Consolas, "Courier New", monospace;
+        }
+
+        .page {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 24px 48px;
+        }
+
+        h1 {
+            margin: 0 0 18px;
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .subtitle {
+            margin: 0 0 18px;
+            color: #c5d0dd;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+            margin-bottom: 18px;
+        }
+
+        #userInput {
+            flex: 1;
+            min-height: 48px;
+            padding: 0 18px;
+            border: 1px solid #8d99ae;
+            border-radius: 10px;
+            background: #14181f;
+            color: #f3f6fb;
+            font-size: 16px;
+            outline: none;
+        }
+
+        #userInput:focus {
+            border-color: #c8d1dc;
+            box-shadow: 0 0 0 2px rgba(200, 209, 220, 0.15);
+        }
+
+        button {
+            min-width: 92px;
+            border: none;
+            border-radius: 10px;
+            background: #2f6fe4;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 0 18px;
+        }
+
+        button:hover {
+            background: #3b7bf0;
+        }
+
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.65;
+        }
+
+        .panel {
+            border: 1px solid #232a35;
+            border-radius: 12px;
+            background: #0f1319;
+            padding: 16px;
+            margin-top: 14px;
+        }
+
+        .panel-title {
+            color: #8fc0ff;
+            font-size: 15px;
+            margin-bottom: 12px;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .meta-card {
+            border: 1px solid #232a35;
+            border-radius: 10px;
+            background: #0b1016;
+            padding: 10px 12px;
+        }
+
+        .meta-label {
+            color: #8ea0b5;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+
+        .meta-value {
+            color: #f3f6fb;
+            font-size: 14px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        .status-success {
+            background: rgba(40, 167, 69, 0.16);
+            border: 1px solid rgba(40, 167, 69, 0.35);
+            color: #8ee6a4;
+        }
+
+        .status-warning {
+            background: rgba(255, 193, 7, 0.14);
+            border: 1px solid rgba(255, 193, 7, 0.35);
+            color: #ffd978;
+        }
+
+        .status-fail {
+            background: rgba(220, 53, 69, 0.16);
+            border: 1px solid rgba(220, 53, 69, 0.35);
+            color: #ff9aa5;
+        }
+
+        .summary-box,
+        .warning-box,
+        .error-box,
+        .result-box {
+            border-radius: 10px;
+            border: 1px solid #202734;
+            padding: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.7;
+            margin-top: 12px;
+        }
+
+        .summary-box {
+            background: #0a1016;
+            color: #dce7f3;
+        }
+
+        .warning-box {
+            background: rgba(138, 103, 10, 0.18);
+            border-color: rgba(255, 193, 7, 0.28);
+            color: #ffe7a3;
+        }
+
+        .error-box {
+            background: rgba(120, 20, 28, 0.22);
+            border-color: rgba(220, 53, 69, 0.35);
+            color: #ffd3d8;
+        }
+
+        .result-box {
+            background: #0a0d12;
+            color: #f4f7fb;
+            min-height: 220px;
+            max-height: 520px;
+            overflow: auto;
+        }
+
+        .section-title {
+            color: #8fc0ff;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .muted {
+            color: #9da8b6;
+        }
+
+        details {
+            margin-top: 14px;
+        }
+
+        summary {
+            cursor: pointer;
+            color: #8fc0ff;
+            user-select: none;
+        }
+
+        pre {
+            margin: 12px 0 0;
+            padding: 14px;
+            border-radius: 10px;
+            background: #0a0d12;
+            border: 1px solid #202734;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.6;
+            color: #d9e3ef;
+        }
+
+        .hint {
+            margin-top: 10px;
+            color: #93a0b0;
+            font-size: 13px;
+        }
+
+        @media (max-width: 900px) {
+            .meta-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .input-row {
+                flex-direction: column;
+            }
+
+            button {
+                min-height: 46px;
+            }
+
+            .meta-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <h1>ZERO Local Agent</h1>
+        <p class="subtitle">
+            在下面輸入純文字指令，例如：<br>
+            <span class="muted">你好</span>、
+            <span class="muted">dir</span>、
+            <span class="muted">echo hello</span>、
+            <span class="muted">where python</span><br>
+            <strong>不要自己輸入 JSON。</strong>
+        </p>
+
+        <div class="input-row">
+            <input
+                id="userInput"
+                type="text"
+                placeholder="請直接輸入文字，例如：你好"
+                autocomplete="off"
+            />
+            <button id="sendBtn">送出</button>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">回應結果</div>
+
+            <div class="meta-grid">
+                <div class="meta-card">
+                    <div class="meta-label">狀態</div>
+                    <div id="statusBadge" class="status-badge status-success">尚未送出</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">模式</div>
+                    <div id="modeValue" class="meta-value muted">未知</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">模型</div>
+                    <div id="modelValue" class="meta-value muted">未知</div>
+                </div>
+                <div class="meta-card">
+                    <div class="meta-label">LLM 狀態</div>
+                    <div id="llmStateValue" class="meta-value muted">未知</div>
+                </div>
+            </div>
+
+            <div class="summary-box">
+                <div class="section-title">摘要</div>
+                <div id="summaryBox" class="muted">尚未送出請求。</div>
+            </div>
+
+            <div id="warningWrapper" class="warning-box" style="display: none;">
+                <div class="section-title">警告</div>
+                <div id="warningBox"></div>
+            </div>
+
+            <div id="errorWrapper" class="error-box" style="display: none;">
+                <div class="section-title">錯誤</div>
+                <div id="errorBox"></div>
+            </div>
+
+            <div class="result-box">
+                <div class="section-title">主內容</div>
+                <div id="resultBox">請先輸入內容。</div>
+            </div>
+
+            <details>
+                <summary>查看原始 JSON</summary>
+                <pre id="rawJsonBox">{}</pre>
+            </details>
+
+            <div class="hint">
+                這個輸入框是給人直接打字，不是拿來手動輸入 <code>{"message":"..."}</code>。
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const userInput = document.getElementById("userInput");
+        const sendBtn = document.getElementById("sendBtn");
+        const statusBadge = document.getElementById("statusBadge");
+        const modeValue = document.getElementById("modeValue");
+        const modelValue = document.getElementById("modelValue");
+        const llmStateValue = document.getElementById("llmStateValue");
+        const summaryBox = document.getElementById("summaryBox");
+        const warningWrapper = document.getElementById("warningWrapper");
+        const warningBox = document.getElementById("warningBox");
+        const errorWrapper = document.getElementById("errorWrapper");
+        const errorBox = document.getElementById("errorBox");
+        const resultBox = document.getElementById("resultBox");
+        const rawJsonBox = document.getElementById("rawJsonBox");
+
+        function setLoadingState(isLoading) {
+            sendBtn.disabled = isLoading;
+            sendBtn.textContent = isLoading ? "送出中..." : "送出";
+        }
+
+        function setStatusBadge(type, text) {
+            statusBadge.textContent = text;
+            statusBadge.classList.remove("status-success", "status-warning", "status-fail");
+
+            if (type === "success") {
+                statusBadge.classList.add("status-success");
+                return;
+            }
+
+            if (type === "warning") {
+                statusBadge.classList.add("status-warning");
+                return;
+            }
+
+            statusBadge.classList.add("status-fail");
+        }
+
+        function getMainResponseText(data) {
+            const candidates = [
+                data?.content,
+                data?.response,
+                data?.message,
+                data?.final_answer,
+                data?.data?.reply,
+                data?.data?.response,
+                data?.data?.message
+            ];
+
+            for (const item of candidates) {
+                if (typeof item === "string" && item.trim()) {
+                    return item.trim();
+                }
+            }
+
+            return "（沒有可顯示的回應文字）";
+        }
+
+        function renderResponse(data) {
+            const success = Boolean(data && data.success);
+            const modeText =
+                data && typeof data.mode === "string" && data.mode.trim()
+                    ? data.mode
+                    : "未知";
+
+            const summaryText =
+                data && typeof data.summary === "string" && data.summary.trim()
+                    ? data.summary
+                    : "沒有摘要資訊。";
+
+            const responseText = getMainResponseText(data);
+
+            const errorText =
+                data && typeof data.error === "string" && data.error.trim()
+                    ? data.error
+                    : "";
+
+            const warningText =
+                data && typeof data.warning === "string" && data.warning.trim()
+                    ? data.warning
+                    : "";
+
+            const modelText =
+                data?.meta && typeof data.meta.model === "string" && data.meta.model.trim()
+                    ? data.meta.model
+                    : "未知";
+
+            const usedFallback = Boolean(data?.meta?.used_fallback);
+            const llmUsed = Boolean(data?.meta?.llm_used);
+
+            let llmStateText = "未知";
+            let statusType = "fail";
+            let statusText = "失敗";
+
+            if (success && usedFallback) {
+                llmStateText = "Fallback";
+                statusType = "warning";
+                statusText = "成功（Fallback）";
+            } else if (success && llmUsed) {
+                llmStateText = "已連線";
+                statusType = "success";
+                statusText = "成功";
+            } else if (success) {
+                llmStateText = "成功";
+                statusType = "success";
+                statusText = "成功";
+            } else {
+                llmStateText = "失敗";
+                statusType = "fail";
+                statusText = "失敗";
+            }
+
+            setStatusBadge(statusType, statusText);
+            modeValue.textContent = modeText;
+            modelValue.textContent = modelText;
+            llmStateValue.textContent = llmStateText;
+            summaryBox.textContent = summaryText;
+            resultBox.textContent = responseText;
+            rawJsonBox.textContent = JSON.stringify(data, null, 2);
+
+            if (warningText) {
+                warningWrapper.style.display = "block";
+                warningBox.textContent = warningText;
+            } else {
+                warningWrapper.style.display = "none";
+                warningBox.textContent = "";
+            }
+
+            if (errorText) {
+                errorWrapper.style.display = "block";
+                errorBox.textContent = errorText;
+            } else {
+                errorWrapper.style.display = "none";
+                errorBox.textContent = "";
+            }
+        }
+
+        async function sendMessage() {
+            const text = userInput.value.trim();
+
+            if (!text) {
+                setStatusBadge("fail", "未送出");
+                modeValue.textContent = "未知";
+                modelValue.textContent = "未知";
+                llmStateValue.textContent = "未知";
+                summaryBox.textContent = "請先輸入內容。";
+                warningWrapper.style.display = "none";
+                warningBox.textContent = "";
+                errorWrapper.style.display = "none";
+                errorBox.textContent = "";
+                resultBox.textContent = "請先輸入內容。";
+                rawJsonBox.textContent = "{}";
+                return;
+            }
+
+            setLoadingState(true);
+            setStatusBadge("success", "請求中...");
+            modeValue.textContent = "等待中";
+            modelValue.textContent = "等待中";
+            llmStateValue.textContent = "等待中";
+            summaryBox.textContent = "等待 ZERO 回應...";
+            warningWrapper.style.display = "none";
+            warningBox.textContent = "";
+            errorWrapper.style.display = "none";
+            errorBox.textContent = "";
+            resultBox.textContent = "等待 ZERO 回應...";
+            rawJsonBox.textContent = "{}";
+
+            try {
+                const response = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        message: text
+                    })
+                });
+
+                const data = await response.json();
+                renderResponse(data);
+            } catch (error) {
+                const errorPayload = {
+                    success: false,
+                    mode: "system",
+                    summary: "前端請求失敗。",
+                    error: String(error),
+                    warning: null,
+                    response: "前端請求失敗，請檢查 Flask 是否仍在執行。",
+                    meta: {
+                        model: null,
+                        used_fallback: false,
+                        llm_used: false
+                    }
+                };
+                renderResponse(errorPayload);
+            } finally {
+                setLoadingState(false);
+            }
+        }
+
+        sendBtn.addEventListener("click", sendMessage);
+
+        userInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

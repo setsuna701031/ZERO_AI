@@ -1,6 +1,6 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 
 # C extensions
@@ -214,3 +214,14 @@ run/
 logs/
 .vscode/
 .idea/
+
+workspace/
+data/backups/
+data/test.txt
+core/_archive_candidate/
+tools/_archive_candidate/
+data/memory_store.json
+data/demo2/
+data/logs/
+data/memory/
+data/workspace/

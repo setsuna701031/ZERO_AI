@@ -1,122 +1,134 @@
-from typing import Any, Dict, Optional
+from __future__ import annotations
 
-from services.web_search_service import WebSearchService
+from typing import Any, Dict, List, Optional
+
+import requests
 
 
 class WebSearchTool:
     """
-    ZERO 的 web_search 工具層
+    ZERO Web Search Tool
+    使用 DuckDuckGo Instant Answer API 作為搜尋來源
     """
 
-    def __init__(
-        self,
-        mode: str = "mock",
-        searxng_base_url: Optional[str] = None,
-        timeout: int = 10,
-        max_results: int = 5,
-    ) -> None:
-        self.name = "web_search"
-        self.description = "搜尋網路資訊，可用於查資料、找教學、查規格、查一般資訊。"
-        self.service = WebSearchService(
-            mode=mode,
-            searxng_base_url=searxng_base_url,
-            timeout=timeout,
-            max_results=max_results,
-        )
+    def __init__(self, timeout: int = 10) -> None:
+        self.timeout = timeout
 
-    def execute(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        標準工具執行入口
-        """
-        params = params or {}
+    @property
+    def name(self) -> str:
+        return "web_search"
 
-        query = str(params.get("query", "")).strip()
-        max_results = params.get("max_results")
-        category = str(params.get("category", "general")).strip() or "general"
+    def execute(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = payload or {}
 
-        if not query:
+        action = str(payload.get("action", "search")).strip() or "search"
+        query = str(payload.get("query", "")).strip()
+
+        if action != "search":
             return {
-                "success": False,
+                "ok": False,
                 "tool_name": self.name,
-                "error": "Missing required parameter: query",
-                "input": params,
+                "summary": f"Unsupported action for web_search: {action}",
+                "changed_files": [],
+                "evidence": [],
                 "results": [],
-                "result_count": 0,
+                "error": "unsupported_action",
+                "payload": payload,
+            }
+
+        if query == "":
+            return {
+                "ok": False,
+                "tool_name": self.name,
+                "summary": "Query is required for web search.",
+                "changed_files": [],
+                "evidence": [],
+                "results": [],
+                "error": "missing_query",
+                "payload": payload,
             }
 
         try:
-            result = self.service.search(
-                query=query,
-                max_results=max_results,
-                category=category,
-            )
-
+            return self._search_duckduckgo(query=query, payload=payload)
+        except Exception as exc:
             return {
-                "success": result.get("success", False),
+                "ok": False,
                 "tool_name": self.name,
-                "input": {
-                    "query": query,
-                    "max_results": max_results,
-                    "category": category,
-                },
-                "mode": result.get("mode"),
-                "query": result.get("query"),
-                "category": result.get("category", category),
-                "results": result.get("results", []),
-                "result_count": result.get("result_count", 0),
-                "elapsed_seconds": result.get("elapsed_seconds", 0),
-                "error": result.get("error"),
-            }
-
-        except Exception as e:
-            return {
-                "success": False,
-                "tool_name": self.name,
-                "input": params,
-                "error": f"WebSearchTool execution failed: {str(e)}",
+                "summary": f"Web search failed: {exc}",
+                "changed_files": [],
+                "evidence": [],
                 "results": [],
-                "result_count": 0,
+                "error": "web_search_failed",
+                "payload": payload,
             }
 
-    def get_tool_definition(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "description": self.description,
-            "parameters": {
-                "query": {
-                    "type": "string",
-                    "required": True,
-                    "description": "要搜尋的關鍵字或問題",
-                },
-                "max_results": {
-                    "type": "integer",
-                    "required": False,
-                    "default": 5,
-                    "description": "最多回傳幾筆搜尋結果",
-                },
-                "category": {
-                    "type": "string",
-                    "required": False,
-                    "default": "general",
-                    "description": "搜尋分類，例如 general、news、science、it",
-                },
-            },
+    def _search_duckduckgo(self, query: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        url = "https://api.duckduckgo.com/"
+        params = {
+            "q": query,
+            "format": "json",
+            "no_html": "1",
+            "skip_disambig": "1",
         }
 
+        response = requests.get(url, params=params, timeout=self.timeout)
+        response.raise_for_status()
 
-if __name__ == "__main__":
-    tool = WebSearchTool()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Search response is not a JSON object.")
 
-    test_cases = [
-        {"query": "Python requests 教學"},
-        {"query": "RTX 3060 VRAM 幾 GB", "max_results": 3},
-        {"query": "台北今天天氣", "category": "general"},
-        {},
-    ]
+        results: List[Dict[str, Any]] = []
 
-    for i, case in enumerate(test_cases, start=1):
-        print("=" * 80)
-        print(f"TEST CASE {i}")
-        print("INPUT:", case)
-        result = tool.execute(case)
-        print("OUTPUT:", result)
+        # Abstract
+        abstract_text = data.get("AbstractText")
+        abstract_url = data.get("AbstractURL")
+        heading = data.get("Heading")
+
+        if isinstance(abstract_text, str) and abstract_text.strip():
+            results.append({
+                "title": heading or query,
+                "content": abstract_text.strip(),
+                "url": abstract_url or "",
+                "source": "duckduckgo_abstract",
+            })
+
+        # Related Topics
+        related_topics = data.get("RelatedTopics", [])
+        if isinstance(related_topics, list):
+            for item in related_topics[:8]:
+                if isinstance(item, dict):
+                    text = item.get("Text")
+                    first_url = item.get("FirstURL")
+
+                    if isinstance(text, str) and text.strip():
+                        results.append({
+                            "title": query,
+                            "content": text.strip(),
+                            "url": first_url or "",
+                            "source": "duckduckgo_related",
+                        })
+
+                    elif "Topics" in item and isinstance(item["Topics"], list):
+                        for sub in item["Topics"][:3]:
+                            if isinstance(sub, dict):
+                                text = sub.get("Text")
+                                first_url = sub.get("FirstURL")
+                                if isinstance(text, str) and text.strip():
+                                    results.append({
+                                        "title": query,
+                                        "content": text.strip(),
+                                        "url": first_url or "",
+                                        "source": "duckduckgo_related",
+                                    })
+
+        return {
+            "ok": True,
+            "tool_name": self.name,
+            "summary": f"Web search results for '{query}'",
+            "changed_files": [],
+            "evidence": [],
+            "results": results,
+            "error": None,
+            "payload": payload,
+        }

@@ -1,41 +1,99 @@
-from core.tool_router import run_tool, get_available_tools
-from core.llm_client import ask_local_llm
-from core.model_router import select_model
+from __future__ import annotations
+from typing import Any, Dict, List
 
 
-def execute_plan(plan: dict) -> dict:
+class Executor:
+    """
+    Execute plan steps using ToolRegistry
+    """
 
-    steps = plan.get("steps", [])
-    results = []
+    def __init__(self, tool_registry: Any):
+        self.tool_registry = tool_registry
 
-    if not steps:
+    def execute_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+        steps: List[Dict[str, Any]] = plan.get("steps", [])
+        results = []
+
+        for step in steps:
+            tool_name = step.get("tool")
+            args = step.get("args", {})
+
+            tool = self._get_tool(tool_name)
+            if tool is None:
+                results.append({
+                    "ok": False,
+                    "error": f"Tool not found: {tool_name}"
+                })
+                continue
+
+            try:
+                result = tool.execute(args)
+                results.append(result)
+            except Exception as e:
+                results.append({
+                    "ok": False,
+                    "error": str(e)
+                })
+
         return {
-            "success": False,
-            "error": "plan has no steps"
+            "ok": True,
+            "results": results
         }
 
-    for step in steps:
+    def _get_tool(self, name: str):
+        if hasattr(self.tool_registry, "get_tool"):
+            return self.tool_registry.get_tool(name)
 
-        step_id = step.get("step")
-        task = step.get("task", "")
+        if hasattr(self.tool_registry, "tools"):
+            return self.tool_registry.tools.get(name)
 
-        # 判斷模型
-        model_info = select_model(task)
+        return Nonefrom __future__ import annotations
+from typing import Any, Dict, List
 
-        llm_result = ask_local_llm(
-            task,
-            model_name=model_info["model"]
-        )
 
-        results.append({
-            "step": step_id,
-            "task": task,
-            "model": model_info["model"],
-            "result": llm_result.get("answer", ""),
-            "success": llm_result.get("success", False)
-        })
+class Executor:
+    """
+    Execute plan steps using ToolRegistry
+    """
 
-    return {
-        "success": True,
-        "steps_executed": results
-    }
+    def __init__(self, tool_registry: Any):
+        self.tool_registry = tool_registry
+
+    def execute_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+        steps: List[Dict[str, Any]] = plan.get("steps", [])
+        results = []
+
+        for step in steps:
+            tool_name = step.get("tool")
+            args = step.get("args", {})
+
+            tool = self._get_tool(tool_name)
+            if tool is None:
+                results.append({
+                    "ok": False,
+                    "error": f"Tool not found: {tool_name}"
+                })
+                continue
+
+            try:
+                result = tool.execute(args)
+                results.append(result)
+            except Exception as e:
+                results.append({
+                    "ok": False,
+                    "error": str(e)
+                })
+
+        return {
+            "ok": True,
+            "results": results
+        }
+
+    def _get_tool(self, name: str):
+        if hasattr(self.tool_registry, "get_tool"):
+            return self.tool_registry.get_tool(name)
+
+        if hasattr(self.tool_registry, "tools"):
+            return self.tool_registry.tools.get(name)
+
+        return None

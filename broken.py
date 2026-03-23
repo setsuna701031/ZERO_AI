@@ -1,1 +1,0 @@
-print("start")    # 添加冒号

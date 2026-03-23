@@ -1,314 +1,343 @@
-import subprocess
+from __future__ import annotations
 
-from core.flask_manager import list_flask_routes, restart_flask_internal
-from core.llm import LLMClient
-from core.workspace_manager import safe_path
-
-
-# -----------------------------
-# Flask tools
-# -----------------------------
-
-def tool_list_routes(args: dict | None = None) -> dict:
-    result = list_flask_routes()
-    return {
-        "tool": "list_routes",
-        "success": result.get("success", False),
-        "data": result
-    }
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
-def tool_restart_flask(args: dict | None = None) -> dict:
-    result = restart_flask_internal()
-    return {
-        "tool": "restart_flask",
-        "success": result.get("success", False),
-        "data": result
-    }
+class ToolRegistry:
+    """
+    ZERO Tool Registry
 
+    作用：
+    1. 統一註冊工具
+    2. 統一取得工具
+    3. 統一執行工具
+    4. 統一列出工具
+    5. 避免 AgentLoop 直接依賴每一個 tool 類別
+    """
 
-# -----------------------------
-# Filesystem tools
-# -----------------------------
+    def __init__(self, workspace_root: Optional[str] = None) -> None:
+        self._tools: Dict[str, Any] = {}
+        self.workspace_root = Path(workspace_root).resolve() if workspace_root else None
+        self._auto_register_default_tools()
 
-def tool_list_files(args: dict | None = None) -> dict:
-    args = args or {}
-    path = str(args.get("path", ".")).strip()
+    @property
+    def tools(self) -> Dict[str, Any]:
+        """
+        給舊版 AgentLoop 相容使用。
+        """
+        return self._tools
 
-    try:
-        target_path = safe_path(path)
+    # =========================
+    # Default tool registration
+    # =========================
 
-        if not target_path.exists():
+    def _auto_register_default_tools(self) -> None:
+        """
+        啟動時自動註冊預設工具。
+        目前先保守註冊：
+        - workspace（需要 workspace_root）
+        - file（若存在）
+        - command（需要 workspace_root）
+        """
+        self._try_register_workspace_tool()
+        self._try_register_file_tool()
+        self._try_register_command_tool()
+
+    def _try_register_workspace_tool(self) -> None:
+        try:
+            if self.workspace_root is None:
+                print("[ToolRegistry] skip workspace tool: workspace_root is not set")
+                return
+
+            from tools.workspace_tool import WorkspaceTool
+
+            result = self.register(WorkspaceTool(workspace_root=self.workspace_root))
+            if not result.get("ok", False):
+                print(f"[ToolRegistry] skip workspace tool: {result.get('summary')}")
+        except Exception as exc:
+            print(f"[ToolRegistry] skip workspace tool: {exc}")
+
+    def _try_register_file_tool(self) -> None:
+        try:
+            from tools.file_tool import FileTool
+
+            file_tool = None
+
+            # 先嘗試帶 workspace_root 建立
+            if self.workspace_root is not None:
+                try:
+                    file_tool = FileTool(workspace_root=self.workspace_root)
+                except TypeError:
+                    file_tool = None
+
+            # 若上面不適用，再退回無參數初始化
+            if file_tool is None:
+                file_tool = FileTool()
+
+            result = self.register(file_tool)
+            if not result.get("ok", False):
+                print(f"[ToolRegistry] skip file tool: {result.get('summary')}")
+        except Exception as exc:
+            print(f"[ToolRegistry] skip file tool: {exc}")
+
+    def _try_register_command_tool(self) -> None:
+        try:
+            if self.workspace_root is None:
+                print("[ToolRegistry] skip command tool: workspace_root is not set")
+                return
+
+            from tools.command_tool import CommandTool
+
+            result = self.register(CommandTool(workspace_root=self.workspace_root))
+            if not result.get("ok", False):
+                print(f"[ToolRegistry] skip command tool: {result.get('summary')}")
+        except Exception as exc:
+            print(f"[ToolRegistry] skip command tool: {exc}")
+
+    # =========================
+    # Public API
+    # =========================
+
+    def register(self, tool: Any) -> Dict[str, Any]:
+        """
+        註冊單一工具
+
+        工具需至少具備：
+        - name 屬性
+        - execute(payload) 方法
+        """
+        if tool is None:
             return {
-                "tool": "list_files",
-                "success": False,
-                "data": {"message": f"path not found: {path}"}
+                "ok": False,
+                "error": "tool_is_none",
+                "summary": "Cannot register tool: tool is None."
             }
 
-        items = []
+        tool_name = getattr(tool, "name", None)
+        if not isinstance(tool_name, str) or tool_name.strip() == "":
+            return {
+                "ok": False,
+                "error": "invalid_tool_name",
+                "summary": "Cannot register tool: missing valid tool.name."
+            }
 
-        for item in sorted(target_path.iterdir()):
-            items.append({
-                "name": item.name,
-                "path": str(item).replace("\\", "/"),
-                "type": "dir" if item.is_dir() else "file"
+        execute_method = getattr(tool, "execute", None)
+        if not callable(execute_method):
+            return {
+                "ok": False,
+                "error": "missing_execute_method",
+                "summary": f"Cannot register tool '{tool_name}': execute(payload) is required."
+            }
+
+        normalized_name = tool_name.strip()
+        self._tools[normalized_name] = tool
+
+        return {
+            "ok": True,
+            "tool_name": normalized_name,
+            "summary": f"Tool registered: {normalized_name}"
+        }
+
+    def unregister(self, tool_name: str) -> Dict[str, Any]:
+        normalized_name = str(tool_name or "").strip()
+
+        if normalized_name == "":
+            return {
+                "ok": False,
+                "error": "missing_tool_name",
+                "summary": "Cannot unregister tool: tool_name is required."
+            }
+
+        if normalized_name not in self._tools:
+            return {
+                "ok": False,
+                "error": "tool_not_found",
+                "summary": f"Tool not found: {normalized_name}"
+            }
+
+        del self._tools[normalized_name]
+
+        return {
+            "ok": True,
+            "tool_name": normalized_name,
+            "summary": f"Tool unregistered: {normalized_name}"
+        }
+
+    def has_tool(self, tool_name: str) -> bool:
+        normalized_name = str(tool_name or "").strip()
+        return normalized_name in self._tools
+
+    def get_tool(self, tool_name: str) -> Optional[Any]:
+        normalized_name = str(tool_name or "").strip()
+        return self._tools.get(normalized_name)
+
+    def list_tools(self) -> Dict[str, Any]:
+        names = sorted(self._tools.keys())
+        return {
+            "ok": True,
+            "count": len(names),
+            "tools": names,
+            "summary": f"Registered {len(names)} tool(s)."
+        }
+
+    def list_tool_names(self) -> List[str]:
+        return sorted(self._tools.keys())
+
+    def list_tool_definitions(self) -> List[Dict[str, Any]]:
+        """
+        提供給 tool_registry_inspector / API 使用的工具定義列表
+        """
+        definitions: List[Dict[str, Any]] = []
+
+        for tool_name in sorted(self._tools.keys()):
+            tool = self._tools[tool_name]
+
+            description = getattr(tool, "description", "") or ""
+            version = getattr(tool, "version", "") or ""
+            category = getattr(tool, "category", "") or ""
+            metadata = getattr(tool, "metadata", None)
+
+            execute_method = getattr(tool, "execute", None)
+            callable_execute = callable(execute_method)
+
+            definitions.append({
+                "name": tool_name,
+                "description": description,
+                "version": version,
+                "category": category,
+                "callable": callable_execute,
+                "class_name": tool.__class__.__name__,
+                "module": tool.__class__.__module__,
+                "metadata": metadata if isinstance(metadata, dict) else {},
             })
 
-        return {
-            "tool": "list_files",
-            "success": True,
-            "data": {
-                "path": path,
-                "items": items
-            }
-        }
+        return definitions
 
-    except Exception as exc:
-        return {
-            "tool": "list_files",
-            "success": False,
-            "data": {"message": str(exc)}
-        }
+    def execute_tool(
+        self,
+        tool_name: str,
+        payload: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        normalized_name = str(tool_name or "").strip()
+        payload = payload or {}
 
+        if normalized_name == "":
+            return self._build_error(
+                tool_name="",
+                summary="Tool name is required.",
+                error="missing_tool_name",
+                payload=payload
+            )
 
-def tool_read_file(args: dict | None = None) -> dict:
-    args = args or {}
-    path = str(args.get("path", "")).strip()
+        tool = self.get_tool(normalized_name)
+        if tool is None:
+            return self._build_error(
+                tool_name=normalized_name,
+                summary=f"Tool not found: {normalized_name}",
+                error="tool_not_found",
+                payload=payload
+            )
 
-    try:
-        file_path = safe_path(path)
+        try:
+            result = tool.execute(payload)
+        except Exception as exc:
+            return self._build_error(
+                tool_name=normalized_name,
+                summary=f"Tool execution failed: {exc}",
+                error="tool_execution_exception",
+                payload=payload
+            )
 
-        content = file_path.read_text(encoding="utf-8")
+        if not isinstance(result, dict):
+            return self._build_error(
+                tool_name=normalized_name,
+                summary=f"Tool '{normalized_name}' returned non-dict result.",
+                error="invalid_tool_result",
+                payload=payload
+            )
 
-        return {
-            "tool": "read_file",
-            "success": True,
-            "data": {
-                "path": path,
-                "content": content
-            }
-        }
+        if "tool_name" not in result:
+            result["tool_name"] = normalized_name
 
-    except Exception as exc:
-        return {
-            "tool": "read_file",
-            "success": False,
-            "data": {"message": str(exc)}
-        }
+        if "ok" not in result:
+            result["ok"] = False
 
+        if "changed_files" not in result:
+            result["changed_files"] = []
 
-def tool_write_file(args: dict | None = None) -> dict:
-    args = args or {}
+        if "evidence" not in result:
+            result["evidence"] = []
 
-    path = str(args.get("path", "")).strip()
-    content = str(args.get("content", ""))
+        if "results" not in result:
+            result["results"] = []
 
-    try:
-        file_path = safe_path(path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        return result
 
-        file_path.write_text(content, encoding="utf-8")
+    def register_many(self, tools: List[Any]) -> Dict[str, Any]:
+        results: List[Dict[str, Any]] = []
 
-        return {
-            "tool": "write_file",
-            "success": True,
-            "data": {
-                "message": f"file written: {path}",
-                "path": path
-            }
-        }
+        for tool in tools:
+            results.append(self.register(tool))
 
-    except Exception as exc:
-        return {
-            "tool": "write_file",
-            "success": False,
-            "data": {"message": str(exc)}
-        }
-
-
-# -----------------------------
-# Python execution
-# -----------------------------
-
-def tool_run_python(args: dict | None = None) -> dict:
-    args = args or {}
-    path = str(args.get("path", "")).strip()
-
-    try:
-        file_path = safe_path(path)
-
-        result = subprocess.run(
-            ["python", str(file_path)],
-            capture_output=True,
-            text=True
-        )
+        success_count = sum(1 for item in results if item.get("ok", False))
+        failed_count = len(results) - success_count
 
         return {
-            "tool": "run_python",
-            "success": result.returncode == 0,
-            "data": {
-                "path": path,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
-            }
+            "ok": failed_count == 0,
+            "summary": f"Registered {success_count} tool(s), failed {failed_count}.",
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "results": results,
         }
 
-    except Exception as exc:
+    # =========================
+    # Compatibility helpers
+    # =========================
+
+    def dispatch(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        相容某些舊程式碼直接呼叫 registry.dispatch(payload)
+        """
+        payload = payload or {}
+
+        if not isinstance(payload, dict):
+            return self._build_error(
+                tool_name="",
+                summary="Payload must be a dict.",
+                error="payload_must_be_dict",
+                payload={}
+            )
+
+        tool_name = str(payload.get("tool_name", "")).strip()
+        if tool_name == "":
+            return self._build_error(
+                tool_name="",
+                summary="Tool name missing.",
+                error="tool_name_missing",
+                payload=payload
+            )
+
+        return self.execute_tool(tool_name=tool_name, payload=payload)
+
+    # =========================
+    # Helpers
+    # =========================
+
+    def _build_error(
+        self,
+        tool_name: str,
+        summary: str,
+        error: str,
+        payload: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         return {
-            "tool": "run_python",
-            "success": False,
-            "data": {"message": str(exc)}
+            "ok": False,
+            "tool_name": tool_name,
+            "summary": summary,
+            "changed_files": [],
+            "evidence": [],
+            "results": [],
+            "error": error,
+            "payload": payload or {},
         }
-
-
-# -----------------------------
-# Code generation
-# -----------------------------
-
-def tool_generate_python(args: dict | None = None) -> dict:
-    args = args or {}
-
-    task = str(args.get("task", "")).strip()
-    filename = str(args.get("filename", "")).strip()
-
-    llm = LLMClient()
-
-    prompt = f"""
-Write a complete Python script.
-
-Task:
-{task}
-
-Rules:
-- Return ONLY Python code
-- No explanations
-- No markdown
-- Must run directly
-
-Example:
-print("hello world")
-"""
-
-    raw = llm.generate(prompt)
-
-    code = llm.extract_python_code(raw)
-
-    return {
-        "tool": "generate_python",
-        "success": True,
-        "data": {
-            "filename": filename,
-            "code": code,
-            "raw": raw
-        }
-    }
-
-
-# -----------------------------
-# NEW: shell tool
-# -----------------------------
-
-def tool_shell(args: dict | None = None) -> dict:
-    args = args or {}
-
-    cmd = str(args.get("cmd", "")).strip()
-
-    if not cmd:
-        return {
-            "tool": "shell",
-            "success": False,
-            "data": {"message": "cmd required"}
-        }
-
-    try:
-
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True
-        )
-
-        return {
-            "tool": "shell",
-            "success": result.returncode == 0,
-            "data": {
-                "cmd": cmd,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
-            }
-        }
-
-    except Exception as exc:
-
-        return {
-            "tool": "shell",
-            "success": False,
-            "data": {"message": str(exc)}
-        }
-
-
-# -----------------------------
-# NEW: pip install tool
-# -----------------------------
-
-def tool_pip_install(args: dict | None = None) -> dict:
-    args = args or {}
-
-    package = str(args.get("package", "")).strip()
-
-    if not package:
-        return {
-            "tool": "pip_install",
-            "success": False,
-            "data": {"message": "package required"}
-        }
-
-    try:
-
-        result = subprocess.run(
-            ["pip", "install", package],
-            capture_output=True,
-            text=True
-        )
-
-        return {
-            "tool": "pip_install",
-            "success": result.returncode == 0,
-            "data": {
-                "package": package,
-                "stdout": result.stdout,
-                "stderr": result.stderr
-            }
-        }
-
-    except Exception as exc:
-
-        return {
-            "tool": "pip_install",
-            "success": False,
-            "data": {"message": str(exc)}
-        }
-
-
-# -----------------------------
-# Tool registry
-# -----------------------------
-
-TOOL_REGISTRY = {
-
-    "list_routes": tool_list_routes,
-    "restart_flask": tool_restart_flask,
-
-    "list_files": tool_list_files,
-    "read_file": tool_read_file,
-    "write_file": tool_write_file,
-
-    "run_python": tool_run_python,
-    "generate_python": tool_generate_python,
-
-    "shell": tool_shell,
-    "pip_install": tool_pip_install,
-}

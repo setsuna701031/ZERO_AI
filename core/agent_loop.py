@@ -1,94 +1,198 @@
-from core.tool_registry import TOOL_REGISTRY
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
 
 
 class AgentLoop:
+    """
+    ZERO Agent Loop (Runtime 版)
 
-    def run(self, plan):
+    流程：
+    User Input
+        ↓
+    TaskManager.create_task(...)
+        ↓
+    TaskRuntime.run_task(...)
+        ↓
+    Refresh latest task state
+        ↓
+    Output Result
+    """
 
-        results = []
-        observations = []
+    def __init__(
+        self,
+        task_manager: Any = None,
+        task_runtime: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.task_manager = task_manager
+        self.task_runtime = task_runtime
+        self.extra_config = kwargs
 
-        steps = []
+    # =========================================================
+    # Main
+    # =========================================================
 
-        # 如果是 multi_step
-        if plan.get("action") == "multi_step":
-            steps = plan.get("steps", [])
+    def run(self, user_input: str) -> Dict[str, Any]:
+        if not isinstance(user_input, str) or user_input.strip() == "":
+            return self._build_response(
+                success=False,
+                mode="system",
+                summary="Empty user input.",
+                data={},
+                error="user_input cannot be empty.",
+            )
 
-        else:
-            steps = [plan]
+        if self.task_manager is None:
+            return self._build_response(
+                success=False,
+                mode="system",
+                summary="Task manager is not available.",
+                data={},
+                error="task_manager is not configured.",
+            )
 
-        step_index = 1
+        if self.task_runtime is None:
+            return self._build_response(
+                success=False,
+                mode="system",
+                summary="Task runtime is not available.",
+                data={},
+                error="task_runtime is not configured.",
+            )
 
-        for step in steps:
+        # 1) 建立任務
+        try:
+            task = self.task_manager.create_task(user_input)
+        except Exception as exc:
+            return self._build_response(
+                success=False,
+                mode="task",
+                summary="Failed to create task.",
+                data={},
+                error=str(exc),
+            )
 
-            action = step.get("action")
+        if not isinstance(task, dict):
+            return self._build_response(
+                success=False,
+                mode="task",
+                summary="Task manager returned invalid task.",
+                data={"raw_task": task},
+                error="create_task(...) must return a dict.",
+            )
 
-            if action == "reply":
+        task_name = str(task.get("task_name", "")).strip()
 
-                return {
-                    "success": True,
-                    "final_answer": step.get("message", ""),
-                    "plan": plan,
-                    "results": results,
-                    "observations": observations
-                }
+        # 2) 執行任務
+        try:
+            runtime_result = self.task_runtime.run_task(task)
+        except Exception as exc:
+            latest_task = self._refresh_task(task_name, fallback_task=task)
+            return self._build_response(
+                success=False,
+                mode="runtime",
+                summary="Task runtime execution failed.",
+                data={"task": latest_task},
+                error=str(exc),
+            )
 
-            elif action == "tool":
+        # 3) 正規化 runtime 結果
+        normalized_result = self._normalize_runtime_result(runtime_result)
 
-                tool_name = step.get("tool")
-                args = step.get("args", {})
+        # 4) 重新讀取最新 task 狀態
+        latest_task = self._refresh_task(task_name, fallback_task=task)
 
-                if tool_name not in TOOL_REGISTRY:
+        return self._build_response(
+            success=normalized_result["success"],
+            mode="runtime",
+            summary=normalized_result["summary"],
+            data={
+                "task": latest_task,
+                "runtime_result": normalized_result["data"],
+            },
+            error=normalized_result["error"],
+        )
 
-                    return {
-                        "success": False,
-                        "final_answer": f"Unknown tool: {tool_name}",
-                        "plan": plan,
-                        "results": results,
-                        "observations": observations
-                    }
+    # =========================================================
+    # Helpers
+    # =========================================================
 
-                tool_fn = TOOL_REGISTRY[tool_name]
+    def _refresh_task(
+        self,
+        task_name: str,
+        fallback_task: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not task_name:
+            return fallback_task
 
-                result = tool_fn(args)
+        get_task_method = getattr(self.task_manager, "get_task", None)
+        if not callable(get_task_method):
+            return fallback_task
 
-                results.append({
-                    "step": step_index,
-                    "tool": tool_name,
-                    "args": args,
-                    "result": result
-                })
+        try:
+            latest_task = get_task_method(task_name)
+        except Exception:
+            return fallback_task
 
-                observations.append({
-                    "step": step_index,
-                    "tool": tool_name,
-                    "observation": result
-                })
+        if isinstance(latest_task, dict):
+            return latest_task
 
-                step_index += 1
+        return fallback_task
 
-            else:
+    def _normalize_runtime_result(self, runtime_result: Any) -> Dict[str, Any]:
+        """
+        允許 TaskRuntime.run_task(...) 回傳不同格式，
+        這裡統一整理成固定結構。
+        """
 
-                return {
-                    "success": False,
-                    "final_answer": f"Unknown action: {action}",
-                    "plan": plan,
-                    "results": results,
-                    "observations": observations
-                }
+        if isinstance(runtime_result, dict):
+            success = bool(runtime_result.get("success", True))
+            summary = str(runtime_result.get("summary", "Task executed."))
+            data = runtime_result.get("data", runtime_result)
+            error = runtime_result.get("error")
+            return {
+                "success": success,
+                "summary": summary,
+                "data": data,
+                "error": error,
+            }
 
-        # 最後一個結果當 final_answer
+        if isinstance(runtime_result, str):
+            return {
+                "success": True,
+                "summary": "Task executed.",
+                "data": {"answer": runtime_result},
+                "error": None,
+            }
 
-        final_answer = ""
-
-        if results:
-            last = results[-1]["result"]
-            final_answer = str(last.get("data", last))
+        if runtime_result is None:
+            return {
+                "success": True,
+                "summary": "Task executed with no result.",
+                "data": {},
+                "error": None,
+            }
 
         return {
             "success": True,
-            "final_answer": final_answer,
-            "plan": plan,
-            "results": results,
-            "observations": observations
+            "summary": "Task executed.",
+            "data": {"result": runtime_result},
+            "error": None,
+        }
+
+    def _build_response(
+        self,
+        success: bool,
+        mode: str,
+        summary: str,
+        data: Dict[str, Any],
+        error: Optional[str],
+    ) -> Dict[str, Any]:
+        return {
+            "success": success,
+            "mode": mode,
+            "summary": summary,
+            "data": data,
+            "error": error,
         }
