@@ -1,306 +1,72 @@
-\# ZERO AI
-
-
+# ZERO AI
 
 Local Tool-Driven Engineering Agent
 
+ZERO AI is a local-first engineering assistant focused on tool execution, modular architecture, and privacy-preserving workflows.
 
+It is designed to run on a local machine and evolve from a tool-routed assistant into a more complete engineering agent system.
 
-ZERO AI is a local-first engineering assistant focused on tool execution, modular architecture, and privacy-preserving workflows.  
+---
 
-It is designed to run on a local machine and evolve from a simple tool-routed assistant into a more complete engineering agent system.
+## Current Milestone
 
+This repository is currently at the first runtime milestone / checkpoint.
 
+The project has completed an initial runtime execution skeleton and a repository structure reorganization.
 
-\---
+### Current working runtime flow
 
+User input  
+→ TaskManager.create_task  
+→ TaskRuntime.run_task  
+→ step loop  
+→ task status sync  
+→ workspace artifacts  
+→ CLI display
 
+---
 
-\## Current Status
+## Current Status
 
+Current implemented foundation includes:
 
+- Runtime task pipeline connected
+- Agent loop skeleton available
+- Router / planner / executor structure in place
+- Tool registry and tool dispatch foundation available
+- Local web search integration available
+- Project structure reorganized into clearer modules
 
-Current working version:
+This is still an early-stage engineering checkpoint, not a finished autonomous agent.
 
+---
 
+## Repository Structure
 
-\- Flask API running
+Main repository structure currently includes:
 
-\- Agent Loop running
+- `config/` — configuration
+- `core/` — runtime, routing, planning, execution, state handling
+- `services/` — system boot and service-level integration
+- `tools/` — tool implementations
+- `memory/` — memory-related storage/components
+- `tests/` — project tests
+- `ui/` — interface assets
 
-\- Router working
+---
 
-\- Tool Registry working
+## Next Steps
 
-\- Local web search tool callable
+Planned next-stage work:
 
-\- Local SearxNG integrated
+- strengthen planner output structure
+- improve runtime step execution loop
+- improve task state persistence and observation flow
+- connect verifier / response finalization more cleanly
+- continue reducing root-level responsibility mixing
 
-\- `/chat` can perform real search requests
+---
 
+## Notes
 
-
-This means ZERO has moved beyond a static tool skeleton and is now functioning as a real local tool-based Agent v1.
-
-
-
-\---
-
-
-
-\## Current Active Architecture
-
-
-
-Current main execution path:
-
-
-
-```text
-
-app.py
-
-→ agent\_loop.py
-
-→ router.py
-
-→ tool\_registry.py
-
-→ tools/
-
-→ services/
-
-
-
-\## Main Components
-
-
-
-\### `app.py`
-
-Current API entry point.
-
-
-
-Runs the Flask server and exposes routes such as:
-
-
-
-\- `/`
-
-\- `/health`
-
-\- `/chat`
-
-\- `/route`
-
-\- `/tools`
-
-\- `/tools/<tool\_name>`
-
-
-
-\### `agent\_loop.py`
-
-Current main agent execution loop.
-
-
-
-Responsibilities:
-
-
-
-\- receive user input
-
-\- call router
-
-\- dispatch tool execution
-
-\- handle normal chat fallback
-
-\- format final result output
-
-
-
-\### `router.py`
-
-Determines whether a request should go to:
-
-
-
-\- normal chat
-
-\- tool execution
-
-
-
-\### `tool\_registry.py`
-
-Registers tools and executes them by name.
-
-
-
-\### `tools/`
-
-Contains callable tools.
-
-
-
-Current and planned examples include:
-
-
-
-\- web search
-
-\- file tools
-
-\- terminal tools
-
-\- project tools
-
-\- code search tools
-
-
-
-\### `services/`
-
-Contains lower-level service implementations.
-
-
-
-For example:
-
-
-
-\- SearxNG-backed web search service
-
-
-
-\### `config.py`
-
-Stores project configuration.
-
-
-
-\### `llm\_client.py`
-
-Reserved for local LLM integration and future chat generation improvements.
-
-
-
-\---
-
-
-
-\## Current API Routes
-
-
-
-\### `GET /`
-
-Basic service info and available routes.
-
-
-
-\### `GET /health`
-
-Health check endpoint.
-
-
-
-\### `POST /chat`
-
-Main user interaction route.
-
-
-
-Example request body:
-
-
-
-```json
-
-{
-
-&#x20; "message": "查一下台北今天天氣"
-
-}
-
-
-
-\---
-
-
-
-\## Project Structure
-
-
-
-```text
-
-zero\_ai/
-
-├─ app.py
-
-├─ agent\_loop.py
-
-├─ router.py
-
-├─ tool\_registry.py
-
-├─ planner.py
-
-├─ llm\_client.py
-
-├─ config.py
-
-├─ main.py
-
-├─ zero.py
-
-├─ zero\_v8.py
-
-├─ requirements.txt
-
-├─ README.md
-
-├─ tools/
-
-├─ services/
-
-├─ core/
-
-├─ brain/
-
-├─ memory/
-
-├─ schemas/
-
-├─ utils/
-
-├─ ui/
-
-├─ docs/
-
-├─ data/
-
-└─ config/
-
-
-
-\---
-
-
-
-\## Example Usage
-
-
-
-\### Health check
-
-
-
-```bash
-
-curl http://127.0.0.1:5000/health
-
+ZERO AI is being developed as a local engineering agent platform, with emphasis on modularity, controllability, and safe incremental evolution.
