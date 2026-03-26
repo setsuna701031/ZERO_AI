@@ -1,227 +1,272 @@
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
 class WorkspaceTool:
+    """
+    ZERO Workspace Tool
+    """
+
     name = "workspace_tool"
-    description = "Safe file operations inside the workspace directory."
 
-    def __init__(self, workspace_root: Path | str) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
+    def __init__(
+        self,
+        workspace_root: str = "workspace",
+        project_root: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        self.project_root = Path(project_root).resolve() if project_root else Path.cwd().resolve()
+        self.workspace_root = self._resolve_workspace_root(workspace_root)
+
+        if self.workspace_root is None:
+            raise ValueError("workspace_root is not set")
+
         self.workspace_root.mkdir(parents=True, exist_ok=True)
+        (self.workspace_root / "tasks").mkdir(parents=True, exist_ok=True)
+        (self.workspace_root / "temp").mkdir(parents=True, exist_ok=True)
+        (self.workspace_root / "logs").mkdir(parents=True, exist_ok=True)
+        (self.workspace_root / "memory").mkdir(parents=True, exist_ok=True)
+        (self.workspace_root / "test").mkdir(parents=True, exist_ok=True)
 
-    def execute(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        payload = payload or {}
+    # ------------------------------------------------------------------
+    # execute
+    # ------------------------------------------------------------------
 
-        if not isinstance(payload, dict):
-            raise ValueError("payload must be a dict.")
+    def execute(self, action: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        params = params or {}
+        action = (action or "").strip()
 
-        action = payload.get("action", "")
-        kwargs = dict(payload)
-        kwargs.pop("action", None)
-
-        return self.run(action=action, **kwargs)
-
-    def run(self, action: str, **kwargs: Any) -> Dict[str, Any]:
-        action = (action or "").strip().lower()
-
-        if not action:
-            raise ValueError("action is required.")
-
-        if action == "list_files":
-            return self._list_files(
-                path=kwargs.get("path", "."),
-                recursive=bool(kwargs.get("recursive", False)),
-            )
-
-        if action == "read_file":
-            return self._read_file(
-                path=kwargs["path"],
-                encoding=kwargs.get("encoding", "utf-8"),
-            )
+        if action == "create_dir":
+            return self.create_dir(**params)
 
         if action == "write_file":
-            return self._write_file(
-                path=kwargs["path"],
-                content=kwargs.get("content", ""),
-                encoding=kwargs.get("encoding", "utf-8"),
-                overwrite=bool(kwargs.get("overwrite", True)),
-            )
+            return self.write_file(**params)
 
         if action == "append_file":
-            return self._append_file(
-                path=kwargs["path"],
-                content=kwargs.get("content", ""),
-                encoding=kwargs.get("encoding", "utf-8"),
-            )
+            return self.append_file(**params)
 
-        if action == "make_dir":
-            return self._make_dir(
-                path=kwargs["path"],
-            )
+        if action == "read_file":
+            return self.read_file(**params)
 
-        raise ValueError(f"Unsupported action: {action}")
+        if action == "exists":
+            return self.exists(**params)
 
-    def _resolve_path(self, relative_path: str) -> Path:
-        if relative_path is None:
-            raise ValueError("path cannot be None.")
+        if action == "list_dir":
+            return self.list_dir(**params)
 
-        relative_path = str(relative_path).strip()
-        if relative_path == "":
-            raise ValueError("path cannot be empty.")
+        if action == "delete_file":
+            return self.delete_file(**params)
 
-        target = (self.workspace_root / relative_path).resolve()
+        if action == "delete_dir":
+            return self.delete_dir(**params)
 
-        try:
-            target.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise ValueError("Path escapes workspace root, operation denied.") from exc
+        return self._error(f"unsupported workspace action: {action}")
 
-        return target
+    # ------------------------------------------------------------------
+    # file operations
+    # ------------------------------------------------------------------
 
-    def _rel(self, path: Path) -> str:
-        rel = str(path.relative_to(self.workspace_root))
-        return rel.replace("\\", "/")
-
-    def _list_files(self, path: str = ".", recursive: bool = False) -> Dict[str, Any]:
-        target = self._resolve_path(path)
-
-        if not target.exists():
-            raise FileNotFoundError(f"Path not found: {target}")
-
-        if not target.is_dir():
-            raise NotADirectoryError(f"Not a directory: {target}")
-
-        items: List[Dict[str, Any]] = []
-
-        iterator = target.rglob("*") if recursive else target.iterdir()
-
-        for item in iterator:
-            items.append(
-                {
-                    "path": self._rel(item),
-                    "type": "dir" if item.is_dir() else "file",
-                    "size": item.stat().st_size if item.is_file() else None,
-                }
-            )
-
-        items.sort(key=lambda x: (x["type"] != "dir", x["path"]))
-
-        rel = self._rel(target)
-
-        return {
-            "ok": True,
-            "success": True,
-            "tool_name": self.name,
-            "summary": f"Listed files under: {rel}",
-            "action": "list_files",
-            "path": rel,
-            "items": items,
-            "count": len(items),
-            "changed_files": [],
-            "evidence": [],
-            "results": items,
-        }
-
-    def _read_file(self, path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-        target = self._resolve_path(path)
-
-        if not target.exists():
-            raise FileNotFoundError(f"File not found: {target}")
-
-        if not target.is_file():
-            raise FileNotFoundError(f"Not a file: {target}")
-
-        content = target.read_text(encoding=encoding)
-        rel = self._rel(target)
-
-        return {
-            "ok": True,
-            "success": True,
-            "tool_name": self.name,
-            "summary": f"Read file: {rel}",
-            "action": "read_file",
-            "path": rel,
-            "content": content,
-            "encoding": encoding,
-            "changed_files": [],
-            "evidence": [],
-            "results": [],
-        }
-
-    def _write_file(
+    def create_dir(
         self,
         path: str,
-        content: str,
-        encoding: str = "utf-8",
-        overwrite: bool = True,
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = False,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
-        target = self._resolve_path(path)
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, True)
+        target.mkdir(parents=True, exist_ok=True)
 
-        if target.exists() and not overwrite:
-            raise FileExistsError(f"File already exists: {target}")
+        return self._success({
+            "path": str(target),
+            "exists": target.exists(),
+        })
 
+    def write_file(
+        self,
+        path: str,
+        content: str = "",
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = True,
+        encoding: str = "utf-8",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, True)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding=encoding)
+        target.write_text("" if content is None else str(content), encoding=encoding)
 
-        rel = self._rel(target)
+        return self._success({
+            "path": str(target),
+            "size": target.stat().st_size if target.exists() else 0,
+        })
 
-        return {
-            "ok": True,
-            "success": True,
-            "tool_name": self.name,
-            "summary": f"Wrote file: {rel}",
-            "action": "write_file",
-            "path": rel,
-            "changed_files": [rel],
-            "evidence": [],
-            "results": [],
-        }
-
-    def _append_file(
+    def append_file(
         self,
         path: str,
-        content: str,
+        content: str = "",
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = True,
         encoding: str = "utf-8",
+        **kwargs: Any,
     ) -> Dict[str, Any]:
-        target = self._resolve_path(path)
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, True)
         target.parent.mkdir(parents=True, exist_ok=True)
 
         with target.open("a", encoding=encoding) as f:
-            f.write(content)
+            f.write("" if content is None else str(content))
 
-        rel = self._rel(target)
+        return self._success({
+            "path": str(target),
+            "size": target.stat().st_size if target.exists() else 0,
+        })
 
+    def read_file(
+        self,
+        path: str,
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = True,
+        encoding: str = "utf-8",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, False)
+
+        if not target.exists():
+            return self._error(f"file not found: {target}")
+
+        content = target.read_text(encoding=encoding)
+
+        return self._success({
+            "path": str(target),
+            "content": content,
+            "size": len(content),
+        })
+
+    def exists(
+        self,
+        path: str,
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = True,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, False)
+
+        return self._success({
+            "path": str(target),
+            "exists": target.exists(),
+            "is_file": target.is_file(),
+            "is_dir": target.is_dir(),
+        })
+
+    def list_dir(
+        self,
+        path: str = "",
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        target = self._resolve_target_path(path or ".", task_id, use_task_files_dir, False)
+
+        if not target.exists():
+            return self._error(f"directory not found: {target}")
+
+        items = []
+        for p in target.iterdir():
+            items.append({
+                "name": p.name,
+                "is_file": p.is_file(),
+                "is_dir": p.is_dir(),
+            })
+
+        return self._success({
+            "path": str(target),
+            "items": items,
+            "count": len(items),
+        })
+
+    def delete_file(
+        self,
+        path: str,
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = True,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, False)
+
+        if target.exists() and target.is_file():
+            target.unlink()
+
+        return self._success({"path": str(target)})
+
+    def delete_dir(
+        self,
+        path: str,
+        task_id: Optional[str] = None,
+        use_task_files_dir: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        target = self._resolve_target_path(path, task_id, use_task_files_dir, False)
+
+        if target.exists() and target.is_dir():
+            shutil.rmtree(target)
+
+        return self._success({"path": str(target)})
+
+    # ------------------------------------------------------------------
+    # path helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_workspace_root(self, workspace_root: str) -> Optional[Path]:
+        if not workspace_root:
+            return None
+
+        root = Path(workspace_root)
+
+        if not root.is_absolute():
+            root = self.project_root / workspace_root
+
+        return root.resolve()
+
+    def _resolve_target_path(
+        self,
+        path: str,
+        task_id: Optional[str],
+        prefer_task_files_dir: bool,
+        allow_nonexistent: bool,
+    ) -> Path:
+        base_dir = self.workspace_root
+
+        if task_id and prefer_task_files_dir:
+            base_dir = self.workspace_root / "tasks" / task_id / "files"
+            base_dir.mkdir(parents=True, exist_ok=True)
+
+        target = Path(path)
+
+        if not target.is_absolute():
+            target = base_dir / path
+
+        target = target.resolve()
+
+        if not allow_nonexistent and not target.exists():
+            return target
+
+        return target
+
+    # ------------------------------------------------------------------
+    # result helpers
+    # ------------------------------------------------------------------
+
+    def _success(self, data: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            "ok": True,
             "success": True,
-            "tool_name": self.name,
-            "summary": f"Appended file: {rel}",
-            "action": "append_file",
-            "path": rel,
-            "changed_files": [rel],
-            "evidence": [],
-            "results": [],
+            "message": "workspace operation success",
+            "data": data,
         }
 
-    def _make_dir(self, path: str) -> Dict[str, Any]:
-        target = self._resolve_path(path)
-        target.mkdir(parents=True, exist_ok=True)
-
-        rel = self._rel(target)
-
+    def _error(self, message: str) -> Dict[str, Any]:
         return {
-            "ok": True,
-            "success": True,
-            "tool_name": self.name,
-            "summary": f"Created directory: {rel}",
-            "action": "make_dir",
-            "path": rel,
-            "changed_files": [rel],
-            "evidence": [],
-            "results": [],
+            "success": False,
+            "message": message,
+            "data": {},
         }

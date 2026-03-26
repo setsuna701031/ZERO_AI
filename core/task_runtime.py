@@ -1,219 +1,201 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any, Dict, List
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+@dataclass
+class RuntimeEvent:
+    timestamp: str
+    event_type: str
+    task_id: Optional[str]
+    message: str
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "event_type": self.event_type,
+            "task_id": self.task_id,
+            "message": self.message,
+            "meta": self.meta,
+        }
 
 
 class TaskRuntime:
     """
-    ZERO Task Runtime
-
-    負責：
-    - 執行任務
-    - 建立 plan.json
-    - 逐步執行 steps
-    - 寫入 step_XX.json
-    - 寫入 result.json
-    - 寫 log.txt
-    - 回寫任務狀態:
-        created -> running -> finished / failed
+    第一版 Runtime：
+    - 追蹤目前 active root task
+    - 追蹤 current running task
+    - 記錄每一步結果 / 錯誤
+    - 方便 agent_loop 讀寫執行狀態
     """
 
-    def __init__(
-        self,
-        workspace_root: Path | str,
-        task_manager: Any = None,
-    ) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
-        self.task_manager = task_manager
+    def __init__(self) -> None:
+        self.active_root_task_id: Optional[str] = None
+        self.current_task_id: Optional[str] = None
+        self.step_results: Dict[str, str] = {}
+        self.step_errors: Dict[str, str] = {}
+        self.events: List[RuntimeEvent] = []
+        self.last_result: Optional[str] = None
+        self.last_error: Optional[str] = None
 
-    # =========================================================
-    # Run Task
-    # =========================================================
+    # -------------------------------------------------------------------------
+    # Root task / current task
+    # -------------------------------------------------------------------------
+    def set_active_root_task(self, task_id: Optional[str]) -> None:
+        self.active_root_task_id = task_id
+        self._log_event(
+            event_type="set_active_root_task",
+            task_id=task_id,
+            message=f"Active root task set to: {task_id}",
+        )
 
-    def run_task(self, task_info: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(task_info, dict):
-            raise TypeError("task_info must be a dict.")
+    def get_active_root_task(self) -> Optional[str]:
+        return self.active_root_task_id
 
-        task_name = str(task_info.get("task_name", "")).strip()
-        goal = str(task_info.get("goal", "")).strip()
+    def set_current_task(self, task_id: Optional[str]) -> None:
+        self.current_task_id = task_id
+        self._log_event(
+            event_type="set_current_task",
+            task_id=task_id,
+            message=f"Current task set to: {task_id}",
+        )
 
-        if not task_name:
-            raise ValueError("task_info['task_name'] is required.")
+    def get_current_task(self) -> Optional[str]:
+        return self.current_task_id
 
-        task_dir = self.workspace_root / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
+    # -------------------------------------------------------------------------
+    # 結果 / 錯誤
+    # -------------------------------------------------------------------------
+    def record_step_result(self, task_id: str, result: str) -> None:
+        self.step_results[task_id] = result
+        self.last_result = result
+        self.last_error = None
+        self._log_event(
+            event_type="step_result",
+            task_id=task_id,
+            message=result,
+        )
 
-        try:
-            self._set_task_status(task_name, "running")
-            self._append_log(task_dir, f"Task started: {task_name}")
-            self._append_log(task_dir, f"Goal: {goal}")
-            self._append_log(task_dir, "Status changed to: running")
+    def get_step_result(self, task_id: str) -> Optional[str]:
+        return self.step_results.get(task_id)
 
-            # 1) 建立 plan
-            plan = self._create_simple_plan(goal)
-            self._save_json(task_dir / "plan.json", plan)
+    def record_step_error(self, task_id: str, error: str) -> None:
+        self.step_errors[task_id] = error
+        self.last_error = error
+        self._log_event(
+            event_type="step_error",
+            task_id=task_id,
+            message=error,
+        )
 
-            steps = plan.get("steps", [])
-            if not isinstance(steps, list):
-                raise ValueError("plan['steps'] must be a list.")
+    def get_step_error(self, task_id: str) -> Optional[str]:
+        return self.step_errors.get(task_id)
 
-            # 2) 逐步執行
-            step_results: List[Dict[str, Any]] = []
+    def get_last_result(self) -> Optional[str]:
+        return self.last_result
 
-            for index, step_text in enumerate(steps, start=1):
-                step_result = self._execute_step(
-                    step_index=index,
-                    step_text=str(step_text),
-                    goal=goal,
+    def get_last_error(self) -> Optional[str]:
+        return self.last_error
+
+    # -------------------------------------------------------------------------
+    # 事件紀錄
+    # -------------------------------------------------------------------------
+    def log_info(self, message: str, task_id: Optional[str] = None, **meta: Any) -> None:
+        self._log_event(
+            event_type="info",
+            task_id=task_id,
+            message=message,
+            meta=meta,
+        )
+
+    def log_warning(self, message: str, task_id: Optional[str] = None, **meta: Any) -> None:
+        self._log_event(
+            event_type="warning",
+            task_id=task_id,
+            message=message,
+            meta=meta,
+        )
+
+    def log_error(self, message: str, task_id: Optional[str] = None, **meta: Any) -> None:
+        self._log_event(
+            event_type="error",
+            task_id=task_id,
+            message=message,
+            meta=meta,
+        )
+
+    def get_events(self) -> List[Dict[str, Any]]:
+        return [event.to_dict() for event in self.events]
+
+    def clear_events(self) -> None:
+        self.events.clear()
+
+    # -------------------------------------------------------------------------
+    # reset / serialize
+    # -------------------------------------------------------------------------
+    def reset(self) -> None:
+        self.active_root_task_id = None
+        self.current_task_id = None
+        self.step_results.clear()
+        self.step_errors.clear()
+        self.events.clear()
+        self.last_result = None
+        self.last_error = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "active_root_task_id": self.active_root_task_id,
+            "current_task_id": self.current_task_id,
+            "step_results": dict(self.step_results),
+            "step_errors": dict(self.step_errors),
+            "events": [event.to_dict() for event in self.events],
+            "last_result": self.last_result,
+            "last_error": self.last_error,
+        }
+
+    def load_from_dict(self, data: Dict[str, Any]) -> None:
+        self.active_root_task_id = data.get("active_root_task_id")
+        self.current_task_id = data.get("current_task_id")
+        self.step_results = dict(data.get("step_results", {}))
+        self.step_errors = dict(data.get("step_errors", {}))
+        self.last_result = data.get("last_result")
+        self.last_error = data.get("last_error")
+
+        self.events = []
+        for item in data.get("events", []):
+            self.events.append(
+                RuntimeEvent(
+                    timestamp=item.get("timestamp", _utc_now_iso()),
+                    event_type=item.get("event_type", "info"),
+                    task_id=item.get("task_id"),
+                    message=item.get("message", ""),
+                    meta=dict(item.get("meta", {})),
                 )
-
-                step_file = task_dir / f"step_{index:02d}.json"
-                self._save_json(step_file, step_result)
-                step_results.append(step_result)
-
-                self._append_log(
-                    task_dir,
-                    f"Step {index:02d} finished: {step_result.get('step_text', '')}",
-                )
-
-            # 3) 彙總結果
-            result = self._build_final_result(
-                task_name=task_name,
-                goal=goal,
-                step_results=step_results,
             )
-            self._save_json(task_dir / "result.json", result)
 
-            self._append_log(task_dir, "Task finished.")
-            self._set_task_status(task_name, "finished")
-
-            step_files = [
-                str(task_dir / f"step_{i:02d}.json")
-                for i in range(1, len(step_results) + 1)
-            ]
-
-            return {
-                "success": True,
-                "summary": f"Task finished: {task_name}",
-                "data": {
-                    "task_name": task_name,
-                    "task_dir": str(task_dir),
-                    "status": "finished",
-                    "plan_file": str(task_dir / "plan.json"),
-                    "step_files": step_files,
-                    "result_file": str(task_dir / "result.json"),
-                    "log_file": str(task_dir / "log.txt"),
-                    "step_count": len(step_results),
-                },
-                "error": None,
-            }
-
-        except Exception as exc:
-            self._append_log(task_dir, f"Task failed: {exc}")
-            self._set_task_status(task_name, "failed")
-
-            failed_result = {
-                "status": "failed",
-                "message": str(exc),
-            }
-            self._save_json(task_dir / "result.json", failed_result)
-
-            return {
-                "success": False,
-                "summary": f"Task failed: {task_name}",
-                "data": {
-                    "task_name": task_name,
-                    "task_dir": str(task_dir),
-                    "status": "failed",
-                    "result_file": str(task_dir / "result.json"),
-                    "log_file": str(task_dir / "log.txt"),
-                },
-                "error": str(exc),
-            }
-
-    # =========================================================
-    # Step Execution
-    # =========================================================
-
-    def _execute_step(
+    # -------------------------------------------------------------------------
+    # internal
+    # -------------------------------------------------------------------------
+    def _log_event(
         self,
-        step_index: int,
-        step_text: str,
-        goal: str,
-    ) -> Dict[str, Any]:
-        normalized_step = step_text.strip().lower()
-
-        if normalized_step == "analyze goal":
-            output = {
-                "goal": goal,
-                "analysis": f"Goal received: {goal}",
-            }
-        elif normalized_step == "execute task":
-            output = {
-                "execution": "Task executed (demo step loop)",
-            }
-        elif normalized_step == "save result":
-            output = {
-                "save": "Result prepared for persistence",
-            }
-        else:
-            output = {
-                "info": f"Unhandled step executed as generic step: {step_text}",
-            }
-
-        return {
-            "step": step_index,
-            "step_text": step_text,
-            "status": "finished",
-            "output": output,
-        }
-
-    def _build_final_result(
-        self,
-        task_name: str,
-        goal: str,
-        step_results: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        return {
-            "task_name": task_name,
-            "goal": goal,
-            "status": "finished",
-            "message": "Task finished (step loop runtime)",
-            "step_count": len(step_results),
-            "steps": step_results,
-        }
-
-    # =========================================================
-    # Helpers
-    # =========================================================
-
-    def _set_task_status(self, task_name: str, status: str) -> None:
-        if self.task_manager is None:
-            return
-
-        update_method = getattr(self.task_manager, "update_task_status", None)
-        if callable(update_method):
-            update_method(task_name, status)
-
-    def _create_simple_plan(self, goal: str) -> Dict[str, Any]:
-        return {
-            "goal": goal,
-            "steps": [
-                "analyze goal",
-                "execute task",
-                "save result",
-            ],
-        }
-
-    def _save_json(self, path: Path, data: Dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-    def _append_log(self, task_dir: Path, text: str) -> None:
-        task_dir.mkdir(parents=True, exist_ok=True)
-        log_file = task_dir / "log.txt"
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(text + "\n")
+        event_type: str,
+        task_id: Optional[str],
+        message: str,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self.events.append(
+            RuntimeEvent(
+                timestamp=_utc_now_iso(),
+                event_type=event_type,
+                task_id=task_id,
+                message=message,
+                meta=meta or {},
+            )
+        )

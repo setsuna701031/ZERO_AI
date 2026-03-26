@@ -1,306 +1,224 @@
-\# ZERO AI
+# ZERO — Local Tool-Driven Engineering Agent
+
+ZERO is a local-first engineering agent designed to execute tasks, call tools,
+recover from failures, and learn from execution history.
+
+It is not just a chatbot.
+ZERO is an agent execution system focused on tool usage, task execution,
+retry, reflection, replanning, and memory-driven summaries.
+
+The goal of this project is to evolve ZERO from a simple tool-routed assistant
+into a local autonomous engineering agent.
 
 
+------------------------------------------------------------
+Features
+------------------------------------------------------------
 
-Local Tool-Driven Engineering Agent
+Current capabilities:
 
+- Local-first architecture
+- Tool routing system
+- Agent execution loop
+- Task tree execution
+- Retry mechanism
+- Reflection after repeated failures
+- Replanning and recovery steps
+- Memory summaries and lessons
+- Local web search (SearxNG)
+- Flask API interface
 
-
-ZERO AI is a local-first engineering assistant focused on tool execution, modular architecture, and privacy-preserving workflows.  
-
-It is designed to run on a local machine and evolve from a simple tool-routed assistant into a more complete engineering agent system.
-
-
-
-\---
-
-
-
-\## Current Status
-
-
-
-Current working version:
-
+ZERO already behaves like a basic autonomous agent kernel,
+not just a script runner or chatbot.
 
 
-\- Flask API running
+------------------------------------------------------------
+Architecture Overview
+------------------------------------------------------------
 
-\- Agent Loop running
+High-level execution flow:
 
-\- Router working
-
-\- Tool Registry working
-
-\- Local web search tool callable
-
-\- Local SearxNG integrated
-
-\- `/chat` can perform real search requests
-
-
-
-This means ZERO has moved beyond a static tool skeleton and is now functioning as a real local tool-based Agent v1.
-
-
-
-\---
-
-
-
-\## Current Active Architecture
+User Request
+    ↓
+Flask API (app.py)
+    ↓
+Agent Loop
+    ↓
+Router
+    ↓
+Tool Registry
+    ↓
+Tools / Services
+    ↓
+Task Execution
+    ↓
+Retry / Reflection / Replan
+    ↓
+Memory Summary
 
 
+Core execution idea:
 
-Current main execution path:
+Plan → Execute → Fail → Retry → Reflect → Replan → Continue → Summarize → Learn
+
+This loop is the core of ZERO.
 
 
-
-```text
+------------------------------------------------------------
+Core Modules
+------------------------------------------------------------
 
 app.py
+    Flask API entry point.
 
-→ agent\_loop.py
+agent_loop.py
+    Main agent execution loop.
 
-→ router.py
+router.py
+    Determines whether a request should go to chat or tools.
 
-→ tool\_registry.py
+tool_registry.py
+    Registers tools and executes them.
 
-→ tools/
+tools/
+    Callable tools such as web search, file tools, terminal tools.
 
-→ services/
+services/
+    Lower-level service implementations such as SearxNG web search.
 
+core/
+    Agent kernel modules:
+    - task manager
+    - task runtime
+    - planner
+    - reflection engine
+    - replanner
+    - memory manager
+    - step executor
 
+memory/
+    Stores task summaries, lessons, and execution history.
 
-\## Main Components
 
+------------------------------------------------------------
+Quick Start
+------------------------------------------------------------
 
+Start the server:
 
-\### `app.py`
+python app.py
 
-Current API entry point.
+Health check:
 
+http://127.0.0.1:5000/health
 
+Chat endpoint example:
 
-Runs the Flask server and exposes routes such as:
-
-
-
-\- `/`
-
-\- `/health`
-
-\- `/chat`
-
-\- `/route`
-
-\- `/tools`
-
-\- `/tools/<tool\_name>`
-
-
-
-\### `agent\_loop.py`
-
-Current main agent execution loop.
-
-
-
-Responsibilities:
-
-
-
-\- receive user input
-
-\- call router
-
-\- dispatch tool execution
-
-\- handle normal chat fallback
-
-\- format final result output
-
-
-
-\### `router.py`
-
-Determines whether a request should go to:
-
-
-
-\- normal chat
-
-\- tool execution
-
-
-
-\### `tool\_registry.py`
-
-Registers tools and executes them by name.
-
-
-
-\### `tools/`
-
-Contains callable tools.
-
-
-
-Current and planned examples include:
-
-
-
-\- web search
-
-\- file tools
-
-\- terminal tools
-
-\- project tools
-
-\- code search tools
-
-
-
-\### `services/`
-
-Contains lower-level service implementations.
-
-
-
-For example:
-
-
-
-\- SearxNG-backed web search service
-
-
-
-\### `config.py`
-
-Stores project configuration.
-
-
-
-\### `llm\_client.py`
-
-Reserved for local LLM integration and future chat generation improvements.
-
-
-
-\---
-
-
-
-\## Current API Routes
-
-
-
-\### `GET /`
-
-Basic service info and available routes.
-
-
-
-\### `GET /health`
-
-Health check endpoint.
-
-
-
-\### `POST /chat`
-
-Main user interaction route.
-
-
-
-Example request body:
-
-
-
-```json
-
+POST /chat
 {
-
-&#x20; "message": "查一下台北今天天氣"
-
+  "message": "search latest AI news"
 }
 
 
+------------------------------------------------------------
+Demo
+------------------------------------------------------------
 
-\---
+See:
+
+docs/demo.md
+
+Recommended demo order:
+
+1. Basic Task Execution
+2. Retry Recovery
+3. Reflection + Replan Recovery
 
 
+------------------------------------------------------------
+Project Structure
+------------------------------------------------------------
 
-\## Project Structure
-
-
-
-```text
-
-zero\_ai/
-
+zero_ai/
 ├─ app.py
-
-├─ agent\_loop.py
-
+├─ agent_loop.py
 ├─ router.py
-
-├─ tool\_registry.py
-
-├─ planner.py
-
-├─ llm\_client.py
-
-├─ config.py
-
-├─ main.py
-
-├─ zero.py
-
-├─ zero\_v8.py
-
+├─ tool_registry.py
 ├─ requirements.txt
-
 ├─ README.md
-
-├─ tools/
-
-├─ services/
-
+├─ LICENSE
 ├─ core/
-
-├─ brain/
-
+├─ tools/
+├─ services/
 ├─ memory/
-
 ├─ schemas/
-
 ├─ utils/
-
 ├─ ui/
-
 ├─ docs/
-
 ├─ data/
-
-└─ config/
-
-
-
-\---
+├─ workspace/
+└─ logs/
 
 
+------------------------------------------------------------
+Current Status
+------------------------------------------------------------
 
-\## Example Usage
+Current version includes:
+
+- Flask API
+- Agent loop
+- Router
+- Tool registry
+- Local web search
+- Task execution system
+- Retry mechanism
+- Reflection system
+- Replanning system
+- Memory summaries
+
+ZERO is currently in early prototype stage,
+focused on building the agent execution core.
 
 
+------------------------------------------------------------
+Roadmap
+------------------------------------------------------------
 
-\### Health check
+Planned future directions:
+
+- Memory-aware planning
+- Lesson-guided task decomposition
+- Multi-task scheduling
+- Multi-agent cooperation
+- Tool auto-discovery
+- Local model integration
+- UI workflow interface
+- One-click deployment
+- Distributed execution
 
 
+------------------------------------------------------------
+Design Philosophy
+------------------------------------------------------------
 
-```bash
+ZERO follows these principles:
 
-curl http://127.0.0.1:5000/health
+- Local-first
+- Tool-driven
+- Modular architecture
+- Recoverable execution
+- Memory-driven improvement
+- Engineering-oriented agent
+- Not cloud-dependent
+- Not chatbot-first
 
+ZERO is designed as an engineering agent,
+not a conversational assistant.
+
+
+------------------------------------------------------------
+License
+------------------------------------------------------------
+
+This project is licensed under the MIT License.

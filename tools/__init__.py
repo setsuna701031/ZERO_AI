@@ -1,8 +1,17 @@
-"""
-ZERO tools package
+# ZERO tools package
 
-先保持最小初始化，避免在 import tools.xxx 時，
-因為 __init__.py 額外自動載入其他未完成模組而爆炸。
-"""
+from .command_tool import CommandTool
+from .workspace_tool import WorkspaceTool
+from .file_tool import FileTool
 
-__all__ = []
+try:
+    from .web_search_tool import WebSearchTool
+except Exception:
+    WebSearchTool = None
+
+__all__ = [
+    "CommandTool",
+    "WorkspaceTool",
+    "FileTool",
+    "WebSearchTool",
+]

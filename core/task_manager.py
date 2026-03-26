@@ -1,355 +1,364 @@
 from __future__ import annotations
 
-import json
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
+import uuid
+
+
+TASK_STATUS_PENDING = "pending"
+TASK_STATUS_RUNNING = "running"
+TASK_STATUS_COMPLETED = "completed"
+TASK_STATUS_FAILED = "failed"
+TASK_STATUS_BLOCKED = "blocked"
+
+VALID_TASK_STATUSES = {
+    TASK_STATUS_PENDING,
+    TASK_STATUS_RUNNING,
+    TASK_STATUS_COMPLETED,
+    TASK_STATUS_FAILED,
+    TASK_STATUS_BLOCKED,
+}
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def _make_task_id() -> str:
+    return f"task_{uuid.uuid4().hex[:8]}"
+
+
+@dataclass
+class Task:
+    id: str
+    title: str
+    status: str = TASK_STATUS_PENDING
+    parent_id: Optional[str] = None
+    children: List[str] = field(default_factory=list)
+    result: Optional[str] = None
+    error: Optional[str] = None
+    meta: Dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=_utc_now_iso)
+    updated_at: str = field(default_factory=_utc_now_iso)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 class TaskManager:
     """
-    ZERO Task Manager
+    第一版 Task Tree 管理器
 
-    負責：
-    - 建立 task_xxxx 資料夾
-    - 維護 task_memory.json
-    - 提供正式任務結構
-    - 記錄 plan / steps / result
-    - 相容舊版 task_memory.json 格式
+    設計原則：
+    - root task 承載整體任務
+    - 真正執行的是 leaf task（沒有 children 的 task）
+    - 順序執行，不做並行
+    - 父節點完成狀態由子節點收斂推導
     """
 
-    def __init__(self, workspace_root: Path | str) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
-        self.workspace_root.mkdir(parents=True, exist_ok=True)
+    def __init__(self) -> None:
+        self._tasks: Dict[str, Task] = {}
+        self._root_order: List[str] = []
 
-        self.memory_file = self.workspace_root / "task_memory.json"
+    # -------------------------------------------------------------------------
+    # 建立 / 查詢
+    # -------------------------------------------------------------------------
+    def create_root_task(
+        self,
+        title: str,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        task_id = _make_task_id()
+        task = Task(
+            id=task_id,
+            title=title,
+            status=TASK_STATUS_PENDING,
+            parent_id=None,
+            meta=meta or {},
+        )
+        self._tasks[task_id] = task
+        self._root_order.append(task_id)
+        return task_id
 
-        if not self.memory_file.exists():
-            self._save_memory(self._default_memory())
+    def add_subtask(
+        self,
+        parent_id: str,
+        title: str,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        parent = self._require_task(parent_id)
 
-    # =========================================================
-    # Task Creation / Query / Update
-    # =========================================================
+        task_id = _make_task_id()
+        task = Task(
+            id=task_id,
+            title=title,
+            status=TASK_STATUS_PENDING,
+            parent_id=parent_id,
+            meta=meta or {},
+        )
 
-    def create_task(self, goal: str) -> Dict[str, Any]:
-        clean_goal = str(goal).strip()
-        if not clean_goal:
-            raise ValueError("goal cannot be empty.")
+        self._tasks[task_id] = task
+        parent.children.append(task_id)
+        parent.updated_at = _utc_now_iso()
 
-        memory = self._load_memory()
+        return task_id
 
-        task_id = int(memory.get("last_task_id", 0)) + 1
-        task_name = f"task_{task_id:04d}"
-        task_dir = self.workspace_root / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        task = self._tasks.get(task_id)
+        return task.to_dict() if task else None
 
-        created_at = self._utc_now_iso()
+    def get_task_obj(self, task_id: str) -> Optional[Task]:
+        return self._tasks.get(task_id)
 
-        task_info = {
-            "task_id": task_id,
-            "task_name": task_name,
-            "input": clean_goal,
-            "goal": clean_goal,
-            "task_dir": str(task_dir),
-            "status": "created",
-            "created_at": created_at,
-            "updated_at": created_at,
-        }
+    def get_children(self, task_id: str) -> List[Dict[str, Any]]:
+        task = self._require_task(task_id)
+        return [self._tasks[child_id].to_dict() for child_id in task.children]
 
-        tasks = memory.get("tasks", [])
-        if not isinstance(tasks, list):
-            tasks = []
-
-        tasks.append(task_info)
-        memory["tasks"] = tasks
-        memory["last_task_id"] = task_id
-
-        self._save_memory(memory)
-        return task_info
-
-    def get_task(self, task_name: str) -> Optional[Dict[str, Any]]:
-        clean_name = str(task_name).strip()
-        if not clean_name:
+    def get_parent(self, task_id: str) -> Optional[Dict[str, Any]]:
+        task = self._require_task(task_id)
+        if task.parent_id is None:
             return None
+        return self._tasks[task.parent_id].to_dict()
 
-        memory = self._load_memory()
-        tasks = memory.get("tasks", [])
+    def list_root_tasks(self) -> List[Dict[str, Any]]:
+        return [self._tasks[root_id].to_dict() for root_id in self._root_order]
 
-        if not isinstance(tasks, list):
-            return None
+    def has_subtasks(self, task_id: str) -> bool:
+        task = self._require_task(task_id)
+        return len(task.children) > 0
 
-        for item in tasks:
-            if not isinstance(item, dict):
+    def is_leaf_task(self, task_id: str) -> bool:
+        task = self._require_task(task_id)
+        return len(task.children) == 0
+
+    def count_tasks(self) -> int:
+        return len(self._tasks)
+
+    # -------------------------------------------------------------------------
+    # 狀態更新
+    # -------------------------------------------------------------------------
+    def mark_task_pending(self, task_id: str) -> None:
+        task = self._require_task(task_id)
+        task.status = TASK_STATUS_PENDING
+        task.updated_at = _utc_now_iso()
+
+    def mark_task_running(self, task_id: str) -> None:
+        task = self._require_task(task_id)
+        task.status = TASK_STATUS_RUNNING
+        task.updated_at = _utc_now_iso()
+
+    def mark_task_completed(self, task_id: str, result: Optional[str] = None) -> None:
+        task = self._require_task(task_id)
+        task.status = TASK_STATUS_COMPLETED
+        task.result = result
+        task.error = None
+        task.updated_at = _utc_now_iso()
+        self._refresh_parent_chain(task_id)
+
+    def mark_task_failed(self, task_id: str, error: Optional[str] = None) -> None:
+        task = self._require_task(task_id)
+        task.status = TASK_STATUS_FAILED
+        task.error = error
+        task.updated_at = _utc_now_iso()
+        self._refresh_parent_chain(task_id)
+
+    def mark_task_blocked(self, task_id: str, error: Optional[str] = None) -> None:
+        task = self._require_task(task_id)
+        task.status = TASK_STATUS_BLOCKED
+        task.error = error
+        task.updated_at = _utc_now_iso()
+        self._refresh_parent_chain(task_id)
+
+    def set_task_result(self, task_id: str, result: Optional[str]) -> None:
+        task = self._require_task(task_id)
+        task.result = result
+        task.updated_at = _utc_now_iso()
+
+    def set_task_error(self, task_id: str, error: Optional[str]) -> None:
+        task = self._require_task(task_id)
+        task.error = error
+        task.updated_at = _utc_now_iso()
+
+    # -------------------------------------------------------------------------
+    # 可執行任務挑選
+    # -------------------------------------------------------------------------
+    def get_next_runnable_task(self, root_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        第一版規則：
+        - 只挑 leaf task
+        - 狀態必須是 pending
+        - 依建立順序深度優先掃描
+        """
+        task_ids = self._collect_scan_order(root_id=root_id)
+        for task_id in task_ids:
+            task = self._tasks[task_id]
+            if task.status != TASK_STATUS_PENDING:
                 continue
-            if str(item.get("task_name", "")).strip() == clean_name:
-                return item
-
+            if not self._is_runnable_leaf(task):
+                continue
+            return task.to_dict()
         return None
 
-    def list_tasks(self) -> List[Dict[str, Any]]:
-        memory = self._load_memory()
-        tasks = memory.get("tasks", [])
+    def get_all_leaf_tasks(self, root_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        task_ids = self._collect_scan_order(root_id=root_id)
+        for task_id in task_ids:
+            task = self._tasks[task_id]
+            if len(task.children) == 0:
+                result.append(task.to_dict())
+        return result
 
-        if not isinstance(tasks, list):
-            return []
+    # -------------------------------------------------------------------------
+    # 樹狀狀態判定
+    # -------------------------------------------------------------------------
+    def is_task_tree_completed(self, root_id: str) -> bool:
+        root = self._require_task(root_id)
+        if root.status == TASK_STATUS_COMPLETED:
+            return True
 
-        normalized_tasks: List[Dict[str, Any]] = []
-        for item in tasks:
-            normalized_item = self._normalize_task_item(item)
-            if normalized_item is not None:
-                normalized_tasks.append(normalized_item)
+        descendants = self._collect_descendants(root_id)
+        if not descendants:
+            return root.status == TASK_STATUS_COMPLETED
 
-        return normalized_tasks
+        for task_id in descendants:
+            task = self._tasks[task_id]
+            if task.status != TASK_STATUS_COMPLETED:
+                return False
+        return True
 
-    def update_task_status(self, task_name: str, status: str) -> Dict[str, Any]:
-        clean_name = str(task_name).strip()
-        clean_status = str(status).strip()
+    def is_task_tree_failed(self, root_id: str) -> bool:
+        root = self._require_task(root_id)
+        if root.status == TASK_STATUS_FAILED:
+            return True
 
-        if not clean_name:
-            raise ValueError("task_name cannot be empty.")
-        if not clean_status:
-            raise ValueError("status cannot be empty.")
+        descendants = self._collect_descendants(root_id)
+        for task_id in descendants:
+            if self._tasks[task_id].status == TASK_STATUS_FAILED:
+                return True
+        return False
 
-        memory = self._load_memory()
-        tasks = memory.get("tasks", [])
+    def get_root_id(self, task_id: str) -> str:
+        current = self._require_task(task_id)
+        while current.parent_id is not None:
+            current = self._require_task(current.parent_id)
+        return current.id
 
-        if not isinstance(tasks, list):
-            tasks = []
+    def get_tree_snapshot(self, root_id: str) -> Dict[str, Any]:
+        root = self._require_task(root_id)
 
-        updated = None
-        now = self._utc_now_iso()
+        def build_node(task_id: str) -> Dict[str, Any]:
+            task = self._tasks[task_id]
+            data = task.to_dict()
+            data["children_nodes"] = [build_node(child_id) for child_id in task.children]
+            return data
 
-        for item in tasks:
-            if not isinstance(item, dict):
-                continue
-            if str(item.get("task_name", "")).strip() == clean_name:
-                item["status"] = clean_status
-                item["updated_at"] = now
-                updated = item
-                break
+        return build_node(root.id)
 
-        if updated is None:
-            raise ValueError(f"Task not found: {clean_name}")
-
-        memory["tasks"] = tasks
-        self._save_memory(memory)
-        return updated
-
-    # =========================================================
-    # Plan / Step / Result logging
-    # =========================================================
-
-    def save_plan(self, task_name: str, plan: Dict[str, Any]) -> None:
-        task_dir = self._ensure_task_dir(task_name)
-        plan_file = task_dir / "plan.json"
-        self._save_json(plan_file, plan)
-
-    def save_step(self, task_name: str, step_index: int, data: Dict[str, Any]) -> None:
-        task_dir = self._ensure_task_dir(task_name)
-        step_file = task_dir / f"step_{step_index:02d}.json"
-        self._save_json(step_file, data)
-
-    def save_result(self, task_name: str, result: Dict[str, Any]) -> None:
-        task_dir = self._ensure_task_dir(task_name)
-        result_file = task_dir / "result.json"
-        self._save_json(result_file, result)
-
-    # =========================================================
-    # Memory file
-    # =========================================================
-
-    def _default_memory(self) -> Dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
-            "last_task_id": self._scan_existing_task_max_id(),
-            "tasks": [],
+            "roots": list(self._root_order),
+            "tasks": {task_id: task.to_dict() for task_id, task in self._tasks.items()},
         }
 
-    def _load_memory(self) -> Dict[str, Any]:
-        if not self.memory_file.exists():
-            memory = self._default_memory()
-            self._save_memory(memory)
-            return memory
+    def load_from_dict(self, data: Dict[str, Any]) -> None:
+        self._tasks.clear()
+        self._root_order = list(data.get("roots", []))
 
-        try:
-            with open(self.memory_file, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-        except Exception:
-            memory = self._default_memory()
-            self._save_memory(memory)
-            return memory
+        raw_tasks = data.get("tasks", {})
+        for task_id, task_data in raw_tasks.items():
+            self._tasks[task_id] = Task(
+                id=task_data["id"],
+                title=task_data["title"],
+                status=task_data.get("status", TASK_STATUS_PENDING),
+                parent_id=task_data.get("parent_id"),
+                children=list(task_data.get("children", [])),
+                result=task_data.get("result"),
+                error=task_data.get("error"),
+                meta=dict(task_data.get("meta", {})),
+                created_at=task_data.get("created_at", _utc_now_iso()),
+                updated_at=task_data.get("updated_at", _utc_now_iso()),
+            )
 
-        normalized = self._normalize_memory(raw)
-        self._save_memory(normalized)
-        return normalized
+    # -------------------------------------------------------------------------
+    # 內部方法
+    # -------------------------------------------------------------------------
+    def _require_task(self, task_id: str) -> Task:
+        task = self._tasks.get(task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id}")
+        return task
 
-    def _save_memory(self, data: Dict[str, Any]) -> None:
-        normalized = self._normalize_memory(data)
-        with open(self.memory_file, "w", encoding="utf-8") as f:
-            json.dump(normalized, f, indent=2, ensure_ascii=False)
+    def _is_runnable_leaf(self, task: Task) -> bool:
+        if len(task.children) > 0:
+            return False
+        if task.status != TASK_STATUS_PENDING:
+            return False
+        return True
 
-    def _normalize_memory(self, raw: Any) -> Dict[str, Any]:
-        """
-        相容幾種舊格式：
-        1. dict 正常格式
-        2. list -> 視為 tasks 清單
-        3. 其他異常 -> 重建
-        """
-        max_existing_id = self._scan_existing_task_max_id()
+    def _collect_scan_order(self, root_id: Optional[str] = None) -> List[str]:
+        ordered: List[str] = []
 
-        if isinstance(raw, dict):
-            last_task_id = raw.get("last_task_id", 0)
-            tasks = raw.get("tasks", [])
+        def walk(task_id: str) -> None:
+            ordered.append(task_id)
+            task = self._tasks[task_id]
+            for child_id in task.children:
+                walk(child_id)
 
-            if not isinstance(tasks, list):
-                tasks = []
+        if root_id is not None:
+            self._require_task(root_id)
+            walk(root_id)
+            return ordered
 
-            normalized_tasks = []
-            max_task_id_in_tasks = 0
+        for rid in self._root_order:
+            walk(rid)
+        return ordered
 
-            for item in tasks:
-                normalized_item = self._normalize_task_item(item)
-                if normalized_item is None:
-                    continue
-                normalized_tasks.append(normalized_item)
-                max_task_id_in_tasks = max(max_task_id_in_tasks, normalized_item["task_id"])
+    def _collect_descendants(self, root_id: str) -> List[str]:
+        root = self._require_task(root_id)
+        result: List[str] = []
 
-            safe_last_task_id = self._safe_int(last_task_id, 0)
-            safe_last_task_id = max(safe_last_task_id, max_task_id_in_tasks, max_existing_id)
+        def walk(task_id: str) -> None:
+            task = self._tasks[task_id]
+            for child_id in task.children:
+                result.append(child_id)
+                walk(child_id)
 
-            return {
-                "last_task_id": safe_last_task_id,
-                "tasks": normalized_tasks,
-            }
+        walk(root.id)
+        return result
 
-        if isinstance(raw, list):
-            normalized_tasks = []
-            max_task_id_in_tasks = 0
+    def _refresh_parent_chain(self, task_id: str) -> None:
+        current = self._require_task(task_id)
+        parent_id = current.parent_id
 
-            for item in raw:
-                normalized_item = self._normalize_task_item(item)
-                if normalized_item is None:
-                    continue
-                normalized_tasks.append(normalized_item)
-                max_task_id_in_tasks = max(max_task_id_in_tasks, normalized_item["task_id"])
+        while parent_id is not None:
+            parent = self._require_task(parent_id)
+            children = [self._tasks[child_id] for child_id in parent.children]
 
-            safe_last_task_id = max(max_task_id_in_tasks, max_existing_id)
-
-            return {
-                "last_task_id": safe_last_task_id,
-                "tasks": normalized_tasks,
-            }
-
-        return {
-            "last_task_id": max_existing_id,
-            "tasks": [],
-        }
-
-    def _normalize_task_item(self, item: Any) -> Dict[str, Any] | None:
-        if not isinstance(item, dict):
-            return None
-
-        task_name = str(item.get("task_name", "")).strip()
-        task_id = item.get("task_id")
-
-        if not task_name:
-            if isinstance(task_id, int):
-                task_name = f"task_{task_id:04d}"
+            if not children:
+                parent.status = TASK_STATUS_COMPLETED
             else:
-                return None
+                child_statuses = {child.status for child in children}
 
-        parsed_id = self._extract_task_id_from_name(task_name)
-        safe_task_id = self._safe_int(task_id, parsed_id if parsed_id is not None else 0)
+                if TASK_STATUS_FAILED in child_statuses:
+                    parent.status = TASK_STATUS_FAILED
+                    failed_children = [child for child in children if child.status == TASK_STATUS_FAILED]
+                    parent.error = failed_children[0].error if failed_children else parent.error
 
-        if safe_task_id <= 0 and parsed_id is not None:
-            safe_task_id = parsed_id
+                elif TASK_STATUS_BLOCKED in child_statuses:
+                    parent.status = TASK_STATUS_BLOCKED
+                    blocked_children = [child for child in children if child.status == TASK_STATUS_BLOCKED]
+                    parent.error = blocked_children[0].error if blocked_children else parent.error
 
-        if safe_task_id <= 0:
-            return None
+                elif all(status == TASK_STATUS_COMPLETED for status in child_statuses):
+                    parent.status = TASK_STATUS_COMPLETED
+                    parent.error = None
 
-        canonical_task_name = f"task_{safe_task_id:04d}"
-        task_dir = str(self.workspace_root / canonical_task_name)
+                elif TASK_STATUS_RUNNING in child_statuses:
+                    parent.status = TASK_STATUS_RUNNING
 
-        goal = str(item.get("goal", item.get("input", "")))
-        input_text = str(item.get("input", goal))
+                else:
+                    parent.status = TASK_STATUS_PENDING
 
-        created_at = self._safe_str(
-            item.get("created_at", ""),
-            default=""
-        )
-        updated_at = self._safe_str(
-            item.get("updated_at", created_at),
-            default=created_at
-        )
-
-        return {
-            "task_id": safe_task_id,
-            "task_name": canonical_task_name,
-            "input": input_text,
-            "goal": goal,
-            "task_dir": str(item.get("task_dir", task_dir)),
-            "status": str(item.get("status", "unknown")),
-            "created_at": created_at,
-            "updated_at": updated_at,
-        }
-
-    # =========================================================
-    # Helpers
-    # =========================================================
-
-    def _ensure_task_dir(self, task_name: str) -> Path:
-        clean_name = str(task_name).strip()
-        if not clean_name:
-            raise ValueError("task_name cannot be empty.")
-
-        task_dir = self.workspace_root / clean_name
-        task_dir.mkdir(parents=True, exist_ok=True)
-        return task_dir
-
-    def _save_json(self, path: Path, data: Dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-    def _safe_int(self, value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except Exception:
-            return default
-
-    def _safe_str(self, value: Any, default: str = "") -> str:
-        try:
-            if value is None:
-                return default
-            return str(value)
-        except Exception:
-            return default
-
-    def _extract_task_id_from_name(self, task_name: str) -> int | None:
-        if not isinstance(task_name, str):
-            return None
-
-        task_name = task_name.strip()
-        if not task_name.startswith("task_"):
-            return None
-
-        suffix = task_name[5:]
-        if not suffix.isdigit():
-            return None
-
-        return int(suffix)
-
-    def _scan_existing_task_max_id(self) -> int:
-        max_id = 0
-
-        for item in self.workspace_root.iterdir():
-            if not item.is_dir():
-                continue
-
-            parsed_id = self._extract_task_id_from_name(item.name)
-            if parsed_id is not None:
-                max_id = max(max_id, parsed_id)
-
-        return max_id
-
-    def _utc_now_iso(self) -> str:
-        return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+            parent.updated_at = _utc_now_iso()
+            parent_id = parent.parent_id

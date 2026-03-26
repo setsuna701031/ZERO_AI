@@ -1,254 +1,262 @@
 from __future__ import annotations
 
-import locale
-import os
-import shlex
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 
 class CommandTool:
     """
-    安全版命令工具：
-    1. 預設在 workspace_root 內執行
-    2. 阻擋高風險命令
-    3. 支援 execute(payload_dict) 與 run(**kwargs)
-    4. 盡量修正 Windows cmd 輸出亂碼
+    ZERO Command Tool
+    ------------------------------------------------------------
+    負責 CLI 任務指令：
+    - task help
+    - task new <goal>
+    - task plan <task_id>
+    - task run-next <task_id>
+    - task status <task_id>
     """
 
+    # 這行非常重要，ToolRegistry 需要
     name = "command_tool"
-    description = "Execute safe shell commands inside the workspace directory."
 
-    def __init__(self, workspace_root: Path | str) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
+    def __init__(
+        self,
+        workspace_root: Optional[str | Path] = None,
+        task_manager: Any = None,
+        task_runtime: Any = None,
+        planner: Any = None,
+        **kwargs: Any,
+    ) -> None:
+        self.workspace_root = Path(workspace_root).resolve() if workspace_root else Path("workspace").resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
 
-        self.blocked_fragments = [
-            "del /f /q",
-            "rmdir /s /q",
-            "format ",
-            "shutdown ",
-            "restart-computer",
-            "stop-computer",
-            "remove-item -recurse -force",
-            "rm -rf /",
-            "sudo rm -rf /",
-            "mkfs",
-            "diskpart",
-            "bcdedit",
-            "reg delete",
-            "net user",
-            "cipher /w",
-        ]
+        self.task_manager = task_manager
+        self.task_runtime = task_runtime
+        self.planner = planner
+        self.extra_config = kwargs
 
-    def execute(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        payload = payload or {}
+    # -------------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------------
 
-        if not isinstance(payload, dict):
-            raise ValueError("payload must be a dict.")
+    def execute(self, command_text: str) -> Dict[str, Any]:
+        return self.run(command_text)
 
-        return self.run(
-            command=payload.get("command", ""),
-            cwd=payload.get("cwd"),
-            timeout=int(payload.get("timeout", 20)),
-            shell=bool(payload.get("shell", True)),
-        )
-
-    def run(
-        self,
-        command: str,
-        cwd: Optional[str] = None,
-        timeout: int = 20,
-        shell: bool = True,
-    ) -> Dict[str, Any]:
-        if not isinstance(command, str) or command.strip() == "":
-            raise ValueError("command cannot be empty.")
-
-        normalized_command = command.strip()
-        self._guard_command(normalized_command)
-
-        run_cwd = self._resolve_cwd(cwd)
-
-        if os.name == "nt":
-            completed = self._run_windows_command(
-                command=normalized_command,
-                cwd=run_cwd,
-                timeout=timeout,
-                shell=shell,
-            )
-        else:
-            completed = self._run_posix_command(
-                command=normalized_command,
-                cwd=run_cwd,
-                timeout=timeout,
-                shell=shell,
+    def run(self, command_text: str) -> Dict[str, Any]:
+        if not isinstance(command_text, str) or not command_text.strip():
+            return self._result(
+                command="task",
+                success=False,
+                message="Empty command.",
+                error="command_text is empty.",
             )
 
-        return {
-            "ok": completed["returncode"] == 0,
-            "success": completed["returncode"] == 0,
-            "tool_name": self.name,
-            "summary": f"Executed command: {normalized_command}",
-            "action": "execute_command",
-            "command": normalized_command,
-            "cwd": str(run_cwd),
-            "returncode": completed["returncode"],
-            "stdout": completed["stdout"],
-            "stderr": completed["stderr"],
-            "encoding_used": completed.get("encoding_used", ""),
-            "changed_files": [],
-            "evidence": [],
-            "results": [],
-        }
+        parts = command_text.strip().split()
+        if not parts:
+            return self._result(
+                command="task",
+                success=False,
+                message="Empty command.",
+                error="command_text is empty.",
+            )
 
-    def _run_windows_command(
-        self,
-        command: str,
-        cwd: Path,
-        timeout: int,
-        shell: bool,
-    ) -> Dict[str, Any]:
-        """
-        Windows 下優先用 bytes 方式抓輸出，再自己嘗試解碼，
-        避免 cp950 / utf-8 / OEM code page 混亂造成亂碼。
-        """
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
+        if parts[0] != "task":
+            return self._result(
+                command=parts[0],
+                success=False,
+                message="Unknown command.",
+                error=f"unsupported root command: {parts[0]}",
+            )
 
-        wrapped_command = f"chcp 65001>nul & {command}"
+        if len(parts) == 1:
+            return self._task_help()
 
-        completed = subprocess.run(
-            wrapped_command if shell else shlex.split(command, posix=False),
-            cwd=str(cwd),
-            capture_output=True,
-            text=False,
-            timeout=timeout,
-            shell=shell,
-            env=env,
-        )
-
-        stdout_text, stdout_encoding = self._decode_windows_bytes(completed.stdout)
-        stderr_text, stderr_encoding = self._decode_windows_bytes(completed.stderr)
-
-        encoding_used = stdout_encoding or stderr_encoding or ""
-
-        return {
-            "returncode": completed.returncode,
-            "stdout": stdout_text,
-            "stderr": stderr_text,
-            "encoding_used": encoding_used,
-        }
-
-    def _run_posix_command(
-        self,
-        command: str,
-        cwd: Path,
-        timeout: int,
-        shell: bool,
-    ) -> Dict[str, Any]:
-        completed = subprocess.run(
-            command if shell else shlex.split(command, posix=False),
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            shell=shell,
-            encoding="utf-8",
-            errors="replace",
-        )
-
-        return {
-            "returncode": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-            "encoding_used": "utf-8",
-        }
-
-    def _decode_windows_bytes(self, data: bytes) -> tuple[str, str]:
-        if not data:
-            return "", ""
-
-        candidates = []
+        subcommand = parts[1].strip().lower()
 
         try:
-            preferred = locale.getpreferredencoding(False)
-            if preferred:
-                candidates.append(preferred)
-        except Exception:
-            pass
+            if subcommand == "help":
+                return self._task_help()
 
-        candidates.extend(
-            [
-                "utf-8",
-                "cp950",
-                "cp936",
-                "cp932",
-                "cp949",
-                "mbcs",
-                "oem",
-                "latin-1",
-            ]
+            if subcommand == "new":
+                goal = " ".join(parts[2:]).strip()
+                return self._task_new(goal)
+
+            if subcommand == "plan":
+                if len(parts) < 3:
+                    return self._result(
+                        command="task_plan",
+                        success=False,
+                        message="Missing task_id.",
+                        error="usage: task plan <task_id>",
+                    )
+                return self._task_plan(parts[2].strip())
+
+            if subcommand == "run-next":
+                if len(parts) < 3:
+                    return self._result(
+                        command="task_run_next",
+                        success=False,
+                        message="Missing task_id.",
+                        error="usage: task run-next <task_id>",
+                    )
+                return self._task_run_next(parts[2].strip())
+
+            if subcommand == "status":
+                if len(parts) < 3:
+                    return self._result(
+                        command="task_status",
+                        success=False,
+                        message="Missing task_id.",
+                        error="usage: task status <task_id>",
+                    )
+                return self._task_status(parts[2].strip())
+
+            return self._result(
+                command="task",
+                success=False,
+                message=f"Unknown task subcommand: {subcommand}",
+                error=f"unsupported task subcommand: {subcommand}",
+            )
+
+        except Exception as exc:
+            return self._result(
+                command=f"task_{subcommand}",
+                success=False,
+                message="Command execution failed.",
+                error=str(exc),
+            )
+
+    # -------------------------------------------------------------------------
+    # Task Commands
+    # -------------------------------------------------------------------------
+
+    def _task_help(self) -> Dict[str, Any]:
+        return self._result(
+            command="task_help",
+            success=True,
+            message="Task help loaded.",
+            data={
+                "commands": [
+                    "task help",
+                    "task new <goal>",
+                    "task plan <task_id>",
+                    "task run-next <task_id>",
+                    "task status <task_id>",
+                ]
+            },
+            error=None,
         )
 
-        seen = set()
-        ordered_candidates = []
-        for enc in candidates:
-            key = str(enc).lower()
-            if key not in seen:
-                seen.add(key)
-                ordered_candidates.append(enc)
+    def _task_new(self, goal: str) -> Dict[str, Any]:
+        if not goal:
+            return self._result(
+                command="task_new",
+                success=False,
+                message="Task goal is required.",
+                error="usage: task new <goal>",
+            )
 
-        for enc in ordered_candidates:
-            try:
-                return data.decode(enc), enc
-            except Exception:
-                continue
+        if self.task_manager is None:
+            return self._result(
+                command="task_new",
+                success=False,
+                message="Task manager not available.",
+                error="task_manager is not configured.",
+            )
 
-        return data.decode("utf-8", errors="replace"), "utf-8-replace"
+        create_task = getattr(self.task_manager, "create_task", None)
+        if callable(create_task):
+            result = create_task(goal)
 
-    def _resolve_cwd(self, cwd: Optional[str]) -> Path:
-        if cwd is None or str(cwd).strip() == "":
-            return self.workspace_root
+            if isinstance(result, dict):
+                return self._normalize_manager_result("task_new", result)
 
-        target = (self.workspace_root / str(cwd)).resolve()
+            return self._result(
+                command="task_new",
+                success=True,
+                message="Task created.",
+                data=result,
+                error=None,
+            )
 
-        try:
-            target.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise ValueError("cwd escapes workspace root, operation denied.") from exc
+        raise RuntimeError("task_manager.create_task() not found.")
 
-        if not target.exists():
-            raise FileNotFoundError(f"cwd not found: {target}")
+    def _task_plan(self, task_id: str) -> Dict[str, Any]:
+        if self.planner is None:
+            return self._result(
+                command="task_plan",
+                success=False,
+                message="Planner not available.",
+                error="planner is not configured.",
+            )
 
-        if not target.is_dir():
-            raise NotADirectoryError(f"cwd is not a directory: {target}")
+        plan_method = getattr(self.planner, "plan", None)
+        if not callable(plan_method):
+            raise RuntimeError("planner.plan() not found.")
 
-        return target
+        result = plan_method(task_id=task_id)
+        return self._normalize_manager_result("task_plan", result)
 
-    def _guard_command(self, command: str) -> None:
-        lowered = command.lower()
+    def _task_run_next(self, task_id: str) -> Dict[str, Any]:
+        if self.task_runtime is None:
+            return self._result(
+                command="task_run_next",
+                success=False,
+                message="Task runtime not available.",
+                error="task_runtime is not configured.",
+            )
 
-        for fragment in self.blocked_fragments:
-            if fragment in lowered:
-                raise PermissionError(f"Blocked dangerous command fragment: {fragment}")
+        run_next = getattr(self.task_runtime, "run_next_step", None)
+        if callable(run_next):
+            result = run_next(task_id)
+            return self._normalize_manager_result("task_run_next", result)
 
-        dangerous_prefixes = [
-            "del ",
-            "erase ",
-            "rmdir ",
-            "format ",
-            "shutdown ",
-            "reg delete ",
-            "diskpart",
-        ]
+        raise RuntimeError("task_runtime.run_next_step() not found.")
 
-        for prefix in dangerous_prefixes:
-            if lowered.startswith(prefix):
-                raise PermissionError(f"Blocked dangerous command: {command}")
+    def _task_status(self, task_id: str) -> Dict[str, Any]:
+        if self.task_runtime is not None:
+            get_status = getattr(self.task_runtime, "get_status", None)
+            if callable(get_status):
+                result = get_status(task_id)
+                return self._normalize_manager_result("task_status", result)
 
-        if lowered.startswith("powershell") and "remove-item" in lowered:
-            raise PermissionError("Blocked dangerous PowerShell remove command.")
+        return self._result(
+            command="task_status",
+            success=False,
+            message="No status provider available.",
+            error="task_runtime.get_status not found.",
+        )
 
-        if lowered.startswith("cmd") and "/c del " in lowered:
-            raise PermissionError("Blocked dangerous cmd delete command.")
+    # -------------------------------------------------------------------------
+    # Helpers
+    # -------------------------------------------------------------------------
+
+    def _normalize_manager_result(self, command: str, result: Dict[str, Any]) -> Dict[str, Any]:
+        success = bool(result.get("success", True))
+        message = str(result.get("message") or "OK")
+        data = result.get("data")
+        error = result.get("error")
+
+        return self._result(
+            command=command,
+            success=success,
+            message=message,
+            data=data,
+            error=error,
+        )
+
+    def _result(
+        self,
+        command: str,
+        success: bool,
+        message: str,
+        data: Any = None,
+        error: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "command": command,
+            "success": success,
+            "message": message,
+            "data": data,
+            "error": error,
+        }

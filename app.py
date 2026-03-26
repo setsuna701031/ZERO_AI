@@ -1,245 +1,454 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, List, Optional
 
-from services.system_boot import bootstrap_system
-
-
-def _safe_str(value: Any) -> str:
-    if value is None:
-        return ""
-    return str(value)
-
-
-def _print_banner() -> None:
-    print("=" * 60)
-    print("ZERO AI")
-    print("Runtime Task Mode")
-    print("=" * 60)
+from core.agent_loop import AgentLoop
+from core.experience_planner import ExperiencePlanner
+from core.memory_manager import MemoryManager
+from core.step_executor import DummyStepExecutor
+from core.task_manager import TaskManager
+from core.task_runtime import TaskRuntime
+from core.tool_registry import ToolRegistry
 
 
-def _print_boot_info(boot_info: Dict[str, Any]) -> None:
-    print("[boot]")
-    print(f"project_root   : {_safe_str(boot_info.get('project_root'))}")
-    print(f"workspace_root : {_safe_str(boot_info.get('workspace_root'))}")
-    print(f"agent_loop     : {_safe_str(boot_info.get('agent_loop_name'))}")
-    print(f"task_manager   : {_safe_str(boot_info.get('task_manager_name'))}")
-    print(f"task_runtime   : {_safe_str(boot_info.get('task_runtime_name'))}")
-
-    tool_names = boot_info.get("tool_names", [])
-    if isinstance(tool_names, list) and tool_names:
-        print(f"tools          : {', '.join(_safe_str(x) for x in tool_names)}")
-    else:
-        print("tools          : (none)")
-
-    print("-" * 60)
-    print("輸入一般文字 -> 建立任務並執行")
-    print("cmd:你的指令  -> 執行 command_tool")
-    print("ws:檔案路徑   -> 執行 workspace_tool 讀檔")
-    print("exit          -> 離開")
-    print("=" * 60)
+DIVIDER = "=" * 48
 
 
-def _print_error(result: Dict[str, Any]) -> None:
-    summary = _safe_str(result.get("summary", "Execution failed."))
-    error = _safe_str(result.get("error", ""))
+class TaskStepExecutorAdapter:
+    """
+    把 AgentLoop 需要的 execute_task(task, context)
+    轉接到目前的 DummyStepExecutor.execute(step, workspace)
 
-    print(f"[failed] {summary}")
+    目前策略：
+    - 依 task title 映射成 workspace step
+    - 成功就回傳 message
+    - 失敗就 raise，讓 AgentLoop 標記 task failed / retry
+    """
+
+    def __init__(
+        self,
+        step_executor: DummyStepExecutor,
+        tool_registry: ToolRegistry,
+        workspace: str = "workspace",
+    ) -> None:
+        self.step_executor = step_executor
+        self.tool_registry = tool_registry
+        self.workspace = workspace
+
+    def execute_task(
+        self,
+        task: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        step = self._task_to_step(task, context=context)
+        result = self.step_executor.execute(step, workspace=self.workspace)
+
+        if not result.get("ok"):
+            raise RuntimeError(result.get("message", "step execution failed"))
+
+        return str(result.get("message") or "step completed")
+
+    # ------------------------------------------------------------------
+    # task -> step mapping
+    # ------------------------------------------------------------------
+    def _task_to_step(
+        self,
+        task: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        title = str(task.get("title", "")).strip()
+        task_id = str(task.get("id", "")).strip()
+        step_index = int(task.get("meta", {}).get("step_index", 0) or 0)
+
+        action_input = self._infer_workspace_action(
+            title=title,
+            task=task,
+            context=context,
+        )
+
+        return {
+            "id": task_id,
+            "title": title,
+            "index": step_index,
+            "tool": "workspace",
+            "input": action_input,
+        }
+
+    def _infer_workspace_action(
+        self,
+        title: str,
+        task: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        目前先做簡單規則式映射。
+
+        常見 subtasks：
+        - 分析需求
+        - 規劃執行步驟
+        - 實作主要內容
+        - 驗證結果
+
+        注意：
+        fail_first / always_fail 必須放前面，
+        否則 title 同時包含「分析 / 規劃 / 實作 / 驗證」時，會先被一般規則吃掉，
+        retry 測試就永遠不會真正觸發。
+        """
+
+        lower_title = title.lower()
+
+        # --------------------------------------------------------------
+        # 先處理 retry / fail 測試關鍵字
+        # --------------------------------------------------------------
+        if "fail_first" in lower_title:
+            return {
+                "action": "mkdir",
+                "path": "demo_fail_first",
+            }
+
+        if "always_fail" in lower_title:
+            return {
+                "action": "mkdir",
+                "path": "demo_always_fail",
+            }
+
+        # --------------------------------------------------------------
+        # 一般流程映射
+        # --------------------------------------------------------------
+        if ("分析" in title) or ("需求" in title):
+            return {
+                "action": "append_text",
+                "path": "plan.txt",
+                "content": f"[分析] {title}\n",
+            }
+
+        if ("規劃" in title) or ("步驟" in title) or ("計畫" in title):
+            return {
+                "action": "append_text",
+                "path": "plan.txt",
+                "content": f"[規劃] {title}\n",
+            }
+
+        if ("實作" in title) or ("建立" in title) or ("生成" in title) or ("撰寫" in title):
+            return {
+                "action": "mkdir",
+                "path": "demo_ok",
+            }
+
+        if ("驗證" in title) or ("測試" in title) or ("確認" in title) or ("檢查" in title):
+            return {
+                "action": "exists",
+                "path": "demo_ok",
+            }
+
+        return {
+            "action": "mkdir",
+            "path": "demo_ok",
+        }
+
+
+def print_help() -> None:
+    print("Available commands:")
+    print("  task new <goal>        建立新 root task 並拆 subtasks")
+    print("  task tree              顯示目前 active task tree")
+    print("  task roots             顯示所有 root tasks")
+    print("  task next              執行下一個 leaf task")
+    print("  task run               持續執行直到完成或失敗")
+    print("  task reset             清除目前 runtime active task")
+    print("  runtime show           顯示 runtime 狀態")
+    print("  runtime events         顯示 runtime events")
+    print("  memory recent          顯示最近 memory records")
+    print("  memory task            顯示目前 active root task 的 memories")
+    print("  memory search <text>   搜尋 memory")
+    print("  memory plan <goal>     顯示 planner 看到的經驗上下文")
+    print("  memory clear           清空 memory store")
+    print("  tools show             顯示 tool registry 狀態")
+    print("  help")
+    print("  exit")
+
+
+def parse_value(command: str, prefix: str) -> Optional[str]:
+    if not command.startswith(prefix):
+        return None
+    value = command[len(prefix):].strip()
+    if not value:
+        return None
+    return value
+
+
+def print_root_tasks(task_manager: TaskManager) -> None:
+    roots = task_manager.list_root_tasks()
+    if not roots:
+        print("No root tasks.")
+        return
+
+    print(DIVIDER)
+    for root in roots:
+        print(
+            f"{root['id']} | status={root['status']} | "
+            f"title={root['title']} | children={len(root.get('children', []))}"
+        )
+    print(DIVIDER)
+
+
+def print_tree_node(node: Dict[str, Any], indent: int = 0) -> None:
+    prefix = "  " * indent
+    task_id = node.get("id", "")
+    title = node.get("title", "")
+    status = node.get("status", "")
+    result = node.get("result")
+    error = node.get("error")
+
+    print(f"{prefix}- {task_id} | {status} | {title}")
+
+    if result:
+        print(f"{prefix}  result: {result}")
     if error:
-        print(f"[error] {error}")
+        print(f"{prefix}  error: {error}")
+
+    children = node.get("children_nodes", []) or []
+    for child in children:
+        print_tree_node(child, indent + 1)
 
 
-def _print_key_value(key: str, value: Any, width: int = 11) -> None:
-    print(f"{key:<{width}}: {_safe_str(value)}")
-
-
-def _print_multiline_value(key: str, value: str, width: int = 11) -> None:
-    lines = str(value).splitlines()
-    if not lines:
-        print(f"{key:<{width}}: ")
+def print_active_tree(agent: AgentLoop) -> None:
+    tree = agent.get_active_tree()
+    if tree is None:
+        print("No active task tree.")
         return
 
-    print(f"{key:<{width}}: {lines[0]}")
-    for line in lines[1:]:
-        print(" " * (width + 2) + line)
+    print(DIVIDER)
+    print_tree_node(tree)
+    print(DIVIDER)
 
 
-def _print_list_block(key: str, items: Iterable[Any], width: int = 11) -> None:
-    items = list(items)
-    if not items:
-        print(f"{key:<{width}}: []")
+def print_runtime(runtime: TaskRuntime) -> None:
+    print(DIVIDER)
+    print(f"Active Root Task: {runtime.get_active_root_task()}")
+    print(f"Current Task: {runtime.get_current_task()}")
+    print(f"Last Result: {runtime.get_last_result()}")
+    print(f"Last Error: {runtime.get_last_error()}")
+    print(f"Recorded Results: {len(runtime.step_results)}")
+    print(f"Recorded Errors: {len(runtime.step_errors)}")
+    print(f"Events: {len(runtime.events)}")
+    print(DIVIDER)
+
+
+def print_runtime_events(runtime: TaskRuntime) -> None:
+    events = runtime.get_events()
+    if not events:
+        print("No runtime events.")
         return
 
-    print(f"{key:<{width}}:")
-    for item in items:
-        print(f"{' ' * (width + 2)}- {_safe_str(item)}")
+    print(DIVIDER)
+    for item in events:
+        print(
+            f"{item['timestamp']} | {item['event_type']} | "
+            f"task={item['task_id']} | {item['message']}"
+        )
+        meta = item.get("meta", {})
+        if meta:
+            print(f"  meta={meta}")
+    print(DIVIDER)
 
 
-def _print_tool_result(result: Dict[str, Any]) -> None:
-    data = result.get("data", {})
-    tool_name = _safe_str(data.get("tool_name", ""))
-    tool_result = data.get("tool_result", {})
+def print_memory_records(records: List[Dict[str, Any]]) -> None:
+    if not records:
+        print("No memory records.")
+        return
 
-    print(f"[tool] {tool_name}")
+    print(DIVIDER)
+    for item in records:
+        print(
+            f"{item.get('created_at')} | {item.get('memory_type')} | "
+            f"root={item.get('root_task_id')} | task={item.get('task_id')}"
+        )
+        content = item.get("content", {})
+        print(f"  content={content}")
+    print(DIVIDER)
 
-    if isinstance(tool_result, dict):
-        for key, value in tool_result.items():
-            if isinstance(value, list):
-                _print_list_block(key, value)
-            elif isinstance(value, str) and "\n" in value:
-                _print_multiline_value(key, value)
-            else:
-                _print_key_value(key, value)
+
+def print_planning_context(context: Dict[str, Any]) -> None:
+    print(DIVIDER)
+    print(f"Goal: {context.get('goal')}")
+    print(f"Source Count: {context.get('source_count')}")
+
+    similar_goals = context.get("similar_goals", []) or []
+    successful_steps = context.get("successful_steps", []) or []
+    lessons = context.get("lessons", []) or []
+    failed_notes = context.get("failed_notes", []) or []
+
+    print("Similar Goals:")
+    if similar_goals:
+        for item in similar_goals:
+            print(f"  - {item}")
     else:
-        print(_safe_str(tool_result))
+        print("  (none)")
+
+    print("Successful Steps:")
+    if successful_steps:
+        for item in successful_steps:
+            print(f"  - {item}")
+    else:
+        print("  (none)")
+
+    print("Lessons:")
+    if lessons:
+        for item in lessons:
+            print(f"  - {item}")
+    else:
+        print("  (none)")
+
+    print("Failed Notes:")
+    if failed_notes:
+        for item in failed_notes:
+            print(f"  - {item}")
+    else:
+        print("  (none)")
+
+    print(DIVIDER)
 
 
-def _print_runtime_result(result: Dict[str, Any]) -> None:
-    summary = _safe_str(result.get("summary", "Task executed."))
-    data = result.get("data", {})
-
-    task = data.get("task", {})
-    runtime_result = data.get("runtime_result", {})
-
-    print(f"[ok] {summary}")
-    print("-" * 60)
-
-    if isinstance(task, dict) and task:
-        print("[task]")
-
-        ordered_task_keys = [
-            "task_name",
-            "goal",
-            "input",
-            "status",
-            "task_dir",
-            "created_at",
-            "updated_at",
-        ]
-
-        printed_task_keys = set()
-
-        for key in ordered_task_keys:
-            if key in task:
-                _print_key_value(key, task.get(key))
-                printed_task_keys.add(key)
-
-        for key, value in task.items():
-            if key not in printed_task_keys:
-                if isinstance(value, list):
-                    _print_list_block(key, value)
-                elif isinstance(value, str) and "\n" in value:
-                    _print_multiline_value(key, value)
-                else:
-                    _print_key_value(key, value)
-
-    if isinstance(runtime_result, dict) and runtime_result:
-        print("[runtime]")
-
-        ordered_runtime_keys = [
-            "task_name",
-            "task_dir",
-            "status",
-            "plan_file",
-            "result_file",
-            "log_file",
-            "step_count",
-            "answer",
-        ]
-
-        printed_runtime_keys = set()
-
-        for key in ordered_runtime_keys:
-            if key in runtime_result:
-                _print_key_value(key, runtime_result.get(key))
-                printed_runtime_keys.add(key)
-
-        if "step_files" in runtime_result:
-            _print_list_block("step_files", runtime_result.get("step_files", []))
-            printed_runtime_keys.add("step_files")
-
-        if "step_file" in runtime_result:
-            _print_key_value("step_file", runtime_result.get("step_file"))
-            printed_runtime_keys.add("step_file")
-
-        for key, value in runtime_result.items():
-            if key not in printed_runtime_keys:
-                if isinstance(value, list):
-                    _print_list_block(key, value)
-                elif isinstance(value, str) and "\n" in value:
-                    _print_multiline_value(key, value)
-                else:
-                    _print_key_value(key, value)
-
-    print("-" * 60)
-
-
-def _print_result(result: Dict[str, Any]) -> None:
-    if not isinstance(result, dict):
-        print(_safe_str(result))
-        return
-
-    success = bool(result.get("success", False))
-    mode = _safe_str(result.get("mode", ""))
-
-    if not success:
-        _print_error(result)
-        return
-
-    if mode == "tool":
-        _print_tool_result(result)
-        return
-
-    if mode in {"runtime", "task"}:
-        _print_runtime_result(result)
-        return
-
-    summary = _safe_str(result.get("summary", "Done."))
-    print(summary)
-
-    data = result.get("data", {})
-    if isinstance(data, dict) and data:
-        for key, value in data.items():
-            if isinstance(value, list):
-                _print_list_block(key, value)
-            elif isinstance(value, str) and "\n" in value:
-                _print_multiline_value(key, value)
-            else:
-                _print_key_value(key, value)
+def print_tools_info(tool_registry: ToolRegistry) -> None:
+    info = tool_registry.debug_info()
+    print(DIVIDER)
+    print(f"workspace_root: {info.get('workspace_root')}")
+    print(f"project_root: {info.get('project_root')}")
+    print(f"tools: {info.get('tools')}")
+    print(DIVIDER)
 
 
 def main() -> None:
-    system = bootstrap_system()
-    agent = system["agent"]
-    boot_info = system["boot_info"]
+    task_manager = TaskManager()
+    task_runtime = TaskRuntime()
+    memory_manager = MemoryManager(storage_path="data/memory_store.json")
+    planner = ExperiencePlanner(memory_manager=memory_manager)
 
-    _print_banner()
-    _print_boot_info(boot_info)
+    tool_registry = ToolRegistry(
+        workspace_root="workspace",
+        project_root=".",
+    )
+
+    step_executor = DummyStepExecutor()
+
+    executor = TaskStepExecutorAdapter(
+        step_executor=step_executor,
+        tool_registry=tool_registry,
+        workspace="workspace",
+    )
+
+    agent = AgentLoop(
+        task_manager=task_manager,
+        task_runtime=task_runtime,
+        planner=planner,
+        executor=executor,
+        memory_manager=memory_manager,
+    )
+
+    print("ZERO>")
+    print_help()
+    print(DIVIDER)
 
     while True:
         try:
-            user_input = input("\nZERO> ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print("\nbye.")
+            command = input("ZERO> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("Bye.")
             break
 
-        if not user_input:
+        if not command:
             continue
 
-        if user_input.lower() in {"exit", "quit"}:
-            print("bye.")
+        if command in {"exit", "quit"}:
+            print("Bye.")
             break
 
-        try:
-            result = agent.run(user_input)
-        except KeyboardInterrupt:
-            print("\n[interrupted]")
-            continue
-        except Exception as exc:
-            print(f"[fatal] {exc}")
+        if command == "help":
+            print_help()
             continue
 
-        _print_result(result)
+        if command == "task roots":
+            print_root_tasks(task_manager)
+            continue
+
+        if command == "task tree":
+            print_active_tree(agent)
+            continue
+
+        if command == "runtime show":
+            print_runtime(task_runtime)
+            continue
+
+        if command == "runtime events":
+            print_runtime_events(task_runtime)
+            continue
+
+        if command == "task reset":
+            agent.reset_active_task()
+            print("Active runtime reset.")
+            continue
+
+        if command == "memory recent":
+            records = memory_manager.get_recent_records(limit=20)
+            print_memory_records(records)
+            continue
+
+        if command == "memory task":
+            root_task_id = task_runtime.get_active_root_task()
+            if not root_task_id:
+                print("No active root task.")
+                continue
+            records = memory_manager.get_records_by_root_task(root_task_id)
+            print_memory_records(records)
+            continue
+
+        if command == "memory clear":
+            memory_manager.clear()
+            print("Memory cleared.")
+            continue
+
+        if command == "tools show":
+            print_tools_info(tool_registry)
+            continue
+
+        keyword = parse_value(command, "memory search ")
+        if keyword is not None:
+            records = memory_manager.search_text(keyword, limit=20)
+            print_memory_records(records)
+            continue
+
+        preview_goal = parse_value(command, "memory plan ")
+        if preview_goal is not None:
+            context = planner.preview_context(preview_goal)
+            print_planning_context(context)
+            planned_steps = planner.plan(preview_goal)
+            print("Planned Steps:")
+            for idx, step in enumerate(planned_steps, start=1):
+                print(f"  {idx}. {step}")
+            print(DIVIDER)
+            continue
+
+        goal = parse_value(command, "task new ")
+        if goal is not None:
+            result = agent.start_new_task(goal)
+            print(result.to_dict())
+            print_active_tree(agent)
+            continue
+
+        if command == "task next":
+            result = agent.run_next_step()
+            print(result.to_dict())
+            print_active_tree(agent)
+            continue
+
+        if command == "task run":
+            result = agent.run_until_done()
+            print(result.to_dict())
+            print_active_tree(agent)
+            continue
+
+        print("Unknown command. Type 'help' for available commands.")
 
 
 if __name__ == "__main__":
