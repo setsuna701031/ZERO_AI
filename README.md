@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ZERO — Local Tool-Driven Engineering Agent
 
 ZERO is a local-first engineering agent designed to execute tasks, call tools,
@@ -14,6 +15,9 @@ into a local autonomous engineering agent.
 ------------------------------------------------------------
 Features
 ------------------------------------------------------------
+=======
+# ZERO AI
+>>>>>>> 90107d5e296af9b3fc451cbc12c15051d79f3208
 
 Current capabilities:
 
@@ -31,7 +35,9 @@ Current capabilities:
 ZERO already behaves like a basic autonomous agent kernel,
 not just a script runner or chatbot.
 
+ZERO AI is a local-first engineering assistant focused on tool execution, modular architecture, and privacy-preserving workflows.
 
+<<<<<<< HEAD
 ------------------------------------------------------------
 Architecture Overview
 ------------------------------------------------------------
@@ -55,15 +61,37 @@ Task Execution
 Retry / Reflection / Replan
     ↓
 Memory Summary
+=======
+It is designed to run on a local machine and evolve from a tool-routed assistant into a more complete engineering agent system.
 
+---
 
+## Current Milestone
+>>>>>>> 90107d5e296af9b3fc451cbc12c15051d79f3208
+
+This repository is currently at the first runtime milestone / checkpoint.
+
+<<<<<<< HEAD
 Core execution idea:
 
 Plan → Execute → Fail → Retry → Reflect → Replan → Continue → Summarize → Learn
 
 This loop is the core of ZERO.
+=======
+The project has completed an initial runtime execution skeleton and a repository structure reorganization.
 
+### Current working runtime flow
+>>>>>>> 90107d5e296af9b3fc451cbc12c15051d79f3208
 
+User input  
+→ TaskManager.create_task  
+→ TaskRuntime.run_task  
+→ step loop  
+→ task status sync  
+→ workspace artifacts  
+→ CLI display
+
+<<<<<<< HEAD
 ------------------------------------------------------------
 Core Modules
 ------------------------------------------------------------
@@ -222,3 +250,51 @@ License
 ------------------------------------------------------------
 
 This project is licensed under the MIT License.
+=======
+---
+
+## Current Status
+
+Current implemented foundation includes:
+
+- Runtime task pipeline connected
+- Agent loop skeleton available
+- Router / planner / executor structure in place
+- Tool registry and tool dispatch foundation available
+- Local web search integration available
+- Project structure reorganized into clearer modules
+
+This is still an early-stage engineering checkpoint, not a finished autonomous agent.
+
+---
+
+## Repository Structure
+
+Main repository structure currently includes:
+
+- `config/` — configuration
+- `core/` — runtime, routing, planning, execution, state handling
+- `services/` — system boot and service-level integration
+- `tools/` — tool implementations
+- `memory/` — memory-related storage/components
+- `tests/` — project tests
+- `ui/` — interface assets
+
+---
+
+## Next Steps
+
+Planned next-stage work:
+
+- strengthen planner output structure
+- improve runtime step execution loop
+- improve task state persistence and observation flow
+- connect verifier / response finalization more cleanly
+- continue reducing root-level responsibility mixing
+
+---
+
+## Notes
+
+ZERO AI is being developed as a local engineering agent platform, with emphasis on modularity, controllability, and safe incremental evolution.
+>>>>>>> 90107d5e296af9b3fc451cbc12c15051d79f3208
