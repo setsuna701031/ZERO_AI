@@ -1,74 +1,135 @@
-\# ZERO AI Roadmap
+# ZERO Roadmap
 
+This document describes the development roadmap of the ZERO Task Operating System.
 
+---
 
-\## Phase 1: 基礎骨架
+## Stage 1 – Basic Task Execution
+Status: Completed
 
-\- \[x] 建立基本 Flask API
+- Task creation
+- Task tree
+- Step execution
+- Tool calling
+- Step result recording
+- Task completion
 
-\- \[x] 建立健康檢查路由
+---
 
-\- \[x] 建立 echo 測試路由
+## Stage 2 – Retry System
+Status: Completed
 
-\- \[x] 建立自動新增 GET route 的能力
+- Step retry
+- Retry limit
+- Retry counter
+- Failure detection
+- Permanent failure detection
 
-\- \[x] 建立 `/status`
+---
 
-\- \[x] 建立 `/ai/ask` 最小入口
+## Stage 3 – Reflection and Replanning
+Status: Completed
 
-\- \[x] 抽離 `core/ai\_handler.py`
+- Reflection triggered on permanent failure
+- Reflection generates recovery plan
+- Replanner inserts new steps
+- Recovery steps executed
+- Task recovered and completed
 
+---
 
+## Stage 4 – Memory Logging
+Status: Completed
 
-\## Phase 2: API 擴充
+- Task summary
+- Failed steps
+- Recovered steps
+- Retry statistics
+- Reflection statistics
+- Lessons learned
 
-\- \[ ] 建立 `/tools/run`
+---
 
-\- \[ ] 建立 `/memory/save`
+## Stage 5 – Memory-Aware Planning
+Status: Planned
 
-\- \[ ] 建立 `/memory/read`
+- Planner reads memory before planning
+- Avoid repeating previous failures
+- Use past successful recovery strategies
+- Improve planning based on history
 
-\- \[ ] 支援自動新增 POST route
+---
 
-\- \[ ] 建立更清楚的 API 回應格式標準
+## Stage 6 – Long-Term Memory
+Status: Planned
 
+- Store memory to database
+- Memory retrieval
+- Task history search
+- Lessons database
 
+---
 
-\## Phase 3: AI 核心能力
+## Stage 7 – Tool Auto Selection
+Status: Planned
 
-\- \[ ] 接入本地 LLM
+- Automatically choose tools
+- Tool capability description
+- Tool selection logic
+- Multi-tool workflow
 
-\- \[ ] 建立 Router
+---
 
-\- \[ ] 建立 Tool Selector
+## Stage 8 – Multi-Step Planning
+Status: Planned
 
-\- \[ ] 建立任務處理流程
+- Planner generates multi-step plans
+- Dependency between steps
+- Conditional execution
+- Loop tasks
 
-\- \[ ] 建立基礎錯誤處理與日誌
+---
 
+## Stage 9 – Multi-Agent Workers
+Status: Planned
 
+- Worker agents
+- Task delegation
+- Parallel execution
+- Result aggregation
 
-\## Phase 4: Agent 化
+---
 
-\- \[ ] 建立 Planner
+## Stage 10 – Web Interface
+Status: Planned
 
-\- \[ ] 建立 Executor
+- Web UI
+- Task dashboard
+- Task tree visualization
+- Memory viewer
 
-\- \[ ] 建立多步驟任務處理能力
+---
 
-\- \[ ] 建立記憶整合流程
+## Stage 11 – One-Click Deployment
+Status: Planned
 
+- Install script
+- Start script
+- Docker deployment
+- Server deployment
 
+---
 
-\## Phase 5: 平台化
+## Long-Term Vision
 
-\- \[ ] GUI
+ZERO is designed to become a Task Operating System.
 
-\- \[ ] 語音輸入輸出
+Instead of interacting with AI through conversation,
+users interact with AI through tasks.
 
-\- \[ ] 視覺模組
-
-\- \[ ] 系統監控
-
-\- \[ ] 自我擴展與自我修正流程
-
+The system should:
+- Plan tasks
+- Execute steps
+- Recover from failures
+- Learn from execution history
+- Improve over time
