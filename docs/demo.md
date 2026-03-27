@@ -1,328 +1,171 @@
-\# ZERO Demo Guide
-
-
+# ZERO Demo Guide
 
 This document describes the current demo flows for ZERO.
 
+The purpose of these demos is to show that ZERO is not just a chatbot or script runner,
+but a task-oriented agent runtime with retry, reflection, replanning, and memory summaries.
 
+---
 
-The purpose of these demos is to demonstrate that ZERO is not just a chatbot,
+## Demo 1 — Basic Task Execution
 
-but a task execution system with retry, reflection, replanning, and memory summaries.
+This demo shows the normal task-tree execution flow.
 
+### Commands
 
+```bash
+task new build a simple homepage
+task run
+task tree
+memory task
+```
 
-\---
+### Expected Flow
 
+1. A root task is created
+2. The planner generates subtasks
+3. The agent executes runnable leaf tasks in sequence
+4. Runtime events are recorded
+5. A task summary is written into memory
 
+### What This Demonstrates
 
-\## Demo 1 — Basic Task Execution
+- task creation
+- task-tree execution
+- runtime event tracking
+- task memory summary
 
+---
 
+## Demo 2 — Retry Recovery
 
-This demonstrates the normal task-tree execution flow.
+This demo shows retry behavior after a step fails once.
 
+### Commands
 
+```bash
+task new fail_first retry test
+task run
+runtime events
+task tree
+memory task
+```
 
-\### Command
+### Expected Flow
 
+1. A step fails on the first attempt
+2. The retry mechanism is triggered
+3. The step succeeds on retry
+4. The task continues normally
+5. Memory records the retry history
 
+### What This Demonstrates
 
-&#x20;   task new build a simple homepage
+- step failure detection
+- automatic retry
+- retry event logging
+- memory summary including retry history
 
-&#x20;   task run
+---
 
-&#x20;   task tree
+## Demo 3 — Reflection + Replan Recovery
 
-&#x20;   memory task
+This demo shows the full recovery loop:
 
+**retry → reflection → replan → recovery → continue**
 
+### Commands
 
-\### Expected Flow
+```bash
+task new always_fail reflection test
+task run
+runtime events
+task tree
+memory task
+```
 
+### Expected Flow
 
+1. A task fails repeatedly
+2. Retry attempts are exhausted
+3. Reflection is triggered
+4. Reflection generates recovery subtasks
+5. New subtasks are inserted into the task tree
+6. The recovery subtasks are executed
+7. The root task completes successfully
+8. Memory records retry, reflection, replanning, and lessons learned
 
-1\. A root task is created
+### What This Demonstrates
 
-2\. The planner generates subtasks
+- retry exhaustion
+- reflection engine activation
+- dynamic replanning
+- task-tree modification during execution
+- recovery execution
+- lesson recording into memory
 
-3\. The agent executes leaf tasks in sequence
+---
 
-4\. Runtime events are recorded
+## What These Demos Prove
 
-5\. A task summary is written to memory
+The current ZERO prototype already demonstrates:
 
+- task-tree execution
+- runtime event logging
+- retry handling
+- reflection after repeated failures
+- dynamic replanning
+- recovery-step insertion
+- memory summaries with lessons learned
 
+This means ZERO already behaves like an **early autonomous task-execution kernel**,
+not just a chat wrapper.
 
-\### What This Shows
+---
 
+## Recommended Demo Order
 
+If you want to present ZERO to others, use this order:
 
-\- Task creation
+1. Basic Task Execution
+2. Retry Recovery
+3. Reflection + Replan Recovery
 
-\- Task tree execution
+This sequence shows the progression from:
 
-\- Runtime event tracking
+**task runner → resilient executor → self-recovering agent kernel**
 
-\- Task memory summary
+---
 
+## Current Limitations
 
+ZERO is still an early-stage engineering prototype.
 
-\---
+Current focus areas include:
 
+- local-first agent execution
+- task runtime behavior
+- reflection and replanning loop
+- memory-aware summaries
+- agent loop architecture
 
+Not implemented or not yet complete:
 
-\## Demo 2 — Retry Recovery
+- memory-aware planning
+- long-term memory system
+- tool auto-selection
+- advanced multi-step planning
+- multi-agent workers
+- web interface
+- one-click deployment
 
+---
 
-
-This demonstrates retry behavior after a step fails once.
-
-
-
-\### Command
-
-
-
-&#x20;   task new fail\_first retry test
-
-&#x20;   task run
-
-&#x20;   runtime events
-
-&#x20;   task tree
-
-&#x20;   memory task
-
-
-
-\### Expected Flow
-
-
-
-1\. A step fails on the first attempt
-
-2\. The retry mechanism is triggered
-
-3\. The step succeeds on retry
-
-4\. The task continues normally
-
-5\. Memory records the retry history
-
-
-
-\### What This Shows
-
-
-
-\- Step failure detection
-
-\- Automatic retry
-
-\- Retry event logging
-
-\- Memory summary including retries
-
-
-
-\---
-
-
-
-\## Demo 3 — Reflection + Replan Recovery
-
-
-
-This demonstrates the full recovery loop:
-
-
-
-retry → reflection → replan → recovery → continue
-
-
-
-\### Command
-
-
-
-&#x20;   task new always\_fail reflection test
-
-&#x20;   task run
-
-&#x20;   runtime events
-
-&#x20;   task tree
-
-&#x20;   memory task
-
-
-
-\### Expected Flow
-
-
-
-1\. A task fails repeatedly
-
-2\. Retry attempts are exhausted
-
-3\. Reflection is triggered
-
-4\. Reflection generates recovery subtasks
-
-5\. New subtasks are inserted into the task tree
-
-6\. The recovery subtasks are executed
-
-7\. The root task completes successfully
-
-8\. Memory summary records retry, reflection, replanning, and lessons
-
-
-
-\### What This Shows
-
-
-
-\- Retry exhaustion
-
-\- Reflection engine activation
-
-\- Dynamic replanning
-
-\- Task tree modification during execution
-
-\- Recovery execution
-
-\- Lessons recorded into memory
-
-
-
-\---
-
-
-
-\## What These Demos Prove
-
-
-
-The current ZERO prototype already supports:
-
-
-
-\- Task-tree execution
-
-\- Runtime event logging
-
-\- Retry mechanism
-
-\- Reflection after repeated failures
-
-\- Dynamic replanning
-
-\- Recovery-step insertion
-
-\- Memory summary with lessons
-
-
-
-This means ZERO already behaves like a basic autonomous agent kernel,
-
-not just a script runner.
-
-
-
-\---
-
-
-
-\## Current Limitations
-
-
-
-This project is still an early-stage prototype.
-
-
-
-Current focus:
-
-
-
-\- Local-first agent execution
-
-\- Task runtime behavior
-
-\- Reflection and replanning loop
-
-\- Memory-aware summaries
-
-\- Agent loop architecture
-
-
-
-Not implemented yet:
-
-
-
-\- Long-term learning planner
-
-\- Multi-agent cooperation
-
-\- Distributed execution
-
-\- Tool auto-discovery
-
-\- UI workflow system
-
-\- Deployment system
-
-
-
-\---
-
-
-
-\## Recommended Demo Order (for GitHub / Presentation)
-
-
-
-If you want to demonstrate ZERO to others, run demos in this order:
-
-
-
-1\. Basic Task Execution
-
-2\. Retry Recovery
-
-3\. Reflection + Replan Recovery
-
-
-
-This order shows the progression from:
-
-task runner → resilient executor → self-recovering agent
-
-
-
-\---
-
-
-
-\## Summary
-
-
+## Summary
 
 ZERO is currently positioned as:
 
+**a local-first task execution kernel with retry, reflection, replanning, and memory-based task summaries.**
 
-
-A local-first agent execution kernel with retry, reflection, replanning,
-
-and memory-based task summaries.
-
-
-
-This repository focuses on the agent execution core first,
-
-and product / UI / deployment layers later.
-
+This repository prioritizes the execution core first,
+with UI, deployment, and broader product layers coming later.
