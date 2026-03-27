@@ -1,812 +1,576 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-
-from core.memory_manager import MemoryManager
-from core.reflection_engine import ReflectionDecision, ReflectionEngine
-from core.task_manager import TaskManager
-from core.task_runtime import TaskRuntime
-
-
-MAX_RETRY_PER_TASK = 2
-MAX_REFLECTION_PER_TASK = 1
-
-
-@dataclass
-class AgentLoopResult:
-    ok: bool
-    status: str
-    message: str
-    root_task_id: Optional[str] = None
-    current_task_id: Optional[str] = None
-    result: Optional[str] = None
-    error: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "ok": self.ok,
-            "status": self.status,
-            "message": self.message,
-            "root_task_id": self.root_task_id,
-            "current_task_id": self.current_task_id,
-            "result": self.result,
-            "error": self.error,
-            "data": self.data or {},
-        }
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 
 class AgentLoop:
     """
-    Agent Loop + Retry + Reflection/Replan v1
+    ZERO Agent Loop (compat version)
 
-    目前能力：
-    - 建立 root task
-    - planner 拆 subtasks
-    - executor 執行 leaf task
-    - runtime 記錄事件
-    - memory 記錄任務開始 / step 完成 / step 失敗 / root summary
-    - step 失敗時自動 retry
-    - retry 用完後進行 reflection
-    - reflection 產生補救 subtasks，讓任務繼續跑
-    - summary 會記錄執行歷程，不只看最終樹狀狀態
-    - lessons 會自動去重
+    目標：
+    - 兼容不同版本的 TaskManager
+    - 兼容 router / non-router
+    - tool mode 可直接執行
+    - task mode 可走 TaskRuntime
+    - 就算 TaskManager 沒有 create_task，也能自建 task payload 往下跑
     """
 
     def __init__(
         self,
-        task_manager: TaskManager,
-        task_runtime: TaskRuntime,
-        planner: Optional[Any] = None,
-        executor: Optional[Any] = None,
-        memory_manager: Optional[MemoryManager] = None,
-        reflection_engine: Optional[ReflectionEngine] = None,
+        task_manager: Any = None,
+        task_runtime: Any = None,
+        router: Any = None,
+        tool_registry: Any = None,
+        **kwargs: Any,
     ) -> None:
         self.task_manager = task_manager
         self.task_runtime = task_runtime
-        self.planner = planner
-        self.executor = executor
-        self.memory_manager = memory_manager
-        self.reflection_engine = reflection_engine or ReflectionEngine()
+        self.router = router
+        self.tool_registry = tool_registry
+        self.extra_config = kwargs
 
-        self._retry_counter: Dict[str, int] = {}
-        self._reflection_counter: Dict[str, int] = {}
+    # =========================================================
+    # Main
+    # =========================================================
 
-    # -------------------------------------------------------------------------
-    # 對外主流程
-    # -------------------------------------------------------------------------
-    def start_new_task(
-        self,
-        user_input: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> AgentLoopResult:
-        if not user_input or not user_input.strip():
-            return AgentLoopResult(
-                ok=False,
-                status="invalid_input",
-                message="User input is empty.",
-                error="empty_user_input",
+    def run(self, user_input: str) -> Dict[str, Any]:
+        if not isinstance(user_input, str) or user_input.strip() == "":
+            return self._build_response(
+                success=False,
+                mode="system",
+                summary="Empty user input.",
+                data={},
+                error="user_input cannot be empty.",
             )
 
-        root_task_id = self.task_manager.create_root_task(
-            title=user_input.strip(),
-            meta={"source": "user_input"},
-        )
-        self.task_runtime.set_active_root_task(root_task_id)
-        self.task_runtime.set_current_task(None)
-        self.task_runtime.log_info(
-            message=f"Created root task: {user_input.strip()}",
-            task_id=root_task_id,
-        )
-
-        planned = self._ensure_root_subtasks(
-            root_task_id=root_task_id,
-            user_input=user_input,
-            context=context,
-        )
-        if not planned.ok:
-            return planned
-
-        subtasks = self.task_manager.get_children(root_task_id)
-        subtask_titles = [item["title"] for item in subtasks]
-
-        if self.memory_manager is not None:
-            self.memory_manager.record_task_started(
-                root_task_id=root_task_id,
-                goal=user_input.strip(),
-                subtasks=subtask_titles,
-                context=context,
+        if self.task_runtime is None:
+            return self._build_response(
+                success=False,
+                mode="system",
+                summary="Task runtime is not available.",
+                data={},
+                error="task_runtime is not configured.",
             )
 
-        return AgentLoopResult(
-            ok=True,
-            status="task_started",
-            message="Root task created and subtasks prepared.",
-            root_task_id=root_task_id,
-            data={"tree": self.task_manager.get_tree_snapshot(root_task_id)},
-        )
+        route = self._route_input(user_input)
 
-    def run_next_step(
-        self,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> AgentLoopResult:
-        root_task_id = self.task_runtime.get_active_root_task()
-        if not root_task_id:
-            return AgentLoopResult(
-                ok=False,
-                status="no_active_task",
-                message="No active root task.",
-                error="no_active_root_task",
-            )
+        if route["mode"] == "tool":
+            return self._run_tool_mode(user_input=user_input, route=route)
 
-        if self.task_manager.is_task_tree_completed(root_task_id):
-            self.task_runtime.set_current_task(None)
-            self._record_root_summary_if_needed(root_task_id)
-            return AgentLoopResult(
-                ok=True,
-                status="all_completed",
-                message="Task tree already completed.",
-                root_task_id=root_task_id,
-                data={"tree": self.task_manager.get_tree_snapshot(root_task_id)},
-            )
+        return self._run_task_mode(user_input=user_input, route=route)
 
-        next_task = self.task_manager.get_next_runnable_task(root_id=root_task_id)
-        if not next_task:
-            if self.task_manager.is_task_tree_failed(root_task_id):
-                self.task_runtime.set_current_task(None)
-                self._record_root_summary_if_needed(root_task_id)
-                return AgentLoopResult(
-                    ok=False,
-                    status="task_tree_failed",
-                    message="Task tree contains failed task.",
-                    root_task_id=root_task_id,
-                    error="task_tree_failed",
-                    data={"tree": self.task_manager.get_tree_snapshot(root_task_id)},
-                )
+    # =========================================================
+    # Route
+    # =========================================================
 
-            return AgentLoopResult(
-                ok=False,
-                status="no_runnable_task",
-                message="No runnable task found.",
-                root_task_id=root_task_id,
-                error="no_runnable_task",
-                data={"tree": self.task_manager.get_tree_snapshot(root_task_id)},
-            )
+    def _route_input(self, user_input: str) -> Dict[str, Any]:
+        if self.router is not None:
+            route_method = getattr(self.router, "route", None)
+            if callable(route_method):
+                try:
+                    routed = route_method(user_input)
+                    if isinstance(routed, dict):
+                        mode = str(routed.get("mode", "task")).strip() or "task"
+                        return {
+                            "mode": mode,
+                            "tool_name": routed.get("tool_name"),
+                            "tool_args": routed.get("tool_args", {}) or {},
+                        }
+                except Exception:
+                    pass
 
-        task_id = next_task["id"]
-        self.task_runtime.set_current_task(task_id)
-        self.task_manager.mark_task_running(task_id)
-        self.task_runtime.log_info(
-            message=f"Running task: {next_task['title']}",
-            task_id=task_id,
-        )
+        text = user_input.strip()
 
-        execution = self._execute_leaf_task(next_task, context=context)
-
-        if not execution.ok:
-            if self.task_manager.is_task_tree_failed(root_task_id):
-                self.task_runtime.set_current_task(None)
-                self._record_root_summary_if_needed(root_task_id)
-            return AgentLoopResult(
-                ok=False,
-                status=execution.status,
-                message=execution.message,
-                root_task_id=root_task_id,
-                current_task_id=task_id,
-                error=execution.error,
-                data={"tree": self.task_manager.get_tree_snapshot(root_task_id)},
-            )
-
-        if self.task_manager.is_task_tree_completed(root_task_id):
-            self.task_runtime.set_current_task(None)
-            self._record_root_summary_if_needed(root_task_id)
-            return AgentLoopResult(
-                ok=True,
-                status="all_completed",
-                message="Task tree completed.",
-                root_task_id=root_task_id,
-                current_task_id=task_id,
-                result=execution.result,
-                data={"tree": self.task_manager.get_tree_snapshot(root_task_id)},
-            )
-
-        return AgentLoopResult(
-            ok=True,
-            status=execution.status,
-            message=execution.message,
-            root_task_id=root_task_id,
-            current_task_id=task_id,
-            result=execution.result,
-            data={
-                "tree": self.task_manager.get_tree_snapshot(root_task_id),
-                **(execution.data or {}),
-            },
-        )
-
-    def run_until_done(
-        self,
-        context: Optional[Dict[str, Any]] = None,
-        max_steps: int = 50,
-    ) -> AgentLoopResult:
-        if max_steps <= 0:
-            return AgentLoopResult(
-                ok=False,
-                status="invalid_max_steps",
-                message="max_steps must be greater than 0.",
-                error="invalid_max_steps",
-            )
-
-        root_task_id = self.task_runtime.get_active_root_task()
-        if not root_task_id:
-            return AgentLoopResult(
-                ok=False,
-                status="no_active_task",
-                message="No active root task.",
-                error="no_active_root_task",
-            )
-
-        steps_run = 0
-
-        while steps_run < max_steps:
-            step_result = self.run_next_step(context=context)
-            steps_run += 1
-
-            if step_result.status == "all_completed":
-                return AgentLoopResult(
-                    ok=True,
-                    status="all_completed",
-                    message=f"Task tree completed in {steps_run} step(s).",
-                    root_task_id=root_task_id,
-                    current_task_id=step_result.current_task_id,
-                    result=step_result.result,
-                    data={
-                        "steps_run": steps_run,
-                        "tree": self.task_manager.get_tree_snapshot(root_task_id),
-                    },
-                )
-
-            if not step_result.ok:
-                return AgentLoopResult(
-                    ok=False,
-                    status=step_result.status,
-                    message=step_result.message,
-                    root_task_id=root_task_id,
-                    current_task_id=step_result.current_task_id,
-                    error=step_result.error,
-                    data={
-                        "steps_run": steps_run,
-                        "tree": self.task_manager.get_tree_snapshot(root_task_id),
-                    },
-                )
-
-        return AgentLoopResult(
-            ok=False,
-            status="max_steps_reached",
-            message=f"Stopped after reaching max_steps={max_steps}.",
-            root_task_id=root_task_id,
-            current_task_id=self.task_runtime.get_current_task(),
-            error="max_steps_reached",
-            data={
-                "steps_run": steps_run,
-                "tree": self.task_manager.get_tree_snapshot(root_task_id),
-            },
-        )
-
-    def get_active_tree(self) -> Optional[Dict[str, Any]]:
-        root_task_id = self.task_runtime.get_active_root_task()
-        if not root_task_id:
-            return None
-        return self.task_manager.get_tree_snapshot(root_task_id)
-
-    def reset_active_task(self) -> None:
-        self.task_runtime.reset()
-        self._retry_counter.clear()
-        self._reflection_counter.clear()
-
-    # -------------------------------------------------------------------------
-    # 內部：拆任務
-    # -------------------------------------------------------------------------
-    def _ensure_root_subtasks(
-        self,
-        root_task_id: str,
-        user_input: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> AgentLoopResult:
-        if self.task_manager.has_subtasks(root_task_id):
-            return AgentLoopResult(
-                ok=True,
-                status="subtasks_already_exist",
-                message="Subtasks already exist.",
-                root_task_id=root_task_id,
-            )
-
-        subtask_titles = self._plan_subtasks(user_input=user_input, context=context)
-        if not subtask_titles:
-            return AgentLoopResult(
-                ok=False,
-                status="planning_failed",
-                message="Planner did not return any subtasks.",
-                root_task_id=root_task_id,
-                error="empty_plan",
-            )
-
-        for index, title in enumerate(subtask_titles, start=1):
-            self.task_manager.add_subtask(
-                parent_id=root_task_id,
-                title=title,
-                meta={"step_index": index},
-            )
-
-        self.task_runtime.log_info(
-            message=f"Planned {len(subtask_titles)} subtasks.",
-            task_id=root_task_id,
-            count=len(subtask_titles),
-        )
-
-        return AgentLoopResult(
-            ok=True,
-            status="subtasks_created",
-            message="Subtasks created successfully.",
-            root_task_id=root_task_id,
-        )
-
-    def _plan_subtasks(
-        self,
-        user_input: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> List[str]:
-        if self.planner is None:
-            return [user_input.strip()]
-
-        try:
-            if hasattr(self.planner, "plan") and callable(self.planner.plan):
-                raw = self.planner.plan(user_input, context=context)
-            elif callable(self.planner):
-                raw = self.planner(user_input, context)
-            else:
-                return [user_input.strip()]
-        except Exception:
-            return [user_input.strip()]
-
-        if isinstance(raw, list):
-            return [str(item).strip() for item in raw if str(item).strip()]
-
-        if isinstance(raw, dict):
-            if isinstance(raw.get("steps"), list):
-                return [str(item).strip() for item in raw["steps"] if str(item).strip()]
-            if isinstance(raw.get("subtasks"), list):
-                return [str(item).strip() for item in raw["subtasks"] if str(item).strip()]
-
-        if isinstance(raw, str) and raw.strip():
-            return [raw.strip()]
-
-        return [user_input.strip()]
-
-    # -------------------------------------------------------------------------
-    # 內部：執行任務 + retry + reflection
-    # -------------------------------------------------------------------------
-    def _execute_leaf_task(
-        self,
-        task: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> AgentLoopResult:
-        task_id = task["id"]
-        task_title = task["title"]
-        root_task_id = self.task_runtime.get_active_root_task()
-
-        initial_retry_count = self._retry_counter.get(task_id, 0)
-
-        while self._retry_counter.get(task_id, 0) <= MAX_RETRY_PER_TASK:
-            try:
-                result_text = self._call_executor(task=task, context=context)
-                result_text = self._normalize_result_text(result_text)
-
-                self.task_manager.mark_task_completed(task_id, result=result_text)
-                self.task_runtime.record_step_result(task_id, result_text)
-                self.task_runtime.log_info(
-                    message=f"Task completed: {task_title}",
-                    task_id=task_id,
-                    retry_count=self._retry_counter.get(task_id, 0),
-                )
-
-                if self.memory_manager is not None and root_task_id is not None:
-                    self.memory_manager.record_step_completed(
-                        root_task_id=root_task_id,
-                        task_id=task_id,
-                        task_title=task_title,
-                        result=result_text,
-                        meta={
-                            "status": "completed",
-                            "retry_count": self._retry_counter.get(task_id, 0),
-                        },
-                    )
-
-                return AgentLoopResult(
-                    ok=True,
-                    status="task_completed",
-                    message=f"Task completed: {task_title}",
-                    root_task_id=root_task_id,
-                    current_task_id=task_id,
-                    result=result_text,
-                    data={
-                        "retry_count": self._retry_counter.get(task_id, 0),
-                        "retried": self._retry_counter.get(task_id, 0) > 0,
-                        "initial_retry_count": initial_retry_count,
-                    },
-                )
-
-            except Exception as exc:
-                error_text = f"{type(exc).__name__}: {exc}"
-                current_retry = self._retry_counter.get(task_id, 0) + 1
-                self._retry_counter[task_id] = current_retry
-
-                self.task_runtime.record_step_error(task_id, error_text)
-
-                if current_retry <= MAX_RETRY_PER_TASK:
-                    self.task_runtime.log_warning(
-                        message=f"Task failed, retrying ({current_retry}/{MAX_RETRY_PER_TASK}): {task_title}",
-                        task_id=task_id,
-                        error=error_text,
-                        retry_count=current_retry,
-                    )
-
-                    self.task_manager.mark_task_pending(task_id)
-
-                    if self.memory_manager is not None and root_task_id is not None:
-                        self.memory_manager.record_step_failed(
-                            root_task_id=root_task_id,
-                            task_id=task_id,
-                            task_title=task_title,
-                            error=error_text,
-                            meta={
-                                "status": "retrying",
-                                "retry_count": current_retry,
-                                "max_retry": MAX_RETRY_PER_TASK,
-                            },
-                        )
-
-                    self.task_manager.mark_task_running(task_id)
-                    continue
-
-                reflection_result = self._handle_reflection_after_retry_exhausted(
-                    task=task,
-                    error_text=error_text,
-                    context=context,
-                )
-                return reflection_result
-
-        return AgentLoopResult(
-            ok=False,
-            status="retry_loop_error",
-            message="Retry loop exited unexpectedly.",
-            root_task_id=root_task_id,
-            current_task_id=task_id,
-            error="retry_loop_error",
-        )
-
-    def _handle_reflection_after_retry_exhausted(
-        self,
-        task: Dict[str, Any],
-        error_text: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> AgentLoopResult:
-        task_id = task["id"]
-        task_title = task["title"]
-        root_task_id = self.task_runtime.get_active_root_task()
-
-        current_reflection_count = self._reflection_counter.get(task_id, 0) + 1
-        self._reflection_counter[task_id] = current_reflection_count
-
-        if current_reflection_count > MAX_REFLECTION_PER_TASK:
-            self.task_manager.mark_task_failed(task_id, error=error_text)
-            self.task_runtime.log_error(
-                message=f"Task permanently failed after reflection limit: {task_title}",
-                task_id=task_id,
-                error=error_text,
-                reflection_count=current_reflection_count,
-            )
-
-            if self.memory_manager is not None and root_task_id is not None:
-                self.memory_manager.record_step_failed(
-                    root_task_id=root_task_id,
-                    task_id=task_id,
-                    task_title=task_title,
-                    error=error_text,
-                    meta={
-                        "status": "failed",
-                        "retry_count": self._retry_counter.get(task_id, 0),
-                        "reflection_count": current_reflection_count,
-                        "max_retry": MAX_RETRY_PER_TASK,
-                        "max_reflection": MAX_REFLECTION_PER_TASK,
-                    },
-                )
-
-            return AgentLoopResult(
-                ok=False,
-                status="task_failed",
-                message=f"Task failed after retries and reflection limit: {task_title}",
-                root_task_id=root_task_id,
-                current_task_id=task_id,
-                error=error_text,
-                data={
-                    "retry_count": self._retry_counter.get(task_id, 0),
-                    "reflection_count": current_reflection_count,
+        if text.startswith("cmd:"):
+            return {
+                "mode": "tool",
+                "tool_name": "command_tool",
+                "tool_args": {
+                    "command": text[4:].strip(),
                 },
-            )
-
-        self.task_runtime.log_warning(
-            message=f"Retry exhausted, starting reflection: {task_title}",
-            task_id=task_id,
-            error=error_text,
-            retry_count=self._retry_counter.get(task_id, 0),
-            reflection_count=current_reflection_count,
-        )
-
-        decision: ReflectionDecision = self.reflection_engine.reflect(
-            task=task,
-            error=error_text,
-            context=context,
-        )
-
-        if not decision.ok or decision.action != "replan" or not decision.generated_steps:
-            self.task_manager.mark_task_failed(task_id, error=error_text)
-            self.task_runtime.log_error(
-                message=f"Reflection could not recover task: {task_title}",
-                task_id=task_id,
-                error=error_text,
-                reflection=decision.to_dict(),
-            )
-
-            if self.memory_manager is not None and root_task_id is not None:
-                self.memory_manager.record_step_failed(
-                    root_task_id=root_task_id,
-                    task_id=task_id,
-                    task_title=task_title,
-                    error=error_text,
-                    meta={
-                        "status": "failed_after_reflection",
-                        "retry_count": self._retry_counter.get(task_id, 0),
-                        "reflection_count": current_reflection_count,
-                        "reflection": decision.to_dict(),
-                    },
-                )
-
-            return AgentLoopResult(
-                ok=False,
-                status="task_failed",
-                message=f"Task failed and reflection could not recover: {task_title}",
-                root_task_id=root_task_id,
-                current_task_id=task_id,
-                error=error_text,
-                data={
-                    "retry_count": self._retry_counter.get(task_id, 0),
-                    "reflection_count": current_reflection_count,
-                    "reflection": decision.to_dict(),
-                },
-            )
-
-        generated_ids: List[str] = []
-        base_step_index = len(self.task_manager.get_children(task_id))
-
-        for offset, step_title in enumerate(decision.generated_steps, start=1):
-            new_task_id = self.task_manager.add_subtask(
-                parent_id=task_id,
-                title=step_title,
-                meta={
-                    "step_index": base_step_index + offset,
-                    "source": "reflection_replan",
-                    "reflection_parent": task_id,
-                },
-            )
-            generated_ids.append(new_task_id)
-
-        self.task_manager.set_task_error(task_id, None)
-        self.task_manager.set_task_result(task_id, None)
-        self.task_manager.mark_task_pending(task_id)
-
-        self.task_runtime.log_info(
-            message=f"Reflection replanned task: {task_title}",
-            task_id=task_id,
-            generated_steps=len(decision.generated_steps),
-            reflection=decision.to_dict(),
-        )
-
-        if self.memory_manager is not None and root_task_id is not None:
-            self.memory_manager.record_step_failed(
-                root_task_id=root_task_id,
-                task_id=task_id,
-                task_title=task_title,
-                error=error_text,
-                meta={
-                    "status": "replanned",
-                    "retry_count": self._retry_counter.get(task_id, 0),
-                    "reflection_count": current_reflection_count,
-                    "reflection": decision.to_dict(),
-                    "generated_task_ids": generated_ids,
-                },
-            )
-
-        return AgentLoopResult(
-            ok=True,
-            status="task_replanned",
-            message=f"Task replanned after reflection: {task_title}",
-            root_task_id=root_task_id,
-            current_task_id=task_id,
-            result=decision.summary,
-            data={
-                "retry_count": self._retry_counter.get(task_id, 0),
-                "reflection_count": current_reflection_count,
-                "reflection": decision.to_dict(),
-                "generated_task_ids": generated_ids,
-            },
-        )
-
-    def _call_executor(
-        self,
-        task: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        if self.executor is None:
-            return f"Simulated completion: {task['title']}"
-
-        if hasattr(self.executor, "execute_task") and callable(self.executor.execute_task):
-            return self.executor.execute_task(task, context=context)
-
-        if callable(self.executor):
-            return self.executor(task, context)
-
-        return f"Simulated completion: {task['title']}"
-
-    # -------------------------------------------------------------------------
-    # 內部：記錄 summary（修正版：記錄歷程 + lessons 去重）
-    # -------------------------------------------------------------------------
-    def _record_root_summary_if_needed(self, root_task_id: str) -> None:
-        if self.memory_manager is None:
-            return
-
-        existing = self.memory_manager.get_records_by_root_task(root_task_id)
-        if any(item.get("memory_type") == "task_summary" for item in existing):
-            return
-
-        tree = self.task_manager.get_tree_snapshot(root_task_id)
-        goal = tree.get("title", "")
-
-        completed_steps: List[Dict[str, Any]] = []
-        failed_steps: List[Dict[str, Any]] = []
-        recovered_steps: List[Dict[str, Any]] = []
-        replanned_steps: List[Dict[str, Any]] = []
-
-        total_nodes = 0
-        completed_count = 0
-        failed_count = 0
-        retry_total = 0
-        reflection_total = 0
-        failed_attempts = 0
-
-        def walk(node: Dict[str, Any]) -> None:
-            nonlocal total_nodes
-            nonlocal completed_count
-            nonlocal failed_count
-            nonlocal retry_total
-            nonlocal reflection_total
-            nonlocal failed_attempts
-
-            task_id = str(node.get("id", ""))
-            title = str(node.get("title", ""))
-            status = str(node.get("status", ""))
-            result = node.get("result")
-            error = node.get("error")
-            meta = dict(node.get("meta", {}) or {})
-            children = node.get("children_nodes", []) or []
-
-            retry_count = int(self._retry_counter.get(task_id, 0) or 0)
-            reflection_count = int(self._reflection_counter.get(task_id, 0) or 0)
-
-            total_nodes += 1
-            retry_total += retry_count
-            reflection_total += reflection_count
-            failed_attempts += retry_count
-
-            item = {
-                "task_id": task_id,
-                "task_title": title,
-                "result": result,
-                "error": error,
-                "status": status,
-                "retry_count": retry_count,
-                "reflection_count": reflection_count,
-                "meta": meta,
             }
 
-            if status == "completed":
-                completed_steps.append(item)
-                completed_count += 1
-            elif status == "failed":
-                failed_steps.append(item)
-                failed_count += 1
+        if text.startswith("ws:"):
+            return {
+                "mode": "tool",
+                "tool_name": "workspace_tool",
+                "tool_args": {
+                    "action": "read_file",
+                    "path": text[3:].strip(),
+                },
+            }
 
-            if retry_count > 0 and status == "completed":
-                recovered_steps.append(item)
-
-            if reflection_count > 0 or meta.get("source") == "reflection_replan":
-                replanned_steps.append(item)
-
-            for child in children:
-                walk(child)
-
-        walk(tree)
-
-        final_status = str(tree.get("status", "unknown"))
-
-        lessons_raw: List[str] = []
-
-        if retry_total > 0:
-            lessons_raw.append("Some steps failed initially but later succeeded after retry.")
-
-        if reflection_total > 0:
-            lessons_raw.append("Some steps required reflection and replanning to recover.")
-
-        if failed_count > 0:
-            lessons_raw.append("Some steps still ended in failed status.")
-
-        if retry_total == 0 and reflection_total == 0 and failed_count == 0 and final_status == "completed":
-            lessons_raw.append("Task completed smoothly without retries or reflection.")
-
-        lessons = self._dedupe_preserve_order(lessons_raw)
-
-        history_summary = {
-            "goal": goal,
-            "final_status": final_status,
-            "stats": {
-                "total_nodes": total_nodes,
-                "completed_nodes": completed_count,
-                "failed_nodes": failed_count,
-                "failed_attempts": failed_attempts,
-                "retry_total": retry_total,
-                "reflection_total": reflection_total,
-                "recovered_steps": len(recovered_steps),
-                "replanned_steps": len(replanned_steps),
-            },
-            "completed_steps": completed_steps,
-            "failed_steps": failed_steps,
-            "recovered_steps": recovered_steps,
-            "replanned_steps": replanned_steps,
-            "lessons": lessons,
+        return {
+            "mode": "task",
+            "tool_name": None,
+            "tool_args": {},
         }
 
-        self.memory_manager.record_task_completed_summary(
-            root_task_id=root_task_id,
-            goal=goal,
-            completed_steps=completed_steps,
-            failed_steps=failed_steps,
-            final_status=final_status,
-            extra_summary=history_summary,
+    # =========================================================
+    # Tool Mode
+    # =========================================================
+
+    def _run_tool_mode(self, user_input: str, route: Dict[str, Any]) -> Dict[str, Any]:
+        tool_name = self._normalize_tool_name(route.get("tool_name"))
+        tool_args = route.get("tool_args", {})
+
+        if not isinstance(tool_args, dict):
+            tool_args = {}
+
+        if not tool_name:
+            return self._build_response(
+                success=False,
+                mode="tool",
+                summary="Tool route missing tool_name.",
+                data={"route": route},
+                error="tool_name is required for tool mode.",
+            )
+
+        tool = self._get_tool(tool_name)
+        if tool is None:
+            return self._build_response(
+                success=False,
+                mode="tool",
+                summary=f"Tool not found: {tool_name}",
+                data={
+                    "tool_name": tool_name,
+                    "tool_args": tool_args,
+                },
+                error=f"Tool '{tool_name}' is not registered.",
+            )
+
+        task = self._ensure_task_record(
+            user_input=user_input,
+            task_type="tool",
+            route=route,
         )
 
-    @staticmethod
-    def _normalize_result_text(raw: Any) -> str:
-        if raw is None:
-            return "Task completed."
-        if isinstance(raw, str):
-            text = raw.strip()
-            return text if text else "Task completed."
-        if isinstance(raw, dict):
-            if "result" in raw and raw["result"] is not None:
-                return str(raw["result"])
-            return str(raw)
-        return str(raw)
+        try:
+            tool_result = self._run_tool(tool, tool_args)
+            success = True
 
-    @staticmethod
-    def _dedupe_preserve_order(items: List[str]) -> List[str]:
-        seen = set()
-        result: List[str] = []
-        for item in items:
-            text = str(item).strip()
-            if not text:
+            if isinstance(tool_result, dict) and tool_result.get("success") is False:
+                success = False
+
+            self._update_task_status(task, "finished" if success else "failed")
+
+            return self._build_response(
+                success=success,
+                mode="tool",
+                summary=f"Tool executed: {tool_name}",
+                data={
+                    "task": self._refresh_task(task),
+                    "runtime_result": {
+                        "task_name": task.get("task_name", ""),
+                        "status": "finished" if success else "failed",
+                        "task_type": "tool",
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                        "tool_result": tool_result,
+                    },
+                },
+                error=None if success else self._extract_error_from_tool_result(tool_result),
+            )
+        except Exception as exc:
+            self._update_task_status(task, "failed")
+            return self._build_response(
+                success=False,
+                mode="tool",
+                summary=f"Tool execution failed: {tool_name}",
+                data={
+                    "task": self._refresh_task(task),
+                    "runtime_result": {
+                        "task_name": task.get("task_name", ""),
+                        "status": "failed",
+                        "task_type": "tool",
+                        "tool_name": tool_name,
+                        "tool_args": tool_args,
+                    },
+                },
+                error=str(exc),
+            )
+
+    # =========================================================
+    # Task Mode
+    # =========================================================
+
+    def _run_task_mode(self, user_input: str, route: Dict[str, Any]) -> Dict[str, Any]:
+        task = self._ensure_task_record(
+            user_input=user_input,
+            task_type="general",
+            route=route,
+        )
+
+        try:
+            runtime_result = self.task_runtime.run_task(task)
+        except Exception as exc:
+            self._update_task_status(task, "failed")
+            return self._build_response(
+                success=False,
+                mode="runtime",
+                summary="Task runtime execution failed.",
+                data={"task": self._refresh_task(task)},
+                error=str(exc),
+            )
+
+        normalized_result = self._normalize_runtime_result(runtime_result)
+        latest_task = self._refresh_task(task)
+
+        return self._build_response(
+            success=normalized_result["success"],
+            mode="runtime",
+            summary=normalized_result["summary"],
+            data={
+                "task": latest_task,
+                "runtime_result": normalized_result["data"],
+            },
+            error=normalized_result["error"],
+        )
+
+    # =========================================================
+    # Task Compatibility Layer
+    # =========================================================
+
+    def _ensure_task_record(
+        self,
+        user_input: str,
+        task_type: str,
+        route: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        task = self._try_create_task_via_manager(user_input)
+        if isinstance(task, dict):
+            return self._normalize_task_dict(task, user_input, task_type)
+
+        fallback_task = self._build_fallback_task(user_input=user_input, task_type=task_type, route=route)
+        self._try_save_task_via_manager(fallback_task)
+        return fallback_task
+
+    def _try_create_task_via_manager(self, user_input: str) -> Optional[Dict[str, Any]]:
+        if self.task_manager is None:
+            return None
+
+        candidate_methods = [
+            "create_task",
+            "add_task",
+            "new_task",
+            "build_task",
+        ]
+
+        for method_name in candidate_methods:
+            method = getattr(self.task_manager, method_name, None)
+            if not callable(method):
                 continue
-            if text in seen:
+
+            try:
+                result = method(user_input)
+                if isinstance(result, dict):
+                    return result
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+            try:
+                result = method(goal=user_input)
+                if isinstance(result, dict):
+                    return result
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+            try:
+                result = method(task_input=user_input)
+                if isinstance(result, dict):
+                    return result
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+        return None
+
+    def _try_save_task_via_manager(self, task: Dict[str, Any]) -> None:
+        if self.task_manager is None or not isinstance(task, dict):
+            return
+
+        candidate_methods = [
+            "save_task",
+            "register_task",
+            "add_task",
+            "insert_task",
+        ]
+
+        for method_name in candidate_methods:
+            method = getattr(self.task_manager, method_name, None)
+            if not callable(method):
                 continue
-            seen.add(text)
-            result.append(text)
-        return result
+
+            try:
+                method(task)
+                return
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+            try:
+                method(task.get("task_name"), task)
+                return
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+    def _update_task_status(self, task: Dict[str, Any], status: str) -> None:
+        if not isinstance(task, dict):
+            return
+
+        task["status"] = status
+        task["updated_at"] = self._now_iso()
+
+        if self.task_manager is None:
+            return
+
+        task_name = str(task.get("task_name", "")).strip()
+        if not task_name:
+            return
+
+        candidate_methods = [
+            "update_task_status",
+            "set_task_status",
+            "mark_task_status",
+        ]
+
+        for method_name in candidate_methods:
+            method = getattr(self.task_manager, method_name, None)
+            if not callable(method):
+                continue
+
+            try:
+                method(task_name, status)
+                return
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+            try:
+                method(task, status)
+                return
+            except TypeError:
+                pass
+            except Exception:
+                pass
+
+    def _refresh_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return {}
+
+        if self.task_manager is None:
+            return task
+
+        task_name = str(task.get("task_name", "")).strip()
+        if not task_name:
+            return task
+
+        candidate_methods = [
+            "get_task",
+            "read_task",
+            "find_task",
+        ]
+
+        for method_name in candidate_methods:
+            method = getattr(self.task_manager, method_name, None)
+            if not callable(method):
+                continue
+
+            try:
+                result = method(task_name)
+                if isinstance(result, dict):
+                    return result
+            except Exception:
+                pass
+
+        return task
+
+    def _normalize_task_dict(
+        self,
+        task: Dict[str, Any],
+        user_input: str,
+        task_type: str,
+    ) -> Dict[str, Any]:
+        normalized = dict(task)
+
+        if not normalized.get("task_name"):
+            normalized["task_name"] = self._make_task_name(task_type)
+
+        if not normalized.get("goal"):
+            normalized["goal"] = user_input
+
+        if not normalized.get("status"):
+            normalized["status"] = "created"
+
+        if not normalized.get("created_at"):
+            normalized["created_at"] = self._now_iso()
+
+        normalized["updated_at"] = self._now_iso()
+
+        if not normalized.get("task_type"):
+            normalized["task_type"] = task_type
+
+        return normalized
+
+    def _build_fallback_task(
+        self,
+        user_input: str,
+        task_type: str,
+        route: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        now = self._now_iso()
+
+        return {
+            "task_name": self._make_task_name(task_type),
+            "goal": user_input,
+            "status": "created",
+            "task_type": task_type,
+            "route_mode": route.get("mode", "task"),
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    # =========================================================
+    # Tool Helpers
+    # =========================================================
+
+    def _get_tool(self, name: str) -> Optional[Any]:
+        clean_name = self._normalize_tool_name(name)
+        if not clean_name or self.tool_registry is None:
+            return None
+
+        get_tool = getattr(self.tool_registry, "get_tool", None)
+        if callable(get_tool):
+            try:
+                tool = get_tool(clean_name)
+                if tool is not None:
+                    return tool
+            except Exception:
+                pass
+
+        tools = getattr(self.tool_registry, "tools", None)
+        if isinstance(tools, dict):
+            return tools.get(clean_name)
+
+        private_tools = getattr(self.tool_registry, "_tools", None)
+        if isinstance(private_tools, dict):
+            return private_tools.get(clean_name)
+
+        return None
+
+    def _run_tool(self, tool: Any, tool_args: Dict[str, Any]) -> Any:
+        execute_method = getattr(tool, "execute", None)
+        if callable(execute_method):
+            try:
+                return execute_method(tool_args)
+            except TypeError:
+                pass
+
+        run_method = getattr(tool, "run", None)
+        if callable(run_method):
+            return run_method(**tool_args)
+
+        call_method = getattr(tool, "__call__", None)
+        if callable(call_method):
+            return call_method(**tool_args)
+
+        raise RuntimeError(
+            f"Tool '{getattr(tool, 'name', str(tool))}' has no callable execute/run method."
+        )
+
+    def _extract_error_from_tool_result(self, tool_result: Any) -> Optional[str]:
+        if isinstance(tool_result, dict):
+            error = tool_result.get("error")
+            if error:
+                return str(error)
+        return None
+
+    # =========================================================
+    # Result Normalization
+    # =========================================================
+
+    def _normalize_runtime_result(self, runtime_result: Any) -> Dict[str, Any]:
+        if isinstance(runtime_result, dict):
+            success = bool(runtime_result.get("success", True))
+            summary = str(runtime_result.get("summary", "Task executed."))
+            data = runtime_result.get("data", runtime_result)
+            error = runtime_result.get("error")
+            return {
+                "success": success,
+                "summary": summary,
+                "data": data,
+                "error": error,
+            }
+
+        if isinstance(runtime_result, str):
+            return {
+                "success": True,
+                "summary": "Task executed.",
+                "data": {"answer": runtime_result},
+                "error": None,
+            }
+
+        if runtime_result is None:
+            return {
+                "success": True,
+                "summary": "Task executed with no result.",
+                "data": {},
+                "error": None,
+            }
+
+        return {
+            "success": True,
+            "summary": "Task executed.",
+            "data": {"result": runtime_result},
+            "error": None,
+        }
+
+    # =========================================================
+    # Common Helpers
+    # =========================================================
+
+    def _build_response(
+        self,
+        success: bool,
+        mode: str,
+        summary: str,
+        data: Dict[str, Any],
+        error: Optional[str],
+    ) -> Dict[str, Any]:
+        return {
+            "success": success,
+            "mode": mode,
+            "summary": summary,
+            "data": data,
+            "error": error,
+        }
+
+    def _normalize_tool_name(self, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+
+        text = str(value).strip()
+        if not text:
+            return None
+
+        if text.lower() == "none":
+            return None
+
+        return text
+
+    def _make_task_name(self, task_type: str) -> str:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        return f"{task_type}_task_{stamp}"
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat()

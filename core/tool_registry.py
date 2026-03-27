@@ -21,7 +21,11 @@ class ToolRegistry:
     ) -> None:
         self.workspace_root = workspace_root
         self.project_root = project_root
+
+        # runtime._get_tool() 會看 get_tool / tools / _tools
+        # 所以這裡三個都對齊
         self.tools: Dict[str, Any] = {}
+        self._tools = self.tools
 
     # ---------------------------------------------------------
     # register
@@ -32,6 +36,7 @@ class ToolRegistry:
             return
 
         self.tools[name] = tool
+        self._tools = self.tools
 
     # 相容舊名稱
     def register(self, name: str, tool: Any) -> None:
@@ -79,21 +84,65 @@ class ToolRegistry:
                 "data": {},
             }
 
-        if not hasattr(tool, "execute"):
-            return {
-                "success": False,
-                "message": f"tool has no execute(): {tool_name}",
-                "data": {},
-            }
+        params = params or {}
 
-        try:
-            return tool.execute(action, params or {})
-        except Exception as exc:
-            return {
-                "success": False,
-                "message": str(exc),
-                "data": {},
-            }
+        # 先試 execute(args_dict)
+        execute = getattr(tool, "execute", None)
+        if callable(execute):
+            try:
+                result = execute({"action": action, **params})
+                return {
+                    "success": True if not isinstance(result, dict) else bool(result.get("success", True)),
+                    "message": "",
+                    "data": result,
+                }
+            except TypeError:
+                pass
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "message": str(exc),
+                    "data": {},
+                }
+
+        # 再試 execute(action, params)
+        if callable(execute):
+            try:
+                result = execute(action, params)
+                return {
+                    "success": True if not isinstance(result, dict) else bool(result.get("success", True)),
+                    "message": "",
+                    "data": result,
+                }
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "message": str(exc),
+                    "data": {},
+                }
+
+        # 再試 run(**params)
+        run = getattr(tool, "run", None)
+        if callable(run):
+            try:
+                result = run(**params)
+                return {
+                    "success": True if not isinstance(result, dict) else bool(result.get("success", True)),
+                    "message": "",
+                    "data": result,
+                }
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "message": str(exc),
+                    "data": {},
+                }
+
+        return {
+            "success": False,
+            "message": f"tool has no supported execute/run method: {tool_name}",
+            "data": {},
+        }
 
     # ---------------------------------------------------------
     # debug info

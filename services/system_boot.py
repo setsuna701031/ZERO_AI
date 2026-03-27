@@ -1,340 +1,357 @@
 from __future__ import annotations
 
-import importlib
-import inspect
+import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.task_runtime import TaskRuntime
+from core.workspace import Workspace
+from core.tool_registry import ToolRegistry
+from core.tasks.scheduler import TaskScheduler
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parent.parent
+class WorkspaceToolAdapter:
+    """
+    把 Workspace 包成 TaskRuntime 可用的 tool 介面。
+    TaskRuntime 會呼叫 tool.execute(args_dict)
+    """
 
+    name = "workspace_tool"
 
-def _workspace_root() -> Path:
-    return _project_root() / "workspace"
+    def __init__(self, workspace_root: str | Path) -> None:
+        self.workspace_root = Path(workspace_root).resolve()
 
+    def execute(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(args, dict):
+            return {
+                "success": False,
+                "error": "args must be a dict",
+            }
 
-def _ensure_workspace_layout(workspace_root: Path) -> None:
-    (workspace_root / "tasks").mkdir(parents=True, exist_ok=True)
-    (workspace_root / "memory").mkdir(parents=True, exist_ok=True)
-    (workspace_root / "temp").mkdir(parents=True, exist_ok=True)
-    (workspace_root / "test").mkdir(parents=True, exist_ok=True)
-    (workspace_root / "logs").mkdir(parents=True, exist_ok=True)
+        action = str(args.get("action", "")).strip()
+        path = str(args.get("path", "")).strip()
+        content = args.get("content", "")
 
+        if not action:
+            return {
+                "success": False,
+                "error": "action is required",
+            }
 
-def _import_first(class_name: str, module_candidates: List[str]) -> Any:
-    last_error: Optional[Exception] = None
+        if action == "read_file":
+            return self._read_file(path)
 
-    for module_name in module_candidates:
+        if action == "write_file":
+            return self._write_file(path, content)
+
+        if action == "list_files":
+            return self._list_files(path)
+
+        return {
+            "success": False,
+            "error": f"unknown action: {action}",
+        }
+
+    def _read_file(self, relative_path: str) -> Dict[str, Any]:
+        if not relative_path:
+            return {
+                "success": False,
+                "error": "path is required",
+            }
+
+        file_path = self.workspace_root / relative_path
+        if not file_path.exists():
+            return {
+                "success": False,
+                "error": f"file not found: {file_path}",
+            }
+
         try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, class_name):
-                return getattr(module, class_name)
+            text = file_path.read_text(encoding="utf-8")
+            return {
+                "success": True,
+                "path": str(file_path),
+                "content": text,
+            }
         except Exception as exc:
-            last_error = exc
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
-    tried = ", ".join(module_candidates)
-    if last_error is not None:
-        raise ImportError(
-            f"Cannot import {class_name}. Tried modules: {tried}. Last error: {last_error}"
-        )
-    raise ImportError(f"Cannot import {class_name}. Tried modules: {tried}.")
+    def _write_file(self, relative_path: str, content: Any) -> Dict[str, Any]:
+        if not relative_path:
+            return {
+                "success": False,
+                "error": "path is required",
+            }
 
+        file_path = self.workspace_root / relative_path
 
-def _build_kwargs_for_callable(target: Any, raw_kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        signature = inspect.signature(target)
-    except (TypeError, ValueError):
-        return raw_kwargs
-
-    params = signature.parameters
-    has_var_kwargs = any(
-        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
-    )
-    if has_var_kwargs:
-        return raw_kwargs
-
-    accepted: Dict[str, Any] = {}
-    for key, value in raw_kwargs.items():
-        if key in params:
-            accepted[key] = value
-    return accepted
-
-
-def _safe_construct(cls: Any, **kwargs: Any) -> Any:
-    accepted_kwargs = _build_kwargs_for_callable(cls, kwargs)
-    return cls(**accepted_kwargs)
-
-
-def bootstrap_system() -> Dict[str, Any]:
-    project_root = _project_root()
-    workspace_root = _workspace_root()
-    _ensure_workspace_layout(workspace_root)
-
-    Router = _import_first(
-        "Router",
-        [
-            "core.router",
-            "router",
-            "services.router",
-        ],
-    )
-
-    ToolRegistry = _import_first(
-        "ToolRegistry",
-        [
-            "core.tool_registry",
-            "tool_registry",
-            "services.tool_registry",
-        ],
-    )
-
-    TaskManager = _import_first(
-        "TaskManager",
-        [
-            "core.task_manager",
-            "task_manager",
-            "services.task_manager",
-        ],
-    )
-
-    Planner = _import_first(
-        "Planner",
-        [
-            "core.planner",
-            "planner",
-            "services.planner",
-        ],
-    )
-
-    AgentLoop = _import_first(
-        "AgentLoop",
-        [
-            "core.agent_loop",
-            "agent_loop",
-            "services.agent_loop",
-        ],
-    )
-
-    StepExecutor = _import_first(
-        "StepExecutor",
-        [
-            "core.step_executor",
-            "step_executor",
-            "services.step_executor",
-        ],
-    )
-
-    TaskRuntime = _import_first(
-        "TaskRuntime",
-        [
-            "core.task_runtime",
-            "task_runtime",
-            "services.task_runtime",
-        ],
-    )
-
-    LlmClientClass: Optional[Any] = None
-    for module_name in [
-        "core.llm_client",
-        "llm_client",
-        "services.llm_client",
-    ]:
         try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, "LLMClient"):
-                LlmClientClass = getattr(module, "LLMClient")
-                break
-            if hasattr(module, "LlmClient"):
-                LlmClientClass = getattr(module, "LlmClient")
-                break
-        except Exception:
-            continue
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(str(content or ""), encoding="utf-8")
+            return {
+                "success": True,
+                "path": str(file_path),
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
-    CommandToolClass: Optional[Any] = None
-    WorkspaceToolClass: Optional[Any] = None
-    FileToolClass: Optional[Any] = None
-    WebSearchToolClass: Optional[Any] = None
+    def _list_files(self, relative_dir: str) -> Dict[str, Any]:
+        target_dir = self.workspace_root if not relative_dir else (self.workspace_root / relative_dir)
 
-    for module_name in [
-        "tools.command_tool",
-        "command_tool",
-        "services.command_tool",
-    ]:
+        if not target_dir.exists():
+            return {
+                "success": False,
+                "error": f"path not found: {target_dir}",
+            }
+
         try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, "CommandTool"):
-                CommandToolClass = getattr(module, "CommandTool")
-                break
-        except Exception:
-            continue
+            files = [
+                str(p.relative_to(self.workspace_root))
+                for p in target_dir.rglob("*")
+                if p.is_file()
+            ]
+            return {
+                "success": True,
+                "files": files,
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
-    for module_name in [
-        "tools.workspace_tool",
-        "workspace_tool",
-        "services.workspace_tool",
-    ]:
-        try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, "WorkspaceTool"):
-                WorkspaceToolClass = getattr(module, "WorkspaceTool")
-                break
-        except Exception:
-            continue
 
-    for module_name in [
-        "tools.file_tool",
-        "file_tool",
-        "services.file_tool",
-    ]:
-        try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, "FileTool"):
-                FileToolClass = getattr(module, "FileTool")
-                break
-        except Exception:
-            continue
+_ZERO_SYSTEM: "ZeroSystem | None" = None
 
-    for module_name in [
-        "tools.web_search_tool",
-        "tools.web_search_service",
-        "web_search_tool",
-        "web_search",
-        "services.web_search",
-    ]:
-        try:
-            module = importlib.import_module(module_name)
-            if hasattr(module, "WebSearchTool"):
-                WebSearchToolClass = getattr(module, "WebSearchTool")
-                break
-            if hasattr(module, "WebSearchService"):
-                WebSearchToolClass = getattr(module, "WebSearchService")
-                break
-            if hasattr(module, "WebSearch"):
-                WebSearchToolClass = getattr(module, "WebSearch")
-                break
-        except Exception:
-            continue
 
-    router = _safe_construct(Router)
+def bootstrap_system(workspace_root: str = "E:/zero_ai/workspace") -> Dict[str, Any]:
+    """
+    每次都建立新的 boot 物件，不保留舊 cache。
 
-    llm_client = None
-    if LlmClientClass is not None:
-        llm_client = _safe_construct(
-            LlmClientClass,
-            project_root=str(project_root),
-            workspace_root=str(workspace_root),
-        )
+    目的：
+    1. 避免你改完 code 後，仍吃到舊的 tool_registry / task_runtime
+    2. scheduler 每次跑 task 時，都拿到乾淨且一致的依賴
+    3. health 可直接反映當下 boot 狀態
+    """
+    workspace_root_path = Path(workspace_root).resolve()
 
-    tool_registry = _safe_construct(
-        ToolRegistry,
-        workspace_root=str(workspace_root),
-        project_root=str(project_root),
+    workspace = Workspace(base_dir=str(workspace_root_path))
+
+    tool_registry = ToolRegistry(
+        workspace_root=str(workspace_root_path),
+        project_root=str(ROOT),
     )
 
-    command_tool = None
-    if CommandToolClass is not None:
-        command_tool = _safe_construct(
-            CommandToolClass,
-            workspace_root=str(workspace_root),
-            project_root=str(project_root),
-        )
-        tool_registry.register_tool("command_tool", command_tool)
+    workspace_tool = WorkspaceToolAdapter(workspace_root=workspace_root_path)
+    tool_registry.register_tool("workspace_tool", workspace_tool)
 
-    workspace_tool = None
-    if WorkspaceToolClass is not None:
-        workspace_tool = _safe_construct(
-            WorkspaceToolClass,
-            workspace_root=str(workspace_root),
-            project_root=str(project_root),
-        )
-        tool_registry.register_tool("workspace_tool", workspace_tool)
-
-    file_tool = None
-    if FileToolClass is not None:
-        file_tool = _safe_construct(
-            FileToolClass,
-            workspace_root=str(workspace_root),
-            project_root=str(project_root),
-        )
-        tool_registry.register_tool("file_tool", file_tool)
-
-    web_search_tool = None
-    if WebSearchToolClass is not None:
-        web_search_tool = _safe_construct(
-            WebSearchToolClass,
-            workspace_root=str(workspace_root),
-            project_root=str(project_root),
-        )
-        tool_registry.register_tool("web_search", web_search_tool)
-
-    planner = _safe_construct(
-        Planner,
-        llm_client=llm_client,
+    task_runtime = TaskRuntime(
+        workspace_root=workspace_root_path,
+        task_manager=workspace,
         tool_registry=tool_registry,
-        workspace_root=str(workspace_root),
-        project_root=str(project_root),
-    )
-
-    task_manager = _safe_construct(
-        TaskManager,
-        workspace_root=str(workspace_root),
-        planner=planner,
-    )
-
-    step_executor = _safe_construct(
-        StepExecutor,
-        task_manager=task_manager,
-        tasks_root=str(workspace_root / "tasks"),
-        workspace_root=str(workspace_root),
-        command_tool=command_tool,
-        workspace_tool=workspace_tool,
-        file_tool=file_tool,
-        web_search=web_search_tool,
-        web_search_tool=web_search_tool,
-        project_root=str(project_root),
-    )
-
-    task_runtime = _safe_construct(
-        TaskRuntime,
-        task_manager=task_manager,
-        step_executor=step_executor,
-        planner=planner,
-        max_auto_retries=1,
-    )
-
-    agent_loop = _safe_construct(
-        AgentLoop,
-        router=router,
-        llm_client=llm_client,
-        tool_registry=tool_registry,
-        planner=planner,
-        task_manager=task_manager,
-        task_runtime=task_runtime,
-        step_executor=step_executor,
-        command_tool=command_tool,
-        workspace_tool=workspace_tool,
-        file_tool=file_tool,
-        web_search=web_search_tool,
-        web_search_tool=web_search_tool,
-        workspace_root=str(workspace_root),
-        project_root=str(project_root),
     )
 
     return {
-        "project_root": str(project_root),
-        "workspace_root": str(workspace_root),
-        "router": router,
-        "llm_client": llm_client,
+        "workspace_root": str(workspace_root_path),
+        "workspace": workspace,
         "tool_registry": tool_registry,
-        "planner": planner,
-        "task_manager": task_manager,
-        "task_runtime": task_runtime,
-        "step_executor": step_executor,
-        "agent_loop": agent_loop,
-        "command_tool": command_tool,
         "workspace_tool": workspace_tool,
-        "file_tool": file_tool,
-        "web_search": web_search_tool,
-        "web_search_tool": web_search_tool,
+        "task_runtime": task_runtime,
+        "task_manager": workspace,
     }
+
+
+def _normalize_runtime_result(result: Any, fallback_task_name: str) -> Dict[str, Any]:
+    if isinstance(result, dict):
+        data = result.get("data", {})
+        task_name = str(result.get("task_name", "")).strip()
+
+        if not task_name and isinstance(data, dict):
+            task_name = str(data.get("task_name", "")).strip()
+
+        if not task_name:
+            task_name = fallback_task_name
+
+        return {
+            "success": bool(result.get("success", False)),
+            "task_name": task_name,
+            "summary": str(result.get("summary", "")),
+            "error": str(result.get("error", "") or ""),
+        }
+
+    if isinstance(result, str):
+        return {
+            "success": True,
+            "task_name": fallback_task_name,
+            "summary": result,
+            "error": "",
+        }
+
+    return {
+        "success": False,
+        "task_name": fallback_task_name,
+        "summary": "",
+        "error": "runtime returned invalid result",
+    }
+
+
+def scheduler_task_launcher_factory(workspace_root: str):
+    def scheduler_task_launcher(goal: str, queue_task: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            boot = bootstrap_system(workspace_root=workspace_root)
+            task_runtime = boot["task_runtime"]
+            workspace = boot["workspace"]
+            tool_registry = boot["tool_registry"]
+
+            created = workspace.create_task(task_name=goal, description=goal)
+            if not isinstance(created, dict) or not created.get("ok"):
+                return {
+                    "success": False,
+                    "task_name": "",
+                    "summary": "",
+                    "error": f"workspace.create_task failed: {created}",
+                }
+
+            task_id = str(created.get("task_id", "")).strip()
+            if not task_id:
+                return {
+                    "success": False,
+                    "task_name": "",
+                    "summary": "",
+                    "error": "workspace.create_task did not return task_id",
+                }
+
+            task_info = {
+                "task_name": task_id,
+                "goal": goal,
+                "source_task_name": str(queue_task.get("source_task_name", "")).strip(),
+                "priority": queue_task.get("priority", 100),
+                "run_mode": str(queue_task.get("run_mode", "normal")).strip(),
+                "task_type": str(queue_task.get("task_type", "general")).strip(),
+                "metadata": queue_task.get("metadata", {}) or {},
+                "queue_task": dict(queue_task),
+            }
+
+            runtime_result = task_runtime.run_task(task_info)
+            normalized = _normalize_runtime_result(runtime_result, task_id)
+
+            return {
+                "success": normalized["success"],
+                "task_name": normalized["task_name"],
+                "summary": normalized["summary"],
+                "error": normalized["error"],
+                "debug": {
+                    "workspace_root": str(workspace_root),
+                    "registered_tools": list(tool_registry.list_tools().keys()),
+                },
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "task_name": "",
+                "summary": "",
+                "error": str(e),
+            }
+
+    return scheduler_task_launcher
+
+
+class ZeroSystem:
+    def __init__(self, workspace_root: str = "E:/zero_ai/workspace") -> None:
+        self.workspace_root = workspace_root
+        self.boot = bootstrap_system(workspace_root=self.workspace_root)
+
+        self.scheduler = TaskScheduler(
+            workspace_root=self.workspace_root,
+            task_launcher=scheduler_task_launcher_factory(self.workspace_root),
+        )
+        self.queue = self.scheduler.queue
+
+    def start(self) -> Dict[str, Any]:
+        return self.scheduler.start()
+
+    def stop(self) -> Dict[str, Any]:
+        return self.scheduler.stop()
+
+    def refresh_boot(self) -> Dict[str, Any]:
+        self.boot = bootstrap_system(workspace_root=self.workspace_root)
+        return {
+            "success": True,
+            "workspace_root": self.boot.get("workspace_root"),
+            "tools": list(self.boot["tool_registry"].list_tools().keys()),
+        }
+
+    def health(self) -> Dict[str, Any]:
+        self.boot = bootstrap_system(workspace_root=self.workspace_root)
+
+        data = self.scheduler.health()
+        data["boot"] = {
+            "workspace_root": self.boot.get("workspace_root"),
+            "tools": list(self.boot["tool_registry"].list_tools().keys()),
+            "task_runtime_has_registry": self.boot.get("task_runtime").tool_registry is not None,
+            "task_runtime_registry_tools": list(
+                getattr(self.boot.get("task_runtime").tool_registry, "list_tools", lambda: {})().keys()
+            )
+            if self.boot.get("task_runtime") is not None and self.boot.get("task_runtime").tool_registry is not None
+            else [],
+        }
+        return data
+
+    def enqueue(
+        self,
+        goal: str,
+        priority: int = 100,
+        source_task_name: str = "",
+        run_mode: str = "normal",
+        task_type: str = "general",
+        metadata: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        return self.scheduler.enqueue(
+            goal=goal,
+            priority=priority,
+            source_task_name=source_task_name,
+            run_mode=run_mode,
+            task_type=task_type,
+            metadata=metadata,
+        )
+
+    def queue_list(
+        self,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> Dict[str, Any]:
+        return self.scheduler.list_tasks(status=status, limit=limit)
+
+    def queue_get(self, queue_task_id: str) -> Dict[str, Any]:
+        return self.scheduler.get_task(queue_task_id)
+
+    def queue_pause(self, queue_task_id: str) -> Dict[str, Any]:
+        return self.scheduler.pause_task(queue_task_id)
+
+    def queue_resume(self, queue_task_id: str) -> Dict[str, Any]:
+        return self.scheduler.resume_task(queue_task_id)
+
+    def queue_cancel(self, queue_task_id: str) -> Dict[str, Any]:
+        return self.scheduler.cancel_task(queue_task_id)
+
+    def queue_reprioritize(self, queue_task_id: str, priority: int) -> Dict[str, Any]:
+        return self.scheduler.reprioritize(queue_task_id, priority)
+
+
+def get_zero_system() -> ZeroSystem:
+    global _ZERO_SYSTEM
+    if _ZERO_SYSTEM is None:
+        _ZERO_SYSTEM = ZeroSystem()
+        _ZERO_SYSTEM.start()
+    return _ZERO_SYSTEM

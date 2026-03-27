@@ -1,284 +1,312 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 
 class Planner:
     """
-    ZERO Planner
+    ZERO Planner (memory-aware rules v1)
 
-    作用：
-    1. 根據 goal 產生 steps
-    2. 先支援 generic task 與 http server task
-    3. step params 開始使用 context variables
+    先不碰複雜 LLM planner。
+    先把：
+    - task classification
+    - lessons injection
+    - precheck insertion
+    - fallback preference
+    做進來。
     """
 
-    def __init__(
+    def plan(
         self,
-        llm_client: Any = None,
-        tool_registry: Any = None,
-        workspace_root: Optional[str] = None,
-        project_root: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        self.llm_client = llm_client
-        self.tool_registry = tool_registry
-        self.workspace_root = workspace_root
-        self.project_root = project_root
-        self.extra_config = kwargs
+        goal: str,
+        lessons: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        goal_text = str(goal or "").strip()
+        lowered = goal_text.lower()
+        task_type = self._classify_task_type(goal_text)
+        lessons = lessons or []
 
-    # ------------------------------------------------------------------
-    # public api
-    # ------------------------------------------------------------------
+        memory_hints = self._build_memory_hints(lessons)
+        recalled_actions = memory_hints["suggested_actions"]
 
-    def create_plan(self, goal: str) -> Dict[str, Any]:
-        cleaned_goal = (goal or "").strip()
-        if not cleaned_goal:
-            return self._build_empty_plan(goal="")
+        steps: List[Dict[str, Any]] = []
 
-        lowered = cleaned_goal.lower()
-
-        if self._looks_like_http_server_task(lowered):
-            return self._build_http_server_plan(cleaned_goal)
-
-        return self._build_generic_plan(cleaned_goal)
-
-    def plan_task(self, goal: str) -> Dict[str, Any]:
-        return self.create_plan(goal)
-
-    def plan(self, goal: str) -> Dict[str, Any]:
-        return self.create_plan(goal)
-
-    # ------------------------------------------------------------------
-    # plan builders
-    # ------------------------------------------------------------------
-
-    def _build_empty_plan(self, goal: str) -> Dict[str, Any]:
-        now = self._now_str()
-        return {
-            "task_id": "",
-            "goal": goal,
-            "steps": [],
-            "status": "planned",
-            "created_at": now,
-            "updated_at": now,
-        }
-
-    def _build_generic_plan(self, goal: str) -> Dict[str, Any]:
-        now = self._now_str()
-
-        steps: List[Dict[str, Any]] = [
+        steps.append(
             {
-                "step_id": "step_1",
-                "name": "Create project workspace",
-                "title": "Create project workspace",
-                "type": "workspace",
-                "action": "create_dir",
-                "params": {
-                    "path": "",
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_2",
-                "name": "Write task summary file",
-                "title": "Write task summary file",
-                "type": "workspace",
-                "action": "write_file",
-                "params": {
-                    "path": "result.txt",
-                    "content": (
-                        "ZERO generic planner executed.\n"
-                        f"Original goal: {goal}\n"
-                        "Task workspace: {{task_workspace}}\n"
-                        "Task id: {{task_id}}\n"
-                    ),
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_3",
-                "name": "Read task summary file",
-                "title": "Read task summary file",
-                "type": "workspace",
-                "action": "read_file",
-                "params": {
-                    "path": "{{last_relative_path}}",
-                },
-                "status": "pending",
-            },
-        ]
-
-        return {
-            "task_id": "",
-            "goal": goal,
-            "steps": steps,
-            "status": "planned",
-            "created_at": now,
-            "updated_at": now,
-        }
-
-    def _build_http_server_plan(self, goal: str) -> Dict[str, Any]:
-        now = self._now_str()
-
-        server_code = self._http_server_source()
-
-        steps: List[Dict[str, Any]] = [
-            {
-                "step_id": "step_1",
-                "name": "Create project workspace",
-                "title": "Create project workspace",
-                "type": "workspace",
-                "action": "create_dir",
-                "params": {
-                    "path": "",
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_2",
-                "name": "Write HTTP server file",
-                "title": "Write HTTP server file",
-                "type": "workspace",
-                "action": "write_file",
-                "params": {
-                    "path": "server.py",
-                    "content": server_code,
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_3",
-                "name": "Read HTTP server file",
-                "title": "Read HTTP server file",
-                "type": "workspace",
-                "action": "read_file",
-                "params": {
-                    "path": "{{last_relative_path}}",
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_4",
-                "name": "Start server",
-                "title": "Start server",
-                "type": "process",
-                "action": "run_server",
-                "params": {
-                    "server_file": "{{last_relative_path}}",
-                    "host": "127.0.0.1",
-                    "port": 8000,
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_5",
-                "name": "Test HTTP endpoint",
-                "title": "Test HTTP endpoint",
-                "type": "process",
-                "action": "test_http",
-                "params": {
-                    "url": "{{server_url}}",
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_6",
-                "name": "Write task summary file",
-                "title": "Write task summary file",
-                "type": "workspace",
-                "action": "write_file",
-                "params": {
-                    "path": "result.txt",
-                    "content": (
-                        "ZERO http server planner executed.\n"
-                        f"Original goal: {goal}\n"
-                        "Server file: {{last_server_file}}\n"
-                        "Server URL: {{server_url}}\n"
-                        "Task workspace: {{task_workspace}}\n"
-                    ),
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_7",
-                "name": "Read task summary file",
-                "title": "Read task summary file",
-                "type": "workspace",
-                "action": "read_file",
-                "params": {
-                    "path": "{{last_relative_path}}",
-                },
-                "status": "pending",
-            },
-            {
-                "step_id": "step_8",
-                "name": "Stop server",
-                "title": "Stop server",
-                "type": "process",
-                "action": "stop_server",
-                "params": {},
-                "status": "pending",
-            },
-        ]
-
-        return {
-            "task_id": "",
-            "goal": goal,
-            "steps": steps,
-            "status": "planned",
-            "created_at": now,
-            "updated_at": now,
-        }
-
-    # ------------------------------------------------------------------
-    # helpers
-    # ------------------------------------------------------------------
-
-    def _looks_like_http_server_task(self, lowered_goal: str) -> bool:
-        keywords = [
-            "http server",
-            "web server",
-            "server",
-            "api server",
-            "http",
-        ]
-        return any(keyword in lowered_goal for keyword in keywords)
-
-    def _now_str(self) -> str:
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def _http_server_source(self) -> str:
-        return (
-            'from http.server import BaseHTTPRequestHandler, HTTPServer\n'
-            '\n'
-            'HOST = "127.0.0.1"\n'
-            'PORT = 8000\n'
-            '\n'
-            '\n'
-            'class SimpleHandler(BaseHTTPRequestHandler):\n'
-            '    def do_GET(self):\n'
-            '        self.send_response(200)\n'
-            '        self.send_header("Content-type", "text/plain; charset=utf-8")\n'
-            '        self.end_headers()\n'
-            '        self.wfile.write("ZERO local web server is running.".encode("utf-8"))\n'
-            '\n'
-            '    def log_message(self, format, *args):\n'
-            '        return\n'
-            '\n'
-            '\n'
-            'def main() -> None:\n'
-            '    server = HTTPServer((HOST, PORT), SimpleHandler)\n'
-            '    print(f"Server running at http://{HOST}:{PORT}", flush=True)\n'
-            '    try:\n'
-            '        server.serve_forever()\n'
-            '    except KeyboardInterrupt:\n'
-            '        pass\n'
-            '    finally:\n'
-            '        server.server_close()\n'
-            '\n'
-            '\n'
-            'if __name__ == "__main__":\n'
-            '    main()\n'
+                "name": "analyze goal",
+                "kind": "reason",
+            }
         )
+
+        for action in recalled_actions:
+            steps.append(
+                {
+                    "name": f"memory precheck: {action}",
+                    "kind": "reason",
+                }
+            )
+
+        if task_type == "command":
+            command_text = self._extract_command_from_goal(goal_text)
+
+            steps.append(
+                {
+                    "name": "validate command target",
+                    "kind": "reason",
+                }
+            )
+
+            if memory_hints["prefer_command_tool"]:
+                steps.append(
+                    {
+                        "name": "execute command tool",
+                        "kind": "tool",
+                        "tool_name": "command_tool",
+                        "tool_args": {
+                            "command": command_text,
+                        },
+                    }
+                )
+            else:
+                steps.append(
+                    {
+                        "name": "execute command tool",
+                        "kind": "tool",
+                        "tool_name": "command_tool",
+                        "tool_args": {
+                            "command": command_text,
+                        },
+                    }
+                )
+
+            steps.append(
+                {
+                    "name": "collect command result",
+                    "kind": "reason",
+                }
+            )
+
+        elif task_type == "file":
+            target_path = self._extract_file_target(goal_text)
+
+            steps.append(
+                {
+                    "name": "verify file path",
+                    "kind": "reason",
+                }
+            )
+            steps.append(
+                {
+                    "name": "read file with workspace tool",
+                    "kind": "tool",
+                    "tool_name": "workspace_tool",
+                    "tool_args": {
+                        "action": "read_file",
+                        "path": target_path,
+                    },
+                }
+            )
+            steps.append(
+                {
+                    "name": "summarize file handling",
+                    "kind": "reason",
+                }
+            )
+
+        else:
+            steps.append(
+                {
+                    "name": "plan response",
+                    "kind": "reason",
+                }
+            )
+            steps.append(
+                {
+                    "name": "summarize outcome",
+                    "kind": "reason",
+                }
+            )
+
+        steps.append(
+            {
+                "name": "save result",
+                "kind": "reason",
+            }
+        )
+
+        return {
+            "goal": goal_text,
+            "task_type": task_type,
+            "planner_version": "memory_aware_rules_v1",
+            "steps": steps,
+            "memory_context": {
+                "lesson_count": len(lessons),
+                "recalled_lesson_ids": [
+                    str(item.get("lesson_id", "")).strip()
+                    for item in lessons
+                    if isinstance(item, dict)
+                ],
+                "recalled_actions": recalled_actions,
+                "avoid_patterns": memory_hints["avoid_patterns"],
+                "prefer_patterns": memory_hints["prefer_patterns"],
+            },
+            "signals": {
+                "length": len(goal_text),
+                "contains_path_hint": any(
+                    x in lowered for x in ["\\", "/", ".py", ".json", ".txt", ".md"]
+                ),
+                "contains_command_hint": any(
+                    x in lowered
+                    for x in [
+                        "cmd",
+                        "command",
+                        "執行",
+                        "run ",
+                        "echo ",
+                        "dir ",
+                        "copy ",
+                        "move ",
+                    ]
+                ),
+                "memory_lesson_count": len(lessons),
+            },
+        }
+
+    # =========================================================
+    # Memory Hints
+    # =========================================================
+
+    def _build_memory_hints(self, lessons: List[Dict[str, Any]]) -> Dict[str, Any]:
+        suggested_actions: List[str] = []
+        avoid_patterns: List[str] = []
+        prefer_patterns: List[str] = []
+
+        prefer_command_tool = False
+
+        for lesson in lessons:
+            if not isinstance(lesson, dict):
+                continue
+
+            outcome = str(lesson.get("outcome", "")).strip().lower()
+
+            for item in lesson.get("suggested_next_time", []):
+                clean = str(item).strip()
+                if clean:
+                    suggested_actions.append(clean)
+
+            for item in lesson.get("what_failed", []):
+                clean = str(item).strip()
+                if clean:
+                    avoid_patterns.append(clean)
+
+            for item in lesson.get("what_worked", []):
+                clean = str(item).strip()
+                if clean:
+                    prefer_patterns.append(clean)
+
+            tools_used = lesson.get("tools_used", [])
+            if outcome == "success" and isinstance(tools_used, list):
+                if "command_tool" in [str(x).strip() for x in tools_used]:
+                    prefer_command_tool = True
+
+        return {
+            "suggested_actions": self._dedupe(suggested_actions)[:5],
+            "avoid_patterns": self._dedupe(avoid_patterns)[:5],
+            "prefer_patterns": self._dedupe(prefer_patterns)[:5],
+            "prefer_command_tool": prefer_command_tool,
+        }
+
+    # =========================================================
+    # Task Type
+    # =========================================================
+
+    def _classify_task_type(self, goal: str) -> str:
+        lowered = goal.lower()
+
+        command_keywords = [
+            "cmd",
+            "command",
+            "execute",
+            "run ",
+            "shell",
+            "terminal",
+            "powershell",
+            "執行",
+            "指令",
+            "命令",
+            "echo ",
+            "dir ",
+            "copy ",
+            "move ",
+        ]
+
+        file_keywords = [
+            ".py",
+            ".json",
+            ".txt",
+            ".md",
+            "file",
+            "folder",
+            "workspace",
+            "path",
+            "檔案",
+            "資料夾",
+            "路徑",
+            "讀取",
+            "讀檔",
+        ]
+
+        if any(keyword in lowered for keyword in command_keywords):
+            return "command"
+
+        if any(keyword in lowered for keyword in file_keywords):
+            return "file"
+
+        return "general"
+
+    # =========================================================
+    # Parsing
+    # =========================================================
+
+    def _extract_command_from_goal(self, goal: str) -> str:
+        text = str(goal).strip()
+
+        prefixes = [
+            "execute command ",
+            "run command ",
+            "cmd:",
+            "執行指令 ",
+            "執行命令 ",
+        ]
+
+        lowered = text.lower()
+        for prefix in prefixes:
+            if lowered.startswith(prefix):
+                return text[len(prefix):].strip() or "echo placeholder"
+
+        return text
+
+    def _extract_file_target(self, goal: str) -> str:
+        tokens = str(goal).replace("\\", " \\ ").replace("/", " / ").split()
+
+        for token in tokens:
+            clean = token.strip().strip("\"'")
+            if clean.endswith((".py", ".json", ".txt", ".md")):
+                return clean
+
+        return "task_memory.json"
+
+    def _dedupe(self, items: List[str]) -> List[str]:
+        result: List[str] = []
+        seen = set()
+
+        for item in items:
+            clean = str(item).strip()
+            if not clean:
+                continue
+            if clean in seen:
+                continue
+            seen.add(clean)
+            result.append(clean)
+
+        return result

@@ -8,7 +8,7 @@ class WorkspaceTool:
     name = "workspace_tool"
     description = "Read and write files in workspace."
 
-    def __init__(self, workspace_root: Path):
+    def __init__(self, workspace_root: Path | str):
         self.workspace_root = Path(workspace_root)
 
     def execute(self, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -19,7 +19,6 @@ class WorkspaceTool:
             "path": "test.txt"
         }
         """
-
         if not isinstance(args, dict):
             return {
                 "success": False,
