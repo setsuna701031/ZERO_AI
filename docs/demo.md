@@ -3,123 +3,148 @@
 This document describes the current demo flows for ZERO.
 
 The purpose of these demos is to show that ZERO is not just a chatbot or script runner,
-but a task-oriented agent runtime with retry, reflection, replanning, and memory summaries.
+but a task-oriented runtime that is moving toward a Task Operating System.
+
+Current visible strengths include:
+
+- queue-based task flow
+- scheduler-driven execution
+- task runtime state control
+- retry / failure convergence
+- workspace-driven execution behavior
 
 ---
 
-## Demo 1 — Basic Task Execution
+## Demo 1 — Task OS Runtime Skeleton
 
-This demo shows the normal task-tree execution flow.
+This demo shows that ZERO now behaves more like a task runtime than a simple command wrapper.
 
-### Commands
+### What to Highlight
 
-```bash
-task new build a simple homepage
-task run
-task tree
-memory task
+- task queue exists
+- priority queue exists
+- scheduler exists
+- runtime exists
+- workspace state exists
+- pause / resume / finish behavior exists
+
+### Concept Flow
+
+```text
+CLI
+↓
+Queue API
+↓
+Priority Queue
+↓
+Preemptive Scheduler
+↓
+Task Runtime
+↓
+Workspace State
+↓
+Pause / Resume / Finish
 ```
-
-### Expected Flow
-
-1. A root task is created
-2. The planner generates subtasks
-3. The agent executes runnable leaf tasks in sequence
-4. Runtime events are recorded
-5. A task summary is written into memory
 
 ### What This Demonstrates
 
-- task creation
-- task-tree execution
-- runtime event tracking
-- task memory summary
+- runtime architecture exists
+- scheduling layer exists
+- execution is no longer just direct one-shot tool invocation
+- ZERO is moving toward a workflow-engine / Task OS model
 
 ---
 
-## Demo 2 — Retry Recovery
+## Demo 2 — Retry / Failure Closure
 
-This demo shows retry behavior after a step fails once.
+This demo shows the retry/failure path that is now working.
 
-### Commands
+### Goal
 
-```bash
-task new fail_first retry test
-task run
-runtime events
-task tree
-memory task
-```
+Show that a failed task no longer silently breaks or incorrectly reports success.
 
 ### Expected Flow
 
-1. A step fails on the first attempt
-2. The retry mechanism is triggered
-3. The step succeeds on retry
-4. The task continues normally
-5. Memory records the retry history
+```text
+queued → running → retrying → queued → running → retrying → queued → running → failed
+```
+
+### What to Verify
+
+- `retry_count` increments correctly
+- `max_retries` is enforced
+- `last_error` is preserved
+- final status becomes `failed`
+- task does not incorrectly end as `finished`
 
 ### What This Demonstrates
 
-- step failure detection
-- automatic retry
-- retry event logging
-- memory summary including retry history
+- runtime failure detection
+- scheduler retry accounting
+- correct terminal failure convergence
+- Task OS failure-path closure
 
 ---
 
-## Demo 3 — Reflection + Replan Recovery
+## Demo 3 — Successful Completion Path
 
-This demo shows the full recovery loop:
+This demo verifies the clean success path.
 
-**retry → reflection → replan → recovery → continue**
+### Goal
 
-### Commands
+Show that a normal runnable task ends in a clean final success state.
 
-```bash
-task new always_fail reflection test
-task run
-runtime events
-task tree
-memory task
-```
+### Example Concept
+
+Use a known-success workspace operation or a simple existing file target.
 
 ### Expected Flow
 
-1. A task fails repeatedly
-2. Retry attempts are exhausted
-3. Reflection is triggered
-4. Reflection generates recovery subtasks
-5. New subtasks are inserted into the task tree
-6. The recovery subtasks are executed
-7. The root task completes successfully
-8. Memory records retry, reflection, replanning, and lessons learned
+```text
+queued → running → finished
+```
+
+### What to Verify
+
+- task starts normally
+- runtime executes without false retry
+- task ends in `finished`
+- final result is stable and inspectable
 
 ### What This Demonstrates
 
-- retry exhaustion
-- reflection engine activation
-- dynamic replanning
-- task-tree modification during execution
-- recovery execution
-- lesson recording into memory
+- success-path closure
+- runtime correctness in normal execution
+- balance between failure handling and normal completion
 
 ---
 
-## What These Demos Prove
+## Demo 4 — Task History / Event Visibility
 
-The current ZERO prototype already demonstrates:
+This demo is about observability.
 
-- task-tree execution
-- runtime event logging
-- retry handling
-- reflection after repeated failures
-- dynamic replanning
-- recovery-step insertion
-- memory summaries with lessons learned
+### Goal
 
-This means ZERO already behaves like an **early autonomous task-execution kernel**,
-not just a chat wrapper.
+Show not only the final state, but the full state/event path of a task.
+
+### Example Desired Visibility
+
+```text
+queued → running → retrying → queued → running → failed
+```
+
+or
+
+```text
+queued → running → finished
+```
+
+### What This Demonstrates
+
+- inspectable runtime history
+- easier debugging
+- better confidence in scheduler/runtime behavior
+- transition from "black box execution" toward visible workflow execution
 
 ---
 
@@ -127,13 +152,14 @@ not just a chat wrapper.
 
 If you want to present ZERO to others, use this order:
 
-1. Basic Task Execution
-2. Retry Recovery
-3. Reflection + Replan Recovery
+1. Task OS Runtime Skeleton
+2. Retry / Failure Closure
+3. Successful Completion Path
+4. Task History / Event Visibility
 
 This sequence shows the progression from:
 
-**task runner → resilient executor → self-recovering agent kernel**
+**runtime skeleton → failure closure → success closure → observability**
 
 ---
 
@@ -141,23 +167,16 @@ This sequence shows the progression from:
 
 ZERO is still an early-stage engineering prototype.
 
-Current focus areas include:
+Current limitations include:
 
-- local-first agent execution
-- task runtime behavior
-- reflection and replanning loop
-- memory-aware summaries
-- agent loop architecture
-
-Not implemented or not yet complete:
-
-- memory-aware planning
-- long-term memory system
-- tool auto-selection
-- advanced multi-step planning
-- multi-agent workers
-- web interface
-- one-click deployment
+- task history visibility is still being improved
+- success-path validation still needs cleaner demonstration
+- reflection / replanning path still needs more structured demo proof
+- memory-aware planning is not complete
+- long-term memory is not complete
+- advanced multi-agent behavior is not complete
+- web interface is not the current priority
+- one-click deployment is not the current priority
 
 ---
 
@@ -165,7 +184,7 @@ Not implemented or not yet complete:
 
 ZERO is currently positioned as:
 
-**a local-first task execution kernel with retry, reflection, replanning, and memory-based task summaries.**
+**an early local-first Task Operating System prototype with queueing, scheduling, runtime control, and retry/failure closure**
 
-This repository prioritizes the execution core first,
-with UI, deployment, and broader product layers coming later.
+This repository currently prioritizes the execution core first,
+with broader product and UI layers coming later.

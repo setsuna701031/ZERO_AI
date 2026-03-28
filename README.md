@@ -1,100 +1,172 @@
-# ZERO - Task Operating System
+# ZERO AI
 
-ZERO is an experimental task-oriented autonomous agent runtime.
+ZERO is a local-first autonomous task runtime that is evolving toward a **Task Operating System**.
 
-It is not just a chatbot.
-It is a system that can plan tasks, execute steps, detect failures, retry, reflect, replan, recover, and store lessons in memory.
-
-The idea is to explore a "Task Operating System" architecture.
+It is not designed as a chatbot-first system.
+It is designed as an execution-first system that can manage tasks, runtime flow, retry logic, failure convergence, and future recovery mechanisms.
 
 ---
 
-## What ZERO can do
+## Current Position
 
-ZERO can:
+ZERO is currently in an **early Task OS prototype** stage.
 
-- Create tasks
-- Build a task tree
-- Execute steps
-- Retry failed steps
-- Detect permanent failures
-- Trigger reflection
-- Generate recovery plans
-- Replan tasks
-- Execute recovery steps
-- Complete tasks
-- Write execution history into memory
-- Record lessons learned
+The project already includes meaningful progress in:
 
-Execution flow looks like this:
+- task queue
+- priority queue
+- preemptive scheduling
+- task runtime
+- step execution
+- workspace state tracking
+- pause / resume behavior
+- retry / failure closure
+- CLI-driven execution flow
+- logging and runtime state transitions
 
-User → Planner → Task Tree → Executor → Failure → Retry → Reflection → Replan → Recovery → Success → Memory
+At the current stage, ZERO is closer to a:
 
----
+- job scheduler
+- workflow engine
+- task execution kernel
 
-## Demo
-
-Reflection and recovery demo:
-
-See demo document:
-docs/demo.md
-
-This demo shows:
-
-- Step failure
-- Retry logic
-- Reflection
-- Replanning
-- Recovery execution
-- Task completion
-- Memory logging
-- Lessons learned
+than to a simple assistant wrapper.
 
 ---
 
-## Project Structure
+## What Is Working Now
 
-zero_ai/
-core/        core runtime, planner, agent loop, task system
-tools/       tools used by the agent
-docs/        documentation and demos
-images/      screenshots for demo and README
-tests/       test scripts
-app.py       main entry point
+### Runtime / Task OS Foundations
+- queue-based task flow
+- scheduler-driven execution
+- runtime state control
+- workspace-linked task behavior
+- execution path structured around task state
+
+### Retry / Failure Closure
+The current prototype already proves a working failure path:
+
+```text
+queued → running → retrying → queued → running → retrying → queued → running → failed
+```
+
+This means:
+
+- runtime can detect failure
+- scheduler can increment retry count
+- retry limit is enforced
+- `last_error` can be preserved
+- tasks converge to real `failed` state
+- tasks do not incorrectly appear as `finished`
+
+### Task OS Direction
+The current architecture is no longer only:
+
+```text
+user → prompt → tool → reply
+```
+
+It is moving toward:
+
+```text
+CLI
+↓
+Queue API
+↓
+Priority Queue
+↓
+Preemptive Scheduler
+↓
+Task Runtime
+↓
+Workspace State
+↓
+Pause / Resume / Finish
+```
 
 ---
 
-## Why this project
+## Project Philosophy
 
-Most AI systems today are chat-based.
-They answer questions but do not manage tasks.
+ZERO follows a task-oriented design philosophy:
 
-This project explores a different direction:
-AI should manage tasks, recover from errors, and learn from execution history.
+- tasks instead of conversations
+- steps instead of responses
+- execution instead of chatting
+- scheduling instead of naive sequential dispatch
+- recovery instead of stopping
+- memory instead of forgetting
+- lessons instead of raw logs
 
-Instead of a Chat AI,
-this project explores a Task Operating System.
+The core idea is simple:
 
----
-
-## Roadmap
-
-Planned future work:
-
-- Memory-aware planning
-- Long-term memory
-- Tool auto selection
-- Multi-step planning
-- Multi-agent workers
-- Persistent task sessions
-- Web interface
-- One-click deployment
+**The user gives a goal.  
+The runtime manages execution.**
 
 ---
 
-## Long-term Goal
+## Current Priorities
 
-The long-term goal of ZERO is to become a personal autonomous engineering assistant.
+Current engineering priorities are:
 
-The user gives a goal,
-and the system helps plan, execute, recover from errors, and complete the task.
+1. improve runtime observability
+2. expose task history / event visibility
+3. verify clean success-path closure
+4. continue stabilizing scheduler/runtime/task-state behavior
+5. preserve clean architecture while expanding capability
+
+---
+
+## Current Limitations
+
+ZERO is still an early-stage engineering prototype.
+
+Not yet complete or still being stabilized:
+
+- task history visibility
+- success-path validation
+- reflection / replanning structured verification
+- memory-aware planning
+- long-term memory
+- tool auto-selection
+- web interface
+- one-click deployment
+
+---
+
+## Docs
+
+See the `docs/` folder for more detailed project documents:
+
+- `project_overview.md`
+- `current_status.md`
+- `architecture.md`
+- `design.md`
+- `roadmap.md`
+- `demo.md`
+
+---
+
+## Long-Term Vision
+
+ZERO is being built toward a personal autonomous engineering assistant.
+
+Example future directions:
+
+- build engineering task flows
+- recover from failed execution
+- continue interrupted work
+- use tools under runtime control
+- learn from execution history
+- improve through memory and lessons
+
+The long-term goal is not just to answer.
+The goal is to **execute, recover, and evolve**.
+
+---
+
+## Status
+
+Current status:
+
+**early local-first Task Operating System prototype**

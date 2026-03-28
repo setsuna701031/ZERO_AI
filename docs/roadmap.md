@@ -1,135 +1,356 @@
-# ZERO Roadmap
+\# ZERO Roadmap
+
+
 
 This document describes the development roadmap of the ZERO Task Operating System.
 
----
 
-## Stage 1 – Basic Task Execution
+
+\---
+
+
+
+\## Stage 1 – Basic Task Execution
+
 Status: Completed
 
-- Task creation
-- Task tree
-- Step execution
-- Tool calling
-- Step result recording
-- Task completion
 
----
 
-## Stage 2 – Retry System
+\- task creation
+
+\- task tree
+
+\- step execution
+
+\- tool calling
+
+\- step result recording
+
+\- task completion
+
+
+
+\---
+
+
+
+\## Stage 2 – Retry System
+
 Status: Completed
 
-- Step retry
-- Retry limit
-- Retry counter
-- Failure detection
-- Permanent failure detection
 
----
 
-## Stage 3 – Reflection and Replanning
-Status: Completed
+\- step retry
 
-- Reflection triggered on permanent failure
-- Reflection generates recovery plan
-- Replanner inserts new steps
-- Recovery steps executed
-- Task recovered and completed
+\- retry limit
 
----
+\- retry counter
 
-## Stage 4 – Memory Logging
-Status: Completed
+\- failure detection
 
-- Task summary
-- Failed steps
-- Recovered steps
-- Retry statistics
-- Reflection statistics
-- Lessons learned
+\- permanent failure detection
 
----
+\- final failure convergence
 
-## Stage 5 – Memory-Aware Planning
+
+
+\---
+
+
+
+\## Stage 3 – Scheduler / Task OS Foundations
+
+Status: In Progress
+
+
+
+\- task queue
+
+\- priority queue
+
+\- preemptive scheduling
+
+\- task runtime
+
+\- workspace state
+
+\- pause / resume behavior
+
+\- CLI-driven execution control
+
+
+
+\### Current Note
+
+
+
+This stage has already reached a meaningful prototype level.
+
+The retry/failure closure and scheduler flow are now working milestone pieces,
+
+but runtime observability and cleaner state history exposure are still being improved.
+
+
+
+\---
+
+
+
+\## Stage 4 – Reflection and Replanning
+
+Status: Partial / In Progress
+
+
+
+\- reflection triggered after terminal failure conditions
+
+\- reflection generates recovery direction
+
+\- replanner inserts recovery steps
+
+\- recovery execution continues task flow
+
+
+
+\### Current Note
+
+
+
+Reflection/replan direction exists in project design
+
+and parts of the architecture have already been shaped around it,
+
+but this path still needs cleaner structured validation as the scheduler/runtime core stabilizes.
+
+
+
+\---
+
+
+
+\## Stage 5 – Memory Logging
+
+Status: In Progress
+
+
+
+\- task summary
+
+\- failed-step summary
+
+\- recovered-step summary
+
+\- retry statistics
+
+\- reflection statistics
+
+\- lessons learned
+
+
+
+\### Current Note
+
+
+
+Memory remains part of the architecture direction,
+
+but the current engineering priority is still execution-core stability.
+
+
+
+\---
+
+
+
+\## Stage 6 – Runtime Observability
+
+Status: Immediate Next Focus
+
+
+
+\- task event history
+
+\- queue/runtime transition visibility
+
+\- success-path closure verification
+
+\- failure-path timeline visibility
+
+\- inspectable task execution traces
+
+
+
+\---
+
+
+
+\## Stage 7 – Memory-Aware Planning
+
 Status: Planned
 
-- Planner reads memory before planning
-- Avoid repeating previous failures
-- Use past successful recovery strategies
-- Improve planning based on history
 
----
 
-## Stage 6 – Long-Term Memory
+\- planner reads memory before planning
+
+\- avoid repeating previous failures
+
+\- use past successful recovery strategies
+
+\- improve planning based on history
+
+
+
+\---
+
+
+
+\## Stage 8 – Long-Term Memory
+
 Status: Planned
 
-- Store memory to database
-- Memory retrieval
-- Task history search
-- Lessons database
 
----
 
-## Stage 7 – Tool Auto Selection
+\- store memory to database
+
+\- memory retrieval
+
+\- task history search
+
+\- lessons database
+
+
+
+\---
+
+
+
+\## Stage 9 – Tool Auto Selection
+
 Status: Planned
 
-- Automatically choose tools
-- Tool capability description
-- Tool selection logic
-- Multi-tool workflow
 
----
 
-## Stage 8 – Multi-Step Planning
+\- automatically choose tools
+
+\- tool capability description
+
+\- tool selection logic
+
+\- multi-tool workflow
+
+
+
+\---
+
+
+
+\## Stage 10 – Multi-Step Planning
+
 Status: Planned
 
-- Planner generates multi-step plans
-- Dependency between steps
-- Conditional execution
-- Loop tasks
 
----
 
-## Stage 9 – Multi-Agent Workers
+\- planner generates multi-step plans
+
+\- dependency between steps
+
+\- conditional execution
+
+\- loop tasks
+
+
+
+\---
+
+
+
+\## Stage 11 – Multi-Agent Workers
+
 Status: Planned
 
-- Worker agents
-- Task delegation
-- Parallel execution
-- Result aggregation
 
----
 
-## Stage 10 – Web Interface
+\- worker agents
+
+\- task delegation
+
+\- parallel execution
+
+\- result aggregation
+
+
+
+\---
+
+
+
+\## Stage 12 – Web Interface
+
 Status: Planned
 
-- Web UI
-- Task dashboard
-- Task tree visualization
-- Memory viewer
 
----
 
-## Stage 11 – One-Click Deployment
+\- web UI
+
+\- task dashboard
+
+\- task tree visualization
+
+\- memory viewer
+
+
+
+\---
+
+
+
+\## Stage 13 – One-Click Deployment
+
 Status: Planned
 
-- Install script
-- Start script
-- Docker deployment
-- Server deployment
 
----
 
-## Long-Term Vision
+\- install script
+
+\- start script
+
+\- Docker deployment
+
+\- server deployment
+
+
+
+\---
+
+
+
+\## Long-Term Vision
+
+
 
 ZERO is designed to become a Task Operating System.
 
+
+
 Instead of interacting with AI through conversation,
+
 users interact with AI through tasks.
 
+
+
 The system should:
-- Plan tasks
-- Execute steps
-- Recover from failures
-- Learn from execution history
-- Improve over time
+
+
+
+\- plan tasks
+
+\- queue and schedule work
+
+\- execute steps
+
+\- recover from failures
+
+\- learn from execution history
+
+\- improve over time
+

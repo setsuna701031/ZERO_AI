@@ -4,19 +4,25 @@
 
 ZERO is not designed to be a chatbot.
 
-ZERO is designed to be a task execution system.
+
+
+ZERO is designed to be a local-first task execution system.
 
 
 
 Most AI systems today are conversation-based.
 
-They generate responses but do not manage tasks.
+They generate responses, but they do not manage real execution flow.
 
 
 
 ZERO explores a different direction:
 
-AI should execute tasks, recover from failures, and learn from execution history.
+
+
+AI should execute tasks, control runtime flow, recover from failures,
+
+and learn from execution history.
 
 
 
@@ -30,13 +36,17 @@ AI should execute tasks, recover from failures, and learn from execution history
 
 Chat AI:
 
+
+
 User → Question → AI → Answer → End
 
 
 
 Task AI:
 
-User → Goal → Plan → Execute → Fail → Retry → Reflect → Replan → Recover → Complete → Memory
+
+
+User → Goal → Plan → Queue → Schedule → Execute → Fail → Retry → Reflect → Replan → Recover → Complete → Memory
 
 
 
@@ -52,11 +62,13 @@ ZERO follows the Task AI model.
 
 
 
-ZERO is built on several core ideas:
+ZERO is built on several core ideas.
 
 
 
 \### 1. Tasks instead of conversations
+
+
 
 The system should focus on completing tasks, not generating text.
 
@@ -64,39 +76,61 @@ The system should focus on completing tasks, not generating text.
 
 \### 2. Steps instead of responses
 
-Tasks are broken into steps that can be executed.
+
+
+Tasks are broken into executable steps.
 
 
 
 \### 3. Execution instead of chatting
 
-The system should execute tools and actions.
+
+
+The system should execute tools and actions, not stop at explanation.
 
 
 
-\### 4. Failure recovery instead of stopping
+\### 4. Scheduling instead of naive sequencing
+
+
+
+A serious task system needs queueing, priority, and runtime flow control.
+
+
+
+\### 5. Failure recovery instead of stopping
+
+
 
 Failures should not stop the system.
 
-Failures should trigger retry and recovery.
+Failures should trigger retry and controlled recovery behavior.
 
 
 
-\### 5. Reflection instead of giving up
+\### 6. Reflection instead of giving up
+
+
 
 The system should analyze why failures happened and generate new plans.
 
 
 
-\### 6. Memory instead of forgetting
+\### 7. Memory instead of forgetting
+
+
 
 The system should remember what happened during task execution.
 
 
 
-\### 7. Lessons instead of logs
+\### 8. Lessons instead of logs
 
-Execution history should become lessons that improve future planning.
+
+
+Execution history should become lessons that improve future planning,
+
+not just raw technical traces.
 
 
 
@@ -112,15 +146,79 @@ ZERO is designed as a Task Operating System.
 
 
 
-An operating system manages processes, memory, and execution.
-
-A Task Operating System manages tasks, steps, failures, recovery, and memory.
+A normal operating system manages processes, memory, and execution.
 
 
 
-User gives a goal.
+A Task Operating System manages:
 
-The system manages everything else.
+
+
+\- tasks
+
+\- steps
+
+\- queueing
+
+\- scheduling
+
+\- failures
+
+\- retries
+
+\- recovery
+
+\- reflection
+
+\- memory
+
+
+
+The user gives a goal.
+
+The system manages the execution structure around that goal.
+
+
+
+\---
+
+
+
+\## Why This Direction Matters
+
+
+
+A system that only answers is limited.
+
+
+
+A system that can:
+
+
+
+\- queue work
+
+\- prioritize work
+
+\- execute steps
+
+\- detect failures
+
+\- retry correctly
+
+\- converge to final failure when needed
+
+\- recover from execution problems
+
+\- remember lessons
+
+
+
+is much closer to a real engineering assistant.
+
+
+
+That is the direction ZERO is exploring.
 
 
 
@@ -132,37 +230,79 @@ The system manages everything else.
 
 
 
-The long-term vision of ZERO:
+The long-term vision of ZERO is:
 
 
 
-A personal autonomous engineering assistant.
+\*\*a personal autonomous engineering assistant\*\*
 
 
 
-The user provides a goal:
-
-"Build a robotic arm"
-
-"Deploy a server"
-
-"Design a 3D model"
-
-"Write a program"
+Examples:
 
 
 
-The system:
+\- Build a robotic arm
 
-\- Plans tasks
+\- Deploy a server
 
-\- Executes steps
+\- Design a 3D model
 
-\- Uses tools
+\- Write a program
 
-\- Recovers from failures
+\- Diagnose an execution problem
 
-\- Learns from execution history
+\- Continue interrupted engineering work
 
-\- Improves over time
+
+
+The system should eventually:
+
+
+
+\- plan tasks
+
+\- execute steps
+
+\- use tools
+
+\- recover from failures
+
+\- learn from execution history
+
+\- improve over time
+
+
+
+\---
+
+
+
+\## Current Philosophy in Practice
+
+
+
+At the current stage, the project prioritizes:
+
+
+
+\- local-first execution
+
+\- runtime control
+
+\- retry/failure closure
+
+\- scheduler behavior
+
+\- clean architecture evolution
+
+\- engineering-state summaries
+
+
+
+UI polish, one-click deployment, and broader product layers come later.
+
+
+
+The execution core comes first.
 

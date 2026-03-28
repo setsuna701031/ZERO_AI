@@ -2,13 +2,31 @@
 
 
 
-ZERO is a task-oriented autonomous agent runtime.
-
-It is designed as a "Task Operating System" rather than a chatbot.
+ZERO is a local-first autonomous task runtime.
 
 
 
-The system focuses on task execution, failure recovery, reflection, and memory.
+It is designed as a \*\*Task Operating System\*\* rather than a chatbot.
+
+
+
+The system focuses on:
+
+
+
+\- task execution
+
+\- scheduling
+
+\- runtime control
+
+\- failure recovery
+
+\- retry convergence
+
+\- reflection and replanning
+
+\- memory summaries
 
 
 
@@ -16,57 +34,65 @@ The system focuses on task execution, failure recovery, reflection, and memory.
 
 
 
-\## High Level Architecture
+\## High-Level Architecture
 
 
 
-User
+User  
 
-&#x20; ↓
+↓  
 
-Planner
+Planner  
 
-&#x20; ↓
+↓  
 
-Task Manager
+Task Manager  
 
-&#x20; ↓
+↓  
 
-Task Tree
+Task Queue  
 
-&#x20; ↓
+↓  
 
-Executor
+Priority Queue  
 
-&#x20; ↓
+↓  
 
-Failure Detection
+Preemptive Scheduler  
 
-&#x20; ↓
+↓  
 
-Retry
+Task Runtime  
 
-&#x20; ↓
+↓  
 
-Reflection
+Step Executor  
 
-&#x20; ↓
+↓  
 
-Replan
+Workspace State  
 
-&#x20; ↓
+↓  
 
-Recovery Execution
+Success / Retry / Pause / Failure  
 
-&#x20; ↓
+↓  
 
-Task Complete
+Reflection / Replan  
 
-&#x20; ↓
+↓  
 
-Memory Log
+Recovery Execution  
 
-&#x20; ↓
+↓  
+
+Task Complete  
+
+↓  
+
+Memory Summary  
+
+↓  
 
 Lessons Learned
 
@@ -80,15 +106,21 @@ Lessons Learned
 
 
 
-\### 1. Planner
+\## 1. Planner
 
-The planner converts a user goal into task steps.
+
+
+The planner converts a user goal into executable task steps.
 
 
 
 Example:
 
+
+
 Goal: Create a folder and verify it exists
+
+
 
 Steps:
 
@@ -98,27 +130,7 @@ Steps:
 
 
 
-\---
-
-
-
-\### 2. Task Manager
-
-The task manager manages:
-
-\- Task tree
-
-\- Task status
-
-\- Retry count
-
-\- Reflection count
-
-\- Parent/child tasks
-
-\- Replanned tasks
-
-\- Execution history
+The planner is responsible for turning intent into structured execution targets.
 
 
 
@@ -126,13 +138,163 @@ The task manager manages:
 
 
 
-\### 3. Executor
-
-The executor runs steps using tools.
+\## 2. Task Manager
 
 
 
-Example tools:
+The task manager manages the execution graph and task state.
+
+
+
+It is responsible for:
+
+
+
+\- task tree
+
+\- task metadata
+
+\- task status
+
+\- retry count
+
+\- reflection count
+
+\- parent/child relationships
+
+\- replanned tasks
+
+\- execution history
+
+\- scheduler-facing task state
+
+
+
+\---
+
+
+
+\## 3. Task Queue
+
+
+
+The task queue holds runnable work items.
+
+
+
+It provides the execution system with a controlled place to pull the next task from,
+
+instead of treating all task steps as immediate one-shot commands.
+
+
+
+This is one of the key shifts from "assistant" architecture to "Task OS" architecture.
+
+
+
+\---
+
+
+
+\## 4. Priority Queue
+
+
+
+The priority queue determines task ordering.
+
+
+
+This allows the system to:
+
+
+
+\- sort urgent work ahead of lower-priority work
+
+\- support future policy-based scheduling
+
+\- act more like a workflow engine instead of a simple sequential runner
+
+
+
+\---
+
+
+
+\## 5. Preemptive Scheduler
+
+
+
+The preemptive scheduler manages which task should run now
+
+and when current work should pause, resume, or yield.
+
+
+
+This layer is important because it moves ZERO toward:
+
+
+
+\- runtime control
+
+\- task arbitration
+
+\- execution flow management
+
+
+
+instead of just "run the next step in order."
+
+
+
+\---
+
+
+
+\## 6. Task Runtime
+
+
+
+The runtime is the execution control layer.
+
+
+
+It is responsible for:
+
+
+
+\- executing steps
+
+\- recording runtime state
+
+\- determining success/failure
+
+\- triggering retry logic
+
+\- forwarding terminal results back to scheduler/task manager
+
+\- preserving execution error information
+
+
+
+The runtime is one of the most important parts of the current prototype.
+
+
+
+\---
+
+
+
+\## 7. Step Executor
+
+
+
+The step executor actually runs task steps through tools and adapters.
+
+
+
+Example tool families:
+
+
 
 \- workspace tool
 
@@ -146,19 +308,65 @@ Example tools:
 
 
 
+Execution should remain modular so the core runtime does not become tool-specific.
+
+
+
 \---
 
 
 
-\### 4. Failure Handling
+\## 8. Workspace State
+
+
+
+Workspace state tracks what is currently happening around task execution.
+
+
+
+This includes operational state such as:
+
+
+
+\- current task execution context
+
+\- running / paused / resumed flow
+
+\- execution control transitions
+
+
+
+This makes task execution more stateful and inspectable.
+
+
+
+\---
+
+
+
+\## 9. Failure Handling
+
+
 
 If a step fails:
 
-1\. Retry step
 
-2\. If retry exceeds limit → mark permanent failure
 
-3\. Trigger reflection
+1\. Runtime marks the step failure
+
+2\. Scheduler increments retry count
+
+3\. If retry remains available → requeue task
+
+4\. If retry exceeds limit → converge to permanent failure
+
+5\. Preserve `last\_error`
+
+6\. Prevent false success state
+
+
+
+This retry/failure closure is a key current milestone.
 
 
 
@@ -166,15 +374,27 @@ If a step fails:
 
 
 
-\### 5. Reflection Engine
+\## 10. Reflection Engine
 
-Reflection analyzes why the step failed and generates a recovery plan.
+
+
+Reflection analyzes why a task failed
+
+and can generate a recovery direction.
 
 
 
 Example:
 
-Original step failed → create alternative steps → continue execution
+
+
+Original step failed  
+
+→ analyze why  
+
+→ generate alternative steps  
+
+→ continue execution
 
 
 
@@ -182,13 +402,17 @@ Original step failed → create alternative steps → continue execution
 
 
 
-\### 6. Replanner
-
-The replanner inserts new steps into the task tree based on reflection results.
+\## 11. Replanner
 
 
 
-This allows the system to recover from failures automatically.
+The replanner inserts new recovery steps into the task tree
+
+based on reflection results.
+
+
+
+This allows ZERO to recover dynamically instead of stopping permanently.
 
 
 
@@ -196,27 +420,31 @@ This allows the system to recover from failures automatically.
 
 
 
-\### 7. Memory System
-
-After task execution, the system writes logs into memory:
+\## 12. Memory System
 
 
 
-\- Task summary
-
-\- Failed steps
-
-\- Recovered steps
-
-\- Retry count
-
-\- Reflection count
-
-\- Lessons learned
+After execution, the system writes engineering-style memory summaries, such as:
 
 
 
-This memory can be used for future planning.
+\- task summary
+
+\- failed steps
+
+\- recovered steps
+
+\- retry count
+
+\- reflection count
+
+\- lessons learned
+
+\- next useful engineering state
+
+
+
+This memory is intended to support future planning and system improvement.
 
 
 
@@ -232,55 +460,107 @@ Full execution flow:
 
 
 
-User Goal
+User Goal  
 
-&#x20; ↓
+↓  
 
-Planner
+Planner  
 
-&#x20; ↓
+↓  
 
-Task Tree Created
+Task Tree Created  
 
-&#x20; ↓
+↓  
 
-Execute Step
+Task Queue  
 
-&#x20; ↓
+↓  
 
-Success → Next Step
+Priority Queue  
 
-&#x20; ↓
+↓  
 
-Fail → Retry
+Preemptive Scheduler  
 
-&#x20; ↓
+↓  
 
-Retry Fail → Reflection
+Execute Step  
 
-&#x20; ↓
+↓  
 
-Reflection → Replan
+Success → Next Step  
 
-&#x20; ↓
+↓  
 
-Insert Recovery Steps
+Fail → Retry  
 
-&#x20; ↓
+↓  
 
-Execute Recovery Steps
+Retry Exhausted → Permanent Failure  
 
-&#x20; ↓
+↓  
 
-Task Completed
+Reflection  
 
-&#x20; ↓
+↓  
 
-Write Memory
+Replan  
 
-&#x20; ↓
+↓  
+
+Insert Recovery Steps  
+
+↓  
+
+Execute Recovery Steps  
+
+↓  
+
+Task Completed  
+
+↓  
+
+Write Memory  
+
+↓  
 
 Lessons Learned
+
+
+
+\---
+
+
+
+\## Current Architectural Reality
+
+
+
+At the current stage, ZERO already includes meaningful progress in:
+
+
+
+\- task queueing
+
+\- priority handling
+
+\- preemptive scheduling
+
+\- runtime control
+
+\- retry/failure convergence
+
+\- pause/resume behavior
+
+\- execution-state handling
+
+
+
+So the project is no longer accurately described as only a tool-routed assistant shell.
+
+
+
+It is now much closer to an early workflow-engine / task-OS kernel.
 
 
 
@@ -294,6 +574,8 @@ Lessons Learned
 
 ZERO is not designed to be a chatbot.
 
+
+
 ZERO is designed to be a task execution system.
 
 
@@ -302,21 +584,23 @@ Key ideas:
 
 
 
-\- Tasks instead of conversations
+\- tasks instead of conversations
 
-\- Steps instead of responses
+\- steps instead of responses
 
-\- Execution instead of chatting
+\- execution instead of chatting
 
-\- Failure recovery instead of stopping
+\- scheduling instead of direct one-shot dispatch
 
-\- Reflection instead of giving up
+\- recovery instead of stopping
 
-\- Memory instead of forgetting
+\- reflection instead of giving up
 
-\- Lessons instead of logs
+\- memory instead of forgetting
+
+\- lessons instead of raw logs
 
 
 
-This project explores the concept of a Task Operating System.
+This project explores the concept of a reusable local-first Task Operating System core.
 
