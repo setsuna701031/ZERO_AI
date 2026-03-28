@@ -10,7 +10,13 @@ class ToolRegistry:
     作用：
     1. 註冊工具
     2. 取得工具
-    3. 呼叫工具 execute()
+    3. 呼叫工具 execute() / run()
+
+    相容幾種常見工具介面：
+    - execute({"action": action, **params})
+    - execute(action, params)
+    - execute(params)
+    - run(**params)
     """
 
     def __init__(
@@ -66,13 +72,31 @@ class ToolRegistry:
         return self.tools
 
     # ---------------------------------------------------------
+    # execute helpers
+    # ---------------------------------------------------------
+
+    def _wrap_result(self, result: Any) -> Dict[str, Any]:
+        if isinstance(result, dict):
+            return {
+                "success": bool(result.get("success", True)),
+                "message": str(result.get("message", "")),
+                "data": result,
+            }
+
+        return {
+            "success": True,
+            "message": "",
+            "data": result,
+        }
+
+    # ---------------------------------------------------------
     # execute tool
     # ---------------------------------------------------------
 
     def execute_tool(
         self,
         tool_name: str,
-        action: str,
+        action: str = "",
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         tool = self.get_tool(tool_name)
@@ -86,16 +110,15 @@ class ToolRegistry:
 
         params = params or {}
 
-        # 先試 execute(args_dict)
         execute = getattr(tool, "execute", None)
         if callable(execute):
+            # 1) execute({"action": action, **params})
             try:
-                result = execute({"action": action, **params})
-                return {
-                    "success": True if not isinstance(result, dict) else bool(result.get("success", True)),
-                    "message": "",
-                    "data": result,
-                }
+                payload = dict(params)
+                if action:
+                    payload = {"action": action, **payload}
+                result = execute(payload)
+                return self._wrap_result(result)
             except TypeError:
                 pass
             except Exception as exc:
@@ -105,15 +128,12 @@ class ToolRegistry:
                     "data": {},
                 }
 
-        # 再試 execute(action, params)
-        if callable(execute):
+            # 2) execute(action, params)
             try:
                 result = execute(action, params)
-                return {
-                    "success": True if not isinstance(result, dict) else bool(result.get("success", True)),
-                    "message": "",
-                    "data": result,
-                }
+                return self._wrap_result(result)
+            except TypeError:
+                pass
             except Exception as exc:
                 return {
                     "success": False,
@@ -121,16 +141,24 @@ class ToolRegistry:
                     "data": {},
                 }
 
-        # 再試 run(**params)
+            # 3) execute(params)
+            try:
+                result = execute(params)
+                return self._wrap_result(result)
+            except TypeError:
+                pass
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "message": str(exc),
+                    "data": {},
+                }
+
         run = getattr(tool, "run", None)
         if callable(run):
             try:
                 result = run(**params)
-                return {
-                    "success": True if not isinstance(result, dict) else bool(result.get("success", True)),
-                    "message": "",
-                    "data": result,
-                }
+                return self._wrap_result(result)
             except Exception as exc:
                 return {
                     "success": False,

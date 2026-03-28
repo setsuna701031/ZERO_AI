@@ -1,197 +1,68 @@
-from __future__ import annotations
-
+import time
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List, Optional
 
 
-class DummyStepExecutor:
+class StepExecutor:
     """
-    測試用 Step Executor
-
-    支援三種路徑：
-    1. demo_ok
-       - 直接成功
-    2. demo_fail_first
-       - 第一次失敗，第二次成功
-    3. demo_always_fail
-       - 每次都失敗
-
-    其他 path 預設當作一般 workspace 動作處理。
+    負責逐步執行 planner 產生的 steps
+    並在每個 step 前檢查 queue 狀態（pause / cancel）
     """
 
-    def __init__(self) -> None:
-        self._attempts: Dict[str, int] = {}
+    def __init__(self, queue_controller=None):
+        self.queue_controller = queue_controller
 
-    def execute(self, step: Dict[str, Any], workspace: str) -> Dict[str, Any]:
-        tool = step.get("tool")
-        action_input = step.get("input", {}) or {}
-        title = step.get("title", "")
-        step_id = step.get("id", "")
-        index = step.get("index", 0)
+    def _wait_if_paused_or_cancelled(self, queue_task_id: str):
+        if not self.queue_controller or not queue_task_id:
+            return
 
-        if tool != "workspace":
-            return {
-                "ok": False,
-                "tool": tool,
-                "input": action_input,
-                "message": f"unsupported tool: {tool}",
-                "step_id": step_id,
-                "title": title,
-                "index": index,
-            }
+        while True:
+            status = self.queue_controller.get_status(queue_task_id)
 
-        action = action_input.get("action")
-        path_value = action_input.get("path", "")
+            if status == "paused":
+                time.sleep(1)
+                continue
 
-        print(f"[DummyStepExecutor] tool = {tool} | path = {path_value}")
+            if status == "cancelled":
+                raise RuntimeError("task cancelled by user")
 
-        attempt_key = f"{workspace}:{step_id}:{path_value}"
-        attempt_count = self._attempts.get(attempt_key, 0) + 1
-        self._attempts[attempt_key] = attempt_count
+            return
 
-        if path_value == "demo_fail_first":
-            if attempt_count == 1:
-                print("[DummyStepExecutor] forced failure on first attempt")
-                return {
-                    "ok": False,
-                    "tool": tool,
-                    "input": action_input,
-                    "message": "forced failure on first attempt",
-                    "step_id": step_id,
-                    "title": title,
-                    "index": index,
-                }
+    def execute_steps(
+        self,
+        steps: List[Dict[str, Any]],
+        run_step_func: Callable[[Dict[str, Any]], Dict[str, Any]],
+        state_file: Path,
+        queue_task_id: str = "",
+    ) -> Dict[str, Any]:
 
-            print("[DummyStepExecutor] retry success")
-            return self._run_workspace_action(
-                action=action,
-                path_value=path_value,
-                workspace=workspace,
-                tool=tool,
-                action_input=action_input,
-                step_id=step_id,
-                title=title,
-                index=index,
-                success_message="retry success",
+        total_steps = len(steps)
+
+        for index, step in enumerate(steps, start=1):
+            # Pause / Cancel 控制
+            self._wait_if_paused_or_cancelled(queue_task_id)
+
+            result = run_step_func(step)
+
+            # 更新 state.json
+            state = {}
+            if state_file.exists():
+                try:
+                    state = json.loads(state_file.read_text(encoding="utf-8"))
+                except Exception:
+                    state = {}
+
+            state["current_step_index"] = index
+            state["last_finished_step"] = index
+            state["progress_percent"] = int((index / total_steps) * 100)
+
+            state_file.write_text(
+                json.dumps(state, indent=2, ensure_ascii=False),
+                encoding="utf-8",
             )
 
-        if path_value == "demo_always_fail":
-            print("[DummyStepExecutor] forced permanent failure")
-            return {
-                "ok": False,
-                "tool": tool,
-                "input": action_input,
-                "message": "forced permanent failure",
-                "step_id": step_id,
-                "title": title,
-                "index": index,
-            }
-
-        return self._run_workspace_action(
-            action=action,
-            path_value=path_value,
-            workspace=workspace,
-            tool=tool,
-            action_input=action_input,
-            step_id=step_id,
-            title=title,
-            index=index,
-            success_message="step completed",
-        )
-
-    def _run_workspace_action(
-        self,
-        action: str,
-        path_value: str,
-        workspace: str,
-        tool: str,
-        action_input: Dict[str, Any],
-        step_id: str,
-        title: str,
-        index: int,
-        success_message: str,
-    ) -> Dict[str, Any]:
-        base_dir = Path(workspace)
-        target = base_dir / path_value if path_value else base_dir
-
-        try:
-            if action == "mkdir":
-                target.mkdir(parents=True, exist_ok=True)
-
-            elif action == "write_text":
-                content = action_input.get("content", "")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(content, encoding="utf-8")
-
-            elif action == "append_text":
-                content = action_input.get("content", "")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open("a", encoding="utf-8") as f:
-                    f.write(content)
-
-            elif action == "read_text":
-                if not target.exists():
-                    return {
-                        "ok": False,
-                        "tool": tool,
-                        "input": action_input,
-                        "message": f"file not found: {target}",
-                        "step_id": step_id,
-                        "title": title,
-                        "index": index,
-                    }
-                content = target.read_text(encoding="utf-8")
-                return {
-                    "ok": True,
-                    "tool": tool,
-                    "input": action_input,
-                    "message": success_message,
-                    "content": content,
-                    "step_id": step_id,
-                    "title": title,
-                    "index": index,
-                }
-
-            elif action == "exists":
-                return {
-                    "ok": True,
-                    "tool": tool,
-                    "input": action_input,
-                    "message": success_message,
-                    "exists": target.exists(),
-                    "step_id": step_id,
-                    "title": title,
-                    "index": index,
-                }
-
-            else:
-                return {
-                    "ok": False,
-                    "tool": tool,
-                    "input": action_input,
-                    "message": f"unsupported workspace action: {action}",
-                    "step_id": step_id,
-                    "title": title,
-                    "index": index,
-                }
-
-            return {
-                "ok": True,
-                "tool": tool,
-                "input": action_input,
-                "message": success_message,
-                "step_id": step_id,
-                "title": title,
-                "index": index,
-            }
-
-        except Exception as e:
-            return {
-                "ok": False,
-                "tool": tool,
-                "input": action_input,
-                "message": f"{type(e).__name__}: {e}",
-                "step_id": step_id,
-                "title": title,
-                "index": index,
-            }
+        return {
+            "success": True,
+            "steps_executed": total_steps,
+        }

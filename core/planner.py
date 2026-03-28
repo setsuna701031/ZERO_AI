@@ -1,19 +1,21 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 
 class Planner:
     """
-    ZERO Planner (memory-aware rules v1)
+    ZERO Planner (memory-aware rules v2)
 
-    先不碰複雜 LLM planner。
-    先把：
-    - task classification
-    - lessons injection
-    - precheck insertion
-    - fallback preference
-    做進來。
+    目前先維持規則式 planner，加入：
+    - command / file / slow_task / general 分流
+    - memory hints
+    - slow task 測試路徑
+
+    目的：
+    讓 queue / scheduler 可以真的測 priority / pause / resume，
+    而不是任務瞬間 finished 導致測試條件失真。
     """
 
     def plan(
@@ -56,28 +58,16 @@ class Planner:
                 }
             )
 
-            if memory_hints["prefer_command_tool"]:
-                steps.append(
-                    {
-                        "name": "execute command tool",
-                        "kind": "tool",
-                        "tool_name": "command_tool",
-                        "tool_args": {
-                            "command": command_text,
-                        },
-                    }
-                )
-            else:
-                steps.append(
-                    {
-                        "name": "execute command tool",
-                        "kind": "tool",
-                        "tool_name": "command_tool",
-                        "tool_args": {
-                            "command": command_text,
-                        },
-                    }
-                )
+            steps.append(
+                {
+                    "name": "execute command tool",
+                    "kind": "tool",
+                    "tool_name": "command_tool",
+                    "tool_args": {
+                        "command": command_text,
+                    },
+                }
+            )
 
             steps.append(
                 {
@@ -113,6 +103,30 @@ class Planner:
                 }
             )
 
+        elif task_type == "slow_task":
+            slow_args = self._extract_slow_task_args(goal_text)
+
+            steps.append(
+                {
+                    "name": "prepare slow task test",
+                    "kind": "reason",
+                }
+            )
+            steps.append(
+                {
+                    "name": "run slow task",
+                    "kind": "tool",
+                    "tool_name": "slow_task",
+                    "tool_args": slow_args,
+                }
+            )
+            steps.append(
+                {
+                    "name": "collect slow task result",
+                    "kind": "reason",
+                }
+            )
+
         else:
             steps.append(
                 {
@@ -137,7 +151,7 @@ class Planner:
         return {
             "goal": goal_text,
             "task_type": task_type,
-            "planner_version": "memory_aware_rules_v1",
+            "planner_version": "memory_aware_rules_v2",
             "steps": steps,
             "memory_context": {
                 "lesson_count": len(lessons),
@@ -166,6 +180,19 @@ class Planner:
                         "dir ",
                         "copy ",
                         "move ",
+                    ]
+                ),
+                "contains_slow_task_hint": any(
+                    x in lowered
+                    for x in [
+                        "slow task",
+                        "sleep task",
+                        "demo long task",
+                        "slow_count_task",
+                        "慢任務",
+                        "慢測試",
+                        "睡眠任務",
+                        "延遲任務",
                     ]
                 ),
                 "memory_lesson_count": len(lessons),
@@ -223,6 +250,18 @@ class Planner:
     def _classify_task_type(self, goal: str) -> str:
         lowered = goal.lower()
 
+        slow_task_keywords = [
+            "slow task",
+            "sleep task",
+            "demo long task",
+            "slow_count_task",
+            "慢任務",
+            "慢測試",
+            "睡眠任務",
+            "延遲任務",
+            "倒數任務",
+        ]
+
         command_keywords = [
             "cmd",
             "command",
@@ -255,6 +294,9 @@ class Planner:
             "讀取",
             "讀檔",
         ]
+
+        if any(keyword in lowered for keyword in slow_task_keywords):
+            return "slow_task"
 
         if any(keyword in lowered for keyword in command_keywords):
             return "command"
@@ -295,6 +337,60 @@ class Planner:
                 return clean
 
         return "task_memory.json"
+
+    def _extract_slow_task_args(self, goal: str) -> Dict[str, Any]:
+        text = str(goal).strip()
+        lowered = text.lower()
+
+        seconds = 10
+        steps = 5
+        label = "slow task demo"
+
+        sec_match = re.search(r"(\d+)\s*(second|seconds|sec|s)\b", lowered)
+        if sec_match:
+            try:
+                seconds = max(1, min(300, int(sec_match.group(1))))
+            except Exception:
+                seconds = 10
+        else:
+            zh_sec_match = re.search(r"(\d+)\s*秒", text)
+            if zh_sec_match:
+                try:
+                    seconds = max(1, min(300, int(zh_sec_match.group(1))))
+                except Exception:
+                    seconds = 10
+
+        step_match = re.search(r"(\d+)\s*(step|steps)\b", lowered)
+        if step_match:
+            try:
+                steps = max(1, min(100, int(step_match.group(1))))
+            except Exception:
+                steps = 5
+        else:
+            zh_step_match = re.search(r"(\d+)\s*步", text)
+            if zh_step_match:
+                try:
+                    steps = max(1, min(100, int(zh_step_match.group(1))))
+                except Exception:
+                    steps = 5
+
+        quoted = re.findall(r'"([^"]+)"', text)
+        if quoted:
+            label = quoted[0].strip() or label
+        elif "sleep task" in lowered:
+            label = "sleep task demo"
+        elif "demo long task" in lowered:
+            label = "demo long task"
+        elif "慢任務" in text:
+            label = "慢任務測試"
+        elif "睡眠任務" in text:
+            label = "睡眠任務測試"
+
+        return {
+            "duration_seconds": seconds,
+            "steps": steps,
+            "label": label,
+        }
 
     def _dedupe(self, items: List[str]) -> List[str]:
         result: List[str] = []
