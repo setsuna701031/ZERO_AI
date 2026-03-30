@@ -1,6 +1,10 @@
-# =========================
+# ============================
 # ZERO Project Runtime Files
-# =========================
+# ============================
+
+# Python cache
+__pycache__/
+*.pyc
 
 # Workspace runtime
 workspace/*
@@ -12,8 +16,9 @@ data/logs/
 data/backups/
 data/workspace/
 data/*.json
+data/reflections/
 
-# Logs
+# Logs / runtime
 logs/
 run/
 *.log
@@ -21,6 +26,13 @@ run/
 
 # Archive / temp
 *_archive/
-*_backup/
+*-backup/
 *.tmp
 *.bak
+
+# Local test files
+test_agent_loop_reflection.py
+test_memory_engine.py
+
+data/memory/
+venv/

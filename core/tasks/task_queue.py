@@ -1,365 +1,403 @@
+# core/tasks/task_queue.py
 from __future__ import annotations
 
 import json
-import threading
-import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
+import os
 from typing import Any, Dict, List, Optional
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-QUEUE_STATUS_PENDING = "pending"
-QUEUE_STATUS_RUNNING = "running"
-QUEUE_STATUS_PAUSED = "paused"
-QUEUE_STATUS_FINISHED = "finished"
-QUEUE_STATUS_FAILED = "failed"
-QUEUE_STATUS_CANCELLED = "cancelled"
-
-
-VALID_QUEUE_STATUSES = {
-    QUEUE_STATUS_PENDING,
-    QUEUE_STATUS_RUNNING,
-    QUEUE_STATUS_PAUSED,
-    QUEUE_STATUS_FINISHED,
-    QUEUE_STATUS_FAILED,
-    QUEUE_STATUS_CANCELLED,
-}
-
-
-@dataclass
-class QueueTask:
-    queue_task_id: str
-    goal: str
-    source_task_name: str = ""
-    priority: int = 100
-    status: str = QUEUE_STATUS_PENDING
-    created_at: str = field(default_factory=utc_now_iso)
-    updated_at: str = field(default_factory=utc_now_iso)
-    started_at: str = ""
-    finished_at: str = ""
-    run_mode: str = "normal"
-    task_type: str = "general"
-    assigned_task_name: str = ""
-    error: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "QueueTask":
-        return cls(
-            queue_task_id=str(data.get("queue_task_id", "")).strip(),
-            goal=str(data.get("goal", "")).strip(),
-            source_task_name=str(data.get("source_task_name", "")).strip(),
-            priority=int(data.get("priority", 100)),
-            status=str(data.get("status", QUEUE_STATUS_PENDING)).strip(),
-            created_at=str(data.get("created_at", utc_now_iso())).strip(),
-            updated_at=str(data.get("updated_at", utc_now_iso())).strip(),
-            started_at=str(data.get("started_at", "")).strip(),
-            finished_at=str(data.get("finished_at", "")).strip(),
-            run_mode=str(data.get("run_mode", "normal")).strip(),
-            task_type=str(data.get("task_type", "general")).strip(),
-            assigned_task_name=str(data.get("assigned_task_name", "")).strip(),
-            error=str(data.get("error", "")).strip(),
-            metadata=data.get("metadata", {}) or {},
-        )
+STATUS_QUEUED = "queued"
+STATUS_RUNNING = "running"
+STATUS_FINISHED = "finished"
+STATUS_FAILED = "failed"
+STATUS_RETRYING = "retrying"
+STATUS_WAITING = "waiting"
+STATUS_BLOCKED = "blocked"
+STATUS_PAUSED = "paused"
+STATUS_CANCELED = "canceled"
 
 
 class TaskQueue:
     """
-    Persistent task queue.
+    給目前 ZERO Task OS 使用的最小可運作 TaskQueue
 
-    Features:
-    - enqueue task
-    - list tasks
-    - get next runnable task
-    - mark running / finished / failed / paused / cancelled
-    - reprioritize
-    - resume paused task
-    - persist to queue.json
+    提供：
+    - enqueue(...)
+    - dequeue()
+    - requeue(task)
+    - list_tasks()
+    - get_task(task_name)
+    - pause_task(task_name)
+    - resume_task(task_name)
+    - cancel_task(task_name)
+    - set_task_priority(task_name, priority)
+    - get_scheduler_state()
+    - reset_scheduler_state()
+    - has_tasks()
     """
 
-    def __init__(self, workspace_root: str | Path) -> None:
-        self.workspace_root = Path(workspace_root)
-        self.system_dir = self.workspace_root / "_system"
-        self.system_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, workspace_root: str) -> None:
+        self.workspace_root = os.path.abspath(workspace_root)
+        os.makedirs(self.workspace_root, exist_ok=True)
 
-        self.queue_file = self.system_dir / "task_queue.json"
-        self._lock = threading.RLock()
-        self._tasks: List[QueueTask] = []
-        self._load()
+        self.tasks_file = os.path.join(self.workspace_root, "tasks.json")
+        self.scheduler_state_file = os.path.join(self.workspace_root, "scheduler_state.json")
 
-    # -------------------------------------------------------------------------
-    # persistence
-    # -------------------------------------------------------------------------
-    def _load(self) -> None:
-        with self._lock:
-            if not self.queue_file.exists():
-                self._tasks = []
-                self._save()
-                return
+        self._ensure_files()
 
-            try:
-                raw = json.loads(self.queue_file.read_text(encoding="utf-8"))
-                items = raw.get("tasks", [])
-                self._tasks = [QueueTask.from_dict(item) for item in items]
-            except Exception:
-                self._tasks = []
-                self._save()
+    # =========================================================
+    # File helpers
+    # =========================================================
 
-    def _save(self) -> None:
-        with self._lock:
-            data = {
-                "updated_at": utc_now_iso(),
-                "tasks": [task.to_dict() for task in self._tasks],
-            }
-            self.queue_file.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
+    def _ensure_files(self) -> None:
+        if not os.path.exists(self.tasks_file):
+            self._save_tasks([])
+
+        if not os.path.exists(self.scheduler_state_file):
+            self._save_scheduler_state(
+                {
+                    "current_task_name": None,
+                    "queued_task_names": [],
+                    "paused_task_names": [],
+                    "waiting_task_names": [],
+                    "retrying_task_names": [],
+                    "blocked_task_names": [],
+                    "queued_count": 0,
+                    "paused_count": 0,
+                    "waiting_count": 0,
+                    "retrying_count": 0,
+                    "blocked_count": 0,
+                    "tick": 0,
+                    "has_work": False,
+                }
             )
 
-    # -------------------------------------------------------------------------
-    # helpers
-    # -------------------------------------------------------------------------
-    def _find_index(self, queue_task_id: str) -> int:
-        for idx, task in enumerate(self._tasks):
-            if task.queue_task_id == queue_task_id:
-                return idx
-        return -1
+    def _load_tasks(self) -> List[Dict[str, Any]]:
+        self._ensure_files()
+        try:
+            with open(self.tasks_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = []
 
-    def _get_task_or_raise(self, queue_task_id: str) -> QueueTask:
-        idx = self._find_index(queue_task_id)
-        if idx < 0:
-            raise ValueError(f"queue task not found: {queue_task_id}")
-        return self._tasks[idx]
+        if not isinstance(data, list):
+            return []
 
-    def _touch(self, task: QueueTask) -> None:
-        task.updated_at = utc_now_iso()
+        result: List[Dict[str, Any]] = []
+        for item in data:
+            if isinstance(item, dict):
+                try:
+                    result.append(self._normalize_task(item))
+                except Exception:
+                    continue
+        return result
 
-    def _sorted_pending(self) -> List[QueueTask]:
-        pending = [t for t in self._tasks if t.status == QUEUE_STATUS_PENDING]
-        pending.sort(key=lambda x: (x.priority, x.created_at, x.queue_task_id))
-        return pending
+    def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
+        normalized = [self._normalize_task(t) for t in tasks]
+        with open(self.tasks_file, "w", encoding="utf-8") as f:
+            json.dump(normalized, f, ensure_ascii=False, indent=2)
 
-    def _sorted_all(self) -> List[QueueTask]:
-        items = list(self._tasks)
-        items.sort(key=lambda x: (x.priority, x.created_at, x.queue_task_id))
-        return items
+    def _load_scheduler_state(self) -> Dict[str, Any]:
+        self._ensure_files()
+        try:
+            with open(self.scheduler_state_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
 
-    # -------------------------------------------------------------------------
-    # public api
-    # -------------------------------------------------------------------------
+        if not isinstance(data, dict):
+            data = {}
+
+        return {
+            "current_task_name": data.get("current_task_name"),
+            "queued_task_names": list(data.get("queued_task_names", [])),
+            "paused_task_names": list(data.get("paused_task_names", [])),
+            "waiting_task_names": list(data.get("waiting_task_names", [])),
+            "retrying_task_names": list(data.get("retrying_task_names", [])),
+            "blocked_task_names": list(data.get("blocked_task_names", [])),
+            "queued_count": int(data.get("queued_count", 0)),
+            "paused_count": int(data.get("paused_count", 0)),
+            "waiting_count": int(data.get("waiting_count", 0)),
+            "retrying_count": int(data.get("retrying_count", 0)),
+            "blocked_count": int(data.get("blocked_count", 0)),
+            "tick": int(data.get("tick", 0)),
+            "has_work": bool(data.get("has_work", False)),
+        }
+
+    def _save_scheduler_state(self, state: Dict[str, Any]) -> None:
+        with open(self.scheduler_state_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+
+    # =========================================================
+    # Task helpers
+    # =========================================================
+
+    def _normalize_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        task_id = str(task.get("id") or task.get("task_name") or "").strip()
+        if not task_id:
+            raise ValueError("task id missing")
+
+        workspace = str(task.get("workspace") or os.path.join(self.workspace_root, task_id))
+        os.makedirs(workspace, exist_ok=True)
+
+        history = task.get("history", ["queued"])
+        if not isinstance(history, list):
+            history = ["queued"]
+        if not history:
+            history = ["queued"]
+
+        return {
+            "id": task_id,
+            "task_name": task_id,
+            "goal": str(task.get("goal", "")),
+            "workspace": workspace,
+            "status": str(task.get("status", STATUS_QUEUED)),
+            "priority": int(task.get("priority", 0)),
+            "retry_count": int(task.get("retry_count", 0)),
+            "max_retries": int(task.get("max_retries", 0)),
+            "retry_delay": int(task.get("retry_delay", 0)),
+            "timeout_ticks": int(task.get("timeout_ticks", 0)),
+            "depends_on": list(task.get("depends_on", []) or []),
+            "simulate": str(task.get("simulate", "")),
+            "required_ticks": int(task.get("required_ticks", 1)),
+            "history": history,
+        }
+
+    def _append_history(self, task: Dict[str, Any], new_status: str) -> None:
+        old_status = str(task.get("status", ""))
+        if old_status != new_status:
+            task.setdefault("history", [])
+            task["history"].append(f"{old_status} -> {new_status}")
+        task["status"] = new_status
+
+    def _allocate_task_id(self, tasks: List[Dict[str, Any]]) -> str:
+        nums: List[int] = []
+        for task in tasks:
+            task_id = str(task.get("id", ""))
+            if task_id.startswith("task_"):
+                tail = task_id[5:]
+                if tail.isdigit():
+                    nums.append(int(tail))
+        next_num = max(nums) + 1 if nums else 1
+        return f"task_{next_num:04d}"
+
+    def _replace_task(self, updated_task: Dict[str, Any]) -> Dict[str, Any]:
+        tasks = self._load_tasks()
+        replaced = False
+
+        for i, task in enumerate(tasks):
+            if task.get("id") == updated_task.get("id"):
+                tasks[i] = self._normalize_task(updated_task)
+                replaced = True
+                break
+
+        if not replaced:
+            tasks.append(self._normalize_task(updated_task))
+
+        self._save_tasks(tasks)
+        self._refresh_scheduler_state()
+        return self._normalize_task(updated_task)
+
+    # =========================================================
+    # Public API
+    # =========================================================
+
     def enqueue(
         self,
-        goal: str,
         *,
-        priority: int = 100,
-        source_task_name: str = "",
-        run_mode: str = "normal",
-        task_type: str = "general",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> QueueTask:
-        goal = (goal or "").strip()
-        if not goal:
-            raise ValueError("goal cannot be empty")
+        goal: str,
+        priority: int = 0,
+        max_retries: int = 0,
+        retry_delay: int = 0,
+        timeout_ticks: int = 0,
+        depends_on: Optional[List[str]] = None,
+        simulate: str = "",
+        required_ticks: int = 1,
+    ) -> Dict[str, Any]:
+        tasks = self._load_tasks()
+        task_id = self._allocate_task_id(tasks)
+        workspace = os.path.join(self.workspace_root, task_id)
+        os.makedirs(workspace, exist_ok=True)
 
-        queue_task = QueueTask(
-            queue_task_id=f"qtask_{uuid.uuid4().hex[:12]}",
-            goal=goal,
-            source_task_name=source_task_name.strip(),
-            priority=int(priority),
-            status=QUEUE_STATUS_PENDING,
-            run_mode=run_mode.strip() or "normal",
-            task_type=task_type.strip() or "general",
-            metadata=metadata or {},
+        task = self._normalize_task(
+            {
+                "id": task_id,
+                "goal": goal,
+                "workspace": workspace,
+                "status": STATUS_QUEUED,
+                "priority": priority,
+                "retry_count": 0,
+                "max_retries": max_retries,
+                "retry_delay": retry_delay,
+                "timeout_ticks": timeout_ticks,
+                "depends_on": depends_on or [],
+                "simulate": simulate,
+                "required_ticks": required_ticks,
+                "history": ["queued"],
+            }
         )
 
-        with self._lock:
-            self._tasks.append(queue_task)
-            self._save()
-            return queue_task
+        tasks.append(task)
+        self._save_tasks(tasks)
+        self._refresh_scheduler_state()
+        return task
 
-    def list_tasks(
-        self,
-        *,
-        status: Optional[str] = None,
-        limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
-        with self._lock:
-            items = self._sorted_all()
-            if status:
-                status = status.strip()
-                items = [t for t in items if t.status == status]
-            if limit is not None and limit >= 0:
-                items = items[:limit]
-            return [t.to_dict() for t in items]
+    def dequeue(self) -> Optional[Dict[str, Any]]:
+        tasks = self._load_tasks()
 
-    def get_task(self, queue_task_id: str) -> Optional[Dict[str, Any]]:
-        with self._lock:
-            idx = self._find_index(queue_task_id)
-            if idx < 0:
-                return None
-            return self._tasks[idx].to_dict()
+        queued_tasks = [t for t in tasks if str(t.get("status", "")).lower() == STATUS_QUEUED]
+        if not queued_tasks:
+            self._refresh_scheduler_state()
+            return None
 
-    def get_next_runnable_task(self) -> Optional[QueueTask]:
-        with self._lock:
-            # 單機版先限制同時間只跑一個 running task
-            has_running = any(t.status == QUEUE_STATUS_RUNNING for t in self._tasks)
-            if has_running:
-                return None
+        queued_tasks.sort(key=lambda t: (-int(t.get("priority", 0)), str(t.get("id", ""))))
+        selected = queued_tasks[0]
 
-            pending = self._sorted_pending()
-            if not pending:
-                return None
-            return pending[0]
+        for task in tasks:
+            if task["id"] == selected["id"]:
+                self._append_history(task, STATUS_RUNNING)
+                selected = task
+                break
 
-    def mark_running(self, queue_task_id: str, assigned_task_name: str = "") -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            if task.status not in {QUEUE_STATUS_PENDING, QUEUE_STATUS_PAUSED}:
-                raise ValueError(
-                    f"cannot mark running from status '{task.status}'"
-                )
+        self._save_tasks(tasks)
+        self._refresh_scheduler_state(current_task_name=selected["id"])
+        return selected
 
-            task.status = QUEUE_STATUS_RUNNING
-            task.started_at = task.started_at or utc_now_iso()
-            task.assigned_task_name = assigned_task_name.strip()
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+    def requeue(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        tasks = self._load_tasks()
 
-    def mark_finished(self, queue_task_id: str, assigned_task_name: str = "") -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            if task.status not in {QUEUE_STATUS_RUNNING, QUEUE_STATUS_PENDING, QUEUE_STATUS_PAUSED}:
-                raise ValueError(
-                    f"cannot mark finished from status '{task.status}'"
-                )
+        for item in tasks:
+            if item["id"] == task["id"]:
+                self._append_history(item, STATUS_QUEUED)
+                updated = item
+                break
+        else:
+            updated = self._normalize_task(task)
+            self._append_history(updated, STATUS_QUEUED)
+            tasks.append(updated)
 
-            task.status = QUEUE_STATUS_FINISHED
-            task.finished_at = utc_now_iso()
-            if assigned_task_name.strip():
-                task.assigned_task_name = assigned_task_name.strip()
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+        self._save_tasks(tasks)
+        self._refresh_scheduler_state()
+        return updated
 
-    def mark_failed(
-        self,
-        queue_task_id: str,
-        error: str = "",
-        assigned_task_name: str = "",
-    ) -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            if task.status not in {QUEUE_STATUS_RUNNING, QUEUE_STATUS_PENDING, QUEUE_STATUS_PAUSED}:
-                raise ValueError(
-                    f"cannot mark failed from status '{task.status}'"
-                )
+    def get_task(self, task_name: str) -> Optional[Dict[str, Any]]:
+        tasks = self._load_tasks()
+        for task in tasks:
+            if task.get("id") == task_name or task.get("task_name") == task_name:
+                return task
+        return None
 
-            task.status = QUEUE_STATUS_FAILED
-            task.finished_at = utc_now_iso()
-            task.error = (error or "").strip()
-            if assigned_task_name.strip():
-                task.assigned_task_name = assigned_task_name.strip()
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+    def list_tasks(self) -> List[Dict[str, Any]]:
+        return self._load_tasks()
 
-    def pause_task(self, queue_task_id: str) -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            if task.status != QUEUE_STATUS_RUNNING:
-                raise ValueError(f"only running task can be paused, current='{task.status}'")
+    def pause_task(self, task_name: str) -> Dict[str, Any]:
+        task = self.get_task(task_name)
+        if task is None:
+            raise ValueError(f"Task not found: {task_name}")
+        self._append_history(task, STATUS_PAUSED)
+        return self._replace_task(task)
 
-            task.status = QUEUE_STATUS_PAUSED
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+    def resume_task(self, task_name: str) -> Dict[str, Any]:
+        task = self.get_task(task_name)
+        if task is None:
+            raise ValueError(f"Task not found: {task_name}")
+        self._append_history(task, STATUS_QUEUED)
+        return self._replace_task(task)
 
-    def resume_task(self, queue_task_id: str) -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            if task.status != QUEUE_STATUS_PAUSED:
-                raise ValueError(f"only paused task can be resumed, current='{task.status}'")
+    def cancel_task(self, task_name: str) -> Dict[str, Any]:
+        task = self.get_task(task_name)
+        if task is None:
+            raise ValueError(f"Task not found: {task_name}")
+        self._append_history(task, STATUS_CANCELED)
+        return self._replace_task(task)
 
-            # 重新丟回 pending，由 scheduler 重新撿起來
-            task.status = QUEUE_STATUS_PENDING
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+    def set_task_priority(self, task_name: str, priority: int) -> Dict[str, Any]:
+        task = self.get_task(task_name)
+        if task is None:
+            raise ValueError(f"Task not found: {task_name}")
+        task["priority"] = int(priority)
+        return self._replace_task(task)
 
-    def cancel_task(self, queue_task_id: str) -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            if task.status in {
-                QUEUE_STATUS_FINISHED,
-                QUEUE_STATUS_FAILED,
-                QUEUE_STATUS_CANCELLED,
-            }:
-                raise ValueError(f"cannot cancel task from status '{task.status}'")
+    def has_tasks(self) -> bool:
+        tasks = self._load_tasks()
+        for task in tasks:
+            status = str(task.get("status", "")).lower()
+            if status not in {STATUS_FINISHED, STATUS_FAILED, STATUS_CANCELED}:
+                return True
+        return False
 
-            task.status = QUEUE_STATUS_CANCELLED
-            task.finished_at = utc_now_iso()
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+    # =========================================================
+    # Scheduler state
+    # =========================================================
 
-    def reprioritize(self, queue_task_id: str, priority: int) -> Dict[str, Any]:
-        with self._lock:
-            task = self._get_task_or_raise(queue_task_id)
-            task.priority = int(priority)
-            self._touch(task)
-            self._save()
-            return task.to_dict()
+    def _refresh_scheduler_state(self, current_task_name: Optional[str] = None) -> Dict[str, Any]:
+        tasks = self._load_tasks()
+        old_state = self._load_scheduler_state()
 
-    def remove_terminal_task(self, queue_task_id: str) -> Dict[str, Any]:
-        with self._lock:
-            idx = self._find_index(queue_task_id)
-            if idx < 0:
-                raise ValueError(f"queue task not found: {queue_task_id}")
+        queued = []
+        paused = []
+        waiting = []
+        retrying = []
+        blocked = []
 
-            task = self._tasks[idx]
-            if task.status not in {
-                QUEUE_STATUS_FINISHED,
-                QUEUE_STATUS_FAILED,
-                QUEUE_STATUS_CANCELLED,
-            }:
-                raise ValueError(
-                    f"only terminal task can be removed, current='{task.status}'"
-                )
+        for task in tasks:
+            task_id = task.get("id", "")
+            status = str(task.get("status", "")).lower()
 
-            removed = self._tasks.pop(idx)
-            self._save()
-            return removed.to_dict()
+            if status == STATUS_QUEUED:
+                queued.append(task_id)
+            elif status == STATUS_PAUSED:
+                paused.append(task_id)
+            elif status == STATUS_WAITING:
+                waiting.append(task_id)
+            elif status == STATUS_RETRYING:
+                retrying.append(task_id)
+            elif status == STATUS_BLOCKED:
+                blocked.append(task_id)
 
-    def stats(self) -> Dict[str, Any]:
-        with self._lock:
-            counts = {
-                QUEUE_STATUS_PENDING: 0,
-                QUEUE_STATUS_RUNNING: 0,
-                QUEUE_STATUS_PAUSED: 0,
-                QUEUE_STATUS_FINISHED: 0,
-                QUEUE_STATUS_FAILED: 0,
-                QUEUE_STATUS_CANCELLED: 0,
-            }
+        state = {
+            "current_task_name": current_task_name,
+            "queued_task_names": queued,
+            "paused_task_names": paused,
+            "waiting_task_names": waiting,
+            "retrying_task_names": retrying,
+            "blocked_task_names": blocked,
+            "queued_count": len(queued),
+            "paused_count": len(paused),
+            "waiting_count": len(waiting),
+            "retrying_count": len(retrying),
+            "blocked_count": len(blocked),
+            "tick": int(old_state.get("tick", 0)),
+            "has_work": bool(queued or paused or waiting or retrying or blocked),
+        }
 
-            for task in self._tasks:
-                counts[task.status] = counts.get(task.status, 0) + 1
+        self._save_scheduler_state(state)
+        return state
 
-            return {
-                "queue_file": str(self.queue_file),
-                "total": len(self._tasks),
-                "counts": counts,
-                "next_runnable": (
-                    self.get_next_runnable_task().to_dict()
-                    if self.get_next_runnable_task()
-                    else None
-                ),
-            }
+    def get_scheduler_state(self) -> Dict[str, Any]:
+        return self._refresh_scheduler_state()
+
+    def reset_scheduler_state(self) -> Dict[str, Any]:
+        state = {
+            "current_task_name": None,
+            "queued_task_names": [],
+            "paused_task_names": [],
+            "waiting_task_names": [],
+            "retrying_task_names": [],
+            "blocked_task_names": [],
+            "queued_count": 0,
+            "paused_count": 0,
+            "waiting_count": 0,
+            "retrying_count": 0,
+            "blocked_count": 0,
+            "tick": 0,
+            "has_work": self.has_tasks(),
+        }
+        self._save_scheduler_state(state)
+        return state
+
+    def advance_tick(self) -> Dict[str, Any]:
+        state = self._load_scheduler_state()
+        state["tick"] = int(state.get("tick", 0)) + 1
+        self._save_scheduler_state(state)
+        return state
