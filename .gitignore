@@ -50,3 +50,5 @@ test_memory_engine.py
 # Secrets / local config
 .env
 .env.*
+data/test.txt
+data/memory/
