@@ -1,38 +1,22 @@
-\# ZERO
+\# ZERO AI
 
 
 
-ZERO is a local task-oriented AI runtime focused on executable task flows, workspace actions, and verifiable agent behavior.
+ZERO AI is a local-first AI execution project.
 
 
 
-ZERO 的方向不是一般聊天機器人，而是往「本地可控、可驗證、可執行任務」的 AI Task Operating System 核心推進。
+At the current stage, it is best described as an early
+
+\*\*Autonomous Agent Runtime / Task Operating System prototype\*\*
+
+rather than a traditional chatbot-style assistant.
 
 
 
-\---
+The project focuses on structured task-oriented execution,
 
-
-
-\## Current Focus
-
-
-
-目前 ZERO 正在朝這幾個方向演進：
-
-
-
-\- Local-first AI runtime
-
-\- Task-oriented execution flow
-
-\- Workspace action execution
-
-\- Verifiable success / failure behavior
-
-\- Multi-step task execution
-
-\- Open-core architecture path
+workspace-facing behavior, and demonstrable engineering progress.
 
 
 
@@ -40,95 +24,57 @@ ZERO 的方向不是一般聊天機器人，而是往「本地可控、可驗證
 
 
 
-\## What ZERO Can Already Do
+\## What ZERO Is
 
 
 
-以下是目前已經有實測證據支撐的能力：
+ZERO is being built toward a system where the user gives a goal,
+
+and the system increasingly helps organize, execute, and carry work forward.
 
 
 
-\- 建立任務並執行基本 task flow
-
-\- 執行 workspace actions
-
-\- 建立資料夾
-
-\- 建立檔案並寫入內容
-
-\- 將任務結果寫入 execution log
-
-\- 將 success / failure 與真實工具結果對齊
-
-\- 執行基本 multi-step workspace flow
+A simplified high-level view looks like this:
 
 
 
-目前已驗證的方向，不是單純聊天，而是：
+User Goal  
+
+↓  
+
+Structured Work  
+
+↓  
+
+Execution Layers  
+
+↓  
+
+Workspace / Tool Interaction  
+
+↓  
+
+Result Recording  
+
+↓  
+
+Summary / Continuity
 
 
 
-1\. 接收任務意圖
-
-2\. 進入 task execution flow
-
-3\. 呼叫工具
-
-4\. 在 workspace 中產生真實結果
-
-5\. 回傳 success / failure 與 execution log
+This means ZERO is not mainly positioned as:
 
 
 
-\---
+\- a generic chat wrapper
+
+\- a simple tool collection
+
+\- a thin prompt router
 
 
 
-\## Verified Demo Evidence
-
-
-
-\### 1. Task success / finished
-
-成功案例已驗證，任務完成時可正確顯示 finished 結果。
-
-
-
-!\[Task Success Finished](docs/images/ZERO\_TaskOS\_Success\_TaskFinished.png)
-
-
-
-\### 2. Retry / permanent failure
-
-失敗案例已驗證，當任務無法完成時，系統可正確反映 permanent failure，而不是假成功。
-
-
-
-!\[Retry Permanent Failure](docs/images/ZERO\_TaskOS\_Retry\_PermanentFailure.png)
-
-
-
-\### 3. Basic multi-step workspace execution
-
-目前已完成基本 multi-step workspace flow 驗證：
-
-
-
-\- 建立資料夾
-
-\- 在資料夾中建立檔案
-
-\- 寫入內容
-
-\- 產生實體落地結果
-
-
-
-Demo video:
-
-
-
-\[ZERO\_TaskOS\_MultiStep\_Workspace\_Demo.mp4](docs/images/ZERO\_TaskOS\_MultiStep\_Workspace\_Demo.mp4)
+Instead, it is evolving toward a more structured execution architecture.
 
 
 
@@ -136,67 +82,27 @@ Demo video:
 
 
 
-\## Current Status
+\## Current Position
 
 
 
-目前 ZERO 比較接近這個狀態：
+At the current stage, ZERO is better understood as:
 
 
 
-\- Single-step execution: verified
+\- a local-first execution-core prototype
 
-\- Basic workspace tool execution: verified
+\- an early Autonomous Agent Runtime
 
-\- Success / failure alignment: verified
+\- a Task Operating System direction with real implementation progress
 
-\- Basic multi-step workspace flow: verified
-
-\- Planner-driven deeper orchestration: in progress
-
-\- Retry / resume / verifier / richer multi-step flow: in progress
+\- a structured agent-system foundation for future engineering assistance
 
 
 
-也就是說，ZERO 已經不是概念展示或聊天殼，而是正在形成一個真正可執行任務的本地 AI runtime 核心。
+This is already beyond a pure concept demo,
 
-
-
-\---
-
-
-
-\## Architecture Snapshot
-
-
-
-目前的核心模組方向包含：
-
-
-
-\- Router
-
-\- Planner
-
-\- Step Executor
-
-\- Scheduler
-
-\- Task Runtime
-
-\- Memory
-
-\- Command
-
-\- Tool Registry
-
-\- Workspace Tool
-
-\- Agent Loop
-
-
-
-ZERO 現在的重點不是把模組名稱堆多，而是把它們真正接成一條可驗證的 execution chain。
+but it is still an actively evolving prototype.
 
 
 
@@ -204,71 +110,39 @@ ZERO 現在的重點不是把模組名稱堆多，而是把它們真正接成一
 
 
 
-\## Design Direction
+\## What Can Be Demonstrated Now
 
 
 
-ZERO 的目標不是做一個只會對話的 AI，而是做一個：
+The current project stage already demonstrates:
 
 
 
-\- 可本地執行
+\- local task-oriented execution
 
-\- 可審查
+\- workspace-facing actions
 
-\- 可追蹤
+\- visible and inspectable outputs
 
-\- 可驗證
+\- verifiable success / failure behavior
 
-\- 可逐步擴展到更強 task orchestration
+\- early multi-step execution value
 
-\- 保留未來企業化與部署路線
-
-
-
-這條路會優先重視：
+\- clear architectural progression beyond a simple assistant shell
 
 
 
-\- controllability
-
-\- inspectability
-
-\- verifiable execution
-
-\- extensibility
-
-\- open-core friendliness
+This is important because the project now has:
 
 
 
-\---
+\- visible architecture
 
+\- visible progress
 
+\- visible outputs
 
-\## Near-Term Roadmap
-
-
-
-下一階段主線會放在：
-
-
-
-\- Planner 正式化 step 產生能力
-
-\- 更穩定的 multi-step task execution
-
-\- task status lifecycle
-
-\- task retry
-
-\- task resume
-
-\- verifier / reflection
-
-\- memory-aware planning
-
-\- deployment-oriented architecture path
+\- visible display value
 
 
 
@@ -276,61 +150,35 @@ ZERO 的目標不是做一個只會對話的 AI，而是做一個：
 
 
 
-\## Open-Core Direction
+\## Demo Focus
 
 
 
-ZERO 預計採取偏 open-core 的路線：
+The current demo focus is not general conversation ability.
 
 
 
-\- 公開核心 execution / task runtime 骨架
-
-\- 持續演進 planner / orchestration / runtime 主線
-
-\- 保留後續更高價值的進階層、部署層與企業化路線
+The current demo focus is:
 
 
 
-這代表目前開源的重點是：
+\- task-oriented execution
+
+\- workspace interaction
+
+\- verifiable outcomes
+
+\- structured system growth
+
+\- early runtime-style behavior
 
 
 
-\- 展示可驗證的核心能力
-
-\- 建立技術可信度
-
-\- 讓外界看見 ZERO 的執行主幹
+In simple terms:
 
 
 
-而不是一次公開所有未來路線。
-
-
-
-\---
-
-
-
-\## Repository Note
-
-
-
-目前這個版本是 ZERO 的一個可驗證節點：
-
-
-
-\- 已有真實 execution evidence
-
-\- 已有 success / failure 對齊證據
-
-\- 已有 basic multi-step workspace demo
-
-\- 主線仍在持續快速推進
-
-
-
-後續版本會持續往更完整的 task OS 與 agent runtime 能力演進。
+\*\*this stage is about showing that ZERO is moving from “can talk” to “can do.”\*\*
 
 
 
@@ -338,15 +186,35 @@ ZERO 預計採取偏 open-core 的路線：
 
 
 
-\## Demo / Documentation
+\## Architecture Direction
 
 
 
-更多展示與階段說明可見：
+ZERO is currently moving toward a layered architecture that includes:
 
 
 
-\- \[docs/demo.md](docs/demo.md)
+\- planning-oriented structure
+
+\- task coordination
+
+\- scheduling / runtime direction
+
+\- execution layers
+
+\- tools / adapters
+
+\- workspace-facing interaction
+
+\- result recording
+
+\- summary / memory support
+
+
+
+At a practical level, this means the project is increasingly centered on execution,
+
+not just response generation.
 
 
 
@@ -354,13 +222,201 @@ ZERO 預計採取偏 open-core 的路線：
 
 
 
-\## Status Summary
+\## Design Principles
 
 
 
-一句話描述現在的 ZERO：
+ZERO currently follows several broad principles:
 
 
 
-> A local, task-oriented AI runtime that is already capable of verified workspace execution and is evolving toward a deeper agent task operating system core.
+\- local-first execution
+
+\- modular architecture
+
+\- task-oriented thinking instead of conversation-only thinking
+
+\- execution before presentation polish
+
+\- visible results before abstract claims
+
+\- reusable core before vertical specialization
+
+\- architecture clarity before aggressive feature sprawl
+
+
+
+These principles shape the current prototype direction.
+
+
+
+\---
+
+
+
+\## What This Stage Does Not Claim
+
+
+
+This stage does \*\*not\*\* claim that ZERO is already:
+
+
+
+\- a fully mature product
+
+\- a fully autonomous long-term system
+
+\- a fully expanded execution platform
+
+\- a final version of system behavior
+
+
+
+Instead, it shows a real and credible milestone
+
+in building a larger task-oriented AI execution system.
+
+
+
+\---
+
+
+
+\## Current Technical Interpretation
+
+
+
+At the present stage, ZERO is more appropriately interpreted as:
+
+
+
+\- a local execution-core prototype
+
+\- an early task runtime
+
+\- a structured execution-system foundation
+
+\- a meaningful Task Operating System direction with practical evidence behind it
+
+
+
+This means the project has already moved beyond
+
+a simple concept-only stage.
+
+
+
+\---
+
+
+
+\## What Comes Next
+
+
+
+The next stage will continue strengthening:
+
+
+
+\- execution depth
+
+\- multi-step task behavior
+
+\- runtime maturity
+
+\- visibility into system behavior
+
+\- stronger task lifecycle handling
+
+\- broader architecture stability
+
+
+
+The goal is to keep increasing execution reliability
+
+without losing architectural clarity.
+
+
+
+\---
+
+
+
+\## Project Status
+
+
+
+Current status: \*\*active prototype development\*\*
+
+
+
+The current priority is to strengthen the execution core
+
+before expanding into broader product layers.
+
+
+
+That means the focus remains on:
+
+
+
+\- execution behavior
+
+\- architecture quality
+
+\- structured runtime growth
+
+\- demonstrable milestones
+
+
+
+UI polish, broader deployment, and wider product layers come later.
+
+
+
+\---
+
+
+
+\## Documentation
+
+
+
+Project documents are available in the `docs/` folder, including:
+
+
+
+\- architecture overview
+
+\- current status
+
+\- demo positioning
+
+\- design philosophy
+
+\- project overview
+
+\- roadmap
+
+
+
+These documents describe the project at a public-facing level
+
+without treating the current prototype as a finished platform.
+
+
+
+\---
+
+
+
+\## Short Summary
+
+
+
+In one sentence:
+
+
+
+> ZERO is a local-first AI project evolving into an early Autonomous Agent Runtime / Task Operating System with demonstrable task-oriented execution value.
 
