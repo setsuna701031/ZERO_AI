@@ -59,3 +59,7 @@ tests/test_replan.py
 tests/test_runtime.py
 tests/test_scheduler_replan.py
 tests/test_verifier.py
+tests/test_planner.py
+tests/test_resume.py
+tests/test_step_executor.py
+tests/test_workspace_flow.py
