@@ -1,107 +1,556 @@
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, Optional, Union
+import copy
+from typing import Any, Dict, List, Optional
 
-from .agent_loop import AgentLoop
-from .task_manager import Task, TaskManager
+from .task_queue import TaskQueue
+from .task_runner import TaskRunner
 
 
 class TaskScheduler:
     """
-    最小可用 Task Scheduler
+    ZERO Runtime Task Scheduler
 
-    功能：
-    1. 從 TaskManager 找出下一個 pending task
-    2. 呼叫 AgentLoop 執行
-    3. 支援 run_once / run_until_empty / loop_forever
+    角色：
+    - 管理 ready queue
+    - rebuild ready queue
+    - dependency ready 判斷
+    - 從 ready queue 選 task
+    - 呼叫 TaskRunner 跑一個 tick
+    - 不負責 step execution 細節
+    - 不負責 planner
+    - 不負責 repository persistence 細節
 
-    向下相容：
-    - find_next_task() 可回傳 Task 或 task_id
-    - run_once() 會自動判斷型別
+    相容需求：
+    1. ZeroSystem._build_scheduler(...) 目前會傳很多 kwargs
+    2. ZeroSystem.tick() 目前仍會呼叫 self.scheduler.run_one_step(task)
+    3. 未來可逐步切到真正 scheduler.tick(task_repo=...)
     """
 
     def __init__(
         self,
-        task_manager: Optional[TaskManager] = None,
-        agent_loop: Optional[AgentLoop] = None,
-        poll_interval: float = 1.0,
+        task_repo: Any = None,
+        task_manager: Any = None,
+        workspace_dir: Optional[str] = None,
+        runtime_store: Any = None,
+        queue: Optional[List[str]] = None,
+        debug: bool = False,
+        step_executor: Any = None,
+        tool_registry: Any = None,
+        task_runtime: Any = None,
+        task_runner: Any = None,
+        task_step_executor_adapter: Any = None,
+        step_executor_adapter: Any = None,
+        executor: Any = None,
+        runtime_executor: Any = None,
+        task_executor: Any = None,
         **kwargs: Any,
     ) -> None:
-        self.task_manager = task_manager or TaskManager()
-        self.agent_loop = agent_loop or AgentLoop(task_manager=self.task_manager)
-        self.poll_interval = poll_interval
-        self.extra_config = kwargs
+        self.task_repo = task_repo if task_repo is not None else task_manager
+        self.workspace_dir = workspace_dir or "workspace"
+        self.runtime_store = runtime_store
+        self.debug = debug
 
-    def find_next_task(self) -> Optional[Task]:
-        """
-        回傳下一個 pending task 物件。
-        """
-        pending_tasks = self.task_manager.get_pending_tasks()
-        if not pending_tasks:
-            return None
+        self.step_executor = step_executor
+        self.tool_registry = tool_registry
+        self.task_runtime = task_runtime
+        self.task_step_executor_adapter = task_step_executor_adapter
+        self.step_executor_adapter = step_executor_adapter
+        self.executor = executor
+        self.runtime_executor = runtime_executor
+        self.task_executor = task_executor
+        self.extra_kwargs = dict(kwargs)
 
-        # 先用建立順序 / 載入順序
-        return pending_tasks[0]
+        self.task_queue = TaskQueue()
+        self.current_tick = 0
 
-    def _normalize_task(
-        self,
-        task_or_id: Optional[Union[str, Task]],
-    ) -> Optional[Task]:
-        if task_or_id is None:
-            return None
+        # 相容舊欄位名稱
+        self.queue = self.task_queue.snapshot()
 
-        if isinstance(task_or_id, Task):
-            return task_or_id
+        self.task_runner = task_runner if task_runner is not None else self._build_default_task_runner()
 
-        if isinstance(task_or_id, str):
-            return self.task_manager.load_task(task_or_id)
+        # 若外部有傳 queue 初始內容，先放進 ready queue
+        if isinstance(queue, list):
+            for item in queue:
+                if isinstance(item, str) and item.strip():
+                    self.task_queue.enqueue(item.strip())
 
-        return None
+        self._sync_queue_snapshot()
 
-    def run_once(self) -> bool:
-        """
-        執行一個 task。
-        回傳：
-        - True  = 有跑到 task
-        - False = 沒有 pending task
-        """
-        next_item = self.find_next_task()
-        task = self._normalize_task(next_item)
+    # ============================================================
+    # public api
+    # ============================================================
 
-        if task is None:
-            print("[Scheduler] No pending tasks")
+    def boot(self) -> Dict[str, Any]:
+        self._sync_queue_snapshot()
+        return {
+            "ok": True,
+            "message": "task scheduler booted",
+            "tick": self.current_tick,
+            "ready_queue": self.task_queue.snapshot(),
+            "workspace_dir": self.workspace_dir,
+            "has_task_runner": self.task_runner is not None,
+        }
+
+    def status(self) -> Dict[str, Any]:
+        self._sync_queue_snapshot()
+        return {
+            "ok": True,
+            "tick": self.current_tick,
+            "ready_queue": self.task_queue.snapshot(),
+            "ready_queue_size": len(self.task_queue.snapshot()),
+            "workspace_dir": self.workspace_dir,
+            "has_task_runner": self.task_runner is not None,
+            "has_task_repo": self.task_repo is not None,
+        }
+
+    def enqueue(self, task_id: str) -> bool:
+        task_id = str(task_id or "").strip()
+        if not task_id:
             return False
 
-        print(f"[Scheduler] Running task: {task.task_id}")
-        result = self.agent_loop.run_task(task)
+        self.task_queue.enqueue(task_id)
+        self._sync_queue_snapshot()
+        return True
 
-        status = result.get("status")
-        if status == "completed":
-            print(f"[Scheduler] Task completed: {task.task_id}")
-        elif status == "failed":
-            print(f"[Scheduler] Task failed: {task.task_id} | {result.get('error')}")
+    def enqueue_task(self, task_id: str) -> bool:
+        return self.enqueue(task_id)
+
+    def dequeue(self) -> Optional[str]:
+        task_id = self.task_queue.dequeue()
+        self._sync_queue_snapshot()
+        return task_id
+
+    def list_queue(self) -> List[str]:
+        self._sync_queue_snapshot()
+        return self.task_queue.snapshot()
+
+    def rebuild_ready_queue(self, task_repo: Any = None) -> List[str]:
+        """
+        從 task repository 掃描可執行 task，放進 ready queue。
+
+        規則：
+        - queued / ready / retrying 可進候選
+        - blocked / waiting 若 dependency 已滿足，也可進 ready
+        - terminal status 不進 queue
+        """
+        repo = task_repo if task_repo is not None else self.task_repo
+        if repo is None:
+            self._sync_queue_snapshot()
+            return self.task_queue.snapshot()
+
+        tasks = self._repo_list_tasks(repo)
+
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+
+            task_id = self._task_id(task)
+            if not task_id:
+                continue
+
+            status = self._normalize_status(task.get("status"))
+            if self._is_terminal_status(status):
+                continue
+
+            deps = self._normalize_depends_on(task.get("depends_on", []))
+            deps_ready = self._dependencies_ready(repo, deps)
+
+            if status in ("queued", "ready", "retrying"):
+                if deps_ready:
+                    self.task_queue.enqueue(task_id)
+                continue
+
+            if status in ("blocked", "waiting"):
+                if deps_ready:
+                    self.task_queue.enqueue(task_id)
+                continue
+
+        self._sync_queue_snapshot()
+        return self.task_queue.snapshot()
+
+    def tick(
+        self,
+        task_repo: Any = None,
+        current_tick: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        真正的 scheduler tick：
+
+        1. rebuild ready queue
+        2. dequeue 一個 task
+        3. load task
+        4. 呼叫 runner.run_task_tick(...)
+        """
+        if current_tick is None:
+            self.current_tick += 1
         else:
-            print(f"[Scheduler] Task finished with status: {status}")
+            self.current_tick = int(current_tick)
+
+        repo = task_repo if task_repo is not None else self.task_repo
+
+        self.rebuild_ready_queue(task_repo=repo)
+
+        task_id = self.task_queue.dequeue()
+        self._sync_queue_snapshot()
+
+        if not task_id:
+            return {
+                "ok": True,
+                "action": "scheduler_idle",
+                "tick": self.current_tick,
+                "message": "no ready task",
+                "ready_queue": self.task_queue.snapshot(),
+            }
+
+        if repo is None:
+            return {
+                "ok": False,
+                "action": "scheduler_error",
+                "tick": self.current_tick,
+                "message": "task repo not available",
+                "task_id": task_id,
+                "ready_queue": self.task_queue.snapshot(),
+            }
+
+        task = self._repo_get_task(repo, task_id)
+        if not isinstance(task, dict):
+            return {
+                "ok": False,
+                "action": "scheduler_error",
+                "tick": self.current_tick,
+                "message": f"task not found: {task_id}",
+                "task_id": task_id,
+                "ready_queue": self.task_queue.snapshot(),
+            }
+
+        return self.run_one_step(task=copy.deepcopy(task), current_tick=self.current_tick)
+
+    def run_one(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
+        return self.run_one_step(task=task, current_tick=current_tick)
+
+    def run_one_step(
+        self,
+        task: Dict[str, Any],
+        current_tick: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        相容你現在 ZeroSystem.tick() 的入口。
+        目前 ZeroSystem 還是直接呼叫這個，所以這裡一定要保留。
+        """
+        if current_tick is None:
+            self.current_tick += 1
+        else:
+            self.current_tick = int(current_tick)
+
+        if not isinstance(task, dict):
+            return {
+                "ok": False,
+                "action": "scheduler_invalid_task",
+                "tick": self.current_tick,
+                "message": "task must be dict",
+                "error": "task must be dict",
+            }
+
+        task_id = self._task_id(task)
+        task_name = task.get("task_name") or task_id or "unknown_task"
+
+        if not task_id:
+            return {
+                "ok": False,
+                "action": "scheduler_invalid_task",
+                "tick": self.current_tick,
+                "message": "task_id missing",
+                "error": "task_id missing",
+                "task_name": task_name,
+            }
+
+        if self.task_runner is None:
+            return {
+                "ok": False,
+                "action": "scheduler_no_runner",
+                "tick": self.current_tick,
+                "message": "task_runner not available",
+                "error": "task_runner not available",
+                "task_id": task_id,
+                "task_name": task_name,
+            }
+
+        status = self._normalize_status(task.get("status"))
+        if self._is_terminal_status(status):
+            return {
+                "ok": False,
+                "action": "scheduler_skip_terminal",
+                "tick": self.current_tick,
+                "message": f"task already terminal: {status}",
+                "task_id": task_id,
+                "task_name": task_name,
+                "status": status,
+            }
+
+        dependency_status_map = self._build_dependency_status_map(task)
+
+        self._trace(task, "scheduler_before_runner", {
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": status,
+            "dependency_status_map": dependency_status_map,
+            "ready_queue": self.task_queue.snapshot(),
+        })
+
+        # 先讓 runtime 做 dependency 判斷，避免 runner 永遠拿空 map
+        if self.task_runtime is not None and hasattr(self.task_runtime, "check_blocked_by_dependencies"):
+            try:
+                dep_result = self.task_runtime.check_blocked_by_dependencies(
+                    task=copy.deepcopy(task),
+                    dependency_status_map=dependency_status_map,
+                    current_tick=self.current_tick,
+                )
+                self._trace(task, "scheduler_dependency_check", dep_result)
+
+                if isinstance(dep_result, dict) and dep_result.get("blocked") is True:
+                    return {
+                        "ok": True,
+                        "action": "task_blocked",
+                        "tick": self.current_tick,
+                        "task_id": task_id,
+                        "task_name": task_name,
+                        "status": dep_result.get("status", "blocked"),
+                        "message": dep_result.get("message", "task blocked"),
+                        "final_answer": "",
+                        "execution_log": [],
+                        "current_step_index": task.get("current_step_index", 0),
+                        "step_count": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
+                        "raw_result": dep_result,
+                    }
+            except Exception as e:
+                self._trace(task, "scheduler_dependency_check_exception", {"error": str(e)})
+
+        # 正式交給 runner 跑一個 tick
+        try:
+            runner_result = self.task_runner.run_task_tick(
+                task=copy.deepcopy(task),
+                current_tick=self.current_tick,
+            )
+        except Exception as e:
+            error_result = {
+                "ok": False,
+                "action": "scheduler_runner_exception",
+                "tick": self.current_tick,
+                "task_id": task_id,
+                "task_name": task_name,
+                "status": "failed",
+                "message": "task runner exception",
+                "error": str(e),
+            }
+            self._trace(task, "scheduler_runner_exception", error_result)
+            return error_result
+
+        normalized = self._normalize_runner_result(task, runner_result)
+
+        self._trace(task, "scheduler_after_runner", normalized)
+        return normalized
+
+    # ============================================================
+    # helpers
+    # ============================================================
+
+    def _build_default_task_runner(self) -> Optional[TaskRunner]:
+        step_executor = (
+            self.step_executor
+            or self.task_step_executor_adapter
+            or self.step_executor_adapter
+            or self.executor
+            or self.runtime_executor
+            or self.task_executor
+        )
+
+        if step_executor is None:
+            return None
+
+        try:
+            return TaskRunner(
+                step_executor=step_executor,
+                task_runtime=self.task_runtime,
+                replanner=self.extra_kwargs.get("replanner"),
+                verifier=self.extra_kwargs.get("verifier"),
+                debug=bool(self.debug),
+            )
+        except Exception:
+            return None
+
+    def _normalize_runner_result(
+        self,
+        task: Dict[str, Any],
+        runner_result: Any,
+    ) -> Dict[str, Any]:
+        task_id = self._task_id(task)
+        task_name = task.get("task_name") or task_id or "unknown_task"
+        step_count = len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0
+        current_step_index = int(task.get("current_step_index", 0) or 0)
+
+        if not isinstance(runner_result, dict):
+            return {
+                "ok": False,
+                "action": "scheduler_invalid_runner_result",
+                "tick": self.current_tick,
+                "task_id": task_id,
+                "task_name": task_name,
+                "status": "failed",
+                "message": "runner returned invalid result",
+                "error": f"invalid runner result type: {type(runner_result).__name__}",
+                "final_answer": "",
+                "execution_log": [],
+                "current_step_index": current_step_index,
+                "step_count": step_count,
+                "raw_result": runner_result,
+            }
+
+        state_from_runner = runner_result.get("task")
+        if isinstance(state_from_runner, dict):
+            current_step_index = int(state_from_runner.get("current_step_index", current_step_index) or 0)
+            step_count = int(
+                state_from_runner.get("steps_total", len(state_from_runner.get("steps", [])) if isinstance(state_from_runner.get("steps", []), list) else step_count)
+                or step_count
+            )
+
+        return {
+            "ok": bool(runner_result.get("ok", False)),
+            "action": runner_result.get("action", ""),
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": runner_result.get("task_name") or task_name,
+            "status": runner_result.get("status", self._normalize_status(task.get("status"))),
+            "message": runner_result.get("message", ""),
+            "error": runner_result.get("error"),
+            "final_answer": runner_result.get("final_answer", ""),
+            "execution_log": copy.deepcopy(runner_result.get("execution_log", []))
+            if isinstance(runner_result.get("execution_log", []), list)
+            else [],
+            "current_step_index": current_step_index,
+            "step_count": step_count,
+            "raw_result": copy.deepcopy(runner_result),
+        }
+
+    def _build_dependency_status_map(self, task: Dict[str, Any]) -> Dict[str, str]:
+        repo = self.task_repo
+        if repo is None:
+            return {}
+
+        depends_on = self._normalize_depends_on(task.get("depends_on", []))
+        if not depends_on:
+            return {}
+
+        status_map: Dict[str, str] = {}
+        for dep_task_id in depends_on:
+            dep_task = self._repo_get_task(repo, dep_task_id)
+            if isinstance(dep_task, dict):
+                status_map[dep_task_id] = self._normalize_status(dep_task.get("status"))
+            else:
+                status_map[dep_task_id] = "unknown"
+        return status_map
+
+    def _dependencies_ready(self, repo: Any, deps: List[str]) -> bool:
+        if not deps:
+            return True
+
+        for dep_task_id in deps:
+            dep_task = self._repo_get_task(repo, dep_task_id)
+            if not isinstance(dep_task, dict):
+                return False
+
+            dep_status = self._normalize_status(dep_task.get("status"))
+            if dep_status not in ("finished", "failed", "cancelled", "timeout"):
+                return False
 
         return True
 
-    def run_until_empty(self) -> None:
-        print("[Scheduler] Started (until empty)")
+    def _repo_list_tasks(self, repo: Any) -> List[Dict[str, Any]]:
+        if repo is None:
+            return []
 
-        while True:
-            did_run = self.run_once()
-            if not did_run:
-                print("[Scheduler] Stopped (queue empty)")
-                break
+        if hasattr(repo, "list_tasks"):
+            try:
+                tasks = repo.list_tasks()
+                if isinstance(tasks, list):
+                    return [t for t in tasks if isinstance(t, dict)]
+            except Exception:
+                return []
 
-    def loop_forever(self) -> None:
-        print("[Scheduler] Started (loop mode)")
+        if hasattr(repo, "tasks"):
+            try:
+                tasks_obj = getattr(repo, "tasks")
+                if isinstance(tasks_obj, dict):
+                    return [t for t in tasks_obj.values() if isinstance(t, dict)]
+                if isinstance(tasks_obj, list):
+                    return [t for t in tasks_obj if isinstance(t, dict)]
+            except Exception:
+                return []
 
-        try:
-            while True:
-                did_run = self.run_once()
-                if not did_run:
-                    time.sleep(self.poll_interval)
-        except KeyboardInterrupt:
-            print("[Scheduler] Stopped by user")
+        return []
+
+    def _repo_get_task(self, repo: Any, task_id: str) -> Optional[Dict[str, Any]]:
+        if repo is None:
+            return None
+
+        if hasattr(repo, "get_task"):
+            try:
+                task = repo.get_task(task_id)
+                if isinstance(task, dict):
+                    return task
+            except Exception:
+                return None
+
+        if hasattr(repo, "tasks"):
+            try:
+                tasks_obj = getattr(repo, "tasks")
+                if isinstance(tasks_obj, dict):
+                    task = tasks_obj.get(task_id)
+                    if isinstance(task, dict):
+                        return task
+            except Exception:
+                return None
+
+        return None
+
+    def _task_id(self, task: Dict[str, Any]) -> str:
+        return str(
+            task.get("task_id")
+            or task.get("task_name")
+            or task.get("id")
+            or ""
+        ).strip()
+
+    def _normalize_status(self, status: Any) -> str:
+        return str(status or "").strip().lower()
+
+    def _normalize_depends_on(self, value: Any) -> List[str]:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+
+        if isinstance(value, list):
+            result: List[str] = []
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    result.append(item.strip())
+            return result
+
+        return []
+
+    def _is_terminal_status(self, status: str) -> bool:
+        return status in ("finished", "failed", "cancelled", "timeout")
+
+    def _sync_queue_snapshot(self) -> None:
+        self.queue = self.task_queue.snapshot()
+
+    def _trace(self, task: Dict[str, Any], label: str, payload: Dict[str, Any]) -> None:
+        if not self.debug:
+            return
+
+        task_name = task.get("task_name") or task.get("task_id") or task.get("id") or "unknown_task"
+        print(f"[TaskScheduler] {task_name} | {label} | {payload}")

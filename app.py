@@ -1,47 +1,59 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
-from typing import Any, Dict
+import time
+from typing import Any, Dict, Optional
 
 from services.system_boot import boot_system
 
 
 WORKSPACE_DIR = os.environ.get("ZERO_WORKSPACE", "workspace")
 
+TERMINAL_STATUSES = {
+    "finished",
+    "completed",
+    "failed",
+    "canceled",
+}
+
 
 def print_help() -> None:
     print("可用指令：")
-    print("  /help                          顯示說明")
-    print("  /health                        系統健康狀態")
-    print("  /tools                         顯示目前已註冊工具")
-    print("  /executor                      顯示 step_executor 物件資訊")
-    print("  /queue                         顯示任務佇列")
-    print("  /tasks                         顯示任務快照")
-    print("  /task <task_name>              顯示單一任務")
-    print("  /tick                          執行一次 scheduler tick")
-    print("  /run <count>                   連續執行多次 tick")
-    print("  /pause <task_name>             暫停任務")
-    print("  /resume <task_name>            恢復任務")
-    print("  /cancel <task_name>            取消任務")
-    print("  /priority <task> <num>         設定任務優先級")
+    print("  /help                                   顯示說明")
+    print("  /health                                 系統健康狀態")
+    print("  /tools                                  顯示目前已註冊工具")
+    print("  /executor                               顯示 step_executor 物件資訊")
+    print("  /queue                                  顯示任務佇列")
+    print("  /tasks                                  顯示任務快照")
+    print("  /task <task_name>                       顯示單一任務")
+    print("  /tick                                   執行一次 scheduler tick")
+    print("  /run <count>                            連續執行多次 tick")
+    print("  /pause <task_name>                      暫停任務")
+    print("  /resume <task_name>                     恢復任務")
+    print("  /cancel <task_name>                     取消任務")
+    print("  /priority <task> <num>                  設定任務優先級")
     print("")
     print("Task OS 別名指令：")
-    print("  /task_submit <goal>            建立任務並立刻執行一次")
-    print("  /task_create <goal>            只建立任務，不立刻 tick")
-    print("  /task_list                     顯示任務佇列")
-    print("  /task_tasks                    顯示任務快照")
-    print("  /task_show <task_name>         顯示單一任務")
-    print("  /task_tick                     執行一次 scheduler tick")
-    print("  /task_run <count>              連續執行多次 tick")
-    print("  /task_pause <task_name>        暫停任務")
-    print("  /task_resume <task_name>       恢復任務")
-    print("  /task_cancel <task_name>       取消任務")
-    print("  /task_priority <task> <num>    設定任務優先級")
+    print("  /task_submit <goal>                     建立任務並持續執行到完成或達到上限")
+    print("  /task_create <goal>                     只建立任務，不立刻執行")
+    print("  /task_submit_retry <max> <delay> <goal> 建立可重試任務並持續執行")
+    print("  /task_create_retry <max> <delay> <goal> 建立可重試任務，不立刻執行")
+    print("  /retrytask <max> <delay> <goal>         /task_submit_retry 的簡寫")
+    print("  /task_list                              顯示任務佇列")
+    print("  /task_tasks                             顯示任務快照")
+    print("  /task_show <task_name>                  顯示單一任務")
+    print("  /task_tick                              執行一次 scheduler tick")
+    print("  /task_run <count>                       連續執行多次 tick")
+    print("  /task_pause <task_name>                 暫停任務")
+    print("  /task_resume <task_name>                恢復任務")
+    print("  /task_cancel <task_name>                取消任務")
+    print("  /task_priority <task> <num>             設定任務優先級")
     print("")
-    print("  其他自然語言輸入會直接建立任務並立刻執行一次")
-    print("  /exit                          離開")
-    print("  /quit                          離開")
+    print("  其他自然語言輸入會直接建立任務並持續執行")
+    print("  /exit                                   離開")
+    print("  /quit                                   離開")
 
 
 def print_json(data: Any) -> None:
@@ -80,6 +92,9 @@ def print_execution_log(execution_log: Any) -> None:
 
     result = last_item.get("result")
     if result is None:
+        result = last_item.get("data")
+
+    if result is None:
         return
 
     summary = summarize_tool_result(result)
@@ -88,65 +103,309 @@ def print_execution_log(execution_log: Any) -> None:
         print(summary)
 
 
-def print_task_result(submit_result: Dict[str, Any], tick_result: Dict[str, Any], system: Any) -> None:
-    task_name = submit_result.get("task_name", "")
-    print(f"[task] {task_name}")
+def _extract_task_name(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("task_name", "task_id", "id", "name"):
+            v = value.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    elif isinstance(value, str):
+        text = value.strip()
+        if text:
+            return text
+    return ""
 
-    if tick_result.get("ok"):
-        final_answer = tick_result.get("final_answer")
-        if final_answer:
-            print(final_answer)
 
-        execution_log = tick_result.get("execution_log")
-        if isinstance(execution_log, list) and execution_log:
-            print_execution_log(execution_log)
-            return
+def _extract_submit_task_name(submit_result: Dict[str, Any]) -> str:
+    if not isinstance(submit_result, dict):
+        return ""
 
-        task_result = system.get_task(task_name)
-        if task_result.get("ok"):
-            task = task_result.get("task", {})
-            task_final_answer = task.get("final_answer")
-            if task_final_answer and task_final_answer != tick_result.get("final_answer"):
-                print(task_final_answer)
+    direct = _extract_task_name(submit_result)
+    if direct:
+        return direct
 
-            task_log = task.get("execution_log", [])
-            if isinstance(task_log, list) and task_log:
-                print_execution_log(task_log)
-                return
+    task_obj = submit_result.get("task")
+    nested = _extract_task_name(task_obj)
+    if nested:
+        return nested
 
-        message = tick_result.get("message")
-        if message and not final_answer:
-            print(message)
+    enqueue_result = submit_result.get("enqueue_result")
+    nested2 = _extract_task_name(enqueue_result)
+    if nested2:
+        return nested2
+
+    return ""
+
+
+def _get_system_task(system: Any, task_name: str) -> Dict[str, Any]:
+    if not task_name:
+        return {"ok": False, "error": "empty task_name"}
+
+    get_task_fn = getattr(system, "get_task", None)
+    if callable(get_task_fn):
+        try:
+            result = get_task_fn(task_name)
+            if isinstance(result, dict):
+                return result
+        except Exception as e:
+            return {"ok": False, "error": f"system.get_task failed: {e}"}
+
+    task_manager = getattr(system, "task_manager", None)
+    if task_manager is not None:
+        load_task_fn = getattr(task_manager, "load_task", None)
+        if callable(load_task_fn):
+            try:
+                task_obj = load_task_fn(task_name)
+                if task_obj is None:
+                    return {"ok": False, "error": "task not found"}
+
+                to_dict = getattr(task_obj, "to_dict", None)
+                if callable(to_dict):
+                    return {"ok": True, "task": to_dict()}
+
+                if isinstance(task_obj, dict):
+                    return {"ok": True, "task": copy.deepcopy(task_obj)}
+
+                if hasattr(task_obj, "__dict__"):
+                    return {"ok": True, "task": copy.deepcopy(vars(task_obj))}
+            except Exception as e:
+                return {"ok": False, "error": f"task_manager.load_task failed: {e}"}
+
+    return {"ok": False, "error": "no available get_task path"}
+
+
+def _extract_task_from_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+
+    task = result.get("task")
+    if isinstance(task, dict):
+        return task
+
+    return {}
+
+
+def _get_task_status(system: Any, task_name: str) -> str:
+    task_result = _get_system_task(system, task_name)
+    if not task_result.get("ok"):
+        return ""
+
+    task = task_result.get("task", {})
+    status = task.get("status")
+    if isinstance(status, str):
+        return status.strip()
+
+    return ""
+
+
+def _run_scheduler_once(system: Any) -> Dict[str, Any]:
+    """
+    盡量用最直接的方式推動 scheduler/runner 執行一次。
+    優先順序：
+    1. system.tick()
+    2. scheduler.run_once()
+    """
+    tick_fn = getattr(system, "tick", None)
+    if callable(tick_fn):
+        try:
+            result = tick_fn()
+            if isinstance(result, dict):
+                return result
+            return {"ok": True, "result": result}
+        except Exception as e:
+            return {"ok": False, "error": f"system.tick failed: {e}"}
+
+    scheduler = getattr(system, "scheduler", None)
+    if scheduler is not None:
+        run_once_fn = getattr(scheduler, "run_once", None)
+        if callable(run_once_fn):
+            try:
+                result = run_once_fn()
+                if isinstance(result, dict):
+                    return result
+                return {"ok": True, "ran": bool(result)}
+            except Exception as e:
+                return {"ok": False, "error": f"scheduler.run_once failed: {e}"}
+
+    return {"ok": False, "error": "no available tick method"}
+
+
+def _run_scheduler_until_task_done(
+    system: Any,
+    task_name: str,
+    *,
+    max_ticks: int = 20,
+    sleep_sec: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    建任務後持續推進，直到指定 task 進入 terminal 狀態或達到 tick 上限。
+    """
+    history: list[Dict[str, Any]] = []
+
+    for i in range(max_ticks):
+        status_before = _get_task_status(system, task_name)
+
+        if status_before in TERMINAL_STATUSES:
+            return {
+                "ok": True,
+                "task_name": task_name,
+                "tick_count": i,
+                "status": status_before,
+                "history": history,
+                "message": "task already terminal before tick",
+            }
+
+        tick_result = _run_scheduler_once(system)
+        history.append(
+            {
+                "tick_index": i + 1,
+                "status_before": status_before,
+                "tick_result": copy.deepcopy(tick_result),
+                "status_after": _get_task_status(system, task_name),
+            }
+        )
+
+        status_after = _get_task_status(system, task_name)
+        if status_after in TERMINAL_STATUSES:
+            return {
+                "ok": True,
+                "task_name": task_name,
+                "tick_count": i + 1,
+                "status": status_after,
+                "history": history,
+                "tick_result": tick_result,
+                "message": "task reached terminal status",
+            }
+
+        if sleep_sec > 0:
+            time.sleep(sleep_sec)
+
+    return {
+        "ok": False,
+        "task_name": task_name,
+        "tick_count": max_ticks,
+        "status": _get_task_status(system, task_name),
+        "history": history,
+        "error": f"task did not reach terminal status within {max_ticks} ticks",
+    }
+
+
+def print_task_result(submit_result: Dict[str, Any], run_result: Dict[str, Any], system: Any) -> None:
+    task_name = _extract_submit_task_name(submit_result)
+    print(f"[task] {task_name or '(unknown)'}")
+
+    if isinstance(run_result, dict) and not run_result.get("ok", True):
+        print("[run_result]")
+        print_json(run_result)
+
+    task_result = _get_system_task(system, task_name)
+    if not task_result.get("ok"):
+        print("[task_lookup_failed]")
+        print_json(task_result)
         return
 
-    print("[tick_failed]")
-    print_json(tick_result)
+    task = task_result.get("task", {})
 
-    task_result = system.get_task(task_name)
-    if task_result.get("ok"):
-        task = task_result.get("task", {})
-        final_answer = task.get("final_answer")
-        if final_answer:
-            print(final_answer)
-        task_log = task.get("execution_log", [])
-        if isinstance(task_log, list) and task_log:
-            print_execution_log(task_log)
+    final_answer = task.get("final_answer")
+    if isinstance(final_answer, str) and final_answer.strip():
+        print(final_answer)
+
+    execution_log = task.get("execution_log", [])
+    if isinstance(execution_log, list) and execution_log:
+        print_execution_log(execution_log)
+    else:
+        message = run_result.get("message") if isinstance(run_result, dict) else ""
+        if message:
+            print(message)
+
+    print("[task_status]")
+    print(task.get("status"))
+
+    runtime_state_file = task.get("runtime_state_file")
+    if runtime_state_file:
+        print("[runtime_state_file]")
+        print(runtime_state_file)
 
 
-def submit_and_tick(system: Any, goal: str) -> None:
-    submit_result = system.submit_task(goal=goal)
+def submit_and_run(
+    system: Any,
+    goal: str,
+    *,
+    priority: int = 0,
+    max_retries: int = 0,
+    retry_delay: int = 0,
+    timeout_ticks: int = 0,
+) -> None:
+    submit_result = system.submit_task(
+        goal=goal,
+        priority=priority,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+        timeout_ticks=timeout_ticks,
+    )
 
-    if not submit_result.get("ok"):
+    if not isinstance(submit_result, dict) or not submit_result.get("ok"):
         print_json(submit_result)
         return
 
-    tick_result = system.tick()
-    print_task_result(submit_result, tick_result, system)
+    task_name = _extract_submit_task_name(submit_result)
+    if not task_name:
+        print("[submit_result]")
+        print_json(submit_result)
+        print("找不到 task_name，無法追蹤執行。")
+        return
+
+    run_result = _run_scheduler_until_task_done(
+        system,
+        task_name,
+        max_ticks=20 + (max_retries * (retry_delay + 2)),
+        sleep_sec=0.0,
+    )
+
+    print_task_result(submit_result, run_result, system)
 
 
-def create_task_only(system: Any, goal: str) -> None:
-    submit_result = system.submit_task(goal=goal)
+def create_task_only(
+    system: Any,
+    goal: str,
+    *,
+    priority: int = 0,
+    max_retries: int = 0,
+    retry_delay: int = 0,
+    timeout_ticks: int = 0,
+) -> None:
+    submit_result = system.submit_task(
+        goal=goal,
+        priority=priority,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+        timeout_ticks=timeout_ticks,
+    )
     print_json(submit_result)
+
+
+def _parse_retry_command(text: str) -> Optional[Dict[str, Any]]:
+    parts = text.split(maxsplit=3)
+    if len(parts) < 4:
+        return None
+
+    cmd = parts[0].strip()
+    try:
+        max_retries = int(parts[1])
+        retry_delay = int(parts[2])
+    except Exception:
+        return None
+
+    goal = parts[3].strip()
+    if not goal:
+        return None
+
+    return {
+        "cmd": cmd,
+        "max_retries": max_retries,
+        "retry_delay": retry_delay,
+        "goal": goal,
+    }
 
 
 def handle_command(system: Any, text: str) -> None:
@@ -257,7 +516,7 @@ def handle_command(system: Any, text: str) -> None:
         return
 
     if text in ("/tick", "/task_tick"):
-        print_json(system.tick())
+        print_json(_run_scheduler_once(system))
         return
 
     if text.startswith("/run") or text.startswith("/task_run"):
@@ -268,7 +527,48 @@ def handle_command(system: Any, text: str) -> None:
                 count = int(parts[1])
             except Exception:
                 count = 1
-        print_json(system.run(count))
+
+        results = []
+        for i in range(count):
+            one = _run_scheduler_once(system)
+            results.append({
+                "tick_index": i + 1,
+                "result": one,
+            })
+        print_json({
+            "ok": True,
+            "count": count,
+            "results": results,
+        })
+        return
+
+    if text.startswith("/task_submit_retry ") or text.startswith("/retrytask "):
+        parsed = _parse_retry_command(text)
+        if not parsed:
+            print("用法: /task_submit_retry <max_retries> <retry_delay> <goal>")
+            print("或:   /retrytask <max_retries> <retry_delay> <goal>")
+            return
+
+        submit_and_run(
+            system,
+            parsed["goal"],
+            max_retries=parsed["max_retries"],
+            retry_delay=parsed["retry_delay"],
+        )
+        return
+
+    if text.startswith("/task_create_retry "):
+        parsed = _parse_retry_command(text)
+        if not parsed:
+            print("用法: /task_create_retry <max_retries> <retry_delay> <goal>")
+            return
+
+        create_task_only(
+            system,
+            parsed["goal"],
+            max_retries=parsed["max_retries"],
+            retry_delay=parsed["retry_delay"],
+        )
         return
 
     if text.startswith("/task_submit "):
@@ -276,7 +576,7 @@ def handle_command(system: Any, text: str) -> None:
         if len(parts) < 2 or not parts[1].strip():
             print("用法: /task_submit <goal>")
             return
-        submit_and_tick(system, parts[1].strip())
+        submit_and_run(system, parts[1].strip())
         return
 
     if text.startswith("/task_create "):
@@ -383,7 +683,7 @@ def handle_command(system: Any, text: str) -> None:
 
 
 def handle_natural_input(system: Any, text: str) -> None:
-    submit_and_tick(system, text)
+    submit_and_run(system, text)
 
 
 def main() -> None:

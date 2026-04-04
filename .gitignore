@@ -5,6 +5,19 @@
 # Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
 # Workspace runtime
 workspace/*
@@ -15,8 +28,8 @@ data/memory_store.json
 data/logs/
 data/backups/
 data/workspace/
-data/*.json
 data/reflections/
+data/memory/
 
 # Logs / runtime
 logs/
@@ -34,5 +47,6 @@ run/
 test_agent_loop_reflection.py
 test_memory_engine.py
 
-data/memory/
-venv/
+# Secrets / local config
+.env
+.env.*

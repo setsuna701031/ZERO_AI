@@ -1,42 +1,26 @@
-import sys
-import os
+from core.planning.planner import Planner
+from core.tools.tool_registry import ToolRegistry
 
-# 把專案根目錄加入 Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+def main():
+    tool_registry = ToolRegistry(workspace_dir="workspace")
 
-from core.planner import Planner
+    planner = Planner(
+        tool_registry=tool_registry,
+        workspace_dir="workspace",
+        debug=True,
+    )
 
+    user_input = "建立 hello.py 內容是 print('hello planner'), 然後執行 python hello.py"
 
-def run_planner_test():
-    print("=== Planner Test Start ===")
+    plan = planner.plan(user_input=user_input)
 
-    planner = Planner(llm_client=None)
+    print("\nPLAN RESULT")
+    print(plan)
 
-    test_goals = [
-        "幫我分析這個專案結構",
-        "寫一個python函式計算費氏數列",
-        "讀取workspace裡面的task_memory.json",
-        "執行 command dir",
-    ]
-
-    for goal in test_goals:
-        print("\n--- Goal ---")
-        print(goal)
-
-        plan = planner.create_plan(goal=goal)
-
-        print("Plan OK:", isinstance(plan, dict))
-
-        steps = plan.get("steps")
-        print("Steps exist:", isinstance(steps, list))
-
-        if isinstance(steps, list):
-            print("Step count:", len(steps))
-            for step in steps:
-                print(" -", step.get("title"), "|", step.get("type"))
-
-    print("\n=== Planner Test End ===")
+    print("\nSTEPS")
+    for step in plan["steps"]:
+        print(step)
 
 
 if __name__ == "__main__":
-    run_planner_test()
+    main()

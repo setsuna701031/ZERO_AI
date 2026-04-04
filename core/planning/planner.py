@@ -6,13 +6,14 @@ from typing import Any, Dict, List, Optional
 
 class Planner:
     """
-    最小可用 deterministic planner v1
+    Deterministic Planner v10
 
-    目標：
-    1. 將常見中文 / 英文任務轉成 steps
-    2. 對齊 ZERO 現在的 step 格式
-    3. 先打通 planner -> executor -> tool 鏈路
-    4. 看不懂時回傳 respond，不亂寫檔
+    重點：
+    1. 保留 Windows shell 指令，例如：cmd /c echo hello
+    2. 只把 cmd: xxx / run: xxx / command: xxx 視為前綴式命令語法
+    3. 若 router 已經判定 mode=command，planner 直接保留原字串，不再二次剝前綴
+    4. 支援 multi-step planning
+    5. 支援 command / read / write / search 混合拆步
     """
 
     def __init__(
@@ -20,6 +21,7 @@ class Planner:
         memory_store: Any = None,
         runtime_store: Any = None,
         step_executor: Any = None,
+        tool_registry: Any = None,
         workspace_dir: str = "workspace",
         workspace_root: Optional[str] = None,
         debug: bool = False,
@@ -27,6 +29,7 @@ class Planner:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
         self.step_executor = step_executor
+        self.tool_registry = tool_registry
         self.workspace_dir = workspace_root or workspace_dir or "workspace"
         self.debug = debug
 
@@ -46,54 +49,20 @@ class Planner:
 
         if not text:
             return {
-                "final_answer": "空白輸入，無法規劃。",
-                "steps": [
-                    {
-                        "type": "respond",
-                        "message": "空白輸入，無法規劃。",
-                    }
-                ],
-            }
-
-        steps = self._plan_steps(text=text, context=context, route=route)
-
-        if not steps:
-            fallback = f"已收到：{text}"
-            return {
-                "planner_mode": "deterministic_fallback_respond",
+                "planner_mode": "deterministic_v10",
                 "intent": "respond",
-                "final_answer": fallback,
-                "steps": [
-                    {
-                        "type": "respond",
-                        "message": fallback,
-                    }
-                ],
+                "final_answer": "空白輸入",
+                "steps": [],
             }
+
+        steps = self._plan_steps(text=text, route=route)
 
         return {
-            "planner_mode": "deterministic_v1",
-            "intent": self._infer_intent(text),
-            "final_answer": self._summarize_plan(text, steps),
+            "planner_mode": "deterministic_v10",
+            "intent": self._infer_intent(text=text, route=route, steps=steps),
+            "final_answer": f"已規劃 {len(steps)} 個步驟",
             "steps": steps,
         }
-
-    # 向下相容
-    def build_plan(
-        self,
-        goal: str = "",
-        task_dir: str = "",
-        **kwargs: Any,
-    ) -> List[Dict[str, Any]]:
-        context = {
-            "user_input": goal,
-            "workspace": task_dir or self.workspace_dir,
-        }
-        result = self.plan(context=context, user_input=goal)
-        steps = result.get("steps", [])
-        if isinstance(steps, list):
-            return steps
-        return []
 
     def run(
         self,
@@ -104,462 +73,237 @@ class Planner:
     ) -> Dict[str, Any]:
         return self.plan(context=context, user_input=user_input, route=route, **kwargs)
 
-    # ============================================================
-    # main planning logic
-    # ============================================================
-
-    def _plan_steps(
+    def build_plan(
         self,
-        text: str,
-        context: Dict[str, Any],
+        goal: str = "",
+        task_dir: str = "",
         route: Any = None,
+        **kwargs: Any,
     ) -> List[Dict[str, Any]]:
-        normalized_text = self._normalize_text(text)
-        clauses = self._split_clauses(normalized_text)
+        result = self.plan(
+            context={"user_input": goal, "workspace": task_dir or self.workspace_dir},
+            user_input=goal,
+            route=route,
+        )
+        steps = result.get("steps", [])
+        if isinstance(steps, list):
+            return steps
+        return []
 
-        all_steps: List[Dict[str, Any]] = []
+    def build_plan_for_goal(
+        self,
+        goal: str = "",
+        task_dir: str = "",
+        route: Any = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        return self.build_plan(goal=goal, task_dir=task_dir, route=route, **kwargs)
+
+    # ============================================================
+    # multi step planner
+    # ============================================================
+
+    def _plan_steps(self, text: str, route: Any = None) -> List[Dict[str, Any]]:
+        stripped = str(text or "").strip()
+
+        # router 已明確判斷 command 時，不拆 clause，避免 shell 指令被拆壞
+        if self._is_command_route(route):
+            return [
+                {
+                    "type": "command",
+                    "command": stripped,
+                }
+            ]
+
+        clauses = self._split_clauses(stripped)
+        steps: List[Dict[str, Any]] = []
 
         for clause in clauses:
             clause = clause.strip()
             if not clause:
                 continue
 
-            clause_steps = self._plan_clause(clause=clause, context=context, route=route)
+            clause_steps = self._plan_single_clause(clause, route=route)
             if clause_steps:
-                all_steps.extend(clause_steps)
+                steps.extend(clause_steps)
 
-        if all_steps:
-            return all_steps
+        return steps
 
-        # 如果整句拆不出，就直接拿原句判一次
-        return self._plan_clause(clause=normalized_text, context=context, route=route)
+    # ============================================================
+    # clause planner
+    # ============================================================
 
-    def _plan_clause(
-        self,
-        clause: str,
-        context: Dict[str, Any],
-        route: Any = None,
-    ) -> List[Dict[str, Any]]:
-        workspace_tool = self._pick_tool(
-            ["workspace", "workspace_tool", "write_file", "workspace_write", "file_write"]
-        )
-        search_tool = self._pick_tool(
-            ["web_search", "search_web", "search", "websearch"]
-        )
-        command_tool = self._pick_tool(
-            ["command", "command_tool"]
-        )
+    def _plan_single_clause(self, text: str, route: Any = None) -> List[Dict[str, Any]]:
+        stripped = str(text or "").strip()
 
-        # --------------------------------------------------------
-        # read file
-        # --------------------------------------------------------
-        read_path = self._extract_read_path(clause)
-        if read_path and workspace_tool:
+        if not stripped:
+            return []
+
+        # router 已經判定 command，直接整段保留
+        if self._is_command_route(route):
             return [
                 {
-                    "type": "tool",
-                    "tool_name": workspace_tool,
-                    "tool_input": {
-                        "action": "read",
-                        "path": read_path,
-                    },
+                    "type": "command",
+                    "command": stripped,
                 }
             ]
 
-        # --------------------------------------------------------
-        # mkdir / create folder
-        # --------------------------------------------------------
-        mkdir_path = self._extract_mkdir_path(clause)
-        if mkdir_path and workspace_tool:
+        # command 優先
+        cmd = self._extract_command(stripped)
+        if cmd:
             return [
                 {
-                    "type": "tool",
-                    "tool_name": workspace_tool,
-                    "tool_input": {
-                        "action": "mkdir",
-                        "path": mkdir_path,
-                    },
+                    "type": "command",
+                    "command": cmd,
                 }
             ]
 
-        # --------------------------------------------------------
-        # append file
-        # --------------------------------------------------------
-        append_info = self._extract_append_request(clause)
-        if append_info and workspace_tool:
+        # read
+        read_path = self._extract_read_path(stripped)
+        if read_path:
             return [
                 {
-                    "type": "tool",
-                    "tool_name": workspace_tool,
-                    "tool_input": {
-                        "action": "append",
-                        "path": append_info["path"],
-                        "content": append_info["content"],
-                    },
+                    "type": "read_file",
+                    "path": read_path,
                 }
             ]
 
-        # --------------------------------------------------------
-        # write file
-        # --------------------------------------------------------
-        write_info = self._extract_write_request(clause, context=context)
-        if write_info and workspace_tool:
-            steps: List[Dict[str, Any]] = []
-
-            parent_dir = self._parent_dir(write_info["path"])
-            if parent_dir:
-                steps.append(
-                    {
-                        "type": "tool",
-                        "tool_name": workspace_tool,
-                        "tool_input": {
-                            "action": "mkdir",
-                            "path": parent_dir,
-                        },
-                    }
-                )
-
-            steps.append(
+        # write
+        write = self._extract_write_request(stripped)
+        if write:
+            return [
                 {
-                    "type": "tool",
-                    "tool_name": workspace_tool,
-                    "tool_input": {
-                        "action": "write",
-                        "path": write_info["path"],
-                        "content": write_info["content"],
-                    },
+                    "type": "write_file",
+                    "path": write["path"],
+                    "content": write["content"],
                 }
-            )
-            return steps
+            ]
 
-        # --------------------------------------------------------
         # search
-        # --------------------------------------------------------
-        if self._looks_like_search_query(clause) and search_tool:
+        if self._looks_like_search(stripped):
             return [
                 {
-                    "type": "tool",
-                    "tool_name": search_tool,
-                    "tool_input": {
-                        "query": clause,
-                    },
+                    "type": "web_search",
+                    "query": stripped,
                 }
             ]
 
-        # --------------------------------------------------------
-        # command
-        # --------------------------------------------------------
-        command_text = self._extract_command_text(clause)
-        if command_text and command_tool:
-            return [
-                {
-                    "type": "tool",
-                    "tool_name": command_tool,
-                    "tool_input": {
-                        "command": command_text,
-                    },
-                }
-            ]
-
-        # --------------------------------------------------------
-        # plan / breakdown request
-        # --------------------------------------------------------
-        if self._looks_like_plan_request(clause):
-            return [
-                {
-                    "type": "respond",
-                    "message": self._make_breakdown(clause),
-                }
-            ]
-
+        # fallback：如果看起來像一般命令句但沒前綴，不自動轉 command
         return []
 
     # ============================================================
-    # clause split
+    # split clauses
     # ============================================================
 
-    def _normalize_text(self, text: str) -> str:
-        text = str(text or "").strip()
-        text = text.replace("，", ",")
-        text = text.replace("。", ".")
-        text = text.replace("；", ";")
-        text = text.replace("：", ":")
-        return text
-
     def _split_clauses(self, text: str) -> List[str]:
-        if not text:
+        tmp = str(text or "").strip()
+        if not tmp:
             return []
 
-        tmp = text
+        # 先保護引號內容，避免把 content: "a,b;c" 這種拆壞
+        protected_text, placeholders = self._protect_quoted_segments(tmp)
+
         connectors = [
             "然後",
             "接著",
-            "並且",
-            "並",
-            "再",
             "之後",
+            "再",
+            "並且",
+            "以及",
             "and then",
             " then ",
         ]
 
-        for token in connectors:
-            tmp = tmp.replace(token, "|")
+        for c in connectors:
+            protected_text = protected_text.replace(c, "|")
 
-        tmp = tmp.replace(",", "|")
-        tmp = tmp.replace(";", "|")
+        protected_text = protected_text.replace("；", "|")
+        protected_text = protected_text.replace(";", "|")
+        protected_text = protected_text.replace("，", "|")
+        protected_text = protected_text.replace(",", "|")
 
-        parts = [p.strip() for p in tmp.split("|")]
-        return [p for p in parts if p]
+        parts = [self._restore_quoted_segments(p.strip(), placeholders) for p in protected_text.split("|")]
+        return [p for p in parts if p.strip()]
+
+    def _protect_quoted_segments(self, text: str) -> tuple[str, Dict[str, str]]:
+        placeholders: Dict[str, str] = {}
+
+        def repl(match: re.Match[str]) -> str:
+            key = f"__QUOTE_{len(placeholders)}__"
+            placeholders[key] = match.group(0)
+            return key
+
+        protected = re.sub(r'"[^"]*"|\'[^\']*\'', repl, text)
+        return protected, placeholders
+
+    def _restore_quoted_segments(self, text: str, placeholders: Dict[str, str]) -> str:
+        restored = text
+        for key, value in placeholders.items():
+            restored = restored.replace(key, value)
+        return restored
 
     # ============================================================
-    # read parsing
+    # command
+    # ============================================================
+
+    def _extract_command(self, text: str) -> Optional[str]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        # 故意不支援 ^cmd\s+(.+)$
+        # 避免把 Windows 的 `cmd /c xxx` 誤當成前綴語法
+        patterns = [
+            r"^cmd\s*:\s*(.+)$",
+            r"^run\s*:\s*(.+)$",
+            r"^run\s+(.+)$",
+            r"^command\s*:\s*(.+)$",
+            r"^command\s+(.+)$",
+            r"^execute\s+(.+)$",
+            r"^shell\s+(.+)$",
+            r"^bash\s+(.+)$",
+            r"^執行\s+(.+)$",
+        ]
+
+        for p in patterns:
+            m = re.match(p, stripped, flags=re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
+
+        # 直接輸入 python / py 也視為 command
+        if lowered.startswith("python "):
+            return stripped
+
+        if lowered.startswith("py "):
+            return stripped
+
+        return None
+
+    def _is_command_route(self, route: Any) -> bool:
+        if not isinstance(route, dict):
+            return False
+
+        mode = str(route.get("mode", "")).strip().lower()
+        tool_name = str(route.get("tool_name", "")).strip().lower()
+
+        if mode == "command":
+            return True
+
+        if tool_name == "command":
+            return True
+
+        return False
+
+    # ============================================================
+    # read
     # ============================================================
 
     def _extract_read_path(self, text: str) -> Optional[str]:
-        lowered = text.lower()
-
-        if not any(k in lowered or k in text for k in ["讀取", "查看", "打開", "read", "open", "show"]):
-            return None
-
-        path = self._extract_file_path(text)
-        return path
-
-    # ============================================================
-    # mkdir parsing
-    # ============================================================
-
-    def _extract_mkdir_path(self, text: str) -> Optional[str]:
-        lowered = text.lower()
-
-        mkdir_keywords = [
-            "建立資料夾",
-            "建立文件夾",
-            "新增資料夾",
-            "創建資料夾",
-            "create folder",
-            "make folder",
-            "mkdir",
-        ]
-
-        if not any(k in text or k in lowered for k in mkdir_keywords):
-            return None
-
-        patterns = [
-            r"(?:建立資料夾|建立文件夾|新增資料夾|創建資料夾)\s+([^\s]+)",
-            r"(?:create folder|make folder|mkdir)\s+([^\s]+)",
-        ]
-
-        for pattern in patterns:
-            m = re.search(pattern, text, flags=re.IGNORECASE)
-            if m:
-                return self._strip_quotes(m.group(1))
-
+        if self._looks_like_read(text):
+            return self._extract_file_path(text)
         return None
 
-    # ============================================================
-    # write parsing
-    # ============================================================
-
-    def _extract_write_request(
-        self,
-        text: str,
-        context: Dict[str, Any],
-    ) -> Optional[Dict[str, str]]:
-        lowered = text.lower()
-
-        write_keywords = [
-            "寫入",
-            "建立檔案",
-            "新增檔案",
-            "創建檔案",
-            "存成",
-            "存檔",
-            "寫檔",
-            "create file",
-            "write file",
-            "save file",
-        ]
-
-        if not any(k in text or k in lowered for k in write_keywords) and not self._contains_filename(text):
-            return None
-
-        path = self._extract_file_path(text)
-        content = self._extract_write_content(text)
-
-        # 僅有檔名但沒明確寫入關鍵字，且像「讀取 a.txt」這類句子，不要誤判
-        if path and self._looks_like_read_request(text):
-            return None
-
-        # 特例：像「在 test 裡面建立 a.txt」這種只有 path 沒 content
-        if path and content is None:
-            content = ""
-
-        if not path:
-            inferred = self._infer_output_path(text=text, context=context)
-            if inferred:
-                path = inferred
-
-        if not path:
-            return None
-
-        if content is None:
-            content = text
-
-        return {
-            "path": path,
-            "content": content,
-        }
-
-    def _extract_append_request(self, text: str) -> Optional[Dict[str, str]]:
-        lowered = text.lower()
-
-        append_keywords = [
-            "追加",
-            "附加",
-            "append",
-        ]
-
-        if not any(k in text or k in lowered for k in append_keywords):
-            return None
-
-        path = self._extract_file_path(text)
-        if not path:
-            return None
-
-        content = self._extract_write_content(text)
-        if content is None:
-            content = text
-
-        return {
-            "path": path,
-            "content": content,
-        }
-
-    def _extract_write_content(self, text: str) -> Optional[str]:
-        patterns = [
-            r"內容是\s+(.+)$",
-            r"內容為\s+(.+)$",
-            r"寫入\s+(.+?)\s+到\s+[^\s]+$",
-            r"寫入\s+(.+?)\s+進\s+[^\s]+$",
-            r"寫入\s+(.+)$",
-            r"content is\s+(.+)$",
-            r"content:\s*(.+)$",
-        ]
-
-        for pattern in patterns:
-            m = re.search(pattern, text, flags=re.IGNORECASE)
-            if m:
-                return self._strip_quotes(m.group(1).strip())
-
-        # 引號內容
-        quote_patterns = [
-            r'"([^"]+)"',
-            r"'([^']+)'",
-        ]
-        for pattern in quote_patterns:
-            m = re.search(pattern, text)
-            if m:
-                return m.group(1)
-
-        return None
-
-    # ============================================================
-    # file path parsing
-    # ============================================================
-
-    def _extract_file_path(self, text: str) -> Optional[str]:
-        patterns = [
-            r'([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))',
-        ]
-
-        for pattern in patterns:
-            m = re.search(pattern, text, flags=re.IGNORECASE)
-            if m:
-                return self._normalize_path(m.group(1))
-
-        # 中文語境：在 test 裡面建立 a.txt
-        inside_match = re.search(
-            r"在\s+([A-Za-z0-9_\-./\\]+)\s+裡面.*?([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))",
-            text,
-            flags=re.IGNORECASE,
-        )
-        if inside_match:
-            folder = self._normalize_path(inside_match.group(1))
-            filename = self._normalize_path(inside_match.group(2))
-            filename = filename.split("/")[-1]
-            return f"{folder}/{filename}"
-
-        return None
-
-    def _infer_output_path(self, text: str, context: Dict[str, Any]) -> Optional[str]:
-        # 有明確副檔名時才推
-        if self._contains_filename(text):
-            path = self._extract_file_path(text)
-            if path:
-                return path
-
-        # 像「建立 hello.txt」這種通常上面會抓到，不再硬推 output.txt
-        return None
-
-    def _contains_filename(self, text: str) -> bool:
-        return bool(
-            re.search(r'[A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log)', text, flags=re.IGNORECASE)
-        )
-
-    def _normalize_path(self, path: str) -> str:
-        value = self._strip_quotes(path).strip()
-        value = value.replace("\\", "/")
-        value = re.sub(r"/+", "/", value)
-
-        # 防止 fallback 再塞出 workspace/workspace
-        if value.startswith("./"):
-            value = value[2:]
-
-        if value.lower().startswith("workspace/"):
-            value = value[len("workspace/"):]
-
-        return value
-
-    def _parent_dir(self, path: str) -> str:
-        normalized = self._normalize_path(path)
-        if "/" not in normalized:
-            return ""
-        return normalized.rsplit("/", 1)[0]
-
-    def _strip_quotes(self, value: str) -> str:
-        value = str(value or "").strip()
-        if len(value) >= 2:
-            if (value.startswith('"') and value.endswith('"')) or (
-                value.startswith("'") and value.endswith("'")
-            ):
-                return value[1:-1]
-        return value
-
-    # ============================================================
-    # intent heuristics
-    # ============================================================
-
-    def _infer_intent(self, text: str) -> str:
-        lowered = text.lower()
-
-        if self._looks_like_read_request(text):
-            return "read_file"
-        if self._extract_mkdir_path(text):
-            return "mkdir"
-        if self._extract_append_request(text):
-            return "append_file"
-        if self._extract_write_request(text, context={}):
-            return "write_file"
-        if self._looks_like_search_query(text):
-            return "web_search"
-        if self._extract_command_text(text):
-            return "command"
-        if self._looks_like_plan_request(text):
-            return "planning"
-        return "respond"
-
-    def _looks_like_read_request(self, text: str) -> bool:
-        lowered = text.lower()
+    def _looks_like_read(self, text: str) -> bool:
+        lowered = str(text or "").lower()
         keywords = [
             "讀取",
             "查看",
@@ -572,180 +316,143 @@ class Planner:
         ]
         return any(k in text or k in lowered for k in keywords)
 
-    def _looks_like_search_query(self, text: str) -> bool:
-        lowered = text.lower()
-        keywords = [
-            "查",
-            "搜尋",
-            "搜索",
-            "規格",
-            "資料",
-            "教學",
-            "怎麼設定",
-            "怎麼安裝",
-            "怎麼用",
-            "是什麼",
-            "多少",
-            "版本",
-            "說明",
-            "web",
-            "search",
-            "spec",
-            "specs",
-            "lookup",
-        ]
-        return any(k in text or k in lowered for k in keywords)
+    # ============================================================
+    # write file
+    # ============================================================
 
-    def _looks_like_plan_request(self, text: str) -> bool:
-        lowered = text.lower()
-        keywords = [
-            "規劃",
-            "計畫",
-            "拆解",
-            "步驟",
-            "怎麼做",
-            "如何做",
-            "roadmap",
-            "plan",
-            "breakdown",
-            "steps",
-        ]
-        return any(k in text or k in lowered for k in keywords)
+    def _extract_write_request(self, text: str) -> Optional[Dict[str, str]]:
+        lowered = str(text or "").lower()
 
-    def _extract_command_text(self, text: str) -> str:
-        stripped = text.strip()
+        if self._extract_command(text):
+            return None
 
-        prefixes = [
-            "執行 ",
-            "執行:",
-            "執行：",
-            "run ",
-            "cmd ",
-            "command ",
+        if self._looks_like_read(text):
+            return None
+
+        write_keywords = [
+            "建立",
+            "新增",
+            "寫",
+            "寫入",
+            "create",
+            "write",
+            "save",
         ]
 
-        lowered = stripped.lower()
-        for prefix in prefixes:
-            if lowered.startswith(prefix.lower()):
-                return stripped[len(prefix):].strip()
+        has_write_keyword = any(k in text or k in lowered for k in write_keywords)
+        has_filename = self._contains_filename(text)
+
+        if not has_filename:
+            return None
+
+        if not has_write_keyword and not self._looks_like_filename_only_request(text):
+            return None
+
+        path = self._extract_file_path(text)
+        if not path:
+            return None
+
+        content = self._extract_write_content(text)
+        if content is None:
+            content = self._generate_content_from_filename(path)
+
+        return {
+            "path": path,
+            "content": content,
+        }
+
+    def _generate_content_from_filename(self, path: str) -> str:
+        normalized = path.replace("\\", "/").lower()
+
+        if normalized.endswith(".py"):
+            return "print('hello')\n"
+
+        if normalized.endswith(".md"):
+            return "# Document\n"
+
+        if normalized.endswith(".json"):
+            return "{}\n"
+
+        if normalized.endswith(".csv"):
+            return "column1,column2\n"
 
         return ""
 
-    # ============================================================
-    # tool helpers
-    # ============================================================
+    def _extract_write_content(self, text: str) -> Optional[str]:
+        patterns = [
+            r"內容是\s+(.+)$",
+            r"內容為\s+(.+)$",
+            r"內容:\s*(.+)$",
+            r"content is\s+(.+)$",
+            r"content:\s*(.+)$",
+        ]
 
-    def _pick_tool(self, candidates: List[str]) -> Optional[str]:
-        actual_tools = self._list_tools()
-        if not actual_tools:
-            return None
-
-        def norm(x: Any) -> str:
-            return str(x).strip().lower().replace("-", "_").replace(" ", "_")
-
-        normalized_actual = {norm(t): t for t in actual_tools}
-
-        alias_map = {
-            "web_search": ["search_web", "search", "websearch"],
-            "search_web": ["web_search", "search", "websearch"],
-            "search": ["web_search", "search_web", "websearch"],
-            "websearch": ["web_search", "search_web", "search"],
-            "workspace": ["workspace_tool", "write_file", "workspace_write", "file_write"],
-            "workspace_tool": ["workspace", "write_file", "workspace_write", "file_write"],
-            "write_file": ["workspace", "workspace_tool", "workspace_write", "file_write"],
-            "workspace_write": ["workspace", "workspace_tool", "write_file", "file_write"],
-            "file_write": ["workspace", "workspace_tool", "write_file", "workspace_write"],
-            "command": ["command_tool"],
-            "command_tool": ["command"],
-        }
-
-        for candidate in candidates:
-            nc = norm(candidate)
-
-            if nc in normalized_actual:
-                return normalized_actual[nc]
-
-            for alias in alias_map.get(nc, []):
-                na = norm(alias)
-                if na in normalized_actual:
-                    return normalized_actual[na]
+        for p in patterns:
+            m = re.search(p, text, flags=re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
 
         return None
 
-    def _list_tools(self) -> List[str]:
-        registry = self._get_tool_registry()
-        if registry is None:
-            return []
+    # ============================================================
+    # search
+    # ============================================================
 
-        list_tools_fn = getattr(registry, "list_tools", None)
-        if callable(list_tools_fn):
-            try:
-                result = list_tools_fn()
-                if isinstance(result, dict):
-                    if isinstance(result.get("tools"), list):
-                        return [str(x) for x in result.get("tools", [])]
-                    if isinstance(result.get("items"), list):
-                        names: List[str] = []
-                        for item in result.get("items", []):
-                            if isinstance(item, dict):
-                                name = item.get("name") or item.get("tool_name")
-                                if name:
-                                    names.append(str(name))
-                            else:
-                                names.append(str(item))
-                        return names
-                if isinstance(result, list):
-                    names = []
-                    for item in result:
-                        if isinstance(item, dict):
-                            name = item.get("name") or item.get("tool_name")
-                            if name:
-                                names.append(str(name))
-                        else:
-                            names.append(str(item))
-                    return names
-            except Exception:
-                pass
+    def _looks_like_search(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        keywords = ["搜尋", "search", "查", "規格", "是什麼"]
+        return any(k in text or k in lowered for k in keywords)
 
-        for attr_name in ("tools", "_tools", "registry"):
-            value = getattr(registry, attr_name, None)
-            if isinstance(value, dict):
-                return [str(k) for k in value.keys()]
+    # ============================================================
+    # file path
+    # ============================================================
 
-        return []
-
-    def _get_tool_registry(self) -> Optional[Any]:
-        if self.step_executor is not None:
-            registry = getattr(self.step_executor, "tool_registry", None)
-            if registry is not None:
-                return registry
+    def _extract_file_path(self, text: str) -> Optional[str]:
+        m = re.search(
+            r'([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))',
+            text,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).replace("\\", "/")
         return None
 
-    # ============================================================
-    # response helpers
-    # ============================================================
-
-    def _make_breakdown(self, text: str) -> str:
-        return (
-            "可將任務拆解為：\n"
-            "1. 需求分析\n"
-            "2. 設計解法\n"
-            "3. 實作\n"
-            "4. 測試\n"
-            "5. 修正與優化\n\n"
-            f"任務：{text}"
+    def _contains_filename(self, text: str) -> bool:
+        return bool(
+            re.search(
+                r'([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))',
+                text,
+                flags=re.IGNORECASE,
+            )
         )
 
-    def _summarize_plan(self, text: str, steps: List[Dict[str, Any]]) -> str:
-        if not steps:
-            return f"已收到：{text}"
+    def _looks_like_filename_only_request(self, text: str) -> bool:
+        lowered = str(text or "").lower()
+        return any(k in text or k in lowered for k in ["建立", "新增", "create", "write", "save"])
 
-        if len(steps) == 1:
-            step = steps[0]
-            step_type = str(step.get("type") or "")
-            if step_type == "tool":
-                tool_name = step.get("tool_name", "")
-                return f"已規劃 1 個步驟，使用工具：{tool_name}"
-            return "已規劃 1 個步驟。"
+    # ============================================================
+    # intent
+    # ============================================================
 
-        return f"已規劃 {len(steps)} 個步驟。"
+    def _infer_intent(self, text: str, route: Any = None, steps: Optional[List[Dict[str, Any]]] = None) -> str:
+        if self._is_command_route(route):
+            return "command"
+
+        if self._extract_command(text):
+            return "command"
+
+        if steps:
+            first_type = str(steps[0].get("type", "")).strip().lower()
+            if first_type:
+                return first_type
+
+        if self._looks_like_read(text):
+            return "read_file"
+
+        if self._extract_write_request(text):
+            return "write_file"
+
+        if self._looks_like_search(text):
+            return "web_search"
+
+        return "respond"
