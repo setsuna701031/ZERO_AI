@@ -52,3 +52,5 @@ test_memory_engine.py
 .env.*
 data/test.txt
 data/memory/
+memory/history.txt
+legacy/
