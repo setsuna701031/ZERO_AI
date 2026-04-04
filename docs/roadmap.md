@@ -2,7 +2,13 @@
 
 
 
-This document describes the development roadmap of the ZERO Task Operating System.
+This document describes the high-level development direction of ZERO.
+
+
+
+It intentionally focuses on stage-level progression,
+
+not on exposing detailed internal implementation policies.
 
 
 
@@ -10,47 +16,29 @@ This document describes the development roadmap of the ZERO Task Operating Syste
 
 
 
-\## Stage 1 – Basic Task Execution
-
-Status: Completed
+\## Stage 1 – Foundational Execution
 
 
 
-\- task creation
-
-\- task tree
-
-\- step execution
-
-\- tool calling
-
-\- step result recording
-
-\- task completion
+Status: Established
 
 
 
-\---
+Focus:
 
 
 
-\## Stage 2 – Retry System
+\- basic task-oriented execution
 
-Status: Completed
+\- initial tool-connected behavior
+
+\- observable output generation
+
+\- early execution structure
 
 
 
-\- step retry
-
-\- retry limit
-
-\- retry counter
-
-\- failure detection
-
-\- permanent failure detection
-
-\- final failure convergence
+This stage established the first meaningful execution baseline.
 
 
 
@@ -58,37 +46,97 @@ Status: Completed
 
 
 
-\## Stage 3 – Scheduler / Task OS Foundations
+\## Stage 2 – Verifiable Task Behavior
+
+
+
+Status: Established
+
+
+
+Focus:
+
+
+
+\- success-path demonstrations
+
+\- failure-path demonstrations
+
+\- inspectable task results
+
+\- clearer external evidence of system behavior
+
+
+
+This stage matters because it moved the project
+
+from concept description toward demonstrable proof.
+
+
+
+\---
+
+
+
+\## Stage 3 – Structured Runtime Direction
+
+
+
+Status: Active
+
+
+
+Focus:
+
+
+
+\- layered execution architecture
+
+\- task-oriented system growth
+
+\- stronger runtime identity
+
+\- clearer separation between planning, coordination, and execution layers
+
+\- a more visible Task Operating System direction
+
+
+
+This is the stage where ZERO increasingly becomes
+
+more than a tool-routed assistant shell.
+
+
+
+\---
+
+
+
+\## Stage 4 – Broader Multi-Step Capability
+
+
 
 Status: In Progress
 
 
 
-\- task queue
-
-\- priority queue
-
-\- preemptive scheduling
-
-\- task runtime
-
-\- workspace state
-
-\- pause / resume behavior
-
-\- CLI-driven execution control
+Focus:
 
 
 
-\### Current Note
+\- stronger multi-step task behavior
+
+\- richer structured work progression
+
+\- improved execution continuity
+
+\- more capable task handling
 
 
 
-This stage has already reached a meaningful prototype level.
+The purpose of this stage is to move from isolated flows
 
-The retry/failure closure and scheduler flow are now working milestone pieces,
-
-but runtime observability and cleaner state history exposure are still being improved.
+toward more durable task-oriented behavior.
 
 
 
@@ -96,65 +144,31 @@ but runtime observability and cleaner state history exposure are still being imp
 
 
 
-\## Stage 4 – Reflection and Replanning
-
-Status: Partial / In Progress
+\## Stage 5 – Better System Visibility
 
 
 
-\- reflection triggered after terminal failure conditions
-
-\- reflection generates recovery direction
-
-\- replanner inserts recovery steps
-
-\- recovery execution continues task flow
+Status: Near-Term Focus
 
 
 
-\### Current Note
+Focus:
 
 
 
-Reflection/replan direction exists in project design
+\- clearer runtime visibility
 
-and parts of the architecture have already been shaped around it,
+\- better inspection of system progression
 
-but this path still needs cleaner structured validation as the scheduler/runtime core stabilizes.
+\- more understandable task-state presentation
 
-
-
-\---
+\- stronger evidence of execution behavior
 
 
 
-\## Stage 5 – Memory Logging
+This stage is important for both engineering work
 
-Status: In Progress
-
-
-
-\- task summary
-
-\- failed-step summary
-
-\- recovered-step summary
-
-\- retry statistics
-
-\- reflection statistics
-
-\- lessons learned
-
-
-
-\### Current Note
-
-
-
-Memory remains part of the architecture direction,
-
-but the current engineering priority is still execution-core stability.
+and external demonstration quality.
 
 
 
@@ -162,41 +176,31 @@ but the current engineering priority is still execution-core stability.
 
 
 
-\## Stage 6 – Runtime Observability
-
-Status: Immediate Next Focus
+\## Stage 6 – Stronger Continuity Layers
 
 
 
-\- task event history
-
-\- queue/runtime transition visibility
-
-\- success-path closure verification
-
-\- failure-path timeline visibility
-
-\- inspectable task execution traces
+Status: Future Direction
 
 
 
-\---
+Focus:
 
 
 
-\## Stage 7 – Memory-Aware Planning
+\- richer cross-task continuity
 
-Status: Planned
+\- better summary preservation
+
+\- improved carry-forward context
+
+\- more useful system memory support
 
 
 
-\- planner reads memory before planning
+The goal here is to make the system more capable
 
-\- avoid repeating previous failures
-
-\- use past successful recovery strategies
-
-\- improve planning based on history
+across longer-running work.
 
 
 
@@ -204,39 +208,31 @@ Status: Planned
 
 
 
-\## Stage 8 – Long-Term Memory
-
-Status: Planned
+\## Stage 7 – Broader Execution Intelligence
 
 
 
-\- store memory to database
-
-\- memory retrieval
-
-\- task history search
-
-\- lessons database
+Status: Future Direction
 
 
 
-\---
+Focus:
 
 
 
-\## Stage 9 – Tool Auto Selection
+\- more capable planning support
 
-Status: Planned
+\- richer tool interaction
+
+\- more advanced multi-step structure
+
+\- stronger task completion ability
 
 
 
-\- automatically choose tools
+This stage expands the project from a prototype core
 
-\- tool capability description
-
-\- tool selection logic
-
-\- multi-tool workflow
+toward a more capable execution assistant.
 
 
 
@@ -244,79 +240,29 @@ Status: Planned
 
 
 
-\## Stage 10 – Multi-Step Planning
-
-Status: Planned
+\## Stage 8 – Expanded Product Layers
 
 
 
-\- planner generates multi-step plans
-
-\- dependency between steps
-
-\- conditional execution
-
-\- loop tasks
+Status: Future Direction
 
 
 
-\---
+Focus:
 
 
 
-\## Stage 11 – Multi-Agent Workers
+\- better interfaces
 
-Status: Planned
+\- stronger usability
 
+\- broader deployment paths
 
-
-\- worker agents
-
-\- task delegation
-
-\- parallel execution
-
-\- result aggregation
+\- more polished user-facing layers
 
 
 
-\---
-
-
-
-\## Stage 12 – Web Interface
-
-Status: Planned
-
-
-
-\- web UI
-
-\- task dashboard
-
-\- task tree visualization
-
-\- memory viewer
-
-
-
-\---
-
-
-
-\## Stage 13 – One-Click Deployment
-
-Status: Planned
-
-
-
-\- install script
-
-\- start script
-
-\- Docker deployment
-
-\- server deployment
+These layers come after the execution core is sufficiently stable.
 
 
 
@@ -328,29 +274,47 @@ Status: Planned
 
 
 
-ZERO is designed to become a Task Operating System.
+The long-term direction of ZERO is:
 
 
 
-Instead of interacting with AI through conversation,
-
-users interact with AI through tasks.
+\*\*a local-first AI system that helps organize and carry work forward through structured execution architecture\*\*
 
 
 
-The system should:
+This means the project is ultimately aiming toward:
 
 
 
-\- plan tasks
+\- goal-driven work handling
 
-\- queue and schedule work
+\- structured execution layers
 
-\- execute steps
+\- real tool / workspace interaction
 
-\- recover from failures
+\- continuity across tasks
 
-\- learn from execution history
+\- an increasingly capable engineering-assistant direction
 
-\- improve over time
+
+
+\---
+
+
+
+\## Summary
+
+
+
+In one sentence:
+
+
+
+> ZERO is progressing from a local execution prototype toward a broader Autonomous Agent Runtime / Task Operating System direction.
+
+
+
+The current milestone is about strengthening the execution core
+
+while preserving clarity, demonstrability, and long-term extensibility.
 

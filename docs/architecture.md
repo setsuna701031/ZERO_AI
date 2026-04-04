@@ -2,31 +2,23 @@
 
 
 
-ZERO is a local-first autonomous task runtime.
+ZERO is a local-first AI execution project.
 
 
 
-It is designed as a \*\*Task Operating System\*\* rather than a chatbot.
+At the current stage, it is best described as an early
+
+\*\*Autonomous Agent Runtime / Task Operating System prototype\*\*
+
+rather than a traditional chatbot-style assistant.
 
 
 
-The system focuses on:
+This document introduces the architecture at a high level.
 
+It focuses on system layers, responsibilities, and current structure,
 
-
-\- task execution
-
-\- scheduling
-
-\- runtime control
-
-\- failure recovery
-
-\- retry convergence
-
-\- reflection and replanning
-
-\- memory summaries
+without exposing detailed internal execution policies.
 
 
 
@@ -34,429 +26,17 @@ The system focuses on:
 
 
 
-\## High-Level Architecture
+\## High-Level Position
 
 
 
-User  
+ZERO is moving toward a model where the user gives a goal,
 
-↓  
+and the system organizes, executes, and records task-oriented work.
 
-Planner  
 
-↓  
 
-Task Manager  
-
-↓  
-
-Task Queue  
-
-↓  
-
-Priority Queue  
-
-↓  
-
-Preemptive Scheduler  
-
-↓  
-
-Task Runtime  
-
-↓  
-
-Step Executor  
-
-↓  
-
-Workspace State  
-
-↓  
-
-Success / Retry / Pause / Failure  
-
-↓  
-
-Reflection / Replan  
-
-↓  
-
-Recovery Execution  
-
-↓  
-
-Task Complete  
-
-↓  
-
-Memory Summary  
-
-↓  
-
-Lessons Learned
-
-
-
-\---
-
-
-
-\## Core Components
-
-
-
-\## 1. Planner
-
-
-
-The planner converts a user goal into executable task steps.
-
-
-
-Example:
-
-
-
-Goal: Create a folder and verify it exists
-
-
-
-Steps:
-
-1\. Create folder
-
-2\. Verify folder exists
-
-
-
-The planner is responsible for turning intent into structured execution targets.
-
-
-
-\---
-
-
-
-\## 2. Task Manager
-
-
-
-The task manager manages the execution graph and task state.
-
-
-
-It is responsible for:
-
-
-
-\- task tree
-
-\- task metadata
-
-\- task status
-
-\- retry count
-
-\- reflection count
-
-\- parent/child relationships
-
-\- replanned tasks
-
-\- execution history
-
-\- scheduler-facing task state
-
-
-
-\---
-
-
-
-\## 3. Task Queue
-
-
-
-The task queue holds runnable work items.
-
-
-
-It provides the execution system with a controlled place to pull the next task from,
-
-instead of treating all task steps as immediate one-shot commands.
-
-
-
-This is one of the key shifts from "assistant" architecture to "Task OS" architecture.
-
-
-
-\---
-
-
-
-\## 4. Priority Queue
-
-
-
-The priority queue determines task ordering.
-
-
-
-This allows the system to:
-
-
-
-\- sort urgent work ahead of lower-priority work
-
-\- support future policy-based scheduling
-
-\- act more like a workflow engine instead of a simple sequential runner
-
-
-
-\---
-
-
-
-\## 5. Preemptive Scheduler
-
-
-
-The preemptive scheduler manages which task should run now
-
-and when current work should pause, resume, or yield.
-
-
-
-This layer is important because it moves ZERO toward:
-
-
-
-\- runtime control
-
-\- task arbitration
-
-\- execution flow management
-
-
-
-instead of just "run the next step in order."
-
-
-
-\---
-
-
-
-\## 6. Task Runtime
-
-
-
-The runtime is the execution control layer.
-
-
-
-It is responsible for:
-
-
-
-\- executing steps
-
-\- recording runtime state
-
-\- determining success/failure
-
-\- triggering retry logic
-
-\- forwarding terminal results back to scheduler/task manager
-
-\- preserving execution error information
-
-
-
-The runtime is one of the most important parts of the current prototype.
-
-
-
-\---
-
-
-
-\## 7. Step Executor
-
-
-
-The step executor actually runs task steps through tools and adapters.
-
-
-
-Example tool families:
-
-
-
-\- workspace tool
-
-\- file tool
-
-\- command tool
-
-\- web tool
-
-\- memory tool
-
-
-
-Execution should remain modular so the core runtime does not become tool-specific.
-
-
-
-\---
-
-
-
-\## 8. Workspace State
-
-
-
-Workspace state tracks what is currently happening around task execution.
-
-
-
-This includes operational state such as:
-
-
-
-\- current task execution context
-
-\- running / paused / resumed flow
-
-\- execution control transitions
-
-
-
-This makes task execution more stateful and inspectable.
-
-
-
-\---
-
-
-
-\## 9. Failure Handling
-
-
-
-If a step fails:
-
-
-
-1\. Runtime marks the step failure
-
-2\. Scheduler increments retry count
-
-3\. If retry remains available → requeue task
-
-4\. If retry exceeds limit → converge to permanent failure
-
-5\. Preserve `last\_error`
-
-6\. Prevent false success state
-
-
-
-This retry/failure closure is a key current milestone.
-
-
-
-\---
-
-
-
-\## 10. Reflection Engine
-
-
-
-Reflection analyzes why a task failed
-
-and can generate a recovery direction.
-
-
-
-Example:
-
-
-
-Original step failed  
-
-→ analyze why  
-
-→ generate alternative steps  
-
-→ continue execution
-
-
-
-\---
-
-
-
-\## 11. Replanner
-
-
-
-The replanner inserts new recovery steps into the task tree
-
-based on reflection results.
-
-
-
-This allows ZERO to recover dynamically instead of stopping permanently.
-
-
-
-\---
-
-
-
-\## 12. Memory System
-
-
-
-After execution, the system writes engineering-style memory summaries, such as:
-
-
-
-\- task summary
-
-\- failed steps
-
-\- recovered steps
-
-\- retry count
-
-\- reflection count
-
-\- lessons learned
-
-\- next useful engineering state
-
-
-
-This memory is intended to support future planning and system improvement.
-
-
-
-\---
-
-
-
-\## Execution Flow
-
-
-
-Full execution flow:
+A simplified high-level view looks like this:
 
 
 
@@ -464,67 +44,365 @@ User Goal
 
 ↓  
 
-Planner  
+Planning Layer  
 
 ↓  
 
-Task Tree Created  
+Task Coordination Layer  
 
 ↓  
 
-Task Queue  
+Scheduling / Runtime Control  
 
 ↓  
 
-Priority Queue  
+Execution Layer  
 
 ↓  
 
-Preemptive Scheduler  
+Workspace / Tool Interaction  
 
 ↓  
 
-Execute Step  
+Result Recording  
 
 ↓  
 
-Success → Next Step  
+Summary / Memory
 
-↓  
 
-Fail → Retry  
 
-↓  
+This means the project is no longer just a chat wrapper around tools.
 
-Retry Exhausted → Permanent Failure  
+It is evolving toward a structured execution architecture.
 
-↓  
 
-Reflection  
 
-↓  
+\---
 
-Replan  
 
-↓  
 
-Insert Recovery Steps  
+\## Main System Layers
 
-↓  
 
-Execute Recovery Steps  
 
-↓  
+\## 1. Planning Layer
 
-Task Completed  
 
-↓  
 
-Write Memory  
+The planning layer turns user intent into structured work.
 
-↓  
 
-Lessons Learned
+
+Its role is to convert a goal into a form that the runtime can use,
+
+such as ordered actions, execution targets, or verification-oriented steps.
+
+
+
+At the current stage, planning is part of the system direction,
+
+while execution reliability and runtime structure remain the primary focus.
+
+
+
+\---
+
+
+
+\## 2. Task Coordination Layer
+
+
+
+The coordination layer manages how work is organized and tracked.
+
+
+
+Typical responsibilities include:
+
+
+
+\- task structure
+
+\- task metadata
+
+\- execution progress
+
+\- parent / child task relationships
+
+\- runtime-facing task information
+
+\- inspectable task state
+
+
+
+This layer is one of the foundations that separates ZERO
+
+from a simple prompt-response system.
+
+
+
+\---
+
+
+
+\## 3. Scheduling and Runtime Control
+
+
+
+ZERO is being shaped toward a runtime-oriented model,
+
+where work is not treated as a one-shot answer,
+
+but as a controlled execution process.
+
+
+
+This area includes high-level concepts such as:
+
+
+
+\- queued work
+
+\- execution ordering
+
+\- runtime flow control
+
+\- visible task progression
+
+\- pause / resume capable behavior
+
+
+
+This is important because it allows the system
+
+to behave more like an execution framework
+
+instead of only producing text output.
+
+
+
+\---
+
+
+
+\## 4. Execution Layer
+
+
+
+The execution layer is responsible for carrying out task steps
+
+through actual tools and adapters.
+
+
+
+Examples of execution-related capabilities include:
+
+
+
+\- workspace actions
+
+\- file operations
+
+\- command execution
+
+\- search or lookup tools
+
+\- memory-related operations
+
+
+
+The architecture is intended to keep execution modular,
+
+so the core structure does not collapse into tool-specific code.
+
+
+
+\---
+
+
+
+\## 5. Workspace and Result Layer
+
+
+
+ZERO is designed to produce inspectable results,
+
+not only internal reasoning.
+
+
+
+This means the system can interact with a real working environment
+
+and leave behind observable outputs.
+
+
+
+Examples include:
+
+
+
+\- file system changes
+
+\- created artifacts
+
+\- execution results
+
+\- state transitions
+
+\- summarized outcomes
+
+
+
+This layer is part of what makes the project demonstrable and verifiable.
+
+
+
+\---
+
+
+
+\## 6. Summary and Memory Layer
+
+
+
+After execution, the system can preserve useful summaries
+
+about what happened during a task.
+
+
+
+The long-term intent is to retain engineering-useful state summaries
+
+instead of relying only on raw conversational traces.
+
+
+
+Examples include:
+
+
+
+\- what task was attempted
+
+\- what result was produced
+
+\- what obstacle appeared
+
+\- what next step may be useful
+
+
+
+This layer supports continuity, iteration, and future system improvement.
+
+
+
+\---
+
+
+
+\## Current Structural View
+
+
+
+At a practical level, the project currently aligns more closely with
+
+a layered execution system than with a simple assistant shell.
+
+
+
+A simplified structural view can be described as:
+
+
+
+\- brain / reasoning-related layer
+
+\- planner layer
+
+\- scheduler / coordination layer
+
+\- runtime layer
+
+\- executor layer
+
+\- tools / adapters
+
+\- workspace-facing layer
+
+\- memory / summaries
+
+\- logs / operational traces
+
+
+
+This should be understood as a high-level architectural direction,
+
+not a strict public contract for every internal implementation detail.
+
+
+
+\---
+
+
+
+\## What the Architecture Means
+
+
+
+The important shift is this:
+
+
+
+ZERO is no longer centered on “generate a response.”
+
+It is increasingly centered on “organize and execute work.”
+
+
+
+That shift changes the role of the system from:
+
+
+
+\- answer generator
+
+
+
+toward:
+
+
+
+\- task-oriented runtime
+
+\- local execution core
+
+\- structured agent system prototype
+
+
+
+\---
+
+
+
+\## Design Principles
+
+
+
+The current architecture follows several broad principles:
+
+
+
+\- local-first execution
+
+\- modular layering
+
+\- task-oriented flow instead of conversation-oriented flow
+
+\- execution before presentation polish
+
+\- inspectable results before abstract claims
+
+\- reusable core before vertical specialization
+
+\- clear separation between core, adapters, and outer layers
 
 
 
@@ -536,31 +414,21 @@ Lessons Learned
 
 
 
-At the current stage, ZERO already includes meaningful progress in:
+At the current stage, ZERO should be described as:
 
 
 
-\- task queueing
+\*\*an early Autonomous Agent Runtime / Task Operating System prototype
 
-\- priority handling
+with structured execution layers, runtime control direction,
 
-\- preemptive scheduling
-
-\- runtime control
-
-\- retry/failure convergence
-
-\- pause/resume behavior
-
-\- execution-state handling
+workspace interaction, and verifiable task-oriented behavior\*\*
 
 
 
-So the project is no longer accurately described as only a tool-routed assistant shell.
+This is already beyond a simple tool-routed assistant shell,
 
-
-
-It is now much closer to an early workflow-engine / task-OS kernel.
+but it is still an actively evolving execution-core project.
 
 
 
@@ -568,39 +436,19 @@ It is now much closer to an early workflow-engine / task-OS kernel.
 
 
 
-\## Design Philosophy
+\## Summary
 
 
 
-ZERO is not designed to be a chatbot.
+In one sentence:
 
 
 
-ZERO is designed to be a task execution system.
+> ZERO is a local-first AI execution system evolving toward an Autonomous Agent Runtime / Task Operating System architecture.
 
 
 
-Key ideas:
+The current milestone is not “finished product.”
 
-
-
-\- tasks instead of conversations
-
-\- steps instead of responses
-
-\- execution instead of chatting
-
-\- scheduling instead of direct one-shot dispatch
-
-\- recovery instead of stopping
-
-\- reflection instead of giving up
-
-\- memory instead of forgetting
-
-\- lessons instead of raw logs
-
-
-
-This project explores the concept of a reusable local-first Task Operating System core.
+It is “execution-core architecture with real, demonstrable progress.”
 

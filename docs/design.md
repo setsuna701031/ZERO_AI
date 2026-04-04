@@ -2,17 +2,23 @@
 
 
 
-ZERO is not designed to be a chatbot.
+ZERO is not designed as a chat-first AI product.
 
 
 
-ZERO is designed to be a local-first task execution system.
+ZERO is being built as a local-first task-oriented execution system.
 
 
 
-Most AI systems today are conversation-based.
+\---
 
-They generate responses, but they do not manage real execution flow.
+
+
+\## Core View
+
+
+
+Many AI systems stop at response generation.
 
 
 
@@ -20,37 +26,13 @@ ZERO explores a different direction:
 
 
 
-AI should execute tasks, control runtime flow, recover from failures,
+AI should not only describe work.
 
-and learn from execution history.
-
-
-
-\---
+It should increasingly help organize, execute, and carry work forward.
 
 
 
-\## Chat AI vs Task AI
-
-
-
-Chat AI:
-
-
-
-User → Question → AI → Answer → End
-
-
-
-Task AI:
-
-
-
-User → Goal → Plan → Queue → Schedule → Execute → Fail → Retry → Reflect → Replan → Recover → Complete → Memory
-
-
-
-ZERO follows the Task AI model.
+That is the core philosophical shift behind the project.
 
 
 
@@ -58,79 +40,235 @@ ZERO follows the Task AI model.
 
 
 
-\## Core Ideas
+\## Chat-Centered Model vs Task-Centered Model
 
 
 
-ZERO is built on several core ideas.
+A chat-centered model is mostly shaped like this:
 
 
 
-\### 1. Tasks instead of conversations
+User → Prompt → Response → End
 
 
 
-The system should focus on completing tasks, not generating text.
+A task-centered model is closer to this:
 
 
 
-\### 2. Steps instead of responses
+User → Goal → Structured Work → Execution → Result → Continuation
 
 
 
-Tasks are broken into executable steps.
+ZERO is aligned with the second direction.
 
 
 
-\### 3. Execution instead of chatting
+This means the project is fundamentally more interested in:
 
 
 
-The system should execute tools and actions, not stop at explanation.
+\- task progression
+
+\- execution structure
+
+\- inspectable results
+
+\- continuity across work
 
 
 
-\### 4. Scheduling instead of naive sequencing
+than in producing isolated one-off answers.
 
 
 
-A serious task system needs queueing, priority, and runtime flow control.
+\---
 
 
 
-\### 5. Failure recovery instead of stopping
+\## Core Design Ideas
 
 
 
-Failures should not stop the system.
-
-Failures should trigger retry and controlled recovery behavior.
+\## 1. Tasks instead of conversations
 
 
 
-\### 6. Reflection instead of giving up
+The center of the system should be work,
+
+not only dialogue.
 
 
 
-The system should analyze why failures happened and generate new plans.
+The user gives a goal.
+
+The system should increasingly be able to turn that goal
+
+into actionable structure.
 
 
 
-\### 7. Memory instead of forgetting
+\---
 
 
 
-The system should remember what happened during task execution.
+\## 2. Execution instead of explanation only
 
 
 
-\### 8. Lessons instead of logs
+A useful AI system should not stop at “what to do.”
 
 
 
-Execution history should become lessons that improve future planning,
+It should move toward “help get it done.”
 
-not just raw technical traces.
+
+
+This is why ZERO focuses on execution-facing architecture.
+
+
+
+\---
+
+
+
+\## 3. Structure instead of one-shot dispatch
+
+
+
+A serious execution system needs more than simple tool calling.
+
+
+
+It needs structure around work:
+
+
+
+\- organized tasks
+
+\- visible execution layers
+
+\- runtime progression
+
+\- inspectable outputs
+
+
+
+That is why the project is evolving toward a Task Operating System model.
+
+
+
+\---
+
+
+
+\## 4. Local-first before dependency-heavy design
+
+
+
+ZERO follows a local-first direction.
+
+
+
+This is important for:
+
+
+
+\- control
+
+\- privacy
+
+\- independence
+
+\- system ownership
+
+\- engineering flexibility
+
+
+
+The local-first principle is part of the project identity.
+
+
+
+\---
+
+
+
+\## 5. Architecture before surface polish
+
+
+
+The project currently prioritizes execution-core structure
+
+over presentation polish.
+
+
+
+That means the emphasis is on:
+
+
+
+\- system layers
+
+\- reliable execution direction
+
+\- clean responsibility boundaries
+
+\- expandable core design
+
+
+
+rather than early product cosmetics.
+
+
+
+\---
+
+
+
+\## 6. Results instead of abstract claims
+
+
+
+ZERO values demonstrable progress.
+
+
+
+That means the system should increasingly produce:
+
+
+
+\- inspectable outputs
+
+\- visible execution evidence
+
+\- reproducible demonstrations
+
+\- milestone-level proof
+
+
+
+This is part of why the project can now begin to show external display value.
+
+
+
+\---
+
+
+
+\## 7. Reusable core before vertical specialization
+
+
+
+The long-term direction is not to build a one-off script pile.
+
+
+
+The intent is to shape a reusable execution core
+
+that can later support broader assistant capabilities,
+
+different interfaces, and future specialization layers.
 
 
 
@@ -142,41 +280,33 @@ not just raw technical traces.
 
 
 
-ZERO is designed as a Task Operating System.
+ZERO is best understood as exploring the idea of a Task Operating System.
 
 
 
-A normal operating system manages processes, memory, and execution.
+A traditional operating system organizes processes and resources.
 
 
 
-A Task Operating System manages:
+A task-oriented AI system should organize:
 
 
+
+\- goals
 
 \- tasks
 
-\- steps
+\- execution structure
 
-\- queueing
+\- runtime progression
 
-\- scheduling
+\- results
 
-\- failures
-
-\- retries
-
-\- recovery
-
-\- reflection
-
-\- memory
+\- continuity
 
 
 
-The user gives a goal.
-
-The system manages the execution structure around that goal.
+This is the conceptual direction of the project.
 
 
 
@@ -192,33 +322,15 @@ A system that only answers is limited.
 
 
 
-A system that can:
-
-
-
-\- queue work
-
-\- prioritize work
-
-\- execute steps
-
-\- detect failures
-
-\- retry correctly
-
-\- converge to final failure when needed
-
-\- recover from execution problems
-
-\- remember lessons
-
-
+A system that can increasingly help structure and advance work
 
 is much closer to a real engineering assistant.
 
 
 
-That is the direction ZERO is exploring.
+That is why ZERO is being shaped around execution architecture
+
+instead of pure conversation design.
 
 
 
@@ -234,43 +346,29 @@ The long-term vision of ZERO is:
 
 
 
-\*\*a personal autonomous engineering assistant\*\*
+\*\*a personal local-first engineering-oriented AI assistant\*\*
 
 
 
-Examples:
+The system should eventually help with work such as:
 
 
 
-\- Build a robotic arm
+\- engineering tasks
 
-\- Deploy a server
+\- software tasks
 
-\- Design a 3D model
+\- workspace-based execution
 
-\- Write a program
+\- interrupted work continuation
 
-\- Diagnose an execution problem
-
-\- Continue interrupted engineering work
+\- structured multi-step operations
 
 
 
-The system should eventually:
+The current prototype is still early,
 
-
-
-\- plan tasks
-
-\- execute steps
-
-\- use tools
-
-\- recover from failures
-
-\- learn from execution history
-
-\- improve over time
+but the direction is already visible.
 
 
 
@@ -282,27 +380,45 @@ The system should eventually:
 
 
 
-At the current stage, the project prioritizes:
+At the current stage, the practical priorities are:
 
 
 
-\- local-first execution
+\- strengthen the execution core
 
-\- runtime control
+\- preserve architecture clarity
 
-\- retry/failure closure
+\- make progress demonstrable
 
-\- scheduler behavior
+\- expand task-oriented behavior
 
-\- clean architecture evolution
+\- keep the system local-first
 
-\- engineering-state summaries
-
-
-
-UI polish, one-click deployment, and broader product layers come later.
+\- avoid premature product-layer clutter
 
 
 
-The execution core comes first.
+The core comes first.
+
+The wider product layers come later.
+
+
+
+\---
+
+
+
+\## Short Summary
+
+
+
+In one sentence:
+
+
+
+> ZERO is a local-first AI project built around task-oriented execution, structured system growth, and demonstrable engineering progress.
+
+
+
+That is the design philosophy behind the current prototype.
 

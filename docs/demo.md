@@ -2,7 +2,9 @@
 
 
 
-這份文件用來整理目前 ZERO 已完成的可驗證成果，以及這個階段的展示重點。
+This document summarizes the current demonstrable results of ZERO
+
+and clarifies what this stage is meant to show.
 
 
 
@@ -14,51 +16,31 @@
 
 
 
-目前 ZERO 的展示重點不是一般聊天能力，而是：
+At this stage, the purpose of ZERO is not to showcase general chat ability.
 
 
 
-\- 本地 task execution
-
-\- workspace action execution
-
-\- verifiable success / failure behavior
-
-\- basic multi-step task flow
+The focus is on:
 
 
 
-換句話說，這一階段的 ZERO 重點在於：
+\- local task-oriented execution
+
+\- workspace-facing actions
+
+\- verifiable outcomes
+
+\- basic multi-step behavior
+
+\- visible system progression
 
 
 
-\*\*讓 AI 任務不只會說，而是真的會做。\*\*
+In simple terms:
 
 
 
-\---
-
-
-
-\## What Has Been Verified
-
-
-
-以下內容已經有實測證據支撐。
-
-
-
-\### 1. Success path
-
-已驗證任務成功時，系統可正確回傳 success / finished。
-
-
-
-展示素材：
-
-
-
-!\[Task Success Finished](images/ZERO\_TaskOS\_Success\_TaskFinished.png)
+\*\*the goal of this stage is to show that ZERO is moving from “can talk” to “can do.”\*\*
 
 
 
@@ -66,17 +48,27 @@
 
 
 
-\### 2. Failure path
-
-已驗證任務失敗時，系統可正確反映 permanent failure，而不是表面成功。
+\## What This Demo Is Showing
 
 
 
-展示素材：
+The current demo stage is intended to show that ZERO already has:
 
 
 
-!\[Retry Permanent Failure](images/ZERO\_TaskOS\_Retry\_PermanentFailure.png)
+\- real execution behavior
+
+\- real workspace interaction
+
+\- real inspectable output
+
+\- real success / failure evidence
+
+\- an architecture that is growing toward a task runtime
+
+
+
+This makes the project more than a concept description.
 
 
 
@@ -84,31 +76,51 @@
 
 
 
-\### 3. Basic multi-step workspace flow
-
-已驗證基本 multi-step workspace 任務鏈。
+\## Verified Demonstration Areas
 
 
 
-目前已展示的流程包括：
+The current demo materials support the following kinds of proof:
 
 
 
-1\. 建立資料夾
-
-2\. 在資料夾中建立檔案
-
-3\. 寫入內容
-
-4\. 產生實際 workspace 落地結果
+\### 1. Observable task execution
 
 
 
-展示影片：
+The system can perform task-oriented actions
+
+that produce visible results in a local environment.
 
 
 
-\[ZERO\_TaskOS\_MultiStep\_Workspace\_Demo.mp4](images/ZERO\_TaskOS\_MultiStep\_Workspace\_Demo.mp4)
+\### 2. Workspace interaction
+
+
+
+The system can interact with the workspace
+
+and leave behind inspectable outputs.
+
+
+
+\### 3. Verifiable outcome behavior
+
+
+
+The system can demonstrate results that can be checked externally,
+
+rather than existing only as internal reasoning.
+
+
+
+\### 4. Basic multi-step flow
+
+
+
+The system is no longer limited to a single isolated action.
+
+It is already moving toward structured multi-step behavior.
 
 
 
@@ -120,23 +132,27 @@
 
 
 
-這個階段的重要性不在於功能數量，而在於 ZERO 已經開始具備：
+This stage is important not because the system is already complete,
+
+but because it proves that ZERO has entered a meaningful execution phase.
 
 
 
-\- 真實工具呼叫
-
-\- 真實 workspace 變更
-
-\- 真實 execution log
-
-\- success / failure 對齊
-
-\- 從單步走向多步任務鏈
+What matters here is:
 
 
 
-這代表 ZERO 已經脫離純概念或聊天殼階段，開始進入可驗證成果期。
+\- the project has visible architecture
+
+\- the project has visible progression
+
+\- the project has visible outputs
+
+\- the project has visible demonstration value
+
+
+
+That is a critical shift.
 
 
 
@@ -144,23 +160,61 @@
 
 
 
-\## Evidence Summary
+\## Evidence Style
 
 
 
-目前已能證明：
+The current demo materials are best understood as:
 
 
 
-\- ZERO 可以建立與執行 task
+\- execution screenshots
 
-\- ZERO 可以透過 workspace tool 產生真實檔案系統變更
+\- workspace results
 
-\- ZERO 可以正確標示成功結果
+\- status demonstrations
 
-\- ZERO 可以正確標示失敗結果
+\- flow demonstrations
 
-\- ZERO 已能執行基本 multi-step workspace task flow
+\- milestone evidence
+
+
+
+These materials help communicate
+
+what the project can already do in practice.
+
+
+
+\---
+
+
+
+\## What This Demo Does Not Claim
+
+
+
+This demo stage does not claim that ZERO is already a finished platform.
+
+
+
+It does not claim:
+
+
+
+\- full product maturity
+
+\- complete long-term autonomy
+
+\- fully expanded execution coverage
+
+\- final system behavior
+
+
+
+Instead, it shows a real and credible milestone
+
+in the construction of a larger task-oriented AI system.
 
 
 
@@ -172,21 +226,21 @@
 
 
 
-目前這個版本的 ZERO，比較接近：
+At the current stage, ZERO is better interpreted as:
 
 
 
-\- local AI task runtime
+\- a local execution-core prototype
 
-\- workspace execution core
+\- an early task runtime
 
-\- verified task-flow prototype
+\- a structured agent-system foundation
 
-\- early-stage task operating system backbone
+\- a Task Operating System direction with real evidence behind it
 
 
 
-它還不是完整成熟的平台，但已經是一個可被驗證、可被展示、可持續深推的核心節點。
+This is already a meaningful step beyond a pure concept demo.
 
 
 
@@ -194,27 +248,31 @@
 
 
 
-\## What Is Next
+\## What Comes Next
 
 
 
-下一階段預計繼續推進：
+The next stage will continue to strengthen:
 
 
 
-\- Planner 正式化 step 產生能力
+\- execution depth
 
-\- 更強的 multi-step task orchestration
+\- multi-step orchestration
 
-\- task status lifecycle
+\- runtime maturity
 
-\- retry / resume
+\- visibility into system behavior
 
-\- verifier / reflection
+\- stronger task lifecycle handling
 
-\- memory-aware planning
+\- broader architecture stability
 
-\- 更完整的 runtime 與 deployment 路線
+
+
+The purpose is to keep expanding execution reliability
+
+without losing architectural clarity.
 
 
 
@@ -226,9 +284,13 @@
 
 
 
-一句話總結目前這個 demo 階段：
+In one sentence:
 
 
 
-> ZERO has already verified real task execution behavior in a local workspace, including success cases, failure cases, and a basic multi-step execution flow.
+> ZERO already demonstrates real local task-oriented behavior, visible workspace effects, and early multi-step execution value.
+
+
+
+That is the core meaning of the current demo stage.
 

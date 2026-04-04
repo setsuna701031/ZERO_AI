@@ -10,19 +10,35 @@ ZERO AI / zero\_ai
 
 
 
-\## Project Positioning
+\---
 
 
 
-ZERO is a local-first AI engineering agent project.
+\## What ZERO Is
 
 
 
-It is no longer just a chatbot wrapper or a simple tool collection.
+ZERO is a local-first AI execution project.
 
-The project is evolving toward a \*\*Task Operating System\*\*:
 
-a task-oriented runtime that can plan, execute, retry, recover, and record execution state.
+
+It is being built toward an
+
+\*\*Autonomous Agent Runtime / Task Operating System\*\*
+
+rather than a conventional chatbot-style application.
+
+
+
+The project focuses on helping move work forward through
+
+structured execution layers, workspace-facing behavior,
+
+and demonstrable task-oriented progress.
+
+
+
+\---
 
 
 
@@ -30,17 +46,33 @@ a task-oriented runtime that can plan, execute, retry, recover, and record execu
 
 
 
+The current direction of ZERO can be summarized as:
+
+
+
 \- local-first execution
 
-\- modular architecture
+\- task-oriented architecture
 
-\- task-oriented runtime instead of conversation-oriented interaction
+\- structured runtime growth
 
-\- execution, retry, and recovery before product polish
+\- workspace-facing behavior
 
-\- engineering-state summaries instead of raw transcript memory
+\- modular system layers
 
-\- extensible core that can later support additional skill packs and interfaces
+\- demonstrable engineering progress
+
+\- reusable core before product sprawl
+
+
+
+This means the project is centered more on execution
+
+than on conversation.
+
+
+
+\---
 
 
 
@@ -48,39 +80,37 @@ a task-oriented runtime that can plan, execute, retry, recover, and record execu
 
 
 
-ZERO is currently in the \*\*Task OS prototype\*\* stage.
+ZERO is currently in an early
+
+\*\*Autonomous Agent Runtime / Task Operating System prototype\*\* stage.
 
 
 
-The current core already includes:
+At this point, the project already shows:
 
 
 
-\- task queue
+\- visible architectural layering
 
-\- priority queue
+\- task-oriented execution direction
 
-\- preemptive scheduling
+\- workspace interaction capability
 
-\- task runtime
+\- verifiable outcome demonstrations
 
-\- step execution
+\- early multi-step system behavior
 
-\- workspace state tracking
-
-\- pause / resume behavior
-
-\- retry / failure closure
-
-\- CLI-driven execution flow
-
-\- logging and runtime state transitions
+\- a meaningful shift beyond simple API/tool-wrapper structure
 
 
 
-This means the project has moved beyond the early API/router skeleton stage
+The project is still evolving,
 
-and is now focused on the autonomous task-execution kernel.
+but it already has real system shape and display value.
+
+
+
+\---
 
 
 
@@ -88,13 +118,7 @@ and is now focused on the autonomous task-execution kernel.
 
 
 
-ZERO is being built toward a system where the user gives a goal,
-
-and the runtime manages the rest through task flow control.
-
-
-
-Target direction:
+ZERO is moving toward a model where:
 
 
 
@@ -102,39 +126,33 @@ User Goal
 
 ↓  
 
-Planner  
+Structured Work  
 
 ↓  
 
-Task Queue / Scheduler  
+Execution Layers  
 
 ↓  
 
-Task Runtime  
+Workspace / Tool Interaction  
 
 ↓  
 
-Tool Execution  
+Result Recording  
 
 ↓  
 
-Failure Detection  
+Summary / Continuity
 
-↓  
 
-Retry / Recovery  
 
-↓  
+The long-term idea is not merely “AI that answers,”
 
-Reflection / Replan  
+but “AI that increasingly helps carry work forward.”
 
-↓  
 
-Task Completion  
 
-↓  
-
-Memory Summary
+\---
 
 
 
@@ -142,63 +160,137 @@ Memory Summary
 
 
 
+The project currently follows several broad principles:
+
+
+
 \- local-first before cloud dependency
 
-\- stable, understandable architecture before aggressive feature growth
+\- architecture clarity before aggressive feature sprawl
 
-\- core / policy / adapter separation
+\- execution before presentation polish
 
-\- avoid stuffing unrelated logic into one large file
+\- modular layers instead of one giant file
 
-\- treat task execution as the center of the system
+\- task-oriented thinking instead of conversation-only thinking
 
-\- preserve reusable general architecture before adding vertical specialization
+\- reusable core before narrow specialization
 
-\- record important engineering milestones into local docs
-
-
-
-\## Short-Term Focus
+\- visible results before abstract claims
 
 
 
-Current short-term focus areas:
+These principles guide the current prototype direction.
 
 
 
-\- improve runtime observability
-
-\- expose task state history and event flow
-
-\- verify both failure-path and success-path closure
-
-\- continue stabilizing scheduler/runtime/task-state behavior
-
-\- keep the Task OS core clean before adding more product layers
+\---
 
 
 
-\## Longer-Term Direction
+\## Why The Project Matters
 
 
 
-After the execution kernel is stable, future layers may include:
+ZERO matters because it is exploring a more execution-centered path for AI.
 
 
 
-\- memory-aware planning
+Instead of focusing only on response generation,
 
-\- long-term memory
+the project is pushing toward:
 
-\- tool auto-selection
 
-\- richer replanning and reflection
 
-\- multi-worker execution
+\- structured work handling
 
-\- web UI / dashboards
+\- visible execution behavior
 
-\- one-click deployment
+\- inspectable outputs
 
-\- vertical engineering assistant capabilities
+\- continuity across tasks
+
+\- a more practical engineering-assistant direction
+
+
+
+This is what gives the project its current demonstration value.
+
+
+
+\---
+
+
+
+\## Current Focus
+
+
+
+The short-term focus is to continue strengthening:
+
+
+
+\- execution-core maturity
+
+\- system visibility
+
+\- multi-step task behavior
+
+\- architecture cleanliness
+
+\- demonstrable milestone progress
+
+
+
+The priority is to make the core stronger
+
+before expanding into broader product layers.
+
+
+
+\---
+
+
+
+\## Long-Term Direction
+
+
+
+Longer term, ZERO may continue expanding toward areas such as:
+
+
+
+\- richer task orchestration
+
+\- stronger continuity across work
+
+\- broader tool interaction
+
+\- more capable planning support
+
+\- memory-backed execution assistance
+
+\- improved interfaces and deployment paths
+
+
+
+These areas belong to the broader future direction,
+
+while the current stage remains focused on the execution core.
+
+
+
+\---
+
+
+
+\## Short Summary
+
+
+
+In one sentence:
+
+
+
+> ZERO is a local-first AI project evolving into an early Autonomous Agent Runtime / Task Operating System with demonstrable task-oriented execution value.
 
