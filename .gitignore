@@ -63,3 +63,5 @@ tests/test_planner.py
 tests/test_resume.py
 tests/test_step_executor.py
 tests/test_workspace_flow.py
+tests/task/test_task_loop.py
+tests/task/test_task_manager.py
