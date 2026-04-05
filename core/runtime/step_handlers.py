@@ -154,10 +154,20 @@ class WriteFileStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        base_dir = self.executor._resolve_base_dir_for_file(step=step, task=task)
-        full_path = os.path.join(base_dir, path)
-        parent = os.path.dirname(full_path)
+        try:
+            full_path = self.executor.path_manager.resolve_path(
+                path,
+                task=task,
+            )
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"path resolve failed: {e}",
+                "result": {},
+                "step": copy.deepcopy(step),
+            }
 
+        parent = os.path.dirname(full_path)
         if parent:
             os.makedirs(parent, exist_ok=True)
 
@@ -169,7 +179,6 @@ class WriteFileStepHandler(BaseStepHandler):
             "error": None,
             "result": {
                 "path": full_path,
-                "relative_path": path,
                 "content": content,
             },
             "step": copy.deepcopy(step),
@@ -194,8 +203,18 @@ class ReadFileStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        base_dir = self.executor._resolve_base_dir_for_file(step=step, task=task)
-        full_path = os.path.join(base_dir, path)
+        try:
+            full_path = self.executor.path_manager.resolve_path(
+                path,
+                task=task,
+            )
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"path resolve failed: {e}",
+                "result": {},
+                "step": copy.deepcopy(step),
+            }
 
         if not os.path.exists(full_path):
             return {
@@ -203,7 +222,6 @@ class ReadFileStepHandler(BaseStepHandler):
                 "error": "file not found",
                 "result": {
                     "path": full_path,
-                    "relative_path": path,
                 },
                 "step": copy.deepcopy(step),
             }
@@ -216,7 +234,6 @@ class ReadFileStepHandler(BaseStepHandler):
             "error": None,
             "result": {
                 "path": full_path,
-                "relative_path": path,
                 "content": content,
             },
             "step": copy.deepcopy(step),
@@ -241,12 +258,6 @@ class RespondStepHandler(BaseStepHandler):
 
 
 class LLMStepHandler(BaseStepHandler):
-    """
-    目前先做成可接入式 handler：
-    - 如果 executor 上有 llm_client，且有 ask() / generate()，就呼叫
-    - 沒有就回傳明確錯誤
-    """
-
     def handle(
         self,
         step: Dict[str, Any],
@@ -293,18 +304,29 @@ class LLMStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        text = self._extract_text(llm_result)
+        text = str(llm_result)
 
         save_to = str(step.get("save_to", "")).strip()
         saved_path = ""
         if save_to:
-            base_dir = self.executor._resolve_base_dir_for_file(step=step, task=task)
-            saved_path = os.path.join(base_dir, save_to)
-            parent = os.path.dirname(saved_path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            with open(saved_path, "w", encoding="utf-8") as f:
-                f.write(text)
+            try:
+                saved_path = self.executor.path_manager.resolve_path(
+                    save_to,
+                    task=task,
+                )
+                parent = os.path.dirname(saved_path)
+                if parent:
+                    os.makedirs(parent, exist_ok=True)
+
+                with open(saved_path, "w", encoding="utf-8") as f:
+                    f.write(text)
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "error": f"llm save_to failed: {e}",
+                    "result": {},
+                    "step": copy.deepcopy(step),
+                }
 
         return {
             "ok": True,
@@ -317,15 +339,3 @@ class LLMStepHandler(BaseStepHandler):
             },
             "step": copy.deepcopy(step),
         }
-
-    def _extract_text(self, llm_result: Any) -> str:
-        if isinstance(llm_result, str):
-            return llm_result
-
-        if isinstance(llm_result, dict):
-            for key in ("text", "answer", "response", "content", "output"):
-                value = llm_result.get(key)
-                if isinstance(value, str):
-                    return value
-
-        return str(llm_result)

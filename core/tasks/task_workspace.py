@@ -18,6 +18,8 @@ class TaskWorkspace:
 
         self.workspace_root = self.path_manager.workspace_root
         self.base_dir = self.path_manager.tasks_root
+        self.shared_dir = os.path.join(self.workspace_root, "shared")
+        os.makedirs(self.shared_dir, exist_ok=True)
 
     def create_workspace(self, task: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(task, dict):
@@ -38,7 +40,11 @@ class TaskWorkspace:
         task_file = paths["task_file"]
         log_file = paths["log_file"]
 
+        os.makedirs(self.shared_dir, exist_ok=True)
+
+        enriched_task["workspace_root"] = self.workspace_root
         enriched_task["workspace_dir"] = self.base_dir
+        enriched_task["shared_dir"] = self.shared_dir
         enriched_task["task_dir"] = task_dir
         enriched_task["plan_file"] = plan_file
         enriched_task["runtime_state_file"] = runtime_state_file
@@ -183,15 +189,27 @@ class TaskWorkspace:
             "runtime_state_file": str(task.get("runtime_state_file", "")),
             "plan_file": str(task.get("plan_file", "")),
             "log_file": str(task.get("log_file", "")),
+            "result_file": str(task.get("result_file", "")),
+            "execution_log_file": str(task.get("execution_log_file", "")),
+            "workspace_root": str(task.get("workspace_root", self.workspace_root)),
+            "workspace_dir": str(task.get("workspace_dir", self.base_dir)),
+            "shared_dir": str(task.get("shared_dir", self.shared_dir)),
+            "task_dir": str(task.get("task_dir", "")),
             "current_step_index": int(task.get("current_step_index", 0)),
             "steps_total": int(task.get("steps_total", len(steps))),
             "steps": copy.deepcopy(steps),
             "results": copy.deepcopy(task.get("results", [])) if isinstance(task.get("results", []), list) else [],
+            "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results", []), list) else [],
             "last_step_result": copy.deepcopy(task.get("last_step_result")),
             "final_answer": str(task.get("final_answer", "")),
             "replan_count": int(task.get("replan_count", 0)),
             "replanned": bool(task.get("replanned", False)),
+            "replan_reason": str(task.get("replan_reason", "")),
+            "max_replans": int(task.get("max_replans", 1)),
             "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log", []), list) else [],
+            "goal": str(task.get("goal", "")),
+            "title": str(task.get("title", "")),
+            "planner_result": copy.deepcopy(task.get("planner_result", {})) if isinstance(task.get("planner_result", {}), dict) else {},
         }
 
     def _initial_result_payload(self, task: Dict[str, Any]) -> Dict[str, Any]:

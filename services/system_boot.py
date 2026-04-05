@@ -5,17 +5,33 @@ import json
 import os
 from typing import Any, Dict, List
 
+from core.planning.task_replanner import TaskReplanner
+from core.runtime.step_executor import StepExecutor
+from core.runtime.task_runner import TaskRunner
+from core.runtime.task_runtime import TaskRuntime
+from core.tasks.scheduler import Scheduler
 from core.tasks.task_paths import TaskPathManager
 from core.tasks.task_repository import TaskRepository
-from core.runtime.task_runtime import TaskRuntime
-from core.runtime.task_runner import TaskRunner
-from core.runtime.step_executor import StepExecutor
-from core.tasks.scheduler import Scheduler
-from core.planning.task_replanner import TaskReplanner
 
 
 class ZeroSystem:
-    def __init__(self, workspace: str = "workspace"):
+    """
+    ZERO System Boot
+
+    角色：
+    - 統一初始化 ZERO Task OS 核心元件
+    - 提供 tick / run_until_idle / health
+    - 對外暴露 queue / task control 的穩定入口
+
+    分層：
+    app.py
+      -> services.system_boot.ZeroSystem
+      -> core.tasks.scheduler.Scheduler   (facade)
+      -> core.runtime.task_scheduler.TaskScheduler (engine)
+      -> TaskRunner / TaskRuntime / RuntimeStateMachine
+    """
+
+    def __init__(self, workspace: str = "workspace") -> None:
         self.workspace = os.path.abspath(workspace)
 
         # ---------------------------------------------------------
@@ -46,7 +62,11 @@ class ZeroSystem:
         # Core components
         # ---------------------------------------------------------
         self.task_repository = TaskRepository(self.tasks_db_path)
-        self.task_runtime = TaskRuntime(self.workspace)
+
+        self.task_runtime = TaskRuntime(
+            workspace_root=self.workspace,
+            debug=False,
+        )
 
         self.step_executor = StepExecutor(
             workspace_root=self.workspace,
@@ -64,11 +84,14 @@ class ZeroSystem:
             debug=False,
         )
 
+        # 這裡一定要走 facade，不要直接接 runtime TaskScheduler
         self.scheduler = Scheduler(
             task_repo=self.task_repository,
             workspace_dir=self.workspace,
             task_runtime=self.task_runtime,
             task_runner=self.task_runner,
+            step_executor=self.step_executor,
+            debug=False,
         )
 
         self.tick_count = 0
@@ -78,49 +101,46 @@ class ZeroSystem:
     # ============================================================
 
     def tick(self) -> Dict[str, Any]:
+        """
+        執行一次 scheduler tick。
+        """
         self.tick_count += 1
+        sched_result = self.scheduler.tick(current_tick=self.tick_count)
 
-        sched_result = self.scheduler.tick()
+        if not isinstance(sched_result, dict):
+            return {
+                "ok": False,
+                "status": "failed",
+                "message": "scheduler returned invalid result",
+                "tick": self.tick_count,
+                "raw_result": sched_result,
+            }
 
-        if not sched_result:
+        action = str(sched_result.get("action", "") or "").strip().lower()
+        status = str(sched_result.get("status", "") or "").strip().lower()
+
+        if action == "scheduler_idle":
             return {
                 "ok": True,
                 "status": "idle",
-                "message": "no task scheduled",
+                "message": sched_result.get("message", "no task scheduled"),
+                "tick": self.tick_count,
+                "ready_queue": copy.deepcopy(sched_result.get("ready_queue", [])),
             }
 
-        task_name = sched_result.get("task_name")
-        status = sched_result.get("status")
-        message = sched_result.get("message")
-        step_result = sched_result.get("step_result")
-
-        if step_result and task_name:
-            runtime = self.task_runtime.load_runtime(task_name)
-            if runtime:
-                compact_step_result = {
-                    "step": step_result.get("step"),
-                    "command": step_result.get("command"),
-                    "result": step_result.get("result"),
-                    "returncode": step_result.get("returncode"),
-                    "status": step_result.get("status"),
-                    "ok": step_result.get("ok"),
-                    "error": step_result.get("error"),
-                }
-
-                runtime["last_step_result"] = copy.deepcopy(compact_step_result)
-
-                if status == "finished":
-                    result_obj = compact_step_result.get("result")
-                    if isinstance(result_obj, dict) and "stdout" in result_obj:
-                        runtime["final_answer"] = str(result_obj["stdout"]).strip()
-
-                self.task_runtime.save_runtime(task_name, runtime)
-
         return {
-            "ok": True,
-            "task_name": task_name,
+            "ok": bool(sched_result.get("ok", False)),
+            "task_name": sched_result.get("task_name"),
+            "task_id": sched_result.get("task_id"),
             "status": status,
-            "message": message,
+            "action": sched_result.get("action"),
+            "message": sched_result.get("message", ""),
+            "error": sched_result.get("error"),
+            "tick": self.tick_count,
+            "final_answer": sched_result.get("final_answer", ""),
+            "current_step_index": sched_result.get("current_step_index"),
+            "step_count": sched_result.get("step_count"),
+            "raw_result": copy.deepcopy(sched_result),
         }
 
     def run_until_idle(self, max_ticks: int = 50) -> List[Dict[str, Any]]:
@@ -128,9 +148,9 @@ class ZeroSystem:
 
         for _ in range(max_ticks):
             r = self.tick()
-            results.append(r)
+            results.append(copy.deepcopy(r))
 
-            if r.get("status") == "idle":
+            if str(r.get("status", "") or "").strip().lower() == "idle":
                 break
 
         return results
@@ -140,6 +160,8 @@ class ZeroSystem:
     # ============================================================
 
     def health(self) -> Dict[str, Any]:
+        scheduler_status = self.scheduler.status() if hasattr(self.scheduler, "status") else {}
+
         return {
             "ok": True,
             "system": "ZERO",
@@ -158,6 +180,8 @@ class ZeroSystem:
             "scheduler_type": type(self.scheduler).__name__,
             "task_repository_type": type(self.task_repository).__name__,
             "task_runtime_type": type(self.task_runtime).__name__,
+            "tick_count": self.tick_count,
+            "scheduler_status": copy.deepcopy(scheduler_status),
         }
 
     # ============================================================
@@ -177,12 +201,17 @@ class ZeroSystem:
         fn = getattr(self.scheduler, "get_queue_snapshot", None)
         if callable(fn):
             return fn()
+        if hasattr(self.scheduler, "list_queue"):
+            return {
+                "ok": True,
+                "queue": self.scheduler.list_queue(),
+            }
         return {
             "ok": False,
             "error": "scheduler.get_queue_snapshot not available",
         }
 
-    def submit_task(self, **kwargs) -> Any:
+    def submit_task(self, **kwargs: Any) -> Any:
         fn = getattr(self.scheduler, "submit_task", None)
         if callable(fn):
             return fn(**kwargs)
@@ -202,6 +231,16 @@ class ZeroSystem:
         return {
             "ok": True,
             "task": copy.deepcopy(task),
+        }
+
+    def list_tasks(self) -> Dict[str, Any]:
+        tasks = self.task_repository.list_tasks()
+        if not isinstance(tasks, list):
+            tasks = []
+        return {
+            "ok": True,
+            "tasks": copy.deepcopy(tasks),
+            "count": len(tasks),
         }
 
     # ============================================================
@@ -247,6 +286,26 @@ class ZeroSystem:
             "error": "scheduler.set_task_priority not available",
             "task_name": task_name,
             "priority": priority,
+        }
+
+    # ============================================================
+    # low level helpers
+    # ============================================================
+
+    def scheduler_boot(self) -> Dict[str, Any]:
+        if hasattr(self.scheduler, "boot"):
+            return self.scheduler.boot()
+        return {
+            "ok": False,
+            "error": "scheduler.boot not available",
+        }
+
+    def scheduler_status(self) -> Dict[str, Any]:
+        if hasattr(self.scheduler, "status"):
+            return self.scheduler.status()
+        return {
+            "ok": False,
+            "error": "scheduler.status not available",
         }
 
 

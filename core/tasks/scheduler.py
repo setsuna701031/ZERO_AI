@@ -14,17 +14,15 @@ class Scheduler(RuntimeTaskScheduler):
     """
     Tasks-layer Scheduler facade
 
-    目的：
-    1. 相容 services/system_boot.py 目前的 import：
-       from core.tasks.scheduler import Scheduler
-    2. 補齊 app.py / system_boot.py 目前會用到的介面
-    3. 建立任務時先做 deterministic planning，避免 steps 為空直接 finished
-    4. 真正 runtime tick 邏輯仍交給 core.runtime.task_scheduler.TaskScheduler
-    5. 每次 runner 跑完後，把 runtime state 同步回 tasks.json / task.json
+    新增：
+    1. shared 路徑 planning
+    2. 支援 shared/xxx.py, shared/xxx.json ...
+    3. shared workspace 與 task sandbox 共存
     """
 
     def __init__(
         self,
+        self_task_repo: Any = None,
         task_repo: Any = None,
         task_manager: Any = None,
         workspace_dir: Optional[str] = None,
@@ -42,8 +40,10 @@ class Scheduler(RuntimeTaskScheduler):
         task_executor: Any = None,
         **kwargs: Any,
     ) -> None:
+        real_task_repo = task_repo if task_repo is not None else self_task_repo
+
         super().__init__(
-            task_repo=task_repo,
+            task_repo=real_task_repo,
             task_manager=task_manager,
             workspace_dir=workspace_dir,
             runtime_store=runtime_store,
@@ -61,12 +61,15 @@ class Scheduler(RuntimeTaskScheduler):
             **kwargs,
         )
 
-        self.task_repo = task_repo
+        self.task_repo = real_task_repo
         self.task_manager = task_manager
         self.workspace_dir = workspace_dir or "workspace"
         self.task_runtime = task_runtime
         self.task_runner = task_runner
         self.task_workspace = TaskWorkspace(os.path.join(self.workspace_dir, "tasks"))
+        self.workspace_root = os.path.abspath(self.workspace_dir)
+        self.shared_dir = os.path.join(self.workspace_root, "shared")
+        os.makedirs(self.shared_dir, exist_ok=True)
 
     # ------------------------------------------------------------
     # 舊介面相容
@@ -94,8 +97,7 @@ class Scheduler(RuntimeTaskScheduler):
         return []
 
     # ------------------------------------------------------------
-    # 關鍵：覆蓋 runtime scheduler 的 run_one_step
-    # 在 runner 跑完後，把 runtime state 回寫到 repo / snapshot
+    # Runtime scheduler sync
     # ------------------------------------------------------------
 
     def run_one_step(
@@ -176,6 +178,8 @@ class Scheduler(RuntimeTaskScheduler):
             "ready_queue": ready_queue,
             "ready_queue_size": len(ready_queue),
             "workspace_dir": self.workspace_dir,
+            "workspace_root": self.workspace_root,
+            "shared_dir": self.shared_dir,
             "tasks": repo_tasks,
             "task_count": len(repo_tasks),
         }
@@ -244,6 +248,8 @@ class Scheduler(RuntimeTaskScheduler):
             "replan_reason": "",
             "max_replans": 1,
             "history": ["queued"],
+            "workspace_root": self.workspace_root,
+            "shared_dir": self.shared_dir,
         }
 
         try:
@@ -369,72 +375,156 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def _plan_goal(self, goal: str) -> Dict[str, Any]:
-        text = goal.strip()
-        lowered = text.lower()
+        text = str(goal or "").strip()
+        if not text:
+            return {
+                "planner_mode": "deterministic_v3_shared_workspace",
+                "intent": "unresolved",
+                "final_answer": "goal is empty",
+                "steps": [],
+            }
 
-        if lowered.startswith("cmd:"):
-            command = text[4:].strip()
-            return self._build_plan(
-                intent="command",
-                steps=[
-                    {
-                        "type": "command",
-                        "command": command,
-                    }
-                ],
-            )
+        segments = self._split_goal_segments(text)
+        steps: List[Dict[str, Any]] = []
 
-        if self._looks_like_hello_world_python(text):
-            return self._build_plan(
-                intent="python_hello_world",
-                steps=[
-                    {
-                        "type": "write_file",
-                        "path": "hello.py",
-                        "content": 'print("hello world")\n',
-                    },
-                    {
-                        "type": "command",
-                        "command": "python hello.py",
-                    },
-                ],
-            )
+        for segment in segments:
+            segment_steps = self._plan_single_segment(segment)
+            if segment_steps:
+                steps.extend(segment_steps)
 
-        write_file_step = self._try_plan_write_file(text)
-        if write_file_step is not None:
-            return self._build_plan(
-                intent="write_file",
-                steps=[write_file_step],
-            )
-
-        read_file_step = self._try_plan_read_file(text)
-        if read_file_step is not None:
-            return self._build_plan(
-                intent="read_file",
-                steps=[read_file_step],
-            )
-
-        command_step = self._try_plan_command(text)
-        if command_step is not None:
-            return self._build_plan(
-                intent="command",
-                steps=[command_step],
-            )
+        if not steps:
+            segment_steps = self._plan_single_segment(text)
+            if segment_steps:
+                steps.extend(segment_steps)
 
         return {
-            "planner_mode": "deterministic_v1",
-            "intent": "unresolved",
-            "final_answer": "目前規則式 planner 還無法把這個 goal 轉成可執行 steps。",
-            "steps": [],
-        }
-
-    def _build_plan(self, intent: str, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return {
-            "planner_mode": "deterministic_v1",
-            "intent": intent,
-            "final_answer": f"已規劃 {len(steps)} 個步驟",
+            "planner_mode": "deterministic_v3_shared_workspace",
+            "intent": self._infer_intent_from_steps(steps),
+            "final_answer": f"已規劃 {len(steps)} 個步驟" if steps else "目前規則式 planner 還無法把這個 goal 轉成可執行 steps。",
             "steps": steps,
         }
+
+    def _plan_single_segment(self, text: str) -> List[Dict[str, Any]]:
+        stripped = self._strip_segment_prefix(text)
+        if not stripped:
+            return []
+
+        lowered = stripped.lower()
+
+        if lowered.startswith("cmd:"):
+            command = stripped[4:].strip()
+            if command:
+                return [{"type": "command", "command": command}]
+
+        command_step = self._try_plan_command(stripped)
+        if command_step is not None:
+            return [command_step]
+
+        read_file_step = self._try_plan_read_file(stripped)
+        if read_file_step is not None:
+            return [read_file_step]
+
+        write_file_step = self._try_plan_write_file(stripped)
+        if write_file_step is not None:
+            return [write_file_step]
+
+        if self._looks_like_hello_world_python(stripped):
+            return [
+                {
+                    "type": "write_file",
+                    "path": "hello.py",
+                    "content": 'print("hello world")\n',
+                },
+                {
+                    "type": "command",
+                    "command": "python hello.py",
+                },
+            ]
+
+        return []
+
+    def _infer_intent_from_steps(self, steps: List[Dict[str, Any]]) -> str:
+        if not steps:
+            return "unresolved"
+        first = steps[0]
+        if not isinstance(first, dict):
+            return "unknown"
+        return str(first.get("type") or "unknown")
+
+    def _split_goal_segments(self, text: str) -> List[str]:
+        protected_text, placeholders = self._protect_quoted_segments(text)
+
+        separators = [
+            "然後",
+            "接著",
+            "之後",
+            "再來",
+            "並且",
+            "並",
+            "and then",
+            "then",
+        ]
+
+        for sep in separators:
+            protected_text = protected_text.replace(sep, "|")
+
+        protected_text = protected_text.replace("；", "|")
+        protected_text = protected_text.replace(";", "|")
+        protected_text = protected_text.replace("，", "|")
+
+        raw_parts = protected_text.split("|")
+        result: List[str] = []
+
+        for part in raw_parts:
+            restored = self._restore_quoted_segments(part.strip(), placeholders)
+            if restored:
+                result.append(restored)
+
+        return result if result else [text]
+
+    def _protect_quoted_segments(self, text: str) -> tuple[str, Dict[str, str]]:
+        placeholders: Dict[str, str] = {}
+
+        def repl(match: re.Match[str]) -> str:
+            key = f"__QUOTE_{len(placeholders)}__"
+            placeholders[key] = match.group(0)
+            return key
+
+        protected = re.sub(r'"[^"]*"|\'[^\']*\'', repl, text)
+        return protected, placeholders
+
+    def _restore_quoted_segments(self, text: str, placeholders: Dict[str, str]) -> str:
+        restored = text
+        for key, value in placeholders.items():
+            restored = restored.replace(key, value)
+        return restored
+
+    def _strip_segment_prefix(self, text: str) -> str:
+        stripped = str(text or "").strip()
+
+        prefixes = [
+            "先幫我",
+            "再幫我",
+            "幫我",
+            "先去",
+            "再去",
+            "先",
+            "再",
+            "然後",
+            "接著",
+            "之後",
+            "請",
+        ]
+
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if stripped.startswith(prefix):
+                    stripped = stripped[len(prefix):].strip()
+                    changed = True
+
+        return stripped
 
     def _looks_like_hello_world_python(self, text: str) -> bool:
         lowered = text.lower()
@@ -449,28 +539,39 @@ class Scheduler(RuntimeTaskScheduler):
         return any(item in lowered for item in candidates)
 
     def _try_plan_command(self, text: str) -> Optional[Dict[str, Any]]:
-        lowered = text.lower().strip()
+        stripped = text.strip()
+        lowered = stripped.lower()
 
-        command_prefixes = [
-            "run ",
-            "execute ",
-            "cmd ",
-            "cmd /c ",
-            "powershell ",
-            "執行 ",
-            "跑 ",
-            "命令 ",
-            "指令 ",
+        patterns = [
+            r"^cmd\s*:\s*(.+)$",
+            r"^run\s*:\s*(.+)$",
+            r"^run\s+(.+)$",
+            r"^command\s*:\s*(.+)$",
+            r"^command\s+(.+)$",
+            r"^execute\s+(.+)$",
+            r"^shell\s+(.+)$",
+            r"^bash\s+(.+)$",
+            r"^執行\s+(.+)$",
         ]
 
-        for prefix in command_prefixes:
-            if lowered.startswith(prefix):
-                command = text[len(prefix):].strip()
+        for pattern in patterns:
+            m = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if m:
+                command = m.group(1).strip()
                 if command:
                     return {
                         "type": "command",
                         "command": command,
                     }
+
+        if lowered.startswith("python "):
+            return {"type": "command", "command": stripped}
+        if lowered.startswith("py "):
+            return {"type": "command", "command": stripped}
+        if lowered.startswith("cmd /c "):
+            return {"type": "command", "command": stripped}
+        if lowered.startswith("powershell "):
+            return {"type": "command", "command": stripped}
 
         return None
 
@@ -484,7 +585,7 @@ class Scheduler(RuntimeTaskScheduler):
         if any(keyword in lowered for keyword in ["讀取", "讀檔", "read ", "open ", "查看", "看一下", "show "]):
             return {
                 "type": "read_file",
-                "path": path_match.group(1),
+                "path": path_match.group(1).replace("\\", "/"),
             }
 
         return None
@@ -494,7 +595,7 @@ class Scheduler(RuntimeTaskScheduler):
         if not path_match:
             return None
 
-        path = path_match.group(1)
+        path = path_match.group(1).replace("\\", "/")
 
         content_match = re.search(r"(?:內容是|內容為|內容:|內容：)(.+)$", text)
         if content_match:
@@ -625,6 +726,10 @@ class Scheduler(RuntimeTaskScheduler):
                 "plan_file",
                 "log_file",
                 "runtime_state_file",
+                "workspace_root",
+                "workspace_dir",
+                "shared_dir",
+                "task_dir",
             ):
                 if key in runtime_state:
                     merged[key] = copy.deepcopy(runtime_state.get(key))

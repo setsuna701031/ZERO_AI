@@ -6,6 +6,8 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from core.runtime.runtime_state_machine import RuntimeStateMachine
+
 
 TERMINAL_STATUSES = {
     "finished",
@@ -16,11 +18,14 @@ TERMINAL_STATUSES = {
 
 NON_TERMINAL_STATUSES = {
     "queued",
+    "planning",
     "ready",
     "running",
     "waiting",
     "blocked",
     "retrying",
+    "replanning",
+    "paused",
 }
 
 DEFAULT_FAILURE_TYPE = "internal_error"
@@ -32,6 +37,7 @@ FAILURE_TYPES = {
     "dependency_unmet",
     "timeout",
     "unsafe_action_blocked",
+    "unsafe_action",
     "cancelled",
     "internal_error",
 }
@@ -49,6 +55,7 @@ class TaskRuntime:
     5. 相容舊版 task_runner / scheduler 仍會呼叫的方法
     6. 支援 step result / advance step
     7. 支援 replan 欄位保存，不被覆蓋洗掉
+    8. 狀態變更統一走 RuntimeStateMachine
     """
 
     def __init__(
@@ -60,6 +67,7 @@ class TaskRuntime:
         self.workspace_root = workspace_root
         self.debug = debug
         self.trace_log_filename = trace_log_filename
+        self.state_machine = RuntimeStateMachine(debug=debug)
 
     # ============================================================
     # public api
@@ -76,6 +84,7 @@ class TaskRuntime:
                 state = {}
 
             state = self._normalize_runtime_state(task, state)
+            state = self.state_machine.ensure_runtime_status_fields(state)
             self._write_json(runtime_state_file, state)
 
             self._trace(
@@ -93,6 +102,7 @@ class TaskRuntime:
             return state
 
         state = self._build_initial_runtime_state(task)
+        state = self.state_machine.ensure_runtime_status_fields(state)
         self._write_json(runtime_state_file, state)
 
         self._trace(
@@ -120,6 +130,7 @@ class TaskRuntime:
             state = {}
 
         state = self._normalize_runtime_state(task, state)
+        state = self.state_machine.ensure_runtime_status_fields(state)
         return state
 
     def save_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
@@ -129,6 +140,7 @@ class TaskRuntime:
         self._ensure_parent_dir(runtime_state_file)
 
         normalized = self._normalize_runtime_state(task, state)
+        normalized = self.state_machine.ensure_runtime_status_fields(normalized)
         self._write_json(runtime_state_file, normalized)
         return normalized
 
@@ -231,10 +243,8 @@ class TaskRuntime:
 
     def append_step_result(self, task: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        關鍵：
-        只基於「目前 runtime_state.json 最新內容」增量更新，
-        不從舊 task dict 重建，避免把 replanner 剛寫進去的
-        replan_count / replanned / replan_reason / status 洗掉。
+        只基於 runtime_state.json 最新內容增量更新，
+        避免洗掉 replanner 剛寫進去的欄位。
         """
         task = copy.deepcopy(task or {})
         state = self.load_runtime_state(task)
@@ -322,13 +332,6 @@ class TaskRuntime:
         reason: str = "",
         planner_result: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        基礎 replan 機制：
-        - 若沒有 planner_result，先只回傳不可重規劃
-        - 若有 planner_result，覆蓋 steps / steps_total / planner_result
-        - current_step_index 重置為 0
-        - status 改回 ready
-        """
         task = copy.deepcopy(task or {})
         state = self.load_runtime_state(task)
 
@@ -368,16 +371,21 @@ class TaskRuntime:
         state["replan_count"] = new_replan_count
         state["replanned"] = True
         state["replan_reason"] = str(reason or "")
-        state["status"] = "ready"
         state["failure_type"] = None
         state["failure_message"] = None
         state["last_error"] = None
         state["blocked_reason"] = ""
         state["last_failure_tick"] = current_tick
 
+        state, _ = self.state_machine.mark_ready(
+            state,
+            reason="task_runtime_attempt_replan",
+        )
+
         execution_log = copy.deepcopy(state.get("execution_log", []))
         if not isinstance(execution_log, list):
             execution_log = []
+
         execution_log.append(
             {
                 "type": "replan",
@@ -450,32 +458,31 @@ class TaskRuntime:
 
         depends_on = self._normalize_depends_on(task.get("depends_on", []))
         if not depends_on:
-            old_status = task.get("status") or state.get("status") or "queued"
-            new_status = "ready" if old_status in ("queued", "blocked", "waiting") else old_status
+            old_status = state.get("status") or "queued"
+            if old_status in ("queued", "blocked", "waiting", "planning"):
+                state, _ = self.state_machine.mark_ready(
+                    state,
+                    reason="dependencies_satisfied_no_dependencies",
+                )
+                state["blocked_reason"] = ""
+                self.save_runtime_state(task, state)
 
-            task["status"] = new_status
-            task["blocked_reason"] = ""
-            state["status"] = new_status
-            state["blocked_reason"] = ""
-
-            self.save_runtime_state(task, state)
-
-            self._trace(
-                "mark_ready_no_dependencies",
-                {
-                    "old_status": old_status,
-                    "new_status": new_status,
-                    "current_tick": current_tick,
-                },
-                runtime_state_file=self._get_runtime_state_file(task),
-            )
+                self._trace(
+                    "mark_ready_no_dependencies",
+                    {
+                        "old_status": old_status,
+                        "new_status": state.get("status"),
+                        "current_tick": current_tick,
+                    },
+                    runtime_state_file=self._get_runtime_state_file(task),
+                )
 
             return {
                 "ok": True,
                 "action": "task_ready",
                 "task_name": self._task_name(task),
-                "status": new_status,
-                "task": task,
+                "status": state.get("status"),
+                "task": self._apply_runtime_state_to_task(task, state),
                 "runtime_state": state,
             }
 
@@ -501,14 +508,13 @@ class TaskRuntime:
             )
 
         if unmet:
-            old_status = task.get("status") or state.get("status") or "queued"
-            new_status = "blocked"
-
-            task["status"] = new_status
-            task["blocked_reason"] = f"waiting dependencies: {', '.join(unmet)}"
-
-            state["status"] = new_status
-            state["blocked_reason"] = task["blocked_reason"]
+            old_status = state.get("status") or "queued"
+            blocked_reason = f"waiting dependencies: {', '.join(unmet)}"
+            state, _ = self.state_machine.mark_blocked(
+                state,
+                reason="dependencies_unmet",
+            )
+            state["blocked_reason"] = blocked_reason
             state["failure_type"] = None
             state["failure_message"] = None
 
@@ -518,9 +524,9 @@ class TaskRuntime:
                 "mark_blocked_dependencies",
                 {
                     "old_status": old_status,
-                    "new_status": new_status,
+                    "new_status": state.get("status"),
                     "current_tick": current_tick,
-                    "blocked_reason": task["blocked_reason"],
+                    "blocked_reason": blocked_reason,
                 },
                 runtime_state_file=self._get_runtime_state_file(task),
             )
@@ -529,19 +535,17 @@ class TaskRuntime:
                 "ok": True,
                 "action": "task_blocked",
                 "task_name": self._task_name(task),
-                "status": new_status,
-                "message": task["blocked_reason"],
-                "task": task,
+                "status": state.get("status"),
+                "message": blocked_reason,
+                "task": self._apply_runtime_state_to_task(task, state),
                 "runtime_state": state,
             }
 
-        old_status = task.get("status") or state.get("status") or "queued"
-        new_status = "ready"
-
-        task["status"] = new_status
-        task["blocked_reason"] = ""
-
-        state["status"] = new_status
+        old_status = state.get("status") or "queued"
+        state, _ = self.state_machine.mark_ready(
+            state,
+            reason="dependencies_satisfied",
+        )
         state["blocked_reason"] = ""
         state["failure_type"] = None
         state["failure_message"] = None
@@ -552,7 +556,7 @@ class TaskRuntime:
             "mark_ready_dependencies_satisfied",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
             },
             runtime_state_file=self._get_runtime_state_file(task),
@@ -562,8 +566,8 @@ class TaskRuntime:
             "ok": True,
             "action": "task_ready",
             "task_name": self._task_name(task),
-            "status": new_status,
-            "task": task,
+            "status": state.get("status"),
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -575,15 +579,13 @@ class TaskRuntime:
         task = copy.deepcopy(task or {})
         state = self.load_runtime_state(task)
 
-        old_status = task.get("status") or state.get("status") or "queued"
-        new_status = "running"
+        old_status = state.get("status")
 
-        task["status"] = new_status
-        task["last_run_tick"] = current_tick
-        task["blocked_reason"] = ""
-        task["last_error"] = None
+        state, transition = self.state_machine.mark_running(
+            state,
+            reason="task_runtime_mark_running",
+        )
 
-        state["status"] = new_status
         state["last_run_tick"] = current_tick
         state["blocked_reason"] = ""
         state["failure_type"] = None
@@ -596,8 +598,9 @@ class TaskRuntime:
             "mark_running",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
+                "transition_ok": transition.ok,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -606,9 +609,9 @@ class TaskRuntime:
             "ok": True,
             "action": "task_running",
             "task_name": self._task_name(task),
-            "status": new_status,
+            "status": state.get("status"),
             "message": "task marked as running",
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -630,18 +633,15 @@ class TaskRuntime:
                     if isinstance(stdout, str) and stdout.strip():
                         final_answer = stdout.strip()
 
-        old_status = task.get("status") or state.get("status") or "running"
-        new_status = "finished"
+        old_status = state.get("status")
 
-        task["status"] = new_status
-        task["finished_tick"] = current_tick
-        task["final_answer"] = final_answer or task.get("final_answer", "")
-        task["last_error"] = None
-        task["blocked_reason"] = ""
+        state, transition = self.state_machine.mark_finished(
+            state,
+            reason="task_runtime_mark_finished",
+        )
 
-        state["status"] = new_status
         state["finished_tick"] = current_tick
-        state["final_answer"] = task["final_answer"]
+        state["final_answer"] = final_answer or state.get("final_answer", "")
         state["failure_type"] = None
         state["failure_message"] = None
         state["last_error"] = None
@@ -653,9 +653,10 @@ class TaskRuntime:
             "mark_finished",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
-                "final_answer": task["final_answer"],
+                "final_answer": state.get("final_answer", ""),
+                "transition_ok": transition.ok,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -664,9 +665,9 @@ class TaskRuntime:
             "ok": True,
             "action": "task_finished",
             "task_name": self._task_name(task),
-            "status": new_status,
+            "status": state.get("status"),
             "message": "task finished",
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -681,17 +682,13 @@ class TaskRuntime:
         state = self.load_runtime_state(task)
 
         failure_type = self._normalize_failure_type(failure_type)
-        old_status = task.get("status") or state.get("status") or "running"
-        new_status = "failed"
+        old_status = state.get("status")
 
-        task["status"] = new_status
-        task["last_failure_tick"] = current_tick
-        task["last_error"] = failure_message
-        task["failure_type"] = failure_type
-        task["failure_message"] = failure_message
-        task["blocked_reason"] = ""
+        state, transition = self.state_machine.mark_failed(
+            state,
+            reason="task_runtime_mark_failed",
+        )
 
-        state["status"] = new_status
         state["last_failure_tick"] = current_tick
         state["last_error"] = failure_message
         state["failure_type"] = failure_type
@@ -704,10 +701,11 @@ class TaskRuntime:
             "mark_failed",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
                 "failure_type": failure_type,
                 "failure_message": failure_message,
+                "transition_ok": transition.ok,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -716,11 +714,11 @@ class TaskRuntime:
             "ok": False,
             "action": "task_failed",
             "task_name": self._task_name(task),
-            "status": new_status,
+            "status": state.get("status"),
             "message": "task failed",
             "error": failure_message,
             "failure_type": failure_type,
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -733,18 +731,14 @@ class TaskRuntime:
         task = copy.deepcopy(task or {})
         state = self.load_runtime_state(task)
 
-        old_status = task.get("status") or state.get("status") or "running"
-        new_status = "timeout"
+        old_status = state.get("status")
         message = failure_message or "task timeout"
 
-        task["status"] = new_status
-        task["last_failure_tick"] = current_tick
-        task["last_error"] = message
-        task["failure_type"] = "timeout"
-        task["failure_message"] = message
-        task["blocked_reason"] = ""
+        state, transition = self.state_machine.mark_timeout(
+            state,
+            reason="task_runtime_mark_timeout",
+        )
 
-        state["status"] = new_status
         state["last_failure_tick"] = current_tick
         state["last_error"] = message
         state["failure_type"] = "timeout"
@@ -757,9 +751,10 @@ class TaskRuntime:
             "mark_timeout",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
                 "failure_message": message,
+                "transition_ok": transition.ok,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -768,11 +763,11 @@ class TaskRuntime:
             "ok": False,
             "action": "task_timeout",
             "task_name": self._task_name(task),
-            "status": new_status,
+            "status": state.get("status"),
             "message": "task timeout",
             "error": message,
             "failure_type": "timeout",
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -785,17 +780,14 @@ class TaskRuntime:
         task = copy.deepcopy(task or {})
         state = self.load_runtime_state(task)
 
-        old_status = task.get("status") or state.get("status") or "queued"
-        new_status = "cancelled"
+        old_status = state.get("status")
         message = reason or "task cancelled"
 
-        task["status"] = new_status
-        task["last_error"] = message
-        task["failure_type"] = "cancelled"
-        task["failure_message"] = message
-        task["blocked_reason"] = ""
+        state, transition = self.state_machine.mark_cancelled(
+            state,
+            reason="task_runtime_mark_cancelled",
+        )
 
-        state["status"] = new_status
         state["last_error"] = message
         state["failure_type"] = "cancelled"
         state["failure_message"] = message
@@ -807,9 +799,10 @@ class TaskRuntime:
             "mark_cancelled",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
                 "reason": message,
+                "transition_ok": transition.ok,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -818,11 +811,11 @@ class TaskRuntime:
             "ok": False,
             "action": "task_cancelled",
             "task_name": self._task_name(task),
-            "status": new_status,
+            "status": state.get("status"),
             "message": "task cancelled",
             "error": message,
             "failure_type": "cancelled",
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -838,21 +831,16 @@ class TaskRuntime:
         state = self.load_runtime_state(task)
 
         failure_type = self._normalize_failure_type(failure_type)
+        old_status = state.get("status")
+        retry_count = int(state.get("retry_count", 0) or 0) + 1
 
-        old_status = task.get("status") or state.get("status") or "running"
-        new_status = "retrying"
-
-        retry_count = int(task.get("retry_count", state.get("retry_count", 0)) or 0) + 1
-        task["retry_count"] = retry_count
-        task["status"] = new_status
-        task["last_failure_tick"] = current_tick
-        task["last_error"] = failure_message
-        task["failure_type"] = failure_type
-        task["failure_message"] = failure_message
-        task["next_retry_tick"] = next_retry_tick
+        state, transition = self.state_machine.mark_retrying(
+            state,
+            reason="task_runtime_mark_retrying",
+            next_retry_tick=next_retry_tick,
+        )
 
         state["retry_count"] = retry_count
-        state["status"] = new_status
         state["last_failure_tick"] = current_tick
         state["last_error"] = failure_message
         state["failure_type"] = failure_type
@@ -865,12 +853,13 @@ class TaskRuntime:
             "mark_retrying",
             {
                 "old_status": old_status,
-                "new_status": new_status,
+                "new_status": state.get("status"),
                 "current_tick": current_tick,
                 "failure_type": failure_type,
                 "failure_message": failure_message,
                 "retry_count": retry_count,
                 "next_retry_tick": next_retry_tick,
+                "transition_ok": transition.ok,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -879,10 +868,10 @@ class TaskRuntime:
             "ok": True,
             "action": "task_retrying",
             "task_name": self._task_name(task),
-            "status": new_status,
+            "status": state.get("status"),
             "message": "task marked as retrying",
             "failure_type": failure_type,
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -973,7 +962,7 @@ class TaskRuntime:
             "task_name": self._task_name(task),
             "status": state.get("status"),
             "message": "cancel requested",
-            "task": task,
+            "task": self._apply_runtime_state_to_task(task, state),
             "runtime_state": state,
         }
 
@@ -1039,13 +1028,13 @@ class TaskRuntime:
     # ============================================================
 
     def is_terminal_status(self, status: Any) -> bool:
-        return str(status or "").strip().lower() in TERMINAL_STATUSES
+        return self.state_machine.is_terminal(status)
 
     def is_ready_status(self, status: Any) -> bool:
-        return str(status or "").strip().lower() in {"ready", "queued", "retrying"}
+        return self.state_machine.normalize_status(status) in {"ready", "queued", "retrying"}
 
     def is_blocked_status(self, status: Any) -> bool:
-        return str(status or "").strip().lower() in {"blocked", "waiting"}
+        return self.state_machine.normalize_status(status) in {"blocked", "waiting"}
 
     def to_public_failure(self, failure_type: str, failure_message: str = "") -> Dict[str, Any]:
         failure_type = self._normalize_failure_type(failure_type)
@@ -1054,7 +1043,7 @@ class TaskRuntime:
             "failure_message": failure_message or "",
             "retryable": failure_type in {"transient_error", "tool_error", "timeout"},
             "replan": failure_type in {"validation_error", "tool_error"},
-            "fatal": failure_type in {"unsafe_action_blocked", "cancelled"},
+            "fatal": failure_type in {"unsafe_action_blocked", "unsafe_action", "cancelled"},
         }
 
     # ============================================================
@@ -1143,7 +1132,7 @@ class TaskRuntime:
         merged.update(copy.deepcopy(state or {}))
 
         merged["task_name"] = self._task_name(task) or str(merged.get("task_name", "") or "")
-        merged["status"] = str(merged.get("status", "queued") or "queued").strip().lower()
+        merged["status"] = self.state_machine.normalize_status(merged.get("status", "queued"))
         merged["priority"] = int(merged.get("priority", 0) or 0)
         merged["retry_count"] = int(merged.get("retry_count", 0) or 0)
         merged["max_retries"] = int(merged.get("max_retries", 0) or 0)
@@ -1303,6 +1292,26 @@ class TaskRuntime:
             "title",
             "task_dir",
             "workspace_dir",
+            "runtime_status_history",
+            "runtime_created_at",
+            "last_status_change_at",
+            "planning_at",
+            "ready_at",
+            "running_at",
+            "retrying_at",
+            "waiting_at",
+            "blocked_at",
+            "replanning_at",
+            "paused_at",
+            "finished_at",
+            "failed_at",
+            "cancelled_at",
+            "timeout_at",
+            "last_started_at",
+            "last_finished_at",
+            "last_failed_at",
+            "last_cancelled_at",
+            "last_timeout_at",
         ):
             if key in state:
                 merged[key] = copy.deepcopy(state.get(key))

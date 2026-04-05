@@ -1,20 +1,45 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Any, Dict, List, Optional
 
 
 class Planner:
     """
-    Deterministic Planner v10
+    Deterministic Planner v11
 
     重點：
-    1. 保留 Windows shell 指令，例如：cmd /c echo hello
-    2. 只把 cmd: xxx / run: xxx / command: xxx 視為前綴式命令語法
-    3. 若 router 已經判定 mode=command，planner 直接保留原字串，不再二次剝前綴
-    4. 支援 multi-step planning
-    5. 支援 command / read / write / search 混合拆步
+    1. 支援多步驟 clause split
+    2. command / read / write / search 混合拆步
+    3. planner 階段直接補 step metadata
+    4. 明確支援：
+       - 先建立 hello.py 然後執行 python hello.py
+       - 先建立 hello.py 然後執行 python not_exist.py
     """
+
+    READ_ONLY_STEP_TYPES = {
+        "read_file",
+        "list_files",
+        "inspect",
+        "analyze",
+        "search",
+        "web_search",
+        "check",
+        "verify",
+        "noop",
+    }
+
+    SIDE_EFFECT_STEP_TYPES = {
+        "command",
+        "write_file",
+        "delete_file",
+        "call_api",
+        "http_request",
+        "shell",
+        "execute",
+    }
 
     def __init__(
         self,
@@ -33,6 +58,8 @@ class Planner:
         self.workspace_dir = workspace_root or workspace_dir or "workspace"
         self.debug = debug
 
+        print("### USING NEW PLANNER ###")
+
     # ============================================================
     # public api
     # ============================================================
@@ -49,16 +76,18 @@ class Planner:
 
         if not text:
             return {
-                "planner_mode": "deterministic_v10",
+                "planner_mode": "deterministic_v11",
                 "intent": "respond",
                 "final_answer": "空白輸入",
                 "steps": [],
             }
 
-        steps = self._plan_steps(text=text, route=route)
+        raw_steps = self._plan_steps(text=text, route=route)
+        task_name = self._infer_task_name(task_dir=str(context.get("workspace", "") or ""), goal=text)
+        steps = self._apply_step_metadata(raw_steps, task_name=task_name)
 
         return {
-            "planner_mode": "deterministic_v10",
+            "planner_mode": "deterministic_v11",
             "intent": self._infer_intent(text=text, route=route, steps=steps),
             "final_answer": f"已規劃 {len(steps)} 個步驟",
             "steps": steps,
@@ -80,15 +109,9 @@ class Planner:
         route: Any = None,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
-        result = self.plan(
-            context={"user_input": goal, "workspace": task_dir or self.workspace_dir},
-            user_input=goal,
-            route=route,
-        )
-        steps = result.get("steps", [])
-        if isinstance(steps, list):
-            return steps
-        return []
+        raw_steps = self._plan_steps(text=goal, route=route)
+        task_name = self._infer_task_name(task_dir=task_dir, goal=goal)
+        return self._apply_step_metadata(raw_steps, task_name=task_name)
 
     def build_plan_for_goal(
         self,
@@ -105,8 +128,10 @@ class Planner:
 
     def _plan_steps(self, text: str, route: Any = None) -> List[Dict[str, Any]]:
         stripped = str(text or "").strip()
+        if not stripped:
+            return []
 
-        # router 已明確判斷 command 時，不拆 clause，避免 shell 指令被拆壞
+        # router 已明確判斷 command，整句保留
         if self._is_command_route(route):
             return [
                 {
@@ -135,11 +160,15 @@ class Planner:
 
     def _plan_single_clause(self, text: str, route: Any = None) -> List[Dict[str, Any]]:
         stripped = str(text or "").strip()
+        if not stripped:
+            return []
+
+        # 去掉常見自然語言前綴，避免「先建立」「再執行」吃不到命令
+        stripped = self._strip_clause_prefix(stripped)
 
         if not stripped:
             return []
 
-        # router 已經判定 command，直接整段保留
         if self._is_command_route(route):
             return [
                 {
@@ -148,7 +177,6 @@ class Planner:
                 }
             ]
 
-        # command 優先
         cmd = self._extract_command(stripped)
         if cmd:
             return [
@@ -158,17 +186,16 @@ class Planner:
                 }
             ]
 
-        # read
         read_path = self._extract_read_path(stripped)
         if read_path:
             return [
                 {
                     "type": "read_file",
                     "path": read_path,
+                    "consumes_files": [read_path],
                 }
             ]
 
-        # write
         write = self._extract_write_request(stripped)
         if write:
             return [
@@ -176,10 +203,10 @@ class Planner:
                     "type": "write_file",
                     "path": write["path"],
                     "content": write["content"],
+                    "produces_files": [write["path"]],
                 }
             ]
 
-        # search
         if self._looks_like_search(stripped):
             return [
                 {
@@ -188,8 +215,266 @@ class Planner:
                 }
             ]
 
-        # fallback：如果看起來像一般命令句但沒前綴，不自動轉 command
         return []
+
+    def _strip_clause_prefix(self, text: str) -> str:
+        stripped = str(text or "").strip()
+
+        prefixes = [
+            "先",
+            "再",
+            "然後",
+            "接著",
+            "之後",
+            "請",
+            "幫我",
+            "先幫我",
+            "再幫我",
+            "先去",
+            "再去",
+        ]
+
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if stripped.startswith(prefix):
+                    stripped = stripped[len(prefix):].strip()
+                    changed = True
+
+        return stripped
+
+    # ============================================================
+    # step metadata
+    # ============================================================
+
+    def _apply_step_metadata(
+        self,
+        steps: List[Dict[str, Any]],
+        task_name: str = "",
+    ) -> List[Dict[str, Any]]:
+        normalized_steps: List[Dict[str, Any]] = []
+        total = len(steps)
+
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+
+            normalized = self._normalize_step_metadata(
+                step=step,
+                step_index=index,
+                step_count=total,
+                task_name=task_name,
+            )
+            normalized_steps.append(normalized)
+
+        return normalized_steps
+
+    def _normalize_step_metadata(
+        self,
+        step: Dict[str, Any],
+        step_index: int,
+        step_count: int,
+        task_name: str,
+    ) -> Dict[str, Any]:
+        normalized = dict(step or {})
+        step_type = str(normalized.get("type", "") or "").strip().lower()
+
+        if not step_type:
+            step_type = "unknown"
+            normalized["type"] = step_type
+
+        normalized["step_index"] = step_index
+        normalized["step_count"] = step_count
+
+        if not isinstance(normalized.get("produces_files"), list):
+            normalized["produces_files"] = self._infer_produces_files(normalized)
+
+        if not isinstance(normalized.get("consumes_files"), list):
+            normalized["consumes_files"] = self._infer_consumes_files(normalized)
+
+        if not isinstance(normalized.get("external_effects"), list):
+            normalized["external_effects"] = self._infer_external_effects(normalized)
+
+        normalized["produces_files"] = self._normalize_string_list(normalized.get("produces_files"))
+        normalized["consumes_files"] = self._normalize_string_list(normalized.get("consumes_files"))
+        normalized["external_effects"] = self._normalize_string_list(normalized.get("external_effects"))
+
+        metadata_defaults = self._infer_step_metadata_defaults(normalized)
+        for key, value in metadata_defaults.items():
+            if key not in normalized:
+                normalized[key] = value
+
+        step_key = normalized.get("step_key")
+        if not isinstance(step_key, str) or not step_key.strip():
+            normalized["step_key"] = self._build_step_key(
+                task_name=task_name,
+                step_index=step_index,
+                step=normalized,
+            )
+
+        return normalized
+
+    def _infer_step_metadata_defaults(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        step_type = str(step.get("type", "") or "").strip().lower()
+        metadata: Dict[str, Any] = {}
+
+        if step_type in self.READ_ONLY_STEP_TYPES:
+            metadata["idempotent"] = True
+            metadata["side_effects"] = False
+            metadata["retry_safe"] = True
+            metadata["replan_safe"] = True
+            metadata["safety_class"] = "read_only"
+            return metadata
+
+        if step_type == "write_file":
+            metadata["idempotent"] = False
+            metadata["side_effects"] = True
+            metadata["retry_safe"] = False
+            metadata["replan_safe"] = False
+            metadata["safety_class"] = "file_write"
+            return metadata
+
+        if step_type == "delete_file":
+            metadata["idempotent"] = False
+            metadata["side_effects"] = True
+            metadata["retry_safe"] = False
+            metadata["replan_safe"] = False
+            metadata["safety_class"] = "file_delete"
+            return metadata
+
+        if step_type in {"command", "shell", "execute"}:
+            metadata["idempotent"] = False
+            metadata["side_effects"] = True
+            metadata["retry_safe"] = False
+            metadata["replan_safe"] = False
+            metadata["safety_class"] = "command"
+            return metadata
+
+        if step_type in {"call_api", "http_request"}:
+            method = str(step.get("method", "") or "POST").strip().upper()
+            if method == "GET":
+                metadata["idempotent"] = True
+                metadata["side_effects"] = False
+                metadata["retry_safe"] = True
+                metadata["replan_safe"] = True
+                metadata["safety_class"] = "http_read"
+            else:
+                metadata["idempotent"] = False
+                metadata["side_effects"] = True
+                metadata["retry_safe"] = False
+                metadata["replan_safe"] = False
+                metadata["safety_class"] = "http_write"
+            return metadata
+
+        metadata["idempotent"] = False
+        metadata["side_effects"] = False
+        metadata["retry_safe"] = False
+        metadata["replan_safe"] = False
+        metadata["safety_class"] = "unknown"
+        return metadata
+
+    def _infer_produces_files(self, step: Dict[str, Any]) -> List[str]:
+        step_type = str(step.get("type", "") or "").strip().lower()
+        path = str(step.get("path", "") or "").strip()
+
+        if step_type == "write_file" and path:
+            return [path]
+
+        return []
+
+    def _infer_consumes_files(self, step: Dict[str, Any]) -> List[str]:
+        step_type = str(step.get("type", "") or "").strip().lower()
+        path = str(step.get("path", "") or "").strip()
+
+        if step_type == "read_file" and path:
+            return [path]
+
+        if step_type in {"command", "shell", "execute"}:
+            command = str(step.get("command", "") or "").strip()
+            tokens = self._extract_file_references_from_command(command)
+            return tokens
+
+        return []
+
+    def _infer_external_effects(self, step: Dict[str, Any]) -> List[str]:
+        step_type = str(step.get("type", "") or "").strip().lower()
+
+        if step_type in {"command", "shell", "execute"}:
+            command = str(step.get("command", "") or "").strip()
+            return [f"command:{command}"] if command else []
+
+        if step_type in {"call_api", "http_request"}:
+            method = str(step.get("method", "") or "POST").strip().upper()
+            url = str(step.get("url", "") or "").strip()
+            return [f"http:{method}:{url}"] if url else []
+
+        if step_type == "delete_file":
+            path = str(step.get("path", "") or "").strip()
+            return [f"delete:{path}"] if path else []
+
+        return []
+
+    def _build_step_key(
+        self,
+        task_name: str,
+        step_index: int,
+        step: Dict[str, Any],
+    ) -> str:
+        safe_step = dict(step or {})
+        safe_step.pop("step_key", None)
+
+        raw = {
+            "task_name": task_name,
+            "step_index": step_index,
+            "type": safe_step.get("type"),
+            "command": safe_step.get("command"),
+            "path": safe_step.get("path"),
+            "url": safe_step.get("url"),
+            "method": safe_step.get("method"),
+            "content": safe_step.get("content"),
+            "query": safe_step.get("query"),
+        }
+
+        payload = json.dumps(raw, ensure_ascii=False, sort_keys=True, default=str)
+        digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+        return f"step_{step_index}_{digest}"
+
+    def _infer_task_name(self, task_dir: str, goal: str) -> str:
+        task_dir = str(task_dir or "").strip()
+        if task_dir:
+            task_dir = task_dir.replace("\\", "/").rstrip("/")
+            if "/" in task_dir:
+                return task_dir.split("/")[-1]
+            return task_dir
+
+        text = str(goal or "").strip()
+        if not text:
+            return "task"
+
+        digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+        return f"task_{digest}"
+
+    def _normalize_string_list(self, value: Any) -> List[str]:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+
+        if isinstance(value, list):
+            result: List[str] = []
+            for item in value:
+                if item is None:
+                    continue
+                text = str(item).strip()
+                if text:
+                    result.append(text)
+            return result
+
+        text = str(value).strip()
+        return [text] if text else []
 
     # ============================================================
     # split clauses
@@ -200,18 +485,15 @@ class Planner:
         if not tmp:
             return []
 
-        # 先保護引號內容，避免把 content: "a,b;c" 這種拆壞
         protected_text, placeholders = self._protect_quoted_segments(tmp)
 
         connectors = [
             "然後",
             "接著",
             "之後",
-            "再",
             "並且",
             "以及",
             "and then",
-            " then ",
         ]
 
         for c in connectors:
@@ -219,8 +501,6 @@ class Planner:
 
         protected_text = protected_text.replace("；", "|")
         protected_text = protected_text.replace(";", "|")
-        protected_text = protected_text.replace("，", "|")
-        protected_text = protected_text.replace(",", "|")
 
         parts = [self._restore_quoted_segments(p.strip(), placeholders) for p in protected_text.split("|")]
         return [p for p in parts if p.strip()]
@@ -250,8 +530,6 @@ class Planner:
         stripped = str(text or "").strip()
         lowered = stripped.lower()
 
-        # 故意不支援 ^cmd\s+(.+)$
-        # 避免把 Windows 的 `cmd /c xxx` 誤當成前綴語法
         patterns = [
             r"^cmd\s*:\s*(.+)$",
             r"^run\s*:\s*(.+)$",
@@ -269,14 +547,35 @@ class Planner:
             if m:
                 return m.group(1).strip()
 
-        # 直接輸入 python / py 也視為 command
         if lowered.startswith("python "):
             return stripped
 
         if lowered.startswith("py "):
             return stripped
 
+        if lowered.startswith("cmd /c "):
+            return stripped
+
+        if lowered.startswith("powershell "):
+            return stripped
+
         return None
+
+    def _extract_file_references_from_command(self, command: str) -> List[str]:
+        if not command:
+            return []
+
+        matches = re.findall(
+            r'([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))',
+            command,
+            flags=re.IGNORECASE,
+        )
+        result: List[str] = []
+        for item in matches:
+            text = str(item).replace("\\", "/").strip()
+            if text:
+                result.append(text)
+        return result
 
     def _is_command_route(self, route: Any) -> bool:
         if not isinstance(route, dict):
@@ -354,18 +653,20 @@ class Planner:
 
         content = self._extract_write_content(text)
         if content is None:
-            content = self._generate_content_from_filename(path)
+            content = self._generate_content_from_filename(path, text)
 
         return {
             "path": path,
             "content": content,
         }
 
-    def _generate_content_from_filename(self, path: str) -> str:
+    def _generate_content_from_filename(self, path: str, goal: str) -> str:
         normalized = path.replace("\\", "/").lower()
 
         if normalized.endswith(".py"):
-            return "print('hello')\n"
+            if "hello" in goal.lower():
+                return 'print("hello world")\n'
+            return "# generated by ZERO\n"
 
         if normalized.endswith(".md"):
             return "# Document\n"

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import copy
+import json
+import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .task_queue import TaskQueue
@@ -366,9 +369,6 @@ class TaskScheduler:
             or self.task_executor
         )
 
-        if step_executor is None:
-            return None
-
         try:
             return TaskRunner(
                 step_executor=step_executor,
@@ -410,10 +410,28 @@ class TaskScheduler:
         state_from_runner = runner_result.get("task")
         if isinstance(state_from_runner, dict):
             current_step_index = int(state_from_runner.get("current_step_index", current_step_index) or 0)
-            step_count = int(
-                state_from_runner.get("steps_total", len(state_from_runner.get("steps", [])) if isinstance(state_from_runner.get("steps", []), list) else step_count)
-                or step_count
-            )
+            state_steps = state_from_runner.get("steps", [])
+            state_steps_total = state_from_runner.get("steps_total")
+            if isinstance(state_steps_total, int):
+                step_count = state_steps_total
+            elif isinstance(state_steps, list):
+                step_count = len(state_steps)
+
+        status = runner_result.get("status")
+        if not status and isinstance(state_from_runner, dict):
+            status = state_from_runner.get("status")
+        if not status:
+            status = self._normalize_status(task.get("status"))
+
+        execution_log = []
+        if isinstance(runner_result.get("execution_log"), list):
+            execution_log = copy.deepcopy(runner_result.get("execution_log"))
+        elif isinstance(state_from_runner, dict) and isinstance(state_from_runner.get("execution_log"), list):
+            execution_log = copy.deepcopy(state_from_runner.get("execution_log"))
+
+        final_answer = runner_result.get("final_answer", "")
+        if not final_answer and isinstance(state_from_runner, dict):
+            final_answer = state_from_runner.get("final_answer", "")
 
         return {
             "ok": bool(runner_result.get("ok", False)),
@@ -421,13 +439,11 @@ class TaskScheduler:
             "tick": self.current_tick,
             "task_id": task_id,
             "task_name": runner_result.get("task_name") or task_name,
-            "status": runner_result.get("status", self._normalize_status(task.get("status"))),
+            "status": status,
             "message": runner_result.get("message", ""),
             "error": runner_result.get("error"),
-            "final_answer": runner_result.get("final_answer", ""),
-            "execution_log": copy.deepcopy(runner_result.get("execution_log", []))
-            if isinstance(runner_result.get("execution_log", []), list)
-            else [],
+            "final_answer": final_answer,
+            "execution_log": execution_log,
             "current_step_index": current_step_index,
             "step_count": step_count,
             "raw_result": copy.deepcopy(runner_result),
@@ -461,7 +477,7 @@ class TaskScheduler:
                 return False
 
             dep_status = self._normalize_status(dep_task.get("status"))
-            if dep_status not in ("finished", "failed", "cancelled", "timeout"):
+            if dep_status != "finished":
                 return False
 
         return True

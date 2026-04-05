@@ -20,17 +20,12 @@ StepHandler = Callable[[Dict[str, Any], Optional[Dict[str, Any]], Optional[Dict[
 
 class StepExecutor:
     """
-    ZERO Step Executor v4
+    ZERO Step Executor v5
 
-    架構：
-        StepExecutor
-            └── handler registry
-                    ├── tool
-                    ├── command
-                    ├── write_file
-                    ├── read_file
-                    ├── respond
-                    └── llm
+    新增：
+    1. shared workspace path resolve
+    2. shared/... 路徑會落到 workspace/shared/
+    3. task sandbox 仍維持預設行為
     """
 
     def __init__(
@@ -51,6 +46,8 @@ class StepExecutor:
 
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
+        self.shared_dir = os.path.join(self.workspace_root, "shared")
+        os.makedirs(self.shared_dir, exist_ok=True)
 
         self.handlers: Dict[str, StepHandler] = {}
         self._register_builtin_handlers()
@@ -135,6 +132,8 @@ class StepExecutor:
                 "workspace",
                 "cwd",
                 "workspace_dir",
+                "workspace_root",
+                "shared_dir",
                 "plan_file",
                 "runtime_state_file",
                 "result_file",
@@ -145,7 +144,7 @@ class StepExecutor:
                     step[key] = task.get(key)
 
         if isinstance(context, dict):
-            for key in ("workspace", "cwd", "task_dir"):
+            for key in ("workspace", "cwd", "task_dir", "workspace_root", "shared_dir"):
                 if key not in step and key in context:
                     step[key] = context.get(key)
 
@@ -231,10 +230,17 @@ class StepExecutor:
         if not isinstance(task, dict):
             return task
 
+        normalized = copy.deepcopy(task)
+
         try:
-            return self.path_manager.enrich_task(task)
+            normalized = self.path_manager.enrich_task(normalized)
         except Exception:
-            return copy.deepcopy(task)
+            normalized = copy.deepcopy(task)
+
+        normalized.setdefault("workspace_root", self.workspace_root)
+        normalized.setdefault("shared_dir", self.shared_dir)
+
+        return normalized
 
     def _extract_inner_ok(self, result: Any) -> bool:
         if isinstance(result, dict):
@@ -254,6 +260,18 @@ class StepExecutor:
         step: Dict[str, Any],
         task: Optional[Dict[str, Any]] = None,
     ) -> str:
+        path = str(step.get("path", "") or "").replace("\\", "/").strip()
+        if path.startswith("shared/"):
+            if isinstance(step, dict):
+                shared_dir = step.get("shared_dir")
+                if isinstance(shared_dir, str) and shared_dir.strip():
+                    return shared_dir
+            if isinstance(task, dict):
+                shared_dir = task.get("shared_dir")
+                if isinstance(shared_dir, str) and shared_dir.strip():
+                    return shared_dir
+            return self.shared_dir
+
         if isinstance(step, dict):
             for key in ("task_dir", "cwd", "workspace"):
                 value = step.get(key)
@@ -275,6 +293,12 @@ class StepExecutor:
         context: Optional[Dict[str, Any]] = None,
     ) -> str:
         if isinstance(step, dict):
+            command = str(step.get("command", "") or "").replace("\\", "/")
+            if " shared/" in f" {command}" or command.startswith("shared/"):
+                shared_dir = step.get("shared_dir")
+                if isinstance(shared_dir, str) and shared_dir.strip():
+                    return str(step.get("workspace_root") or self.workspace_root)
+
             for key in ("task_dir", "cwd", "workspace"):
                 value = step.get(key)
                 if isinstance(value, str) and value.strip():
