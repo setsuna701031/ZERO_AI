@@ -1,454 +1,296 @@
-\# ZERO Architecture
-
-
-
-ZERO is a local-first AI execution project.
-
-
-
-At the current stage, it is best described as an early
-
-\*\*Autonomous Agent Runtime / Task Operating System prototype\*\*
-
-rather than a traditional chatbot-style assistant.
-
-
-
-This document introduces the architecture at a high level.
-
-It focuses on system layers, responsibilities, and current structure,
-
-without exposing detailed internal execution policies.
-
-
-
-\---
-
-
-
-\## High-Level Position
-
-
-
-ZERO is moving toward a model where the user gives a goal,
-
-and the system organizes, executes, and records task-oriented work.
-
-
-
-A simplified high-level view looks like this:
-
-
-
-User Goal  
-
-↓  
-
-Planning Layer  
-
-↓  
-
-Task Coordination Layer  
-
-↓  
-
-Scheduling / Runtime Control  
-
-↓  
-
-Execution Layer  
-
-↓  
-
-Workspace / Tool Interaction  
-
-↓  
-
-Result Recording  
-
-↓  
-
-Summary / Memory
-
-
-
-This means the project is no longer just a chat wrapper around tools.
-
-It is evolving toward a structured execution architecture.
-
-
-
-\---
-
-
-
-\## Main System Layers
-
-
-
-\## 1. Planning Layer
-
-
-
-The planning layer turns user intent into structured work.
-
-
-
-Its role is to convert a goal into a form that the runtime can use,
-
-such as ordered actions, execution targets, or verification-oriented steps.
-
-
-
-At the current stage, planning is part of the system direction,
-
-while execution reliability and runtime structure remain the primary focus.
-
-
-
-\---
-
-
-
-\## 2. Task Coordination Layer
-
-
-
-The coordination layer manages how work is organized and tracked.
-
-
-
-Typical responsibilities include:
-
-
-
-\- task structure
-
-\- task metadata
-
-\- execution progress
-
-\- parent / child task relationships
-
-\- runtime-facing task information
-
-\- inspectable task state
-
-
-
-This layer is one of the foundations that separates ZERO
-
-from a simple prompt-response system.
-
-
-
-\---
-
-
-
-\## 3. Scheduling and Runtime Control
-
-
-
-ZERO is being shaped toward a runtime-oriented model,
-
-where work is not treated as a one-shot answer,
-
-but as a controlled execution process.
-
-
-
-This area includes high-level concepts such as:
-
-
-
-\- queued work
-
-\- execution ordering
-
-\- runtime flow control
-
-\- visible task progression
-
-\- pause / resume capable behavior
-
-
-
-This is important because it allows the system
-
-to behave more like an execution framework
-
-instead of only producing text output.
-
-
-
-\---
-
-
-
-\## 4. Execution Layer
-
-
-
-The execution layer is responsible for carrying out task steps
-
-through actual tools and adapters.
-
-
-
-Examples of execution-related capabilities include:
-
-
-
-\- workspace actions
-
-\- file operations
-
-\- command execution
-
-\- search or lookup tools
-
-\- memory-related operations
-
-
-
-The architecture is intended to keep execution modular,
-
-so the core structure does not collapse into tool-specific code.
-
-
-
-\---
-
-
-
-\## 5. Workspace and Result Layer
-
-
-
-ZERO is designed to produce inspectable results,
-
-not only internal reasoning.
-
-
-
-This means the system can interact with a real working environment
-
-and leave behind observable outputs.
-
-
-
-Examples include:
-
-
-
-\- file system changes
-
-\- created artifacts
-
-\- execution results
-
-\- state transitions
-
-\- summarized outcomes
-
-
-
-This layer is part of what makes the project demonstrable and verifiable.
-
-
-
-\---
-
-
-
-\## 6. Summary and Memory Layer
-
-
-
-After execution, the system can preserve useful summaries
-
-about what happened during a task.
-
-
-
-The long-term intent is to retain engineering-useful state summaries
-
-instead of relying only on raw conversational traces.
-
-
-
-Examples include:
-
-
-
-\- what task was attempted
-
-\- what result was produced
-
-\- what obstacle appeared
-
-\- what next step may be useful
-
-
-
-This layer supports continuity, iteration, and future system improvement.
-
-
-
-\---
-
-
-
-\## Current Structural View
-
-
-
-At a practical level, the project currently aligns more closely with
-
-a layered execution system than with a simple assistant shell.
-
-
-
-A simplified structural view can be described as:
-
-
-
-\- brain / reasoning-related layer
-
-\- planner layer
-
-\- scheduler / coordination layer
-
-\- runtime layer
-
-\- executor layer
-
-\- tools / adapters
-
-\- workspace-facing layer
-
-\- memory / summaries
-
-\- logs / operational traces
-
-
-
-This should be understood as a high-level architectural direction,
-
-not a strict public contract for every internal implementation detail.
-
-
-
-\---
-
-
-
-\## What the Architecture Means
-
-
-
-The important shift is this:
-
-
-
-ZERO is no longer centered on “generate a response.”
-
-It is increasingly centered on “organize and execute work.”
-
-
-
-That shift changes the role of the system from:
-
-
-
-\- answer generator
-
-
-
-toward:
-
-
-
-\- task-oriented runtime
-
-\- local execution core
-
-\- structured agent system prototype
-
-
-
-\---
-
-
-
-\## Design Principles
-
-
-
-The current architecture follows several broad principles:
-
-
-
-\- local-first execution
-
-\- modular layering
-
-\- task-oriented flow instead of conversation-oriented flow
-
-\- execution before presentation polish
-
-\- inspectable results before abstract claims
-
-\- reusable core before vertical specialization
-
-\- clear separation between core, adapters, and outer layers
-
-
-
-\---
-
-
-
-\## Current Architectural Reality
-
-
-
-At the current stage, ZERO should be described as:
-
-
-
-\*\*an early Autonomous Agent Runtime / Task Operating System prototype
-
-with structured execution layers, runtime control direction,
-
-workspace interaction, and verifiable task-oriented behavior\*\*
-
-
-
-This is already beyond a simple tool-routed assistant shell,
-
-but it is still an actively evolving execution-core project.
-
-
-
-\---
-
-
-
-\## Summary
-
-
-
-In one sentence:
-
-
-
-> ZERO is a local-first AI execution system evolving toward an Autonomous Agent Runtime / Task Operating System architecture.
-
-
-
-The current milestone is not “finished product.”
-
-It is “execution-core architecture with real, demonstrable progress.”
-
+# ZERO Architecture
+
+## High-Level View
+
+ZERO is structured as a task-oriented execution system.
+
+A simplified architecture view looks like this:
+
+```text
+User Command
+    ↓
+TaskManager
+    ↓
+Planner
+    ↓
+plan.json
+    ↓
+Scheduler
+    ↓
+TaskRuntime
+    ↓
+StepExecutor
+    ↓
+StepHandlers
+    ↓
+Workspace / Shared Workspace
+    ↓
+execution_log.json
+    ↓
+result.json
+    ↓
+runtime_state.json
+    ↓
+tasks.json
+```
+
+This architecture means ZERO does not directly jump from user input to a one-shot tool call.
+
+Instead, it follows a structured execution model:
+1. create task
+2. generate plan
+3. schedule task
+4. execute steps
+5. record logs and state
+6. produce result
+7. update task registry
+
+---
+
+## Main Modules
+
+### 1. TaskManager
+Responsible for task creation and task registration.
+
+Main responsibilities:
+- create task identity
+- initialize task metadata
+- write task records
+- connect user task submission to planner/runtime flow
+
+### 2. Planner
+Responsible for converting natural language goals into structured steps.
+
+Planner output is typically stored in:
+- `plan.json`
+
+Current planner direction:
+- deterministic planner
+- explicit step generation
+- write_file / command / read_file style tasks
+- planner-first execution model
+
+### 3. Scheduler
+Responsible for task selection and runtime triggering.
+
+Current direction:
+- scheduler tick model
+- task selection
+- future queue / priority / dependency expansion
+
+### 4. TaskRuntime
+Responsible for lifecycle and runtime state management.
+
+Runtime state is stored in:
+- `runtime_state.json`
+
+Typical state flow:
+- queued
+- ready
+- running
+- finished
+- failed
+
+### 5. StepExecutor
+Responsible for executing each step in the plan.
+
+This is the core execution engine that runs step-by-step task behavior.
+
+### 6. StepHandlers
+Handler-based execution model for different step types.
+
+Current handler set includes concepts such as:
+- WriteFileStepHandler
+- ReadFileStepHandler
+- CommandStepHandler
+- ToolStepHandler
+- RespondStepHandler
+- LLMStepHandler
+
+This architecture keeps execution extensible.
+
+---
+
+## Workspace Architecture
+
+ZERO uses a workspace-based execution model.
+
+A typical structure looks like this:
+
+```text
+workspace/
+  tasks/
+    task_xxx/
+      sandbox/
+      plan.json
+      runtime_state.json
+      execution_log.json
+      result.json
+      task.json
+      task.log
+      task_runner.trace.log
+      task_runtime.trace.log
+  shared/
+```
+
+### Task Workspace
+Each task has its own local execution area.
+
+Task workspace responsibilities:
+- task-local file output
+- runtime state storage
+- execution logs
+- result artifacts
+- task-specific traces
+
+### Shared Workspace
+Shared workspace is used for cross-task shared artifacts.
+
+This enables:
+- shared configuration files
+- reusable generated outputs
+- task-to-task handoff
+- future pipeline-like workflows
+
+---
+
+## Runtime Files and Their Roles
+
+### `plan.json`
+Contains the planned step sequence for a task.
+
+Role:
+- workflow definition
+- executor input
+- planner output record
+
+### `runtime_state.json`
+Contains lifecycle and runtime state.
+
+Typical fields may include:
+- status
+- retry_count
+- depends_on
+- timeout
+- created_tick
+- last_run_tick
+- finished_tick
+- runtime_status_history
+- workspace_root
+- task_dir
+- shared_dir
+
+Role:
+- task lifecycle manager
+- runtime state persistence
+- scheduling and recovery foundation
+
+### `execution_log.json`
+Contains step execution history.
+
+Role:
+- step-by-step execution trace
+- observability
+- debugging
+- verification
+
+### `result.json`
+Contains structured task output.
+
+Role:
+- final task artifact
+- output summary
+- downstream input candidate
+
+### `tasks.json`
+Contains task registry information.
+
+Role:
+- task index
+- task lookup
+- task tracking
+
+---
+
+## Task Lifecycle
+
+A typical task lifecycle looks like this:
+
+```text
+task_submit
+    ↓
+TaskManager
+    ↓
+Planner generates steps
+    ↓
+plan.json saved
+    ↓
+Scheduler selects task
+    ↓
+TaskRuntime enters running state
+    ↓
+StepExecutor executes steps
+    ↓
+execution_log.json updated
+    ↓
+result.json produced
+    ↓
+runtime_state.json updated
+    ↓
+tasks.json status updated
+    ↓
+finished / failed
+```
+
+This lifecycle is one of the reasons ZERO is better described as a runtime system rather than a chatbot shell.
+
+---
+
+## Path Resolution and Workspace Boundary
+
+ZERO is moving toward explicit workspace path rules.
+
+Expected behavior:
+
+- `shared/a.py` → `workspace/shared/a.py`
+- `sandbox/a.py` → `workspace/tasks/<task_id>/sandbox/a.py`
+- `a.py` → default to task sandbox
+- `../xxx` → rejected
+
+This is important because it defines:
+- sandbox boundary
+- shared artifact boundary
+- path safety policy
+- predictable file behavior
+
+---
+
+## Architectural Identity
+
+At the current stage, ZERO is best understood as a hybrid of:
+
+- local task runtime
+- step-based execution engine
+- workflow prototype
+- agent runtime prototype
+- task orchestration core
+
+It is not yet a full platform, but it already has the core architecture of one.
+
+---
+
+## Summary
+
+ZERO currently implements the essential shape of a task execution architecture:
+
+- planner
+- runtime
+- scheduler
+- executor
+- workspace
+- logs
+- state
+- result
+- task registry
+
+This is the foundation for a future local-first workflow engine / agent runtime platform.

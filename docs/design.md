@@ -1,424 +1,302 @@
-\# ZERO Design Philosophy
+# ZERO Design Notes
 
+## Design Philosophy
 
+ZERO is designed around one central idea:
 
-ZERO is not designed as a chat-first AI product.
+> AI execution should be structured, inspectable, and recoverable.
 
+This means ZERO does not treat task execution as a single hidden LLM response.
 
+Instead, it treats execution as a stateful runtime process with:
+- explicit planning
+- explicit steps
+- explicit workspace
+- explicit logs
+- explicit result files
+- explicit runtime state
 
-ZERO is being built as a local-first task-oriented execution system.
+---
 
+## Why Planner-First Instead of Direct Tool Calling
 
+A common pattern in lightweight agent projects is:
 
-\---
+```text
+User Prompt → LLM → Tool Call → Response
+```
 
+This is fast, but it often has problems:
+- hard to inspect
+- hard to reproduce
+- hard to debug
+- hard to recover after failure
+- difficult to verify
 
+ZERO instead prefers:
 
-\## Core View
+```text
+User Prompt → Planner → plan.json → Executor → Logs / State / Result
+```
 
+Advantages:
+- task behavior becomes visible
+- steps can be checked before or after execution
+- logs and state become inspectable
+- future retry / replan is easier
+- execution is more suitable for safety and engineering workflows
 
+---
 
-Many AI systems stop at response generation.
+## JSON-Driven Runtime State
 
+ZERO externalizes important runtime information into JSON files.
 
+This includes:
+- `plan.json`
+- `runtime_state.json`
+- `execution_log.json`
+- `result.json`
+- `tasks.json`
 
-ZERO explores a different direction:
+This design has several advantages.
 
+### Benefits
+1. Inspectable state  
+   The current task state can be viewed directly from files.
 
+2. Better debugging  
+   When something fails, it is easier to locate which stage failed.
 
-AI should not only describe work.
+3. Recoverability  
+   A runtime that stores its state explicitly is easier to resume or replan.
 
-It should increasingly help organize, execute, and carry work forward.
+4. Verifiability  
+   Execution can be checked through step logs and outputs.
 
+5. Lower coupling  
+   State is not trapped entirely in memory.
 
+---
 
-That is the core philosophical shift behind the project.
+## Task Workspace Model
 
+ZERO uses a workspace-per-task model.
 
+Typical structure:
 
-\---
+```text
+workspace/
+  tasks/
+    task_xxx/
+      sandbox/
+      plan.json
+      runtime_state.json
+      execution_log.json
+      result.json
+  shared/
+```
 
+### Why this matters
+This gives each task:
+- its own local execution area
+- isolated artifacts
+- local logs
+- local result files
+- safer file behavior
 
+This is closer to a true runtime system than a simple script runner.
 
-\## Chat-Centered Model vs Task-Centered Model
+---
 
+## Shared Workspace Model
 
+ZERO also introduces a shared workspace:
 
-A chat-centered model is mostly shaped like this:
+```text
+workspace/shared/
+```
 
+This is used for:
+- shared artifacts
+- cross-task resources
+- reusable outputs
+- future workflow handoff
 
+Without a shared workspace, tasks remain completely isolated.
 
-User → Prompt → Response → End
+With a shared workspace, ZERO begins to support:
+- coordination across tasks
+- pipeline-like workflows
+- artifact reuse
+- future dependency chains
 
+---
 
+## Path Resolution Rules
 
-A task-centered model is closer to this:
+Path handling is a foundational part of the Task OS model.
 
+Current intended rules are:
 
+### Rule 1 — Shared path
+`shared/a.py`
+→ `workspace/shared/a.py`
 
-User → Goal → Structured Work → Execution → Result → Continuation
+### Rule 2 — Explicit sandbox path
+`sandbox/a.py`
+→ `workspace/tasks/<task_id>/sandbox/a.py`
 
+### Rule 3 — Default relative path
+`a.py`
+→ default to `workspace/tasks/<task_id>/sandbox/a.py`
 
+### Rule 4 — Path traversal protection
+`../xxx`
+→ rejected
 
-ZERO is aligned with the second direction.
+### Why these rules matter
+These rules define:
+- workspace boundary policy
+- predictable file behavior
+- shared vs task-local resource separation
+- path safety
+- protection against accidental or unsafe escape from workspace
 
+This is one of the most important infrastructure decisions in ZERO.
 
+---
 
-This means the project is fundamentally more interested in:
+## Runtime Status Flow
 
+ZERO treats task execution as a lifecycle, not a one-shot event.
 
+Typical state flow:
 
-\- task progression
+```text
+queued → ready → running → finished
+```
 
-\- execution structure
+or
 
-\- inspectable results
+```text
+queued → ready → running → failed
+```
 
-\- continuity across work
+This is important because it provides:
+- a scheduler-compatible state model
+- future retry support
+- future replan support
+- visible lifecycle transitions
+- better debugging of where a task stopped
 
+---
 
+## Step Executor and Handler Model
 
-than in producing isolated one-off answers.
+ZERO uses a handler-based execution system.
 
+Instead of hardcoding all step behavior in one file, step types are delegated to specific handlers.
 
+Examples:
+- write_file
+- read_file
+- command
+- tool
+- respond
+- llm
 
-\---
+### Why this matters
+This makes the system:
+- more modular
+- easier to extend
+- easier to test
+- less likely to accumulate execution logic in one giant file
 
+This is an important design choice for keeping the runtime extensible.
 
+---
 
-\## Core Design Ideas
+## Execution Logs as System Evidence
 
+Execution logs are not just debug output.
 
+In ZERO, `execution_log.json` is part of the system contract.
 
-\## 1. Tasks instead of conversations
+It acts as:
+- step history
+- execution evidence
+- runtime observability
+- debugging surface
+- verification surface
 
+A successful task is not only "something happened" — it is something that can be checked.
 
+---
 
-The center of the system should be work,
+## Result-Oriented Output
 
-not only dialogue.
+ZERO produces structured outputs such as `result.json`.
 
+This is important because future systems need more than console text:
+- downstream tasks may need machine-readable results
+- users may need stable output structures
+- retries and replans may depend on previous results
 
+Result files push ZERO closer to a proper workflow engine.
 
-The user gives a goal.
+---
 
-The system should increasingly be able to turn that goal
+## Why ZERO Is Not Just a Demo Agent
 
-into actionable structure.
+A demo agent often has:
+- a loop
+- a prompt
+- a tool call
+- an answer
 
+ZERO already has:
+- planner
+- runtime state
+- scheduler logic
+- task workspace
+- shared workspace
+- step executor
+- step handlers
+- execution logs
+- results
+- task status flow
 
+This moves it into the category of:
+- runtime prototype
+- workflow prototype
+- task orchestration system
 
-\---
+---
 
+## Design Direction Going Forward
 
+The next major design expansion areas are:
 
-\## 2. Execution instead of explanation only
+- queue system
+- priority handling
+- retry / replan loop
+- dependency scheduling
+- DAG-style workflow
+- multi-worker execution
+- dashboard / observability UI
+- plugin tool ecosystem
 
+---
 
+## Summary
 
-A useful AI system should not stop at “what to do.”
+ZERO is intentionally designed as a structured, state-centric, workspace-based execution runtime.
 
-
-
-It should move toward “help get it done.”
-
-
-
-This is why ZERO focuses on execution-facing architecture.
-
-
-
-\---
-
-
-
-\## 3. Structure instead of one-shot dispatch
-
-
-
-A serious execution system needs more than simple tool calling.
-
-
-
-It needs structure around work:
-
-
-
-\- organized tasks
-
-\- visible execution layers
-
-\- runtime progression
-
-\- inspectable outputs
-
-
-
-That is why the project is evolving toward a Task Operating System model.
-
-
-
-\---
-
-
-
-\## 4. Local-first before dependency-heavy design
-
-
-
-ZERO follows a local-first direction.
-
-
-
-This is important for:
-
-
-
-\- control
-
-\- privacy
-
-\- independence
-
-\- system ownership
-
-\- engineering flexibility
-
-
-
-The local-first principle is part of the project identity.
-
-
-
-\---
-
-
-
-\## 5. Architecture before surface polish
-
-
-
-The project currently prioritizes execution-core structure
-
-over presentation polish.
-
-
-
-That means the emphasis is on:
-
-
-
-\- system layers
-
-\- reliable execution direction
-
-\- clean responsibility boundaries
-
-\- expandable core design
-
-
-
-rather than early product cosmetics.
-
-
-
-\---
-
-
-
-\## 6. Results instead of abstract claims
-
-
-
-ZERO values demonstrable progress.
-
-
-
-That means the system should increasingly produce:
-
-
-
-\- inspectable outputs
-
-\- visible execution evidence
-
-\- reproducible demonstrations
-
-\- milestone-level proof
-
-
-
-This is part of why the project can now begin to show external display value.
-
-
-
-\---
-
-
-
-\## 7. Reusable core before vertical specialization
-
-
-
-The long-term direction is not to build a one-off script pile.
-
-
-
-The intent is to shape a reusable execution core
-
-that can later support broader assistant capabilities,
-
-different interfaces, and future specialization layers.
-
-
-
-\---
-
-
-
-\## Task Operating System Concept
-
-
-
-ZERO is best understood as exploring the idea of a Task Operating System.
-
-
-
-A traditional operating system organizes processes and resources.
-
-
-
-A task-oriented AI system should organize:
-
-
-
-\- goals
-
-\- tasks
-
-\- execution structure
-
-\- runtime progression
-
-\- results
-
-\- continuity
-
-
-
-This is the conceptual direction of the project.
-
-
-
-\---
-
-
-
-\## Why This Direction Matters
-
-
-
-A system that only answers is limited.
-
-
-
-A system that can increasingly help structure and advance work
-
-is much closer to a real engineering assistant.
-
-
-
-That is why ZERO is being shaped around execution architecture
-
-instead of pure conversation design.
-
-
-
-\---
-
-
-
-\## Long-Term Vision
-
-
-
-The long-term vision of ZERO is:
-
-
-
-\*\*a personal local-first engineering-oriented AI assistant\*\*
-
-
-
-The system should eventually help with work such as:
-
-
-
-\- engineering tasks
-
-\- software tasks
-
-\- workspace-based execution
-
-\- interrupted work continuation
-
-\- structured multi-step operations
-
-
-
-The current prototype is still early,
-
-but the direction is already visible.
-
-
-
-\---
-
-
-
-\## Current Philosophy in Practice
-
-
-
-At the current stage, the practical priorities are:
-
-
-
-\- strengthen the execution core
-
-\- preserve architecture clarity
-
-\- make progress demonstrable
-
-\- expand task-oriented behavior
-
-\- keep the system local-first
-
-\- avoid premature product-layer clutter
-
-
-
-The core comes first.
-
-The wider product layers come later.
-
-
-
-\---
-
-
-
-\## Short Summary
-
-
-
-In one sentence:
-
-
-
-> ZERO is a local-first AI project built around task-oriented execution, structured system growth, and demonstrable engineering progress.
-
-
-
-That is the design philosophy behind the current prototype.
-
+Its core design choices are aimed at making AI task execution:
+- visible
+- inspectable
+- reproducible
+- safer
+- extensible
+- suitable for future orchestration

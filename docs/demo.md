@@ -1,296 +1,226 @@
-\# ZERO Demo
+# ZERO Demo
+
+## Overview
 
+This document shows practical examples of ZERO running as a task-oriented execution system.
+
+The goal of these demos is not just to show that ZERO can print output.
+
+The goal is to show that ZERO can:
+- receive a task
+- generate steps
+- create a workspace
+- execute steps
+- record logs
+- update runtime state
+- produce a result
+- finish the task lifecycle
 
+---
 
-This document summarizes the current demonstrable results of ZERO
+## Demo 1 — CLI Task Execution
 
-and clarifies what this stage is meant to show.
+Run the system:
 
+```bash
+python app.py
+```
+
+Submit a task:
+
+```bash
+/task_submit 建立 hello.py 然後執行 python hello.py
+```
+
+Example output:
+
+```text
+[task] task_1775295843348
+hello world
+
+[execution_log]
+[
+  {
+    "type": "step_result",
+    "step_index": 0,
+    "ok": true,
+    "error": null
+  },
+  {
+    "type": "step_result",
+    "step_index": 1,
+    "ok": true,
+    "error": null
+  }
+]
 
+[task_status]
+finished
+```
 
-\---
+Image:
 
+![CLI Task Execution](images/demo/CLI_Task_Execution.png)
 
+### What this demo proves
+This demo proves that ZERO can:
 
-\## Demo Positioning
+- accept a task from CLI
+- generate a multi-step plan
+- execute the steps
+- record step results
+- complete task lifecycle
+- return a final finished status
 
+---
 
+## Demo 2 — Task Workspace Structure
 
-At this stage, the purpose of ZERO is not to showcase general chat ability.
+A typical task workspace looks like this:
 
+```text
+workspace/
+  tasks/
+    task_xxx/
+      sandbox/
+      execution_log.json
+      hello.py
+      plan.json
+      result.json
+      runtime_state.json
+      task.json
+      task.log
+      task_runner.trace.log
+      task_runtime.trace.log
+```
 
+Image:
 
-The focus is on:
+![Task Workspace Structure](images/demo/Task_Workspace_Structure.png)
 
+### What this demo proves
+This demo proves that ZERO uses a structured task workspace model with:
 
+- task-local sandbox
+- explicit planner output
+- explicit runtime state
+- execution history
+- result artifacts
+- task metadata
+- task logs and traces
 
-\- local task-oriented execution
+This is one of the main reasons ZERO is better described as a runtime system than a simple chatbot demo.
 
-\- workspace-facing actions
-
-\- verifiable outcomes
-
-\- basic multi-step behavior
-
-\- visible system progression
-
-
-
-In simple terms:
-
-
-
-\*\*the goal of this stage is to show that ZERO is moving from “can talk” to “can do.”\*\*
-
-
-
-\---
-
-
-
-\## What This Demo Is Showing
-
-
-
-The current demo stage is intended to show that ZERO already has:
-
-
-
-\- real execution behavior
-
-\- real workspace interaction
-
-\- real inspectable output
-
-\- real success / failure evidence
-
-\- an architecture that is growing toward a task runtime
-
-
-
-This makes the project more than a concept description.
-
-
-
-\---
-
-
-
-\## Verified Demonstration Areas
-
-
-
-The current demo materials support the following kinds of proof:
-
-
-
-\### 1. Observable task execution
-
-
-
-The system can perform task-oriented actions
-
-that produce visible results in a local environment.
-
-
-
-\### 2. Workspace interaction
-
-
-
-The system can interact with the workspace
-
-and leave behind inspectable outputs.
-
-
-
-\### 3. Verifiable outcome behavior
-
-
-
-The system can demonstrate results that can be checked externally,
-
-rather than existing only as internal reasoning.
-
-
-
-\### 4. Basic multi-step flow
-
-
-
-The system is no longer limited to a single isolated action.
-
-It is already moving toward structured multi-step behavior.
-
-
-
-\---
-
-
-
-\## Why This Stage Matters
-
-
-
-This stage is important not because the system is already complete,
-
-but because it proves that ZERO has entered a meaningful execution phase.
-
-
-
-What matters here is:
-
-
-
-\- the project has visible architecture
-
-\- the project has visible progression
-
-\- the project has visible outputs
-
-\- the project has visible demonstration value
-
-
-
-That is a critical shift.
-
-
-
-\---
-
-
-
-\## Evidence Style
-
-
-
-The current demo materials are best understood as:
-
-
-
-\- execution screenshots
-
-\- workspace results
-
-\- status demonstrations
-
-\- flow demonstrations
-
-\- milestone evidence
-
-
-
-These materials help communicate
-
-what the project can already do in practice.
-
-
-
-\---
-
-
-
-\## What This Demo Does Not Claim
-
-
-
-This demo stage does not claim that ZERO is already a finished platform.
-
-
-
-It does not claim:
-
-
-
-\- full product maturity
-
-\- complete long-term autonomy
-
-\- fully expanded execution coverage
-
-\- final system behavior
-
-
-
-Instead, it shows a real and credible milestone
-
-in the construction of a larger task-oriented AI system.
-
-
-
-\---
-
-
-
-\## Current Technical Interpretation
-
-
-
-At the current stage, ZERO is better interpreted as:
-
-
-
-\- a local execution-core prototype
-
-\- an early task runtime
-
-\- a structured agent-system foundation
-
-\- a Task Operating System direction with real evidence behind it
-
-
-
-This is already a meaningful step beyond a pure concept demo.
-
-
-
-\---
-
-
-
-\## What Comes Next
-
-
-
-The next stage will continue to strengthen:
-
-
-
-\- execution depth
-
-\- multi-step orchestration
-
-\- runtime maturity
-
-\- visibility into system behavior
-
-\- stronger task lifecycle handling
-
-\- broader architecture stability
-
-
-
-The purpose is to keep expanding execution reliability
-
-without losing architectural clarity.
-
-
-
-\---
-
-
-
-\## Short Summary
-
-
-
-In one sentence:
-
-
-
-> ZERO already demonstrates real local task-oriented behavior, visible workspace effects, and early multi-step execution value.
-
-
-
-That is the core meaning of the current demo stage.
-
+---
+
+## Demo 3 — Example Task Lifecycle
+
+A successful file creation task can look like this:
+
+- goal: create `api.py`
+- planner generates 1 `write_file` step
+- step executor executes `write_file`
+- file is written to `sandbox/api.py`
+- runtime state flows through:
+  - `queued`
+  - `ready`
+  - `running`
+  - `finished`
+- `execution_log.json` confirms successful execution
+
+### What this demo proves
+This demonstrates:
+- planner-to-executor continuity
+- verifiable runtime state transitions
+- file output inside task sandbox
+- inspectable execution artifacts
+
+---
+
+## Demo 4 — Path Resolution Rules
+
+ZERO is moving toward explicit path resolution behavior.
+
+Examples:
+
+```text
+shared/a.py
+→ workspace/shared/a.py
+
+sandbox/a.py
+→ workspace/tasks/<task_id>/sandbox/a.py
+
+a.py
+→ workspace/tasks/<task_id>/sandbox/a.py
+
+../xxx
+→ rejected
+```
+
+### What this demo proves
+This demonstrates:
+- workspace boundary policy
+- shared vs task-local file routing
+- default sandbox behavior
+- path traversal protection
+
+This is critical for building a safe and predictable task execution runtime.
+
+---
+
+## Why These Demos Matter
+
+These demos are not just small examples.
+
+Together, they show that ZERO already has:
+
+- task submission
+- planning
+- runtime state
+- step execution
+- workspace isolation
+- shared workspace direction
+- logging
+- result output
+- lifecycle completion
+
+This moves ZERO beyond:
+- prompt demo
+- tool-calling shell
+- lightweight agent toy
+
+And closer to:
+- local task runtime
+- mini workflow engine
+- task orchestrator prototype
+
+---
+
+## Summary
+
+The current demos show that ZERO can already run a real task lifecycle:
+
+```text
+task_submit
+    ↓
+planner
+    ↓
+plan.json
+    ↓
+task workspace
+    ↓
+step executor
+    ↓
+execution_log.json
+    ↓
+result.json
+    ↓
+runtime_state.json
+    ↓
+finished
+```
+
+That is the key milestone.
+
+ZERO is no longer only "able to talk."
+It has started to **do structured work**.

@@ -1,136 +1,184 @@
-# ZERO AI Current Status
+# ZERO Current Status
 
-## Current Status Summary
+## Current Runtime Modules
 
-ZERO has moved beyond the early API / tool-wrapper stage.
+![Current Runtime Modules](images/architecture/current_stage_runtime_modules.png)
 
-At the current point, the project is best described as an
-**early Autonomous Agent Runtime / Task Operating System prototype**
-focused on structured execution, runtime progression,
-workspace interaction, and verifiable task behavior.
+## Current Stage
 
-In other words:
+ZERO is currently at the stage where its **Task Runtime core** has taken shape.
 
-**ZERO is no longer just a shell that routes user input to tools.**
+It is no longer just a local chat shell or a simple tool-calling demo.
 
-It is now taking shape as a layered execution system.
+At this stage, ZERO already has the core structure of a mini Task OS / Agent Runtime prototype.
 
 ---
 
-## What Has Already Been Established
+## Main Components Already Present
 
-The current prototype already has visible progress in these areas:
+### 1. TaskManager
+Responsible for task creation and task registration.
 
-- task-oriented execution direction
-- layered runtime structure
-- workspace-facing task behavior
-- verifiable success / failure demonstrations
-- basic multi-step execution flow
-- structured project architecture
-- local-first operating model
+### 2. Planner
+Responsible for generating executable steps from user intent.
 
-This means the project now has meaningful system shape,
-not only isolated code experiments.
+Current planner direction includes deterministic multi-step planning behavior.
+
+### 3. TaskRuntime
+Responsible for runtime state and lifecycle management.
+
+### 4. Scheduler
+Responsible for scheduler tick and selecting runnable tasks.
+
+### 5. StepExecutor
+Responsible for executing step-by-step task actions.
+
+### 6. StepHandlers
+Execution handlers for step types such as:
+- write_file
+- command
+- read_file
+- tool
+- respond
+- llm
+
+### 7. Workspace System
+Includes:
+- task-local workspace
+- sandbox
+- shared workspace
+
+### 8. Execution Artifacts
+The system already uses structured files such as:
+- `plan.json`
+- `runtime_state.json`
+- `execution_log.json`
+- `result.json`
+- `tasks.json`
+
+### 9. Status Flow
+Current runtime flow already includes states such as:
+- queued
+- ready
+- running
+- finished
+- failed
+
+### 10. Dependency Field Foundation
+Fields such as `depends_on` are already present in the runtime model, forming a base for future dependency scheduling.
 
 ---
 
-## What Can Be Demonstrated Now
+## What Has Already Been Demonstrated
 
-At the current stage, the project can already demonstrate:
+The system has already demonstrated successful task behavior such as:
 
-- task execution that produces observable results
-- workspace actions with real output
-- success / failure outcomes that can be inspected
-- basic multi-step flow instead of only single-shot behavior
-- a clearer shift from “assistant shell” toward “execution runtime”
-
-This is important because it shows that the system is entering
-a demonstrable engineering phase.
+- creating a file
+- executing a generated script
+- reading task-local files
+- recording execution logs
+- updating runtime state
+- marking tasks as finished
+- storing outputs in task workspace
+- beginning to support shared workspace behavior
 
 ---
 
-## Current Positioning
+## Example Verified Runtime Behavior
 
-ZERO should currently be positioned as:
+A typical successful task currently demonstrates:
 
-**a local-first AI task execution prototype evolving toward an Autonomous Agent Runtime / Task Operating System**
+1. user submits task
+2. planner generates steps
+3. plan is written to `plan.json`
+4. runtime creates task workspace
+5. step executor runs the step(s)
+6. `execution_log.json` records step success
+7. `result.json` is produced
+8. `runtime_state.json` reflects lifecycle transitions
+9. task status becomes `finished`
 
-This positioning is more accurate than describing it as:
+This means the core runtime loop is already real and verifiable.
 
-- a chatbot wrapper
-- a simple tool collection
-- a prompt router with a thin API layer
+---
 
-The project is now centered more on execution structure than on chat behavior.
+## Current Architectural Identity
+
+At the current stage, ZERO is best described as:
+
+- local-first task runtime
+- step-based execution engine
+- agent runtime prototype
+- mini task orchestration system
+- mini Task OS prototype
+
+It is not yet a full platform, but it is already beyond the demo-only stage.
 
 ---
 
 ## Current Strengths
 
-The current prototype already shows several strengths:
+### State-centric execution
+State is written to files and can be inspected.
 
-- local-first direction
-- architecture-first development style
-- task-oriented system thinking
-- visible project structure
-- demonstrable execution value
-- potential for continued expansion into a larger execution platform
+### Workspace-based execution
+Each task has its own task workspace and sandbox.
 
-These strengths matter because they make the project
-both technically directional and externally presentable.
+### Verifiable execution
+Tasks produce logs, outputs, and runtime state.
 
----
+### Planner-first model
+Execution is not only prompt-driven; it is plan-driven.
 
-## Current Limitations
-
-The project is still in a prototype phase.
-
-That means several areas are still evolving, including:
-
-- overall runtime maturity
-- broader task orchestration depth
-- richer observability
-- stronger end-to-end coverage
-- more polished external presentation
-- broader product-layer completeness
-
-This is expected at the current milestone.
+### Extensible executor model
+Step handlers make future expansion easier.
 
 ---
 
-## Immediate Priorities
+## What Is Still In Progress
 
-The immediate priorities remain:
+The following areas are still under active development or expansion:
 
-1. Continue stabilizing the execution core
-2. Improve visibility into system behavior
-3. Expand reliable multi-step task capability
-4. Keep the architecture clean while the system grows
-5. Preserve demonstrable progress without overexposing core internals
-
----
-
-## Current Interpretation
-
-The most important interpretation of the current stage is this:
-
-ZERO is no longer mainly interesting as “an AI that can respond.”
-
-It is increasingly interesting as:
-
-- a structured local execution system
-- an early task runtime
-- a prototype Task Operating System
-- a foundation for a future engineering assistant
+- queue system
+- priority handling
+- retry loop
+- replan loop
+- stronger dependency scheduling
+- DAG-like workflow behavior
+- dashboard / web UI
+- richer CLI task management
+- plugin/tool ecosystem
+- multi-worker execution
 
 ---
 
-## Short Summary
+## Practical Interpretation
 
-In one sentence:
+If judged by engineering system maturity, ZERO is now somewhere between:
 
-> ZERO is currently an early local-first Autonomous Agent Runtime / Task Operating System prototype with demonstrable task-oriented execution progress.
+- agent runtime
+and
+- workflow engine prototype
 
-This is a meaningful stage:
-the project now has visible architecture, visible direction,
-and visible execution value.
+This means the project is no longer just proving "an AI can call a tool."
+
+It is now proving "an execution system can manage AI-driven tasks through runtime state, workspaces, and lifecycle control."
+
+---
+
+## Summary
+
+Current ZERO status can be summarized as:
+
+- planner exists
+- runtime exists
+- scheduler exists
+- executor exists
+- workspace exists
+- state exists
+- logs exist
+- result files exist
+- lifecycle exists
+
+This is a strong foundation for the next stage:
+**queue / retry / dependency / DAG / orchestration expansion**.
