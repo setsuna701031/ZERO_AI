@@ -1,0 +1,17 @@
+# Demo - Complete Task Flow
+
+## Goal
+Test task completion and worker release.
+
+## Steps
+1. Dispatch tasks to workers
+2. Complete a task
+3. Check worker pool stats
+4. Check task status
+
+## Result
+Task status updated to finished.
+Worker released correctly.
+
+## Conclusion
+Complete task flow works correctly.

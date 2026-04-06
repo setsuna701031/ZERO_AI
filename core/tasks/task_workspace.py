@@ -3,231 +3,288 @@ from __future__ import annotations
 import copy
 import json
 import os
-from typing import Any, Dict, List
-
-from core.tasks.task_paths import TaskPathManager
+import time
+from typing import Any, Dict, List, Optional
 
 
 class TaskWorkspace:
-    def __init__(self, base_dir: str = "workspace/tasks"):
-        base_dir_abs = os.path.abspath(base_dir)
-        workspace_root = os.path.dirname(base_dir_abs)
+    """
+    Task workspace manager
 
-        self.path_manager = TaskPathManager(workspace_root=workspace_root)
-        self.path_manager.ensure_workspace()
+    職責：
+    1. 建立 task workspace 資料夾
+    2. 寫入 plan.json
+    3. 寫入 runtime_state.json
+    4. 寫入 execution_log.json
+    5. 寫入 result.json
+    6. 確保 scheduler / repo / runtime 的落盤格式一致
+    """
 
-        self.workspace_root = self.path_manager.workspace_root
-        self.base_dir = self.path_manager.tasks_root
+    def __init__(self, tasks_root: str = "workspace/tasks") -> None:
+        self.tasks_root = os.path.abspath(tasks_root)
+        self.workspace_root = os.path.abspath(os.path.dirname(self.tasks_root))
         self.shared_dir = os.path.join(self.workspace_root, "shared")
+
+        os.makedirs(self.tasks_root, exist_ok=True)
         os.makedirs(self.shared_dir, exist_ok=True)
+
+    # ============================================================
+    # public api
+    # ============================================================
 
     def create_workspace(self, task: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(task, dict):
             raise TypeError("task must be dict")
 
-        enriched_task = self.path_manager.enrich_task(task)
-        task_id = str(enriched_task.get("task_id", "")).strip()
+        task_id = self._task_id(task)
         if not task_id:
-            raise ValueError("Task missing id/task_id/task_name")
+            raise ValueError("task_id missing")
 
-        paths = self.path_manager.ensure_task_paths(task_id)
+        task_dir = os.path.join(self.tasks_root, task_id)
+        os.makedirs(task_dir, exist_ok=True)
 
-        task_dir = paths["task_dir"]
-        plan_file = paths["plan_file"]
-        runtime_state_file = paths["runtime_state_file"]
-        execution_log_file = paths["execution_log_file"]
-        result_file = paths["result_file"]
-        task_file = paths["task_file"]
-        log_file = paths["log_file"]
+        enriched = copy.deepcopy(task)
+        enriched["task_id"] = task_id
+        enriched["task_name"] = str(enriched.get("task_name") or task_id)
+        enriched["workspace_root"] = self.workspace_root
+        enriched["workspace_dir"] = self.tasks_root
+        enriched["shared_dir"] = self.shared_dir
+        enriched["task_dir"] = task_dir
+        enriched["plan_file"] = os.path.join(task_dir, "plan.json")
+        enriched["runtime_state_file"] = os.path.join(task_dir, "runtime_state.json")
+        enriched["execution_log_file"] = os.path.join(task_dir, "execution_log.json")
+        enriched["result_file"] = os.path.join(task_dir, "result.json")
+        enriched["log_file"] = os.path.join(task_dir, "task.log")
 
-        os.makedirs(self.shared_dir, exist_ok=True)
+        if "created_at" not in enriched or enriched.get("created_at") is None:
+            enriched["created_at"] = int(time.time())
 
-        enriched_task["workspace_root"] = self.workspace_root
-        enriched_task["workspace_dir"] = self.base_dir
-        enriched_task["shared_dir"] = self.shared_dir
-        enriched_task["task_dir"] = task_dir
-        enriched_task["plan_file"] = plan_file
-        enriched_task["runtime_state_file"] = runtime_state_file
-        enriched_task["execution_log_file"] = execution_log_file
-        enriched_task["result_file"] = result_file
-        enriched_task["log_file"] = log_file
+        if "history" not in enriched or not isinstance(enriched.get("history"), list):
+            enriched["history"] = ["queued"]
 
-        # 先寫 task.json，確保資料夾不是空的
-        self._save(task_file, enriched_task)
+        return enriched
 
-        # 建立基礎檔案，讓後續每層都能直接覆蓋/追加
-        if not os.path.exists(plan_file):
-            self._save(plan_file, self._initial_plan_payload(enriched_task))
+    def save_plan(self, task: Dict[str, Any], planner_result: Dict[str, Any]) -> None:
+        task = self.create_workspace(task)
 
-        if not os.path.exists(runtime_state_file):
-            self._save(runtime_state_file, self._initial_runtime_state(enriched_task))
+        plan_path = str(task.get("plan_file") or "").strip()
+        if not plan_path:
+            raise ValueError("plan_file missing")
 
-        if not os.path.exists(execution_log_file):
-            self._save(execution_log_file, [])
-
-        if not os.path.exists(result_file):
-            self._save(result_file, self._initial_result_payload(enriched_task))
-
-        if not os.path.exists(log_file):
-            self._write_text(log_file, "")
-
-        return enriched_task
-
-    def save_plan(self, task: Dict[str, Any], plan: Dict[str, Any]) -> None:
-        task = self.path_manager.enrich_task(task)
-        plan_file = self._require_path(task, "plan_file")
-        payload = copy.deepcopy(plan if isinstance(plan, dict) else {"raw_plan": plan})
-        self._save(plan_file, payload)
-
-    def append_execution_log(self, task: Dict[str, Any], log_entry: Dict[str, Any]) -> None:
-        task = self.path_manager.enrich_task(task)
-        execution_log_file = self._require_path(task, "execution_log_file")
-        logs: List[Dict[str, Any]] = []
-
-        if os.path.exists(execution_log_file):
-            try:
-                with open(execution_log_file, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                    if isinstance(loaded, list):
-                        logs = loaded
-            except Exception:
-                logs = []
-
-        logs.append(
-            copy.deepcopy(
-                log_entry if isinstance(log_entry, dict) else {"message": str(log_entry)}
-            )
-        )
-        self._save(execution_log_file, logs)
-
-    def save_result(self, task: Dict[str, Any], result: Dict[str, Any]) -> None:
-        task = self.path_manager.enrich_task(task)
-        result_file = self._require_path(task, "result_file")
-        payload = copy.deepcopy(result if isinstance(result, dict) else {"raw_result": result})
-        self._save(result_file, payload)
+        payload = planner_result if isinstance(planner_result, dict) else {}
+        self._write_json(plan_path, payload)
 
     def save_task_snapshot(self, task: Dict[str, Any]) -> None:
-        task = self.path_manager.enrich_task(task)
-        task_id = str(task.get("task_id") or task.get("task_name") or task.get("id") or "").strip()
-        if not task_id:
-            raise ValueError("Task missing id/task_id/task_name")
+        task = self.create_workspace(task)
 
-        task_file = self.path_manager.task_snapshot_file(task_id)
-        self._save(task_file, task)
+        runtime_state = self._build_runtime_state(task)
+        execution_log = self._build_execution_log(task)
+        result_payload = self._build_result_payload(task)
 
-    def append_text_log(self, task: Dict[str, Any], line: str) -> None:
-        task = self.path_manager.enrich_task(task)
-        log_file = self._require_path(task, "log_file")
-        existing = ""
+        runtime_state_path = str(task.get("runtime_state_file") or "").strip()
+        execution_log_path = str(task.get("execution_log_file") or "").strip()
+        result_path = str(task.get("result_file") or "").strip()
 
-        if os.path.exists(log_file):
-            try:
-                with open(log_file, "r", encoding="utf-8") as f:
-                    existing = f.read()
-            except Exception:
-                existing = ""
+        if not runtime_state_path:
+            raise ValueError("runtime_state_file missing")
+        if not execution_log_path:
+            raise ValueError("execution_log_file missing")
+        if not result_path:
+            raise ValueError("result_file missing")
 
-        if existing and not existing.endswith("\n"):
-            existing += "\n"
-        existing += str(line) + "\n"
-        self._write_text(log_file, existing)
+        self._write_json(runtime_state_path, runtime_state)
+        self._write_json(execution_log_path, execution_log)
+        self._write_json(result_path, result_payload)
 
-    def save_json(self, dir_path: str, filename: str, data: Any) -> None:
-        os.makedirs(dir_path, exist_ok=True)
-        path = os.path.join(dir_path, filename)
-        self._save(path, data)
+        self._touch_log_file(task)
 
-    def _require_path(self, task: Dict[str, Any], key: str) -> str:
-        value = str(task.get(key, "")).strip()
-        if not value:
-            raise ValueError(f"Task missing required path field: {key}")
-        return value
+    def load_plan(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        task = self.create_workspace(task)
+        path = str(task.get("plan_file") or "").strip()
+        if not path or not os.path.exists(path):
+            return {}
+        return self._read_json(path, default={})
 
-    def _initial_plan_payload(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    def load_runtime_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        task = self.create_workspace(task)
+        path = str(task.get("runtime_state_file") or "").strip()
+        if not path or not os.path.exists(path):
+            return {}
+        data = self._read_json(path, default={})
+        return data if isinstance(data, dict) else {}
+
+    def load_result(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        task = self.create_workspace(task)
+        path = str(task.get("result_file") or "").strip()
+        if not path or not os.path.exists(path):
+            return {}
+        data = self._read_json(path, default={})
+        return data if isinstance(data, dict) else {}
+
+    def load_execution_log(self, task: Dict[str, Any]) -> List[Dict[str, Any]]:
+        task = self.create_workspace(task)
+        path = str(task.get("execution_log_file") or "").strip()
+        if not path or not os.path.exists(path):
+            return []
+        data = self._read_json(path, default=[])
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        return []
+
+    # ============================================================
+    # builders
+    # ============================================================
+
+    def _build_runtime_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        steps = self._ensure_list(task.get("steps"))
+        results = self._ensure_list(task.get("results"))
+        execution_log = self._ensure_list(task.get("execution_log"))
+        history = self._ensure_list(task.get("history"), default=["queued"])
+        depends_on = self._ensure_list(task.get("depends_on"))
+
         planner_result = task.get("planner_result", {})
-        if isinstance(planner_result, dict) and planner_result:
-            return copy.deepcopy(planner_result)
+        if not isinstance(planner_result, dict):
+            planner_result = {}
 
-        steps = task.get("steps", [])
-        if not isinstance(steps, list):
-            steps = []
+        current_step_index = self._to_int(task.get("current_step_index"), default=0)
+        steps_total = self._to_int(task.get("steps_total"), default=len(steps))
+        priority = self._to_int(task.get("priority"), default=0)
+        retry_count = self._to_int(task.get("retry_count"), default=0)
+        max_retries = self._to_int(task.get("max_retries"), default=0)
+        retry_delay = self._to_int(task.get("retry_delay"), default=0)
+        next_retry_tick = self._to_int(task.get("next_retry_tick"), default=0)
+        timeout_ticks = self._to_int(task.get("timeout_ticks"), default=0)
+        wait_until_tick = self._to_int(task.get("wait_until_tick"), default=0)
+        created_tick = self._to_int(task.get("created_tick"), default=0)
+        replan_count = self._to_int(task.get("replan_count"), default=0)
+        max_replans = self._to_int(task.get("max_replans"), default=1)
 
-        return {
-            "planner_mode": "",
-            "intent": "",
-            "final_answer": "",
-            "steps": copy.deepcopy(steps),
-        }
-
-    def _initial_runtime_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        steps = task.get("steps", [])
-        if not isinstance(steps, list):
-            steps = []
-
-        history = task.get("history", ["queued"])
-        if isinstance(history, str):
-            history = [history]
-        elif not isinstance(history, list):
-            history = ["queued"]
-
-        return {
-            "task_name": str(task.get("task_name") or task.get("task_id") or task.get("id") or ""),
-            "status": str(task.get("status", "queued")),
-            "priority": int(task.get("priority", 0)),
-            "retry_count": int(task.get("retry_count", 0)),
-            "max_retries": int(task.get("max_retries", 0)),
-            "retry_delay": int(task.get("retry_delay", 0)),
-            "next_retry_tick": int(task.get("next_retry_tick", 0)),
-            "timeout_ticks": int(task.get("timeout_ticks", 0)),
-            "wait_until_tick": int(task.get("wait_until_tick", 0)),
-            "created_tick": int(task.get("created_tick", 0)),
+        payload = {
+            "task_name": str(task.get("task_name") or self._task_id(task)),
+            "status": str(task.get("status") or "queued"),
+            "priority": priority,
+            "retry_count": retry_count,
+            "max_retries": max_retries,
+            "retry_delay": retry_delay,
+            "next_retry_tick": next_retry_tick,
+            "timeout_ticks": timeout_ticks,
+            "wait_until_tick": wait_until_tick,
+            "created_tick": created_tick,
             "last_run_tick": task.get("last_run_tick"),
             "last_failure_tick": task.get("last_failure_tick"),
             "finished_tick": task.get("finished_tick"),
             "last_error": task.get("last_error"),
             "history": copy.deepcopy(history),
-            "runtime_state_file": str(task.get("runtime_state_file", "")),
-            "plan_file": str(task.get("plan_file", "")),
-            "log_file": str(task.get("log_file", "")),
-            "result_file": str(task.get("result_file", "")),
-            "execution_log_file": str(task.get("execution_log_file", "")),
-            "workspace_root": str(task.get("workspace_root", self.workspace_root)),
-            "workspace_dir": str(task.get("workspace_dir", self.base_dir)),
-            "shared_dir": str(task.get("shared_dir", self.shared_dir)),
-            "task_dir": str(task.get("task_dir", "")),
-            "current_step_index": int(task.get("current_step_index", 0)),
-            "steps_total": int(task.get("steps_total", len(steps))),
+            "runtime_state_file": str(task.get("runtime_state_file") or ""),
+            "plan_file": str(task.get("plan_file") or ""),
+            "log_file": str(task.get("log_file") or ""),
+            "result_file": str(task.get("result_file") or ""),
+            "execution_log_file": str(task.get("execution_log_file") or ""),
+            "workspace_root": str(task.get("workspace_root") or self.workspace_root),
+            "workspace_dir": str(task.get("workspace_dir") or self.tasks_root),
+            "shared_dir": str(task.get("shared_dir") or self.shared_dir),
+            "task_dir": str(task.get("task_dir") or ""),
+            "current_step_index": current_step_index,
+            "steps_total": steps_total,
             "steps": copy.deepcopy(steps),
-            "results": copy.deepcopy(task.get("results", [])) if isinstance(task.get("results", []), list) else [],
-            "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results", []), list) else [],
-            "last_step_result": copy.deepcopy(task.get("last_step_result")),
-            "final_answer": str(task.get("final_answer", "")),
-            "replan_count": int(task.get("replan_count", 0)),
+            "results": copy.deepcopy(results),
+            "step_results": copy.deepcopy(results),
+            "last_step_result": copy.deepcopy(results[-1]) if results else None,
+            "final_answer": str(task.get("final_answer") or ""),
+            "replan_count": replan_count,
             "replanned": bool(task.get("replanned", False)),
-            "replan_reason": str(task.get("replan_reason", "")),
-            "max_replans": int(task.get("max_replans", 1)),
-            "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log", []), list) else [],
-            "goal": str(task.get("goal", "")),
-            "title": str(task.get("title", "")),
-            "planner_result": copy.deepcopy(task.get("planner_result", {})) if isinstance(task.get("planner_result", {}), dict) else {},
+            "replan_reason": str(task.get("replan_reason") or ""),
+            "max_replans": max_replans,
+            "execution_log": copy.deepcopy(execution_log),
+            "goal": str(task.get("goal") or ""),
+            "title": str(task.get("title") or task.get("goal") or ""),
+            "planner_result": copy.deepcopy(planner_result),
         }
 
-    def _initial_result_payload(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "ok": None,
-            "task_name": str(task.get("task_name") or task.get("task_id") or task.get("id") or ""),
-            "status": str(task.get("status", "queued")),
-            "final_answer": str(task.get("final_answer", "")),
-            "result": None,
-            "error": None,
+        if depends_on:
+            payload["depends_on"] = copy.deepcopy(depends_on)
+        else:
+            payload["depends_on"] = []
+
+        return payload
+
+    def _build_execution_log(self, task: Dict[str, Any]) -> List[Dict[str, Any]]:
+        execution_log = self._ensure_list(task.get("execution_log"))
+        return copy.deepcopy(execution_log)
+
+    def _build_result_payload(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        status = str(task.get("status") or "queued")
+        final_answer = task.get("final_answer")
+        if final_answer is None:
+            final_answer = ""
+
+        result_payload = {
+            "ok": self._result_ok_from_status(status),
+            "task_name": str(task.get("task_name") or self._task_id(task)),
+            "status": status,
+            "final_answer": str(final_answer),
+            "result": copy.deepcopy(self._last_result(task)),
+            "error": task.get("last_error"),
         }
+        return result_payload
 
-    def _write_text(self, path: str, text: str) -> None:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
+    # ============================================================
+    # helpers
+    # ============================================================
 
-    def _save(self, path: str, data: Any) -> None:
+    def _touch_log_file(self, task: Dict[str, Any]) -> None:
+        log_path = str(task.get("log_file") or "").strip()
+        if not log_path:
+            return
+
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        if not os.path.exists(log_path):
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("")
+
+    def _last_result(self, task: Dict[str, Any]) -> Any:
+        results = self._ensure_list(task.get("results"))
+        if results:
+            return results[-1]
+        return None
+
+    def _result_ok_from_status(self, status: str) -> Optional[bool]:
+        normalized = str(status or "").strip().lower()
+        if normalized in {"finished", "done", "success", "completed"}:
+            return True
+        if normalized in {"failed", "error", "cancelled", "timeout"}:
+            return False
+        return None
+
+    def _task_id(self, task: Dict[str, Any]) -> str:
+        return str(
+            task.get("task_id")
+            or task.get("task_name")
+            or task.get("id")
+            or ""
+        ).strip()
+
+    def _ensure_list(self, value: Any, default: Optional[List[Any]] = None) -> List[Any]:
+        if isinstance(value, list):
+            return copy.deepcopy(value)
+        if default is not None:
+            return copy.deepcopy(default)
+        return []
+
+    def _to_int(self, value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
+
+    def _write_json(self, path: str, data: Any) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _read_json(self, path: str, default: Any) -> Any:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return copy.deepcopy(default)

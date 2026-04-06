@@ -1,0 +1,18 @@
+# Demo - Fail Task Flow
+
+## Goal
+Test task failure handling.
+
+## Steps
+1. Dispatch tasks
+2. Fail a task
+3. Check worker pool stats
+4. Check task status
+
+## Result
+Task status updated to failed.
+Worker released correctly.
+Error recorded.
+
+## Conclusion
+Fail task flow works correctly.

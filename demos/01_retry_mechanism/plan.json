@@ -1,0 +1,12 @@
+{
+  "title": "dependency task A",
+  "goal": "run task A first",
+  "priority": 5,
+  "max_retries": 0,
+  "steps": [
+    {
+      "type": "command",
+      "command": "task_a.py"
+    }
+  ]
+}

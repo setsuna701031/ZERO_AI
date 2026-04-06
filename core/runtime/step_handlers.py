@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import os
 import subprocess
+import sys
 from typing import Any, Dict, Optional
 
 
@@ -79,6 +80,16 @@ class ToolStepHandler(BaseStepHandler):
 
 
 class CommandStepHandler(BaseStepHandler):
+    """
+    升級版 Command Handler
+
+    功能：
+    1. api.py → 自動補 python
+    2. script.py args → python script.py args
+    3. 已經是 python / py 開頭的不處理
+    4. 若相對 .py 檔不在 cwd，會自動嘗試專案根目錄
+    """
+
     def handle(
         self,
         step: Dict[str, Any],
@@ -96,6 +107,8 @@ class CommandStepHandler(BaseStepHandler):
             }
 
         cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
+
+        command = self._auto_python(command, cwd)
 
         try:
             completed = subprocess.run(
@@ -133,6 +146,45 @@ class CommandStepHandler(BaseStepHandler):
             },
             "step": copy.deepcopy(step),
         }
+
+    def _auto_python(self, command: str, cwd: str) -> str:
+        parts = command.split()
+        if not parts:
+            return command
+
+        first = parts[0].strip()
+        first_lower = first.lower()
+
+        if first_lower in ["python", "python3", "py"]:
+            return command
+
+        if first_lower.endswith(".py"):
+            script_path = self._resolve_python_script_path(first, cwd)
+            python_cmd = sys.executable
+
+            rest = parts[1:]
+            quoted_script = f'"{script_path}"'
+            if rest:
+                return f'"{python_cmd}" {quoted_script} {" ".join(rest)}'
+            return f'"{python_cmd}" {quoted_script}'
+
+        return command
+
+    def _resolve_python_script_path(self, script: str, cwd: str) -> str:
+        script = script.strip().strip('"').strip("'")
+
+        if os.path.isabs(script):
+            return script
+
+        candidate_in_cwd = os.path.abspath(os.path.join(cwd, script))
+        if os.path.exists(candidate_in_cwd):
+            return candidate_in_cwd
+
+        candidate_in_project_root = os.path.abspath(os.path.join(os.getcwd(), script))
+        if os.path.exists(candidate_in_project_root):
+            return candidate_in_project_root
+
+        return script
 
 
 class WriteFileStepHandler(BaseStepHandler):
@@ -306,35 +358,12 @@ class LLMStepHandler(BaseStepHandler):
 
         text = str(llm_result)
 
-        save_to = str(step.get("save_to", "")).strip()
-        saved_path = ""
-        if save_to:
-            try:
-                saved_path = self.executor.path_manager.resolve_path(
-                    save_to,
-                    task=task,
-                )
-                parent = os.path.dirname(saved_path)
-                if parent:
-                    os.makedirs(parent, exist_ok=True)
-
-                with open(saved_path, "w", encoding="utf-8") as f:
-                    f.write(text)
-            except Exception as e:
-                return {
-                    "ok": False,
-                    "error": f"llm save_to failed: {e}",
-                    "result": {},
-                    "step": copy.deepcopy(step),
-                }
-
         return {
             "ok": True,
             "error": None,
             "result": {
                 "prompt": prompt,
                 "text": text,
-                "saved_path": saved_path,
                 "raw": llm_result,
             },
             "step": copy.deepcopy(step),

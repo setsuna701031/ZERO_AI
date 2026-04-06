@@ -1,0 +1,18 @@
+# Demo - Task Dispatcher
+
+## Goal
+Test dispatch tasks from queue to worker pool.
+
+## Steps
+1. Create queue
+2. Add multiple tasks with priority
+3. Create worker pool
+4. Dispatch tasks until workers full
+5. Check assigned tasks
+
+## Result
+Highest priority tasks dispatched first.
+Workers assigned correctly.
+
+## Conclusion
+Task dispatcher works correctly.

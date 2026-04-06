@@ -56,6 +56,8 @@ class TaskRuntime:
     6. 支援 step result / advance step
     7. 支援 replan 欄位保存，不被覆蓋洗掉
     8. 狀態變更統一走 RuntimeStateMachine
+    9. dependency status 可自動從其他 task 的 runtime_state.json 解析
+    10. 若 runtime_state 沒有 steps，會自動從 plan.json 載入 steps
     """
 
     def __init__(
@@ -96,6 +98,8 @@ class TaskRuntime:
                     "max_retries": state.get("max_retries", 0),
                     "replan_count": state.get("replan_count", 0),
                     "max_replans": state.get("max_replans", 0),
+                    "steps_total": state.get("steps_total", 0),
+                    "current_step_index": state.get("current_step_index", 0),
                 },
                 runtime_state_file=runtime_state_file,
             )
@@ -114,6 +118,8 @@ class TaskRuntime:
                 "max_retries": state.get("max_retries", 0),
                 "replan_count": state.get("replan_count", 0),
                 "max_replans": state.get("max_replans", 0),
+                "steps_total": state.get("steps_total", 0),
+                "current_step_index": state.get("current_step_index", 0),
             },
             runtime_state_file=runtime_state_file,
         )
@@ -222,7 +228,12 @@ class TaskRuntime:
         )
 
         status = str(result.get("status", "") or "").strip().lower()
-        blocked = status == "blocked"
+        action = str(result.get("action", "") or "").strip().lower()
+
+        blocked = (
+            status in {"blocked", "waiting"}
+            or action in {"task_blocked", "waiting_dependencies", "task_waiting"}
+        )
 
         return {
             "ok": bool(result.get("ok", True)),
@@ -242,10 +253,6 @@ class TaskRuntime:
     # ============================================================
 
     def append_step_result(self, task: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        只基於 runtime_state.json 最新內容增量更新，
-        避免洗掉 replanner 剛寫進去的欄位。
-        """
         task = copy.deepcopy(task or {})
         state = self.load_runtime_state(task)
 
@@ -375,7 +382,9 @@ class TaskRuntime:
         state["failure_message"] = None
         state["last_error"] = None
         state["blocked_reason"] = ""
-        state["last_failure_tick"] = current_tick
+
+        if current_tick > 0:
+            state["last_failure_tick"] = current_tick
 
         state, _ = self.state_machine.mark_ready(
             state,
@@ -441,8 +450,6 @@ class TaskRuntime:
         current_tick: int = 0,
     ) -> Dict[str, Any]:
         task = copy.deepcopy(task or {})
-        dependency_status_map = dependency_status_map or {}
-
         state = self.load_runtime_state(task)
         task = self._apply_runtime_state_to_task(task, state)
 
@@ -457,15 +464,32 @@ class TaskRuntime:
             }
 
         depends_on = self._normalize_depends_on(task.get("depends_on", []))
+        effective_dependency_status_map = self._build_dependency_status_map(
+            task=task,
+            depends_on=depends_on,
+            provided_map=dependency_status_map,
+        )
+
         if not depends_on:
             old_status = state.get("status") or "queued"
             if old_status in ("queued", "blocked", "waiting", "planning"):
-                state, _ = self.state_machine.mark_ready(
+                state, transition = self.state_machine.mark_ready(
                     state,
                     reason="dependencies_satisfied_no_dependencies",
                 )
+
+                if (
+                    not transition.ok
+                    or self.state_machine.normalize_status(state.get("status")) != "ready"
+                ):
+                    state["status"] = "ready"
+                    state = self.state_machine.ensure_runtime_status_fields(state)
+
                 state["blocked_reason"] = ""
-                self.save_runtime_state(task, state)
+                state["failure_type"] = None
+                state["failure_message"] = None
+
+                state = self.save_runtime_state(task, state)
 
                 self._trace(
                     "mark_ready_no_dependencies",
@@ -490,7 +514,7 @@ class TaskRuntime:
         failed: List[str] = []
 
         for dep in depends_on:
-            dep_status = str(dependency_status_map.get(dep, "")).strip().lower()
+            dep_status = str(effective_dependency_status_map.get(dep, "")).strip().lower()
             if dep_status == "finished":
                 continue
             if dep_status in ("failed", "cancelled", "timeout"):
@@ -510,30 +534,38 @@ class TaskRuntime:
         if unmet:
             old_status = state.get("status") or "queued"
             blocked_reason = f"waiting dependencies: {', '.join(unmet)}"
-            state, _ = self.state_machine.mark_blocked(
+
+            state, transition = self.state_machine.mark_waiting(
                 state,
                 reason="dependencies_unmet",
             )
+
+            normalized_status = self.state_machine.normalize_status(state.get("status"))
+            if not transition.ok or normalized_status not in {"waiting", "blocked"}:
+                state["status"] = "waiting"
+                state = self.state_machine.ensure_runtime_status_fields(state)
+
             state["blocked_reason"] = blocked_reason
             state["failure_type"] = None
             state["failure_message"] = None
 
-            self.save_runtime_state(task, state)
+            state = self.save_runtime_state(task, state)
 
             self._trace(
-                "mark_blocked_dependencies",
+                "mark_waiting_dependencies",
                 {
                     "old_status": old_status,
                     "new_status": state.get("status"),
                     "current_tick": current_tick,
                     "blocked_reason": blocked_reason,
+                    "dependency_status_map": effective_dependency_status_map,
                 },
                 runtime_state_file=self._get_runtime_state_file(task),
             )
 
             return {
                 "ok": True,
-                "action": "task_blocked",
+                "action": "waiting_dependencies",
                 "task_name": self._task_name(task),
                 "status": state.get("status"),
                 "message": blocked_reason,
@@ -542,15 +574,23 @@ class TaskRuntime:
             }
 
         old_status = state.get("status") or "queued"
-        state, _ = self.state_machine.mark_ready(
+        state, transition = self.state_machine.mark_ready(
             state,
             reason="dependencies_satisfied",
         )
+
+        if (
+            not transition.ok
+            or self.state_machine.normalize_status(state.get("status")) != "ready"
+        ):
+            state["status"] = "ready"
+            state = self.state_machine.ensure_runtime_status_fields(state)
+
         state["blocked_reason"] = ""
         state["failure_type"] = None
         state["failure_message"] = None
 
-        self.save_runtime_state(task, state)
+        state = self.save_runtime_state(task, state)
 
         self._trace(
             "mark_ready_dependencies_satisfied",
@@ -558,6 +598,7 @@ class TaskRuntime:
                 "old_status": old_status,
                 "new_status": state.get("status"),
                 "current_tick": current_tick,
+                "dependency_status_map": effective_dependency_status_map,
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -657,6 +698,8 @@ class TaskRuntime:
                 "current_tick": current_tick,
                 "final_answer": state.get("final_answer", ""),
                 "transition_ok": transition.ok,
+                "steps_total": state.get("steps_total", 0),
+                "current_step_index": state.get("current_step_index", 0),
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
@@ -1053,7 +1096,19 @@ class TaskRuntime:
     def _build_initial_runtime_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
         task_name = self._task_name(task)
         depends_on = self._normalize_depends_on(task.get("depends_on", []))
-        steps = task.get("steps", [])
+
+        plan_file = str(task.get("plan_file", "") or "")
+        planner_result = copy.deepcopy(task.get("planner_result", {})) if isinstance(task.get("planner_result", {}), dict) else {}
+
+        task_steps = task.get("steps", [])
+        if not isinstance(task_steps, list):
+            task_steps = []
+
+        loaded_steps, loaded_planner_result = self._load_steps_and_plan_from_plan_file(plan_file)
+        if loaded_planner_result and not planner_result:
+            planner_result = loaded_planner_result
+
+        steps = task_steps if task_steps else loaded_steps
         if not isinstance(steps, list):
             steps = []
 
@@ -1103,7 +1158,7 @@ class TaskRuntime:
             "cancel_requested": bool(task.get("cancel_requested", False)),
             "cancel_reason": str(task.get("cancel_reason", "") or ""),
             "runtime_state_file": self._get_runtime_state_file(task),
-            "plan_file": str(task.get("plan_file", "") or ""),
+            "plan_file": plan_file,
             "log_file": str(task.get("log_file", "") or ""),
             "result_file": str(task.get("result_file", "") or ""),
             "execution_log_file": str(task.get("execution_log_file", "") or ""),
@@ -1117,7 +1172,7 @@ class TaskRuntime:
             "replanned": bool(task.get("replanned", False)),
             "replan_reason": str(task.get("replan_reason", "") or ""),
             "max_replans": int(task.get("max_replans", 1) or 1),
-            "planner_result": copy.deepcopy(task.get("planner_result", {})) if isinstance(task.get("planner_result", {}), dict) else {},
+            "planner_result": copy.deepcopy(planner_result),
             "history": copy.deepcopy(history),
             "execution_log": copy.deepcopy(execution_log),
             "goal": str(task.get("goal", "") or ""),
@@ -1155,7 +1210,7 @@ class TaskRuntime:
         merged["cancel_requested"] = bool(merged.get("cancel_requested", False))
         merged["cancel_reason"] = str(merged.get("cancel_reason", "") or "")
         merged["runtime_state_file"] = self._get_runtime_state_file(task)
-        merged["plan_file"] = str(merged.get("plan_file", "") or "")
+        merged["plan_file"] = str(merged.get("plan_file", task.get("plan_file", "")) or "")
         merged["log_file"] = str(merged.get("log_file", "") or "")
         merged["result_file"] = str(merged.get("result_file", "") or "")
         merged["execution_log_file"] = str(merged.get("execution_log_file", "") or "")
@@ -1164,8 +1219,20 @@ class TaskRuntime:
         steps = merged.get("steps", [])
         if not isinstance(steps, list):
             steps = []
+
+        if not steps:
+            loaded_steps, loaded_planner_result = self._load_steps_and_plan_from_plan_file(merged["plan_file"])
+            if isinstance(loaded_steps, list) and loaded_steps:
+                steps = loaded_steps
+            if isinstance(loaded_planner_result, dict) and loaded_planner_result:
+                current_planner_result = merged.get("planner_result", {})
+                if not isinstance(current_planner_result, dict) or not current_planner_result:
+                    merged["planner_result"] = copy.deepcopy(loaded_planner_result)
+
         merged["steps"] = steps
         merged["steps_total"] = int(merged.get("steps_total", len(steps)) or len(steps))
+        if merged["steps_total"] <= 0 and isinstance(steps, list):
+            merged["steps_total"] = len(steps)
 
         results = merged.get("results", [])
         if not isinstance(results, list):
@@ -1366,6 +1433,73 @@ class TaskRuntime:
             return result
 
         return []
+
+    def _build_dependency_status_map(
+        self,
+        task: Dict[str, Any],
+        depends_on: List[str],
+        provided_map: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, str]:
+        result: Dict[str, str] = {}
+
+        if isinstance(provided_map, dict):
+            for key, value in provided_map.items():
+                result[str(key).strip()] = str(value or "").strip().lower()
+
+        for dep in depends_on:
+            dep_key = str(dep).strip()
+            if not dep_key:
+                continue
+
+            if result.get(dep_key):
+                continue
+
+            dep_runtime_file = self._resolve_dependency_runtime_state_file(task, dep_key)
+            dep_state = self._read_json(dep_runtime_file, default={})
+            dep_status = ""
+
+            if isinstance(dep_state, dict):
+                dep_status = str(dep_state.get("status", "") or "").strip().lower()
+
+            result[dep_key] = dep_status
+
+        return result
+
+    def _resolve_dependency_runtime_state_file(self, task: Dict[str, Any], dependency_name: str) -> str:
+        current_task_dir = str(task.get("task_dir", "") or "").strip()
+        if current_task_dir:
+            tasks_dir = os.path.dirname(current_task_dir)
+            if tasks_dir:
+                return os.path.join(tasks_dir, dependency_name, "runtime_state.json")
+
+        runtime_state_file = str(task.get("runtime_state_file", "") or "").strip()
+        if runtime_state_file:
+            current_task_dir = os.path.dirname(runtime_state_file)
+            tasks_dir = os.path.dirname(current_task_dir)
+            if tasks_dir:
+                return os.path.join(tasks_dir, dependency_name, "runtime_state.json")
+
+        return os.path.join(self.workspace_root, "tasks", dependency_name, "runtime_state.json")
+
+    def _load_steps_and_plan_from_plan_file(self, plan_file: str) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        plan_file = str(plan_file or "").strip()
+        if not plan_file:
+            return [], {}
+
+        plan = self._read_json(plan_file, default={})
+        if not isinstance(plan, dict):
+            return [], {}
+
+        steps = plan.get("steps", [])
+        if not isinstance(steps, list):
+            steps = []
+
+        normalized_steps: List[Dict[str, Any]] = []
+        for item in steps:
+            if isinstance(item, dict):
+                normalized_steps.append(copy.deepcopy(item))
+
+        return normalized_steps, copy.deepcopy(plan)
 
     def _normalize_failure_type(self, value: Any) -> str:
         text = str(value or "").strip().lower()

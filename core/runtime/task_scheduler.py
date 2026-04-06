@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import copy
-import json
-import os
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .task_queue import TaskQueue
 from .task_runner import TaskRunner
@@ -70,7 +67,15 @@ class TaskScheduler:
         # 相容舊欄位名稱
         self.queue = self.task_queue.snapshot()
 
-        self.task_runner = task_runner if task_runner is not None else self._build_default_task_runner()
+        self.task_runner_error: Optional[str] = None
+        self.task_runner_build_trace: List[str] = []
+
+        if task_runner is not None:
+            self.task_runner = task_runner
+            self.task_runner_error = None
+            self.task_runner_build_trace.append("external task_runner provided")
+        else:
+            self.task_runner = self._build_default_task_runner()
 
         # 若外部有傳 queue 初始內容，先放進 ready queue
         if isinstance(queue, list):
@@ -93,6 +98,8 @@ class TaskScheduler:
             "ready_queue": self.task_queue.snapshot(),
             "workspace_dir": self.workspace_dir,
             "has_task_runner": self.task_runner is not None,
+            "task_runner_error": self.task_runner_error,
+            "task_runner_build_trace": copy.deepcopy(self.task_runner_build_trace),
         }
 
     def status(self) -> Dict[str, Any]:
@@ -105,6 +112,8 @@ class TaskScheduler:
             "workspace_dir": self.workspace_dir,
             "has_task_runner": self.task_runner is not None,
             "has_task_repo": self.task_repo is not None,
+            "task_runner_error": self.task_runner_error,
+            "task_runner_build_trace": copy.deepcopy(self.task_runner_build_trace),
         }
 
     def enqueue(self, task_id: str) -> bool:
@@ -269,14 +278,18 @@ class TaskScheduler:
             }
 
         if self.task_runner is None:
+            self.task_runner = self._build_default_task_runner()
+
+        if self.task_runner is None:
             return {
                 "ok": False,
                 "action": "scheduler_no_runner",
                 "tick": self.current_tick,
                 "message": "task_runner not available",
-                "error": "task_runner not available",
+                "error": self.task_runner_error or "task_runner not available",
                 "task_id": task_id,
                 "task_name": task_name,
+                "task_runner_build_trace": copy.deepcopy(self.task_runner_build_trace),
             }
 
         status = self._normalize_status(task.get("status"))
@@ -360,25 +373,101 @@ class TaskScheduler:
     # ============================================================
 
     def _build_default_task_runner(self) -> Optional[TaskRunner]:
-        step_executor = (
-            self.step_executor
-            or self.task_step_executor_adapter
-            or self.step_executor_adapter
-            or self.executor
-            or self.runtime_executor
-            or self.task_executor
-        )
+        self.task_runner_build_trace = []
 
-        try:
-            return TaskRunner(
-                step_executor=step_executor,
-                task_runtime=self.task_runtime,
-                replanner=self.extra_kwargs.get("replanner"),
-                verifier=self.extra_kwargs.get("verifier"),
-                debug=bool(self.debug),
+        candidate_executor_names = [
+            "step_executor",
+            "task_step_executor_adapter",
+            "step_executor_adapter",
+            "executor",
+            "runtime_executor",
+            "task_executor",
+        ]
+
+        candidate_executors: List[Tuple[str, Any]] = []
+        for name in candidate_executor_names:
+            value = getattr(self, name, None)
+            if value is not None:
+                candidate_executors.append((name, value))
+
+        if not candidate_executors:
+            self.task_runner_error = (
+                "no executor available; checked: "
+                + ", ".join(candidate_executor_names)
             )
-        except Exception:
+            self.task_runner_build_trace.append(self.task_runner_error)
             return None
+
+        constructor_attempts: List[Dict[str, Any]] = []
+
+        for executor_name, executor_value in candidate_executors:
+            constructor_attempts.extend(
+                [
+                    {
+                        "label": f"{executor_name}: step_executor + task_runtime + replanner + verifier + debug",
+                        "kwargs": {
+                            "step_executor": executor_value,
+                            "task_runtime": self.task_runtime,
+                            "replanner": self.extra_kwargs.get("replanner"),
+                            "verifier": self.extra_kwargs.get("verifier"),
+                            "debug": bool(self.debug),
+                        },
+                    },
+                    {
+                        "label": f"{executor_name}: step_executor + task_runtime + debug",
+                        "kwargs": {
+                            "step_executor": executor_value,
+                            "task_runtime": self.task_runtime,
+                            "debug": bool(self.debug),
+                        },
+                    },
+                    {
+                        "label": f"{executor_name}: step_executor + task_runtime",
+                        "kwargs": {
+                            "step_executor": executor_value,
+                            "task_runtime": self.task_runtime,
+                        },
+                    },
+                    {
+                        "label": f"{executor_name}: step_executor only",
+                        "kwargs": {
+                            "step_executor": executor_value,
+                        },
+                    },
+                    {
+                        "label": f"{executor_name}: executor + task_runtime + debug",
+                        "kwargs": {
+                            "executor": executor_value,
+                            "task_runtime": self.task_runtime,
+                            "debug": bool(self.debug),
+                        },
+                    },
+                    {
+                        "label": f"{executor_name}: executor only",
+                        "kwargs": {
+                            "executor": executor_value,
+                        },
+                    },
+                ]
+            )
+
+        errors: List[str] = []
+
+        for attempt in constructor_attempts:
+            label = str(attempt.get("label") or "unknown_attempt")
+            kwargs = dict(attempt.get("kwargs") or {})
+            try:
+                runner = TaskRunner(**kwargs)
+                self.task_runner_error = None
+                self.task_runner_build_trace.append(f"build success: {label}")
+                return runner
+            except Exception as e:
+                err = f"{label} -> {type(e).__name__}: {e}"
+                errors.append(err)
+                self.task_runner_build_trace.append(err)
+
+        self.task_runner_error = "failed to build TaskRunner; " + " | ".join(errors)
+        return None
 
     def _normalize_runner_result(
         self,

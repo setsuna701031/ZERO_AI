@@ -1,0 +1,18 @@
+# Demo - Retry and Requeue
+
+## Goal
+Test retry and requeue mechanism.
+
+## Steps
+1. Create task with max_retries
+2. Dispatch task
+3. Fail task with requeue
+4. Check retry count
+5. Check task returned to queue
+
+## Result
+Retry count increased.
+Task requeued successfully.
+
+## Conclusion
+Retry and requeue mechanism works correctly.

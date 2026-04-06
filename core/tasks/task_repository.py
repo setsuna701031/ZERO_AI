@@ -3,30 +3,29 @@ from __future__ import annotations
 import copy
 import json
 import os
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Dict, List, Optional, Set
 
 from core.tasks.task_paths import TaskPathManager
 
 
 class TaskRepository:
     """
-    ZERO Task Repository
+    ZERO Task Repository (DAG Enabled)
 
-    與目前主線 tasks.json 格式相容：
-
-    {
-      "tasks": [
-        {...task1...},
-        {...task2...}
-      ]
-    }
-
-    職責：
-    1. 管理 workspace/tasks.json
-    2. 保留任務索引與 metadata
-    3. 不負責保存大型 runtime 結果檔
-    4. 與 TaskPathManager 統一路徑規則
+    這版重點：
+    1. 保留外部傳進來的 status，不再強制洗成 queued
+    2. 保留 depends_on，不再在 create_task 時被舊邏輯覆蓋
+    3. 若沒有顯式 status，才根據 depends_on 自動推導：
+       - 有依賴 => blocked
+       - 無依賴 => queued
+    4. DAG 解鎖時同時接受 done / finished
     """
+
+    COMPLETED_STATUSES: Set[str] = {
+        "done",
+        "finished",
+    }
 
     def __init__(self, db_path: str = "workspace/tasks.json") -> None:
         self.db_path = os.path.abspath(db_path)
@@ -72,10 +71,13 @@ class TaskRepository:
 
         self.tasks = normalized
 
+    def reload(self) -> None:
+        self.load()
+
     def save(self) -> None:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
-        normalized = []
+        normalized: List[Dict[str, Any]] = []
         for task in self.tasks:
             if not isinstance(task, dict):
                 continue
@@ -93,144 +95,305 @@ class TaskRepository:
             )
 
     # ============================================================
+    # DAG helpers
+    # ============================================================
+
+    def _build_graph(self) -> Dict[str, List[str]]:
+        graph: Dict[str, List[str]] = {}
+        for task in self.tasks:
+            tid = str(task.get("task_id") or "").strip()
+            if not tid:
+                continue
+            deps = self._normalize_depends_on(task.get("depends_on", []))
+            graph[tid] = deps
+        return graph
+
+    def _detect_cycle(self, graph: Dict[str, List[str]]) -> bool:
+        visited: Set[str] = set()
+        stack: Set[str] = set()
+
+        def visit(node: str) -> bool:
+            if node in stack:
+                return True
+            if node in visited:
+                return False
+
+            visited.add(node)
+            stack.add(node)
+
+            for dep in graph.get(node, []):
+                if dep not in graph:
+                    continue
+                if visit(dep):
+                    return True
+
+            stack.remove(node)
+            return False
+
+        for node in graph:
+            if visit(node):
+                return True
+        return False
+
+    def _check_dependencies_exist(self, depends_on: List[str]) -> bool:
+        ids = {str(t.get("task_id")) for t in self.tasks if t.get("task_id")}
+        for dep in depends_on:
+            if dep not in ids:
+                return False
+        return True
+
+    def _normalize_depends_on(self, depends_on: Any) -> List[str]:
+        if not isinstance(depends_on, list):
+            return []
+
+        result: List[str] = []
+        seen: Set[str] = set()
+
+        for dep in depends_on:
+            dep_id = str(dep).strip()
+            if not dep_id:
+                continue
+            if dep_id in seen:
+                continue
+            seen.add(dep_id)
+            result.append(dep_id)
+
+        return result
+
+    def _resolve_default_status(self, explicit_status: Any, depends_on: List[str]) -> str:
+        status = str(explicit_status or "").strip().lower()
+        if status:
+            return status
+
+        if depends_on:
+            return "blocked"
+
+        return "queued"
+
+    def _normalize_history(self, history: Any, status: str) -> List[str]:
+        if isinstance(history, list):
+            cleaned = [str(x).strip() for x in history if str(x).strip()]
+        else:
+            cleaned = []
+
+        if not cleaned:
+            return [status]
+
+        return cleaned
+
+    def _is_dependency_completed(self, status: Any) -> bool:
+        return str(status or "").strip().lower() in self.COMPLETED_STATUSES
+
+    def _refresh_blocked_status(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        只在 status 為 queued / blocked 時，自動和 depends_on 對齊。
+        done / finished / running / failed 之類的狀態不主動改。
+        """
+        result = copy.deepcopy(task)
+        task_map = {t["task_id"]: t for t in self.tasks if "task_id" in t}
+
+        deps = self._normalize_depends_on(result.get("depends_on", []))
+        current_status = str(result.get("status", "")).strip().lower()
+
+        if current_status not in {"queued", "blocked"}:
+            return result
+
+        if not deps:
+            result["status"] = "queued"
+            return result
+
+        all_done = True
+        for dep in deps:
+            dep_task = task_map.get(dep)
+            if not dep_task:
+                all_done = False
+                break
+            if not self._is_dependency_completed(dep_task.get("status")):
+                all_done = False
+                break
+
+        result["status"] = "queued" if all_done else "blocked"
+        return result
+
+    # ============================================================
     # basic repo api
     # ============================================================
 
     def list_tasks(self) -> List[Dict[str, Any]]:
-        return copy.deepcopy(self.tasks)
+        self.reload()
 
-    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        task_id = str(task_id or "").strip()
-        if not task_id:
-            return None
+        refreshed: List[Dict[str, Any]] = []
+        changed = False
 
         for task in self.tasks:
-            if not isinstance(task, dict):
-                continue
+            updated = self._refresh_blocked_status(task)
+            refreshed.append(updated)
+            if updated.get("status") != task.get("status"):
+                changed = True
 
-            current_id = (
-                task.get("task_id")
-                or task.get("task_name")
-                or task.get("id")
-            )
-            if str(current_id).strip() == task_id:
-                return copy.deepcopy(task)
+        if changed:
+            self.tasks = refreshed
+            self.save()
+
+        return copy.deepcopy(refreshed)
+
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        self.reload()
+
+        for task in self.tasks:
+            if task.get("task_id") == task_id:
+                updated = self._refresh_blocked_status(task)
+                if updated.get("status") != task.get("status"):
+                    for i, item in enumerate(self.tasks):
+                        if item.get("task_id") == task_id:
+                            self.tasks[i] = updated
+                            self.save()
+                            break
+                return copy.deepcopy(updated)
 
         return None
 
     def add_task(self, task: Dict[str, Any]) -> bool:
-        if not isinstance(task, dict):
-            return False
+        self.reload()
 
         normalized = self._normalize_task(task)
         task_id = normalized["task_id"]
 
-        existed = self._find_task_ref(task_id)
-        if existed is not None:
+        if self._find_task_ref(task_id):
             return False
 
+        depends_on = self._normalize_depends_on(normalized.get("depends_on", []))
+        normalized["depends_on"] = depends_on
+
+        if not self._check_dependencies_exist(depends_on):
+            raise ValueError("depends_on task not found")
+
         self.tasks.append(normalized)
+        graph = self._build_graph()
+        if self._detect_cycle(graph):
+            self.tasks.pop()
+            raise ValueError("DAG cycle detected")
+
+        normalized = self._refresh_blocked_status(normalized)
+        self.tasks[-1] = normalized
+
         self.save()
         return True
 
-    def create_task(self, task: Dict[str, Any]) -> bool:
-        return self.add_task(task)
+    def create_task(
+        self,
+        task: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        self.reload()
+
+        if isinstance(task, dict):
+            return self.add_task(task)
+
+        goal = str(kwargs.get("goal") or "").strip()
+        if not goal:
+            return False
+
+        task_id = str(
+            kwargs.get("task_id")
+            or f"task_{int(time.time() * 1000)}"
+        ).strip()
+
+        depends_on = self._normalize_depends_on(kwargs.get("depends_on", []))
+        status = self._resolve_default_status(kwargs.get("status"), depends_on)
+        history = self._normalize_history(kwargs.get("history"), status)
+
+        raw_task: Dict[str, Any] = {
+            "task_id": task_id,
+            "title": str(kwargs.get("title") or goal),
+            "goal": goal,
+            "status": status,
+            "priority": int(kwargs.get("priority", 0)),
+            "depends_on": depends_on,
+            "history": history,
+        }
+
+        return self.add_task(raw_task)
 
     def upsert_task(self, task: Dict[str, Any]) -> bool:
-        if not isinstance(task, dict):
-            return False
+        self.reload()
 
         normalized = self._normalize_task(task)
         task_id = normalized["task_id"]
 
+        depends_on = self._normalize_depends_on(normalized.get("depends_on", []))
+        normalized["depends_on"] = depends_on
+
+        if depends_on and not self._check_dependencies_exist(depends_on):
+            own_id_only = [dep for dep in depends_on if dep != task_id]
+            if not self._check_dependencies_exist(own_id_only):
+                raise ValueError("depends_on task not found")
+
+        existing_index = None
         for i, existing in enumerate(self.tasks):
-            existing_id = (
-                existing.get("task_id")
-                or existing.get("task_name")
-                or existing.get("id")
-            )
-            if str(existing_id).strip() == task_id:
-                self.tasks[i] = normalized
-                self.save()
-                return True
+            if existing.get("task_id") == task_id:
+                existing_index = i
+                break
+
+        if existing_index is not None:
+            old_task = self.tasks[existing_index]
+            self.tasks[existing_index] = normalized
+
+            graph = self._build_graph()
+            if self._detect_cycle(graph):
+                self.tasks[existing_index] = old_task
+                raise ValueError("DAG cycle detected")
+
+            self.tasks[existing_index] = self._refresh_blocked_status(normalized)
+            self.save()
+            return True
 
         self.tasks.append(normalized)
+        graph = self._build_graph()
+        if self._detect_cycle(graph):
+            self.tasks.pop()
+            raise ValueError("DAG cycle detected")
+
+        self.tasks[-1] = self._refresh_blocked_status(normalized)
         self.save()
         return True
 
     def delete_task(self, task_id: str) -> bool:
-        task_id = str(task_id or "").strip()
-        if not task_id:
-            return False
+        self.reload()
 
-        original_len = len(self.tasks)
-        self.tasks = [
-            task for task in self.tasks
-            if str(
-                task.get("task_id")
-                or task.get("task_name")
-                or task.get("id")
-                or ""
-            ).strip() != task_id
-        ]
-
-        changed = len(self.tasks) != original_len
-        if changed:
-            self.save()
-        return changed
-
-    # ============================================================
-    # scheduler-compatible api
-    # ============================================================
-
-    def set_task_status(self, task_id: str, status: str) -> bool:
-        task = self._find_task_ref(task_id)
-        if task is None:
-            return False
-
-        task["status"] = str(status)
+        self.tasks = [t for t in self.tasks if t.get("task_id") != task_id]
         self.save()
         return True
 
-    def update_task_field(self, task_id: str, field_name: str, value: Any) -> bool:
-        task = self._find_task_ref(task_id)
-        if task is None:
-            return False
+    # ============================================================
+    # scheduler api
+    # ============================================================
 
-        task[field_name] = copy.deepcopy(value)
-        task = self._normalize_task(task)
+    def get_ready_tasks(self) -> List[Dict[str, Any]]:
+        """
+        只回傳依賴已完成且可進入執行的任務
+        """
+        self.reload()
 
-        for i, item in enumerate(self.tasks):
-            current_id = (
-                item.get("task_id")
-                or item.get("task_name")
-                or item.get("id")
-            )
-            if str(current_id).strip() == task_id:
-                self.tasks[i] = task
-                self.save()
-                return True
+        refreshed: List[Dict[str, Any]] = []
+        changed = False
+        for i, task in enumerate(self.tasks):
+            updated = self._refresh_blocked_status(task)
+            refreshed.append(updated)
+            if updated.get("status") != task.get("status"):
+                self.tasks[i] = updated
+                changed = True
 
-        return False
+        if changed:
+            self.save()
 
-    def replace_task(self, task_id: str, new_task: Dict[str, Any]) -> bool:
-        if not isinstance(new_task, dict):
-            return False
+        ready: List[Dict[str, Any]] = []
+        for task in refreshed:
+            if str(task.get("status", "")).strip().lower() != "queued":
+                continue
+            ready.append(copy.deepcopy(task))
 
-        normalized = self._normalize_task(new_task)
-
-        for i, item in enumerate(self.tasks):
-            current_id = (
-                item.get("task_id")
-                or item.get("task_name")
-                or item.get("id")
-            )
-            if str(current_id).strip() == str(task_id).strip():
-                self.tasks[i] = normalized
-                self.save()
-                return True
-
-        return False
+        return ready
 
     # ============================================================
     # normalization
@@ -240,78 +403,26 @@ class TaskRepository:
         if not isinstance(task, dict):
             raise TypeError("task must be dict")
 
-        task_id = str(
-            task.get("task_id")
-            or task.get("task_name")
-            or task.get("id")
-            or ""
-        ).strip()
-
+        task_id = str(task.get("task_id") or "").strip()
         if not task_id:
-            raise ValueError("task missing task_id/task_name/id")
+            raise ValueError("task missing task_id")
 
-        enriched = self.path_manager.enrich_task(task)
+        depends_on = self._normalize_depends_on(task.get("depends_on", []))
+        status = self._resolve_default_status(task.get("status"), depends_on)
+        history = self._normalize_history(task.get("history"), status)
 
-        steps = enriched.get("steps", [])
-        if not isinstance(steps, list):
-            steps = []
-
-        results = enriched.get("results", [])
-        if not isinstance(results, list):
-            results = []
-
-        execution_log = enriched.get("execution_log", [])
-        if not isinstance(execution_log, list):
-            execution_log = []
-
-        history = enriched.get("history", ["queued"])
-        if isinstance(history, str):
-            history = [history]
-        elif not isinstance(history, list):
-            history = ["queued"]
+        enriched = self.path_manager.enrich_task(copy.deepcopy(task))
 
         normalized = {
             "task_id": task_id,
-            "task_name": task_id,
-            "title": str(enriched.get("title", enriched.get("goal", ""))),
-            "goal": str(enriched.get("goal", "")),
-            "status": str(enriched.get("status", "queued")),
-            "priority": int(enriched.get("priority", 0)),
-            "current_step_index": int(enriched.get("current_step_index", 0)),
-            "steps": copy.deepcopy(steps),
-            "steps_total": int(enriched.get("steps_total", len(steps))),
-            "results": copy.deepcopy(results),
-            "execution_log": copy.deepcopy(execution_log),
-            "final_answer": str(enriched.get("final_answer", "")),
-            "retry_count": int(enriched.get("retry_count", 0)),
-            "max_retries": int(enriched.get("max_retries", 0)),
-            "retry_delay": int(enriched.get("retry_delay", 0)),
-            "timeout_ticks": int(enriched.get("timeout_ticks", 0)),
-            "created_at": enriched.get("created_at"),
-            "created_tick": int(enriched.get("created_tick", 0)),
-            "last_run_tick": enriched.get("last_run_tick"),
-            "last_failure_tick": enriched.get("last_failure_tick"),
-            "finished_tick": enriched.get("finished_tick"),
-            "depends_on": copy.deepcopy(enriched.get("depends_on", [])) if isinstance(enriched.get("depends_on", []), list) else [],
-            "blocked_reason": str(enriched.get("blocked_reason", "")),
-            "failure_type": enriched.get("failure_type"),
-            "failure_message": enriched.get("failure_message"),
-            "last_error": enriched.get("last_error"),
-            "cancel_requested": bool(enriched.get("cancel_requested", False)),
-            "cancel_reason": str(enriched.get("cancel_reason", "")),
-            "planner_result": copy.deepcopy(enriched.get("planner_result", {})) if isinstance(enriched.get("planner_result", {}), dict) else {},
-            "replan_count": int(enriched.get("replan_count", 0)),
-            "replanned": bool(enriched.get("replanned", False)),
-            "replan_reason": str(enriched.get("replan_reason", "")),
-            "max_replans": int(enriched.get("max_replans", 1)),
+            "title": str(enriched.get("title", task.get("title", ""))),
+            "goal": str(enriched.get("goal", task.get("goal", ""))),
+            "status": status,
+            "priority": int(enriched.get("priority", task.get("priority", 0))),
+            "depends_on": copy.deepcopy(depends_on),
             "history": copy.deepcopy(history),
             "workspace_dir": str(enriched.get("workspace_dir", "")),
             "task_dir": str(enriched.get("task_dir", "")),
-            "plan_file": str(enriched.get("plan_file", "")),
-            "runtime_state_file": str(enriched.get("runtime_state_file", "")),
-            "execution_log_file": str(enriched.get("execution_log_file", "")),
-            "result_file": str(enriched.get("result_file", "")),
-            "log_file": str(enriched.get("log_file", "")),
         }
 
         return normalized
@@ -321,56 +432,7 @@ class TaskRepository:
     # ============================================================
 
     def _find_task_ref(self, task_id: str) -> Optional[Dict[str, Any]]:
-        task_id = str(task_id or "").strip()
-        if not task_id:
-            return None
-
         for task in self.tasks:
-            if not isinstance(task, dict):
-                continue
-
-            current_id = (
-                task.get("task_id")
-                or task.get("task_name")
-                or task.get("id")
-            )
-            if str(current_id).strip() == task_id:
+            if task.get("task_id") == task_id:
                 return task
-
         return None
-
-    # ============================================================
-    # debug / helper
-    # ============================================================
-
-    def rebuild_index(self) -> Dict[str, Dict[str, Any]]:
-        result: Dict[str, Dict[str, Any]] = {}
-        for task in self.tasks:
-            if not isinstance(task, dict):
-                continue
-            task_id = (
-                task.get("task_id")
-                or task.get("task_name")
-                or task.get("id")
-            )
-            if task_id:
-                result[str(task_id)] = copy.deepcopy(task)
-        return result
-
-    def dump_summary(self) -> List[Dict[str, Any]]:
-        items: List[Dict[str, Any]] = []
-        for task in self.tasks:
-            if not isinstance(task, dict):
-                continue
-            items.append(
-                {
-                    "task_id": task.get("task_id") or task.get("task_name") or task.get("id"),
-                    "status": task.get("status"),
-                    "current_step_index": task.get("current_step_index"),
-                    "steps_total": task.get("steps_total"),
-                    "priority": task.get("priority"),
-                    "title": task.get("title"),
-                    "task_dir": task.get("task_dir"),
-                }
-            )
-        return items

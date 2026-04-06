@@ -1,0 +1,212 @@
+{
+  "task_name": "dep_task_A",
+  "status": "finished",
+  "priority": 5,
+  "retry_count": 0,
+  "max_retries": 0,
+  "retry_delay": 0,
+  "next_retry_tick": 0,
+  "timeout_ticks": 0,
+  "wait_until_tick": 0,
+  "created_tick": 0,
+  "last_run_tick": 0,
+  "last_failure_tick": null,
+  "finished_tick": 0,
+  "depends_on": [],
+  "blocked_reason": "",
+  "failure_type": null,
+  "failure_message": null,
+  "last_error": null,
+  "final_answer": "TASK A DONE",
+  "cancel_requested": false,
+  "cancel_reason": "",
+  "runtime_state_file": "E:\\zero_ai\\workspace\\tasks\\dep_task_A\\runtime_state.json",
+  "plan_file": "E:\\zero_ai\\workspace\\tasks\\dep_task_A\\plan.json",
+  "log_file": "E:\\zero_ai\\workspace\\tasks\\dep_task_A\\task.log",
+  "result_file": "E:\\zero_ai\\workspace\\tasks\\dep_task_A\\result.json",
+  "execution_log_file": "E:\\zero_ai\\workspace\\tasks\\dep_task_A\\execution_log.json",
+  "current_step_index": 1,
+  "steps_total": 1,
+  "steps": [
+    {
+      "type": "command",
+      "command": "task_a.py",
+      "step_key": "step_0_fa92d9f7e146",
+      "step_index": 0,
+      "step_count": 1,
+      "idempotent": false,
+      "side_effects": true,
+      "retry_safe": false,
+      "replan_safe": false,
+      "safety_class": "command",
+      "external_effects": [
+        "command:task_a.py"
+      ],
+      "produces_files": [],
+      "consumes_files": []
+    }
+  ],
+  "results": [
+    {
+      "ok": true,
+      "error": null,
+      "result": {
+        "command": "\"C:\\Users\\heero\\AppData\\Local\\Programs\\Python\\Python311\\python.exe\" \"E:\\zero_ai\\workspace\\tasks\\dep_task_A\\task_a.py\"",
+        "cwd": "E:\\zero_ai\\workspace\\tasks\\dep_task_A",
+        "stdout": "TASK A DONE\n",
+        "stderr": "",
+        "returncode": 0
+      },
+      "step": {
+        "type": "command",
+        "command": "task_a.py",
+        "step_key": "step_0_fa92d9f7e146",
+        "step_index": 0,
+        "step_count": 1,
+        "idempotent": false,
+        "side_effects": true,
+        "retry_safe": false,
+        "replan_safe": false,
+        "safety_class": "command",
+        "external_effects": [
+          "command:task_a.py"
+        ],
+        "produces_files": [],
+        "consumes_files": []
+      },
+      "step_key": "step_0_fa92d9f7e146",
+      "idempotent": false,
+      "side_effects": true,
+      "retry_safe": false,
+      "replan_safe": false,
+      "safety_class": "command"
+    }
+  ],
+  "step_results": [
+    {
+      "ok": true,
+      "error": null,
+      "result": {
+        "command": "\"C:\\Users\\heero\\AppData\\Local\\Programs\\Python\\Python311\\python.exe\" \"E:\\zero_ai\\workspace\\tasks\\dep_task_A\\task_a.py\"",
+        "cwd": "E:\\zero_ai\\workspace\\tasks\\dep_task_A",
+        "stdout": "TASK A DONE\n",
+        "stderr": "",
+        "returncode": 0
+      },
+      "step": {
+        "type": "command",
+        "command": "task_a.py",
+        "step_key": "step_0_fa92d9f7e146",
+        "step_index": 0,
+        "step_count": 1,
+        "idempotent": false,
+        "side_effects": true,
+        "retry_safe": false,
+        "replan_safe": false,
+        "safety_class": "command",
+        "external_effects": [
+          "command:task_a.py"
+        ],
+        "produces_files": [],
+        "consumes_files": []
+      },
+      "step_key": "step_0_fa92d9f7e146",
+      "idempotent": false,
+      "side_effects": true,
+      "retry_safe": false,
+      "replan_safe": false,
+      "safety_class": "command"
+    }
+  ],
+  "last_step_result": {
+    "ok": true,
+    "error": null,
+    "result": {
+      "command": "\"C:\\Users\\heero\\AppData\\Local\\Programs\\Python\\Python311\\python.exe\" \"E:\\zero_ai\\workspace\\tasks\\dep_task_A\\task_a.py\"",
+      "cwd": "E:\\zero_ai\\workspace\\tasks\\dep_task_A",
+      "stdout": "TASK A DONE\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "step": {
+      "type": "command",
+      "command": "task_a.py",
+      "step_key": "step_0_fa92d9f7e146",
+      "step_index": 0,
+      "step_count": 1,
+      "idempotent": false,
+      "side_effects": true,
+      "retry_safe": false,
+      "replan_safe": false,
+      "safety_class": "command",
+      "external_effects": [
+        "command:task_a.py"
+      ],
+      "produces_files": [],
+      "consumes_files": []
+    },
+    "step_key": "step_0_fa92d9f7e146",
+    "idempotent": false,
+    "side_effects": true,
+    "retry_safe": false,
+    "replan_safe": false,
+    "safety_class": "command"
+  },
+  "replan_count": 0,
+  "replanned": false,
+  "replan_reason": "",
+  "max_replans": 1,
+  "planner_result": {},
+  "history": [
+    "queued"
+  ],
+  "execution_log": [
+    {
+      "type": "step_result",
+      "step_index": 0,
+      "ok": true,
+      "error": null
+    }
+  ],
+  "goal": "run task A first",
+  "title": "dependency task A",
+  "task_dir": "E:\\zero_ai\\workspace\\tasks\\dep_task_A",
+  "workspace_dir": "E:\\zero_ai\\workspace\\tasks\\dep_task_A",
+  "runtime_status_history": [
+    {
+      "ts": "2026-04-05T13:12:25",
+      "old_status": "",
+      "new_status": "queued",
+      "reason": "init",
+      "message": "initialize runtime status history"
+    },
+    {
+      "ts": "2026-04-05T13:12:25",
+      "old_status": "queued",
+      "new_status": "ready",
+      "reason": "dependencies_satisfied_no_dependencies",
+      "message": "runtime ready to run"
+    },
+    {
+      "ts": "2026-04-05T13:12:25",
+      "old_status": "ready",
+      "new_status": "running",
+      "reason": "task_runtime_mark_running",
+      "message": "runtime running"
+    },
+    {
+      "ts": "2026-04-05T13:12:25",
+      "old_status": "running",
+      "new_status": "finished",
+      "reason": "task_runtime_mark_finished",
+      "message": "runtime finished"
+    }
+  ],
+  "runtime_created_at": "2026-04-05T13:12:25",
+  "ready_at": "2026-04-05T13:12:25",
+  "last_status_change_at": "2026-04-05T13:12:25",
+  "last_started_at": "2026-04-05T13:12:25",
+  "running_at": "2026-04-05T13:12:25",
+  "last_finished_at": "2026-04-05T13:12:25",
+  "finished_at": "2026-04-05T13:12:25"
+}

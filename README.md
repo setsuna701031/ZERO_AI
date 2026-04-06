@@ -1,182 +1,200 @@
-# ZERO AI
+\# ZERO Task OS
 
-## What is ZERO
 
-ZERO is a local-first AI task execution system designed to turn user intent into structured, verifiable task execution.
 
-Instead of only responding with text, ZERO can:
-- plan tasks
-- execute steps
-- manage task state
-- record execution logs
-- isolate task workspaces
-- produce structured results
+Local DAG Task Orchestration Runtime with Persistent Runtime State Machine.
 
-ZERO is closer to a **Task Runtime / Agent Execution Engine** than a traditional chatbot.
 
----
 
-## Project Positioning
+This project implements a local task orchestration system that supports:
 
-ZERO is not primarily a consumer chatbot project.
 
-ZERO is being built as:
-- Local AI Agent Runtime
-- Task Orchestrator
-- Workflow Engine Prototype
-- Execution System for AI-driven tasks
-- Automation / Engineering Assistant Infrastructure
 
-The long-term goal is to build a local-first execution platform where AI can reliably plan and execute real tasks, not just generate text.
+\* Task repository
 
----
+\* DAG dependency scheduling
 
-## Core Concepts
+\* Scheduler queue
 
-### Task
-A task is a unit of work created from user intent.
+\* Runtime state machine
 
-Each task has:
-- plan.json
-- runtime_state.json
-- execution_log.json
-- result.json
-- its own workspace
-- lifecycle status
+\* Task runner
 
-### Planner
-The planner converts a goal into structured steps.
+\* Persistent runtime state
 
-Example steps:
-- write_file
-- read_file
-- command
-- tool
-- respond
-- llm
+\* Integration testing
 
-### Runtime State
-Runtime state tracks the lifecycle of a task:
 
-```
-queued → ready → running → finished
-```
 
-or
+\---
 
-```
-queued → ready → running → failed
-```
 
-### Workspace
-Each task runs inside its own workspace:
 
-```
+\# System Components
+
+
+
+\## 1. Task Repository
+
+
+
+Stores all tasks, status, dependencies, history, and workspace paths.
+
+
+
+\## 2. DAG Scheduler
+
+
+
+Determines which tasks are ready based on dependency completion.
+
+
+
+\## 3. Scheduler Queue
+
+
+
+Ready tasks are pushed into a runnable queue.
+
+
+
+\## 4. Runtime State Machine
+
+
+
+Tracks task runtime execution state:
+
+
+
+\* current step
+
+\* retry count
+
+\* replan count
+
+\* failure type
+
+\* final answer
+
+
+
+\## 5. Task Runner
+
+
+
+Executes task steps and updates runtime state.
+
+
+
+\## 6. Integration Test
+
+
+
+End-to-end test verifying DAG execution flow.
+
+
+
+\---
+
+
+
+\# DAG Execution Flow
+
+
+
+\## Tick #1 – Dependency Blocking
+
+
+
+docs/images/dag\_runtime\_tick1\_blocked.png
+
+
+
+Task A finished, Task B blocked by dependency.
+
+
+
+\## Scheduler – Dependency Unlocked → Queue
+
+
+
+docs/images/scheduler\_queue\_after\_unblock.png
+
+
+
+Task B moved into scheduler queue after dependency resolved.
+
+
+
+\## Tick #2 – Upstream Finished
+
+
+
+docs/images/dag\_repo\_tick2\_finished.png
+
+
+
+Repository shows upstream task finished.
+
+
+
+\## Tick #3 – All Tasks Finished
+
+
+
+docs/images/dag\_repo\_tick3\_runtime\_finished.png
+
+
+
+All tasks completed and runtime state finalized.
+
+
+
+\## Integration Tests Passed
+
+
+
+docs/images/task\_os\_integration\_tests\_passed.png
+
+
+
+End-to-end orchestration test passed.
+
+
+
+\---
+
+
+
+\# Project Structure
+
+
+
+core/
+
+tasks/
+
+runtime/
+
+services/
+
+docs/
+
 workspace/
-  tasks/
-    task_xxx/
-      sandbox/
-      plan.json
-      runtime_state.json
-      execution_log.json
-      result.json
-  shared/
-```
 
-This provides isolation and reproducibility.
+tests/
 
-### Execution Log
-Each step execution is recorded in execution_log.json, making tasks inspectable and verifiable.
 
----
 
-## Example Workflow
+\---
 
-Typical ZERO task flow:
 
-```
-User command
-    ↓
-TaskManager
-    ↓
-Planner
-    ↓
-plan.json
-    ↓
-Scheduler
-    ↓
-TaskRuntime
-    ↓
-StepExecutor
-    ↓
-Workspace
-    ↓
-execution_log.json
-    ↓
-result.json
-    ↓
-Task finished
-```
 
-This structured flow is what makes ZERO different from simple agent demos.
+\# Summary
 
----
 
-## Current Capabilities
 
-ZERO currently supports:
-- Task creation
-- Planner
-- Runtime state machine
-- Scheduler tick
-- Step executor
-- Step handlers
-- Task workspace
-- Shared workspace
-- Execution logs
-- Result output
-- Task lifecycle management
+This project demonstrates a local task orchestration runtime similar in architecture to workflow orchestration systems such as Airflow, Prefect, or Temporal, but implemented as a lightweight local task operating system.
 
-This already forms the core of a **Task Runtime / Orchestrator prototype**.
 
----
 
-## Roadmap Direction
-
-Planned system expansion includes:
-- Task queue
-- Priority scheduling
-- Retry / replan loop
-- Dependency scheduling
-- DAG workflow
-- Multi-worker execution
-- Dashboard / Web UI
-- Plugin tool system
-- API / SDK
-- Distributed task runtime
-
----
-
-## Project Vision
-
-The long-term vision of ZERO is to evolve from:
-
-```
-Local Task Runner
-        ↓
-Task Runtime
-        ↓
-Workflow Engine
-        ↓
-Agent Execution Platform
-        ↓
-Task Operating System
-```
-
-ZERO is an ongoing system engineering project focused on building execution infrastructure for AI systems.
-
----
-
-## Status
-
-ZERO is currently in the **Task Runtime / Orchestrator Prototype** stage.
