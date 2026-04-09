@@ -170,11 +170,23 @@ This repository represents a milestone:
 
 
 
-\## ⚠️ Note
+\---
 
 
 
-This is an experimental system focused on architecture exploration.
+\## 🚧 Project Status
+
+
+
+This system is actively under development, focusing on:
+
+
+
+\- Multi-task orchestration
+
+\- Self-healing execution
+
+\- Autonomous replanning
 
 
 
@@ -186,5 +198,5 @@ This is an experimental system focused on architecture exploration.
 
 
 
-For inquiries, please reach out via GitHub issues.
+Coming soon
 
