@@ -1,202 +1,141 @@
-\# ZERO AI
-
-
+# ZERO AI
 
 Autonomous Multi-Task AI System with Self-Healing Execution
 
+---
 
+## Overview
 
-\---
+ZERO is a local-first autonomous agent system designed to execute complex tasks through structured planning, execution, verification, and correction.
 
+It is not just a chatbot or script runner.
 
+ZERO operates as a **self-correcting execution system** that can:
 
-\## 🚀 What it does
+- Execute multi-step tasks
+- Detect failures through verification
+- Retry or replan when needed
+- Automatically repair invalid execution plans
+- Converge to a successful result through iterative loops
 
+---
 
+## Core Loop
 
-ZERO AI is an experimental agent system capable of:
+Plan → Execute → Verify → Correct → Retry / Replan → Re-execute
 
+This is the foundation of ZERO.
 
+---
 
-\* Executing multi-step tasks (DAG-based)
+## What ZERO Can Do
 
-\* Detecting failures during execution
+ZERO already supports:
 
-\* Automatically replanning and repairing tasks
+- multi-step task execution  
+- verification-driven correction  
+- retry  
+- replanning  
+- executor-level forced repair  
 
-\* Completing long-running workflows without manual intervention
+In practice, that means the system can:
 
+- run structured tasks
+- detect failures through verification
+- retry when the failure is recoverable
+- replan when retry is not enough
+- repair invalid plans before execution
 
+---
 
-\---
+## Why ZERO
 
+Most AI systems assume:
 
+Plan → Execute → Done
 
-\## 🔥 Key Capability: Self-Healing Runtime
+ZERO assumes:
 
+Plan may be wrong  
+Execution may fail  
+System must adapt  
 
+---
 
-Unlike traditional task runners, ZERO AI can recover from failure:
+## Demo
 
+### Multi Task Execution
 
+![Multi Task](docs/images/demo/multi_task_self_healing_all_success.png)
 
-1\. Task executes
+---
 
-2\. Step fails (e.g. verify failed)
+### Scheduler Execution
 
-3\. System detects failure
+![Scheduler](docs/images/demo/scheduler_multi_task_completion.png)
 
-4\. Replanner generates recovery plan
+---
 
-5\. Execution resumes automatically
+### Self-Healing Execution Flow
 
-6\. Task completes successfully
+![Execution Flow](docs/images/demo/self_healing_full_execution_flow.png)
 
+---
 
+### Verification + Repair
 
-\---
+![Verify Repair](docs/images/demo/self_healing_success_verify_repair.png)
 
+---
 
+## Agent Loop Trace & Self-Correction
 
-\## 🎬 Demo
+### Agent Loop Trace Overview
 
+![Agent Loop Trace](docs/images/demo/agent_loop_trace_overview.png)
 
+This trace shows:
 
-\### Multi-task self-healing (parallel tasks)
+- decision making
+- execution steps
+- verification
+- correction
+- replanning cycles
 
+ZERO is not executing linearly — it iterates toward success.
 
+---
 
-!\[multi](docs/images/demo/multi\_task\_self\_healing\_all\_success.png)
+### Executor-Level Forced Repair
 
+![Forced Repair](docs/images/demo/executor_forced_repair_terminal.png)
 
+When the planner produces an invalid plan:
 
-\---
+read hello.txt
 
+The executor repairs it into:
 
+create hello.txt → read hello.txt
 
-\### Scheduler completing multiple tasks
+This prevents failure and allows the system to converge.
 
+---
 
+## Current Status
 
-!\[scheduler](docs/images/demo/scheduler\_multi\_task\_completion.png)
+ZERO currently has:
 
+- multi-step execution
+- verification-driven correction
+- retry + replanning loop
+- executor-level forced repair
+- trace visibility
 
+At this stage, ZERO is already a **self-correcting agent runtime**, not just a script pipeline.
 
-\---
+---
 
+## License
 
-
-\### Full execution flow (fail → repair → success)
-
-
-
-!\[flow](docs/images/demo/self\_healing\_full\_execution\_flow.png)
-
-
-
-\---
-
-
-
-\### Verify failure → auto repair → success
-
-
-
-!\[repair](docs/images/demo/self\_healing\_success\_verify\_repair.png)
-
-
-
-\---
-
-
-
-\## 🧠 Architecture Highlights
-
-
-
-\* DAG-based task scheduling
-
-\* Runtime state machine
-
-\* Replanner (failure recovery)
-
-\* Execution trace system
-
-\* Safety-locked execution model
-
-
-
-\---
-
-
-
-\## 📁 Project Structure
-
-
-
-\* `core/` → system core
-
-\* `docs/` → documentation
-
-\* `demos/` → demo scripts \& videos
-
-\* `workspace/` → runtime sandbox
-
-
-
-\---
-
-
-
-\## 📌 Status
-
-
-
-This repository represents a milestone:
-
-
-
-✔ Multi-task execution
-
-✔ Self-healing runtime
-
-✔ Failure detection + replanning
-
-✔ End-to-end task completion
-
-
-
-\---
-
-
-
-\---
-
-
-
-\## 🚧 Project Status
-
-
-
-This system is actively under development, focusing on:
-
-
-
-\- Multi-task orchestration
-
-\- Self-healing execution
-
-\- Autonomous replanning
-
-
-
-\---
-
-
-
-\## 📬 Contact
-
-
-
-Coming soon
-
+MIT License

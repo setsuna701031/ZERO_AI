@@ -1,226 +1,120 @@
-# ZERO Demo
+# ZERO AI – Execution Demo
 
-## Overview
+This document demonstrates how ZERO operates as a self-correcting agent system.
 
-This document shows practical examples of ZERO running as a task-oriented execution system.
-
-The goal of these demos is not just to show that ZERO can print output.
-
-The goal is to show that ZERO can:
-- receive a task
-- generate steps
-- create a workspace
-- execute steps
-- record logs
-- update runtime state
-- produce a result
-- finish the task lifecycle
+Unlike traditional pipelines, ZERO does not assume success.  
+It detects failure, corrects itself, and converges through iteration.
 
 ---
 
-## Demo 1 — CLI Task Execution
+## 1. Multi-Step Task Execution
 
-Run the system:
+ZERO can execute structured multi-step tasks end-to-end.
 
-```bash
-python app.py
-```
-
-Submit a task:
-
-```bash
-/task_submit 建立 hello.py 然後執行 python hello.py
-```
-
-Example output:
-
-```text
-[task] task_1775295843348
-hello world
-
-[execution_log]
-[
-  {
-    "type": "step_result",
-    "step_index": 0,
-    "ok": true,
-    "error": null
-  },
-  {
-    "type": "step_result",
-    "step_index": 1,
-    "ok": true,
-    "error": null
-  }
-]
-
-[task_status]
-finished
-```
-
-Image:
-
-![CLI Task Execution](images/demo/CLI_Task_Execution.png)
-
-### What this demo proves
-This demo proves that ZERO can:
-
-- accept a task from CLI
-- generate a multi-step plan
-- execute the steps
-- record step results
-- complete task lifecycle
-- return a final finished status
+![Multi Task](images/demo/multi_task_self_healing_all_success.png)
 
 ---
 
-## Demo 2 — Task Workspace Structure
+## 2. Scheduler & Multi-Task Handling
 
-A typical task workspace looks like this:
+Tasks are queued, scheduled, and executed with proper lifecycle tracking.
 
-```text
-workspace/
-  tasks/
-    task_xxx/
-      sandbox/
-      execution_log.json
-      hello.py
-      plan.json
-      result.json
-      runtime_state.json
-      task.json
-      task.log
-      task_runner.trace.log
-      task_runtime.trace.log
-```
-
-Image:
-
-![Task Workspace Structure](images/demo/Task_Workspace_Structure.png)
-
-### What this demo proves
-This demo proves that ZERO uses a structured task workspace model with:
-
-- task-local sandbox
-- explicit planner output
-- explicit runtime state
-- execution history
-- result artifacts
-- task metadata
-- task logs and traces
-
-This is one of the main reasons ZERO is better described as a runtime system than a simple chatbot demo.
+![Scheduler](images/demo/scheduler_multi_task_completion.png)
 
 ---
 
-## Demo 3 — Example Task Lifecycle
+## 3. Self-Healing Execution Flow
 
-A successful file creation task can look like this:
+ZERO does not stop when execution fails.  
+It continues through verification and correction.
 
-- goal: create `api.py`
-- planner generates 1 `write_file` step
-- step executor executes `write_file`
-- file is written to `sandbox/api.py`
-- runtime state flows through:
-  - `queued`
-  - `ready`
-  - `running`
-  - `finished`
-- `execution_log.json` confirms successful execution
-
-### What this demo proves
-This demonstrates:
-- planner-to-executor continuity
-- verifiable runtime state transitions
-- file output inside task sandbox
-- inspectable execution artifacts
+![Execution Flow](images/demo/self_healing_full_execution_flow.png)
 
 ---
 
-## Demo 4 — Path Resolution Rules
+## 4. Verification → Repair → Success
 
-ZERO is moving toward explicit path resolution behavior.
+When a step produces incorrect output, ZERO detects it and repairs the process.
 
-Examples:
-
-```text
-shared/a.py
-→ workspace/shared/a.py
-
-sandbox/a.py
-→ workspace/tasks/<task_id>/sandbox/a.py
-
-a.py
-→ workspace/tasks/<task_id>/sandbox/a.py
-
-../xxx
-→ rejected
-```
-
-### What this demo proves
-This demonstrates:
-- workspace boundary policy
-- shared vs task-local file routing
-- default sandbox behavior
-- path traversal protection
-
-This is critical for building a safe and predictable task execution runtime.
+![Verify Repair](images/demo/self_healing_success_verify_repair.png)
 
 ---
 
-## Why These Demos Matter
+## 5. Agent Loop Trace (Core System Behavior)
 
-These demos are not just small examples.
+This is the internal execution loop of ZERO.
 
-Together, they show that ZERO already has:
+![Agent Loop Trace](images/demo/agent_loop_trace_overview.png)
 
-- task submission
-- planning
-- runtime state
-- step execution
-- workspace isolation
-- shared workspace direction
-- logging
-- result output
-- lifecycle completion
+This trace shows:
 
-This moves ZERO beyond:
-- prompt demo
-- tool-calling shell
-- lightweight agent toy
+- decision making
+- execution steps
+- verification results
+- correction cycles
+- replanning rounds
 
-And closer to:
-- local task runtime
-- mini workflow engine
-- task orchestrator prototype
+ZERO is not executing linearly — it is iterating toward success.
+
+---
+
+## 6. Executor-Level Forced Repair (Key Capability)
+
+This is one of the most important behaviors in ZERO.
+
+![Forced Repair](images/demo/executor_forced_repair_terminal.png)
+
+### What happens here:
+
+Planner produces an invalid plan:
+
+read hello.txt
+
+This would normally fail.
+
+---
+
+### What ZERO does instead:
+
+Executor detects missing dependency and repairs the plan:
+
+create hello.txt → read hello.txt
+
+---
+
+### Result:
+
+- failure is avoided
+- execution continues
+- system converges without manual intervention
+
+---
+
+## Why This Matters
+
+Most systems rely entirely on planner correctness.
+
+ZERO does not.
+
+It introduces a second control layer:
+
+- planner (LLM-driven)
+- executor (deterministic repair)
+
+This allows the system to remain stable even when planning is imperfect.
 
 ---
 
 ## Summary
 
-The current demos show that ZERO can already run a real task lifecycle:
+ZERO demonstrates:
 
-```text
-task_submit
-    ↓
-planner
-    ↓
-plan.json
-    ↓
-task workspace
-    ↓
-step executor
-    ↓
-execution_log.json
-    ↓
-result.json
-    ↓
-runtime_state.json
-    ↓
-finished
-```
+- multi-step task execution
+- verification-driven correction
+- retry and replanning loops
+- executor-level forced repair
+- full execution trace visibility
 
-That is the key milestone.
+This is not a simple automation script.
 
-ZERO is no longer only "able to talk."
-It has started to **do structured work**.
+It is an early-stage self-correcting agent runtime.
