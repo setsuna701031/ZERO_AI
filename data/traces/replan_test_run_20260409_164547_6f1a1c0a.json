@@ -1,0 +1,1793 @@
+{
+  "run_id": "run_20260409_164547_6f1a1c0a",
+  "task_id": "replan_test",
+  "source": "test",
+  "created_at": "2026-04-09T16:45:47.693181",
+  "updated_at": "2026-04-09T16:45:47.721178",
+  "summary": {
+    "event_count": 26,
+    "event_types": {
+      "lifecycle": 6,
+      "execution": 2,
+      "correction": 6,
+      "verifier": 5,
+      "decision": 7
+    },
+    "statuses": {
+      "start": 4,
+      "error": 1,
+      "failed": 3,
+      "partial_failed": 1,
+      "needs_correction": 2,
+      "replanning": 1,
+      "success": 5
+    }
+  },
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-04-09T16:45:47.693181",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "start",
+      "title": "execute agent loop start",
+      "message": "task=replan_test, iteration=1",
+      "raw": {
+        "task_name": "replan_test",
+        "iteration": 1,
+        "initial_plan": {
+          "steps": [
+            {
+              "type": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "force_error": true,
+              "retry_limit": 0
+            }
+          ]
+        },
+        "max_replan_rounds": 1
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-04-09T16:45:47.694178",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "start",
+      "title": "execute round start",
+      "message": "task=replan_test, iteration=1, replan_round=0, step_count=1",
+      "raw": {
+        "task_name": "replan_test",
+        "iteration": 1,
+        "replan_round": 0,
+        "step_count": 1,
+        "plan": {
+          "steps": [
+            {
+              "type": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "force_error": true,
+              "retry_limit": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-04-09T16:45:47.694178",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "step_01",
+      "status": "start",
+      "title": "step 1 force fail",
+      "message": "force failure to trigger replan",
+      "raw": {
+        "task_name": "replan_test",
+        "step_index": 1,
+        "attempt": 1,
+        "step": {
+          "type": "read_file",
+          "title": "step 1 force fail",
+          "message": "force failure to trigger replan",
+          "force_error": true,
+          "retry_limit": 0,
+          "_attempt": 1
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-04-09T16:45:47.695191",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "step_01",
+      "status": "error",
+      "title": "step 1 force fail",
+      "message": "execute step failed: forced error at step 1 attempt 1",
+      "raw": {
+        "task_name": "replan_test",
+        "step_index": 1,
+        "attempt": 1,
+        "step": {
+          "type": "read_file",
+          "title": "step 1 force fail",
+          "message": "force failure to trigger replan",
+          "force_error": true,
+          "retry_limit": 0,
+          "_attempt": 1
+        },
+        "error_result": {
+          "step": 1,
+          "action": "read_file",
+          "title": "step 1 force fail",
+          "message": "force failure to trigger replan",
+          "status": "error",
+          "output": "forced error at step 1 attempt 1",
+          "attempt": 1,
+          "retry_info": {
+            "used_retry": false,
+            "attempts": 1,
+            "retry_limit": 0,
+            "recovered": false,
+            "history": [
+              {
+                "attempt": 1,
+                "status": "error",
+                "output": "forced error at step 1 attempt 1"
+              }
+            ]
+          }
+        },
+        "error_type": "RuntimeError",
+        "error_message": "forced error at step 1 attempt 1",
+        "traceback": "Traceback (most recent call last):\n  File \"E:\\zero_ai\\core\\runtime\\executor.py\", line 543, in _execute_step\n    raise RuntimeError(f\"forced error at step {step_index} attempt {attempt}\")\nRuntimeError: forced error at step 1 attempt 1\n"
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-04-09T16:45:47.695191",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "replan_test",
+      "step_id": "step_01",
+      "status": "failed",
+      "title": "retry exhausted",
+      "message": "retry exhausted after 1 attempts",
+      "raw": {
+        "task_name": "replan_test",
+        "step_index": 1,
+        "attempts": 1,
+        "retry_limit": 0,
+        "history": [
+          {
+            "attempt": 1,
+            "status": "error",
+            "output": "forced error at step 1 attempt 1"
+          }
+        ],
+        "step": {
+          "type": "read_file",
+          "title": "step 1 force fail",
+          "message": "force failure to trigger replan",
+          "force_error": true,
+          "retry_limit": 0
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-04-09T16:45:47.695191",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "partial_failed",
+      "title": "execute round end",
+      "message": "task=replan_test, iteration=1, replan_round=0, success=False",
+      "raw": {
+        "task_name": "replan_test",
+        "iteration": 1,
+        "replan_round": 0,
+        "results": [
+          {
+            "step": 1,
+            "action": "read_file",
+            "title": "step 1 force fail",
+            "message": "force failure to trigger replan",
+            "status": "error",
+            "output": "forced error at step 1 attempt 1",
+            "attempt": 1,
+            "retry_info": {
+              "used_retry": false,
+              "attempts": 1,
+              "retry_limit": 0,
+              "recovered": false,
+              "history": [
+                {
+                  "attempt": 1,
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1"
+                }
+              ]
+            }
+          }
+        ],
+        "success": false,
+        "retry_summary": [
+          {
+            "used_retry": false,
+            "attempts": 1,
+            "retry_limit": 0,
+            "recovered": false,
+            "history": [
+              {
+                "attempt": 1,
+                "status": "error",
+                "output": "forced error at step 1 attempt 1"
+              }
+            ]
+          }
+        ],
+        "plan": {
+          "steps": [
+            {
+              "type": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "force_error": true,
+              "retry_limit": 0
+            }
+          ]
+        },
+        "verify_result": {
+          "task_name": "replan_test",
+          "passed": false,
+          "step_checks": [
+            {
+              "step": 1,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 1 attempt 1",
+              "step_result": {
+                "step": 1,
+                "action": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "status": "error",
+                "output": "forced error at step 1 attempt 1",
+                "attempt": 1,
+                "retry_info": {
+                  "used_retry": false,
+                  "attempts": 1,
+                  "retry_limit": 0,
+                  "recovered": false,
+                  "history": [
+                    {
+                      "attempt": 1,
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "failed_steps": [
+            {
+              "step": 1,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 1 attempt 1",
+              "step_result": {
+                "step": 1,
+                "action": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "status": "error",
+                "output": "forced error at step 1 attempt 1",
+                "attempt": 1,
+                "retry_info": {
+                  "used_retry": false,
+                  "attempts": 1,
+                  "retry_limit": 0,
+                  "recovered": false,
+                  "history": [
+                    {
+                      "attempt": 1,
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "correction": {
+            "needs_correction": true,
+            "action": "review_failed_steps",
+            "reason": "step_failure_detected",
+            "failed_steps": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 1 attempt 1",
+                "step_result": {
+                  "step": 1,
+                  "action": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1",
+                  "attempt": 1,
+                  "retry_info": {
+                    "used_retry": false,
+                    "attempts": 1,
+                    "retry_limit": 0,
+                    "recovered": false,
+                    "history": [
+                      {
+                        "attempt": 1,
+                        "status": "error",
+                        "output": "forced error at step 1 attempt 1"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "needs_correction": true
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-04-09T16:45:47.696182",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "verify execution result start",
+      "message": "task=replan_test, step_count=1",
+      "raw": {
+        "task_name": "replan_test",
+        "execution_result": {
+          "task_name": "replan_test",
+          "iteration": 1,
+          "replan_round": 0,
+          "results": [
+            {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          ],
+          "success": false,
+          "retry_summary": [
+            {
+              "used_retry": false,
+              "attempts": 1,
+              "retry_limit": 0,
+              "recovered": false,
+              "history": [
+                {
+                  "attempt": 1,
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1"
+                }
+              ]
+            }
+          ],
+          "plan": {
+            "steps": [
+              {
+                "type": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "force_error": true,
+                "retry_limit": 0
+              }
+            ]
+          },
+          "verify_result": {
+            "task_name": "replan_test",
+            "passed": false,
+            "step_checks": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 1 attempt 1",
+                "step_result": {
+                  "step": 1,
+                  "action": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1",
+                  "attempt": 1,
+                  "retry_info": {
+                    "used_retry": false,
+                    "attempts": 1,
+                    "retry_limit": 0,
+                    "recovered": false,
+                    "history": [
+                      {
+                        "attempt": 1,
+                        "status": "error",
+                        "output": "forced error at step 1 attempt 1"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "failed_steps": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 1 attempt 1",
+                "step_result": {
+                  "step": 1,
+                  "action": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1",
+                  "attempt": 1,
+                  "retry_info": {
+                    "used_retry": false,
+                    "attempts": 1,
+                    "retry_limit": 0,
+                    "recovered": false,
+                    "history": [
+                      {
+                        "attempt": 1,
+                        "status": "error",
+                        "output": "forced error at step 1 attempt 1"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "correction": {
+              "needs_correction": true,
+              "action": "review_failed_steps",
+              "reason": "step_failure_detected",
+              "failed_steps": [
+                {
+                  "step": 1,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 1 attempt 1",
+                  "step_result": {
+                    "step": 1,
+                    "action": "read_file",
+                    "title": "step 1 force fail",
+                    "message": "force failure to trigger replan",
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1",
+                    "attempt": 1,
+                    "retry_info": {
+                      "used_retry": false,
+                      "attempts": 1,
+                      "retry_limit": 0,
+                      "recovered": false,
+                      "history": [
+                        {
+                          "attempt": 1,
+                          "status": "error",
+                          "output": "forced error at step 1 attempt 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "needs_correction": true
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-04-09T16:45:47.696182",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "replan_test",
+      "step_id": "step_01",
+      "status": "failed",
+      "title": "verify step result",
+      "message": "step=1, passed=False, status=error",
+      "raw": {
+        "task_name": "replan_test",
+        "check": {
+          "step": 1,
+          "action": "read_file",
+          "status": "error",
+          "passed": false,
+          "reason": "status=error, output=forced error at step 1 attempt 1",
+          "step_result": {
+            "step": 1,
+            "action": "read_file",
+            "title": "step 1 force fail",
+            "message": "force failure to trigger replan",
+            "status": "error",
+            "output": "forced error at step 1 attempt 1",
+            "attempt": 1,
+            "retry_info": {
+              "used_retry": false,
+              "attempts": 1,
+              "retry_limit": 0,
+              "recovered": false,
+              "history": [
+                {
+                  "attempt": 1,
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-04-09T16:45:47.697181",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "replan_test",
+      "step_id": "step_01",
+      "status": "needs_correction",
+      "title": "step needs correction",
+      "message": "step=1, action=read_file",
+      "raw": {
+        "task_name": "replan_test",
+        "step_result": {
+          "step": 1,
+          "action": "read_file",
+          "title": "step 1 force fail",
+          "message": "force failure to trigger replan",
+          "status": "error",
+          "output": "forced error at step 1 attempt 1",
+          "attempt": 1,
+          "retry_info": {
+            "used_retry": false,
+            "attempts": 1,
+            "retry_limit": 0,
+            "recovered": false,
+            "history": [
+              {
+                "attempt": 1,
+                "status": "error",
+                "output": "forced error at step 1 attempt 1"
+              }
+            ]
+          }
+        },
+        "reason": "status=error, output=forced error at step 1 attempt 1"
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-04-09T16:45:47.697181",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "needs_correction",
+      "title": "correction decision",
+      "message": "failed_steps=1",
+      "raw": {
+        "needs_correction": true,
+        "action": "review_failed_steps",
+        "reason": "step_failure_detected",
+        "failed_steps": [
+          {
+            "step": 1,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 1 attempt 1",
+            "step_result": {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "seq": 11,
+      "ts": "2026-04-09T16:45:47.698186",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "failed",
+      "title": "verify execution result end",
+      "message": "passed=False",
+      "raw": {
+        "task_name": "replan_test",
+        "passed": false,
+        "step_checks": [
+          {
+            "step": 1,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 1 attempt 1",
+            "step_result": {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "failed_steps": [
+          {
+            "step": 1,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 1 attempt 1",
+            "step_result": {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "correction": {
+          "needs_correction": true,
+          "action": "review_failed_steps",
+          "reason": "step_failure_detected",
+          "failed_steps": [
+            {
+              "step": 1,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 1 attempt 1",
+              "step_result": {
+                "step": 1,
+                "action": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "status": "error",
+                "output": "forced error at step 1 attempt 1",
+                "attempt": 1,
+                "retry_info": {
+                  "used_retry": false,
+                  "attempts": 1,
+                  "retry_limit": 0,
+                  "recovered": false,
+                  "history": [
+                    {
+                      "attempt": 1,
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 12,
+      "ts": "2026-04-09T16:45:47.698186",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "replanning",
+      "title": "replan requested",
+      "message": "failed_steps=1, next_round=1",
+      "raw": {
+        "task_name": "replan_test",
+        "failed_steps": [
+          {
+            "step": 1,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 1 attempt 1",
+            "step_result": {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "previous_plan": {
+          "steps": [
+            {
+              "type": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "force_error": true,
+              "retry_limit": 0
+            }
+          ]
+        },
+        "previous_round_result": {
+          "task_name": "replan_test",
+          "iteration": 1,
+          "replan_round": 0,
+          "results": [
+            {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          ],
+          "success": false,
+          "retry_summary": [
+            {
+              "used_retry": false,
+              "attempts": 1,
+              "retry_limit": 0,
+              "recovered": false,
+              "history": [
+                {
+                  "attempt": 1,
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1"
+                }
+              ]
+            }
+          ],
+          "plan": {
+            "steps": [
+              {
+                "type": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "force_error": true,
+                "retry_limit": 0
+              }
+            ]
+          },
+          "verify_result": {
+            "task_name": "replan_test",
+            "passed": false,
+            "step_checks": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 1 attempt 1",
+                "step_result": {
+                  "step": 1,
+                  "action": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1",
+                  "attempt": 1,
+                  "retry_info": {
+                    "used_retry": false,
+                    "attempts": 1,
+                    "retry_limit": 0,
+                    "recovered": false,
+                    "history": [
+                      {
+                        "attempt": 1,
+                        "status": "error",
+                        "output": "forced error at step 1 attempt 1"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "failed_steps": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 1 attempt 1",
+                "step_result": {
+                  "step": 1,
+                  "action": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1",
+                  "attempt": 1,
+                  "retry_info": {
+                    "used_retry": false,
+                    "attempts": 1,
+                    "retry_limit": 0,
+                    "recovered": false,
+                    "history": [
+                      {
+                        "attempt": 1,
+                        "status": "error",
+                        "output": "forced error at step 1 attempt 1"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "correction": {
+              "needs_correction": true,
+              "action": "review_failed_steps",
+              "reason": "step_failure_detected",
+              "failed_steps": [
+                {
+                  "step": 1,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 1 attempt 1",
+                  "step_result": {
+                    "step": 1,
+                    "action": "read_file",
+                    "title": "step 1 force fail",
+                    "message": "force failure to trigger replan",
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1",
+                    "attempt": 1,
+                    "retry_info": {
+                      "used_retry": false,
+                      "attempts": 1,
+                      "retry_limit": 0,
+                      "recovered": false,
+                      "history": [
+                        {
+                          "attempt": 1,
+                          "status": "error",
+                          "output": "forced error at step 1 attempt 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "needs_correction": true
+        },
+        "next_iteration": 2,
+        "next_replan_round": 1
+      }
+    },
+    {
+      "seq": 13,
+      "ts": "2026-04-09T16:45:47.699181",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "replan input",
+      "message": "重新規劃：先建立 step 1 force fail 然後讀取 step 1 force fail",
+      "raw": {
+        "task_name": "replan_test",
+        "failed_steps": [
+          {
+            "step": 1,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 1 attempt 1",
+            "step_result": {
+              "step": 1,
+              "action": "read_file",
+              "title": "step 1 force fail",
+              "message": "force failure to trigger replan",
+              "status": "error",
+              "output": "forced error at step 1 attempt 1",
+              "attempt": 1,
+              "retry_info": {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "next_iteration": 2,
+        "next_replan_round": 1
+      }
+    },
+    {
+      "seq": 14,
+      "ts": "2026-04-09T16:45:47.701181",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "planner input",
+      "message": "重新規劃：先建立 step 1 force fail 然後讀取 step 1 force fail",
+      "raw": {
+        "context": {
+          "workspace": "replan_test",
+          "user_input": "重新規劃：先建立 step 1 force fail 然後讀取 step 1 force fail",
+          "failed_steps": [
+            {
+              "step": 1,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 1 attempt 1",
+              "step_result": {
+                "step": 1,
+                "action": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "status": "error",
+                "output": "forced error at step 1 attempt 1",
+                "attempt": 1,
+                "retry_info": {
+                  "used_retry": false,
+                  "attempts": 1,
+                  "retry_limit": 0,
+                  "recovered": false,
+                  "history": [
+                    {
+                      "attempt": 1,
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "previous_plan": {
+            "steps": [
+              {
+                "type": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "force_error": true,
+                "retry_limit": 0
+              }
+            ]
+          },
+          "previous_round_result": {
+            "task_name": "replan_test",
+            "iteration": 1,
+            "replan_round": 0,
+            "results": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "status": "error",
+                "output": "forced error at step 1 attempt 1",
+                "attempt": 1,
+                "retry_info": {
+                  "used_retry": false,
+                  "attempts": 1,
+                  "retry_limit": 0,
+                  "recovered": false,
+                  "history": [
+                    {
+                      "attempt": 1,
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1"
+                    }
+                  ]
+                }
+              }
+            ],
+            "success": false,
+            "retry_summary": [
+              {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            ],
+            "plan": {
+              "steps": [
+                {
+                  "type": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "force_error": true,
+                  "retry_limit": 0
+                }
+              ]
+            },
+            "verify_result": {
+              "task_name": "replan_test",
+              "passed": false,
+              "step_checks": [
+                {
+                  "step": 1,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 1 attempt 1",
+                  "step_result": {
+                    "step": 1,
+                    "action": "read_file",
+                    "title": "step 1 force fail",
+                    "message": "force failure to trigger replan",
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1",
+                    "attempt": 1,
+                    "retry_info": {
+                      "used_retry": false,
+                      "attempts": 1,
+                      "retry_limit": 0,
+                      "recovered": false,
+                      "history": [
+                        {
+                          "attempt": 1,
+                          "status": "error",
+                          "output": "forced error at step 1 attempt 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "failed_steps": [
+                {
+                  "step": 1,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 1 attempt 1",
+                  "step_result": {
+                    "step": 1,
+                    "action": "read_file",
+                    "title": "step 1 force fail",
+                    "message": "force failure to trigger replan",
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1",
+                    "attempt": 1,
+                    "retry_info": {
+                      "used_retry": false,
+                      "attempts": 1,
+                      "retry_limit": 0,
+                      "recovered": false,
+                      "history": [
+                        {
+                          "attempt": 1,
+                          "status": "error",
+                          "output": "forced error at step 1 attempt 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "correction": {
+                "needs_correction": true,
+                "action": "review_failed_steps",
+                "reason": "step_failure_detected",
+                "failed_steps": [
+                  {
+                    "step": 1,
+                    "action": "read_file",
+                    "status": "error",
+                    "passed": false,
+                    "reason": "status=error, output=forced error at step 1 attempt 1",
+                    "step_result": {
+                      "step": 1,
+                      "action": "read_file",
+                      "title": "step 1 force fail",
+                      "message": "force failure to trigger replan",
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1",
+                      "attempt": 1,
+                      "retry_info": {
+                        "used_retry": false,
+                        "attempts": 1,
+                        "retry_limit": 0,
+                        "recovered": false,
+                        "history": [
+                          {
+                            "attempt": 1,
+                            "status": "error",
+                            "output": "forced error at step 1 attempt 1"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "needs_correction": true
+          },
+          "replan_round": 1
+        },
+        "route": null
+      }
+    },
+    {
+      "seq": 15,
+      "ts": "2026-04-09T16:45:47.702180",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "split clauses",
+      "message": "2 clauses",
+      "raw": {
+        "clauses": [
+          "重新規劃：先建立 step 1 force fail",
+          "讀取 step 1 force fail"
+        ]
+      }
+    },
+    {
+      "seq": 16,
+      "ts": "2026-04-09T16:45:47.704181",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "analyze clause",
+      "message": "重新規劃：先建立 step 1 force fail",
+      "raw": {}
+    },
+    {
+      "seq": 17,
+      "ts": "2026-04-09T16:45:47.705179",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "analyze clause",
+      "message": "讀取 step 1 force fail",
+      "raw": {}
+    },
+    {
+      "seq": 18,
+      "ts": "2026-04-09T16:45:47.707181",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "planner result",
+      "message": "steps=0, intent=respond",
+      "raw": {
+        "steps": [],
+        "intent": "respond",
+        "task_name": "task_5d9c12"
+      }
+    },
+    {
+      "seq": 19,
+      "ts": "2026-04-09T16:45:47.708179",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "replan result",
+      "message": "replanned_steps=0",
+      "raw": {
+        "task_name": "replan_test",
+        "replanned_plan": {
+          "planner_mode": "deterministic_v12",
+          "intent": "respond",
+          "final_answer": "已規劃 0 個步驟",
+          "steps": []
+        },
+        "next_iteration": 2,
+        "next_replan_round": 1
+      }
+    },
+    {
+      "seq": 20,
+      "ts": "2026-04-09T16:45:47.710180",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "start",
+      "title": "execute round start",
+      "message": "task=replan_test, iteration=2, replan_round=1, step_count=0",
+      "raw": {
+        "task_name": "replan_test",
+        "iteration": 2,
+        "replan_round": 1,
+        "step_count": 0,
+        "plan": {
+          "planner_mode": "deterministic_v12",
+          "intent": "respond",
+          "final_answer": "已規劃 0 個步驟",
+          "steps": []
+        }
+      }
+    },
+    {
+      "seq": 21,
+      "ts": "2026-04-09T16:45:47.711180",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "success",
+      "title": "execute round end",
+      "message": "task=replan_test, iteration=2, replan_round=1, success=True",
+      "raw": {
+        "task_name": "replan_test",
+        "iteration": 2,
+        "replan_round": 1,
+        "results": [],
+        "success": true,
+        "retry_summary": [],
+        "plan": {
+          "planner_mode": "deterministic_v12",
+          "intent": "respond",
+          "final_answer": "已規劃 0 個步驟",
+          "steps": []
+        },
+        "verify_result": {
+          "task_name": "replan_test",
+          "passed": true,
+          "step_checks": [],
+          "failed_steps": [],
+          "correction": {
+            "needs_correction": false,
+            "action": "pass",
+            "reason": "all_steps_passed",
+            "failed_steps": []
+          }
+        },
+        "needs_correction": false
+      }
+    },
+    {
+      "seq": 22,
+      "ts": "2026-04-09T16:45:47.713181",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "",
+      "title": "verify execution result start",
+      "message": "task=replan_test, step_count=0",
+      "raw": {
+        "task_name": "replan_test",
+        "execution_result": {
+          "task_name": "replan_test",
+          "iteration": 2,
+          "replan_round": 1,
+          "results": [],
+          "success": true,
+          "retry_summary": [],
+          "plan": {
+            "planner_mode": "deterministic_v12",
+            "intent": "respond",
+            "final_answer": "已規劃 0 個步驟",
+            "steps": []
+          },
+          "verify_result": {
+            "task_name": "replan_test",
+            "passed": true,
+            "step_checks": [],
+            "failed_steps": [],
+            "correction": {
+              "needs_correction": false,
+              "action": "pass",
+              "reason": "all_steps_passed",
+              "failed_steps": []
+            }
+          },
+          "needs_correction": false
+        }
+      }
+    },
+    {
+      "seq": 23,
+      "ts": "2026-04-09T16:45:47.714180",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "success",
+      "title": "correction decision",
+      "message": "pass",
+      "raw": {
+        "needs_correction": false,
+        "action": "pass",
+        "reason": "all_steps_passed",
+        "failed_steps": []
+      }
+    },
+    {
+      "seq": 24,
+      "ts": "2026-04-09T16:45:47.716178",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "success",
+      "title": "verify execution result end",
+      "message": "passed=True",
+      "raw": {
+        "task_name": "replan_test",
+        "passed": true,
+        "step_checks": [],
+        "failed_steps": [],
+        "correction": {
+          "needs_correction": false,
+          "action": "pass",
+          "reason": "all_steps_passed",
+          "failed_steps": []
+        }
+      }
+    },
+    {
+      "seq": 25,
+      "ts": "2026-04-09T16:45:47.717181",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "success",
+      "title": "agent loop stop",
+      "message": "round=1, no correction needed",
+      "raw": {
+        "task_name": "replan_test",
+        "replan_round": 1,
+        "verify_result": {
+          "task_name": "replan_test",
+          "passed": true,
+          "step_checks": [],
+          "failed_steps": [],
+          "correction": {
+            "needs_correction": false,
+            "action": "pass",
+            "reason": "all_steps_passed",
+            "failed_steps": []
+          }
+        }
+      }
+    },
+    {
+      "seq": 26,
+      "ts": "2026-04-09T16:45:47.719178",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "replan_test",
+      "step_id": "",
+      "status": "success",
+      "title": "execute agent loop end",
+      "message": "task=replan_test, success=True, replan_rounds_used=1",
+      "raw": {
+        "task_name": "replan_test",
+        "iteration": 1,
+        "final_iteration": 2,
+        "replan_rounds_used": 1,
+        "success": true,
+        "needs_correction": false,
+        "final_round_result": {
+          "task_name": "replan_test",
+          "iteration": 2,
+          "replan_round": 1,
+          "results": [],
+          "success": true,
+          "retry_summary": [],
+          "plan": {
+            "planner_mode": "deterministic_v12",
+            "intent": "respond",
+            "final_answer": "已規劃 0 個步驟",
+            "steps": []
+          },
+          "verify_result": {
+            "task_name": "replan_test",
+            "passed": true,
+            "step_checks": [],
+            "failed_steps": [],
+            "correction": {
+              "needs_correction": false,
+              "action": "pass",
+              "reason": "all_steps_passed",
+              "failed_steps": []
+            }
+          },
+          "needs_correction": false
+        },
+        "final_verify_result": {
+          "task_name": "replan_test",
+          "passed": true,
+          "step_checks": [],
+          "failed_steps": [],
+          "correction": {
+            "needs_correction": false,
+            "action": "pass",
+            "reason": "all_steps_passed",
+            "failed_steps": []
+          }
+        },
+        "rounds": [
+          {
+            "task_name": "replan_test",
+            "iteration": 1,
+            "replan_round": 0,
+            "results": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "title": "step 1 force fail",
+                "message": "force failure to trigger replan",
+                "status": "error",
+                "output": "forced error at step 1 attempt 1",
+                "attempt": 1,
+                "retry_info": {
+                  "used_retry": false,
+                  "attempts": 1,
+                  "retry_limit": 0,
+                  "recovered": false,
+                  "history": [
+                    {
+                      "attempt": 1,
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1"
+                    }
+                  ]
+                }
+              }
+            ],
+            "success": false,
+            "retry_summary": [
+              {
+                "used_retry": false,
+                "attempts": 1,
+                "retry_limit": 0,
+                "recovered": false,
+                "history": [
+                  {
+                    "attempt": 1,
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1"
+                  }
+                ]
+              }
+            ],
+            "plan": {
+              "steps": [
+                {
+                  "type": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "force_error": true,
+                  "retry_limit": 0
+                }
+              ]
+            },
+            "verify_result": {
+              "task_name": "replan_test",
+              "passed": false,
+              "step_checks": [
+                {
+                  "step": 1,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 1 attempt 1",
+                  "step_result": {
+                    "step": 1,
+                    "action": "read_file",
+                    "title": "step 1 force fail",
+                    "message": "force failure to trigger replan",
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1",
+                    "attempt": 1,
+                    "retry_info": {
+                      "used_retry": false,
+                      "attempts": 1,
+                      "retry_limit": 0,
+                      "recovered": false,
+                      "history": [
+                        {
+                          "attempt": 1,
+                          "status": "error",
+                          "output": "forced error at step 1 attempt 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "failed_steps": [
+                {
+                  "step": 1,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 1 attempt 1",
+                  "step_result": {
+                    "step": 1,
+                    "action": "read_file",
+                    "title": "step 1 force fail",
+                    "message": "force failure to trigger replan",
+                    "status": "error",
+                    "output": "forced error at step 1 attempt 1",
+                    "attempt": 1,
+                    "retry_info": {
+                      "used_retry": false,
+                      "attempts": 1,
+                      "retry_limit": 0,
+                      "recovered": false,
+                      "history": [
+                        {
+                          "attempt": 1,
+                          "status": "error",
+                          "output": "forced error at step 1 attempt 1"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ],
+              "correction": {
+                "needs_correction": true,
+                "action": "review_failed_steps",
+                "reason": "step_failure_detected",
+                "failed_steps": [
+                  {
+                    "step": 1,
+                    "action": "read_file",
+                    "status": "error",
+                    "passed": false,
+                    "reason": "status=error, output=forced error at step 1 attempt 1",
+                    "step_result": {
+                      "step": 1,
+                      "action": "read_file",
+                      "title": "step 1 force fail",
+                      "message": "force failure to trigger replan",
+                      "status": "error",
+                      "output": "forced error at step 1 attempt 1",
+                      "attempt": 1,
+                      "retry_info": {
+                        "used_retry": false,
+                        "attempts": 1,
+                        "retry_limit": 0,
+                        "recovered": false,
+                        "history": [
+                          {
+                            "attempt": 1,
+                            "status": "error",
+                            "output": "forced error at step 1 attempt 1"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "needs_correction": true
+          },
+          {
+            "task_name": "replan_test",
+            "iteration": 2,
+            "replan_round": 1,
+            "results": [],
+            "success": true,
+            "retry_summary": [],
+            "plan": {
+              "planner_mode": "deterministic_v12",
+              "intent": "respond",
+              "final_answer": "已規劃 0 個步驟",
+              "steps": []
+            },
+            "verify_result": {
+              "task_name": "replan_test",
+              "passed": true,
+              "step_checks": [],
+              "failed_steps": [],
+              "correction": {
+                "needs_correction": false,
+                "action": "pass",
+                "reason": "all_steps_passed",
+                "failed_steps": []
+              }
+            },
+            "needs_correction": false
+          }
+        ],
+        "replan_history": [
+          {
+            "task_name": "replan_test",
+            "next_iteration": 2,
+            "next_replan_round": 1,
+            "input": "重新規劃：先建立 step 1 force fail 然後讀取 step 1 force fail",
+            "failed_steps": [
+              {
+                "step": 1,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 1 attempt 1",
+                "step_result": {
+                  "step": 1,
+                  "action": "read_file",
+                  "title": "step 1 force fail",
+                  "message": "force failure to trigger replan",
+                  "status": "error",
+                  "output": "forced error at step 1 attempt 1",
+                  "attempt": 1,
+                  "retry_info": {
+                    "used_retry": false,
+                    "attempts": 1,
+                    "retry_limit": 0,
+                    "recovered": false,
+                    "history": [
+                      {
+                        "attempt": 1,
+                        "status": "error",
+                        "output": "forced error at step 1 attempt 1"
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "plan": {
+              "planner_mode": "deterministic_v12",
+              "intent": "respond",
+              "final_answer": "已規劃 0 個步驟",
+              "steps": []
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

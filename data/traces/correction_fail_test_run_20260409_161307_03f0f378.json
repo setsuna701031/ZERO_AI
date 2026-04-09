@@ -1,0 +1,580 @@
+{
+  "run_id": "run_20260409_161307_03f0f378",
+  "task_id": "correction_fail_test",
+  "source": "test",
+  "created_at": "2026-04-09T16:13:07.274604",
+  "updated_at": "2026-04-09T16:13:07.283082",
+  "summary": {
+    "event_count": 12,
+    "event_types": {
+      "lifecycle": 2,
+      "execution": 4,
+      "verifier": 4,
+      "correction": 2
+    },
+    "statuses": {
+      "start": 3,
+      "success": 1,
+      "error": 1,
+      "partial_failed": 1,
+      "passed": 1,
+      "failed": 2,
+      "needs_correction": 2
+    }
+  },
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-04-09T16:13:07.274604",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "correction_fail_test",
+      "step_id": "",
+      "status": "start",
+      "title": "execute plan start",
+      "message": "task=correction_fail_test, iteration=1, step_count=2",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "iteration": 1,
+        "step_count": 2,
+        "plan": {
+          "steps": [
+            {
+              "type": "write_file",
+              "title": "step 1 success",
+              "message": "normal success step",
+              "status": "done"
+            },
+            {
+              "type": "read_file",
+              "title": "step 2 forced failure",
+              "message": "this step should fail",
+              "force_error": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-04-09T16:13:07.278085",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "correction_fail_test",
+      "step_id": "step_01",
+      "status": "start",
+      "title": "step 1 success",
+      "message": "normal success step",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "step_index": 1,
+        "step": {
+          "type": "write_file",
+          "title": "step 1 success",
+          "message": "normal success step",
+          "status": "done"
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-04-09T16:13:07.279082",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "correction_fail_test",
+      "step_id": "step_01",
+      "status": "success",
+      "title": "step 1 success",
+      "message": "step file saved: E:\\zero_ai\\workspace\\correction_fail_test\\step_01.json",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "step_index": 1,
+        "step_file": "E:\\zero_ai\\workspace\\correction_fail_test\\step_01.json",
+        "step_result": {
+          "step": 1,
+          "action": "write_file",
+          "title": "step 1 success",
+          "message": "normal success step",
+          "status": "done",
+          "output": "Executed step 1"
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-04-09T16:13:07.279082",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "correction_fail_test",
+      "step_id": "step_02",
+      "status": "start",
+      "title": "step 2 forced failure",
+      "message": "this step should fail",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "step_index": 2,
+        "step": {
+          "type": "read_file",
+          "title": "step 2 forced failure",
+          "message": "this step should fail",
+          "force_error": true
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-04-09T16:13:07.280081",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "correction_fail_test",
+      "step_id": "step_02",
+      "status": "error",
+      "title": "step 2 forced failure",
+      "message": "execute step failed: forced error at step 2",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "step_index": 2,
+        "step": {
+          "type": "read_file",
+          "title": "step 2 forced failure",
+          "message": "this step should fail",
+          "force_error": true
+        },
+        "error_result": {
+          "step": 2,
+          "action": "read_file",
+          "title": "step 2 forced failure",
+          "message": "this step should fail",
+          "status": "error",
+          "output": "forced error at step 2"
+        },
+        "error_type": "RuntimeError",
+        "error_message": "forced error at step 2",
+        "traceback": "Traceback (most recent call last):\n  File \"E:\\zero_ai\\core\\runtime\\executor.py\", line 151, in _execute_step\n    raise RuntimeError(f\"forced error at step {step_index}\")\nRuntimeError: forced error at step 2\n"
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-04-09T16:13:07.280081",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "correction_fail_test",
+      "step_id": "",
+      "status": "partial_failed",
+      "title": "execute plan end",
+      "message": "task=correction_fail_test, iteration=1, success=False",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "iteration": 1,
+        "results": [
+          {
+            "step": 1,
+            "action": "write_file",
+            "title": "step 1 success",
+            "message": "normal success step",
+            "status": "done",
+            "output": "Executed step 1"
+          },
+          {
+            "step": 2,
+            "action": "read_file",
+            "title": "step 2 forced failure",
+            "message": "this step should fail",
+            "status": "error",
+            "output": "forced error at step 2"
+          }
+        ],
+        "success": false,
+        "verify_result": {
+          "task_name": "correction_fail_test",
+          "passed": false,
+          "step_checks": [
+            {
+              "step": 1,
+              "action": "write_file",
+              "status": "done",
+              "passed": true,
+              "reason": "status=done treated as success",
+              "step_result": {
+                "step": 1,
+                "action": "write_file",
+                "title": "step 1 success",
+                "message": "normal success step",
+                "status": "done",
+                "output": "Executed step 1"
+              }
+            },
+            {
+              "step": 2,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 2",
+              "step_result": {
+                "step": 2,
+                "action": "read_file",
+                "title": "step 2 forced failure",
+                "message": "this step should fail",
+                "status": "error",
+                "output": "forced error at step 2"
+              }
+            }
+          ],
+          "failed_steps": [
+            {
+              "step": 2,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 2",
+              "step_result": {
+                "step": 2,
+                "action": "read_file",
+                "title": "step 2 forced failure",
+                "message": "this step should fail",
+                "status": "error",
+                "output": "forced error at step 2"
+              }
+            }
+          ],
+          "correction": {
+            "needs_correction": true,
+            "action": "review_failed_steps",
+            "reason": "step_failure_detected",
+            "failed_steps": [
+              {
+                "step": 2,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 2",
+                "step_result": {
+                  "step": 2,
+                  "action": "read_file",
+                  "title": "step 2 forced failure",
+                  "message": "this step should fail",
+                  "status": "error",
+                  "output": "forced error at step 2"
+                }
+              }
+            ]
+          }
+        },
+        "needs_correction": true
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-04-09T16:13:07.281083",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "correction_fail_test",
+      "step_id": "",
+      "status": "",
+      "title": "verify execution result start",
+      "message": "task=correction_fail_test, step_count=2",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "execution_result": {
+          "task_name": "correction_fail_test",
+          "iteration": 1,
+          "results": [
+            {
+              "step": 1,
+              "action": "write_file",
+              "title": "step 1 success",
+              "message": "normal success step",
+              "status": "done",
+              "output": "Executed step 1"
+            },
+            {
+              "step": 2,
+              "action": "read_file",
+              "title": "step 2 forced failure",
+              "message": "this step should fail",
+              "status": "error",
+              "output": "forced error at step 2"
+            }
+          ],
+          "success": false,
+          "verify_result": {
+            "task_name": "correction_fail_test",
+            "passed": false,
+            "step_checks": [
+              {
+                "step": 1,
+                "action": "write_file",
+                "status": "done",
+                "passed": true,
+                "reason": "status=done treated as success",
+                "step_result": {
+                  "step": 1,
+                  "action": "write_file",
+                  "title": "step 1 success",
+                  "message": "normal success step",
+                  "status": "done",
+                  "output": "Executed step 1"
+                }
+              },
+              {
+                "step": 2,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 2",
+                "step_result": {
+                  "step": 2,
+                  "action": "read_file",
+                  "title": "step 2 forced failure",
+                  "message": "this step should fail",
+                  "status": "error",
+                  "output": "forced error at step 2"
+                }
+              }
+            ],
+            "failed_steps": [
+              {
+                "step": 2,
+                "action": "read_file",
+                "status": "error",
+                "passed": false,
+                "reason": "status=error, output=forced error at step 2",
+                "step_result": {
+                  "step": 2,
+                  "action": "read_file",
+                  "title": "step 2 forced failure",
+                  "message": "this step should fail",
+                  "status": "error",
+                  "output": "forced error at step 2"
+                }
+              }
+            ],
+            "correction": {
+              "needs_correction": true,
+              "action": "review_failed_steps",
+              "reason": "step_failure_detected",
+              "failed_steps": [
+                {
+                  "step": 2,
+                  "action": "read_file",
+                  "status": "error",
+                  "passed": false,
+                  "reason": "status=error, output=forced error at step 2",
+                  "step_result": {
+                    "step": 2,
+                    "action": "read_file",
+                    "title": "step 2 forced failure",
+                    "message": "this step should fail",
+                    "status": "error",
+                    "output": "forced error at step 2"
+                  }
+                }
+              ]
+            }
+          },
+          "needs_correction": true
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-04-09T16:13:07.281083",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "correction_fail_test",
+      "step_id": "step_01",
+      "status": "passed",
+      "title": "verify step result",
+      "message": "step=1, passed=True, status=done",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "check": {
+          "step": 1,
+          "action": "write_file",
+          "status": "done",
+          "passed": true,
+          "reason": "status=done treated as success",
+          "step_result": {
+            "step": 1,
+            "action": "write_file",
+            "title": "step 1 success",
+            "message": "normal success step",
+            "status": "done",
+            "output": "Executed step 1"
+          }
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-04-09T16:13:07.281083",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "correction_fail_test",
+      "step_id": "step_02",
+      "status": "failed",
+      "title": "verify step result",
+      "message": "step=2, passed=False, status=error",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "check": {
+          "step": 2,
+          "action": "read_file",
+          "status": "error",
+          "passed": false,
+          "reason": "status=error, output=forced error at step 2",
+          "step_result": {
+            "step": 2,
+            "action": "read_file",
+            "title": "step 2 forced failure",
+            "message": "this step should fail",
+            "status": "error",
+            "output": "forced error at step 2"
+          }
+        }
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-04-09T16:13:07.282083",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "correction_fail_test",
+      "step_id": "step_02",
+      "status": "needs_correction",
+      "title": "step needs correction",
+      "message": "step=2, action=read_file",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "step_result": {
+          "step": 2,
+          "action": "read_file",
+          "title": "step 2 forced failure",
+          "message": "this step should fail",
+          "status": "error",
+          "output": "forced error at step 2"
+        },
+        "reason": "status=error, output=forced error at step 2"
+      }
+    },
+    {
+      "seq": 11,
+      "ts": "2026-04-09T16:13:07.282083",
+      "event_type": "correction",
+      "source": "correction",
+      "task_id": "correction_fail_test",
+      "step_id": "",
+      "status": "needs_correction",
+      "title": "correction decision",
+      "message": "failed_steps=1",
+      "raw": {
+        "needs_correction": true,
+        "action": "review_failed_steps",
+        "reason": "step_failure_detected",
+        "failed_steps": [
+          {
+            "step": 2,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 2",
+            "step_result": {
+              "step": 2,
+              "action": "read_file",
+              "title": "step 2 forced failure",
+              "message": "this step should fail",
+              "status": "error",
+              "output": "forced error at step 2"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "seq": 12,
+      "ts": "2026-04-09T16:13:07.283082",
+      "event_type": "verifier",
+      "source": "verifier",
+      "task_id": "correction_fail_test",
+      "step_id": "",
+      "status": "failed",
+      "title": "verify execution result end",
+      "message": "passed=False",
+      "raw": {
+        "task_name": "correction_fail_test",
+        "passed": false,
+        "step_checks": [
+          {
+            "step": 1,
+            "action": "write_file",
+            "status": "done",
+            "passed": true,
+            "reason": "status=done treated as success",
+            "step_result": {
+              "step": 1,
+              "action": "write_file",
+              "title": "step 1 success",
+              "message": "normal success step",
+              "status": "done",
+              "output": "Executed step 1"
+            }
+          },
+          {
+            "step": 2,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 2",
+            "step_result": {
+              "step": 2,
+              "action": "read_file",
+              "title": "step 2 forced failure",
+              "message": "this step should fail",
+              "status": "error",
+              "output": "forced error at step 2"
+            }
+          }
+        ],
+        "failed_steps": [
+          {
+            "step": 2,
+            "action": "read_file",
+            "status": "error",
+            "passed": false,
+            "reason": "status=error, output=forced error at step 2",
+            "step_result": {
+              "step": 2,
+              "action": "read_file",
+              "title": "step 2 forced failure",
+              "message": "this step should fail",
+              "status": "error",
+              "output": "forced error at step 2"
+            }
+          }
+        ],
+        "correction": {
+          "needs_correction": true,
+          "action": "review_failed_steps",
+          "reason": "step_failure_detected",
+          "failed_steps": [
+            {
+              "step": 2,
+              "action": "read_file",
+              "status": "error",
+              "passed": false,
+              "reason": "status=error, output=forced error at step 2",
+              "step_result": {
+                "step": 2,
+                "action": "read_file",
+                "title": "step 2 forced failure",
+                "message": "this step should fail",
+                "status": "error",
+                "output": "forced error at step 2"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

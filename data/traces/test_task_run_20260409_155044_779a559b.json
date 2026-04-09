@@ -1,0 +1,172 @@
+{
+  "run_id": "run_20260409_155044_779a559b",
+  "task_id": "test_task",
+  "source": "test",
+  "created_at": "2026-04-09T15:50:44.680931",
+  "updated_at": "2026-04-09T15:50:44.682931",
+  "summary": {
+    "event_count": 6,
+    "event_types": {
+      "lifecycle": 2,
+      "execution": 4
+    },
+    "statuses": {
+      "start": 3,
+      "success": 3
+    }
+  },
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-04-09T15:50:44.680931",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "test_task",
+      "step_id": "",
+      "status": "start",
+      "title": "execute plan start",
+      "message": "task=test_task, iteration=1, step_count=2",
+      "raw": {
+        "task_name": "test_task",
+        "iteration": 1,
+        "step_count": 2,
+        "plan": {
+          "steps": [
+            {
+              "action": "write_file",
+              "title": "create hello file",
+              "message": "writing hello.txt"
+            },
+            {
+              "action": "print",
+              "title": "print something",
+              "message": "print hello world"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-04-09T15:50:44.680931",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "test_task",
+      "step_id": "step_01",
+      "status": "start",
+      "title": "create hello file",
+      "message": "writing hello.txt",
+      "raw": {
+        "task_name": "test_task",
+        "step_index": 1,
+        "step": {
+          "action": "write_file",
+          "title": "create hello file",
+          "message": "writing hello.txt"
+        }
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-04-09T15:50:44.681931",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "test_task",
+      "step_id": "step_01",
+      "status": "success",
+      "title": "create hello file",
+      "message": "step file saved: E:\\zero_ai\\workspace\\test_task\\step_01.json",
+      "raw": {
+        "task_name": "test_task",
+        "step_index": 1,
+        "step_file": "E:\\zero_ai\\workspace\\test_task\\step_01.json",
+        "step_result": {
+          "step": 1,
+          "action": "write_file",
+          "title": "create hello file",
+          "message": "writing hello.txt",
+          "status": "done",
+          "output": "Executed step 1"
+        }
+      }
+    },
+    {
+      "seq": 4,
+      "ts": "2026-04-09T15:50:44.681931",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "test_task",
+      "step_id": "step_02",
+      "status": "start",
+      "title": "print something",
+      "message": "print hello world",
+      "raw": {
+        "task_name": "test_task",
+        "step_index": 2,
+        "step": {
+          "action": "print",
+          "title": "print something",
+          "message": "print hello world"
+        }
+      }
+    },
+    {
+      "seq": 5,
+      "ts": "2026-04-09T15:50:44.681931",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "test_task",
+      "step_id": "step_02",
+      "status": "success",
+      "title": "print something",
+      "message": "step file saved: E:\\zero_ai\\workspace\\test_task\\step_02.json",
+      "raw": {
+        "task_name": "test_task",
+        "step_index": 2,
+        "step_file": "E:\\zero_ai\\workspace\\test_task\\step_02.json",
+        "step_result": {
+          "step": 2,
+          "action": "print",
+          "title": "print something",
+          "message": "print hello world",
+          "status": "done",
+          "output": "Executed step 2"
+        }
+      }
+    },
+    {
+      "seq": 6,
+      "ts": "2026-04-09T15:50:44.682931",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "test_task",
+      "step_id": "",
+      "status": "success",
+      "title": "execute plan end",
+      "message": "task=test_task, iteration=1, success=True",
+      "raw": {
+        "task_name": "test_task",
+        "iteration": 1,
+        "results": [
+          {
+            "step": 1,
+            "action": "write_file",
+            "title": "create hello file",
+            "message": "writing hello.txt",
+            "status": "done",
+            "output": "Executed step 1"
+          },
+          {
+            "step": 2,
+            "action": "print",
+            "title": "print something",
+            "message": "print hello world",
+            "status": "done",
+            "output": "Executed step 2"
+          }
+        ],
+        "success": true
+      }
+    }
+  ]
+}

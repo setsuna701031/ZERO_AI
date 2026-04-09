@@ -11,35 +11,23 @@ from core.runtime.task_runner import TaskRunner
 
 class AgentLoop:
     """
-    Agent 主迴圈
+    ZERO Agent Loop
 
-    支援三種模式：
+    目前收斂目標：
+    1. 明確區分 single-shot 與 task mode
+    2. task mode 只負責建立任務與交給 scheduler
+    3. scheduler 呼叫 run_task() 時，只做單個 task 的 one-tick 執行
+    4. 保留舊相容入口，但主幹改成清楚的 loop 骨架
 
-    1. single-shot mode
-       user_input
-       -> build_context
-       -> router
-       -> planner
-       -> step_executor
-       -> verifier
-       -> safety_guard
-       -> response
-
-    2. task mode
-       user_input
-       -> build_context
-       -> router
-       -> planner
-       -> scheduler.create_task(...)
-       -> 覆蓋 planner_result / steps
-       -> scheduler.submit_existing_task(...)
-       -> 回傳 task_id / task_created
-
-    3. task execution mode
-       scheduler
-       -> agent_loop.run_task(task)
-       -> task_runner.run_one_tick(...)
-       -> task_runtime / runtime_state.json
+    這一版不急著接 execution_trace。
+    先把主流程固定成：
+        detect mode
+        -> build context
+        -> route
+        -> plan
+        -> create/submit task
+        -> scheduler tick
+        -> task_runner.run_one_tick
     """
 
     def __init__(
@@ -59,7 +47,7 @@ class AgentLoop:
         replanner=None,
         debug: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         self.router = router
         self.planner = planner
         self.step_executor = step_executor
@@ -68,14 +56,13 @@ class AgentLoop:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
 
-        # 相容舊測試：task_manager 優先當作任務入口，但 scheduler 仍是主要任務控制入口
+        # 相容舊入口：task_manager 還能存在，但 scheduler 是主要任務控制入口
         self.task_manager = task_manager
         self.scheduler = scheduler or task_manager
 
         self.task_workspace = task_workspace
         self.task_runtime = task_runtime
         self.replanner = replanner
-
         self.debug = debug
         self.extra_kwargs = kwargs
 
@@ -88,37 +75,113 @@ class AgentLoop:
         )
 
     # ============================================================
-    # main entry
+    # public entry
     # ============================================================
 
     def run(self, user_input: str) -> Dict[str, Any]:
-        if not user_input:
+        """
+        對外主入口：
+        - 如果判定為 task mode：建立任務並送進 scheduler
+        - 否則：走 single-shot
+        """
+        user_text = str(user_input or "").strip()
+        if not user_text:
             return {"ok": False, "error": "empty input"}
 
-        context = build_context(
-            user_input=user_input,
-            memory_store=self.memory_store,
-            runtime_store=self.runtime_store,
-        )
+        context = self._build_context(user_text)
+        route = self._call_router(context=context, user_input=user_text)
 
         if self.debug:
-            print("CTX:", context)
+            print("[AgentLoop] input =", user_text)
+            print("[AgentLoop] route =", route)
 
-        route = self._call_router(context=context, user_input=user_input)
-
-        # --------------------------------------------------------
-        # task mode
-        # --------------------------------------------------------
-        if self._should_enter_task_mode(route=route, user_input=user_input):
+        if self._should_enter_task_mode(route=route, user_input=user_text):
             return self._run_task_mode(
                 context=context,
-                user_input=user_input,
+                user_input=user_text,
                 route=route,
             )
 
-        # --------------------------------------------------------
-        # single-shot mode（原本流程）
-        # --------------------------------------------------------
+        return self._run_single_shot_mode(
+            context=context,
+            user_input=user_text,
+            route=route,
+        )
+
+    def run_task(
+        self,
+        task: Any,
+        *,
+        current_tick: int = 0,
+        user_input: str = "",
+        original_plan: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        給 scheduler 呼叫的 one-tick task execution 入口。
+
+        這裡不做 create / submit，不做 UI 回應，
+        只做：
+            normalize task
+            -> task_runner.run_one_tick(...)
+            -> return result
+        """
+        try:
+            task_dict = self._normalize_task_input(task)
+            if not isinstance(task_dict, dict):
+                return {
+                    "ok": False,
+                    "status": "failed",
+                    "error": "task must be dict-like",
+                }
+
+            if self.task_runner is None:
+                return {
+                    "ok": False,
+                    "status": "failed",
+                    "error": "task_runner missing",
+                }
+
+            effective_user_input = str(user_input or task_dict.get("goal") or "").strip()
+            effective_original_plan = (
+                original_plan
+                if isinstance(original_plan, dict)
+                else task_dict.get("planner_result")
+            )
+
+            if self.debug:
+                print(
+                    "[AgentLoop] run_task:",
+                    task_dict.get("task_name") or task_dict.get("task_id") or task_dict.get("id"),
+                    "tick=",
+                    current_tick,
+                )
+
+            result = self.task_runner.run_one_tick(
+                task=task_dict,
+                current_tick=current_tick,
+                user_input=effective_user_input,
+                original_plan=effective_original_plan,
+            )
+            return result
+
+        except Exception as e:
+            return {
+                "ok": False,
+                "status": "failed",
+                "error": f"agent_loop.run_task failed: {e}",
+                "traceback": traceback.format_exc(),
+            }
+
+    # ============================================================
+    # single-shot mode
+    # ============================================================
+
+    def _run_single_shot_mode(
+        self,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Dict[str, Any]:
         plan = self._call_planner(
             context=context,
             user_input=user_input,
@@ -128,7 +191,8 @@ class AgentLoop:
         if isinstance(plan, dict) and plan.get("ok") is False and plan.get("_planner_error"):
             return {
                 "ok": False,
-                "error": plan.get("error", "planner 呼叫失敗"),
+                "mode": "single_shot",
+                "error": plan.get("error", "planner call failed"),
                 "traceback": plan.get("traceback"),
             }
 
@@ -162,65 +226,6 @@ class AgentLoop:
         }
 
     # ============================================================
-    # scheduler entry: execute one task tick
-    # ============================================================
-
-    def run_task(
-        self,
-        task: Any,
-        *,
-        current_tick: int = 0,
-        user_input: str = "",
-        original_plan: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """
-        給 scheduler 呼叫：
-        AgentLoop.run_task(task) -> TaskRunner.run_one_tick(...)
-        """
-
-        try:
-            task_dict = self._normalize_task_input(task)
-
-            if not isinstance(task_dict, dict):
-                return {
-                    "ok": False,
-                    "status": "failed",
-                    "error": "task must be dict-like",
-                }
-
-            if self.task_runner is None:
-                return {
-                    "ok": False,
-                    "status": "failed",
-                    "error": "task_runner missing",
-                }
-
-            if self.debug:
-                print(
-                    "[AgentLoop] run_task ->",
-                    task_dict.get("task_name") or task_dict.get("id"),
-                    "tick=",
-                    current_tick,
-                )
-
-            result = self.task_runner.run_one_tick(
-                task=task_dict,
-                current_tick=current_tick,
-                user_input=user_input or task_dict.get("goal", ""),
-                original_plan=original_plan or task_dict.get("planner_result"),
-            )
-
-            return result
-
-        except Exception as e:
-            return {
-                "ok": False,
-                "status": "failed",
-                "error": f"agent_loop.run_task failed: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    # ============================================================
     # task mode
     # ============================================================
 
@@ -246,7 +251,6 @@ class AgentLoop:
             }
 
         try:
-            # 1. 先規劃
             plan = self._call_planner(
                 context=context,
                 user_input=user_input,
@@ -257,11 +261,10 @@ class AgentLoop:
                 return {
                     "ok": False,
                     "mode": "task",
-                    "error": plan.get("error", "planner 呼叫失敗"),
+                    "error": plan.get("error", "planner call failed"),
                     "traceback": plan.get("traceback"),
                 }
 
-            # 2. 優先走收束版 scheduler：create -> 覆蓋內容 -> submit_existing_task
             if self._supports_scheduler_create_submit(task_entry):
                 return self._run_task_mode_via_scheduler(
                     task_entry=task_entry,
@@ -271,7 +274,6 @@ class AgentLoop:
                     plan=plan,
                 )
 
-            # 3. fallback：舊 task_manager / enqueue 介面
             return self._run_task_mode_legacy_enqueue(
                 task_entry=task_entry,
                 context=context,
@@ -301,7 +303,6 @@ class AgentLoop:
         timeout_ticks = self._route_int(route, "timeout_ticks", 0)
         depends_on = self._route_depends_on(route)
 
-        # create：只建立，不進 queue
         create_result = task_entry.create_task(
             goal=user_input,
             priority=priority,
@@ -336,11 +337,10 @@ class AgentLoop:
                 "create_result": create_result,
             }
 
-        # 用 AgentLoop 的 planner 覆蓋 scheduler 預設 planner 結果
         created_task["planner_result"] = plan if isinstance(plan, dict) else {}
         created_task["steps"] = self._extract_steps_from_plan(plan)
         created_task["steps_total"] = len(created_task["steps"])
-        created_task["final_answer"] = self._extract_final_answer(None, plan, user_input)
+        created_task["final_answer"] = ""
         created_task["max_replans"] = max_replans
 
         if isinstance(route, dict):
@@ -348,7 +348,6 @@ class AgentLoop:
         if isinstance(context, dict):
             created_task["context_snapshot"] = copy.deepcopy(context)
 
-        # 若 task shell 內有這些欄位，保留一致性
         created_task.setdefault("results", [])
         created_task.setdefault("step_results", [])
         created_task.setdefault("execution_log", [])
@@ -359,13 +358,12 @@ class AgentLoop:
         created_task.setdefault("replan_reason", "")
         created_task.setdefault("replan_count", 0)
 
-        # 存 plan / runtime
-        self._save_task_plan_and_runtime(task=created_task, plan=created_task["planner_result"])
-
-        # persist 覆蓋後的 task payload
+        self._save_task_plan_and_runtime(
+            task=created_task,
+            plan=created_task["planner_result"],
+        )
         self._persist_task_to_entry(task_entry=task_entry, task=created_task)
 
-        # submit：才進 queue
         task_id = str(
             created_task.get("task_id")
             or created_task.get("id")
@@ -404,7 +402,6 @@ class AgentLoop:
             route=route,
         )
 
-        # 1. 建立 workspace（如果有）
         if self.task_workspace is not None:
             try:
                 task = self.task_workspace.create_workspace(task)
@@ -416,27 +413,23 @@ class AgentLoop:
                     "traceback": traceback.format_exc(),
                 }
 
-        # 2. 掛上 planner 結果
         task["planner_result"] = plan if isinstance(plan, dict) else {}
         task["steps"] = self._extract_steps_from_plan(plan)
         task["steps_total"] = len(task["steps"])
-        task["final_answer"] = self._extract_final_answer(None, plan, user_input)
+        task["final_answer"] = ""
 
-        # 3. 存 plan.json（如果有）
         if self.task_workspace is not None:
             try:
                 self.task_workspace.save_plan(task, task["planner_result"])
             except Exception:
                 pass
 
-        # 4. 初始化 runtime_state.json（如果有）
         if self.task_runtime is not None:
             try:
                 self.task_runtime.ensure_runtime_state(task)
             except Exception:
                 pass
 
-        # 5. fallback enqueue
         enqueue_result = self._enqueue_task(task_entry, task)
 
         enqueued_task_dict = self._normalize_task_input(enqueue_result) if enqueue_result is not None else None
@@ -455,6 +448,72 @@ class AgentLoop:
             "enqueue_result": enqueue_result,
             "final_answer": f"已建立任務：{task.get('title') or task.get('goal')}",
         }
+
+    # ============================================================
+    # loop helpers
+    # ============================================================
+
+    def _build_context(self, user_input: str) -> Dict[str, Any]:
+        context = build_context(
+            user_input=user_input,
+            memory_store=self.memory_store,
+            runtime_store=self.runtime_store,
+        )
+        if self.debug:
+            print("[AgentLoop] context =", context)
+        return context
+
+    def _should_enter_task_mode(self, route: Any, user_input: str) -> bool:
+        if isinstance(route, dict):
+            if route.get("mode") == "task":
+                return True
+            if route.get("type") == "task":
+                return True
+            if route.get("task") is True:
+                return True
+            if route.get("long_running") is True:
+                return True
+
+        text = str(user_input or "").strip().lower()
+        task_keywords = [
+            "建立任務",
+            "新增任務",
+            "排程",
+            "加入佇列",
+            "背景執行",
+            "長任務",
+            "task",
+            "schedule",
+            "queue",
+            "background",
+        ]
+        return any(k in text for k in task_keywords)
+
+    def _extract_steps_from_plan(self, plan: Any) -> list:
+        if isinstance(plan, dict):
+            if isinstance(plan.get("steps"), list):
+                return copy.deepcopy(plan["steps"])
+
+            nested_plan = plan.get("plan")
+            if isinstance(nested_plan, dict) and isinstance(nested_plan.get("steps"), list):
+                return copy.deepcopy(nested_plan["steps"])
+
+            for key in ("actions", "tasks"):
+                value = plan.get(key)
+                if isinstance(value, list):
+                    return copy.deepcopy(value)
+
+        if isinstance(plan, list):
+            return copy.deepcopy(plan)
+
+        return []
+
+    def _make_task_id(self) -> str:
+        return f"task_{int(time.time() * 1000)}"
+
+    # ============================================================
+    # task shell
+    # ============================================================
 
     def _build_task_shell(
         self,
@@ -541,68 +600,6 @@ class AgentLoop:
             task["context_snapshot"] = copy.deepcopy(context)
 
         return task
-
-    def _enqueue_task(self, task_entry: Any, task: Dict[str, Any]) -> Any:
-        """
-        舊相容路徑：
-        不建議新流程走這裡，但保留給舊 task_manager / 測試用。
-        """
-        for method_name in ("add_task", "enqueue", "submit_task", "create_task"):
-            fn = getattr(task_entry, method_name, None)
-            if callable(fn):
-                return fn(task)
-
-        raise RuntimeError("scheduler/task_manager has no add_task / enqueue / submit_task / create_task")
-
-    def _should_enter_task_mode(self, route: Any, user_input: str) -> bool:
-        if isinstance(route, dict):
-            if route.get("mode") == "task":
-                return True
-            if route.get("type") == "task":
-                return True
-            if route.get("task") is True:
-                return True
-            if route.get("long_running") is True:
-                return True
-
-        text = str(user_input or "").strip().lower()
-
-        task_keywords = [
-            "建立任務",
-            "新增任務",
-            "排程",
-            "加入佇列",
-            "背景執行",
-            "長任務",
-            "task",
-            "schedule",
-            "queue",
-            "background",
-        ]
-
-        return any(k in text for k in task_keywords)
-
-    def _extract_steps_from_plan(self, plan: Any) -> list:
-        if isinstance(plan, dict):
-            if isinstance(plan.get("steps"), list):
-                return plan["steps"]
-
-            nested_plan = plan.get("plan")
-            if isinstance(nested_plan, dict) and isinstance(nested_plan.get("steps"), list):
-                return nested_plan["steps"]
-
-            for key in ("actions", "tasks"):
-                value = plan.get(key)
-                if isinstance(value, list):
-                    return value
-
-        if isinstance(plan, list):
-            return plan
-
-        return []
-
-    def _make_task_id(self) -> str:
-        return f"task_{int(time.time() * 1000)}"
 
     # ============================================================
     # controlled scheduler helpers
@@ -706,6 +703,13 @@ class AgentLoop:
                 runtime.ensure_runtime_state(task)
             except Exception:
                 pass
+
+    def _enqueue_task(self, task_entry: Any, task: Dict[str, Any]) -> Any:
+        for method_name in ("add_task", "enqueue", "submit_task", "create_task"):
+            fn = getattr(task_entry, method_name, None)
+            if callable(fn):
+                return fn(task)
+        raise RuntimeError("scheduler/task_manager has no add_task / enqueue / submit_task / create_task")
 
     def _route_int(self, route: Any, key: str, default: int) -> int:
         if isinstance(route, dict) and route.get(key) is not None:
@@ -983,14 +987,12 @@ class AgentLoop:
         if task is None:
             raise ValueError("task is None")
 
-        # dataclass / object with to_dict
         to_dict = getattr(task, "to_dict", None)
         if callable(to_dict):
             result = to_dict()
             if isinstance(result, dict):
                 return copy.deepcopy(result)
 
-        # dataclass / object with __dict__
         if hasattr(task, "__dict__"):
             raw = dict(vars(task))
             if isinstance(raw, dict):

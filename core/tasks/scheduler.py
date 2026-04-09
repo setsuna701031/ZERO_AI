@@ -23,9 +23,10 @@ from core.tasks.scheduler_core.task_scheduler_queue import (
     TaskSchedulerQueue,
 )
 from core.tasks.scheduler_core.worker_pool import WorkerPool
+from core.tools.execution_trace import ExecutionTrace
 
 
-SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V6_SINGLE_TICK_SELF_HEALING"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V6_SINGLE_TICK_SELF_HEALING_TRACE_V1"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
@@ -52,7 +53,7 @@ READY_STATUSES = {
 
 class Scheduler(RuntimeTaskScheduler):
     """
-    收束版 Scheduler
+    收束版 Scheduler + ExecutionTrace
 
     核心原則：
     1. scheduler 只管狀態 / 排程 / queue
@@ -60,12 +61,12 @@ class Scheduler(RuntimeTaskScheduler):
     3. blocked 只由 depends_on 決定
     4. execute 一律走 _execute_simple_step
     5. 所有 step 先經過 guard
+    6. 每個 task 都有自己的 trace.json
 
-    V3 重點：
-    - 補上 run_python
-    - 補上 verify
-    - step fail 時接 replanner
-    - 可在 max_replans 內自動產生 recovery steps 並續跑
+    本版新增：
+    - task create / submit / blocked / finished / failed / replan 事件落到 trace.json
+    - step success / step fail 結構化記錄
+    - replan meta 寫入 trace
     """
 
     def __init__(
@@ -192,8 +193,6 @@ class Scheduler(RuntimeTaskScheduler):
         last_synced: List[str] = []
         rounds_used = 0
 
-        # 核心：單次 tick 內持續消化 queue，直到沒有可派發任務
-        # 加 safety guard 避免邏輯錯誤造成無限循環。
         for _ in range(self.max_scheduler_rounds_per_tick):
             rounds_used += 1
             last_synced = self.rebuild_ready_queue()
@@ -323,7 +322,6 @@ class Scheduler(RuntimeTaskScheduler):
 
             all_executed_results.extend(round_executed)
 
-            # 如果目前已沒有 queued / running task，就可以提前結束。
             snapshot = self.dispatcher.snapshot()
             queue_stats = snapshot.get("queue", {})
             worker_stats = snapshot.get("workers", {})
@@ -393,9 +391,6 @@ class Scheduler(RuntimeTaskScheduler):
             self._sync_runtime_back_to_repo(task=task, runner_result=result)
             return result
 
-        # 收束期先強制走 simple executor，避免父類 run_one_step
-        # 因沒有真正接上 runner 而停在 queued、不執行 step。
-        # 等 scheduler → agent_loop 真正打通後，再把這裡改回可切換模式。
         result = self._run_simple_task_tick(task=task, current_tick=current_tick)
 
         self._sync_runtime_back_to_repo(task=task, runner_result=result)
@@ -425,8 +420,18 @@ class Scheduler(RuntimeTaskScheduler):
         task_id = self._extract_task_id(task)
         task_name = str(task.get("task_name") or task_id or "unknown_task")
         task_status = str(task.get("status") or "").strip().lower()
+        trace = self._load_trace_for_task(task)
 
         if task_status in TERMINAL_STATUSES:
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status=task_status,
+                tick=self.current_tick,
+                final_answer=str(task.get("final_answer") or ""),
+                extra={"action": "terminal_skip"},
+            )
+            self._save_trace_for_task(task=task, trace=trace)
             return {
                 "ok": True,
                 "action": "terminal_skip",
@@ -443,6 +448,20 @@ class Scheduler(RuntimeTaskScheduler):
             task["status"] = STATUS_BLOCKED
             task["blocked_reason"] = blocked_reason
             task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
+
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status=STATUS_BLOCKED,
+                tick=self.current_tick,
+                final_answer="",
+                extra={
+                    "action": "blocked_by_dependencies",
+                    "blocked_reason": blocked_reason,
+                },
+            )
+            self._save_trace_for_task(task=task, trace=trace)
+
             return {
                 "ok": False,
                 "action": "blocked_by_dependencies",
@@ -483,6 +502,21 @@ class Scheduler(RuntimeTaskScheduler):
             task["step_results"] = step_results
             task["last_step_result"] = last_step_result
             task["history"] = self._append_history(task.get("history"), "finished")
+
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status="finished",
+                tick=self.current_tick,
+                final_answer=task["final_answer"],
+                extra={
+                    "action": "simple_task_finished",
+                    "current_step_index": current_step_index,
+                    "steps_total": len(steps),
+                },
+            )
+            self._save_trace_for_task(task=task, trace=trace)
+
             return {
                 "ok": True,
                 "action": "simple_task_finished",
@@ -514,6 +548,20 @@ class Scheduler(RuntimeTaskScheduler):
             task["step_results"] = step_results
             task["last_step_result"] = last_step_result
             task["history"] = self._append_history(task.get("history"), "failed")
+
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status="failed",
+                tick=self.current_tick,
+                final_answer="",
+                extra={
+                    "action": "simple_invalid_step",
+                    "error": "invalid step type",
+                },
+            )
+            self._save_trace_for_task(task=task, trace=trace)
+
             return {
                 "ok": False,
                 "action": "simple_invalid_step",
@@ -556,6 +604,17 @@ class Scheduler(RuntimeTaskScheduler):
             task["last_failure_tick"] = self.current_tick
             task["last_run_tick"] = self.current_tick
 
+            self._trace_step(
+                trace=trace,
+                task=task,
+                step_index=current_step_index,
+                step=step,
+                ok=False,
+                result=None,
+                error=str(e),
+                tick=self.current_tick,
+            )
+
             replan_result = self._try_replan_task(task=task)
             if replan_result.get("replanned"):
                 task["status"] = "queued"
@@ -566,6 +625,27 @@ class Scheduler(RuntimeTaskScheduler):
 
                 new_steps = task.get("steps", []) if isinstance(task.get("steps"), list) else []
                 new_steps_total = len(new_steps)
+
+                self._trace_replan(
+                    trace=trace,
+                    task=task,
+                    tick=self.current_tick,
+                    replan_result=replan_result,
+                )
+                self._trace_status(
+                    trace=trace,
+                    task=task,
+                    status="queued",
+                    tick=self.current_tick,
+                    final_answer="",
+                    extra={
+                        "action": "simple_step_replanned",
+                        "replan_reason": task["replan_reason"],
+                        "replan_count": task.get("replan_count", 0),
+                        "steps_total": new_steps_total,
+                    },
+                )
+                self._save_trace_for_task(task=task, trace=trace)
 
                 return {
                     "ok": True,
@@ -590,6 +670,20 @@ class Scheduler(RuntimeTaskScheduler):
 
             task["status"] = "failed"
             task["history"] = self._append_history(task.get("history"), "failed")
+
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status="failed",
+                tick=self.current_tick,
+                final_answer="",
+                extra={
+                    "action": "simple_step_failed",
+                    "error": str(e),
+                    "replan_result": copy.deepcopy(replan_result),
+                },
+            )
+            self._save_trace_for_task(task=task, trace=trace)
 
             return {
                 "ok": False,
@@ -639,6 +733,17 @@ class Scheduler(RuntimeTaskScheduler):
         task["current_step_index"] = current_step_index + 1
         task["last_run_tick"] = self.current_tick
 
+        self._trace_step(
+            trace=trace,
+            task=task,
+            step_index=current_step_index,
+            step=step,
+            ok=True,
+            result=step_result,
+            error="",
+            tick=self.current_tick,
+        )
+
         if task["current_step_index"] >= len(steps):
             final_answer = self._build_simple_final_answer(
                 [x.get("result", x) if isinstance(x, dict) else x for x in results]
@@ -647,6 +752,20 @@ class Scheduler(RuntimeTaskScheduler):
             task["final_answer"] = final_answer
             task["finished_tick"] = self.current_tick
             task["history"] = self._append_history(task.get("history"), "finished")
+
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status="finished",
+                tick=self.current_tick,
+                final_answer=final_answer,
+                extra={
+                    "action": "simple_task_finished",
+                    "current_step_index": task["current_step_index"],
+                    "steps_total": len(steps),
+                },
+            )
+            self._save_trace_for_task(task=task, trace=trace)
 
             return {
                 "ok": True,
@@ -670,6 +789,21 @@ class Scheduler(RuntimeTaskScheduler):
 
         task["status"] = "queued"
         task["history"] = self._append_history(task.get("history"), "queued")
+
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status="queued",
+            tick=self.current_tick,
+            final_answer="",
+            extra={
+                "action": "simple_step_executed",
+                "current_step_index": task["current_step_index"],
+                "steps_total": len(steps),
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
+
         return {
             "ok": True,
             "action": "simple_step_executed",
@@ -1067,6 +1201,129 @@ class Scheduler(RuntimeTaskScheduler):
         return "task finished"
 
     # ------------------------------------------------------------
+    # Trace helpers
+    # ------------------------------------------------------------
+
+    def _get_trace_file_for_task(self, task: Dict[str, Any]) -> str:
+        if not isinstance(task, dict):
+            return os.path.join(self.tasks_root, "unknown_task", "trace.json")
+
+        task_dir = str(task.get("task_dir") or "").strip()
+        if not task_dir:
+            task_id = self._extract_task_id(task) or "unknown_task"
+            task_dir = os.path.join(self.tasks_root, task_id)
+
+        os.makedirs(task_dir, exist_ok=True)
+
+        trace_file = str(task.get("trace_file") or "").strip()
+        if trace_file:
+            return trace_file
+
+        return os.path.join(task_dir, "trace.json")
+
+    def _load_trace_for_task(self, task: Dict[str, Any]) -> ExecutionTrace:
+        trace_path = self._get_trace_file_for_task(task)
+        trace = ExecutionTrace(trace_file=trace_path)
+        trace.load(trace_path)
+        task["trace_file"] = trace_path
+        return trace
+
+    def _save_trace_for_task(self, task: Dict[str, Any], trace: ExecutionTrace) -> Optional[str]:
+        trace_path = self._get_trace_file_for_task(task)
+        saved = trace.save(trace_path)
+        task["trace_file"] = trace_path
+        return saved
+
+    def _trace_summary(
+        self,
+        trace: ExecutionTrace,
+        task: Dict[str, Any],
+        summary: str,
+        tick: Optional[int] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        trace.add_summary_event(
+            task_id=self._extract_task_id(task),
+            summary=summary,
+            tick=tick,
+            extra=copy.deepcopy(extra) if isinstance(extra, dict) else None,
+        )
+
+    def _trace_status(
+        self,
+        trace: ExecutionTrace,
+        task: Dict[str, Any],
+        status: str,
+        tick: Optional[int] = None,
+        final_answer: str = "",
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        trace.add_status_event(
+            task_id=self._extract_task_id(task),
+            status=status,
+            tick=tick,
+            final_answer=final_answer,
+            extra=copy.deepcopy(extra) if isinstance(extra, dict) else None,
+        )
+
+    def _trace_step(
+        self,
+        trace: ExecutionTrace,
+        task: Dict[str, Any],
+        step_index: int,
+        step: Dict[str, Any],
+        ok: bool,
+        result: Optional[Dict[str, Any]] = None,
+        error: str = "",
+        tick: Optional[int] = None,
+    ) -> None:
+        trace.add_step_event(
+            task_id=self._extract_task_id(task),
+            step_index=step_index,
+            step=copy.deepcopy(step),
+            ok=bool(ok),
+            result=copy.deepcopy(result) if isinstance(result, dict) else None,
+            error=str(error or ""),
+            tick=tick,
+        )
+
+    def _trace_replan(
+        self,
+        trace: ExecutionTrace,
+        task: Dict[str, Any],
+        tick: Optional[int],
+        replan_result: Dict[str, Any],
+    ) -> None:
+        raw_replan_result = replan_result.get("raw_replan_result", {})
+        if not isinstance(raw_replan_result, dict):
+            raw_replan_result = {}
+
+        plan = raw_replan_result.get("plan", {})
+        if not isinstance(plan, dict):
+            plan = {}
+
+        meta = plan.get("meta", {})
+        if not isinstance(meta, dict):
+            meta = {}
+
+        new_steps = plan.get("steps", [])
+        if not isinstance(new_steps, list):
+            new_steps = []
+
+        trace.add_replan_event(
+            task_id=self._extract_task_id(task),
+            failed_step_index=int(meta.get("failed_step_index", -1) or -1),
+            failed_step_type=str(meta.get("failed_step_type") or ""),
+            error_type=str(meta.get("error_type") or ""),
+            failed_error=str(meta.get("failed_error") or ""),
+            repair_mode=str(meta.get("repair_mode") or ""),
+            replan_count=int(replan_result.get("replan_count", task.get("replan_count", 0)) or 0),
+            max_replans=int(meta.get("max_replans", task.get("max_replans", 0)) or 0),
+            new_steps=copy.deepcopy(new_steps),
+            tick=tick,
+        )
+
+    # ------------------------------------------------------------
     # 查詢 API
     # ------------------------------------------------------------
 
@@ -1149,6 +1406,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         task_name = f"task_{int(time.time() * 1000)}"
         task_dir = os.path.join(self.tasks_root, task_name)
+        trace_file = os.path.join(task_dir, "trace.json")
 
         raw_depends_on = depends_on if depends_on is not None else kwargs.get("depends_on", None)
         if raw_depends_on is None:
@@ -1212,6 +1470,7 @@ class Scheduler(RuntimeTaskScheduler):
             "task_dir": task_dir,
             "plan_file": os.path.join(task_dir, "plan.json"),
             "runtime_state_file": os.path.join(task_dir, "runtime_state.json"),
+            "trace_file": trace_file,
             "scheduler_build": SCHEDULER_BUILD,
         }
 
@@ -1225,6 +1484,29 @@ class Scheduler(RuntimeTaskScheduler):
                 "scheduler_build": SCHEDULER_BUILD,
                 "error": f"task workspace init failed: {e}",
             }
+
+        trace = self._load_trace_for_task(task)
+        trace.clear()
+        self._trace_summary(
+            trace=trace,
+            task=task,
+            summary="task created",
+            tick=getattr(self, "current_tick", 0),
+            extra={
+                "goal": clean_goal,
+                "steps_total": len(steps),
+                "depends_on": copy.deepcopy(normalized_depends_on),
+            },
+        )
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status=initial_status,
+            tick=getattr(self, "current_tick", 0),
+            final_answer="",
+            extra={"action": "create_task"},
+        )
+        self._save_trace_for_task(task=task, trace=trace)
 
         created = False
         try:
@@ -1358,9 +1640,22 @@ class Scheduler(RuntimeTaskScheduler):
             }
 
         task = self._hydrate_task_from_workspace(task)
+        trace = self._load_trace_for_task(task)
 
         status = str(task.get("status") or "").strip().lower()
         if status in TERMINAL_STATUSES:
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status=status,
+                tick=getattr(self, "current_tick", 0),
+                final_answer=str(task.get("final_answer") or ""),
+                extra={
+                    "action": "submit_existing_task_rejected_terminal",
+                    "error": "task already terminal",
+                },
+            )
+            self._save_trace_for_task(task=task, trace=trace)
             return {
                 "ok": False,
                 "scheduler_build": SCHEDULER_BUILD,
@@ -1381,6 +1676,17 @@ class Scheduler(RuntimeTaskScheduler):
             refreshed = self._get_task_from_repo(task_id)
             if isinstance(refreshed, dict):
                 self._enqueue_repo_task_if_ready(refreshed, overwrite=True)
+                task = refreshed
+
+            self._trace_status(
+                trace=trace,
+                task=task,
+                status="queued",
+                tick=getattr(self, "current_tick", 0),
+                final_answer="",
+                extra={"action": "submit_existing_task"},
+            )
+            self._save_trace_for_task(task=task, trace=trace)
 
             return {
                 "ok": True,
@@ -1396,6 +1702,19 @@ class Scheduler(RuntimeTaskScheduler):
         task["scheduler_build"] = SCHEDULER_BUILD
         task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
         self._persist_task_payload(task_id=task_id, task=task)
+
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status=STATUS_BLOCKED,
+            tick=getattr(self, "current_tick", 0),
+            final_answer="",
+            extra={
+                "action": "submit_existing_task_blocked",
+                "blocked_reason": blocked_reason,
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
 
         return {
             "ok": True,
@@ -1761,6 +2080,19 @@ class Scheduler(RuntimeTaskScheduler):
                 task["scheduler_build"] = SCHEDULER_BUILD
                 self._persist_task_payload(task_id=task_id, task=task)
                 self._enqueue_repo_task_if_ready(task, overwrite=True)
+
+                trace = self._load_trace_for_task(task)
+                self._trace_status(
+                    trace=trace,
+                    task=task,
+                    status="queued",
+                    tick=getattr(self, "current_tick", 0),
+                    final_answer="",
+                    extra={
+                        "action": "unblocked_by_dependencies",
+                    },
+                )
+                self._save_trace_for_task(task=task, trace=trace)
             else:
                 self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
 
@@ -1970,6 +2302,11 @@ class Scheduler(RuntimeTaskScheduler):
             runtime_state_file = os.path.join(task_dir, "runtime_state.json")
             hydrated["runtime_state_file"] = runtime_state_file
 
+        trace_file = str(hydrated.get("trace_file") or "").strip()
+        if not trace_file:
+            trace_file = os.path.join(task_dir, "trace.json")
+            hydrated["trace_file"] = trace_file
+
         if os.path.exists(plan_file):
             plan_data = self._safe_read_json(plan_file)
             if isinstance(plan_data, dict):
@@ -2037,6 +2374,7 @@ class Scheduler(RuntimeTaskScheduler):
                     "plan_file",
                     "log_file",
                     "runtime_state_file",
+                    "trace_file",
                     "workspace_root",
                     "workspace_dir",
                     "shared_dir",
@@ -2052,7 +2390,10 @@ class Scheduler(RuntimeTaskScheduler):
         if not isinstance(hydrated.get("step_results"), list):
             hydrated["step_results"] = copy.deepcopy(hydrated.get("results", []))
         if hydrated.get("last_step_result") is None and hydrated.get("step_results"):
-            hydrated["last_step_result"] = copy.deepcopy(hydrated["step_results"][-1])
+            try:
+                hydrated["last_step_result"] = copy.deepcopy(hydrated["step_results"][-1])
+            except Exception:
+                pass
 
         if not isinstance(hydrated.get("history"), list):
             current_status = str(hydrated.get("status") or STATUS_CREATED)
@@ -2138,6 +2479,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "plan_file",
                 "log_file",
                 "runtime_state_file",
+                "trace_file",
                 "workspace_root",
                 "workspace_dir",
                 "shared_dir",
@@ -2225,6 +2567,7 @@ class Scheduler(RuntimeTaskScheduler):
         merged["runtime_state_file"] = merged.get("runtime_state_file") or os.path.join(
             merged["task_dir"], "runtime_state.json"
         )
+        merged["trace_file"] = merged.get("trace_file") or os.path.join(merged["task_dir"], "trace.json")
         merged["workspace_root"] = merged.get("workspace_root") or self.workspace_root
         merged["workspace_dir"] = merged.get("workspace_dir") or self.tasks_root
         merged["shared_dir"] = merged.get("shared_dir") or self.shared_dir
@@ -2341,6 +2684,20 @@ class Scheduler(RuntimeTaskScheduler):
 
         if changed:
             self._persist_task_payload(task_id=task_id, task=task)
+
+        trace = self._load_trace_for_task(task)
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status=STATUS_BLOCKED,
+            tick=getattr(self, "current_tick", 0),
+            final_answer="",
+            extra={
+                "action": "sync_blocked_state",
+                "blocked_reason": str(blocked_reason or ""),
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
 
         self.worker_pool.release_by_task(task_id)
 

@@ -1,0 +1,206 @@
+{
+  "run_id": "run_20260409_155318_cb43a663",
+  "task_id": "planner_test",
+  "source": "test",
+  "created_at": "2026-04-09T15:53:18.925474",
+  "updated_at": "2026-04-09T15:53:18.929039",
+  "summary": {
+    "event_count": 10,
+    "event_types": {
+      "decision": 6,
+      "lifecycle": 2,
+      "execution": 2
+    },
+    "statuses": {
+      "start": 2,
+      "success": 2
+    }
+  },
+  "events": [
+    {
+      "seq": 1,
+      "ts": "2026-04-09T15:53:18.925474",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "",
+      "title": "planner input",
+      "message": "建立 hello.txt 然後讀取 hello.txt",
+      "raw": {
+        "context": {},
+        "route": null
+      }
+    },
+    {
+      "seq": 2,
+      "ts": "2026-04-09T15:53:18.926474",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "",
+      "title": "split clauses",
+      "message": "2 clauses",
+      "raw": {
+        "clauses": [
+          "建立 hello.txt",
+          "讀取 hello.txt"
+        ]
+      }
+    },
+    {
+      "seq": 3,
+      "ts": "2026-04-09T15:53:18.926474",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "",
+      "title": "analyze clause",
+      "message": "建立 hello.txt",
+      "raw": {}
+    },
+    {
+      "seq": 4,
+      "ts": "2026-04-09T15:53:18.926474",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "",
+      "title": "analyze clause",
+      "message": "讀取 hello.txt",
+      "raw": {}
+    },
+    {
+      "seq": 5,
+      "ts": "2026-04-09T15:53:18.927474",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "",
+      "title": "read detected",
+      "message": "hello.txt",
+      "raw": {}
+    },
+    {
+      "seq": 6,
+      "ts": "2026-04-09T15:53:18.928035",
+      "event_type": "decision",
+      "source": "planner",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "",
+      "title": "planner result",
+      "message": "steps=1, intent=read_file",
+      "raw": {
+        "steps": [
+          {
+            "type": "read_file",
+            "path": "hello.txt"
+          }
+        ],
+        "intent": "read_file",
+        "task_name": "task_2cc605"
+      }
+    },
+    {
+      "seq": 7,
+      "ts": "2026-04-09T15:53:18.928035",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "start",
+      "title": "execute plan start",
+      "message": "task=planner_test, iteration=1, step_count=1",
+      "raw": {
+        "task_name": "planner_test",
+        "iteration": 1,
+        "step_count": 1,
+        "plan": {
+          "planner_mode": "deterministic_v12",
+          "intent": "read_file",
+          "final_answer": "已規劃 1 個步驟",
+          "steps": [
+            {
+              "type": "read_file",
+              "path": "hello.txt"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "seq": 8,
+      "ts": "2026-04-09T15:53:18.928035",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "planner_test",
+      "step_id": "step_01",
+      "status": "start",
+      "title": "step_1",
+      "message": "start action=",
+      "raw": {
+        "task_name": "planner_test",
+        "step_index": 1,
+        "step": {
+          "type": "read_file",
+          "path": "hello.txt"
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "ts": "2026-04-09T15:53:18.929039",
+      "event_type": "execution",
+      "source": "executor",
+      "task_id": "planner_test",
+      "step_id": "step_01",
+      "status": "success",
+      "title": "step_1",
+      "message": "step file saved: E:\\zero_ai\\workspace\\planner_test\\step_01.json",
+      "raw": {
+        "task_name": "planner_test",
+        "step_index": 1,
+        "step_file": "E:\\zero_ai\\workspace\\planner_test\\step_01.json",
+        "step_result": {
+          "step": 1,
+          "action": "",
+          "title": "step_1",
+          "message": "",
+          "status": "done",
+          "output": "Executed step 1"
+        }
+      }
+    },
+    {
+      "seq": 10,
+      "ts": "2026-04-09T15:53:18.929039",
+      "event_type": "lifecycle",
+      "source": "executor",
+      "task_id": "planner_test",
+      "step_id": "",
+      "status": "success",
+      "title": "execute plan end",
+      "message": "task=planner_test, iteration=1, success=True",
+      "raw": {
+        "task_name": "planner_test",
+        "iteration": 1,
+        "results": [
+          {
+            "step": 1,
+            "action": "",
+            "title": "step_1",
+            "message": "",
+            "status": "done",
+            "output": "Executed step 1"
+          }
+        ],
+        "success": true
+      }
+    }
+  ]
+}
