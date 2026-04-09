@@ -1,22 +1,14 @@
 # ZERO AI
 
-Autonomous Multi-Task AI System with Self-Healing Execution
+> A self-correcting agent runtime, not just an LLM pipeline.
 
 ---
 
-## Overview
+## What is ZERO?
 
-ZERO is a local-first autonomous agent system designed to execute complex tasks through structured planning, execution, verification, and correction.
+ZERO is an autonomous AI system designed to **execute, verify, and fix its own behavior**.
 
-It is not just a chatbot or script runner.
-
-ZERO operates as a **self-correcting execution system** that can:
-
-- Execute multi-step tasks
-- Detect failures through verification
-- Retry or replan when needed
-- Automatically repair invalid execution plans
-- Converge to a successful result through iterative loops
+Instead of assuming success, ZERO continuously loops until the task is correct.
 
 ---
 
@@ -24,118 +16,102 @@ ZERO operates as a **self-correcting execution system** that can:
 
 Plan → Execute → Verify → Correct → Retry / Replan → Re-execute
 
-This is the foundation of ZERO.
+This is not optional — it is the system.
 
 ---
 
-## What ZERO Can Do
+## Why ZERO is Different
 
-ZERO already supports:
-
-- multi-step task execution  
-- verification-driven correction  
-- retry  
-- replanning  
-- executor-level forced repair  
-
-In practice, that means the system can:
-
-- run structured tasks
-- detect failures through verification
-- retry when the failure is recoverable
-- replan when retry is not enough
-- repair invalid plans before execution
-
----
-
-## Why ZERO
-
-Most AI systems assume:
+Most AI systems:
 
 Plan → Execute → Done
 
-ZERO assumes:
+ZERO:
 
-Plan may be wrong  
-Execution may fail  
-System must adapt  
-
----
-
-## Demo
-
-### Multi Task Execution
-
-![Multi Task](docs/images/demo/multi_task_self_healing_all_success.png)
+- assumes plans can be wrong  
+- detects failures automatically  
+- repairs execution before retrying  
+- converges through iteration  
 
 ---
 
-### Scheduler Execution
+## Key Capability
 
-![Scheduler](docs/images/demo/scheduler_multi_task_completion.png)
+### Executor-Level Repair (Not LLM-Dependent)
 
----
+ZERO does not rely only on the planner.
 
-### Self-Healing Execution Flow
+It has a **deterministic execution layer** that can fix problems directly.
 
-![Execution Flow](docs/images/demo/self_healing_full_execution_flow.png)
+Example:
 
----
-
-### Verification + Repair
-
-![Verify Repair](docs/images/demo/self_healing_success_verify_repair.png)
-
----
-
-## Agent Loop Trace & Self-Correction
-
-### Agent Loop Trace Overview
-
-![Agent Loop Trace](docs/images/demo/agent_loop_trace_overview.png)
-
-This trace shows:
-
-- decision making
-- execution steps
-- verification
-- correction
-- replanning cycles
-
-ZERO is not executing linearly — it iterates toward success.
-
----
-
-### Executor-Level Forced Repair
-
-![Forced Repair](docs/images/demo/executor_forced_repair_terminal.png)
-
-When the planner produces an invalid plan:
-
+Planner:
 read hello.txt
 
-The executor repairs it into:
-
+ZERO:
 create hello.txt → read hello.txt
-
-This prevents failure and allows the system to converge.
 
 ---
 
-## Current Status
+## Advanced Repair: Dependency Fix
 
-ZERO currently has:
+ZERO can resolve multi-step dependencies automatically:
 
-- multi-step execution
-- verification-driven correction
-- retry + replanning loop
-- executor-level forced repair
-- trace visibility
+- missing folder → auto mkdir  
+- missing file → auto create  
+- invalid order → auto reorder  
 
-At this stage, ZERO is already a **self-correcting agent runtime**, not just a script pipeline.
+![Dependency Repair](docs/images/demo/executor_auto_dependency_repair.png)
+
+---
+
+## Agent Loop (Observed)
+
+![Agent Loop](docs/images/demo/agent_loop_trace_overview.png)
+
+This shows:
+
+- execution
+- verification
+- correction
+- iteration
+
+---
+
+## What ZERO Already Does
+
+- multi-step task execution  
+- verification-driven correction  
+- retry & replanning  
+- executor-level forced repair  
+- dependency-aware execution  
+- full trace visibility  
+
+---
+
+## What This Means
+
+ZERO is not a script runner.
+
+It is an **early-stage agent runtime** with:
+
+- control over execution  
+- observable behavior  
+- deterministic correction  
+
+---
+
+## Status
+
+Actively evolving.
+
+Focus:
+- stability  
+- repair logic  
+- execution correctness  
 
 ---
 
 ## License
 
-MIT License
+MIT
