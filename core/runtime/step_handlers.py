@@ -80,16 +80,6 @@ class ToolStepHandler(BaseStepHandler):
 
 
 class CommandStepHandler(BaseStepHandler):
-    """
-    升級版 Command Handler
-
-    功能：
-    1. api.py → 自動補 python
-    2. script.py args → python script.py args
-    3. 已經是 python / py 開頭的不處理
-    4. 若相對 .py 檔不在 cwd，會自動嘗試專案根目錄
-    """
-
     def handle(
         self,
         step: Dict[str, Any],
@@ -107,7 +97,6 @@ class CommandStepHandler(BaseStepHandler):
             }
 
         cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
-
         command = self._auto_python(command, cwd)
 
         try:
@@ -207,7 +196,7 @@ class WriteFileStepHandler(BaseStepHandler):
             }
 
         try:
-            full_path = self.executor.path_manager.resolve_path(
+            full_path = self.executor.path_manager.resolve_write_path(
                 path,
                 task=task,
             )
@@ -256,7 +245,7 @@ class ReadFileStepHandler(BaseStepHandler):
             }
 
         try:
-            full_path = self.executor.path_manager.resolve_path(
+            full_path = self.executor.path_manager.resolve_read_path(
                 path,
                 task=task,
             )

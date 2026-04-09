@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import re
 import subprocess
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.planning.replanner import Replanner
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
+from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
 from core.tasks.scheduler_core.task_dispatcher import TaskDispatcher
@@ -21,23 +25,47 @@ from core.tasks.scheduler_core.task_scheduler_queue import (
 from core.tasks.scheduler_core.worker_pool import WorkerPool
 
 
-SCHEDULER_BUILD = "DAG_ALIAS_FORCE_BLOCKED_V4"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V6_SINGLE_TICK_SELF_HEALING"
+
+STATUS_CREATED = "created"
+STATUS_BLOCKED = "blocked"
+
+TERMINAL_STATUSES = {
+    "finished",
+    "done",
+    "success",
+    "completed",
+    "failed",
+    "error",
+    "cancelled",
+    STATUS_FINISHED,
+    STATUS_FAILED,
+}
+
+READY_STATUSES = {
+    "queued",
+    "ready",
+    "retry",
+    STATUS_QUEUED,
+}
 
 
 class Scheduler(RuntimeTaskScheduler):
     """
-    Tasks-layer Scheduler facade
+    收束版 Scheduler
 
-    這版重點：
-    1. Repository 是 source of truth
-    2. depends_on 支援 task_id / task_name / title / goal 解析
-    3. 建立任務後會強制校正 repo 狀態 blocked / queued
-    4. tick() 會統一做 blocked -> queued 解鎖
-    5. 內建最小 simple executor，可跑 noop / command / write_file / read_file
-    6. 修正 _normalize_depends_on 與父類別方法簽名衝突問題
-       - 父類可能會呼叫 self._normalize_depends_on(depends_on)
-       - 本檔 submit_task 需要 richer 版本的 depends_on 解析
-       - 現在同一個方法同時相容兩種呼叫方式
+    核心原則：
+    1. scheduler 只管狀態 / 排程 / queue
+    2. terminal state 不可重排
+    3. blocked 只由 depends_on 決定
+    4. execute 一律走 _execute_simple_step
+    5. 所有 step 先經過 guard
+
+    V3 重點：
+    - 補上 run_python
+    - 補上 verify
+    - step fail 時接 replanner
+    - 可在 max_replans 內自動產生 recovery steps 並續跑
     """
 
     def __init__(
@@ -59,6 +87,11 @@ class Scheduler(RuntimeTaskScheduler):
         runtime_executor: Any = None,
         task_executor: Any = None,
         max_worker_slots: int = 1,
+        allow_commands: bool = False,
+        replanner: Any = None,
+        llm_client: Any = None,
+        max_scheduler_rounds_per_tick: int = 50,
+        default_max_replans: int = 3,
         **kwargs: Any,
     ) -> None:
         resolved_workspace_dir = workspace_dir or "workspace"
@@ -92,11 +125,15 @@ class Scheduler(RuntimeTaskScheduler):
         self.workspace_dir = resolved_workspace_dir
         self.task_runtime = task_runtime
         self.task_runner = task_runner
+        self.max_scheduler_rounds_per_tick = max(1, int(max_scheduler_rounds_per_tick))
+        self.default_max_replans = max(1, int(default_max_replans))
 
         self.task_workspace = TaskWorkspace(os.path.join(self.workspace_dir, "tasks"))
         self.workspace_root = os.path.abspath(self.workspace_dir)
+        self.tasks_root = os.path.join(self.workspace_root, "tasks")
         self.shared_dir = os.path.join(self.workspace_root, "shared")
         os.makedirs(self.shared_dir, exist_ok=True)
+        os.makedirs(self.tasks_root, exist_ok=True)
 
         self.scheduler_queue = TaskSchedulerQueue()
         self.worker_pool = WorkerPool(max_workers=max(1, int(max_worker_slots)))
@@ -104,6 +141,17 @@ class Scheduler(RuntimeTaskScheduler):
             queue=self.scheduler_queue,
             worker_pool=self.worker_pool,
         )
+
+        self.execution_guard = ExecutionGuard(
+            workspace_root=self.workspace_root,
+            shared_dir=self.shared_dir,
+            allow_commands=allow_commands,
+        )
+
+        if replanner is not None:
+            self.replanner = replanner
+        else:
+            self.replanner = Replanner(llm_client=llm_client)
 
     # ------------------------------------------------------------
     # 相容舊介面
@@ -138,153 +186,152 @@ class Scheduler(RuntimeTaskScheduler):
             self.current_tick = int(getattr(self, "current_tick", 0)) + 1
 
         self._unblock_tasks_if_dependencies_done()
-        synced = self.rebuild_ready_queue()
-        dispatch_results = self.dispatcher.dispatch_until_full()
-        executed_results: List[Dict[str, Any]] = []
 
-        for dispatch_result in dispatch_results:
-            if not dispatch_result.dispatched or dispatch_result.task is None:
-                continue
+        all_executed_results: List[Dict[str, Any]] = []
+        total_dispatched = 0
+        last_synced: List[str] = []
+        rounds_used = 0
 
-            scheduled_task = dispatch_result.task
-            task_id = str(scheduled_task.task_id)
+        # 核心：單次 tick 內持續消化 queue，直到沒有可派發任務
+        # 加 safety guard 避免邏輯錯誤造成無限循環。
+        for _ in range(self.max_scheduler_rounds_per_tick):
+            rounds_used += 1
+            last_synced = self.rebuild_ready_queue()
 
-            repo_task = self._get_task_from_repo(task_id)
-            if not isinstance(repo_task, dict):
-                self.dispatcher.fail_task(
-                    task_id=task_id,
-                    error="task missing from repository",
-                    requeue_on_retry=False,
-                )
-                self._mark_repo_task_failed(task_id=task_id, error="task missing from repository")
-                executed_results.append(
-                    {
-                        "ok": False,
-                        "task_id": task_id,
-                        "status": STATUS_FAILED,
-                        "error": "task missing from repository",
-                    }
-                )
-                continue
+            dispatch_results = self.dispatcher.dispatch_until_full()
+            if not dispatch_results:
+                break
 
-            try:
-                runner_result = self.run_one_step(task=repo_task, current_tick=self.current_tick)
-            except Exception as e:
-                fail_result = self.dispatcher.fail_task(
-                    task_id=task_id,
-                    error=f"run_one_step exception: {e}",
-                    requeue_on_retry=True,
-                )
+            total_dispatched += len(dispatch_results)
+            round_executed: List[Dict[str, Any]] = []
 
-                final_status = str(fail_result.get("final_status") or STATUS_FAILED).strip().lower()
-                if final_status == STATUS_QUEUED:
-                    self._mark_repo_task_queued(task_id=task_id, error=f"run_one_step exception: {e}")
-                else:
-                    self._mark_repo_task_failed(task_id=task_id, error=f"run_one_step exception: {e}")
+            for dispatch_result in dispatch_results:
+                if not dispatch_result.dispatched or dispatch_result.task is None:
+                    continue
 
-                executed_results.append(
-                    {
-                        "ok": False,
-                        "task_id": task_id,
-                        "status": fail_result.get("final_status", STATUS_FAILED),
-                        "error": str(e),
-                        "dispatcher": fail_result,
-                    }
-                )
-                continue
+                scheduled_task = dispatch_result.task
+                task_id = str(scheduled_task.task_id or "").strip()
+                if not task_id:
+                    continue
 
-            final_status = str(
-                runner_result.get("status") or repo_task.get("status") or ""
-            ).strip().lower()
-            final_answer = runner_result.get("final_answer")
-
-            if final_status in {"done", "finished", STATUS_FINISHED, "success", "completed"}:
-                self.dispatcher.complete_task(task_id=task_id, result=final_answer)
-                self._mark_repo_task_finished(task_id=task_id, result=final_answer)
-
-            elif final_status in {"failed", STATUS_FAILED, "error"}:
-                fail_result = self.dispatcher.fail_task(
-                    task_id=task_id,
-                    error=str(
-                        runner_result.get("error")
-                        or runner_result.get("final_answer")
-                        or "task failed"
-                    ),
-                    requeue_on_retry=True,
-                )
-                fail_final_status = str(fail_result.get("final_status") or STATUS_FAILED).strip().lower()
-
-                if fail_final_status == STATUS_QUEUED:
-                    self._mark_repo_task_queued(
+                repo_task = self._get_task_from_repo(task_id)
+                if not isinstance(repo_task, dict):
+                    self.dispatcher.fail_task(
                         task_id=task_id,
-                        error=str(
-                            runner_result.get("error")
-                            or runner_result.get("final_answer")
-                            or "task failed"
-                        ),
+                        error="task missing from repository",
+                        requeue_on_retry=False,
                     )
-                else:
-                    self._mark_repo_task_failed(
-                        task_id=task_id,
-                        error=str(
-                            runner_result.get("error")
-                            or runner_result.get("final_answer")
-                            or "task failed"
-                        ),
+                    self._mark_repo_task_failed(task_id=task_id, error="task missing from repository")
+                    round_executed.append(
+                        {
+                            "ok": False,
+                            "task_id": task_id,
+                            "status": STATUS_FAILED,
+                            "error": "task missing from repository",
+                        }
                     )
+                    continue
 
-            elif final_status in {"queued", STATUS_QUEUED, "retry"}:
-                self.worker_pool.release_by_task(task_id)
-                self.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
-                self._mark_repo_task_queued(
-                    task_id=task_id,
-                    error=str(runner_result.get("error") or ""),
-                )
+                repo_task = self._hydrate_task_from_workspace(repo_task)
 
-            else:
-                runtime_task = self._get_task_from_repo(task_id)
-                runtime_status = ""
-                if isinstance(runtime_task, dict):
-                    runtime_status = str(runtime_task.get("status") or "").strip().lower()
+                current_status = str(repo_task.get("status") or "").strip().lower()
+                if current_status in TERMINAL_STATUSES:
+                    self.worker_pool.release_by_task(task_id)
+                    round_executed.append(
+                        {
+                            "ok": True,
+                            "task_id": task_id,
+                            "status": current_status,
+                            "message": "task already terminal, skipped",
+                        }
+                    )
+                    continue
 
-                if runtime_status in {"done", "finished", STATUS_FINISHED, "success", "completed"}:
-                    self.dispatcher.complete_task(task_id=task_id, result=final_answer)
-                    self._mark_repo_task_finished(task_id=task_id, result=final_answer)
-
-                elif runtime_status in {"failed", STATUS_FAILED, "error"}:
+                try:
+                    runner_result = self.run_one_step(task=repo_task, current_tick=self.current_tick)
+                except Exception as e:
                     fail_result = self.dispatcher.fail_task(
                         task_id=task_id,
-                        error=str(runner_result.get("error") or "task failed"),
-                        requeue_on_retry=True,
+                        error=f"run_one_step exception: {e}",
+                        requeue_on_retry=False,
                     )
-                    fail_final_status = str(fail_result.get("final_status") or STATUS_FAILED).strip().lower()
+                    self._mark_repo_task_failed(task_id=task_id, error=f"run_one_step exception: {e}")
+                    round_executed.append(
+                        {
+                            "ok": False,
+                            "task_id": task_id,
+                            "status": fail_result.get("final_status", STATUS_FAILED),
+                            "error": str(e),
+                        }
+                    )
+                    continue
 
-                    if fail_final_status == STATUS_QUEUED:
+                refreshed_repo_task = self._get_task_from_repo(task_id)
+                effective_status, effective_final_answer = self._extract_effective_status_and_answer(
+                    original_task=repo_task,
+                    refreshed_task=refreshed_repo_task,
+                    runner_result=runner_result,
+                )
+
+                if effective_status in {"done", "finished", STATUS_FINISHED, "success", "completed"}:
+                    self.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
+                    self._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
+
+                elif effective_status in {"failed", STATUS_FAILED, "error"}:
+                    fail_error = str(
+                        (runner_result or {}).get("error")
+                        or effective_final_answer
+                        or "task failed"
+                    )
+                    self.dispatcher.fail_task(
+                        task_id=task_id,
+                        error=fail_error,
+                        requeue_on_retry=False,
+                    )
+                    self._mark_repo_task_failed(task_id=task_id, error=fail_error)
+
+                elif effective_status in {STATUS_BLOCKED}:
+                    self.worker_pool.release_by_task(task_id)
+                    blocked_reason = str((runner_result or {}).get("blocked_reason") or "")
+                    self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+
+                elif effective_status in {"queued", STATUS_QUEUED, "retry", "ready", "running"}:
+                    self.worker_pool.release_by_task(task_id)
+                    if self._can_requeue_task(task_id):
+                        self.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
                         self._mark_repo_task_queued(
                             task_id=task_id,
-                            error=str(runner_result.get("error") or "task failed"),
+                            error=str((runner_result or {}).get("error") or ""),
                         )
-                    else:
-                        self._mark_repo_task_failed(
-                            task_id=task_id,
-                            error=str(runner_result.get("error") or "task failed"),
-                        )
+
                 else:
                     self.worker_pool.release_by_task(task_id)
-                    self.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
-                    self._mark_repo_task_queued(
-                        task_id=task_id,
-                        error=str(runner_result.get("error") or ""),
-                    )
 
-            executed_results.append(
-                {
-                    "ok": bool(runner_result.get("ok", True)),
-                    "task_id": task_id,
-                    "worker_id": dispatch_result.worker_id,
-                    "result": runner_result,
-                }
-            )
+                round_executed.append(
+                    {
+                        "ok": bool((runner_result or {}).get("ok", True)),
+                        "task_id": task_id,
+                        "worker_id": dispatch_result.worker_id,
+                        "status": effective_status,
+                        "final_answer": effective_final_answer,
+                        "result": runner_result,
+                    }
+                )
+
+            if not round_executed:
+                break
+
+            all_executed_results.extend(round_executed)
+
+            # 如果目前已沒有 queued / running task，就可以提前結束。
+            snapshot = self.dispatcher.snapshot()
+            queue_stats = snapshot.get("queue", {})
+            worker_stats = snapshot.get("workers", {})
+            if (
+                int(queue_stats.get("queued_count", 0) or 0) <= 0
+                and int(worker_stats.get("running_count", 0) or 0) <= 0
+            ):
+                break
 
         snapshot = self.dispatcher.snapshot()
         queue_stats = snapshot.get("queue", {})
@@ -294,10 +341,12 @@ class Scheduler(RuntimeTaskScheduler):
             "ok": True,
             "scheduler_build": SCHEDULER_BUILD,
             "tick": self.current_tick,
-            "synced_task_ids": synced,
-            "dispatched_count": len(dispatch_results),
-            "executed_count": len(executed_results),
-            "executed_results": executed_results,
+            "rounds_used": rounds_used,
+            "max_scheduler_rounds_per_tick": self.max_scheduler_rounds_per_tick,
+            "synced_task_ids": last_synced,
+            "dispatched_count": total_dispatched,
+            "executed_count": len(all_executed_results),
+            "executed_results": all_executed_results,
             "snapshot": {
                 "queue": queue_stats,
                 "workers": worker_stats,
@@ -309,6 +358,18 @@ class Scheduler(RuntimeTaskScheduler):
             },
         }
 
+    def _can_requeue_task(self, task_id: str) -> bool:
+        task = self._get_task_from_repo(task_id)
+        if not isinstance(task, dict):
+            return False
+
+        status = str(task.get("status") or "").strip().lower()
+        if status in TERMINAL_STATUSES:
+            return False
+
+        deps_ready, _ = self._task_dependencies_satisfied(task)
+        return deps_ready
+
     # ------------------------------------------------------------
     # runtime scheduler sync
     # ------------------------------------------------------------
@@ -318,12 +379,33 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         current_tick: Optional[int] = None,
     ) -> Dict[str, Any]:
-        result = super().run_one_step(task=task, current_tick=current_tick)
+        task = self._hydrate_task_from_workspace(task)
 
-        if isinstance(result, dict) and result.get("action") == "scheduler_no_runner":
-            result = self._run_simple_task_tick(task=task, current_tick=current_tick)
+        current_status = str(task.get("status") or "").strip().lower()
+        if current_status in TERMINAL_STATUSES:
+            result = {
+                "ok": True,
+                "action": "terminal_skip",
+                "task_id": self._extract_task_id(task),
+                "status": current_status,
+                "final_answer": task.get("final_answer", ""),
+            }
+            self._sync_runtime_back_to_repo(task=task, runner_result=result)
+            return result
+
+        # 收束期先強制走 simple executor，避免父類 run_one_step
+        # 因沒有真正接上 runner 而停在 queued、不執行 step。
+        # 等 scheduler → agent_loop 真正打通後，再把這裡改回可切換模式。
+        result = self._run_simple_task_tick(task=task, current_tick=current_tick)
 
         self._sync_runtime_back_to_repo(task=task, runner_result=result)
+
+        refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
+        if isinstance(refreshed_task, dict):
+            refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
+            if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
+                self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+
         return result
 
     # ------------------------------------------------------------
@@ -338,8 +420,39 @@ class Scheduler(RuntimeTaskScheduler):
         if current_tick is not None:
             self.current_tick = int(current_tick)
 
+        task = self._hydrate_task_from_workspace(task)
+
         task_id = self._extract_task_id(task)
         task_name = str(task.get("task_name") or task_id or "unknown_task")
+        task_status = str(task.get("status") or "").strip().lower()
+
+        if task_status in TERMINAL_STATUSES:
+            return {
+                "ok": True,
+                "action": "terminal_skip",
+                "tick": self.current_tick,
+                "task_id": task_id,
+                "task_name": task_name,
+                "status": task_status,
+                "message": "task already terminal",
+                "final_answer": task.get("final_answer", ""),
+            }
+
+        deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
+        if not deps_ready:
+            task["status"] = STATUS_BLOCKED
+            task["blocked_reason"] = blocked_reason
+            task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
+            return {
+                "ok": False,
+                "action": "blocked_by_dependencies",
+                "tick": self.current_tick,
+                "task_id": task_id,
+                "task_name": task_name,
+                "status": STATUS_BLOCKED,
+                "blocked_reason": blocked_reason,
+                "error": blocked_reason,
+            }
 
         steps = task.get("steps", [])
         if not isinstance(steps, list):
@@ -355,11 +468,21 @@ class Scheduler(RuntimeTaskScheduler):
         if not isinstance(results, list):
             results = []
 
+        step_results = copy.deepcopy(task.get("step_results", results))
+        if not isinstance(step_results, list):
+            step_results = copy.deepcopy(results)
+
+        last_step_result = copy.deepcopy(task.get("last_step_result"))
+
         if current_step_index >= len(steps):
             task["status"] = "finished"
-            task["final_answer"] = str(task.get("final_answer") or "task finished")
+            task["final_answer"] = str(task.get("final_answer") or self._build_simple_final_answer(results))
             task["finished_tick"] = self.current_tick
             task["last_run_tick"] = self.current_tick
+            task["results"] = results
+            task["step_results"] = step_results
+            task["last_step_result"] = last_step_result
+            task["history"] = self._append_history(task.get("history"), "finished")
             return {
                 "ok": True,
                 "action": "simple_task_finished",
@@ -371,8 +494,11 @@ class Scheduler(RuntimeTaskScheduler):
                 "final_answer": task["final_answer"],
                 "execution_log": execution_log,
                 "results": results,
+                "step_results": step_results,
+                "last_step_result": last_step_result,
                 "current_step_index": current_step_index,
                 "step_count": len(steps),
+                "steps_total": len(steps),
                 "last_run_tick": self.current_tick,
                 "finished_tick": self.current_tick,
             }
@@ -384,6 +510,10 @@ class Scheduler(RuntimeTaskScheduler):
             task["failure_message"] = "invalid step type"
             task["last_failure_tick"] = self.current_tick
             task["last_run_tick"] = self.current_tick
+            task["results"] = results
+            task["step_results"] = step_results
+            task["last_step_result"] = last_step_result
+            task["history"] = self._append_history(task.get("history"), "failed")
             return {
                 "ok": False,
                 "action": "simple_invalid_step",
@@ -393,17 +523,17 @@ class Scheduler(RuntimeTaskScheduler):
                 "status": "failed",
                 "message": "invalid step type",
                 "error": "invalid step type",
-                "execution_log": execution_log,
-                "results": results,
-                "current_step_index": current_step_index,
-                "step_count": len(steps),
-                "last_run_tick": self.current_tick,
-                "last_failure_tick": self.current_tick,
             }
 
         try:
             step_result = self._execute_simple_step(task=task, step=step)
         except Exception as e:
+            failed_step_result = {
+                "ok": False,
+                "step_index": current_step_index,
+                "step": copy.deepcopy(step),
+                "error": str(e),
+            }
             execution_log.append(
                 {
                     "tick": self.current_tick,
@@ -413,12 +543,53 @@ class Scheduler(RuntimeTaskScheduler):
                     "error": str(e),
                 }
             )
+            results.append(copy.deepcopy(failed_step_result))
+            step_results = copy.deepcopy(results)
+            last_step_result = copy.deepcopy(failed_step_result)
+
             task["execution_log"] = execution_log
-            task["status"] = "failed"
+            task["results"] = results
+            task["step_results"] = step_results
+            task["last_step_result"] = last_step_result
             task["last_error"] = str(e)
             task["failure_message"] = str(e)
             task["last_failure_tick"] = self.current_tick
             task["last_run_tick"] = self.current_tick
+
+            replan_result = self._try_replan_task(task=task)
+            if replan_result.get("replanned"):
+                task["status"] = "queued"
+                task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or str(e))
+                task["current_step_index"] = 0
+                task["history"] = self._append_history(task.get("history"), "replanned")
+                task["history"] = self._append_history(task.get("history"), "queued")
+
+                new_steps = task.get("steps", []) if isinstance(task.get("steps"), list) else []
+                new_steps_total = len(new_steps)
+
+                return {
+                    "ok": True,
+                    "action": "simple_step_replanned",
+                    "tick": self.current_tick,
+                    "task_id": task_id,
+                    "task_name": task_name,
+                    "status": "queued",
+                    "message": replan_result.get("summary", "task replanned"),
+                    "execution_log": execution_log,
+                    "results": results,
+                    "step_results": step_results,
+                    "last_step_result": last_step_result,
+                    "current_step_index": 0,
+                    "step_count": new_steps_total,
+                    "steps_total": new_steps_total,
+                    "last_run_tick": self.current_tick,
+                    "last_failure_tick": self.current_tick,
+                    "replan_reason": task["replan_reason"],
+                    "replan_result": replan_result,
+                }
+
+            task["status"] = "failed"
+            task["history"] = self._append_history(task.get("history"), "failed")
 
             return {
                 "ok": False,
@@ -431,11 +602,22 @@ class Scheduler(RuntimeTaskScheduler):
                 "error": str(e),
                 "execution_log": execution_log,
                 "results": results,
+                "step_results": step_results,
+                "last_step_result": last_step_result,
                 "current_step_index": current_step_index,
                 "step_count": len(steps),
+                "steps_total": len(steps),
                 "last_run_tick": self.current_tick,
                 "last_failure_tick": self.current_tick,
+                "replan_result": replan_result,
             }
+
+        normalized_step_result = {
+            "ok": True,
+            "step_index": current_step_index,
+            "step": copy.deepcopy(step),
+            "result": copy.deepcopy(step_result),
+        }
 
         execution_log.append(
             {
@@ -446,18 +628,25 @@ class Scheduler(RuntimeTaskScheduler):
                 "result": copy.deepcopy(step_result),
             }
         )
-        results.append(copy.deepcopy(step_result))
+        results.append(copy.deepcopy(normalized_step_result))
+        step_results = copy.deepcopy(results)
+        last_step_result = copy.deepcopy(normalized_step_result)
 
         task["execution_log"] = execution_log
         task["results"] = results
+        task["step_results"] = step_results
+        task["last_step_result"] = last_step_result
         task["current_step_index"] = current_step_index + 1
         task["last_run_tick"] = self.current_tick
 
         if task["current_step_index"] >= len(steps):
-            final_answer = self._build_simple_final_answer(results)
+            final_answer = self._build_simple_final_answer(
+                [x.get("result", x) if isinstance(x, dict) else x for x in results]
+            )
             task["status"] = "finished"
             task["final_answer"] = final_answer
             task["finished_tick"] = self.current_tick
+            task["history"] = self._append_history(task.get("history"), "finished")
 
             return {
                 "ok": True,
@@ -470,13 +659,17 @@ class Scheduler(RuntimeTaskScheduler):
                 "final_answer": final_answer,
                 "execution_log": execution_log,
                 "results": results,
+                "step_results": step_results,
+                "last_step_result": last_step_result,
                 "current_step_index": task["current_step_index"],
                 "step_count": len(steps),
+                "steps_total": len(steps),
                 "last_run_tick": self.current_tick,
                 "finished_tick": self.current_tick,
             }
 
         task["status"] = "queued"
+        task["history"] = self._append_history(task.get("history"), "queued")
         return {
             "ok": True,
             "action": "simple_step_executed",
@@ -488,9 +681,83 @@ class Scheduler(RuntimeTaskScheduler):
             "final_answer": "",
             "execution_log": execution_log,
             "results": results,
+            "step_results": step_results,
+            "last_step_result": last_step_result,
             "current_step_index": task["current_step_index"],
             "step_count": len(steps),
+            "steps_total": len(steps),
             "last_run_tick": self.current_tick,
+        }
+
+    def _try_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return {
+                "ok": False,
+                "replanned": False,
+                "summary": "invalid task payload",
+            }
+
+        replanner = getattr(self, "replanner", None)
+        if replanner is None or not hasattr(replanner, "create_replan_for_task"):
+            return {
+                "ok": False,
+                "replanned": False,
+                "summary": "replanner not available",
+            }
+
+        try:
+            replan_result = replanner.create_replan_for_task(
+                task=copy.deepcopy(task),
+                user_input=str(task.get("goal") or ""),
+            )
+        except Exception as e:
+            return {
+                "ok": False,
+                "replanned": False,
+                "summary": f"replanner exception: {e}",
+            }
+
+        if not isinstance(replan_result, dict):
+            return {
+                "ok": False,
+                "replanned": False,
+                "summary": "invalid replanner result",
+            }
+
+        if not bool(replan_result.get("replanned")):
+            return {
+                "ok": True,
+                "replanned": False,
+                "summary": str(replan_result.get("summary") or "replan not applied"),
+                "raw_replan_result": copy.deepcopy(replan_result),
+            }
+
+        plan = replan_result.get("plan", {})
+        new_steps = plan.get("steps", []) if isinstance(plan, dict) else []
+        if not isinstance(new_steps, list) or not new_steps:
+            return {
+                "ok": False,
+                "replanned": False,
+                "summary": "replanner returned empty steps",
+                "raw_replan_result": copy.deepcopy(replan_result),
+            }
+
+        task["steps"] = copy.deepcopy(new_steps)
+        task["steps_total"] = len(new_steps)
+        task["current_step_index"] = 0
+        task["replan_count"] = int(replan_result.get("replan_count", task.get("replan_count", 0)) or 0)
+        task["replanned"] = True
+        task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or "")
+        task["planner_result"] = copy.deepcopy(plan)
+        task["status"] = "queued"
+
+        return {
+            "ok": True,
+            "replanned": True,
+            "summary": str(replan_result.get("summary") or "task replanned"),
+            "steps_total": len(new_steps),
+            "replan_count": task["replan_count"],
+            "raw_replan_result": copy.deepcopy(replan_result),
         }
 
     def _execute_simple_step(
@@ -500,7 +767,27 @@ class Scheduler(RuntimeTaskScheduler):
     ) -> Dict[str, Any]:
         step_type = str(step.get("type") or "").strip().lower()
         task_dir = self._resolve_task_dir(task)
-        shared_dir = self.shared_dir
+
+        guard_step = copy.deepcopy(step)
+
+        if step_type == "run_python":
+            run_path = str(step.get("path") or "").strip()
+            if not run_path:
+                raise ValueError("run_python step missing path")
+            guard_step = {
+                "type": "command",
+                "command": f'{sys.executable} "{run_path}"',
+            }
+
+        elif step_type == "verify":
+            guard_step = {
+                "type": "noop",
+                "message": "verify",
+            }
+
+        guard_result = self.execution_guard.check_step(step=guard_step, task_dir=task_dir)
+        if not bool(guard_result.get("ok")):
+            raise PermissionError(str(guard_result.get("error") or "guard blocked execution"))
 
         if step_type == "noop":
             return {
@@ -518,9 +805,11 @@ class Scheduler(RuntimeTaskScheduler):
                 content = ""
             content = str(content)
 
-            full_path = self._resolve_step_path(raw_path, task_dir=task_dir, shared_dir=shared_dir)
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            full_path = str(guard_result.get("resolved_path") or "")
+            if not full_path:
+                full_path = self._resolve_step_path(raw_path, task_dir=task_dir, shared_dir=self.shared_dir)
 
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
@@ -562,12 +851,72 @@ class Scheduler(RuntimeTaskScheduler):
 
             return result
 
+        if step_type == "run_python":
+            raw_path = str(step.get("path") or "").strip()
+            if not raw_path:
+                raise ValueError("run_python step missing path")
+
+            full_path = self._resolve_read_path_with_fallback(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                shared_dir=self.shared_dir,
+            )
+
+            read_guard = self.execution_guard.check_step(
+                step={"type": "read_file", "path": full_path},
+                task_dir=task_dir,
+            )
+            if not bool(read_guard.get("ok")):
+                raise PermissionError(str(read_guard.get("error") or "guard blocked python file read"))
+
+            if not os.path.exists(full_path):
+                raise FileNotFoundError(f"python file not found: {full_path}")
+
+            completed = subprocess.run(
+                [sys.executable, full_path],
+                cwd=task_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            result = {
+                "type": "run_python",
+                "path": raw_path,
+                "full_path": full_path,
+                "python_executable": sys.executable,
+                "returncode": int(completed.returncode),
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+                "cwd": task_dir,
+            }
+
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"python run failed: {raw_path} | returncode={completed.returncode} | stderr={completed.stderr.strip()}"
+                )
+
+            return result
+
         if step_type == "read_file":
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
                 raise ValueError("read_file step missing path")
 
-            full_path = self._resolve_step_path(raw_path, task_dir=task_dir, shared_dir=shared_dir)
+            full_path = self._resolve_read_path_with_fallback(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                shared_dir=self.shared_dir,
+            )
+
+            guard_check = self.execution_guard.check_step(
+                step={"type": "read_file", "path": full_path},
+                task_dir=task_dir,
+            )
+            if not bool(guard_check.get("ok")):
+                raise PermissionError(str(guard_check.get("error") or "guard blocked read"))
+
             if not os.path.exists(full_path):
                 raise FileNotFoundError(f"file not found: {full_path}")
 
@@ -581,6 +930,69 @@ class Scheduler(RuntimeTaskScheduler):
                 "content": content,
             }
 
+        if step_type == "verify":
+            contains = str(step.get("contains") or "").strip()
+            equals = step.get("equals", None)
+            path = str(step.get("path") or "").strip()
+
+            if not contains and equals is None and not path:
+                raise ValueError("verify step requires contains / equals / path")
+
+            target_text = ""
+
+            if path:
+                full_path = self._resolve_read_path_with_fallback(
+                    raw_path=path,
+                    task_dir=task_dir,
+                    shared_dir=self.shared_dir,
+                )
+
+                read_guard = self.execution_guard.check_step(
+                    step={"type": "read_file", "path": full_path},
+                    task_dir=task_dir,
+                )
+                if not bool(read_guard.get("ok")):
+                    raise PermissionError(str(read_guard.get("error") or "guard blocked verify read"))
+
+                if not os.path.exists(full_path):
+                    raise FileNotFoundError(f"verify file not found: {full_path}")
+
+                with open(full_path, "r", encoding="utf-8") as f:
+                    target_text = f.read()
+            else:
+                last = task.get("last_step_result")
+                if isinstance(last, dict):
+                    last_result = last.get("result")
+                    if isinstance(last_result, dict):
+                        if "stdout" in last_result:
+                            target_text = str(last_result.get("stdout") or "")
+                        elif "content" in last_result:
+                            target_text = str(last_result.get("content") or "")
+                        else:
+                            target_text = json.dumps(last_result, ensure_ascii=False)
+                    else:
+                        target_text = str(last_result or "")
+
+            if contains:
+                if contains not in target_text:
+                    raise RuntimeError(f"verify failed: '{contains}' not found")
+
+            if equals is not None:
+                expected = str(equals)
+                if str(target_text).strip() != expected.strip():
+                    raise RuntimeError(
+                        f"verify failed: expected exact match '{expected}', got '{str(target_text).strip()}'"
+                    )
+
+            return {
+                "type": "verify",
+                "ok": True,
+                "contains": contains,
+                "equals": equals,
+                "path": path,
+                "checked_text": target_text,
+            }
+
         raise ValueError(f"unsupported step type: {step_type}")
 
     def _resolve_task_dir(self, task: Dict[str, Any]) -> str:
@@ -589,11 +1001,8 @@ class Scheduler(RuntimeTaskScheduler):
             os.makedirs(task_dir, exist_ok=True)
             return task_dir
 
-        fallback_dir = os.path.join(
-            self.workspace_root,
-            "tasks",
-            str(task.get("task_name") or "unknown_task"),
-        )
+        task_name = str(task.get("task_name") or self._extract_task_id(task) or "unknown_task")
+        fallback_dir = os.path.join(self.tasks_root, task_name)
         os.makedirs(fallback_dir, exist_ok=True)
         return fallback_dir
 
@@ -609,18 +1018,48 @@ class Scheduler(RuntimeTaskScheduler):
 
         return os.path.abspath(os.path.join(task_dir, normalized))
 
+    def _resolve_read_path_with_fallback(self, raw_path: str, task_dir: str, shared_dir: str) -> str:
+        normalized = raw_path.replace("\\", "/").strip()
+
+        if os.path.isabs(normalized):
+            return os.path.abspath(normalized)
+
+        if normalized.startswith("shared/"):
+            relative_part = normalized[len("shared/"):].strip("/")
+            return os.path.abspath(os.path.join(shared_dir, relative_part))
+
+        task_local = os.path.abspath(os.path.join(task_dir, normalized))
+        if os.path.exists(task_local):
+            return task_local
+
+        shared_candidate = os.path.abspath(os.path.join(shared_dir, normalized))
+        return shared_candidate
+
     def _build_simple_final_answer(self, results: List[Dict[str, Any]]) -> str:
         if not results:
             return "task finished"
 
-        last = results[-1]
-        if isinstance(last, dict) and last.get("type") == "command":
+        normalized_results: List[Dict[str, Any]] = []
+        for item in results:
+            if isinstance(item, dict) and isinstance(item.get("result"), dict):
+                normalized_results.append(item.get("result"))
+            elif isinstance(item, dict):
+                normalized_results.append(item)
+
+        if not normalized_results:
+            return "task finished"
+
+        last = normalized_results[-1]
+        if isinstance(last, dict) and last.get("type") in {"command", "run_python"}:
             stdout = str(last.get("stdout") or "").strip()
             if stdout:
                 return stdout
 
         if isinstance(last, dict) and last.get("type") == "read_file":
             return str(last.get("content") or "").strip() or "task finished"
+
+        if isinstance(last, dict) and last.get("type") == "verify":
+            return "verify ok"
 
         if isinstance(last, dict) and last.get("type") == "noop":
             return str(last.get("message") or "task finished")
@@ -650,19 +1089,7 @@ class Scheduler(RuntimeTaskScheduler):
         }
 
     def get_queue_snapshot(self) -> Dict[str, Any]:
-        repo_tasks: List[Dict[str, Any]] = []
-
-        repo = self.task_repo
-        list_tasks_fn = getattr(repo, "list_tasks", None)
-
-        if callable(list_tasks_fn):
-            try:
-                loaded = list_tasks_fn()
-                if isinstance(loaded, list):
-                    repo_tasks = loaded
-            except Exception:
-                repo_tasks = []
-
+        repo_tasks = self._list_repo_tasks()
         return {
             "ok": True,
             "scheduler_build": SCHEDULER_BUILD,
@@ -683,7 +1110,7 @@ class Scheduler(RuntimeTaskScheduler):
     # 任務操作 API
     # ------------------------------------------------------------
 
-    def submit_task(
+    def _create_task_record(
         self,
         goal: str,
         priority: int = 0,
@@ -691,6 +1118,8 @@ class Scheduler(RuntimeTaskScheduler):
         retry_delay: int = 0,
         timeout_ticks: int = 0,
         depends_on: Optional[List[str]] = None,
+        initial_status: str = STATUS_CREATED,
+        blocked_reason: str = "",
         **kwargs: Any,
     ) -> Dict[str, Any]:
         if not isinstance(goal, str) or not goal.strip():
@@ -719,6 +1148,7 @@ class Scheduler(RuntimeTaskScheduler):
             steps = []
 
         task_name = f"task_{int(time.time() * 1000)}"
+        task_dir = os.path.join(self.tasks_root, task_name)
 
         raw_depends_on = depends_on if depends_on is not None else kwargs.get("depends_on", None)
         if raw_depends_on is None:
@@ -729,12 +1159,13 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "ok": False,
                 "scheduler_build": SCHEDULER_BUILD,
-                "error": resolve_result.get("error", "depends_on normalization failed") if isinstance(resolve_result, dict) else "depends_on normalization failed",
+                "error": resolve_result.get("error", "depends_on normalization failed")
+                if isinstance(resolve_result, dict)
+                else "depends_on normalization failed",
                 "depends_on_input": raw_depends_on,
             }
 
         normalized_depends_on = resolve_result["depends_on"]
-        initial_status, initial_blocked_reason = self._decide_initial_status(normalized_depends_on)
 
         task = {
             "task_id": task_name,
@@ -763,7 +1194,7 @@ class Scheduler(RuntimeTaskScheduler):
             "last_failure_tick": None,
             "finished_tick": None,
             "depends_on": normalized_depends_on,
-            "blocked_reason": initial_blocked_reason,
+            "blocked_reason": blocked_reason,
             "failure_type": None,
             "failure_message": None,
             "last_error": None,
@@ -773,10 +1204,14 @@ class Scheduler(RuntimeTaskScheduler):
             "replan_count": 0,
             "replanned": False,
             "replan_reason": "",
-            "max_replans": 1,
+            "max_replans": int(kwargs.get("max_replans", self.default_max_replans) or self.default_max_replans),
             "history": [initial_status],
             "workspace_root": self.workspace_root,
+            "workspace_dir": self.tasks_root,
             "shared_dir": self.shared_dir,
+            "task_dir": task_dir,
+            "plan_file": os.path.join(task_dir, "plan.json"),
+            "runtime_state_file": os.path.join(task_dir, "runtime_state.json"),
             "scheduler_build": SCHEDULER_BUILD,
         }
 
@@ -826,7 +1261,7 @@ class Scheduler(RuntimeTaskScheduler):
         self._force_repo_task_state(
             task_id=task_name,
             desired_status=initial_status,
-            blocked_reason=initial_blocked_reason,
+            blocked_reason=blocked_reason,
             depends_on=normalized_depends_on,
             full_task=task,
         )
@@ -834,9 +1269,6 @@ class Scheduler(RuntimeTaskScheduler):
         refreshed = self._get_task_from_repo(task_name)
         if isinstance(refreshed, dict):
             task = refreshed
-
-        if str(task.get("status") or "").strip().lower() == "queued":
-            self._enqueue_repo_task_if_ready(task, overwrite=True)
 
         return {
             "ok": True,
@@ -857,15 +1289,123 @@ class Scheduler(RuntimeTaskScheduler):
         depends_on: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        return self.submit_task(
+        return self._create_task_record(
             goal=goal,
             priority=priority,
             max_retries=max_retries,
             retry_delay=retry_delay,
             timeout_ticks=timeout_ticks,
             depends_on=depends_on,
+            initial_status=STATUS_CREATED,
+            blocked_reason="",
             **kwargs,
         )
+
+    def submit_task(
+        self,
+        goal: str,
+        priority: int = 0,
+        max_retries: int = 0,
+        retry_delay: int = 0,
+        timeout_ticks: int = 0,
+        depends_on: Optional[List[str]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        created = self._create_task_record(
+            goal=goal,
+            priority=priority,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            timeout_ticks=timeout_ticks,
+            depends_on=depends_on,
+            initial_status=STATUS_CREATED,
+            blocked_reason="",
+            **kwargs,
+        )
+        if not isinstance(created, dict) or not created.get("ok"):
+            return created
+
+        task_id = str(created.get("task_name") or "").strip()
+        submit_result = self.submit_existing_task(task_id)
+        merged = copy.deepcopy(created)
+        if isinstance(submit_result, dict):
+            merged.update(
+                {
+                    "submit_result": submit_result,
+                    "status": submit_result.get("status"),
+                    "message": submit_result.get("message", created.get("message")),
+                }
+            )
+        return merged
+
+    def submit_existing_task(self, task_id: str) -> Dict[str, Any]:
+        if not isinstance(task_id, str) or not task_id.strip():
+            return {
+                "ok": False,
+                "scheduler_build": SCHEDULER_BUILD,
+                "error": "task_id is empty",
+            }
+
+        task_id = task_id.strip()
+
+        task = self._get_task_from_repo(task_id)
+        if not isinstance(task, dict):
+            return {
+                "ok": False,
+                "scheduler_build": SCHEDULER_BUILD,
+                "error": "task not found",
+                "task_id": task_id,
+            }
+
+        task = self._hydrate_task_from_workspace(task)
+
+        status = str(task.get("status") or "").strip().lower()
+        if status in TERMINAL_STATUSES:
+            return {
+                "ok": False,
+                "scheduler_build": SCHEDULER_BUILD,
+                "error": "task already terminal",
+                "task_id": task_id,
+                "status": status,
+            }
+
+        deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
+
+        if deps_ready:
+            task["status"] = "queued"
+            task["blocked_reason"] = ""
+            task["scheduler_build"] = SCHEDULER_BUILD
+            task["history"] = self._append_history(task.get("history"), "queued")
+            self._persist_task_payload(task_id=task_id, task=task)
+
+            refreshed = self._get_task_from_repo(task_id)
+            if isinstance(refreshed, dict):
+                self._enqueue_repo_task_if_ready(refreshed, overwrite=True)
+
+            return {
+                "ok": True,
+                "scheduler_build": SCHEDULER_BUILD,
+                "task_name": task_id,
+                "task_id": task_id,
+                "status": "queued",
+                "message": "task submitted",
+            }
+
+        task["status"] = STATUS_BLOCKED
+        task["blocked_reason"] = blocked_reason
+        task["scheduler_build"] = SCHEDULER_BUILD
+        task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
+        self._persist_task_payload(task_id=task_id, task=task)
+
+        return {
+            "ok": True,
+            "scheduler_build": SCHEDULER_BUILD,
+            "task_name": task_id,
+            "task_id": task_id,
+            "status": STATUS_BLOCKED,
+            "message": "task submitted but blocked by dependencies",
+            "blocked_reason": blocked_reason,
+        }
 
     def pause_task(self, task_name: str) -> Dict[str, Any]:
         result = self._set_status(task_name, "paused")
@@ -882,6 +1422,16 @@ class Scheduler(RuntimeTaskScheduler):
                 "task_name": task_name,
             }
 
+        task_status = str(task.get("status") or "").strip().lower()
+        if task_status in TERMINAL_STATUSES:
+            return {
+                "ok": False,
+                "scheduler_build": SCHEDULER_BUILD,
+                "error": "task already terminal",
+                "task_name": task_name,
+                "status": task_status,
+            }
+
         deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
         if deps_ready:
             result = self._set_status(task_name, "queued")
@@ -891,7 +1441,7 @@ class Scheduler(RuntimeTaskScheduler):
             return result
 
         self._sync_blocked_state(task_id=task_name, blocked_reason=blocked_reason)
-        result = self._set_status(task_name, "blocked")
+        result = self._set_status(task_name, STATUS_BLOCKED)
         return {
             **result,
             "message": "task still blocked by dependencies",
@@ -1005,19 +1555,35 @@ class Scheduler(RuntimeTaskScheduler):
         for task in tasks:
             if not isinstance(task, dict):
                 continue
+
+            task = self._hydrate_task_from_workspace(task)
+            task_id = self._extract_task_id(task)
+            if not task_id:
+                continue
+
+            status = str(task.get("status") or "").strip().lower()
+
+            if status in TERMINAL_STATUSES:
+                self.worker_pool.release_by_task(task_id)
+                continue
+
             if self._enqueue_repo_task_if_ready(task):
-                task_id = self._extract_task_id(task)
-                if task_id:
-                    synced_ids.append(task_id)
+                synced_ids.append(task_id)
 
         return synced_ids
 
     def _enqueue_repo_task_if_ready(self, task: Dict[str, Any], overwrite: bool = False) -> bool:
+        task = self._hydrate_task_from_workspace(task)
+
         task_id = self._extract_task_id(task)
         if not task_id:
             return False
 
         if self.worker_pool.get_running_task(task_id) is not None:
+            return False
+
+        status = str(task.get("status") or "").strip().lower()
+        if status in TERMINAL_STATUSES:
             return False
 
         if self._queue_contains_task(task_id) and not overwrite:
@@ -1036,20 +1602,15 @@ class Scheduler(RuntimeTaskScheduler):
             task = refreshed_task
 
         status = str(task.get("status") or "").strip().lower()
-        ready_statuses = {
-            "queued",
-            "ready",
-            "retry",
-            STATUS_QUEUED,
-        }
-
-        if status not in ready_statuses:
+        if status not in READY_STATUSES:
             return False
 
         scheduled_task = self._repo_task_to_scheduled_task(task)
         return self.scheduler_queue.enqueue(scheduled_task, overwrite=overwrite)
 
     def _repo_task_to_scheduled_task(self, task: Dict[str, Any]) -> ScheduledTask:
+        task = self._hydrate_task_from_workspace(task)
+
         task_id = self._extract_task_id(task) or f"task_{int(time.time() * 1000)}"
 
         created_at_raw = task.get("created_at", time.time())
@@ -1064,6 +1625,9 @@ class Scheduler(RuntimeTaskScheduler):
         except Exception:
             current_step_index = None
 
+        full_payload = copy.deepcopy(task)
+        full_payload["current_step_index"] = current_step_index
+
         return ScheduledTask(
             task_id=task_id,
             title=str(task.get("title") or task.get("goal") or task_id),
@@ -1072,17 +1636,16 @@ class Scheduler(RuntimeTaskScheduler):
             status=str(task.get("status") or STATUS_QUEUED),
             retry_count=int(task.get("retry_count", 0)),
             max_retries=int(task.get("max_retries", 0)),
-            payload={
-                "goal": task.get("goal"),
-                "steps_total": task.get("steps_total"),
-                "current_step_index": current_step_index,
-                "depends_on": copy.deepcopy(task.get("depends_on", [])),
-            },
+            payload=full_payload,
             metadata={
                 "repo_status": task.get("status"),
                 "task_name": task.get("task_name"),
                 "blocked_reason": task.get("blocked_reason"),
                 "scheduler_build": task.get("scheduler_build", SCHEDULER_BUILD),
+                "goal": task.get("goal"),
+                "steps_total": task.get("steps_total"),
+                "current_step_index": current_step_index,
+                "depends_on": copy.deepcopy(task.get("depends_on", [])),
             },
             last_error=task.get("last_error"),
             result=task.get("final_answer"),
@@ -1136,22 +1699,8 @@ class Scheduler(RuntimeTaskScheduler):
     # DAG helpers
     # ------------------------------------------------------------
 
-    def _decide_initial_status(self, depends_on: List[str]) -> Tuple[str, str]:
-        if not depends_on:
-            return "queued", ""
-
-        for dep_id in depends_on:
-            dep_task = self._get_task_from_repo(dep_id)
-            if not isinstance(dep_task, dict):
-                return "blocked", f"dependency not found: {dep_id}"
-
-            dep_status = str(dep_task.get("status") or "").strip().lower()
-            if dep_status not in {"finished", "done", "success", "completed"}:
-                return "blocked", f"waiting dependency: {dep_id}"
-
-        return "queued", ""
-
     def _task_dependencies_satisfied(self, task: Dict[str, Any]) -> Tuple[bool, str]:
+        task = self._hydrate_task_from_workspace(task)
         depends_on = task.get("depends_on", [])
 
         if depends_on is None:
@@ -1193,12 +1742,14 @@ class Scheduler(RuntimeTaskScheduler):
             if not isinstance(task, dict):
                 continue
 
+            task = self._hydrate_task_from_workspace(task)
+
             task_id = self._extract_task_id(task)
             if not task_id:
                 continue
 
             status = str(task.get("status") or "").strip().lower()
-            if status != "blocked":
+            if status != STATUS_BLOCKED:
                 continue
 
             deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
@@ -1209,7 +1760,6 @@ class Scheduler(RuntimeTaskScheduler):
                 task["history"] = self._append_history(task.get("history"), "queued")
                 task["scheduler_build"] = SCHEDULER_BUILD
                 self._persist_task_payload(task_id=task_id, task=task)
-                self.scheduler_queue.cancel(task_id)
                 self._enqueue_repo_task_if_ready(task, overwrite=True)
             else:
                 self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
@@ -1219,17 +1769,6 @@ class Scheduler(RuntimeTaskScheduler):
         raw_depends_on: Any,
         self_task_id: Optional[str] = None,
     ) -> Any:
-        """
-        相容兩種呼叫模式：
-
-        1. 父類 / 舊邏輯：
-           self._normalize_depends_on(depends_on)
-           -> 回傳 List[str]
-
-        2. 本檔 submit_task：
-           self._normalize_depends_on(raw_depends_on, self_task_id=task_name)
-           -> 回傳 {"ok": bool, "depends_on": [...]} / {"ok": False, "error": ...}
-        """
         if self_task_id is None:
             return self._normalize_depends_on_simple(raw_depends_on)
 
@@ -1395,8 +1934,138 @@ class Scheduler(RuntimeTaskScheduler):
             except Exception:
                 pass
 
-        if desired_status == "blocked":
-            self.scheduler_queue.cancel(task_id)
+    # ------------------------------------------------------------
+    # hydration
+    # ------------------------------------------------------------
+
+    def _hydrate_task_from_workspace(self, task: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not isinstance(task, dict):
+            return task
+
+        hydrated = copy.deepcopy(task)
+
+        task_id = self._extract_task_id(hydrated)
+        if not task_id:
+            return hydrated
+
+        if not hydrated.get("task_name"):
+            hydrated["task_name"] = task_id
+
+        task_dir = str(hydrated.get("task_dir") or "").strip()
+        if not task_dir:
+            task_dir = os.path.join(self.tasks_root, task_id)
+            hydrated["task_dir"] = task_dir
+
+        hydrated.setdefault("workspace_root", self.workspace_root)
+        hydrated.setdefault("workspace_dir", self.tasks_root)
+        hydrated.setdefault("shared_dir", self.shared_dir)
+
+        plan_file = str(hydrated.get("plan_file") or "").strip()
+        if not plan_file:
+            plan_file = os.path.join(task_dir, "plan.json")
+            hydrated["plan_file"] = plan_file
+
+        runtime_state_file = str(hydrated.get("runtime_state_file") or "").strip()
+        if not runtime_state_file:
+            runtime_state_file = os.path.join(task_dir, "runtime_state.json")
+            hydrated["runtime_state_file"] = runtime_state_file
+
+        if os.path.exists(plan_file):
+            plan_data = self._safe_read_json(plan_file)
+            if isinstance(plan_data, dict):
+                if not isinstance(hydrated.get("planner_result"), dict) or not hydrated.get("planner_result"):
+                    hydrated["planner_result"] = copy.deepcopy(plan_data)
+
+                plan_steps = plan_data.get("steps", [])
+                if isinstance(plan_steps, list):
+                    current_steps = hydrated.get("steps", [])
+                    if not isinstance(current_steps, list) or not current_steps:
+                        hydrated["steps"] = copy.deepcopy(plan_steps)
+
+                    current_steps_total = hydrated.get("steps_total")
+                    if current_steps_total in (None, "", 0):
+                        hydrated["steps_total"] = len(plan_steps)
+
+        if "steps" not in hydrated or not isinstance(hydrated.get("steps"), list):
+            hydrated["steps"] = []
+
+        if hydrated.get("steps_total") in (None, ""):
+            hydrated["steps_total"] = len(hydrated.get("steps", []))
+
+        if hydrated.get("current_step_index") is None:
+            hydrated["current_step_index"] = 0
+
+        if os.path.exists(runtime_state_file):
+            runtime_data = self._safe_read_json(runtime_state_file)
+            if isinstance(runtime_data, dict):
+                for key in (
+                    "status",
+                    "priority",
+                    "retry_count",
+                    "max_retries",
+                    "retry_delay",
+                    "next_retry_tick",
+                    "timeout_ticks",
+                    "wait_until_tick",
+                    "created_tick",
+                    "last_run_tick",
+                    "last_failure_tick",
+                    "finished_tick",
+                    "depends_on",
+                    "blocked_reason",
+                    "failure_type",
+                    "failure_message",
+                    "last_error",
+                    "final_answer",
+                    "cancel_requested",
+                    "cancel_reason",
+                    "current_step_index",
+                    "steps",
+                    "steps_total",
+                    "results",
+                    "step_results",
+                    "last_step_result",
+                    "replan_count",
+                    "replanned",
+                    "replan_reason",
+                    "max_replans",
+                    "planner_result",
+                    "history",
+                    "execution_log",
+                    "result_file",
+                    "execution_log_file",
+                    "plan_file",
+                    "log_file",
+                    "runtime_state_file",
+                    "workspace_root",
+                    "workspace_dir",
+                    "shared_dir",
+                    "task_dir",
+                    "goal",
+                    "title",
+                ):
+                    if key in runtime_data:
+                        hydrated[key] = copy.deepcopy(runtime_data.get(key))
+
+        if not isinstance(hydrated.get("results"), list):
+            hydrated["results"] = []
+        if not isinstance(hydrated.get("step_results"), list):
+            hydrated["step_results"] = copy.deepcopy(hydrated.get("results", []))
+        if hydrated.get("last_step_result") is None and hydrated.get("step_results"):
+            hydrated["last_step_result"] = copy.deepcopy(hydrated["step_results"][-1])
+
+        if not isinstance(hydrated.get("history"), list):
+            current_status = str(hydrated.get("status") or STATUS_CREATED)
+            hydrated["history"] = [current_status]
+
+        return hydrated
+
+    def _safe_read_json(self, path: str) -> Any:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
 
     # ------------------------------------------------------------
     # repo/runtime sync
@@ -1418,6 +2087,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         repo_task = self._get_task_from_repo(task_id)
         base_task = copy.deepcopy(repo_task if isinstance(repo_task, dict) else task)
+        base_task = self._hydrate_task_from_workspace(base_task)
 
         runtime_state = None
         if self.task_runtime is not None and hasattr(self.task_runtime, "load_runtime_state"):
@@ -1483,16 +2153,117 @@ class Scheduler(RuntimeTaskScheduler):
                 "final_answer",
                 "execution_log",
                 "results",
+                "step_results",
+                "last_step_result",
                 "current_step_index",
+                "steps_total",
                 "last_run_tick",
                 "last_failure_tick",
                 "finished_tick",
+                "blocked_reason",
             ):
                 if key in runner_result:
                     merged[key] = copy.deepcopy(runner_result.get(key))
 
+        if isinstance(runner_result, dict):
+            replan_result = runner_result.get("replan_result")
+            if isinstance(replan_result, dict) and bool(replan_result.get("replanned")):
+                raw_replan_result = replan_result.get("raw_replan_result", {})
+                if isinstance(raw_replan_result, dict):
+                    plan = raw_replan_result.get("plan", {})
+                else:
+                    plan = {}
+
+                new_steps = plan.get("steps", []) if isinstance(plan, dict) else []
+
+                if isinstance(new_steps, list) and new_steps:
+                    merged["steps"] = copy.deepcopy(new_steps)
+                    merged["steps_total"] = len(new_steps)
+                    merged["current_step_index"] = 0
+                else:
+                    merged["current_step_index"] = 0
+
+                merged["replanned"] = True
+                merged["replan_count"] = int(
+                    replan_result.get("replan_count", merged.get("replan_count", 0)) or 0
+                )
+                merged["planner_result"] = copy.deepcopy(plan) if isinstance(plan, dict) else {}
+                merged["replan_reason"] = str(
+                    runner_result.get("replan_reason")
+                    or merged.get("last_error")
+                    or merged.get("failure_message")
+                    or ""
+                )
+
+                status_from_runner = str(runner_result.get("status") or "").strip().lower()
+                if status_from_runner:
+                    merged["status"] = status_from_runner
+
+        if not isinstance(merged.get("results"), list):
+            merged["results"] = []
+        if not isinstance(merged.get("step_results"), list):
+            merged["step_results"] = copy.deepcopy(merged.get("results", []))
+
+        if merged.get("last_step_result") is None and merged.get("step_results"):
+            try:
+                merged["last_step_result"] = copy.deepcopy(merged["step_results"][-1])
+            except Exception:
+                pass
+
+        steps = merged.get("steps", [])
+        if isinstance(steps, list):
+            merged["steps_total"] = int(merged.get("steps_total", len(steps)) or len(steps))
+        else:
+            merged["steps_total"] = int(merged.get("steps_total", 0) or 0)
+
+        if merged.get("current_step_index") is None:
+            merged["current_step_index"] = 0
+
+        merged["task_name"] = merged.get("task_name") or task_id
+        merged["task_dir"] = merged.get("task_dir") or os.path.join(self.tasks_root, task_id)
+        merged["plan_file"] = merged.get("plan_file") or os.path.join(merged["task_dir"], "plan.json")
+        merged["runtime_state_file"] = merged.get("runtime_state_file") or os.path.join(
+            merged["task_dir"], "runtime_state.json"
+        )
+        merged["workspace_root"] = merged.get("workspace_root") or self.workspace_root
+        merged["workspace_dir"] = merged.get("workspace_dir") or self.tasks_root
+        merged["shared_dir"] = merged.get("shared_dir") or self.shared_dir
+
         merged["scheduler_build"] = SCHEDULER_BUILD
         self._persist_task_payload(task_id=task_id, task=merged)
+
+    def _extract_effective_status_and_answer(
+        self,
+        original_task: Optional[Dict[str, Any]],
+        refreshed_task: Optional[Dict[str, Any]],
+        runner_result: Optional[Dict[str, Any]],
+    ) -> Tuple[str, Any]:
+        candidates: List[Dict[str, Any]] = []
+
+        if isinstance(runner_result, dict):
+            candidates.append(runner_result)
+        if isinstance(refreshed_task, dict):
+            candidates.append(refreshed_task)
+        if isinstance(original_task, dict):
+            candidates.append(original_task)
+
+        status = ""
+        final_answer: Any = ""
+
+        for source in candidates:
+            source_status = str(source.get("status") or "").strip().lower()
+            if source_status:
+                status = source_status
+                break
+
+        for source in candidates:
+            if "final_answer" in source:
+                value = source.get("final_answer")
+                if value not in (None, ""):
+                    final_answer = value
+                    break
+
+        return status, final_answer
 
     # ------------------------------------------------------------
     # repo state sync helpers
@@ -1511,7 +2282,7 @@ class Scheduler(RuntimeTaskScheduler):
             task["final_answer"] = result
         task["history"] = self._append_history(task.get("history"), "finished")
         self._persist_task_payload(task_id=task_id, task=task)
-
+        self.worker_pool.release_by_task(task_id)
         self._unblock_tasks_if_dependencies_done()
 
     def _mark_repo_task_failed(self, task_id: str, error: str = "") -> None:
@@ -1526,10 +2297,15 @@ class Scheduler(RuntimeTaskScheduler):
         task["scheduler_build"] = SCHEDULER_BUILD
         task["history"] = self._append_history(task.get("history"), "failed")
         self._persist_task_payload(task_id=task_id, task=task)
+        self.worker_pool.release_by_task(task_id)
 
     def _mark_repo_task_queued(self, task_id: str, error: str = "") -> None:
         task = self._get_task_from_repo(task_id)
         if not isinstance(task, dict):
+            return
+
+        current_status = str(task.get("status") or "").strip().lower()
+        if current_status in TERMINAL_STATUSES:
             return
 
         task["status"] = "queued"
@@ -1545,11 +2321,15 @@ class Scheduler(RuntimeTaskScheduler):
         if not isinstance(task, dict):
             return
 
+        current_status = str(task.get("status") or "").strip().lower()
+        if current_status in TERMINAL_STATUSES:
+            return
+
         changed = False
 
-        if str(task.get("status") or "").strip().lower() != "blocked":
-            task["status"] = "blocked"
-            task["history"] = self._append_history(task.get("history"), "blocked")
+        if current_status != STATUS_BLOCKED:
+            task["status"] = STATUS_BLOCKED
+            task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
             changed = True
 
         if str(task.get("blocked_reason") or "") != str(blocked_reason or ""):
@@ -1562,13 +2342,18 @@ class Scheduler(RuntimeTaskScheduler):
         if changed:
             self._persist_task_payload(task_id=task_id, task=task)
 
+        self.worker_pool.release_by_task(task_id)
+
     def _sync_unblocked_state(self, task_id: str) -> None:
         task = self._get_task_from_repo(task_id)
         if not isinstance(task, dict):
             return
 
         status = str(task.get("status") or "").strip().lower()
-        if status == "blocked":
+        if status in TERMINAL_STATUSES:
+            return
+
+        if status == STATUS_BLOCKED:
             task["status"] = "queued"
             task["history"] = self._append_history(task.get("history"), "queued")
 
@@ -1624,7 +2409,7 @@ class Scheduler(RuntimeTaskScheduler):
                 try:
                     value = method(task_id)
                     if isinstance(value, dict):
-                        return copy.deepcopy(value)
+                        return self._hydrate_task_from_workspace(value)
                 except Exception:
                     pass
 
@@ -1634,7 +2419,7 @@ class Scheduler(RuntimeTaskScheduler):
                 continue
             candidate = self._extract_task_id(task)
             if candidate == task_id:
-                return copy.deepcopy(task)
+                return self._hydrate_task_from_workspace(task)
 
         return None
 
@@ -1645,7 +2430,11 @@ class Scheduler(RuntimeTaskScheduler):
             try:
                 loaded = list_tasks_fn()
                 if isinstance(loaded, list):
-                    return [copy.deepcopy(x) for x in loaded if isinstance(x, dict)]
+                    return [
+                        self._hydrate_task_from_workspace(x)
+                        for x in loaded
+                        if isinstance(x, dict)
+                    ]
             except Exception:
                 return []
         return []
@@ -1671,7 +2460,7 @@ class Scheduler(RuntimeTaskScheduler):
         command_step = self._try_plan_command(clean_goal)
         if isinstance(command_step, dict):
             return {
-                "planner_mode": "deterministic_v3_shared_workspace",
+                "planner_mode": "deterministic_v4_task_os",
                 "intent": "command",
                 "final_answer": "已規劃 1 個步驟",
                 "steps": [command_step],
@@ -1680,7 +2469,7 @@ class Scheduler(RuntimeTaskScheduler):
         read_step = self._try_plan_read_file(clean_goal)
         if isinstance(read_step, dict):
             return {
-                "planner_mode": "deterministic_v3_shared_workspace",
+                "planner_mode": "deterministic_v4_task_os",
                 "intent": "read_file",
                 "final_answer": "已規劃 1 個步驟",
                 "steps": [read_step],
@@ -1688,20 +2477,28 @@ class Scheduler(RuntimeTaskScheduler):
 
         if self._looks_like_hello_world_python(clean_goal):
             return {
-                "planner_mode": "deterministic_v3_shared_workspace",
-                "intent": "write_file",
-                "final_answer": "已規劃 1 個步驟",
+                "planner_mode": "deterministic_v4_task_os",
+                "intent": "hello_world_python_multi_step",
+                "final_answer": "已規劃 3 個步驟",
                 "steps": [
                     {
                         "type": "write_file",
-                        "path": "hello.py",
-                        "content": 'print("hello world")\n',
-                    }
+                        "path": "shared/hello.py",
+                        "content": "print('hello')\n",
+                    },
+                    {
+                        "type": "run_python",
+                        "path": "shared/hello.py",
+                    },
+                    {
+                        "type": "verify",
+                        "contains": "hello",
+                    },
                 ],
             }
 
         return {
-            "planner_mode": "deterministic_v3_shared_workspace",
+            "planner_mode": "deterministic_v4_task_os",
             "intent": "unresolved",
             "final_answer": "目前規則式 planner 還無法把這個 goal 轉成可執行 steps。",
             "steps": [],
@@ -1757,6 +2554,35 @@ class Scheduler(RuntimeTaskScheduler):
                 return {"type": "command", "command": command}
             return None
 
+        if lower.startswith("run_python:"):
+            path = value.split(":", 1)[1].strip()
+            if path:
+                return {"type": "run_python", "path": path}
+            return None
+
+        if lower.startswith("verify:"):
+            payload = value.split(":", 1)[1].strip()
+            if not payload:
+                return None
+
+            if payload.startswith("contains="):
+                keyword = payload.split("=", 1)[1].strip()
+                if keyword:
+                    return {"type": "verify", "contains": keyword}
+                return None
+
+            if payload.startswith("equals="):
+                expected = payload.split("=", 1)[1]
+                return {"type": "verify", "equals": expected}
+
+            if payload.startswith("path="):
+                path = payload.split("=", 1)[1].strip()
+                if path:
+                    return {"type": "verify", "path": path}
+                return None
+
+            return {"type": "verify", "contains": payload}
+
         if lower.startswith("read_file:"):
             path = value.split(":", 1)[1].strip()
             if path:
@@ -1781,7 +2607,7 @@ class Scheduler(RuntimeTaskScheduler):
         return None
 
     def _looks_like_hello_world_python(self, text: str) -> bool:
-        lowered = text.lower()
+        lowered = str(text or "").lower()
         candidates = [
             "hello world python",
             "hello world 的 python",
@@ -1789,11 +2615,13 @@ class Scheduler(RuntimeTaskScheduler):
             "建立 hello world python",
             "做一個 hello world python",
             "python hello world",
+            "建立一個 hello.py 印出 hello world",
+            "hello.py 印出 hello world",
         ]
         return any(item in lowered for item in candidates)
 
     def _try_plan_command(self, text: str) -> Optional[Dict[str, Any]]:
-        stripped = text.strip()
+        stripped = str(text or "").strip()
         lowered = stripped.lower()
 
         patterns = [
@@ -1827,7 +2655,7 @@ class Scheduler(RuntimeTaskScheduler):
         return None
 
     def _try_plan_read_file(self, text: str) -> Optional[Dict[str, Any]]:
-        stripped = text.strip()
+        stripped = str(text or "").strip()
 
         m = re.search(r"([A-Za-z0-9_\-./\\]+\.(py|json|txt|md))", stripped, flags=re.IGNORECASE)
         if not m:

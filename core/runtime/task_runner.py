@@ -17,16 +17,13 @@ class TaskRunner:
     """
     ZERO Task Runner
 
-    本版整合：
-    1. RuntimeStateMachine 已透過 TaskRuntime 接入
-    2. Retry / Replan / Wait / Fail policy
-    3. Step metadata normalization
-    4. 非 idempotent / 非 retry_safe / 非 replan_safe step 保護
-    5. reflection -> failure_type -> policy -> runtime transition
-    6. 修正最後一個 step 成功後沒進 finished 的 bug
-    7. 修正 multi-step 任務只跑一步就停住的問題
-       - step_completed 不再直接 break
-       - 會在同一個 tick 內繼續跑下一步
+    這版重點：
+    1. queued / ready / running / retrying 任務都能正確進入執行
+    2. step 成功後會持續推進，不會只跑一步就卡住
+    3. 沒有 reflection engine 決策時，會對成功 step 採用 continue 預設
+    4. 沒有 replanner 時，不會把正常任務卡死在 replanned / waiting
+    5. 回傳內容補齊 status / final_answer / current_step_index / steps_total / results
+    6. 讓 scheduler 可以穩定判斷 finished / failed / queued
     """
 
     DEFAULT_POLICY: Dict[str, Dict[str, Any]] = {
@@ -171,14 +168,14 @@ class TaskRunner:
                 current_tick=current_tick,
             )
             if cancel_result.get("cancel_applied"):
-                return cancel_result
+                return self._finalize_public_result(cancel_result)
 
             timeout_result = self.runtime.check_timeout_before_run(
                 task,
                 current_tick=current_tick,
             )
             if timeout_result.get("timed_out"):
-                return timeout_result
+                return self._finalize_public_result(timeout_result)
 
             blocked_result = self.runtime.check_blocked_by_dependencies(
                 task,
@@ -186,7 +183,7 @@ class TaskRunner:
                 current_tick=current_tick,
             )
             if blocked_result.get("blocked"):
-                return blocked_result
+                return self._finalize_public_result(blocked_result)
 
             state = self.runtime.load_runtime_state(task)
             status = str(state.get("status", "") or "").strip().lower()
@@ -194,12 +191,16 @@ class TaskRunner:
             if status == "retrying":
                 next_retry_tick = int(state.get("next_retry_tick", 0) or 0)
                 if current_tick < next_retry_tick:
-                    return {
-                        "ok": True,
-                        "action": "waiting_retry",
-                        "message": "waiting for next retry tick",
-                        "task": copy.deepcopy(state),
-                    }
+                    return self._finalize_public_result(
+                        {
+                            "ok": True,
+                            "action": "waiting_retry",
+                            "message": "waiting for next retry tick",
+                            "task": copy.deepcopy(state),
+                            "status": state.get("status", "retrying"),
+                            "final_answer": state.get("final_answer", ""),
+                        }
+                    )
 
                 state = copy.deepcopy(state)
                 state["status"] = "ready"
@@ -208,12 +209,16 @@ class TaskRunner:
                 status = str(state.get("status", "") or "").strip().lower()
 
             if status not in {"queued", "ready", "running", "retrying"}:
-                return {
-                    "ok": True,
-                    "action": "skip",
-                    "message": f"task status = {status}, skip",
-                    "task": copy.deepcopy(state),
-                }
+                return self._finalize_public_result(
+                    {
+                        "ok": True,
+                        "action": "skip",
+                        "message": f"task status = {status}, skip",
+                        "task": copy.deepcopy(state),
+                        "status": status,
+                        "final_answer": state.get("final_answer", ""),
+                    }
+                )
 
             run_result = self.runtime.mark_running(task, current_tick=current_tick)
             state = copy.deepcopy(run_result.get("runtime_state", self.runtime.load_runtime_state(task)))
@@ -245,9 +250,6 @@ class TaskRunner:
                 }:
                     break
 
-                # 關鍵修正：
-                # step_completed 代表這一步成功，應該繼續跑下一步，
-                # 而不是直接 break。
                 if action == "step_completed":
                     latest_state = self.runtime.load_runtime_state(task)
                     current_index = int(latest_state.get("current_step_index", 0) or 0)
@@ -268,11 +270,18 @@ class TaskRunner:
                     )
 
                     if current_index >= steps_total:
+                        latest_state = self.runtime.load_runtime_state(task)
                         loop_result = {
                             "ok": True,
                             "action": "task_finished",
-                            "status": "finished",
+                            "status": latest_state.get("status", "finished"),
                             "task": copy.deepcopy(latest_state),
+                            "final_answer": latest_state.get("final_answer", ""),
+                            "current_step_index": latest_state.get("current_step_index"),
+                            "steps_total": latest_state.get("steps_total"),
+                            "results": copy.deepcopy(latest_state.get("results", [])),
+                            "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+                            "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
                         }
                         break
 
@@ -287,9 +296,11 @@ class TaskRunner:
                     "action": "noop",
                     "message": "no step executed",
                     "task": copy.deepcopy(state),
+                    "status": state.get("status", "running"),
+                    "final_answer": state.get("final_answer", ""),
                 }
 
-            return loop_result
+            return self._finalize_public_result(loop_result)
 
         except Exception as e:
             traceback.print_exc()
@@ -299,12 +310,16 @@ class TaskRunner:
                 failure_type="internal_error",
                 failure_message=str(e),
             )
-            return {
-                "ok": False,
-                "action": "exception_failed",
-                "error": str(e),
-                "task": copy.deepcopy(fail_result.get("runtime_state", {})),
-            }
+            return self._finalize_public_result(
+                {
+                    "ok": False,
+                    "action": "exception_failed",
+                    "error": str(e),
+                    "task": copy.deepcopy(fail_result.get("runtime_state", {})),
+                    "status": fail_result.get("status", "failed"),
+                    "final_answer": "",
+                }
+            )
 
     def run_one_tick(self, task: Dict[str, Any], current_tick: int = 0, **kwargs: Any) -> Dict[str, Any]:
         return self.run_task_tick(task, current_tick=current_tick)
@@ -328,12 +343,19 @@ class TaskRunner:
                 current_tick=current_tick,
                 final_answer=state.get("final_answer", ""),
             )
+            latest_state = self.runtime.load_runtime_state(task)
             return {
                 "ok": True,
                 "action": "task_finished",
                 "status": finish_result.get("status", "finished"),
-                "task": copy.deepcopy(self.runtime.load_runtime_state(task)),
+                "task": copy.deepcopy(latest_state),
                 "runtime_result": finish_result,
+                "final_answer": latest_state.get("final_answer", ""),
+                "current_step_index": latest_state.get("current_step_index"),
+                "steps_total": latest_state.get("steps_total"),
+                "results": copy.deepcopy(latest_state.get("results", [])),
+                "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+                "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
             }
 
         raw_step = steps[current_index]
@@ -375,7 +397,8 @@ class TaskRunner:
             self.runtime.append_step_result(task, result)
 
         state = self.runtime.load_runtime_state(task)
-        reflection = self.reflection_engine.reflect(
+
+        reflection = self._safe_reflect(
             goal=state.get("goal"),
             step=step,
             step_result=result,
@@ -383,13 +406,6 @@ class TaskRunner:
             plan_file=state.get("plan_file"),
             log_file=state.get("log_file"),
         )
-
-        if not isinstance(reflection, dict):
-            reflection = {
-                "decision": "fail",
-                "reason": "reflection returned non-dict result",
-                "failure_type": "internal_error",
-            }
 
         decision = str(reflection.get("decision", "fail") or "fail").strip().lower()
         reason = str(reflection.get("reason", "") or "")
@@ -407,13 +423,20 @@ class TaskRunner:
                     current_tick=current_tick,
                     final_answer=after_advance.get("final_answer", ""),
                 )
+                latest_state = self.runtime.load_runtime_state(task)
                 return {
                     "ok": True,
                     "action": "task_finished",
                     "status": finish_result.get("status", "finished"),
                     "reflection": reflection,
-                    "task": copy.deepcopy(self.runtime.load_runtime_state(task)),
+                    "task": copy.deepcopy(latest_state),
                     "runtime_result": finish_result,
+                    "final_answer": latest_state.get("final_answer", ""),
+                    "current_step_index": latest_state.get("current_step_index"),
+                    "steps_total": latest_state.get("steps_total"),
+                    "results": copy.deepcopy(latest_state.get("results", [])),
+                    "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+                    "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
                 }
 
             return {
@@ -422,6 +445,12 @@ class TaskRunner:
                 "status": after_advance.get("status", "running"),
                 "reflection": reflection,
                 "task": copy.deepcopy(after_advance),
+                "final_answer": after_advance.get("final_answer", ""),
+                "current_step_index": after_advance.get("current_step_index"),
+                "steps_total": after_advance.get("steps_total"),
+                "results": copy.deepcopy(after_advance.get("results", [])),
+                "step_results": copy.deepcopy(after_advance.get("step_results", [])),
+                "last_step_result": copy.deepcopy(after_advance.get("last_step_result")),
             }
 
         if decision == "finish":
@@ -430,13 +459,20 @@ class TaskRunner:
                 current_tick=current_tick,
                 final_answer=reflection.get("final_answer", ""),
             )
+            latest_state = self.runtime.load_runtime_state(task)
             return {
                 "ok": True,
                 "action": "task_finished",
                 "status": finish_result.get("status", "finished"),
                 "reflection": reflection,
-                "task": copy.deepcopy(self.runtime.load_runtime_state(task)),
+                "task": copy.deepcopy(latest_state),
                 "runtime_result": finish_result,
+                "final_answer": latest_state.get("final_answer", ""),
+                "current_step_index": latest_state.get("current_step_index"),
+                "steps_total": latest_state.get("steps_total"),
+                "results": copy.deepcopy(latest_state.get("results", [])),
+                "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+                "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
             }
 
         if decision == "wait":
@@ -453,6 +489,12 @@ class TaskRunner:
                 "status": state.get("status", "waiting"),
                 "reflection": reflection,
                 "task": copy.deepcopy(state),
+                "final_answer": state.get("final_answer", ""),
+                "current_step_index": state.get("current_step_index"),
+                "steps_total": state.get("steps_total"),
+                "results": copy.deepcopy(state.get("results", [])),
+                "step_results": copy.deepcopy(state.get("step_results", [])),
+                "last_step_result": copy.deepcopy(state.get("last_step_result")),
             }
 
         failure_type = self._determine_failure_type(step=step, result=result, reflection=reflection)
@@ -508,6 +550,12 @@ class TaskRunner:
                 "reflection": reflection,
                 "failure_type": failure_type,
                 "task": copy.deepcopy(state),
+                "final_answer": state.get("final_answer", ""),
+                "current_step_index": state.get("current_step_index"),
+                "steps_total": state.get("steps_total"),
+                "results": copy.deepcopy(state.get("results", [])),
+                "step_results": copy.deepcopy(state.get("step_results", [])),
+                "last_step_result": copy.deepcopy(state.get("last_step_result")),
             }
 
         action_order = self._build_action_order(policy, preferred_action=preferred_action)
@@ -642,6 +690,7 @@ class TaskRunner:
             failure_message=reason,
             next_retry_tick=next_retry_tick,
         )
+        latest_state = self.runtime.load_runtime_state(task)
 
         return {
             "ok": True,
@@ -649,8 +698,14 @@ class TaskRunner:
             "status": retry_result.get("status", "retrying"),
             "reflection": reflection,
             "failure_type": failure_type,
-            "task": copy.deepcopy(retry_result.get("runtime_state", {})),
+            "task": copy.deepcopy(latest_state),
             "runtime_result": retry_result,
+            "final_answer": latest_state.get("final_answer", ""),
+            "current_step_index": latest_state.get("current_step_index"),
+            "steps_total": latest_state.get("steps_total"),
+            "results": copy.deepcopy(latest_state.get("results", [])),
+            "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+            "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
         }
 
     def _attempt_replan(
@@ -742,6 +797,12 @@ class TaskRunner:
             "failure_type": failure_type,
             "task": copy.deepcopy(latest_state),
             "replan_result": replan_result,
+            "final_answer": latest_state.get("final_answer", ""),
+            "current_step_index": latest_state.get("current_step_index"),
+            "steps_total": latest_state.get("steps_total"),
+            "results": copy.deepcopy(latest_state.get("results", [])),
+            "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+            "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
         }
 
     def _fail_step(
@@ -758,6 +819,7 @@ class TaskRunner:
             failure_type=failure_type,
             failure_message=reason,
         )
+        latest_state = self.runtime.load_runtime_state(task)
 
         return {
             "ok": False,
@@ -765,8 +827,14 @@ class TaskRunner:
             "status": fail_result.get("status", "failed"),
             "reflection": reflection,
             "failure_type": failure_type,
-            "task": copy.deepcopy(self.runtime.load_runtime_state(task)),
+            "task": copy.deepcopy(latest_state),
             "runtime_result": fail_result,
+            "final_answer": latest_state.get("final_answer", ""),
+            "current_step_index": latest_state.get("current_step_index"),
+            "steps_total": latest_state.get("steps_total"),
+            "results": copy.deepcopy(latest_state.get("results", [])),
+            "step_results": copy.deepcopy(latest_state.get("step_results", [])),
+            "last_step_result": copy.deepcopy(latest_state.get("last_step_result")),
         }
 
     # ============================================================
@@ -1110,6 +1178,93 @@ class TaskRunner:
             return max(1, v)
         except Exception:
             return 20
+
+    def _safe_reflect(
+        self,
+        goal: Any,
+        step: Dict[str, Any],
+        step_result: Dict[str, Any],
+        runtime_state_file: Any,
+        plan_file: Any,
+        log_file: Any,
+    ) -> Dict[str, Any]:
+        try:
+            reflection = self.reflection_engine.reflect(
+                goal=goal,
+                step=step,
+                step_result=step_result,
+                runtime_state_file=runtime_state_file,
+                plan_file=plan_file,
+                log_file=log_file,
+            )
+        except Exception as e:
+            return {
+                "decision": "fail",
+                "reason": f"reflection exception: {e}",
+                "failure_type": "internal_error",
+            }
+
+        if not isinstance(reflection, dict):
+            reflection = {
+                "decision": "fail",
+                "reason": "reflection returned non-dict result",
+                "failure_type": "internal_error",
+            }
+
+        step_ok = bool(step_result.get("ok", False))
+        decision = str(reflection.get("decision", "") or "").strip().lower()
+
+        if step_ok and decision not in {"continue", "finish", "wait"}:
+            reflection = copy.deepcopy(reflection)
+            reflection["decision"] = "continue"
+            if not reflection.get("reason"):
+                reflection["reason"] = "default continue on successful step"
+
+        return reflection
+
+    def _finalize_public_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(result, dict):
+            return {
+                "ok": False,
+                "action": "invalid_result",
+                "status": "failed",
+                "error": "runner returned non-dict result",
+                "final_answer": "",
+                "results": [],
+                "step_results": [],
+                "last_step_result": None,
+                "current_step_index": 0,
+                "steps_total": 0,
+            }
+
+        task = result.get("task")
+        state: Dict[str, Any] = {}
+        if isinstance(task, dict):
+            state = copy.deepcopy(task)
+
+        finalized = copy.deepcopy(result)
+
+        if "status" not in finalized:
+            finalized["status"] = state.get("status", "")
+        if "final_answer" not in finalized:
+            finalized["final_answer"] = state.get("final_answer", "")
+        if "results" not in finalized:
+            finalized["results"] = copy.deepcopy(state.get("results", []))
+        if "step_results" not in finalized:
+            finalized["step_results"] = copy.deepcopy(state.get("step_results", finalized.get("results", [])))
+        if "last_step_result" not in finalized:
+            finalized["last_step_result"] = copy.deepcopy(state.get("last_step_result"))
+        if "current_step_index" not in finalized:
+            finalized["current_step_index"] = state.get("current_step_index")
+        if "steps_total" not in finalized:
+            finalized["steps_total"] = state.get("steps_total")
+
+        if not isinstance(finalized.get("results"), list):
+            finalized["results"] = []
+        if not isinstance(finalized.get("step_results"), list):
+            finalized["step_results"] = copy.deepcopy(finalized.get("results", []))
+
+        return finalized
 
     def _trace(self, task: Dict[str, Any], label: str, payload: Any) -> None:
         try:

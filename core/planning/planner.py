@@ -8,15 +8,13 @@ from typing import Any, Dict, List, Optional
 
 class Planner:
     """
-    Deterministic Planner v11
+    Deterministic Planner v12
 
     重點：
     1. 支援多步驟 clause split
     2. command / read / write / search 混合拆步
     3. planner 階段直接補 step metadata
-    4. 明確支援：
-       - 先建立 hello.py 然後執行 python hello.py
-       - 先建立 hello.py 然後執行 python not_exist.py
+    4. 內建 demo pipeline 任務，方便測 scheduler / recovery
     """
 
     READ_ONLY_STEP_TYPES = {
@@ -76,7 +74,7 @@ class Planner:
 
         if not text:
             return {
-                "planner_mode": "deterministic_v11",
+                "planner_mode": "deterministic_v12",
                 "intent": "respond",
                 "final_answer": "空白輸入",
                 "steps": [],
@@ -87,7 +85,7 @@ class Planner:
         steps = self._apply_step_metadata(raw_steps, task_name=task_name)
 
         return {
-            "planner_mode": "deterministic_v11",
+            "planner_mode": "deterministic_v12",
             "intent": self._infer_intent(text=text, route=route, steps=steps),
             "final_answer": f"已規劃 {len(steps)} 個步驟",
             "steps": steps,
@@ -123,6 +121,59 @@ class Planner:
         return self.build_plan(goal=goal, task_dir=task_dir, route=route, **kwargs)
 
     # ============================================================
+    # demo tasks
+    # ============================================================
+
+    def _build_demo_pipeline_steps(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "type": "write_file",
+                "path": "a.txt",
+                "content": "A",
+                "produces_files": ["a.txt"],
+            },
+            {
+                "type": "write_file",
+                "path": "b.txt",
+                "content": "B",
+                "produces_files": ["b.txt"],
+            },
+            {
+                "type": "write_file",
+                "path": "c.txt",
+                "content": "C",
+                "produces_files": ["c.txt"],
+            },
+            {
+                "type": "read_file",
+                "path": "a.txt",
+                "consumes_files": ["a.txt"],
+            },
+            {
+                "type": "read_file",
+                "path": "b.txt",
+                "consumes_files": ["b.txt"],
+            },
+            {
+                "type": "read_file",
+                "path": "c.txt",
+                "consumes_files": ["c.txt"],
+            },
+        ]
+
+    def _is_demo_pipeline_request(self, text: str) -> bool:
+        lowered = str(text or "").strip().lower()
+        candidates = {
+            "demo pipeline",
+            "demo_pipeline",
+            "pipeline demo",
+            "測試 pipeline",
+            "demo 任務",
+            "demo task",
+        }
+        return any(token in lowered for token in candidates)
+
+    # ============================================================
     # multi step planner
     # ============================================================
 
@@ -131,7 +182,9 @@ class Planner:
         if not stripped:
             return []
 
-        # router 已明確判斷 command，整句保留
+        if self._is_demo_pipeline_request(stripped):
+            return self._build_demo_pipeline_steps()
+
         if self._is_command_route(route):
             return [
                 {
@@ -163,7 +216,6 @@ class Planner:
         if not stripped:
             return []
 
-        # 去掉常見自然語言前綴，避免「先建立」「再執行」吃不到命令
         stripped = self._strip_clause_prefix(stripped)
 
         if not stripped:

@@ -13,7 +13,7 @@ class AgentLoop:
     """
     Agent 主迴圈
 
-    支援兩種模式：
+    支援三種模式：
 
     1. single-shot mode
        user_input
@@ -30,9 +30,9 @@ class AgentLoop:
        -> build_context
        -> router
        -> planner
-       -> task workspace
-       -> task runtime
-       -> scheduler/task_manager.enqueue
+       -> scheduler.create_task(...)
+       -> 覆蓋 planner_result / steps
+       -> scheduler.submit_existing_task(...)
        -> 回傳 task_id / task_created
 
     3. task execution mode
@@ -68,7 +68,7 @@ class AgentLoop:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
 
-        # 相容舊測試：task_manager 優先當作任務入口
+        # 相容舊測試：task_manager 優先當作任務入口，但 scheduler 仍是主要任務控制入口
         self.task_manager = task_manager
         self.scheduler = scheduler or task_manager
 
@@ -246,25 +246,7 @@ class AgentLoop:
             }
 
         try:
-            task = self._build_task_shell(
-                user_input=user_input,
-                context=context,
-                route=route,
-            )
-
-            # 1. 建立 workspace（如果有）
-            if self.task_workspace is not None:
-                try:
-                    task = self.task_workspace.create_workspace(task)
-                except Exception as e:
-                    return {
-                        "ok": False,
-                        "mode": "task",
-                        "error": f"task_workspace.create_workspace failed: {e}",
-                        "traceback": traceback.format_exc(),
-                    }
-
-            # 2. 建立 plan
+            # 1. 先規劃
             plan = self._call_planner(
                 context=context,
                 user_input=user_input,
@@ -279,46 +261,24 @@ class AgentLoop:
                     "traceback": plan.get("traceback"),
                 }
 
-            task["planner_result"] = plan if isinstance(plan, dict) else {}
-            task["steps"] = self._extract_steps_from_plan(plan)
-            task["steps_total"] = len(task["steps"])
-            task["final_answer"] = self._extract_final_answer(None, plan, user_input)
+            # 2. 優先走收束版 scheduler：create -> 覆蓋內容 -> submit_existing_task
+            if self._supports_scheduler_create_submit(task_entry):
+                return self._run_task_mode_via_scheduler(
+                    task_entry=task_entry,
+                    context=context,
+                    user_input=user_input,
+                    route=route,
+                    plan=plan,
+                )
 
-            # 3. 存 plan.json（如果有）
-            if self.task_workspace is not None:
-                try:
-                    self.task_workspace.save_plan(task, task["planner_result"])
-                except Exception:
-                    pass
-
-            # 4. 初始化 runtime_state.json（如果有）
-            if self.task_runtime is not None:
-                try:
-                    self.task_runtime.ensure_runtime_state(task)
-                except Exception:
-                    pass
-
-            # 5. enqueue 到 scheduler / task_manager
-            enqueue_result = self._enqueue_task(task_entry, task)
-
-            # 6. 若 enqueue 回傳的是 Task 物件，轉成 dict 比較穩
-            enqueued_task_dict = self._normalize_task_input(enqueue_result) if enqueue_result is not None else None
-
-            if isinstance(enqueued_task_dict, dict):
-                task = enqueued_task_dict
-
-            return {
-                "ok": True,
-                "mode": "task",
-                "context": context,
-                "route": route,
-                "task": task,
-                "task_id": task.get("task_id") or task.get("id") or task.get("task_name"),
-                "task_dir": task.get("task_dir"),
-                "plan": task.get("planner_result"),
-                "enqueue_result": enqueue_result,
-                "final_answer": f"已建立任務：{task.get('title') or task.get('goal')}",
-            }
+            # 3. fallback：舊 task_manager / enqueue 介面
+            return self._run_task_mode_legacy_enqueue(
+                task_entry=task_entry,
+                context=context,
+                user_input=user_input,
+                route=route,
+                plan=plan,
+            )
 
         except Exception as e:
             return {
@@ -327,6 +287,174 @@ class AgentLoop:
                 "error": f"task mode failed: {e}",
                 "traceback": traceback.format_exc(),
             }
+
+    def _run_task_mode_via_scheduler(
+        self,
+        task_entry: Any,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+        plan: Any,
+    ) -> Dict[str, Any]:
+        priority = self._route_int(route, "priority", 0)
+        max_replans = self._route_int(route, "max_replans", 1)
+        timeout_ticks = self._route_int(route, "timeout_ticks", 0)
+        depends_on = self._route_depends_on(route)
+
+        # create：只建立，不進 queue
+        create_result = task_entry.create_task(
+            goal=user_input,
+            priority=priority,
+            timeout_ticks=timeout_ticks,
+            depends_on=depends_on,
+        )
+
+        if not isinstance(create_result, dict) or not create_result.get("ok"):
+            return {
+                "ok": False,
+                "mode": "task",
+                "error": (
+                    create_result.get("error", "scheduler.create_task failed")
+                    if isinstance(create_result, dict)
+                    else "scheduler.create_task failed"
+                ),
+                "create_result": create_result,
+            }
+
+        created_task = create_result.get("task")
+        if not isinstance(created_task, dict):
+            task_id = str(create_result.get("task_name") or "").strip()
+            created_task = self._get_task_from_entry(task_entry, task_id)
+        else:
+            created_task = self._normalize_task_input(created_task)
+
+        if not isinstance(created_task, dict):
+            return {
+                "ok": False,
+                "mode": "task",
+                "error": "created task missing or invalid",
+                "create_result": create_result,
+            }
+
+        # 用 AgentLoop 的 planner 覆蓋 scheduler 預設 planner 結果
+        created_task["planner_result"] = plan if isinstance(plan, dict) else {}
+        created_task["steps"] = self._extract_steps_from_plan(plan)
+        created_task["steps_total"] = len(created_task["steps"])
+        created_task["final_answer"] = self._extract_final_answer(None, plan, user_input)
+        created_task["max_replans"] = max_replans
+
+        if isinstance(route, dict):
+            created_task["route"] = copy.deepcopy(route)
+        if isinstance(context, dict):
+            created_task["context_snapshot"] = copy.deepcopy(context)
+
+        # 若 task shell 內有這些欄位，保留一致性
+        created_task.setdefault("results", [])
+        created_task.setdefault("step_results", [])
+        created_task.setdefault("execution_log", [])
+        created_task.setdefault("last_step_result", None)
+        created_task.setdefault("last_error", None)
+        created_task.setdefault("current_step_index", 0)
+        created_task.setdefault("replanned", False)
+        created_task.setdefault("replan_reason", "")
+        created_task.setdefault("replan_count", 0)
+
+        # 存 plan / runtime
+        self._save_task_plan_and_runtime(task=created_task, plan=created_task["planner_result"])
+
+        # persist 覆蓋後的 task payload
+        self._persist_task_to_entry(task_entry=task_entry, task=created_task)
+
+        # submit：才進 queue
+        task_id = str(
+            created_task.get("task_id")
+            or created_task.get("id")
+            or created_task.get("task_name")
+            or ""
+        ).strip()
+
+        submit_result = task_entry.submit_existing_task(task_id)
+        refreshed_task = self._get_task_from_entry(task_entry, task_id) or created_task
+
+        return {
+            "ok": True,
+            "mode": "task",
+            "context": context,
+            "route": route,
+            "task": refreshed_task,
+            "task_id": task_id,
+            "task_dir": refreshed_task.get("task_dir"),
+            "plan": refreshed_task.get("planner_result"),
+            "create_result": create_result,
+            "submit_result": submit_result,
+            "final_answer": f"已建立任務：{refreshed_task.get('title') or refreshed_task.get('goal')}",
+        }
+
+    def _run_task_mode_legacy_enqueue(
+        self,
+        task_entry: Any,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+        plan: Any,
+    ) -> Dict[str, Any]:
+        task = self._build_task_shell(
+            user_input=user_input,
+            context=context,
+            route=route,
+        )
+
+        # 1. 建立 workspace（如果有）
+        if self.task_workspace is not None:
+            try:
+                task = self.task_workspace.create_workspace(task)
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "mode": "task",
+                    "error": f"task_workspace.create_workspace failed: {e}",
+                    "traceback": traceback.format_exc(),
+                }
+
+        # 2. 掛上 planner 結果
+        task["planner_result"] = plan if isinstance(plan, dict) else {}
+        task["steps"] = self._extract_steps_from_plan(plan)
+        task["steps_total"] = len(task["steps"])
+        task["final_answer"] = self._extract_final_answer(None, plan, user_input)
+
+        # 3. 存 plan.json（如果有）
+        if self.task_workspace is not None:
+            try:
+                self.task_workspace.save_plan(task, task["planner_result"])
+            except Exception:
+                pass
+
+        # 4. 初始化 runtime_state.json（如果有）
+        if self.task_runtime is not None:
+            try:
+                self.task_runtime.ensure_runtime_state(task)
+            except Exception:
+                pass
+
+        # 5. fallback enqueue
+        enqueue_result = self._enqueue_task(task_entry, task)
+
+        enqueued_task_dict = self._normalize_task_input(enqueue_result) if enqueue_result is not None else None
+        if isinstance(enqueued_task_dict, dict):
+            task = enqueued_task_dict
+
+        return {
+            "ok": True,
+            "mode": "task",
+            "context": context,
+            "route": route,
+            "task": task,
+            "task_id": task.get("task_id") or task.get("id") or task.get("task_name"),
+            "task_dir": task.get("task_dir"),
+            "plan": task.get("planner_result"),
+            "enqueue_result": enqueue_result,
+            "final_answer": f"已建立任務：{task.get('title') or task.get('goal')}",
+        }
 
     def _build_task_shell(
         self,
@@ -349,7 +477,7 @@ class AgentLoop:
             "task_name": task_name,
             "title": user_input,
             "goal": user_input,
-            "status": "queued",
+            "status": "created",
             "priority": 0,
             "retry_count": 0,
             "max_retries": 0,
@@ -359,7 +487,7 @@ class AgentLoop:
             "simulate": "",
             "required_ticks": 1,
             "progress_ticks": 0,
-            "history": ["queued"],
+            "history": ["created"],
             "workspace_dir": workspace_dir,
             "task_dir": task_dir,
             "runtime_state_file": runtime_state_file,
@@ -383,7 +511,7 @@ class AgentLoop:
         }
 
         if isinstance(route, dict):
-            task["route"] = route
+            task["route"] = copy.deepcopy(route)
 
             if route.get("priority") is not None:
                 try:
@@ -403,18 +531,28 @@ class AgentLoop:
                 except Exception:
                     pass
 
+            depends_on = route.get("depends_on")
+            if isinstance(depends_on, list):
+                task["depends_on"] = [str(x).strip() for x in depends_on if str(x).strip()]
+            elif isinstance(depends_on, str) and depends_on.strip():
+                task["depends_on"] = [depends_on.strip()]
+
         if isinstance(context, dict):
-            task["context_snapshot"] = context
+            task["context_snapshot"] = copy.deepcopy(context)
 
         return task
 
     def _enqueue_task(self, task_entry: Any, task: Dict[str, Any]) -> Any:
-        for method_name in ("add_task", "submit_task", "enqueue", "create_task"):
+        """
+        舊相容路徑：
+        不建議新流程走這裡，但保留給舊 task_manager / 測試用。
+        """
+        for method_name in ("add_task", "enqueue", "submit_task", "create_task"):
             fn = getattr(task_entry, method_name, None)
             if callable(fn):
                 return fn(task)
 
-        raise RuntimeError("scheduler/task_manager has no add_task / submit_task / enqueue / create_task")
+        raise RuntimeError("scheduler/task_manager has no add_task / enqueue / submit_task / create_task")
 
     def _should_enter_task_mode(self, route: Any, user_input: str) -> bool:
         if isinstance(route, dict):
@@ -465,6 +603,133 @@ class AgentLoop:
 
     def _make_task_id(self) -> str:
         return f"task_{int(time.time() * 1000)}"
+
+    # ============================================================
+    # controlled scheduler helpers
+    # ============================================================
+
+    def _supports_scheduler_create_submit(self, task_entry: Any) -> bool:
+        create_fn = getattr(task_entry, "create_task", None)
+        submit_fn = getattr(task_entry, "submit_existing_task", None)
+        return callable(create_fn) and callable(submit_fn)
+
+    def _persist_task_to_entry(self, task_entry: Any, task: Dict[str, Any]) -> None:
+        task_id = str(
+            task.get("task_id")
+            or task.get("id")
+            or task.get("task_name")
+            or ""
+        ).strip()
+        if not task_id:
+            return
+
+        persist_fn = getattr(task_entry, "_persist_task_payload", None)
+        if callable(persist_fn):
+            try:
+                persist_fn(task_id=task_id, task=copy.deepcopy(task))
+                return
+            except Exception:
+                pass
+
+        repo = getattr(task_entry, "task_repo", None)
+        if repo is not None:
+            replace_fn = getattr(repo, "replace_task", None)
+            upsert_fn = getattr(repo, "upsert_task", None)
+            create_fn = getattr(repo, "create_task", None)
+            add_fn = getattr(repo, "add_task", None)
+
+            try:
+                if callable(replace_fn):
+                    replace_fn(task_id, copy.deepcopy(task))
+                    return
+                if callable(upsert_fn):
+                    upsert_fn(copy.deepcopy(task))
+                    return
+                if callable(create_fn):
+                    create_fn(copy.deepcopy(task))
+                    return
+                if callable(add_fn):
+                    add_fn(copy.deepcopy(task))
+                    return
+            except Exception:
+                pass
+
+    def _get_task_from_entry(self, task_entry: Any, task_id: str) -> Optional[Dict[str, Any]]:
+        if not task_id:
+            return None
+
+        get_fn = getattr(task_entry, "_get_task_from_repo", None)
+        if callable(get_fn):
+            try:
+                value = get_fn(task_id)
+                if isinstance(value, dict):
+                    return copy.deepcopy(value)
+            except Exception:
+                pass
+
+        repo = getattr(task_entry, "task_repo", None)
+        if repo is not None:
+            for method_name in ("get_task", "get", "load_task", "find_task"):
+                fn = getattr(repo, method_name, None)
+                if callable(fn):
+                    try:
+                        value = fn(task_id)
+                        if isinstance(value, dict):
+                            return copy.deepcopy(value)
+                    except Exception:
+                        pass
+
+        return None
+
+    def _save_task_plan_and_runtime(self, task: Dict[str, Any], plan: Any) -> None:
+        workspace = self.task_workspace
+        runtime = self.task_runtime
+
+        if workspace is None:
+            workspace = getattr(self.scheduler, "task_workspace", None)
+
+        if runtime is None:
+            runtime = getattr(self.scheduler, "task_runtime", None)
+
+        if workspace is not None:
+            try:
+                workspace.save_plan(task, plan if isinstance(plan, dict) else {})
+            except Exception:
+                pass
+            try:
+                workspace.save_task_snapshot(task)
+            except Exception:
+                pass
+
+        if runtime is not None:
+            try:
+                runtime.ensure_runtime_state(task)
+            except Exception:
+                pass
+
+    def _route_int(self, route: Any, key: str, default: int) -> int:
+        if isinstance(route, dict) and route.get(key) is not None:
+            try:
+                return int(route.get(key))
+            except Exception:
+                return default
+        return default
+
+    def _route_depends_on(self, route: Any) -> Optional[list]:
+        if not isinstance(route, dict):
+            return None
+
+        value = route.get("depends_on")
+        if value is None:
+            return None
+
+        if isinstance(value, list):
+            return [str(x).strip() for x in value if str(x).strip()]
+
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+
+        return None
 
     # ============================================================
     # router

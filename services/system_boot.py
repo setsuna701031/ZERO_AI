@@ -22,13 +22,6 @@ class ZeroSystem:
     - 統一初始化 ZERO Task OS 核心元件
     - 提供 tick / run_until_idle / health
     - 對外暴露 queue / task control 的穩定入口
-
-    分層：
-    app.py
-      -> services.system_boot.ZeroSystem
-      -> core.tasks.scheduler.Scheduler   (facade)
-      -> core.runtime.task_scheduler.TaskScheduler (engine)
-      -> TaskRunner / TaskRuntime / RuntimeStateMachine
     """
 
     def __init__(self, workspace: str = "workspace") -> None:
@@ -84,7 +77,6 @@ class ZeroSystem:
             debug=False,
         )
 
-        # 這裡一定要走 facade，不要直接接 runtime TaskScheduler
         self.scheduler = Scheduler(
             task_repo=self.task_repository,
             workspace_dir=self.workspace,
@@ -101,9 +93,6 @@ class ZeroSystem:
     # ============================================================
 
     def tick(self) -> Dict[str, Any]:
-        """
-        執行一次 scheduler tick。
-        """
         self.tick_count += 1
         sched_result = self.scheduler.tick(current_tick=self.tick_count)
 
@@ -211,13 +200,53 @@ class ZeroSystem:
             "error": "scheduler.get_queue_snapshot not available",
         }
 
-    def submit_task(self, **kwargs: Any) -> Any:
-        fn = getattr(self.scheduler, "submit_task", None)
+    def create_task(self, **kwargs: Any) -> Dict[str, Any]:
+        """
+        純建立 task，不提交既有任務，不自動跑 scheduler。
+        這裡只允許走 scheduler.create_task。
+        """
+        fn = getattr(self.scheduler, "create_task", None)
+        if not callable(fn):
+            return {
+                "ok": False,
+                "error": "scheduler.create_task not available",
+            }
+
+        try:
+            result = fn(**kwargs)
+            if not isinstance(result, dict):
+                return {
+                    "ok": False,
+                    "error": "scheduler.create_task returned invalid result",
+                    "raw_result": result,
+                }
+            return result
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"create_task exception: {e}",
+            }
+
+    def submit_task(self, task_id: str) -> Any:
+        """
+        對外 submit API：提交既有 task_id。
+        不建立新 task，不接受 goal。
+        """
+        fn = getattr(self.scheduler, "submit_existing_task", None)
         if callable(fn):
-            return fn(**kwargs)
+            try:
+                return fn(task_id)
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "error": f"submit_task exception: {e}",
+                    "task_id": task_id,
+                }
+
         return {
             "ok": False,
-            "error": "scheduler.submit_task not available",
+            "error": "scheduler.submit_existing_task not available",
+            "task_id": task_id,
         }
 
     def get_task(self, task_name: str) -> Dict[str, Any]:

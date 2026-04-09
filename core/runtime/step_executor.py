@@ -14,18 +14,17 @@ from core.runtime.step_handlers import (
     LLMStepHandler,
 )
 
-
 StepHandler = Callable[[Dict[str, Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]], Any], Dict[str, Any]]
 
 
 class StepExecutor:
     """
-    ZERO Step Executor v5
+    ZERO Step Executor v6
 
-    新增：
-    1. shared workspace path resolve
-    2. shared/... 路徑會落到 workspace/shared/
-    3. task sandbox 仍維持預設行為
+    Path resolve priority:
+    1. shared/... -> workspace/shared/
+    2. task sandbox
+    3. fallback -> workspace/shared/
     """
 
     def __init__(
@@ -46,6 +45,7 @@ class StepExecutor:
 
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
+
         self.shared_dir = os.path.join(self.workspace_root, "shared")
         os.makedirs(self.shared_dir, exist_ok=True)
 
@@ -83,7 +83,7 @@ class StepExecutor:
         self.register_handler("llm", LLMStepHandler(self).handle)
 
     # ============================================================
-    # Compatibility entry
+    # Execute
     # ============================================================
 
     def execute(
@@ -124,36 +124,6 @@ class StepExecutor:
         task = self._normalize_task(task)
         context = copy.deepcopy(context) if isinstance(context, dict) else {}
 
-        if isinstance(task, dict):
-            for key in (
-                "task_id",
-                "task_name",
-                "task_dir",
-                "workspace",
-                "cwd",
-                "workspace_dir",
-                "workspace_root",
-                "shared_dir",
-                "plan_file",
-                "runtime_state_file",
-                "result_file",
-                "execution_log_file",
-                "log_file",
-            ):
-                if key not in step and key in task:
-                    step[key] = task.get(key)
-
-        if isinstance(context, dict):
-            for key in ("workspace", "cwd", "task_dir", "workspace_root", "shared_dir"):
-                if key not in step and key in context:
-                    step[key] = context.get(key)
-
-        if step_index is not None and "step_index" not in step:
-            step["step_index"] = step_index
-
-        if step_count is not None and "step_count" not in step:
-            step["step_count"] = step_count
-
         step_type = str(step.get("type", "")).lower().strip()
 
         if self.debug:
@@ -181,48 +151,6 @@ class StepExecutor:
             }
 
     # ============================================================
-    # Multi step
-    # ============================================================
-
-    def execute_steps(
-        self,
-        steps: List[Dict[str, Any]],
-        task: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        results: List[Dict[str, Any]] = []
-        previous_result: Any = None
-
-        for i, raw_step in enumerate(steps):
-            step = copy.deepcopy(raw_step)
-            step["step_index"] = i
-            step["step_count"] = len(steps)
-
-            result = self.execute_step(
-                step=step,
-                task=task,
-                context=context,
-                previous_result=previous_result,
-                step_index=i,
-                step_count=len(steps),
-            )
-
-            results.append(result)
-            previous_result = result
-
-            if not result.get("ok", False):
-                return {
-                    "ok": False,
-                    "failed_step": i,
-                    "results": results,
-                }
-
-        return {
-            "ok": True,
-            "results": results,
-        }
-
-    # ============================================================
     # Helpers
     # ============================================================
 
@@ -242,78 +170,35 @@ class StepExecutor:
 
         return normalized
 
-    def _extract_inner_ok(self, result: Any) -> bool:
-        if isinstance(result, dict):
-            if "ok" in result:
-                return bool(result.get("ok"))
-            if "success" in result:
-                return bool(result.get("success"))
-            if "returncode" in result:
-                try:
-                    return int(result.get("returncode", 1)) == 0
-                except Exception:
-                    return False
-        return True
+    # ============================================================
+    # File path resolve (IMPORTANT)
+    # ============================================================
 
-    def _resolve_base_dir_for_file(
+    def resolve_file_path(
         self,
-        step: Dict[str, Any],
+        relative_path: str,
         task: Optional[Dict[str, Any]] = None,
     ) -> str:
-        path = str(step.get("path", "") or "").replace("\\", "/").strip()
-        if path.startswith("shared/"):
-            if isinstance(step, dict):
-                shared_dir = step.get("shared_dir")
-                if isinstance(shared_dir, str) and shared_dir.strip():
-                    return shared_dir
-            if isinstance(task, dict):
-                shared_dir = task.get("shared_dir")
-                if isinstance(shared_dir, str) and shared_dir.strip():
-                    return shared_dir
-            return self.shared_dir
+        """
+        Resolve file path with fallback:
+        1. shared/xxx -> workspace/shared/xxx
+        2. task sandbox
+        3. workspace/shared fallback
+        """
+        relative_path = (relative_path or "").replace("\\", "/").strip()
 
-        if isinstance(step, dict):
-            for key in ("task_dir", "cwd", "workspace"):
-                value = step.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
+        # shared path
+        if relative_path.startswith("shared/"):
+            return os.path.join(self.shared_dir, relative_path[len("shared/"):])
 
+        # task sandbox
         if isinstance(task, dict):
-            for key in ("task_dir", "cwd", "workspace", "workspace_dir"):
-                value = task.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
+            task_dir = task.get("task_dir")
+            if task_dir:
+                sandbox = os.path.join(task_dir, "sandbox")
+                path = os.path.join(sandbox, relative_path)
+                if os.path.exists(path):
+                    return path
 
-        return self.workspace_root
-
-    def _resolve_cwd(
-        self,
-        step: Optional[Dict[str, Any]] = None,
-        task: Optional[Dict[str, Any]] = None,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        if isinstance(step, dict):
-            command = str(step.get("command", "") or "").replace("\\", "/")
-            if " shared/" in f" {command}" or command.startswith("shared/"):
-                shared_dir = step.get("shared_dir")
-                if isinstance(shared_dir, str) and shared_dir.strip():
-                    return str(step.get("workspace_root") or self.workspace_root)
-
-            for key in ("task_dir", "cwd", "workspace"):
-                value = step.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
-
-        if isinstance(task, dict):
-            for key in ("task_dir", "cwd", "workspace", "workspace_dir"):
-                value = task.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
-
-        if isinstance(context, dict):
-            for key in ("task_dir", "cwd", "workspace"):
-                value = context.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
-
-        return self.workspace_root
+        # fallback -> shared
+        return os.path.join(self.shared_dir, relative_path)

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
+from core.tasks.task_paths import TaskPathManager
+
 
 class WorkspaceTool:
     name = "workspace"
@@ -12,6 +14,7 @@ class WorkspaceTool:
 
     def __init__(self, workspace_root: Path | str):
         self.workspace_root = Path(workspace_root).resolve()
+        self.path_manager = TaskPathManager(str(self.workspace_root))
 
     def execute(self, args: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(args, dict):
@@ -21,51 +24,42 @@ class WorkspaceTool:
         path = args.get("path")
         content = args.get("content")
         recursive = bool(args.get("recursive", True))
+        task_id = args.get("task_id")
 
         if not action:
             return self._error("action is required")
 
         if action in {"read", "read_file"}:
-            return self._read_file(path)
+            return self._read_file(path, task_id)
 
         if action in {"write", "write_file", "write_text", "save_file"}:
-            return self._write_file(path, content)
+            return self._write_file(path, content, task_id)
 
         if action in {"append", "append_file"}:
-            return self._append_file(path, content)
+            return self._append_file(path, content, task_id)
 
         if action in {"mkdir", "make_dir", "make_directory", "create_dir", "create_directory"}:
-            return self._mkdir(path)
+            return self._mkdir(path, task_id)
 
         if action in {"list", "list_files"}:
-            return self._list_files(path, recursive=recursive)
+            return self._list_files(path, recursive=recursive, task_id=task_id)
 
         if action == "exists":
-            return self._exists(path)
+            return self._exists(path, task_id)
 
         return self._error(f"unknown action: {action}")
 
-    def _resolve_path(self, path: Any) -> Path:
-        if not path:
-            raise ValueError("path is empty")
+    # ============================================================
+    # read
+    # ============================================================
 
-        raw_path = Path(str(path))
-
-        if raw_path.is_absolute():
-            candidate = raw_path.resolve()
-        else:
-            candidate = (self.workspace_root / raw_path).resolve()
-
+    def _read_file(self, path: Any, task_id: str | None) -> Dict[str, Any]:
         try:
-            candidate.relative_to(self.workspace_root)
-        except ValueError:
-            raise ValueError(f"path escapes workspace: {candidate}")
-
-        return candidate
-
-    def _read_file(self, path: Any) -> Dict[str, Any]:
-        try:
-            file_path = self._resolve_path(path)
+            full_path = self.path_manager.resolve_read_path(
+                str(path),
+                task_id=task_id,
+            )
+            file_path = Path(full_path)
         except Exception as exc:
             return self._error(str(exc))
 
@@ -87,9 +81,17 @@ class WorkspaceTool:
         except Exception as exc:
             return self._error(str(exc))
 
-    def _write_file(self, path: Any, content: Any) -> Dict[str, Any]:
+    # ============================================================
+    # write
+    # ============================================================
+
+    def _write_file(self, path: Any, content: Any, task_id: str | None) -> Dict[str, Any]:
         try:
-            file_path = self._resolve_path(path)
+            full_path = self.path_manager.resolve_write_path(
+                str(path),
+                task_id=task_id,
+            )
+            file_path = Path(full_path)
         except Exception as exc:
             return self._error(str(exc))
 
@@ -97,6 +99,7 @@ class WorkspaceTool:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             text = "" if content is None else str(content)
             file_path.write_text(text, encoding="utf-8")
+
             return {
                 "success": True,
                 "action": "write_file",
@@ -108,9 +111,17 @@ class WorkspaceTool:
         except Exception as exc:
             return self._error(str(exc))
 
-    def _append_file(self, path: Any, content: Any) -> Dict[str, Any]:
+    # ============================================================
+    # append
+    # ============================================================
+
+    def _append_file(self, path: Any, content: Any, task_id: str | None) -> Dict[str, Any]:
         try:
-            file_path = self._resolve_path(path)
+            full_path = self.path_manager.resolve_write_path(
+                str(path),
+                task_id=task_id,
+            )
+            file_path = Path(full_path)
         except Exception as exc:
             return self._error(str(exc))
 
@@ -131,9 +142,17 @@ class WorkspaceTool:
         except Exception as exc:
             return self._error(str(exc))
 
-    def _mkdir(self, path: Any) -> Dict[str, Any]:
+    # ============================================================
+    # mkdir
+    # ============================================================
+
+    def _mkdir(self, path: Any, task_id: str | None) -> Dict[str, Any]:
         try:
-            dir_path = self._resolve_path(path)
+            full_path = self.path_manager.resolve_write_path(
+                str(path),
+                task_id=task_id,
+            )
+            dir_path = Path(full_path)
         except Exception as exc:
             return self._error(str(exc))
 
@@ -148,9 +167,17 @@ class WorkspaceTool:
         except Exception as exc:
             return self._error(str(exc))
 
-    def _list_files(self, path: Any, recursive: bool = True) -> Dict[str, Any]:
+    # ============================================================
+    # list
+    # ============================================================
+
+    def _list_files(self, path: Any, recursive: bool, task_id: str | None) -> Dict[str, Any]:
         try:
-            target_path = self._resolve_path(path or ".")
+            full_path = self.path_manager.resolve_read_path(
+                str(path or "."),
+                task_id=task_id,
+            )
+            target_path = Path(full_path)
         except Exception as exc:
             return self._error(str(exc))
 
@@ -191,9 +218,17 @@ class WorkspaceTool:
         except Exception as exc:
             return self._error(str(exc))
 
-    def _exists(self, path: Any) -> Dict[str, Any]:
+    # ============================================================
+    # exists
+    # ============================================================
+
+    def _exists(self, path: Any, task_id: str | None) -> Dict[str, Any]:
         try:
-            target_path = self._resolve_path(path)
+            full_path = self.path_manager.resolve_read_path(
+                str(path),
+                task_id=task_id,
+            )
+            target_path = Path(full_path)
         except Exception as exc:
             return self._error(str(exc))
 

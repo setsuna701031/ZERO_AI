@@ -2,47 +2,13 @@
 
 
 
-Local-first Task OS / DAG Task Orchestration Runtime / Agent Execution Engine
+ZERO is a local-first AI agent system focused on task execution, orchestration, and self-healing runtime behavior.
 
 
 
-ZERO is an experimental local task operating system that executes AI tasks as structured workflows with persistent runtime state, dependency scheduling, and workspace-based execution.
+This project is not designed as a chatbot.  
 
-
-
-This project explores how a local AI system can manage tasks, plans, execution steps, runtime state, retries, replanning, and dependency graphs.
-
-
-
-\---
-
-
-
-\# Current Milestone
-
-
-
-\*\*DAG dependency scheduling end-to-end integration passed\*\*
-
-
-
-The system now supports:
-
-
-
-\* Task repository
-
-\* Dependency (DAG) scheduling
-
-\* Scheduler queue
-
-\* Runtime state machine
-
-\* Task runner
-
-\* Persistent runtime state
-
-\* End-to-end integration test
+It is built as an \*\*Agentic Workflow Infrastructure\*\* capable of handling structured, multi-step, and long-running tasks.
 
 
 
@@ -50,63 +16,21 @@ The system now supports:
 
 
 
-\# System Architecture Overview
+\## Core Capabilities
 
 
 
-Core components:
+\- Task planning and execution
 
+\- Multi-task scheduling
 
+\- Failure detection and verification
 
-1\. Task Repository
+\- Replanning and self-healing
 
-2\. DAG Scheduler
+\- Clean scheduler convergence
 
-3\. Scheduler Queue
-
-4\. Task Runner
-
-5\. Runtime State Machine
-
-6\. Workspace / Runtime State Persistence
-
-7\. Integration Test
-
-
-
-Execution flow:
-
-
-
-```
-
-Task Submit
-
-&#x20;   ↓
-
-Task Repository
-
-&#x20;   ↓
-
-DAG Scheduler
-
-&#x20;   ↓
-
-Scheduler Queue
-
-&#x20;   ↓
-
-Task Runner
-
-&#x20;   ↓
-
-Runtime State Machine
-
-&#x20;   ↓
-
-Finished / Retry / Failed / Replan
-
-```
+\- Local-first execution (no cloud dependency required)
 
 
 
@@ -114,35 +38,21 @@ Finished / Retry / Failed / Replan
 
 
 
-\# DAG Execution Flow (Integration Test)
+\## Recent Milestones
 
 
 
-\## Tick #1 – Dependency Blocking
+ZERO has recently reached several important runtime milestones:
 
 
 
-Task A finished, Task B blocked by dependency.
+\- Multi-task scheduling completed successfully
 
+\- Self-healing recovery loop validated
 
+\- Scheduler converged cleanly with no pending or stuck tasks
 
-docs/images/dag\_runtime\_tick1\_blocked.png
-
-
-
-\---
-
-
-
-\## Scheduler – Dependency Unlocked → Queue
-
-
-
-Task B moved into scheduler queue after dependency resolved.
-
-
-
-docs/images/scheduler\_queue\_after\_unblock.png
+\- Task repair flow preserved executable steps instead of collapsing into invalid retry plans
 
 
 
@@ -150,47 +60,33 @@ docs/images/scheduler\_queue\_after\_unblock.png
 
 
 
-\## Tick #2 – Upstream Finished
+\## Multi-Task Scheduling Convergence
 
 
 
-Repository shows upstream task finished.
+The scheduler can now accept multiple tasks, execute them through the task runtime, and fully converge into a clean final state.
 
 
 
-docs/images/dag\_repo\_tick2\_finished.png
+Key signals validated in this stage:
 
 
 
-\---
+\- multiple tasks submitted successfully
+
+\- all tasks reached `finished`
+
+\- queue drained cleanly
+
+\- no stuck workers
+
+\- no leftover running tasks
 
 
 
-\## Tick #3 – All Tasks Finished
+!\[Multi-task self-healing all success](docs/images/demo/multi\_task\_self\_healing\_all\_success.png)
 
-
-
-All tasks completed and runtime state finalized.
-
-
-
-docs/images/dag\_repo\_tick3\_runtime\_finished.png
-
-
-
-\---
-
-
-
-\## Integration Tests Passed
-
-
-
-End-to-end orchestration test passed.
-
-
-
-docs/images/task\_os\_integration\_tests\_passed.png
+!\[Scheduler multi-task completion](docs/images/demo/scheduler\_multi\_task\_completion.png)
 
 
 
@@ -198,75 +94,37 @@ docs/images/task\_os\_integration\_tests\_passed.png
 
 
 
-\# Project Structure
+\## Self-Healing Task Recovery
 
 
 
-```
-
-core/
-
-&#x20;   tasks/
-
-&#x20;       task\_repository.py
-
-&#x20;       scheduler.py
-
-&#x20;       task\_models.py
-
-&#x20;       task\_workspace.py
+ZERO is not limited to straight-line execution.
 
 
 
-&#x20;   runtime/
-
-&#x20;       task\_runner.py
-
-&#x20;       task\_runtime.py
-
-&#x20;       runtime\_state\_machine.py
-
-&#x20;       step\_handlers.py
+When verification fails, the system can:
 
 
 
-services/
+1\. detect the failure reason  
 
-&#x20;   system\_boot.py
+2\. trigger replanning  
 
+3\. rebuild a valid executable step sequence  
 
+4\. retry execution  
 
-workspace/
-
-&#x20;   tasks/<task\_id>/
-
-&#x20;       runtime\_state.json
+5\. finish successfully  
 
 
 
-docs/
-
-&#x20;   architecture.md
-
-&#x20;   dag\_scheduler.md
-
-&#x20;   runtime\_state\_machine.md
-
-&#x20;   integration\_test.md
-
-&#x20;   images/
+This recovery behavior has been validated in local runtime tests.
 
 
 
-tests/
+!\[Self-healing full execution flow](docs/images/demo/self\_healing\_full\_execution\_flow.png)
 
-&#x20;   test\_repo\_dag.py
-
-&#x20;   test\_dag\_flow.py
-
-&#x20;   test\_task\_os\_integration.py
-
-```
+!\[Self-healing success verify repair](docs/images/demo/self\_healing\_success\_verify\_repair.png)
 
 
 
@@ -274,45 +132,31 @@ tests/
 
 
 
-\# Documentation Guide
+\## Why This Matters
 
 
 
-Start here:
+This moves ZERO closer to a real task runtime system instead of a simple single-pass executor.
 
 
 
-\* docs/project\_overview.md
-
-\* docs/architecture.md
+The current runtime now demonstrates:
 
 
 
-System components:
+\- task planning  
 
+\- queued execution  
 
+\- failure detection  
 
-\* docs/dag\_scheduler.md
+\- replanning  
 
-\* docs/runtime\_state\_machine.md
+\- repair-driven retry  
 
+\- clean task completion  
 
-
-Execution proof:
-
-
-
-\* docs/integration\_test.md
-
-
-
-Project status:
-
-
-
-\* docs/current\_status.md
-
-\* docs/roadmap.md
+\- scheduler-level convergence  
 
 
 
@@ -320,53 +164,39 @@ Project status:
 
 
 
-\# What This Project Is
+\## Architecture Direction
 
 
 
-This project is NOT just a script runner.
+ZERO is evolving toward a modular agent system with:
 
 
 
-It is an experiment toward building a \*\*local AI task operating system\*\*, where:
+\- planner
+
+\- scheduler
+
+\- runtime state machine
+
+\- executor
+
+\- verification layer
+
+\- memory system
 
 
 
-\* Tasks have workspace directories
-
-\* Tasks have runtime state
-
-\* Tasks execute multi-step plans
-
-\* Tasks can retry or replan
-
-\* Tasks can depend on other tasks (DAG)
-
-\* Scheduler decides execution order
-
-\* Runtime state persists across runs
-
-\* Integration tests verify orchestration flow
+The long-term goal is to support:
 
 
 
-This architecture is conceptually similar to:
+\- complex task orchestration
 
+\- long-running workflows
 
+\- multi-agent coordination
 
-\* Airflow
-
-\* Prefect
-
-\* Luigi
-
-\* Temporal
-
-\* Agent workflow runtimes
-
-
-
-But implemented as a \*\*local-first lightweight system\*\*.
+\- local-first deployment
 
 
 
@@ -374,33 +204,25 @@ But implemented as a \*\*local-first lightweight system\*\*.
 
 
 
-\# Roadmap (High Level)
+\## Status
 
 
 
-Planned next steps:
+Current stage:
 
 
 
-\* Planner / Step generator
+> ✅ Multi-task scheduling  
 
-\* Retry \& failure policies
+> ✅ Self-healing loop  
 
-\* Replan logic
+> ✅ Scheduler convergence  
 
-\* Worker loop / scheduler loop
+> 🔜 Multi-worker execution  
 
-\* Multi-task execution
+> 🔜 Tool expansion  
 
-\* Event log
-
-\* CLI interface
-
-\* Local agent runtime
-
-\* Tool execution framework
-
-\* Memory / context storage
+> 🔜 Deployment pipeline  
 
 
 
@@ -408,11 +230,25 @@ Planned next steps:
 
 
 
-\# Summary
+\## Notes
 
 
 
-ZERO is an experimental local task orchestration runtime that explores how AI agents, task execution, runtime state machines, and workflow scheduling can be implemented as a local-first system.
+\- This project is under active development  
+
+\- Focus is on system capability, not UI polish  
+
+\- Design prioritizes extensibility and control  
 
 
+
+\---
+
+
+
+\## Author
+
+
+
+ZERO is developed as an independent engineering project focused on building a real-world AI task execution system.
 
