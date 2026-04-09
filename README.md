@@ -186,7 +186,5 @@ This is an experimental system focused on architecture exploration.
 
 
 
-(you can fill later)
-
-
+For inquiries, please reach out via GitHub issues.
 
