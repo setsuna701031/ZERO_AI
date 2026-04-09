@@ -2,13 +2,7 @@
 
 
 
-ZERO is a local-first AI agent system focused on task execution, orchestration, and self-healing runtime behavior.
-
-
-
-This project is not designed as a chatbot.  
-
-It is built as an \*\*Agentic Workflow Infrastructure\*\* capable of handling structured, multi-step, and long-running tasks.
+Autonomous Multi-Task AI System with Self-Healing Execution
 
 
 
@@ -16,43 +10,21 @@ It is built as an \*\*Agentic Workflow Infrastructure\*\* capable of handling st
 
 
 
-\## Core Capabilities
+\## 🚀 What it does
 
 
 
-\- Task planning and execution
-
-\- Multi-task scheduling
-
-\- Failure detection and verification
-
-\- Replanning and self-healing
-
-\- Clean scheduler convergence
-
-\- Local-first execution (no cloud dependency required)
+ZERO AI is an experimental agent system capable of:
 
 
 
-\---
+\* Executing multi-step tasks (DAG-based)
 
+\* Detecting failures during execution
 
+\* Automatically replanning and repairing tasks
 
-\## Recent Milestones
-
-
-
-ZERO has recently reached several important runtime milestones:
-
-
-
-\- Multi-task scheduling completed successfully
-
-\- Self-healing recovery loop validated
-
-\- Scheduler converged cleanly with no pending or stuck tasks
-
-\- Task repair flow preserved executable steps instead of collapsing into invalid retry plans
+\* Completing long-running workflows without manual intervention
 
 
 
@@ -60,33 +32,25 @@ ZERO has recently reached several important runtime milestones:
 
 
 
-\## Multi-Task Scheduling Convergence
+\## 🔥 Key Capability: Self-Healing Runtime
 
 
 
-The scheduler can now accept multiple tasks, execute them through the task runtime, and fully converge into a clean final state.
+Unlike traditional task runners, ZERO AI can recover from failure:
 
 
 
-Key signals validated in this stage:
+1\. Task executes
 
+2\. Step fails (e.g. verify failed)
 
+3\. System detects failure
 
-\- multiple tasks submitted successfully
+4\. Replanner generates recovery plan
 
-\- all tasks reached `finished`
+5\. Execution resumes automatically
 
-\- queue drained cleanly
-
-\- no stuck workers
-
-\- no leftover running tasks
-
-
-
-!\[Multi-task self-healing all success](docs/images/demo/multi\_task\_self\_healing\_all\_success.png)
-
-!\[Scheduler multi-task completion](docs/images/demo/scheduler\_multi\_task\_completion.png)
+6\. Task completes successfully
 
 
 
@@ -94,37 +58,15 @@ Key signals validated in this stage:
 
 
 
-\## Self-Healing Task Recovery
+\## 🎬 Demo
 
 
 
-ZERO is not limited to straight-line execution.
+\### Multi-task self-healing (parallel tasks)
 
 
 
-When verification fails, the system can:
-
-
-
-1\. detect the failure reason  
-
-2\. trigger replanning  
-
-3\. rebuild a valid executable step sequence  
-
-4\. retry execution  
-
-5\. finish successfully  
-
-
-
-This recovery behavior has been validated in local runtime tests.
-
-
-
-!\[Self-healing full execution flow](docs/images/demo/self\_healing\_full\_execution\_flow.png)
-
-!\[Self-healing success verify repair](docs/images/demo/self\_healing\_success\_verify\_repair.png)
+!\[multi](docs/images/demo/multi\_task\_self\_healing\_all\_success.png)
 
 
 
@@ -132,31 +74,11 @@ This recovery behavior has been validated in local runtime tests.
 
 
 
-\## Why This Matters
+\### Scheduler completing multiple tasks
 
 
 
-This moves ZERO closer to a real task runtime system instead of a simple single-pass executor.
-
-
-
-The current runtime now demonstrates:
-
-
-
-\- task planning  
-
-\- queued execution  
-
-\- failure detection  
-
-\- replanning  
-
-\- repair-driven retry  
-
-\- clean task completion  
-
-\- scheduler-level convergence  
+!\[scheduler](docs/images/demo/scheduler\_multi\_task\_completion.png)
 
 
 
@@ -164,39 +86,11 @@ The current runtime now demonstrates:
 
 
 
-\## Architecture Direction
+\### Full execution flow (fail → repair → success)
 
 
 
-ZERO is evolving toward a modular agent system with:
-
-
-
-\- planner
-
-\- scheduler
-
-\- runtime state machine
-
-\- executor
-
-\- verification layer
-
-\- memory system
-
-
-
-The long-term goal is to support:
-
-
-
-\- complex task orchestration
-
-\- long-running workflows
-
-\- multi-agent coordination
-
-\- local-first deployment
+!\[flow](docs/images/demo/self\_healing\_full\_execution\_flow.png)
 
 
 
@@ -204,25 +98,11 @@ The long-term goal is to support:
 
 
 
-\## Status
+\### Verify failure → auto repair → success
 
 
 
-Current stage:
-
-
-
-> ✅ Multi-task scheduling  
-
-> ✅ Self-healing loop  
-
-> ✅ Scheduler convergence  
-
-> 🔜 Multi-worker execution  
-
-> 🔜 Tool expansion  
-
-> 🔜 Deployment pipeline  
+!\[repair](docs/images/demo/self\_healing\_success\_verify\_repair.png)
 
 
 
@@ -230,15 +110,19 @@ Current stage:
 
 
 
-\## Notes
+\## 🧠 Architecture Highlights
 
 
 
-\- This project is under active development  
+\* DAG-based task scheduling
 
-\- Focus is on system capability, not UI polish  
+\* Runtime state machine
 
-\- Design prioritizes extensibility and control  
+\* Replanner (failure recovery)
+
+\* Execution trace system
+
+\* Safety-locked execution model
 
 
 
@@ -246,9 +130,63 @@ Current stage:
 
 
 
-\## Author
+\## 📁 Project Structure
 
 
 
-ZERO is developed as an independent engineering project focused on building a real-world AI task execution system.
+\* `core/` → system core
+
+\* `docs/` → documentation
+
+\* `demos/` → demo scripts \& videos
+
+\* `workspace/` → runtime sandbox
+
+
+
+\---
+
+
+
+\## 📌 Status
+
+
+
+This repository represents a milestone:
+
+
+
+✔ Multi-task execution
+
+✔ Self-healing runtime
+
+✔ Failure detection + replanning
+
+✔ End-to-end task completion
+
+
+
+\---
+
+
+
+\## ⚠️ Note
+
+
+
+This is an experimental system focused on architecture exploration.
+
+
+
+\---
+
+
+
+\## 📬 Contact
+
+
+
+(you can fill later)
+
+
 
