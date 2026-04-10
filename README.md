@@ -1,140 +1,78 @@
-# ZERO AI
+# ZERO_AI
 
-> An early-stage self-correcting agent runtime (local-first, execution-focused)
-
----
-
-## Overview
-
-ZERO is a local-first AI system designed to execute tasks through structured planning, execution, verification, and correction.
-
-It is not just a chatbot or script runner.
-
-ZERO focuses on building a **runtime-controlled agent loop**, where execution is continuously validated and adjusted instead of assumed to be correct.
+A local-first AI agent system that executes tasks, handles failures, and keeps going.
 
 ---
 
-## Core Loop
+## What makes it different?
 
-Plan → Execute → Verify → Correct → Retry / Replan → Re-execute
+ZERO_AI is not just a chatbot.
 
-This loop is the foundation of ZERO.
+It is designed to:
+- execute real tasks
+- detect failures during execution
+- attempt repair and retry automatically
 
----
-
-## What ZERO Does (Current Capabilities)
-
-ZERO has demonstrated the following behaviors in local runtime tests:
-
-- multi-step task execution  
-- verification-driven failure detection  
-- retry for recoverable errors  
-- replanning when retry is insufficient  
-- executor-level repair for invalid step sequences  
-- basic dependency-aware execution (e.g. missing file / directory repair)  
-- trace-based observability of execution loops  
+This creates a basic execution loop with self-healing capability.
 
 ---
 
-## Key Idea
+## What is this?
 
-Most LLM-based systems follow:
+ZERO_AI is an experimental system that tries to go beyond chat.
 
-Plan → Execute → Done
-
-ZERO is built on a different assumption:
-
-- plans can be incorrect  
-- execution can fail  
-- results must be verified  
-- the system must adapt  
+Instead of just answering, it:
+- plans tasks
+- executes steps
+- handles failures
+- and tries to fix itself
 
 ---
 
-## Executor-Level Repair (Deterministic Layer)
+## Core Capabilities
 
-ZERO does not rely only on planner output.
-
-It introduces a deterministic execution layer that can fix obvious issues before or during execution.
-
-Example (validated behavior):
-
-Planner output:
-read hello.txt
-
-Executor adjusts:
-create hello.txt → read hello.txt
-
-This allows recovery from common dependency errors without immediately requiring replanning.
+- Task planning and execution
+- Multi-step workflow (DAG-like structure)
+- Self-healing (automatic retry and repair)
+- Execution tracing and logs
 
 ---
 
-## Dependency Repair (Early Implementation)
+## Example Flow
 
-In current tests, ZERO can handle simple dependency chains:
-
-Example:
-
-Attempt:
-read nested/demo/hello.txt
-
-Runtime repair:
-- create directory (nested/demo)
-- create file (nested/demo/hello.txt)
-- then execute read
-
-This behavior is rule-based and currently limited, but demonstrates a path toward more robust execution control.
-
-![Dependency Repair](docs/images/demo/executor_auto_dependency_repair.png)
+1. Receive a task
+2. Break into steps
+3. Execute step-by-step
+4. Detect failure
+5. Attempt repair
+6. Continue until completion
 
 ---
 
-## Agent Loop Trace
+## Demo
 
-![Agent Loop](docs/images/demo/agent_loop_trace_overview.png)
+### 1. Agent Loop Overview
+![agent_loop](docs/images/demo/agent_loop_trace_overview.png)
 
-The system records:
+### 2. Safe Path Repair
+![repair](docs/images/demo/executor_safe_path_repair.png)
 
-- execution
-- verification
-- correction
-- iteration cycles
-
-This makes behavior observable and debuggable.
+### 3. Multi-task Self-healing
+![self_healing](docs/images/demo/multi_task_self_healing_all_success.png)
 
 ---
 
-## Current Position
+## Current Status
 
-ZERO is not a finished product.
-
-It is an **early-stage agent runtime prototype** with:
-
-- working execution loop  
-- partial self-correction capability  
-- deterministic repair layer (initial version)  
+This is an active work-in-progress system.
 
 Focus areas:
-
-- expanding repair rules  
-- improving stability  
-- strengthening execution correctness  
-- maintaining clear system boundaries  
+- stability
+- execution reliability
+- real-world use cases
 
 ---
 
-## Why This Matters
+## Contact
 
-Instead of relying entirely on model quality, ZERO explores:
-
-- separating planning and execution control  
-- adding deterministic correction layers  
-- making agent behavior observable  
-
-This moves toward a more **engineering-oriented approach to agents**.
-
----
-
-## License
-
-MIT
+Open an issue if you want to discuss or collaborate.
