@@ -12,19 +12,29 @@ from core.runtime.step_handlers import (
     ReadFileStepHandler,
     RespondStepHandler,
     LLMStepHandler,
+    EnsureFileStepHandler,
 )
+from core.runtime.safety_guard import SafetyGuard
 
-StepHandler = Callable[[Dict[str, Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]], Any], Dict[str, Any]]
+StepHandler = Callable[
+    [Dict[str, Any], Optional[Dict[str, Any]], Optional[Dict[str, Any]], Any],
+    Dict[str, Any],
+]
 
 
 class StepExecutor:
     """
-    ZERO Step Executor v6
+    ZERO Step Executor v12
 
-    Path resolve priority:
-    1. shared/... -> workspace/shared/
-    2. task sandbox
-    3. fallback -> workspace/shared/
+    核心規則：
+    1. single-shot -> workspace/shared
+    2. real task -> workspace/tasks/<task_id>/sandbox
+    3. execute_step 前先經過 safety guard
+    4. 自動修正常見 path 重複前綴：
+       - shared/xxx
+       - workspace/shared/xxx
+       - ./shared/xxx
+       - .\\shared\\xxx
     """
 
     def __init__(
@@ -49,8 +59,16 @@ class StepExecutor:
         self.shared_dir = os.path.join(self.workspace_root, "shared")
         os.makedirs(self.shared_dir, exist_ok=True)
 
+        self.safety_guard = SafetyGuard(
+            workspace_root=self.workspace_root,
+            shared_dir=self.shared_dir,
+            debug=self.debug,
+        )
+
         self.handlers: Dict[str, StepHandler] = {}
         self._register_builtin_handlers()
+
+        print("### StepExecutor v12 (guard enabled, ensure_file added, single-shot -> shared, task -> sandbox, path normalize fixed) ###")
 
     # ============================================================
     # Handler registry
@@ -76,11 +94,13 @@ class StepExecutor:
         self.register_handler("command", CommandStepHandler(self).handle)
         self.register_handler("write_file", WriteFileStepHandler(self).handle)
         self.register_handler("workspace_write", WriteFileStepHandler(self).handle)
+        self.register_handler("ensure_file", EnsureFileStepHandler(self).handle)
         self.register_handler("read_file", ReadFileStepHandler(self).handle)
         self.register_handler("workspace_read", ReadFileStepHandler(self).handle)
         self.register_handler("respond", RespondStepHandler(self).handle)
         self.register_handler("final_answer", RespondStepHandler(self).handle)
         self.register_handler("llm", LLMStepHandler(self).handle)
+        self.register_handler("llm_generate", LLMStepHandler(self).handle)
 
     # ============================================================
     # Execute
@@ -128,6 +148,7 @@ class StepExecutor:
 
         if self.debug:
             print(f"[StepExecutor] step_type = {step_type}")
+            print(f"[StepExecutor] task = {task}")
 
         handler = self.handlers.get(step_type)
         if handler is None:
@@ -140,8 +161,35 @@ class StepExecutor:
                 "step": copy.deepcopy(step),
             }
 
+        guard_result = self.safety_guard.check_step(
+            step=step,
+            task=task,
+            context=context,
+            executor=self,
+        )
+        if not guard_result.get("ok", False):
+            return {
+                "ok": False,
+                "error": f"safety_guard blocked step: {guard_result.get('error')}",
+                "result": {
+                    "guard_result": guard_result,
+                },
+                "step": copy.deepcopy(step),
+            }
+
         try:
-            return handler(step, task, context, previous_result)
+            result = handler(step, task, context, previous_result)
+
+            if not isinstance(result, dict):
+                return {
+                    "ok": False,
+                    "error": "step handler returned non-dict result",
+                    "result": {"raw_result": result},
+                    "step": copy.deepcopy(step),
+                }
+
+            return result
+
         except Exception as e:
             return {
                 "ok": False,
@@ -155,8 +203,13 @@ class StepExecutor:
     # ============================================================
 
     def _normalize_task(self, task: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        規則：
+        - task mode: 正常 enrich_task，保留真正 task_id / sandbox
+        - single-shot: 補一個 pseudo-task，但 file path 一律導到 shared
+        """
         if not isinstance(task, dict):
-            return task
+            return self._build_shared_pseudo_task()
 
         normalized = copy.deepcopy(task)
 
@@ -168,11 +221,59 @@ class StepExecutor:
         normalized.setdefault("workspace_root", self.workspace_root)
         normalized.setdefault("shared_dir", self.shared_dir)
 
+        if not normalized.get("task_id") and not normalized.get("id"):
+            pseudo = self._build_shared_pseudo_task()
+            pseudo.update(normalized)
+            pseudo["is_pseudo_task"] = True
+            pseudo["mode"] = "single_shot"
+            pseudo["task_dir"] = self.shared_dir
+            pseudo["sandbox_dir"] = self.shared_dir
+            normalized = pseudo
+        else:
+            task_dir = normalized.get("task_dir")
+            if isinstance(task_dir, str) and task_dir.strip():
+                sandbox_dir = os.path.join(task_dir, "sandbox")
+                normalized.setdefault("sandbox_dir", sandbox_dir)
+
         return normalized
 
-    # ============================================================
-    # File path resolve (IMPORTANT)
-    # ============================================================
+    def _build_shared_pseudo_task(self) -> Dict[str, Any]:
+        return {
+            "mode": "single_shot",
+            "is_pseudo_task": True,
+            "task_id": "",
+            "id": "",
+            "task_name": "single_shot",
+            "workspace_root": self.workspace_root,
+            "shared_dir": self.shared_dir,
+            "task_dir": self.shared_dir,
+            "sandbox_dir": self.shared_dir,
+        }
+
+    def _normalize_relative_path(self, relative_path: str) -> str:
+        """
+        將常見的 shared/workspace/shared 前綴統一剝掉，
+        讓 single-shot 一律落到 workspace/shared/<filename>
+        """
+        path = str(relative_path or "").strip().replace("\\", "/")
+
+        while path.startswith("./"):
+            path = path[2:]
+
+        prefixes = [
+            "workspace/shared/",
+            "shared/",
+        ]
+
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if path.startswith(prefix):
+                    path = path[len(prefix):]
+                    changed = True
+
+        return path.strip("/")
 
     def resolve_file_path(
         self,
@@ -180,25 +281,96 @@ class StepExecutor:
         task: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Resolve file path with fallback:
-        1. shared/xxx -> workspace/shared/xxx
-        2. task sandbox
-        3. workspace/shared fallback
+        Path resolve rules:
+        1. absolute path -> direct
+        2. shared/... -> workspace/shared/...
+        3. workspace/shared/... -> workspace/shared/...
+        4. pseudo-task(single-shot) -> workspace/shared/...
+        5. real task -> workspace/tasks/<task_id>/sandbox/...
+        6. fallback -> workspace/shared/...
         """
-        relative_path = (relative_path or "").replace("\\", "/").strip()
+        raw_path = str(relative_path or "").strip()
+        if not raw_path:
+            return self.shared_dir
 
-        # shared path
-        if relative_path.startswith("shared/"):
-            return os.path.join(self.shared_dir, relative_path[len("shared/"):])
+        if os.path.isabs(raw_path):
+            return os.path.abspath(raw_path)
 
-        # task sandbox
-        if isinstance(task, dict):
-            task_dir = task.get("task_dir")
-            if task_dir:
+        normalized_rel = self._normalize_relative_path(raw_path)
+
+        if not normalized_rel:
+            return self.shared_dir
+
+        normalized_task = self._normalize_task(task)
+
+        if isinstance(normalized_task, dict):
+            if normalized_task.get("is_pseudo_task") is True:
+                return os.path.join(self.shared_dir, normalized_rel)
+
+            sandbox_dir = normalized_task.get("sandbox_dir")
+            task_dir = normalized_task.get("task_dir")
+
+            if isinstance(sandbox_dir, str) and sandbox_dir.strip():
+                sandbox_dir = os.path.abspath(sandbox_dir)
+                os.makedirs(sandbox_dir, exist_ok=True)
+                return os.path.join(sandbox_dir, normalized_rel)
+
+            if isinstance(task_dir, str) and task_dir.strip():
+                task_dir = os.path.abspath(task_dir)
                 sandbox = os.path.join(task_dir, "sandbox")
-                path = os.path.join(sandbox, relative_path)
-                if os.path.exists(path):
-                    return path
+                os.makedirs(sandbox, exist_ok=True)
+                return os.path.join(sandbox, normalized_rel)
 
-        # fallback -> shared
-        return os.path.join(self.shared_dir, relative_path)
+        return os.path.join(self.shared_dir, normalized_rel)
+
+    # ============================================================
+    # Compatibility helpers for step_handlers.py
+    # ============================================================
+
+    def _extract_inner_ok(self, result: Any) -> bool:
+        if isinstance(result, dict):
+            if "ok" in result:
+                return bool(result.get("ok"))
+            if "success" in result:
+                return bool(result.get("success"))
+        return result is not None
+
+    def _resolve_cwd(
+        self,
+        step: Optional[Dict[str, Any]] = None,
+        task: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        step = step if isinstance(step, dict) else {}
+        task = self._normalize_task(task)
+        context = context if isinstance(context, dict) else {}
+
+        cwd = step.get("cwd")
+        if isinstance(cwd, str) and cwd.strip():
+            cwd = cwd.strip()
+            if os.path.isabs(cwd):
+                return cwd
+            return os.path.abspath(cwd)
+
+        if isinstance(task, dict) and task.get("is_pseudo_task") is True:
+            return self.shared_dir
+
+        if isinstance(task, dict):
+            sandbox_dir = task.get("sandbox_dir")
+            if isinstance(sandbox_dir, str) and sandbox_dir.strip():
+                os.makedirs(sandbox_dir, exist_ok=True)
+                return os.path.abspath(sandbox_dir)
+
+            task_dir = task.get("task_dir")
+            if isinstance(task_dir, str) and task_dir.strip():
+                sandbox_dir = os.path.join(task_dir, "sandbox")
+                os.makedirs(sandbox_dir, exist_ok=True)
+                return os.path.abspath(sandbox_dir)
+
+        cwd_from_context = context.get("cwd")
+        if isinstance(cwd_from_context, str) and cwd_from_context.strip():
+            if os.path.isabs(cwd_from_context):
+                return cwd_from_context
+            return os.path.abspath(cwd_from_context)
+
+        return os.path.abspath(self.workspace_root)

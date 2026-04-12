@@ -196,8 +196,8 @@ class WriteFileStepHandler(BaseStepHandler):
             }
 
         try:
-            full_path = self.executor.path_manager.resolve_write_path(
-                path,
+            full_path = self.executor.resolve_file_path(
+                relative_path=str(path),
                 task=task,
             )
         except Exception as e:
@@ -208,12 +208,22 @@ class WriteFileStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        parent = os.path.dirname(full_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
+        try:
+            parent = os.path.dirname(full_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
 
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(content)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(str(content))
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"write file failed: {e}",
+                "result": {
+                    "path": full_path,
+                },
+                "step": copy.deepcopy(step),
+            }
 
         return {
             "ok": True,
@@ -222,6 +232,72 @@ class WriteFileStepHandler(BaseStepHandler):
                 "path": full_path,
                 "content": content,
             },
+            "content": str(content),
+            "step": copy.deepcopy(step),
+        }
+
+
+class EnsureFileStepHandler(BaseStepHandler):
+    def handle(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        path = step.get("path")
+
+        if not path:
+            return {
+                "ok": False,
+                "error": "path missing",
+                "result": {},
+                "step": copy.deepcopy(step),
+            }
+
+        try:
+            full_path = self.executor.resolve_file_path(
+                relative_path=str(path),
+                task=task,
+            )
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"path resolve failed: {e}",
+                "result": {},
+                "step": copy.deepcopy(step),
+            }
+
+        try:
+            parent = os.path.dirname(full_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+            created = False
+            if not os.path.exists(full_path):
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write("")
+                created = True
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"ensure file failed: {e}",
+                "result": {
+                    "path": full_path,
+                },
+                "step": copy.deepcopy(step),
+            }
+
+        return {
+            "ok": True,
+            "error": None,
+            "result": {
+                "path": full_path,
+                "created": created,
+                "preserved_existing": not created,
+            },
+            "path": full_path,
+            "created": created,
             "step": copy.deepcopy(step),
         }
 
@@ -245,8 +321,8 @@ class ReadFileStepHandler(BaseStepHandler):
             }
 
         try:
-            full_path = self.executor.path_manager.resolve_read_path(
-                path,
+            full_path = self.executor.resolve_file_path(
+                relative_path=str(path),
                 task=task,
             )
         except Exception as e:
@@ -267,8 +343,18 @@ class ReadFileStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        with open(full_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"read file failed: {e}",
+                "result": {
+                    "path": full_path,
+                },
+                "step": copy.deepcopy(step),
+            }
 
         return {
             "ok": True,
@@ -277,6 +363,8 @@ class ReadFileStepHandler(BaseStepHandler):
                 "path": full_path,
                 "content": content,
             },
+            "content": content,
+            "path": full_path,
             "step": copy.deepcopy(step),
         }
 
@@ -294,6 +382,7 @@ class RespondStepHandler(BaseStepHandler):
             "ok": True,
             "error": None,
             "result": {"message": message},
+            "message": str(message),
             "step": copy.deepcopy(step),
         }
 
@@ -355,5 +444,6 @@ class LLMStepHandler(BaseStepHandler):
                 "text": text,
                 "raw": llm_result,
             },
+            "text": text,
             "step": copy.deepcopy(step),
         }

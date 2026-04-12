@@ -67,3 +67,6 @@ tests/task/test_task_loop.py
 tests/task/test_task_manager.py
 __pycache__/
 *.pyc
+data/traces/
+__pycache__/
+*.log

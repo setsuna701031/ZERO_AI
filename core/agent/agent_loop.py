@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import time
 import traceback
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
@@ -19,21 +19,18 @@ class AgentLoop:
     3. scheduler 呼叫 run_task() 時，只做單個 task 的 one-tick 執行
     4. 保留舊相容入口，但主幹改成清楚的 loop 骨架
 
-    這一版不急著接 execution_trace。
-    先把主流程固定成：
-        detect mode
-        -> build context
-        -> route
-        -> plan
-        -> create/submit task
-        -> scheduler tick
-        -> task_runner.run_one_tick
+    本版修正重點：
+    - 保留你現在穩定的 direct / task / single-shot 結構
+    - 新增 llm_planner，但只在 route.mode == "llm" 時啟用
+    - llm_planner 失敗時，自動 fallback 回原本 deterministic planner
+    - 不大改舊主幹，避免把現在已穩定的系統炸掉
     """
 
     def __init__(
         self,
         router=None,
         planner=None,
+        llm_planner=None,
         step_executor=None,
         verifier=None,
         safety_guard=None,
@@ -45,16 +42,19 @@ class AgentLoop:
         task_runtime=None,
         task_runner=None,
         replanner=None,
+        llm_client=None,
         debug: bool = False,
         **kwargs,
     ) -> None:
         self.router = router
         self.planner = planner
+        self.llm_planner = llm_planner
         self.step_executor = step_executor
         self.verifier = verifier
         self.safety_guard = safety_guard
         self.memory_store = memory_store
         self.runtime_store = runtime_store
+        self.llm_client = llm_client
 
         # 相容舊入口：task_manager 還能存在，但 scheduler 是主要任務控制入口
         self.task_manager = task_manager
@@ -81,8 +81,14 @@ class AgentLoop:
     def run(self, user_input: str) -> Dict[str, Any]:
         """
         對外主入口：
-        - 如果判定為 task mode：建立任務並送進 scheduler
-        - 否則：走 single-shot
+        - 先走 router
+        - direct：直接執行 step
+        - task mode：建立任務並送進 scheduler
+        - llm mode：
+            1. 若未接 llm_client，回未啟用
+            2. 若有 llm_planner，先走 llm_planner
+            3. 若 llm_planner 失敗，fallback 回 planner
+        - 其他：走 single-shot（planner -> executor）
         """
         user_text = str(user_input or "").strip()
         if not user_text:
@@ -95,6 +101,16 @@ class AgentLoop:
             print("[AgentLoop] input =", user_text)
             print("[AgentLoop] route =", route)
 
+        # 1) router direct：直接走 executor，不進 planner
+        direct_result = self._try_handle_direct_route(
+            context=context,
+            user_input=user_text,
+            route=route,
+        )
+        if direct_result is not None:
+            return direct_result
+
+        # 2) task mode
         if self._should_enter_task_mode(route=route, user_input=user_text):
             return self._run_task_mode(
                 context=context,
@@ -102,6 +118,16 @@ class AgentLoop:
                 route=route,
             )
 
+        # 3) llm mode：優先走 llm route
+        llm_result = self._try_handle_llm_route(
+            context=context,
+            user_input=user_text,
+            route=route,
+        )
+        if llm_result is not None:
+            return llm_result
+
+        # 4) 其他走原本 single-shot
         return self._run_single_shot_mode(
             context=context,
             user_input=user_text,
@@ -118,12 +144,6 @@ class AgentLoop:
     ) -> Dict[str, Any]:
         """
         給 scheduler 呼叫的 one-tick task execution 入口。
-
-        這裡不做 create / submit，不做 UI 回應，
-        只做：
-            normalize task
-            -> task_runner.run_one_tick(...)
-            -> return result
         """
         try:
             task_dict = self._normalize_task_input(task)
@@ -173,6 +193,211 @@ class AgentLoop:
             }
 
     # ============================================================
+    # router-first handling
+    # ============================================================
+
+    def _try_handle_direct_route(
+        self,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        若 router 已經明確決定 direct + step，
+        就直接走 executor，不再先進 planner。
+        """
+        if not isinstance(route, dict):
+            return None
+
+        if route.get("mode") != "direct":
+            return None
+
+        step = route.get("step")
+        if not isinstance(step, dict):
+            return {
+                "ok": False,
+                "mode": "direct",
+                "context": context,
+                "route": route,
+                "error": "router returned direct mode but step missing",
+            }
+
+        execution_result = self._execute_direct_step(
+            step=step,
+            context=context,
+            user_input=user_input,
+            route=route,
+        )
+
+        execution_result = self._run_verifier(execution_result)
+        execution_result = self._run_safety_guard(execution_result)
+
+        return {
+            "ok": bool(execution_result.get("ok", True)) if isinstance(execution_result, dict) else True,
+            "mode": "direct",
+            "context": context,
+            "route": route,
+            "plan": None,
+            "execution": execution_result,
+            "final_answer": self._extract_final_answer(execution_result, None, user_input),
+        }
+
+    def _try_handle_llm_route(
+        self,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        llm route 處理順序：
+        1. route.mode 不是 llm -> None
+        2. 沒有 llm_client -> 回未啟用
+        3. 沒有 llm_planner -> fallback 回 single-shot planner
+        4. llm_planner 成功 -> 執行 llm 規劃結果
+        5. llm_planner 失敗 -> fallback 回 single-shot planner
+        """
+        if not isinstance(route, dict):
+            return None
+
+        if route.get("mode") != "llm":
+            return None
+
+        if self.llm_client is None:
+            return {
+                "ok": True,
+                "mode": "llm",
+                "context": context,
+                "route": route,
+                "plan": None,
+                "execution": None,
+                "final_answer": "目前聊天模式尚未啟用。",
+            }
+
+        if self.llm_planner is None:
+            fallback_result = self._run_single_shot_mode(
+                context=context,
+                user_input=user_input,
+                route=route,
+            )
+            if isinstance(fallback_result, dict):
+                fallback_result["mode"] = "llm_fallback_single_shot"
+            return fallback_result
+
+        llm_plan = self._call_llm_planner(
+            context=context,
+            user_input=user_input,
+            route=route,
+        )
+
+        if self.debug:
+            print("[AgentLoop] llm_plan =", llm_plan)
+
+        if not isinstance(llm_plan, dict):
+            fallback_result = self._run_single_shot_mode(
+                context=context,
+                user_input=user_input,
+                route=route,
+            )
+            if isinstance(fallback_result, dict):
+                fallback_result["mode"] = "llm_fallback_single_shot"
+                fallback_result["llm_plan_error"] = "llm_plan invalid"
+            return fallback_result
+
+        if llm_plan.get("ok") is False:
+            fallback_result = self._run_single_shot_mode(
+                context=context,
+                user_input=user_input,
+                route=route,
+            )
+            if isinstance(fallback_result, dict):
+                fallback_result["mode"] = "llm_fallback_single_shot"
+                fallback_result["llm_plan_error"] = llm_plan.get("error")
+            return fallback_result
+
+        steps = self._extract_steps_from_plan(llm_plan)
+
+        if not steps:
+            return {
+                "ok": True,
+                "mode": "llm",
+                "context": context,
+                "route": route,
+                "plan": llm_plan,
+                "execution": None,
+                "final_answer": self._extract_final_answer(None, llm_plan, user_input),
+            }
+
+        execution_result = self._execute_single_shot_steps(
+            steps=steps,
+            context=context,
+            user_input=user_input,
+            route=route,
+        )
+
+        execution_result = self._run_verifier(execution_result)
+        execution_result = self._run_safety_guard(execution_result)
+
+        return {
+            "ok": bool(execution_result.get("ok", True)) if isinstance(execution_result, dict) else True,
+            "mode": "llm",
+            "context": context,
+            "route": route,
+            "plan": llm_plan,
+            "execution": execution_result,
+            "final_answer": self._extract_final_answer(execution_result, llm_plan, user_input),
+        }
+
+    def _execute_direct_step(
+        self,
+        step: Dict[str, Any],
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Dict[str, Any]:
+        if not self.step_executor:
+            return {
+                "ok": False,
+                "error": "step_executor missing",
+                "step": copy.deepcopy(step),
+                "final_answer": "step_executor missing",
+            }
+
+        step_result = self._call_step_executor(
+            step=step,
+            context=context,
+            user_input=user_input,
+            route=route,
+            previous_result=None,
+            step_index=1,
+            step_count=1,
+        )
+
+        if not isinstance(step_result, dict):
+            step_result = {
+                "ok": False,
+                "error": "step_executor returned invalid result",
+                "raw_result": step_result,
+                "step": copy.deepcopy(step),
+            }
+
+        return {
+            "ok": bool(step_result.get("ok", True)),
+            "steps_executed": 1,
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": copy.deepcopy(step),
+                    "result": copy.deepcopy(step_result),
+                }
+            ],
+            "last_result": step_result,
+            "final_answer": self._summarize_step_result(
+                step_result,
+                failed=bool(step_result.get("ok") is False),
+            ),
+        }
+
+    # ============================================================
     # single-shot mode
     # ============================================================
 
@@ -205,8 +430,25 @@ class AgentLoop:
                 "final_answer": user_input,
             }
 
-        execution_result = self._call_step_executor(
-            plan=plan,
+        steps = self._extract_steps_from_plan(plan)
+
+        if self.debug:
+            print("[AgentLoop] single-shot steps =", steps)
+
+        # 沒有 steps 時，直接回 planner 結果
+        if not steps:
+            return {
+                "ok": True,
+                "mode": "single_shot",
+                "context": context,
+                "route": route,
+                "plan": plan,
+                "execution": None,
+                "final_answer": self._extract_final_answer(None, plan, user_input),
+            }
+
+        execution_result = self._execute_single_shot_steps(
+            steps=steps,
             context=context,
             user_input=user_input,
             route=route,
@@ -216,13 +458,79 @@ class AgentLoop:
         execution_result = self._run_safety_guard(execution_result)
 
         return {
-            "ok": True,
+            "ok": bool(execution_result.get("ok", True)) if isinstance(execution_result, dict) else True,
             "mode": "single_shot",
             "context": context,
             "route": route,
             "plan": plan,
             "execution": execution_result,
             "final_answer": self._extract_final_answer(execution_result, plan, user_input),
+        }
+
+    def _execute_single_shot_steps(
+        self,
+        steps: List[Dict[str, Any]],
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Dict[str, Any]:
+        if not self.step_executor:
+            return {
+                "ok": False,
+                "error": "step_executor missing",
+                "steps": copy.deepcopy(steps),
+                "final_answer": "step_executor missing",
+            }
+
+        results: List[Dict[str, Any]] = []
+        previous_result: Any = None
+        last_result: Dict[str, Any] = {}
+
+        for index, step in enumerate(steps, start=1):
+            step_result = self._call_step_executor(
+                step=step,
+                context=context,
+                user_input=user_input,
+                route=route,
+                previous_result=previous_result,
+                step_index=index,
+                step_count=len(steps),
+            )
+
+            if not isinstance(step_result, dict):
+                step_result = {
+                    "ok": False,
+                    "error": "step_executor returned invalid result",
+                    "raw_result": step_result,
+                    "step": copy.deepcopy(step),
+                }
+
+            results.append(
+                {
+                    "step_index": index,
+                    "step": copy.deepcopy(step),
+                    "result": copy.deepcopy(step_result),
+                }
+            )
+
+            last_result = step_result
+            previous_result = step_result
+
+            if step_result.get("ok") is False:
+                return {
+                    "ok": False,
+                    "steps_executed": index,
+                    "results": results,
+                    "last_result": last_result,
+                    "final_answer": self._summarize_step_result(last_result, failed=True),
+                }
+
+        return {
+            "ok": True,
+            "steps_executed": len(steps),
+            "results": results,
+            "last_result": last_result,
+            "final_answer": self._summarize_step_result(last_result, failed=False),
         }
 
     # ============================================================
@@ -853,16 +1161,102 @@ class AgentLoop:
             "error": "planner 存在，但沒有找到相容的呼叫方式",
         }
 
+    def _call_llm_planner(
+        self,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Any:
+        if not self.llm_planner:
+            return None
+
+        planner_fn = self._pick_callable(
+            self.llm_planner,
+            [
+                "plan",
+                "run",
+                "create_plan",
+                "build_plan",
+                "build",
+                "make_plan",
+                "generate_plan",
+                "generate",
+                "handle",
+                "__call__",
+            ],
+        )
+
+        if planner_fn is None:
+            return {
+                "ok": False,
+                "_planner_error": True,
+                "error": "llm_planner has no callable method",
+            }
+
+        candidate_calls = [
+            {"context": context, "user_input": user_input, "route": route},
+            {"context": context, "user_input": user_input},
+            {"context": context},
+            {"user_input": user_input, "route": route},
+            {"user_input": user_input},
+            {"input_text": user_input},
+            {"message": user_input},
+            {"prompt": user_input},
+            {"task": context},
+            {"payload": context},
+        ]
+
+        for kwargs in candidate_calls:
+            try:
+                return planner_fn(**kwargs)
+            except TypeError:
+                continue
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "_planner_error": True,
+                    "error": f"llm_planner 呼叫失敗: {e}",
+                    "traceback": traceback.format_exc(),
+                }
+
+        positional_calls = [
+            context,
+            user_input,
+            {"context": context, "user_input": user_input, "route": route},
+        ]
+
+        for arg in positional_calls:
+            try:
+                return planner_fn(arg)
+            except TypeError:
+                continue
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "_planner_error": True,
+                    "error": f"llm_planner 呼叫失敗: {e}",
+                    "traceback": traceback.format_exc(),
+                }
+
+        return {
+            "ok": False,
+            "_planner_error": True,
+            "error": "llm_planner 存在，但沒有找到相容的呼叫方式",
+        }
+
     # ============================================================
     # step executor
     # ============================================================
 
     def _call_step_executor(
         self,
-        plan: Any,
+        step: Any,
         context: Dict[str, Any],
         user_input: str,
         route: Any,
+        previous_result: Any = None,
+        step_index: Optional[int] = None,
+        step_count: Optional[int] = None,
     ) -> Any:
         if not self.step_executor:
             return None
@@ -884,13 +1278,32 @@ class AgentLoop:
             return {"error": "step_executor has no callable method"}
 
         candidate_calls = [
-            {"plan": plan, "context": context, "user_input": user_input, "route": route},
-            {"step": plan, "context": context, "user_input": user_input, "route": route},
-            {"plan": plan, "context": context},
-            {"step": plan, "context": context},
-            {"plan": plan},
-            {"step": plan},
-            {"payload": plan},
+            {
+                "step": step,
+                "context": context,
+                "user_input": user_input,
+                "route": route,
+                "previous_result": previous_result,
+                "step_index": step_index,
+                "step_count": step_count,
+            },
+            {
+                "step": step,
+                "context": context,
+                "previous_result": previous_result,
+                "step_index": step_index,
+                "step_count": step_count,
+            },
+            {
+                "step": step,
+                "context": context,
+            },
+            {
+                "step": step,
+            },
+            {
+                "payload": step,
+            },
         ]
 
         for kwargs in candidate_calls:
@@ -904,7 +1317,7 @@ class AgentLoop:
                     "traceback": traceback.format_exc(),
                 }
 
-        for arg in (plan, context):
+        for arg in (step, context):
             try:
                 return executor_fn(arg)
             except TypeError:
@@ -960,6 +1373,89 @@ class AgentLoop:
             return execution_result
 
     # ============================================================
+    # result formatting
+    # ============================================================
+
+    def _summarize_step_result(self, result: Any, failed: bool = False) -> str:
+        if not isinstance(result, dict):
+            return str(result) if result is not None else ("執行失敗" if failed else "執行完成")
+
+        if failed:
+            error = result.get("error")
+            if isinstance(error, str) and error.strip():
+                return f"執行失敗：{error.strip()}"
+
+        step = result.get("step")
+        step_type = ""
+        if isinstance(step, dict):
+            step_type = str(step.get("type", "") or "").strip().lower()
+
+        payload = result.get("result")
+        if not isinstance(payload, dict):
+            payload = {}
+
+        if step_type == "write_file":
+            path = payload.get("path")
+            if isinstance(path, str) and path.strip():
+                return f"已寫入檔案：{path.strip()}"
+            return "已寫入檔案"
+
+        if step_type == "read_file":
+            path = payload.get("path")
+            content = payload.get("content")
+            if isinstance(path, str) and isinstance(content, str):
+                return f"已讀取檔案：{path}\n\n{content}"
+            if isinstance(path, str):
+                return f"已讀取檔案：{path}"
+            return "已讀取檔案"
+
+        if step_type in {"llm", "llm_generate"}:
+            text = payload.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+
+            message = payload.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+
+            response = payload.get("response")
+            if isinstance(response, str) and response.strip():
+                return response.strip()
+
+            return "LLM 已完成回應"
+
+        if step_type in {"respond", "final_answer"}:
+            message = payload.get("message")
+            if isinstance(message, str) and message.strip():
+                return message.strip()
+
+        if step_type == "command":
+            stdout = payload.get("stdout")
+            stderr = payload.get("stderr")
+            returncode = payload.get("returncode")
+
+            if isinstance(stdout, str) and stdout.strip():
+                return stdout.strip()
+
+            if isinstance(stderr, str) and stderr.strip():
+                return f"命令執行失敗：{stderr.strip()}"
+
+            if returncode == 0:
+                return "命令執行完成"
+
+        # 通用回退
+        for key in ("message", "content", "text", "answer", "response", "final_answer"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        error = result.get("error")
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+
+        return "執行完成" if not failed else "執行失敗"
+
+    # ============================================================
     # utils
     # ============================================================
 
@@ -971,17 +1467,29 @@ class AgentLoop:
         return None
 
     def _extract_final_answer(self, execution: Any, plan: Any, fallback: str) -> str:
-        for source in (execution, plan):
-            if isinstance(source, dict):
-                for key in ("final_answer", "answer", "response", "message", "summary"):
-                    value = source.get(key)
-                    if isinstance(value, str) and value.strip():
-                        return value.strip()
+        # 先信任 execution_result 自己整理好的 final_answer
+        if isinstance(execution, dict):
+            value = execution.get("final_answer")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
 
-            if isinstance(source, str) and source.strip():
-                return source.strip()
+            last_result = execution.get("last_result")
+            if isinstance(last_result, dict):
+                summary = self._summarize_step_result(last_result, failed=bool(last_result.get("ok") is False))
+                if isinstance(summary, str) and summary.strip():
+                    return summary.strip()
 
-        return fallback
+        # 再看 planner / llm planner
+        if isinstance(plan, dict):
+            for key in ("answer", "response", "message", "summary", "final_answer"):
+                value = plan.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
+
+        return "執行完成"
 
     def _normalize_task_input(self, task: Any) -> Dict[str, Any]:
         if task is None:

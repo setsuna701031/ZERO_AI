@@ -14,6 +14,7 @@ from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
+from core.tasks.task_result_summarizer import build_simple_final_answer
 from core.tasks.scheduler_core.task_dispatcher import TaskDispatcher
 from core.tasks.scheduler_core.task_scheduler_queue import (
     STATUS_FAILED,
@@ -26,7 +27,7 @@ from core.tasks.scheduler_core.worker_pool import WorkerPool
 from core.tools.execution_trace import ExecutionTrace
 
 
-SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V6_SINGLE_TICK_SELF_HEALING_TRACE_V1"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
@@ -55,18 +56,12 @@ class Scheduler(RuntimeTaskScheduler):
     """
     收束版 Scheduler + ExecutionTrace
 
-    核心原則：
-    1. scheduler 只管狀態 / 排程 / queue
-    2. terminal state 不可重排
-    3. blocked 只由 depends_on 決定
-    4. execute 一律走 _execute_simple_step
-    5. 所有 step 先經過 guard
-    6. 每個 task 都有自己的 trace.json
-
-    本版新增：
-    - task create / submit / blocked / finished / failed / replan 事件落到 trace.json
-    - step success / step fail 結構化記錄
-    - replan meta 寫入 trace
+    本版修正：
+    1. task mode 優先走 agent_loop 外掛 planner / llm_planner，不再只靠舊本地單步 planner
+    2. task mode 補上 ensure_file step 支援
+    3. task-local 檔案預設落在 task sandbox，而不是 task_dir 根目錄
+    4. task hydration / result 回寫保持一致
+    5. finished task 應該真的帶出 steps / results / final_answer
     """
 
     def __init__(
@@ -919,6 +914,16 @@ class Scheduler(RuntimeTaskScheduler):
                 "message": "verify",
             }
 
+        elif step_type == "ensure_file":
+            raw_path = str(step.get("path") or "").strip()
+            if not raw_path:
+                raise ValueError("ensure_file step missing path")
+            guard_step = {
+                "type": "write_file",
+                "path": raw_path,
+                "content": "",
+            }
+
         guard_result = self.execution_guard.check_step(step=guard_step, task_dir=task_dir)
         if not bool(guard_result.get("ok")):
             raise PermissionError(str(guard_result.get("error") or "guard blocked execution"))
@@ -927,6 +932,31 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "type": "noop",
                 "message": str(step.get("message") or "noop ok"),
+            }
+
+        if step_type == "ensure_file":
+            raw_path = str(step.get("path") or "").strip()
+            if not raw_path:
+                raise ValueError("ensure_file step missing path")
+
+            full_path = str(guard_result.get("resolved_path") or "")
+            if not full_path:
+                full_path = self._resolve_step_path(raw_path, task_dir=task_dir, shared_dir=self.shared_dir)
+
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+            created = False
+            if not os.path.exists(full_path):
+                with open(full_path, "w", encoding="utf-8") as f:
+                    f.write("")
+                created = True
+
+            return {
+                "type": "ensure_file",
+                "path": raw_path,
+                "full_path": full_path,
+                "created": created,
+                "preserved_existing": not created,
             }
 
         if step_type == "write_file":
@@ -952,6 +982,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "path": raw_path,
                 "full_path": full_path,
                 "bytes": len(content.encode("utf-8")),
+                "content": content,
             }
 
         if step_type == "command":
@@ -1131,20 +1162,23 @@ class Scheduler(RuntimeTaskScheduler):
 
     def _resolve_task_dir(self, task: Dict[str, Any]) -> str:
         task_dir = str(task.get("task_dir") or "").strip()
-        if task_dir:
-            os.makedirs(task_dir, exist_ok=True)
-            return task_dir
+        if not task_dir:
+            task_name = str(task.get("task_name") or self._extract_task_id(task) or "unknown_task")
+            task_dir = os.path.join(self.tasks_root, task_name)
 
-        task_name = str(task.get("task_name") or self._extract_task_id(task) or "unknown_task")
-        fallback_dir = os.path.join(self.tasks_root, task_name)
-        os.makedirs(fallback_dir, exist_ok=True)
-        return fallback_dir
+        sandbox_dir = os.path.join(task_dir, "sandbox")
+        os.makedirs(sandbox_dir, exist_ok=True)
+        return sandbox_dir
 
     def _resolve_step_path(self, raw_path: str, task_dir: str, shared_dir: str) -> str:
         normalized = raw_path.replace("\\", "/").strip()
 
         if os.path.isabs(normalized):
             return os.path.abspath(normalized)
+
+        if normalized.startswith("workspace/shared/"):
+            relative_part = normalized[len("workspace/shared/"):].strip("/")
+            return os.path.abspath(os.path.join(shared_dir, relative_part))
 
         if normalized.startswith("shared/"):
             relative_part = normalized[len("shared/"):].strip("/")
@@ -1158,6 +1192,10 @@ class Scheduler(RuntimeTaskScheduler):
         if os.path.isabs(normalized):
             return os.path.abspath(normalized)
 
+        if normalized.startswith("workspace/shared/"):
+            relative_part = normalized[len("workspace/shared/"):].strip("/")
+            return os.path.abspath(os.path.join(shared_dir, relative_part))
+
         if normalized.startswith("shared/"):
             relative_part = normalized[len("shared/"):].strip("/")
             return os.path.abspath(os.path.join(shared_dir, relative_part))
@@ -1166,39 +1204,14 @@ class Scheduler(RuntimeTaskScheduler):
         if os.path.exists(task_local):
             return task_local
 
-        shared_candidate = os.path.abspath(os.path.join(shared_dir, normalized))
-        return shared_candidate
+        shared_fallback = os.path.abspath(os.path.join(shared_dir, normalized))
+        if os.path.exists(shared_fallback):
+            return shared_fallback
+
+        return task_local
 
     def _build_simple_final_answer(self, results: List[Dict[str, Any]]) -> str:
-        if not results:
-            return "task finished"
-
-        normalized_results: List[Dict[str, Any]] = []
-        for item in results:
-            if isinstance(item, dict) and isinstance(item.get("result"), dict):
-                normalized_results.append(item.get("result"))
-            elif isinstance(item, dict):
-                normalized_results.append(item)
-
-        if not normalized_results:
-            return "task finished"
-
-        last = normalized_results[-1]
-        if isinstance(last, dict) and last.get("type") in {"command", "run_python"}:
-            stdout = str(last.get("stdout") or "").strip()
-            if stdout:
-                return stdout
-
-        if isinstance(last, dict) and last.get("type") == "read_file":
-            return str(last.get("content") or "").strip() or "task finished"
-
-        if isinstance(last, dict) and last.get("type") == "verify":
-            return "verify ok"
-
-        if isinstance(last, dict) and last.get("type") == "noop":
-            return str(last.get("message") or "task finished")
-
-        return "task finished"
+        return build_simple_final_answer(results)
 
     # ------------------------------------------------------------
     # Trace helpers
@@ -2310,18 +2323,11 @@ class Scheduler(RuntimeTaskScheduler):
         if os.path.exists(plan_file):
             plan_data = self._safe_read_json(plan_file)
             if isinstance(plan_data, dict):
-                if not isinstance(hydrated.get("planner_result"), dict) or not hydrated.get("planner_result"):
-                    hydrated["planner_result"] = copy.deepcopy(plan_data)
-
+                hydrated["planner_result"] = copy.deepcopy(plan_data)
                 plan_steps = plan_data.get("steps", [])
                 if isinstance(plan_steps, list):
-                    current_steps = hydrated.get("steps", [])
-                    if not isinstance(current_steps, list) or not current_steps:
-                        hydrated["steps"] = copy.deepcopy(plan_steps)
-
-                    current_steps_total = hydrated.get("steps_total")
-                    if current_steps_total in (None, "", 0):
-                        hydrated["steps_total"] = len(plan_steps)
+                    hydrated["steps"] = copy.deepcopy(plan_steps)
+                    hydrated["steps_total"] = len(plan_steps)
 
         if "steps" not in hydrated or not isinstance(hydrated.get("steps"), list):
             hydrated["steps"] = []
@@ -2814,19 +2820,34 @@ class Scheduler(RuntimeTaskScheduler):
     def _plan_goal(self, goal: str) -> Dict[str, Any]:
         clean_goal = str(goal or "").strip()
 
+        external_plan = self._plan_goal_via_agent_planners(clean_goal)
+        if isinstance(external_plan, dict):
+            steps = external_plan.get("steps", [])
+            if isinstance(steps, list) and steps:
+                return external_plan
+
         command_step = self._try_plan_command(clean_goal)
         if isinstance(command_step, dict):
             return {
-                "planner_mode": "deterministic_v4_task_os",
+                "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "command",
                 "final_answer": "已規劃 1 個步驟",
                 "steps": [command_step],
             }
 
+        write_step = self._try_plan_write_file(clean_goal)
+        if isinstance(write_step, dict):
+            return {
+                "planner_mode": "deterministic_v6_task_os_fallback",
+                "intent": "write_file",
+                "final_answer": "已規劃 1 個步驟",
+                "steps": [write_step],
+            }
+
         read_step = self._try_plan_read_file(clean_goal)
         if isinstance(read_step, dict):
             return {
-                "planner_mode": "deterministic_v4_task_os",
+                "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "read_file",
                 "final_answer": "已規劃 1 個步驟",
                 "steps": [read_step],
@@ -2834,7 +2855,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         if self._looks_like_hello_world_python(clean_goal):
             return {
-                "planner_mode": "deterministic_v4_task_os",
+                "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "hello_world_python_multi_step",
                 "final_answer": "已規劃 3 個步驟",
                 "steps": [
@@ -2855,10 +2876,112 @@ class Scheduler(RuntimeTaskScheduler):
             }
 
         return {
-            "planner_mode": "deterministic_v4_task_os",
+            "planner_mode": "deterministic_v6_task_os_fallback",
             "intent": "unresolved",
-            "final_answer": "目前規則式 planner 還無法把這個 goal 轉成可執行 steps。",
+            "final_answer": "目前 task planner 還無法把這個 goal 轉成可執行 steps。",
             "steps": [],
+        }
+
+    def _plan_goal_via_agent_planners(self, goal: str) -> Optional[Dict[str, Any]]:
+        agent_loop = getattr(self, "agent_loop", None)
+        if agent_loop is None:
+            return None
+
+        planners: List[Any] = []
+        llm_planner = getattr(agent_loop, "llm_planner", None)
+        deterministic_planner = getattr(agent_loop, "planner", None)
+
+        if llm_planner is not None:
+            planners.append(llm_planner)
+        if deterministic_planner is not None:
+            planners.append(deterministic_planner)
+
+        context = {
+            "user_input": goal,
+            "workspace": self.workspace_dir,
+        }
+        route = {
+            "mode": "task",
+            "task": True,
+        }
+
+        for planner in planners:
+            plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+            normalized = self._normalize_external_plan(plan)
+            if normalized is not None:
+                return normalized
+
+        return None
+
+    def _call_planner_like(
+        self,
+        planner: Any,
+        context: Dict[str, Any],
+        user_input: str,
+        route: Dict[str, Any],
+    ) -> Any:
+        if planner is None:
+            return None
+
+        for method_name in ("plan", "run", "__call__"):
+            method = getattr(planner, method_name, None)
+            if not callable(method):
+                continue
+
+            candidate_calls = [
+                {"context": context, "user_input": user_input, "route": route},
+                {"context": context, "user_input": user_input},
+                {"context": context},
+                {"user_input": user_input, "route": route},
+                {"user_input": user_input},
+            ]
+
+            for kwargs in candidate_calls:
+                try:
+                    return method(**kwargs)
+                except TypeError:
+                    continue
+                except Exception:
+                    return None
+
+            try:
+                return method(user_input)
+            except Exception:
+                return None
+
+        return None
+
+    def _normalize_external_plan(self, plan: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(plan, dict):
+            return None
+
+        steps = []
+        if isinstance(plan.get("steps"), list):
+            steps = copy.deepcopy(plan.get("steps", []))
+        elif isinstance(plan.get("plan"), dict) and isinstance(plan["plan"].get("steps"), list):
+            steps = copy.deepcopy(plan["plan"].get("steps", []))
+
+        if not isinstance(steps, list) or not steps:
+            return None
+
+        normalized_steps: List[Dict[str, Any]] = []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            step_type = str(step.get("type") or "").strip()
+            if not step_type:
+                continue
+            normalized_steps.append(copy.deepcopy(step))
+
+        if not normalized_steps:
+            return None
+
+        return {
+            "planner_mode": str(plan.get("planner_mode") or "external_task_planner"),
+            "intent": str(plan.get("intent") or normalized_steps[0].get("type") or "task"),
+            "final_answer": str(plan.get("final_answer") or f"已規劃 {len(normalized_steps)} 個步驟"),
+            "steps": normalized_steps,
+            "meta": copy.deepcopy(plan.get("meta", {})) if isinstance(plan.get("meta"), dict) else {},
         }
 
     def _parse_goal_overrides(self, goal: str) -> Dict[str, Any]:
@@ -2946,6 +3069,12 @@ class Scheduler(RuntimeTaskScheduler):
                 return {"type": "read_file", "path": path}
             return None
 
+        if lower.startswith("ensure_file:"):
+            path = value.split(":", 1)[1].strip()
+            if path:
+                return {"type": "ensure_file", "path": path}
+            return None
+
         if lower.startswith("write_file:"):
             payload = value.split(":", 1)[1]
             if "|" in payload:
@@ -3011,6 +3140,63 @@ class Scheduler(RuntimeTaskScheduler):
 
         return None
 
+    def _try_plan_write_file(self, text: str) -> Optional[Dict[str, Any]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        if not any(k in stripped for k in ["寫", "建立", "新增"]) and not any(
+            k in lowered for k in ["write", "create", "make"]
+        ):
+            return None
+
+        path = self._extract_file_path(stripped)
+        if not path:
+            return None
+
+        content, has_explicit_content = self._extract_write_content(stripped)
+        if has_explicit_content:
+            return {
+                "type": "write_file",
+                "path": path,
+                "content": content,
+            }
+
+        return {
+            "type": "ensure_file",
+            "path": path,
+        }
+
+    def _extract_write_content(self, text: str) -> Tuple[str, bool]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"內容是\s*(.+)$",
+            r"內容為\s*(.+)$",
+            r"內容:\s*(.+)$",
+            r"內容：\s*(.+)$",
+            r"寫入\s*(.+)$",
+            r"放入\s*(.+)$",
+            r"content is\s+(.+)$",
+            r"content:\s*(.+)$",
+            r"with content\s+(.+)$",
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if m:
+                value = m.group(1).strip()
+                if value:
+                    return self._strip_quotes(value), True
+
+        return "", False
+
+    def _strip_quotes(self, text: str) -> str:
+        value = str(text or "").strip()
+        if len(value) >= 2:
+            if (value[0] == value[-1]) and value[0] in {"'", '"', "「", "」", "“", "”"}:
+                return value[1:-1]
+        return value
+
     def _try_plan_read_file(self, text: str) -> Optional[Dict[str, Any]]:
         stripped = str(text or "").strip()
 
@@ -3020,7 +3206,11 @@ class Scheduler(RuntimeTaskScheduler):
 
         path = m.group(1).strip()
         lowered = stripped.lower()
-        if any(x in lowered for x in ["read", "讀", "看", "open", "檢查", "內容"]):
+        if any(x in lowered for x in ["read", "讀", "看", "open", "檢查", "查看"]):
             return {"type": "read_file", "path": path}
 
         return None
+
+    def _extract_file_path(self, text: str) -> Optional[str]:
+        m = re.search(r"([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))", text, flags=re.IGNORECASE)
+        return m.group(1).strip() if m else None

@@ -13,7 +13,7 @@ class Executor:
     """
     Executor
 
-    目前版本功能：
+    強化版功能：
     1. 逐步執行 plan["steps"]
     2. 支援 step retry
     3. 執行後做 verifier / correction
@@ -21,7 +21,10 @@ class Executor:
     5. 空 plan 不再直接算成功
     6. planner replan 無效時，使用 deterministic fallback plan
     7. executor 可做強制修正（forced repair）
-    8. 寫入 execution / verifier / correction / lifecycle trace
+    8. 將強制修正升級為可擴展 repair rule system
+    9. 支援 write_file 失敗時自動 fallback 到 safe path
+    10. 寫入 execution / verifier / correction / lifecycle trace
+    11. 強制所有檔案操作限制在 workspace_root / task_name 內
     """
 
     SUCCESS_STATUSES = {"done", "success", "ok", "passed"}
@@ -356,25 +359,53 @@ class Executor:
 
         normalized: List[Dict[str, Any]] = []
         known_files = set()
+        known_dirs = set()
 
         for step in steps or []:
             if not isinstance(step, dict):
                 continue
 
-            step_type = str(step.get("type") or step.get("action") or "").strip().lower()
-            path = str(step.get("path", "") or "").strip().replace("\\", "/")
+            step_copy = dict(step)
+            step_type = str(step_copy.get("type") or step_copy.get("action") or "").strip().lower()
+            path = str(step_copy.get("path", "") or "").strip().replace("\\", "/")
+
+            if step_type == "mkdir" and path:
+                normalized.append(step_copy)
+                known_dirs.add(path)
+                continue
 
             if step_type == "write_file" and path:
-                normalized.append(dict(step))
+                dir_steps = self._build_missing_dir_repairs(
+                    task_name=task_name,
+                    path=path,
+                    known_dirs=known_dirs,
+                )
+                normalized.extend(dir_steps)
+                normalized.append(step_copy)
+
                 known_files.add(path)
+                parent_dir = self._parent_dir(path)
+                if parent_dir:
+                    known_dirs.add(parent_dir)
                 continue
 
             if step_type == "read_file" and path:
+                dir_steps = self._build_missing_dir_repairs(
+                    task_name=task_name,
+                    path=path,
+                    known_dirs=known_dirs,
+                )
+                normalized.extend(dir_steps)
+
                 path_exists = self._path_exists_for_task(task_name=task_name, path=path)
                 if not path_exists and path not in known_files:
                     forced_write = self._build_forced_write_before_read(path=path)
                     normalized.append(forced_write)
                     known_files.add(path)
+
+                    parent_dir = self._parent_dir(path)
+                    if parent_dir:
+                        known_dirs.add(parent_dir)
 
                     self.trace_logger.log_correction(
                         title="forced repair insert write before read",
@@ -383,17 +414,60 @@ class Executor:
                         source="correction",
                         raw={
                             "task_name": task_name,
-                            "original_step": step,
+                            "original_step": step_copy,
                             "inserted_step": forced_write,
                         },
                     )
 
-                normalized.append(dict(step))
+                normalized.append(step_copy)
                 continue
 
-            normalized.append(dict(step))
+            normalized.append(step_copy)
 
         return normalized
+
+    def _build_missing_dir_repairs(
+        self,
+        task_name: str,
+        path: str,
+        known_dirs: set,
+    ) -> List[Dict[str, Any]]:
+        repairs: List[Dict[str, Any]] = []
+        parent_dir = self._parent_dir(path)
+
+        if not parent_dir:
+            return repairs
+
+        if parent_dir in known_dirs:
+            return repairs
+
+        if self._dir_exists_for_task(task_name=task_name, path=parent_dir):
+            known_dirs.add(parent_dir)
+            return repairs
+
+        mkdir_step = {
+            "type": "mkdir",
+            "path": parent_dir,
+            "title": f"forced repair mkdir {parent_dir}",
+            "message": f"executor inserted mkdir for missing directory {parent_dir}",
+            "status": "done",
+        }
+        repairs.append(mkdir_step)
+        known_dirs.add(parent_dir)
+
+        self.trace_logger.log_correction(
+            title="forced repair insert mkdir",
+            message=f"inserted mkdir for {parent_dir}",
+            status="forced_repair",
+            source="correction",
+            raw={
+                "task_name": task_name,
+                "path": path,
+                "inserted_step": mkdir_step,
+            },
+        )
+
+        return repairs
 
     def _build_forced_write_before_read(self, path: str) -> Dict[str, Any]:
         return {
@@ -404,18 +478,66 @@ class Executor:
             "status": "done",
         }
 
+    def _parent_dir(self, path: str) -> str:
+        normalized = str(path or "").strip().replace("\\", "/")
+        if not normalized or "/" not in normalized:
+            return ""
+        return normalized.rsplit("/", 1)[0].strip("/")
+
+    # =========================================================
+    # Safe path
+    # =========================================================
+
+    def _resolve_safe_path(self, task_name: str, path: str) -> Path:
+        normalized = str(path or "").strip().replace("\\", "/")
+
+        if not normalized:
+            raise ValueError("empty path")
+
+        raw_path = Path(normalized)
+
+        if raw_path.is_absolute():
+            raise ValueError(f"absolute path not allowed: {normalized}")
+
+        parts = [part for part in raw_path.parts if part not in ("", ".")]
+        if any(part == ".." for part in parts):
+            raise ValueError(f"path traversal not allowed: {normalized}")
+
+        task_root = (self.workspace_root / task_name).resolve()
+        task_root.mkdir(parents=True, exist_ok=True)
+
+        safe_path = (task_root / Path(*parts)).resolve()
+
+        try:
+            safe_path.relative_to(task_root)
+        except ValueError as exc:
+            raise ValueError(f"unsafe path detected: {normalized}") from exc
+
+        return safe_path
+
     def _path_exists_for_task(self, task_name: str, path: str) -> bool:
         normalized = str(path or "").strip().replace("\\", "/")
         if not normalized:
             return False
 
-        direct = Path(normalized)
-        if direct.is_absolute():
-            return direct.exists()
+        try:
+            safe_path = self._resolve_safe_path(task_name=task_name, path=normalized)
+        except Exception:
+            return False
 
-        candidate_1 = self.workspace_root / task_name / normalized
-        candidate_2 = self.workspace_root / normalized
-        return candidate_1.exists() or candidate_2.exists()
+        return safe_path.exists()
+
+    def _dir_exists_for_task(self, task_name: str, path: str) -> bool:
+        normalized = str(path or "").strip().replace("\\", "/")
+        if not normalized:
+            return True
+
+        try:
+            safe_path = self._resolve_safe_path(task_name=task_name, path=normalized)
+        except Exception:
+            return False
+
+        return safe_path.exists() and safe_path.is_dir()
 
     # =========================================================
     # Replan
@@ -700,7 +822,12 @@ class Executor:
         title = str(fallback_title or "").strip()
         if title:
             lowered = title.lower()
-            if lowered.endswith(".txt") or lowered.endswith(".md") or lowered.endswith(".json") or lowered.endswith(".py"):
+            if (
+                lowered.endswith(".txt")
+                or lowered.endswith(".md")
+                or lowered.endswith(".json")
+                or lowered.endswith(".py")
+            ):
                 return title
 
         return "hello.txt"
@@ -741,11 +868,23 @@ class Executor:
             step_for_attempt = self._build_step_for_attempt(step=step, attempt=attempt)
             result = self._execute_step(task_name, step_index, step_for_attempt)
 
+            if result.get("status") == "error" and self.enable_forced_repair:
+                repaired_result = self._try_write_safe_path_repair(
+                    task_name=task_name,
+                    step_index=step_index,
+                    step=step_for_attempt,
+                    failed_result=result,
+                )
+                if repaired_result is not None:
+                    result = repaired_result
+
             history.append(
                 {
                     "attempt": attempt,
                     "status": result.get("status"),
                     "output": result.get("output"),
+                    "path": result.get("path", ""),
+                    "resolved_path": result.get("resolved_path", ""),
                 }
             )
 
@@ -803,6 +942,62 @@ class Executor:
             if self.retry_delay_seconds > 0:
                 time.sleep(self.retry_delay_seconds)
 
+    def _try_write_safe_path_repair(
+        self,
+        task_name: str,
+        step_index: int,
+        step: Dict[str, Any],
+        failed_result: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        action = str(step.get("action") or step.get("type") or "").strip().lower()
+        path = str(step.get("path", "") or "").strip().replace("\\", "/")
+
+        if action != "write_file":
+            return None
+
+        if not path:
+            return None
+
+        fallback_path = self._build_safe_fallback_path(task_name=task_name, original_path=path)
+
+        repaired_step = dict(step)
+        repaired_step["path"] = fallback_path
+        repaired_step["title"] = f"safe-path repair write {fallback_path}"
+        repaired_step["message"] = f"executor redirected write_file from {path} to safe path {fallback_path}"
+        repaired_step["status"] = "done"
+        repaired_step["force_error"] = False
+        repaired_step["simulate_write_failure"] = False
+
+        self.trace_logger.log_correction(
+            step_id=f"step_{step_index:02d}",
+            title="write safe path repair",
+            message=f"redirect write_file from {path} to {fallback_path}",
+            status="forced_repair",
+            source="correction",
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "original_path": path,
+                "fallback_path": fallback_path,
+                "failed_result": failed_result,
+            },
+        )
+
+        repaired_result = self._execute_step(task_name, step_index, repaired_step)
+        if repaired_result.get("status") in self.SUCCESS_STATUSES:
+            repaired_result["repaired_from_path"] = path
+            repaired_result["repair_type"] = "safe_path_fallback"
+            return repaired_result
+
+        return None
+
+    def _build_safe_fallback_path(self, task_name: str, original_path: str) -> str:
+        normalized = str(original_path or "").strip().replace("\\", "/")
+        filename = normalized.rsplit("/", 1)[-1] if normalized else "output.txt"
+        if not filename:
+            filename = "output.txt"
+        return f"_repaired/{filename}"
+
     def _get_retry_limit(self, step: Dict[str, Any]) -> int:
         raw = step.get("retry_limit", self.default_retry_limit)
         try:
@@ -825,7 +1020,7 @@ class Executor:
         return step_copy
 
     # =========================================================
-    # Internal
+    # Internal execution
     # =========================================================
 
     def _execute_step(
@@ -834,15 +1029,49 @@ class Executor:
         step_index: int,
         step: Dict[str, Any],
     ) -> Dict[str, Any]:
-        action = step.get("action") or step.get("type") or ""
+        action = str(step.get("action") or step.get("type") or "").strip().lower()
         title = step.get("title") or step.get("name") or f"step_{step_index}"
         message = step.get("message") or step.get("description") or ""
         output = step.get("output") or f"Executed step {step_index}"
         attempt = int(step.get("_attempt", 1) or 1)
-        path = str(step.get("path", "") or "").strip()
+        raw_path = str(step.get("path", "") or "").strip().replace("\\", "/")
 
         task_dir = self.workspace_root / task_name
         task_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_path: Optional[Path] = None
+        if raw_path:
+            try:
+                safe_path = self._resolve_safe_path(task_name=task_name, path=raw_path)
+            except Exception as exc:
+                error_result = {
+                    "step": step_index,
+                    "action": action,
+                    "path": raw_path,
+                    "resolved_path": "",
+                    "title": title,
+                    "message": message,
+                    "status": "error",
+                    "output": f"unsafe_path: {exc}",
+                    "attempt": attempt,
+                }
+
+                self.trace_logger.log_error(
+                    event_type="execution",
+                    step_id=f"step_{step_index:02d}",
+                    title=title,
+                    message=f"unsafe path rejected: {exc}",
+                    source="executor",
+                    error=exc,
+                    raw={
+                        "task_name": task_name,
+                        "step_index": step_index,
+                        "attempt": attempt,
+                        "step": step,
+                        "error_result": error_result,
+                    },
+                )
+                return error_result
 
         try:
             self.trace_logger.log_execution(
@@ -866,10 +1095,50 @@ class Executor:
             if not normalized_status:
                 normalized_status = "done"
 
+            if action == "mkdir":
+                if safe_path is None:
+                    raise ValueError("mkdir requires path")
+                safe_path.mkdir(parents=True, exist_ok=True)
+
+            elif action == "write_file":
+                if safe_path is None:
+                    raise ValueError("write_file requires path")
+
+                safe_path.parent.mkdir(parents=True, exist_ok=True)
+
+                if bool(step.get("simulate_write_failure", False)):
+                    raise RuntimeError(f"simulated write failure for path {raw_path}")
+
+                content = step.get("content")
+                if content is None:
+                    content = step.get("text")
+                if content is None:
+                    content = step.get("data")
+                if content is None:
+                    content = output
+
+                if isinstance(content, (dict, list)):
+                    safe_path.write_text(
+                        json.dumps(content, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                else:
+                    safe_path.write_text(str(content), encoding="utf-8")
+
+            elif action == "read_file":
+                if safe_path is None:
+                    raise ValueError("read_file requires path")
+
+                if not safe_path.exists():
+                    raise FileNotFoundError(f"file not found: {raw_path}")
+
+                output = safe_path.read_text(encoding="utf-8")
+
             step_result = {
                 "step": step_index,
                 "action": action,
-                "path": path,
+                "path": raw_path,
+                "resolved_path": str(safe_path) if safe_path is not None else "",
                 "title": title,
                 "message": message,
                 "status": normalized_status,
@@ -902,7 +1171,8 @@ class Executor:
             error_result = {
                 "step": step_index,
                 "action": action,
-                "path": path,
+                "path": raw_path,
+                "resolved_path": str(safe_path) if safe_path is not None else "",
                 "title": title,
                 "message": message,
                 "status": "error",
@@ -927,3 +1197,11 @@ class Executor:
             )
 
             return error_result
+
+    def _ensure_dir_for_task(self, task_name: str, path: str) -> None:
+        normalized = str(path or "").strip().replace("\\", "/")
+        if not normalized:
+            return
+
+        safe_dir = self._resolve_safe_path(task_name=task_name, path=normalized)
+        safe_dir.mkdir(parents=True, exist_ok=True)

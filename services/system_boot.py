@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Type
 
 from core.planning.task_replanner import TaskReplanner
 from core.runtime.step_executor import StepExecutor
@@ -14,22 +15,142 @@ from core.tasks.task_paths import TaskPathManager
 from core.tasks.task_repository import TaskRepository
 
 
+def _import_first_class(candidates: List[tuple[str, str]]) -> Optional[Type[Any]]:
+    for module_path, class_name in candidates:
+        try:
+            module = importlib.import_module(module_path)
+            value = getattr(module, class_name, None)
+            if value is not None:
+                return value
+        except Exception:
+            continue
+    return None
+
+
+def _resolve_planner_class() -> Optional[Type[Any]]:
+    return _import_first_class(
+        [
+            ("core.planning.planner", "Planner"),
+            ("core.planner", "Planner"),
+            ("planner", "Planner"),
+        ]
+    )
+
+
+def _resolve_llm_client_class() -> Optional[Type[Any]]:
+    return _import_first_class(
+        [
+            ("core.system.llm_client", "LocalLLMClient"),
+            ("core.llm_client", "LocalLLMClient"),
+            ("llm_client", "LocalLLMClient"),
+        ]
+    )
+
+
+def _resolve_llm_planner_class() -> Optional[Type[Any]]:
+    return _import_first_class(
+        [
+            ("core.system.llm_planner", "LLMPlanner"),
+            ("core.planning.llm_planner", "LLMPlanner"),
+            ("llm_planner", "LLMPlanner"),
+        ]
+    )
+
+
+def _resolve_agent_loop_class() -> Optional[Type[Any]]:
+    return _import_first_class(
+        [
+            ("core.agent.agent_loop", "AgentLoop"),
+            ("core.runtime.agent_loop", "AgentLoop"),
+            ("agent_loop", "AgentLoop"),
+        ]
+    )
+
+
+def _resolve_router_class() -> Optional[Type[Any]]:
+    return _import_first_class(
+        [
+            ("core.system.router", "SimpleRouter"),
+            ("core.system.router", "Router"),
+            ("core.router", "SimpleRouter"),
+            ("core.router", "Router"),
+            ("router", "SimpleRouter"),
+            ("router", "Router"),
+        ]
+    )
+
+
+def _resolve_verifier_class() -> Optional[Type[Any]]:
+    return _import_first_class(
+        [
+            ("core.runtime.verifier", "Verifier"),
+            ("core.verifier", "Verifier"),
+            ("verifier", "Verifier"),
+        ]
+    )
+
+
+def _read_int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def _build_llm_boot_config() -> Dict[str, Any]:
+    """
+    統一 LLM boot 設定入口。
+
+    新命名優先：
+    - ZERO_LLM_PLUGIN
+    - ZERO_MODEL
+    - ZERO_CODER_MODEL
+    - ZERO_LLM_BASE_URL
+    - ZERO_LLM_TIMEOUT
+
+    舊命名 fallback：
+    - ZERO_LLM_MODEL
+    - ZERO_LLM_CODER_MODEL
+    - OLLAMA_BASE_URL
+    """
+    plugin_name = os.environ.get("ZERO_LLM_PLUGIN", "").strip() or None
+
+    model = (
+        os.environ.get("ZERO_MODEL", "").strip()
+        or os.environ.get("ZERO_LLM_MODEL", "").strip()
+        or None
+    )
+
+    coder_model = (
+        os.environ.get("ZERO_CODER_MODEL", "").strip()
+        or os.environ.get("ZERO_LLM_CODER_MODEL", "").strip()
+        or None
+    )
+
+    base_url = (
+        os.environ.get("ZERO_LLM_BASE_URL", "").strip()
+        or os.environ.get("OLLAMA_BASE_URL", "").strip()
+        or None
+    )
+
+    timeout = _read_int_env("ZERO_LLM_TIMEOUT", 120)
+
+    return {
+        "plugin_name": plugin_name,
+        "model": model,
+        "coder_model": coder_model,
+        "base_url": base_url,
+        "timeout": timeout,
+    }
+
+
 class ZeroSystem:
-    """
-    ZERO System Boot
-
-    角色：
-    - 統一初始化 ZERO Task OS 核心元件
-    - 提供 tick / run_until_idle / health
-    - 對外暴露 queue / task control 的穩定入口
-    """
-
     def __init__(self, workspace: str = "workspace") -> None:
         self.workspace = os.path.abspath(workspace)
 
-        # ---------------------------------------------------------
-        # Path manager
-        # ---------------------------------------------------------
         self.path_manager = TaskPathManager(workspace_root=self.workspace)
         self.path_manager.ensure_workspace()
 
@@ -44,16 +165,21 @@ class ZeroSystem:
         self.knowledge_root = workspace_paths["knowledge_root"]
         self.cache_root = workspace_paths["cache_root"]
 
-        # ---------------------------------------------------------
-        # Ensure tasks.json exists
-        # ---------------------------------------------------------
         if not os.path.exists(self.tasks_db_path):
             with open(self.tasks_db_path, "w", encoding="utf-8") as f:
                 json.dump({"tasks": []}, f, ensure_ascii=False, indent=2)
 
-        # ---------------------------------------------------------
-        # Core components
-        # ---------------------------------------------------------
+        self.memory_store = None
+        self.runtime_store = None
+        self.verifier = None
+        self.safety_guard = None
+
+        self.router = None
+        self.planner = None
+        self.llm_client = None
+        self.llm_planner = None
+        self.agent_loop = None
+
         self.task_repository = TaskRepository(self.tasks_db_path)
 
         self.task_runtime = TaskRuntime(
@@ -61,13 +187,111 @@ class ZeroSystem:
             debug=False,
         )
 
+        router_cls = _resolve_router_class()
+        if router_cls is not None:
+            try:
+                self.router = router_cls()
+            except TypeError:
+                try:
+                    self.router = router_cls(workspace_root=self.workspace)
+                except Exception:
+                    self.router = None
+            except Exception:
+                self.router = None
+
+        llm_client_cls = _resolve_llm_client_class()
+        if llm_client_cls is not None:
+            llm_boot = _build_llm_boot_config()
+
+            try:
+                self.llm_client = llm_client_cls(
+                    plugin_name=llm_boot["plugin_name"],
+                    base_url=llm_boot["base_url"],
+                    model=llm_boot["model"],
+                    coder_model=llm_boot["coder_model"],
+                    timeout=llm_boot["timeout"],
+                )
+            except TypeError:
+                try:
+                    self.llm_client = llm_client_cls(
+                        base_url=llm_boot["base_url"],
+                        model=llm_boot["model"],
+                        coder_model=llm_boot["coder_model"],
+                        timeout=llm_boot["timeout"],
+                    )
+                except TypeError:
+                    try:
+                        self.llm_client = llm_client_cls()
+                    except Exception:
+                        self.llm_client = None
+                except Exception:
+                    self.llm_client = None
+            except Exception:
+                self.llm_client = None
+
+        verifier_cls = _resolve_verifier_class()
+        if verifier_cls is not None:
+            try:
+                self.verifier = verifier_cls(
+                    llm_client=self.llm_client,
+                    debug=False,
+                )
+            except TypeError:
+                try:
+                    self.verifier = verifier_cls(self.llm_client)
+                except Exception:
+                    self.verifier = None
+            except Exception:
+                self.verifier = None
+
         self.step_executor = StepExecutor(
             workspace_root=self.workspace,
+            llm_client=self.llm_client,
             debug=False,
         )
 
+        planner_cls = _resolve_planner_class()
+        if planner_cls is not None:
+            try:
+                self.planner = planner_cls(
+                    memory_store=self.memory_store,
+                    runtime_store=self.runtime_store,
+                    step_executor=self.step_executor,
+                    tool_registry=getattr(self.step_executor, "tool_registry", None),
+                    workspace_root=self.workspace,
+                    debug=False,
+                )
+            except TypeError:
+                try:
+                    self.planner = planner_cls(
+                        workspace_root=self.workspace,
+                        debug=False,
+                    )
+                except Exception:
+                    self.planner = None
+            except Exception:
+                self.planner = None
+
+        llm_planner_cls = _resolve_llm_planner_class()
+        if llm_planner_cls is not None and self.llm_client is not None:
+            try:
+                self.llm_planner = llm_planner_cls(
+                    llm_client=self.llm_client,
+                    debug=False,
+                )
+            except TypeError:
+                try:
+                    self.llm_planner = llm_planner_cls(
+                        llm_client=self.llm_client,
+                    )
+                except Exception:
+                    self.llm_planner = None
+            except Exception:
+                self.llm_planner = None
+
         self.replanner = TaskReplanner(
             workspace_dir=self.workspace,
+            planner=self.planner,
         )
 
         self.task_runner = TaskRunner(
@@ -86,11 +310,69 @@ class ZeroSystem:
             debug=False,
         )
 
-        self.tick_count = 0
+        self.task_workspace = getattr(self.scheduler, "task_workspace", None)
 
-    # ============================================================
-    # Main loop
-    # ============================================================
+        agent_loop_cls = _resolve_agent_loop_class()
+        if agent_loop_cls is not None:
+            try:
+                self.agent_loop = agent_loop_cls(
+                    router=self.router,
+                    planner=self.planner,
+                    llm_planner=self.llm_planner,
+                    step_executor=self.step_executor,
+                    verifier=self.verifier,
+                    safety_guard=self.safety_guard,
+                    memory_store=self.memory_store,
+                    runtime_store=self.runtime_store,
+                    scheduler=self.scheduler,
+                    task_manager=self.scheduler,
+                    task_workspace=self.task_workspace,
+                    task_runtime=self.task_runtime,
+                    task_runner=self.task_runner,
+                    replanner=self.replanner,
+                    llm_client=self.llm_client,
+                    debug=False,
+                )
+            except TypeError:
+                try:
+                    self.agent_loop = agent_loop_cls(
+                        router=self.router,
+                        planner=self.planner,
+                        step_executor=self.step_executor,
+                        verifier=self.verifier,
+                        safety_guard=self.safety_guard,
+                        memory_store=self.memory_store,
+                        runtime_store=self.runtime_store,
+                        scheduler=self.scheduler,
+                        task_manager=self.scheduler,
+                        task_workspace=self.task_workspace,
+                        task_runtime=self.task_runtime,
+                        task_runner=self.task_runner,
+                        replanner=self.replanner,
+                        llm_client=self.llm_client,
+                        debug=False,
+                    )
+                except Exception:
+                    self.agent_loop = None
+            except Exception:
+                self.agent_loop = None
+
+        try:
+            setattr(self.scheduler, "agent_loop", self.agent_loop)
+        except Exception:
+            pass
+
+        try:
+            setattr(self.task_runner, "agent_loop", self.agent_loop)
+        except Exception:
+            pass
+
+        try:
+            setattr(self, "loop", self.agent_loop)
+        except Exception:
+            pass
+
+        self.tick_count = 0
 
     def tick(self) -> Dict[str, Any]:
         self.tick_count += 1
@@ -144,10 +426,6 @@ class ZeroSystem:
 
         return results
 
-    # ============================================================
-    # System info
-    # ============================================================
-
     def health(self) -> Dict[str, Any]:
         scheduler_status = self.scheduler.status() if hasattr(self.scheduler, "status") else {}
 
@@ -163,7 +441,13 @@ class ZeroSystem:
             "memory_root": self.memory_root,
             "knowledge_root": self.knowledge_root,
             "cache_root": self.cache_root,
+            "router_type": type(self.router).__name__ if self.router is not None else None,
             "step_executor_type": type(self.step_executor).__name__,
+            "planner_type": type(self.planner).__name__ if self.planner is not None else None,
+            "llm_client_type": type(self.llm_client).__name__ if self.llm_client is not None else None,
+            "llm_planner_type": type(self.llm_planner).__name__ if self.llm_planner is not None else None,
+            "agent_loop_type": type(self.agent_loop).__name__ if self.agent_loop is not None else None,
+            "verifier_type": type(self.verifier).__name__ if self.verifier is not None else None,
             "replanner_type": type(self.replanner).__name__,
             "task_runner_type": type(self.task_runner).__name__,
             "scheduler_type": type(self.scheduler).__name__,
@@ -172,10 +456,6 @@ class ZeroSystem:
             "tick_count": self.tick_count,
             "scheduler_status": copy.deepcopy(scheduler_status),
         }
-
-    # ============================================================
-    # Queue / task queries
-    # ============================================================
 
     def get_queue_rows(self) -> Any:
         fn = getattr(self.scheduler, "get_queue_rows", None)
@@ -201,10 +481,6 @@ class ZeroSystem:
         }
 
     def create_task(self, **kwargs: Any) -> Dict[str, Any]:
-        """
-        純建立 task，不提交既有任務，不自動跑 scheduler。
-        這裡只允許走 scheduler.create_task。
-        """
         fn = getattr(self.scheduler, "create_task", None)
         if not callable(fn):
             return {
@@ -228,10 +504,6 @@ class ZeroSystem:
             }
 
     def submit_task(self, task_id: str) -> Any:
-        """
-        對外 submit API：提交既有 task_id。
-        不建立新 task，不接受 goal。
-        """
         fn = getattr(self.scheduler, "submit_existing_task", None)
         if callable(fn):
             try:
@@ -250,6 +522,18 @@ class ZeroSystem:
         }
 
     def get_task(self, task_name: str) -> Dict[str, Any]:
+        helper = getattr(self.scheduler, "_get_task_from_repo", None)
+        if callable(helper):
+            try:
+                task = helper(task_name)
+                if isinstance(task, dict):
+                    return {
+                        "ok": True,
+                        "task": copy.deepcopy(task),
+                    }
+            except Exception:
+                pass
+
         task = self.task_repository.get_task(task_name)
         if task is None:
             return {
@@ -263,6 +547,19 @@ class ZeroSystem:
         }
 
     def list_tasks(self) -> Dict[str, Any]:
+        helper = getattr(self.scheduler, "_list_repo_tasks", None)
+        if callable(helper):
+            try:
+                tasks = helper()
+                if isinstance(tasks, list):
+                    return {
+                        "ok": True,
+                        "tasks": copy.deepcopy(tasks),
+                        "count": len(tasks),
+                    }
+            except Exception:
+                pass
+
         tasks = self.task_repository.list_tasks()
         if not isinstance(tasks, list):
             tasks = []
@@ -271,10 +568,6 @@ class ZeroSystem:
             "tasks": copy.deepcopy(tasks),
             "count": len(tasks),
         }
-
-    # ============================================================
-    # Task control
-    # ============================================================
 
     def pause_task(self, task_name: str) -> Any:
         fn = getattr(self.scheduler, "pause_task", None)
@@ -316,10 +609,6 @@ class ZeroSystem:
             "task_name": task_name,
             "priority": priority,
         }
-
-    # ============================================================
-    # low level helpers
-    # ============================================================
 
     def scheduler_boot(self) -> Dict[str, Any]:
         if hasattr(self.scheduler, "boot"):

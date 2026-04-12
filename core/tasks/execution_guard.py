@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+import re
+import shlex
+from typing import Any, Dict
 
 
 class ExecutionGuard:
     """
-    最小可用執行守門員
+    最小可用執行守門員（B 方案收束版）
 
     目標：
     1. 所有 write_file / read_file / command 都先經過這裡
-    2. 限制寫入只能在 workspace_root 之下
-    3. command 預設關閉，避免先炸
+    2. 限制檔案操作只能在 workspace_root 之下
+    3. command 預設關閉
+    4. 收束期只有限放行安全 python command
     """
 
     def __init__(
@@ -70,18 +73,81 @@ class ExecutionGuard:
             }
 
         if step_type == "command":
-            if not self.allow_commands:
-                return {
-                    "ok": False,
-                    "error": "command execution blocked by guard",
-                }
+            command = str(step.get("command") or "").strip()
+            if not command:
+                return {"ok": False, "error": "command step missing command"}
 
-            return {"ok": True}
+            return self._check_command(command=command, task_dir=task_dir_abs)
 
         return {
             "ok": False,
             "error": f"unsupported step type: {step_type}",
         }
+
+    def _check_command(self, command: str, task_dir: str) -> Dict[str, Any]:
+        if self.allow_commands:
+            return {"ok": True}
+
+        normalized = str(command or "").strip()
+        lowered = normalized.lower()
+
+        # 收束期白名單：
+        # 1. python -c "print('hello')" 類型
+        # 2. python / py 執行 workspace 內腳本
+        if self._is_safe_inline_python(lowered):
+            return {"ok": True, "guard_mode": "safe_python_inline"}
+
+        script_check = self._extract_python_script_path(normalized)
+        if script_check is not None:
+            script_path = self._resolve_path(raw_path=script_check, task_dir=task_dir)
+            if not self._is_under_workspace(script_path):
+                return {
+                    "ok": False,
+                    "error": f"python script blocked outside workspace: {script_path}",
+                }
+            return {
+                "ok": True,
+                "guard_mode": "safe_python_script",
+                "resolved_script_path": script_path,
+            }
+
+        return {
+            "ok": False,
+            "error": "command execution blocked by guard",
+        }
+
+    def _is_safe_inline_python(self, lowered_command: str) -> bool:
+        # 只放行非常小範圍的 inline python 測試
+        patterns = [
+            r'^python\s+-c\s+"print\(.+\)"$',
+            r"^python\s+-c\s+'print\(.+\)'$",
+            r'^py\s+-c\s+"print\(.+\)"$',
+            r"^py\s+-c\s+'print\(.+\)'$",
+        ]
+        return any(re.match(p, lowered_command) for p in patterns)
+
+    def _extract_python_script_path(self, command: str) -> str | None:
+        try:
+            parts = shlex.split(command, posix=False)
+        except Exception:
+            parts = command.split()
+
+        if len(parts) < 2:
+            return None
+
+        exe = str(parts[0]).strip().lower()
+        if exe not in {"python", "py", "python.exe", "py.exe"}:
+            return None
+
+        # python -c ... 不算腳本
+        if len(parts) >= 2 and str(parts[1]).strip().lower() == "-c":
+            return None
+
+        script_path = str(parts[1]).strip().strip('"').strip("'")
+        if not script_path:
+            return None
+
+        return script_path
 
     def _resolve_path(self, raw_path: str, task_dir: str) -> str:
         normalized = str(raw_path or "").replace("\\", "/").strip()

@@ -28,6 +28,10 @@ class TaskReplanner:
     - 依 step_key / step signature 對齊舊步驟
     - 已成功且可保留的步驟直接標成 completed
     - current_step_index 指到第一個未完成 step
+
+    本版修正：
+    - 優先使用外部注入的 planner，避免重複建立第二個 Planner
+    - 只有在外部沒有傳 planner 時，才 fallback 自建 Planner
     """
 
     READ_ONLY_STEP_TYPES = {
@@ -52,9 +56,18 @@ class TaskReplanner:
         "execute",
     }
 
-    def __init__(self, workspace_dir: str = "workspace") -> None:
+    def __init__(
+        self,
+        workspace_dir: str = "workspace",
+        planner: Optional[Any] = None,
+    ) -> None:
         self.workspace_dir = os.path.abspath(workspace_dir)
-        self.planner = Planner(workspace_dir=self.workspace_dir)
+
+        # 優先吃外部注入，避免 system_boot 已建過 planner 時又再建一次
+        if planner is not None:
+            self.planner = planner
+        else:
+            self.planner = Planner(workspace_root=self.workspace_dir)
 
     # =========================================================
     # Public API
@@ -673,7 +686,17 @@ class TaskReplanner:
 
         plan_fn = getattr(self.planner, "plan", None)
         if callable(plan_fn):
-            result = plan_fn(goal=goal, task_dir=task_dir)
+            try:
+                result = plan_fn(
+                    context={"workspace": task_dir, "task_dir": task_dir},
+                    user_input=goal,
+                    route=None,
+                )
+            except TypeError:
+                try:
+                    result = plan_fn(goal=goal, task_dir=task_dir)
+                except TypeError:
+                    result = plan_fn(goal)
             return self._normalize_planner_output(goal=goal, result=result, planner_mode="planner.plan")
 
         return self._fallback_plan(goal)
