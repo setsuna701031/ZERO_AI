@@ -1,0 +1,16 @@
+ACTION ITEMS
+1. Owner: David
+   Task: Draft customer onboarding checklist
+   Due: Not specified
+
+2. Owner: Emma
+   Task: Confirm hardware order
+   Due: This afternoon
+
+3. Owner: Unassigned
+   Task: Schedule review meeting for new workflow
+   Due: Not specified
+
+4. Owner: Frank
+   Task: Update README
+   Due: Tomorrow

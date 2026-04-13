@@ -39,6 +39,8 @@ def print_help() -> None:
     print("  result <task_id>")
     print("  open <task_id>")
     print("  delete <task_id>")
+    print("  retry <task_id>")
+    print("  rerun <task_id>")
     print("  purge finished")
     print("  purge failed")
     print("  purge all")
@@ -51,6 +53,8 @@ def print_help() -> None:
     print("  task result <task_id>")
     print("  task open <task_id>")
     print("  task delete <task_id>")
+    print("  task retry <task_id>")
+    print("  task rerun <task_id>")
     print("  task purge finished")
     print("  task purge failed")
     print("  task purge all")
@@ -69,6 +73,8 @@ def print_help() -> None:
     print("  python app.py task result <task_id>")
     print("  python app.py task open <task_id>")
     print("  python app.py task delete <task_id>")
+    print("  python app.py task retry <task_id>")
+    print("  python app.py task rerun <task_id>")
     print("  python app.py task purge finished")
     print('  python app.py chat "你好"')
     print('  python app.py ask "幫我建立一個檔案"')
@@ -591,6 +597,74 @@ def _submit_existing_task(system: Any, task_id: str) -> Dict[str, Any]:
     return {"ok": False, "error": "submit_existing_task not available", "task_id": task_id}
 
 
+def _spawn_task_from_existing(system: Any, task_id: str, action_name: str) -> Dict[str, Any]:
+    old_task = _get_task(system, task_id)
+    if not isinstance(old_task, dict):
+        return {
+            "ok": False,
+            "error": "source task not found",
+            "source_task_id": task_id,
+            "action": action_name,
+        }
+
+    goal = _extract_goal(old_task)
+    if not goal:
+        return {
+            "ok": False,
+            "error": "source task goal is empty",
+            "source_task_id": task_id,
+            "action": action_name,
+        }
+
+    create_result = _create_task(system, goal)
+    if not isinstance(create_result, dict) or not create_result.get("ok", False):
+        return {
+            "ok": False,
+            "error": "create_task failed",
+            "source_task_id": task_id,
+            "goal": goal,
+            "action": action_name,
+            "create_result": create_result,
+        }
+
+    new_task_id = _first_nonempty_str(
+        create_result.get("task_id"),
+        create_result.get("task_name"),
+        (create_result.get("task", {}) if isinstance(create_result.get("task"), dict) else {}).get("task_id"),
+        (create_result.get("task", {}) if isinstance(create_result.get("task"), dict) else {}).get("task_name"),
+    )
+
+    if not new_task_id:
+        return {
+            "ok": False,
+            "error": "created task but no task_id returned",
+            "source_task_id": task_id,
+            "goal": goal,
+            "action": action_name,
+            "create_result": create_result,
+        }
+
+    submit_result = _submit_existing_task(system, new_task_id)
+
+    return {
+        "ok": bool(submit_result.get("ok", False)) if isinstance(submit_result, dict) else False,
+        "action": action_name,
+        "source_task_id": task_id,
+        "new_task_id": new_task_id,
+        "goal": goal,
+        "create_result": create_result,
+        "submit_result": submit_result,
+    }
+
+
+def _retry_task(system: Any, task_id: str) -> Dict[str, Any]:
+    return _spawn_task_from_existing(system, task_id, action_name="task_retry")
+
+
+def _rerun_task(system: Any, task_id: str) -> Dict[str, Any]:
+    return _spawn_task_from_existing(system, task_id, action_name="task_rerun")
+
+
 def _run_once(system: Any) -> Dict[str, Any]:
     scheduler = _get_scheduler(system)
     run_fn = getattr(scheduler, "run_once", None)
@@ -750,6 +824,10 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         return "/task_open " + stripped[5:].strip()
     if lowered.startswith("delete "):
         return "/task_delete " + stripped[7:].strip()
+    if lowered.startswith("retry "):
+        return "/task_retry " + stripped[6:].strip()
+    if lowered.startswith("rerun "):
+        return "/task_rerun " + stripped[6:].strip()
     if lowered.startswith("purge "):
         return "/task_purge " + stripped[6:].strip()
     if lowered.startswith("chat "):
@@ -779,6 +857,10 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         return "/task_open " + stripped[10:].strip()
     if lowered.startswith("task delete "):
         return "/task_delete " + stripped[12:].strip()
+    if lowered.startswith("task retry "):
+        return "/task_retry " + stripped[11:].strip()
+    if lowered.startswith("task rerun "):
+        return "/task_rerun " + stripped[11:].strip()
     if lowered.startswith("task purge "):
         return "/task_purge " + stripped[11:].strip()
 
@@ -980,6 +1062,36 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         print_json(_delete_task_from_repo(system, task_id))
         return
 
+    if text.startswith("/task_retry "):
+        task_id = text.split(maxsplit=1)[1].strip()
+        if not task_id:
+            print_json({"ok": False, "error": "task_id is required"})
+            return
+        result = _retry_task(system, task_id)
+        print_json(result)
+        if result.get("new_task_id"):
+            print("[hint]")
+            print(f"新 task 已建立：{result['new_task_id']}")
+            print("下一步可執行：")
+            print("python app.py task list")
+            print(f"python app.py task result {result['new_task_id']}")
+        return
+
+    if text.startswith("/task_rerun "):
+        task_id = text.split(maxsplit=1)[1].strip()
+        if not task_id:
+            print_json({"ok": False, "error": "task_id is required"})
+            return
+        result = _rerun_task(system, task_id)
+        print_json(result)
+        if result.get("new_task_id"):
+            print("[hint]")
+            print(f"新 task 已建立：{result['new_task_id']}")
+            print("下一步可執行：")
+            print("python app.py task list")
+            print(f"python app.py task result {result['new_task_id']}")
+        return
+
     if text.startswith("/task_purge "):
         mode = text.split(maxsplit=1)[1].strip().lower()
         if mode not in {"finished", "failed", "all"}:
@@ -1169,6 +1281,12 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
         if sub == "delete" and len(parts) >= 3:
             return "/task_delete " + " ".join(parts[2:])
 
+        if sub == "retry" and len(parts) >= 3:
+            return "/task_retry " + " ".join(parts[2:])
+
+        if sub == "rerun" and len(parts) >= 3:
+            return "/task_rerun " + " ".join(parts[2:])
+
         if sub == "purge" and len(parts) >= 3:
             return "/task_purge " + " ".join(parts[2:])
 
@@ -1211,6 +1329,12 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
 
     if first == "delete" and len(parts) >= 2:
         return "/task_delete " + " ".join(parts[1:])
+
+    if first == "retry" and len(parts) >= 2:
+        return "/task_retry " + " ".join(parts[1:])
+
+    if first == "rerun" and len(parts) >= 2:
+        return "/task_rerun " + " ".join(parts[1:])
 
     if first == "purge" and len(parts) >= 2:
         return "/task_purge " + " ".join(parts[1:])

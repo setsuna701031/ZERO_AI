@@ -1,0 +1,6 @@
+Project sync notes
+
+Alice will prepare the revised API specification by Friday.
+Bob needs to validate the Windows deployment next week.
+We should create a short demo script for the document processing flow.
+Charlie will review the task execution trace tomorrow.

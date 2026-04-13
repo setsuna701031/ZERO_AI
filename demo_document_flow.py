@@ -79,17 +79,19 @@ def call_llm(llm_client: Any, prompt: str) -> str:
 
 
 def build_summary_prompt(document_text: str) -> str:
-    return f"""You are a document-processing agent.
+    return f"""You are a document-processing assistant.
 
 Read the document below and produce a clean English summary.
 
-Requirements:
-1. Start with a short 2-4 sentence executive summary
-2. Then provide 5-10 bullet points with the main takeaways
-3. If the document contains action items, decisions, or risks, list them in separate sections
-4. Do not invent details that are not in the source text
-5. Write the entire output in English
-6. Keep the result concise, readable, and demo-friendly
+Output rules:
+1. Write the entire output in English.
+2. Start with a short executive summary of 2-4 sentences.
+3. Then provide 4-8 concise bullet points with the main takeaways.
+4. If the document includes decisions, risks, blockers, or action-related notes, include them when useful.
+5. Do not invent facts that are not supported by the source text.
+6. Keep the result concise, readable, and demo-friendly.
+7. Do not output JSON.
+8. Do not include commentary outside the summary itself.
 
 Document content:
 --------------------
@@ -129,7 +131,7 @@ def build_trace(
             },
             {
                 "step": 2,
-                "name": "summarize_with_llm",
+                "name": "summarize_document",
             },
             {
                 "step": 3,
@@ -145,9 +147,11 @@ def main() -> int:
 
     if not os.path.exists(INPUT_PATH):
         example_text = (
-            "ZERO is a local-first engineering agent prototype.\n"
-            "This is an example input file for the document-processing demo.\n"
-            "Replace this content with your own text and run the script again.\n"
+            "Project sync notes\n\n"
+            "Alice will prepare the revised API specification by Friday.\n"
+            "Bob needs to validate the Windows deployment next week.\n"
+            "We should create a short demo script for the document processing flow.\n"
+            "Charlie will review the task execution trace tomorrow.\n"
         )
         write_text_file(INPUT_PATH, example_text)
         print(f"Input file not found. Created example file: {INPUT_PATH}")
@@ -214,12 +218,7 @@ def main() -> int:
         print(f"trace: {TRACE_PATH}")
         return 1
 
-    output_text = (
-        "# Document Summary\n\n"
-        f"Source file: {INPUT_PATH}\n\n"
-        "----\n\n"
-        f"{summary_text.strip()}\n"
-    )
+    output_text = summary_text.strip() + "\n"
 
     try:
         write_text_file(OUTPUT_PATH, output_text)
@@ -249,7 +248,7 @@ def main() -> int:
     )
     write_json_file(TRACE_PATH, trace)
 
-    print("Document processing completed")
+    print("Document summary processing completed")
     print(f"input: {INPUT_PATH}")
     print(f"summary: {OUTPUT_PATH}")
     print(f"trace: {TRACE_PATH}")

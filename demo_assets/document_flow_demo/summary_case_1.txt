@@ -1,0 +1,11 @@
+**Executive Summary**
+
+The backup script encountered an error during its execution last night. An investigation into the log issue is underway, led by Grace. In preparation for potential future issues, Henry will create a recovery checklist. A brief summary of the incident will also be shared with the team.
+
+**Main Takeaways:**
+
+* The backup script failed to execute successfully overnight.
+* Grace will investigate the cause of the failure today.
+* Henry will prepare a recovery checklist as a precautionary measure.
+* An incident summary is required for the team.
+* No further details are provided about the nature of the error or its impact.

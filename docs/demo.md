@@ -1,172 +1,342 @@
-# ZERO Demo Index
+\# Document Flow Demo
 
-This document tracks the current demo assets for ZERO and explains the role of each recording.
 
-## Demo Overview
 
-The current demo set is organized into three layers:
+\## Overview
 
-1. Runtime / Task OS proof
-2. CLI control surface proof
-3. Document-processing workflow proof
 
-This separation matters because not every recording serves the same purpose. Some videos are evidence-style technical proof, while others are closer to product-facing demo material.
 
----
+This demo shows a practical local document-processing workflow inside ZERO.
 
-## Current Demo Files
 
-### 1. `00_zero_task_os_runtime_demo.mp4`
-**Role:** Early runtime / Task OS proof  
-**Purpose:** Show that the ZERO task runtime can execute and return visible results  
-**Use case:** Internal milestone proof, historical baseline, early architecture evidence  
-**Status:** Keep
 
----
+Instead of only replying in chat, ZERO reads a real input file, processes it with a local LLM pipeline, writes a useful output file, and preserves a trace file that can be inspected in the Trace Viewer.
 
-### 2. `01_trace_viewer_local.mp4`
-**Role:** Local trace / inspection proof  
-**Purpose:** Show trace-related local inspection capability  
-**Use case:** Supporting evidence, internal verification, technical explanation  
-**Status:** Keep
 
----
 
-### 3. `zero_cli_runtime_task_flow_demo_2026-04-12.mp4`
-**Role:** CLI control surface demo  
-**Purpose:** Show that ZERO can be operated from CLI with visible runtime info and task result inspection  
-**What it demonstrates:**
-- runtime inspection
-- chat entry from CLI
-- task flow from CLI
-- task result lookup
-- model/plugin visibility
+This makes the demo closer to a real local agent workflow than a simple text-generation example.
 
-**Use case:** CLI capability proof, control surface demo, GitHub supporting material  
-**Status:** Keep
 
----
 
-### 4. `zero_document_flow_demo_2026-04-12.mp4`
-**Role:** Full document-processing workflow evidence video  
-**Purpose:** Show a complete local document-processing workflow from input to output with trace  
-**What it demonstrates:**
-- input document prepared locally
-- document processed by the system
-- summary file generated
-- trace file generated
-- full workflow proof
+\---
 
-**Use case:** Evidence video, full workflow proof, technical validation  
-**Status:** Keep
 
-**Important note:**  
-This is not the main homepage demo.  
-It is the complete workflow evidence version.
 
----
+\## Current Capabilities
 
-### 5. `zero_document_flow_short_demo_2026-04-12.mp4`
-**Role:** Short document-flow main demo  
-**Purpose:** Show the most concise product-facing version of the document workflow  
-**What it demonstrates:**
-- input file visible
-- document processing run
-- output summary visible
-- structured trace visible
 
-**Use case:** Main short demo, GitHub/README candidate, public-facing workflow clip  
-**Status:** Keep
 
-**Important note:**  
-This is currently the strongest short-form demo for showing that ZERO can process a local document, generate an output, and leave a structured trace.
+\### 1. Action Items Extraction
 
----
 
-## Demo Positioning
 
-### Evidence / Technical Proof
-These videos are best used as deeper proof:
-- `00_zero_task_os_runtime_demo.mp4`
-- `01_trace_viewer_local.mp4`
-- `zero_document_flow_demo_2026-04-12.mp4`
+Input:
 
-### Control Surface Demo
-These videos are best used to show visible operator control:
-- `zero_cli_runtime_task_flow_demo_2026-04-12.mp4`
+\- `input.txt`
 
-### Main Short Workflow Demo
-These videos are best used for fast public-facing explanation:
-- `zero_document_flow_short_demo_2026-04-12.mp4`
 
----
 
-## Recommended Current Demo Hierarchy
+Output:
 
-### Primary short demo
-`zero_document_flow_short_demo_2026-04-12.mp4`
+\- `action\_items.txt`
 
-### Primary CLI support demo
-`zero_cli_runtime_task_flow_demo_2026-04-12.mp4`
 
-### Full workflow evidence demo
-`zero_document_flow_demo_2026-04-12.mp4`
 
----
+Flow:
 
-## Current Demo Story
+\- `read\_input`
 
-If someone asks what ZERO can currently demonstrate, the strongest answer is:
+\- `extract\_action\_items`
 
-> ZERO can process a local document, generate a summary file, and leave a structured trace of the workflow.
+\- `write\_action\_items`
 
-That is the core meaning of the current document-flow demos.
 
-A second supporting statement is:
 
-> ZERO also exposes a visible CLI control surface for runtime inspection, task execution, and result lookup.
+Purpose:
 
-That is the role of the CLI demo.
+\- Convert meeting notes or raw project notes into clear action items with:
 
----
+&#x20; - Owner
 
-## What Not To Confuse
+&#x20; - Task
 
-Do not treat every video as a homepage demo.
+&#x20; - Due
 
-Some recordings are:
-- proof
-- evidence
-- milestone history
-- technical support material
 
-Only the short document-flow clip should currently be treated as the main short public-facing demo candidate.
 
----
+Example result:
 
-## Next Suggested Demo Direction
+\- identify named owners
 
-After the current document-summary flow, the next workflow demo can expand into one of these:
+\- assign `Unassigned` when no explicit owner exists
 
-- document rewrite flow
-- action-item extraction flow
-- notes-to-brief flow
+\- preserve due phrases such as:
 
-These should build on the same structure:
+&#x20; - `By Monday`
 
-1. input document
-2. processing step
-3. output file
-4. structured trace
+&#x20; - `Today`
 
----
+&#x20; - `This afternoon`
 
-## Status
+&#x20; - `Tomorrow`
 
-Current demo archive is usable and should be preserved.
 
-The current minimum public-facing demo set is:
 
-- `zero_document_flow_short_demo_2026-04-12.mp4`
-- `zero_cli_runtime_task_flow_demo_2026-04-12.mp4`
-- `zero_document_flow_demo_2026-04-12.mp4`
+\---
+
+
+
+\### 2. Document Summary
+
+
+
+Input:
+
+\- `input.txt`
+
+
+
+Output:
+
+\- `summary.txt`
+
+
+
+Flow:
+
+\- `read\_input`
+
+\- `summarize\_document`
+
+\- `write\_summary`
+
+
+
+Purpose:
+
+\- Convert raw notes or documents into a concise English summary for review, reporting, or fast understanding.
+
+
+
+Example result:
+
+\- executive summary
+
+\- key takeaways
+
+\- concise structured output suitable for demos and technical review
+
+
+
+\---
+
+
+
+\## Trace Viewer Support
+
+
+
+Both flows generate a structured trace file:
+
+
+
+\- `document\_flow\_trace.json`
+
+
+
+This allows the Trace Viewer to show the actual document-processing path step by step instead of only showing a final file result.
+
+
+
+\### Action Items Trace
+
+\- `read\_input`
+
+\- `extract\_action\_items`
+
+\- `write\_action\_items`
+
+
+
+\### Summary Trace
+
+\- `read\_input`
+
+\- `summarize\_document`
+
+\- `write\_summary`
+
+
+
+\---
+
+
+
+\## Shared Workspace Files
+
+
+
+Runtime demo files are written under:
+
+
+
+\- `workspace/shared/`
+
+
+
+Typical files:
+
+\- `input.txt`
+
+\- `action\_items.txt`
+
+\- `summary.txt`
+
+\- `document\_flow\_trace.json`
+
+
+
+\---
+
+
+
+\## Demo Assets
+
+
+
+The current demo asset set includes:
+
+
+
+\- validated action-items extraction cases
+
+\- validated summary generation case
+
+\- trace JSON examples
+
+\- successful terminal execution screenshots
+
+\- Trace Viewer screenshots
+
+
+
+These assets are preserved under:
+
+
+
+\- `demo\_assets/document\_flow\_demo/`
+
+
+
+\---
+
+
+
+\## Why This Demo Matters
+
+
+
+This is not just a rewrite example.
+
+
+
+It demonstrates that ZERO can:
+
+
+
+\- read a real file
+
+\- process non-structured text into useful outputs
+
+\- write result files back to disk
+
+\- preserve a machine-readable execution trace
+
+\- support repeated multi-case validation
+
+
+
+That gives the system a more agent-like, workflow-oriented shape instead of being only a chatbot interface.
+
+
+
+\---
+
+
+
+\## Validation Status
+
+
+
+Document Flow Demo Set v1 is complete.
+
+
+
+Completed:
+
+\- action-items extraction flow
+
+\- summary flow
+
+\- trace alignment for both flows
+
+\- multi-case validation
+
+\- demo asset preservation
+
+
+
+\---
+
+
+
+\## Demo Value
+
+
+
+This demo is useful because it is:
+
+
+
+\- local-first
+
+\- file-based
+
+\- repeatable
+
+\- inspectable through trace
+
+\- easy to present visually
+
+
+
+It is a strong early showcase for ZERO because the value is visible immediately:
+
+raw notes go in, structured output comes out, and the pipeline remains observable.
+
+
+
+\---
+
+
+
+\## Next Possible Directions
+
+
+
+Potential next steps:
+
+
+
+\- unify action-items and summary into one selectable document demo entry
+
+\- add lightweight API or UI wrappers
+
+\- support structured JSON export
+
+\- connect extracted action items into later task systems
+
+
+
+For the current stage, this demo already stands as a complete and presentable document-processing capability.
+

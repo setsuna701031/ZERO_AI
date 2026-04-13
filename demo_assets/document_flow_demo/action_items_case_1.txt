@@ -1,0 +1,17 @@
+ACTION ITEMS
+
+1. Owner: Alice
+   Task: Prepare revised API specification
+   Due: By Friday
+
+2. Owner: Bob
+   Task: Validate Windows deployment
+   Due: Next week
+
+3. Owner: Unassigned
+   Task: Create short demo script for document processing flow
+   Due: Not specified
+
+4. Owner: Charlie
+   Task: Review task execution trace
+   Due: Tomorrow

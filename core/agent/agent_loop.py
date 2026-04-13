@@ -13,17 +13,13 @@ class AgentLoop:
     """
     ZERO Agent Loop
 
-    目前收斂目標：
-    1. 明確區分 single-shot 與 task mode
-    2. task mode 只負責建立任務與交給 scheduler
-    3. scheduler 呼叫 run_task() 時，只做單個 task 的 one-tick 執行
-    4. 保留舊相容入口，但主幹改成清楚的 loop 骨架
-
     本版修正重點：
-    - 保留你現在穩定的 direct / task / single-shot 結構
-    - 新增 llm_planner，但只在 route.mode == "llm" 時啟用
-    - llm_planner 失敗時，自動 fallback 回原本 deterministic planner
-    - 不大改舊主幹，避免把現在已穩定的系統炸掉
+    1. 保留現有 direct / task / single-shot 主幹
+    2. 新增 document flow bypass：
+       - read input.txt and extract action items into action_items.txt
+       - summarize input.txt into summary.txt
+       這類請求會強制走 planner，不讓 router direct route 搶走
+    3. llm route / task mode / single-shot 維持原本相容結構
     """
 
     def __init__(
@@ -56,7 +52,6 @@ class AgentLoop:
         self.runtime_store = runtime_store
         self.llm_client = llm_client
 
-        # 相容舊入口：task_manager 還能存在，但 scheduler 是主要任務控制入口
         self.task_manager = task_manager
         self.scheduler = scheduler or task_manager
 
@@ -79,17 +74,6 @@ class AgentLoop:
     # ============================================================
 
     def run(self, user_input: str) -> Dict[str, Any]:
-        """
-        對外主入口：
-        - 先走 router
-        - direct：直接執行 step
-        - task mode：建立任務並送進 scheduler
-        - llm mode：
-            1. 若未接 llm_client，回未啟用
-            2. 若有 llm_planner，先走 llm_planner
-            3. 若 llm_planner 失敗，fallback 回 planner
-        - 其他：走 single-shot（planner -> executor）
-        """
         user_text = str(user_input or "").strip()
         if not user_text:
             return {"ok": False, "error": "empty input"}
@@ -100,6 +84,16 @@ class AgentLoop:
         if self.debug:
             print("[AgentLoop] input =", user_text)
             print("[AgentLoop] route =", route)
+
+        # 0) document flow 強制走 planner，避免 router direct 誤攔
+        if self._should_force_planner_document_flow(user_text):
+            if self.debug:
+                print("[AgentLoop] document flow detected -> force planner path")
+            return self._run_single_shot_mode(
+                context=context,
+                user_input=user_text,
+                route=route,
+            )
 
         # 1) router direct：直接走 executor，不進 planner
         direct_result = self._try_handle_direct_route(
@@ -118,7 +112,7 @@ class AgentLoop:
                 route=route,
             )
 
-        # 3) llm mode：優先走 llm route
+        # 3) llm mode
         llm_result = self._try_handle_llm_route(
             context=context,
             user_input=user_text,
@@ -127,7 +121,7 @@ class AgentLoop:
         if llm_result is not None:
             return llm_result
 
-        # 4) 其他走原本 single-shot
+        # 4) 其他走 single-shot
         return self._run_single_shot_mode(
             context=context,
             user_input=user_text,
@@ -142,9 +136,6 @@ class AgentLoop:
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        給 scheduler 呼叫的 one-tick task execution 入口。
-        """
         try:
             task_dict = self._normalize_task_input(task)
             if not isinstance(task_dict, dict):
@@ -193,6 +184,40 @@ class AgentLoop:
             }
 
     # ============================================================
+    # special routing guard
+    # ============================================================
+
+    def _should_force_planner_document_flow(self, user_input: str) -> bool:
+        text = str(user_input or "").strip().lower()
+        if not text:
+            return False
+
+        explicit_patterns = [
+            "read input.txt and extract action items into action_items.txt",
+            "extract action items from input.txt into action_items.txt",
+            "input.txt -> action_items.txt",
+            "read input.txt and summarize it into summary.txt",
+            "read input.txt and summarise it into summary.txt",
+            "summarize input.txt into summary.txt",
+            "summarise input.txt into summary.txt",
+            "input.txt -> summary.txt",
+        ]
+        if any(p in text for p in explicit_patterns):
+            return True
+
+        has_input = "input.txt" in text
+        has_action = "action_items.txt" in text or "action item" in text or "action items" in text
+        has_summary = "summary.txt" in text or "summary" in text or "summarize" in text or "summarise" in text
+
+        if has_input and has_action:
+            return True
+
+        if has_input and has_summary:
+            return True
+
+        return False
+
+    # ============================================================
     # router-first handling
     # ============================================================
 
@@ -202,10 +227,6 @@ class AgentLoop:
         user_input: str,
         route: Any,
     ) -> Optional[Dict[str, Any]]:
-        """
-        若 router 已經明確決定 direct + step，
-        就直接走 executor，不再先進 planner。
-        """
         if not isinstance(route, dict):
             return None
 
@@ -248,14 +269,6 @@ class AgentLoop:
         user_input: str,
         route: Any,
     ) -> Optional[Dict[str, Any]]:
-        """
-        llm route 處理順序：
-        1. route.mode 不是 llm -> None
-        2. 沒有 llm_client -> 回未啟用
-        3. 沒有 llm_planner -> fallback 回 single-shot planner
-        4. llm_planner 成功 -> 執行 llm 規劃結果
-        5. llm_planner 失敗 -> fallback 回 single-shot planner
-        """
         if not isinstance(route, dict):
             return None
 
@@ -435,7 +448,6 @@ class AgentLoop:
         if self.debug:
             print("[AgentLoop] single-shot steps =", steps)
 
-        # 沒有 steps 時，直接回 planner 結果
         if not steps:
             return {
                 "ok": True,
@@ -1443,7 +1455,6 @@ class AgentLoop:
             if returncode == 0:
                 return "命令執行完成"
 
-        # 通用回退
         for key in ("message", "content", "text", "answer", "response", "final_answer"):
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
@@ -1467,7 +1478,6 @@ class AgentLoop:
         return None
 
     def _extract_final_answer(self, execution: Any, plan: Any, fallback: str) -> str:
-        # 先信任 execution_result 自己整理好的 final_answer
         if isinstance(execution, dict):
             value = execution.get("final_answer")
             if isinstance(value, str) and value.strip():
@@ -1479,7 +1489,6 @@ class AgentLoop:
                 if isinstance(summary, str) and summary.strip():
                     return summary.strip()
 
-        # 再看 planner / llm planner
         if isinstance(plan, dict):
             for key in ("answer", "response", "message", "summary", "final_answer"):
                 value = plan.get(key)

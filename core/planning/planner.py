@@ -9,23 +9,19 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v18
+    Deterministic Planner v22
 
-    修正重點：
-    1. 保留 deterministic planner 規則優先順序
-    2. 保留跨子句 last_path 記憶
-    3. 支援「先建立檔案，然後再讀出來」這種多步語句
-    4. 第二句若是 read 但未明講檔名，會優先沿用上一句檔案路徑
-    5. 沒有明確內容時，不再產生 write_file 覆蓋檔案，改為 ensure_file
-    6. 修正空內容誤判問題，避免 write_file(path, "") 洗掉原本內容
-    7. 保留 trace logger 與 run() 相容入口
-
-    規則優先順序：
-    1. command
-    2. write / ensure_file
-    3. read
-    4. search
-    5. fallback -> llm_generate
+    本版重點：
+    1. 強化 document flow 偵測：
+       - read input.txt and extract action items into action_items.txt
+       - summarize input.txt into summary.txt
+       - input.txt -> action_items.txt
+       - input.txt -> summary.txt
+    2. 修正 read path 誤吞整句問題
+    3. fallback 一律使用 llm
+    4. document flow 輸出檔固定寫到 shared，避免 single-shot 沒 task_id 時炸掉
+    5. 升級 action-items prompt，強化 due date/time 抽取品質
+    6. 保留原本 command / write / ensure / read / search 規則
     """
 
     _banner_printed = False
@@ -50,7 +46,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v18 (ENSURE_FILE + EMPTY-CONTENT FIX) ###")
+            print("### USING PLANNER v22 (ACTION ITEMS PROMPT UPGRADE) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -151,6 +147,18 @@ class Planner:
     # ============================================================
 
     def _plan_steps(self, text: str, route: Any = None) -> Tuple[List[Dict[str, Any]], bool]:
+        stripped = str(text or "").strip()
+
+        special_document_steps = self._plan_document_flow(stripped)
+        if special_document_steps is not None:
+            self.trace_logger.log_decision(
+                title="document flow detected",
+                message=stripped,
+                source="planner",
+                raw={"steps": special_document_steps},
+            )
+            return special_document_steps, False
+
         clauses = self._split_clauses(text)
 
         self.trace_logger.log_decision(
@@ -176,6 +184,155 @@ class Planner:
 
         return steps, fallback_used
 
+    # ============================================================
+    # document flow
+    # ============================================================
+
+    def _plan_document_flow(self, text: str) -> Optional[List[Dict[str, Any]]]:
+        lowered = str(text or "").strip().lower()
+
+        explicit_action_patterns = [
+            r"read\s+input\.txt\s+and\s+extract\s+action\s+items\s+into\s+action_items\.txt",
+            r"extract\s+action\s+items\s+from\s+input\.txt\s+into\s+action_items\.txt",
+            r"input\.txt\s*->\s*action_items\.txt",
+        ]
+        for pattern in explicit_action_patterns:
+            if re.search(pattern, lowered):
+                return self._build_action_items_steps("input.txt", "action_items.txt")
+
+        explicit_summary_patterns = [
+            r"read\s+input\.txt\s+and\s+summari[sz]e\s+(?:it\s+)?into\s+summary\.txt",
+            r"summari[sz]e\s+input\.txt\s+into\s+summary\.txt",
+            r"input\.txt\s*->\s*summary\.txt",
+        ]
+        for pattern in explicit_summary_patterns:
+            if re.search(pattern, lowered):
+                return self._build_summary_steps("input.txt", "summary.txt")
+
+        has_input_txt = "input.txt" in lowered
+        has_action_items_txt = "action_items.txt" in lowered
+        has_summary_txt = "summary.txt" in lowered
+
+        action_keywords = [
+            "action item",
+            "action items",
+            "extract action items",
+            "todo",
+            "to-do",
+            "meeting notes",
+            "行動項目",
+            "待辦事項",
+            "會議紀錄",
+        ]
+        summary_keywords = [
+            "summary",
+            "summarize",
+            "summarise",
+            "摘要",
+            "總結",
+        ]
+
+        wants_action_items = any(k in lowered for k in action_keywords) or has_action_items_txt
+        wants_summary = any(k in lowered for k in summary_keywords) or has_summary_txt
+
+        if has_input_txt and wants_action_items:
+            return self._build_action_items_steps("input.txt", "action_items.txt")
+
+        if has_input_txt and wants_summary:
+            return self._build_summary_steps("input.txt", "summary.txt")
+
+        if wants_action_items:
+            return self._build_action_items_steps("input.txt", "action_items.txt")
+
+        if wants_summary and ("txt" in lowered or "document" in lowered or "文件" in lowered or "檔案" in lowered):
+            return self._build_summary_steps("input.txt", "summary.txt")
+
+        return None
+
+    def _build_action_items_steps(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
+        prompt_template = (
+            "You are an assistant that extracts action items from notes.\n\n"
+            "Read the document content below and produce a clean plain-text file.\n\n"
+            "Output rules:\n"
+            "1. Output title must be exactly: ACTION ITEMS\n"
+            "2. For each item use exactly this format:\n"
+            "   1. Owner: <name or Unassigned>\n"
+            "      Task: <clear action>\n"
+            "      Due: <deadline or Not specified>\n"
+            "3. If no explicit owner, use Unassigned.\n"
+            "4. If no explicit deadline or time commitment for the action, use Not specified.\n"
+            "5. Do not output JSON.\n"
+            "6. Do not add explanations before or after the list.\n"
+            "7. Only include real action items. Do not include pure status statements or background facts.\n\n"
+            "Due extraction rules:\n"
+            "- Preserve explicit due phrases when they belong to the action, such as:\n"
+            "  by Monday, by Friday, today, tomorrow, this afternoon, this evening, next week, next month.\n"
+            "- If a sentence says someone will do something by a certain day, keep that due phrase.\n"
+            "- If a sentence describes a past event, such as last night, yesterday, previously, do not treat that as a due date unless it clearly applies to the action.\n"
+            "- Prefer the deadline phrase exactly as written in the notes when reasonable.\n"
+            "- If the time phrase belongs to the action, keep it in Due.\n"
+            "- If there is no due phrase for the action, write Not specified.\n\n"
+            "Owner extraction rules:\n"
+            "- Use a person's name when explicitly stated.\n"
+            "- For group statements like 'we should', use Unassigned unless a real owner is named.\n\n"
+            "Task extraction rules:\n"
+            "- Rewrite each task as a short, clear action.\n"
+            "- Do not copy unnecessary background context into Task unless it is needed for clarity.\n\n"
+            "Document content:\n"
+            "{{file_content}}\n"
+        )
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "action_items",
+                "prompt_template": prompt_template,
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+        ]
+
+    def _build_summary_steps(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
+        prompt_template = (
+            "Summarize the following document into a concise plain-text summary.\n\n"
+            "Rules:\n"
+            "1. Keep it clear and short.\n"
+            "2. Do not use JSON.\n"
+            "3. Do not add extra commentary.\n\n"
+            "Document content:\n"
+            "{{file_content}}\n"
+        )
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": prompt_template,
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+        ]
+
+    # ============================================================
+    # per-clause planning
+    # ============================================================
+
     def _plan_single_clause(
         self,
         text: str,
@@ -194,7 +351,6 @@ class Planner:
         if not stripped:
             return [], False, last_path
 
-        # 1. command 優先
         cmd = self._extract_command(stripped)
         if cmd:
             self.trace_logger.log_decision(
@@ -204,7 +360,6 @@ class Planner:
             )
             return [{"type": "command", "command": cmd}], False, last_path
 
-        # 2. write / ensure_file 優先於 read
         write = self._extract_write_request(stripped)
         if write:
             current_path = str(write.get("path") or "").strip() or last_path
@@ -233,7 +388,6 @@ class Planner:
             )
             return [normalized_step], False, current_path
 
-        # 3. read
         if self._looks_like_read(stripped):
             read_path = self._resolve_read_path(stripped, last_path=last_path)
             if read_path:
@@ -248,7 +402,6 @@ class Planner:
                 )
                 return [{"type": "read_file", "path": read_path}], False, read_path
 
-        # 4. search
         if self._looks_like_search(stripped):
             self.trace_logger.log_decision(
                 title="search detected",
@@ -257,7 +410,6 @@ class Planner:
             )
             return [{"type": "web_search", "query": stripped}], False, last_path
 
-        # 5. fallback
         self.trace_logger.log_decision(
             title="fallback detected",
             message=stripped,
@@ -267,7 +419,7 @@ class Planner:
                 "last_path": last_path,
             },
         )
-        return [{"type": "llm_generate", "prompt": stripped}], True, last_path
+        return [{"type": "llm", "prompt": stripped}], True, last_path
 
     # ============================================================
     # result builder
@@ -283,7 +435,7 @@ class Planner:
     ) -> Dict[str, Any]:
         return {
             "ok": error is None,
-            "planner_mode": "deterministic_v18",
+            "planner_mode": "deterministic_v22",
             "intent": intent,
             "final_answer": final_answer,
             "steps": steps,
@@ -325,16 +477,24 @@ class Planner:
     # ============================================================
 
     def _extract_file_path(self, text: str) -> Optional[str]:
+        if not text:
+            return None
+
         patterns = [
-            r"([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))",
+            r"\b([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b",
         ]
 
+        candidates: List[str] = []
         for pattern in patterns:
-            m = re.search(pattern, text)
-            if m:
-                return m.group(1).strip()
+            for m in re.finditer(pattern, text):
+                value = str(m.group(1)).strip()
+                if value:
+                    candidates.append(value)
 
-        return None
+        if not candidates:
+            return None
+
+        return candidates[0]
 
     def _looks_like_read(self, text: str) -> bool:
         lowered = text.lower()
@@ -422,7 +582,6 @@ class Planner:
             r"寫成\s*(.+)$",
         ]
 
-        # 明確匹配內容
         for pattern in patterns:
             m = re.search(pattern, stripped, flags=re.IGNORECASE)
             if m:
@@ -430,7 +589,6 @@ class Planner:
                 if raw:
                     return self._normalize_special_content(self._strip_quotes(raw)), True
 
-        # fallback：檔名後面若真的還有內容才算 explicit
         file_path = self._extract_file_path(stripped)
         if file_path:
             idx = stripped.find(file_path)

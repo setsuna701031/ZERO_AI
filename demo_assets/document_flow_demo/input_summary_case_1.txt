@@ -1,0 +1,6 @@
+Operations notes
+
+The backup script failed last night.
+Grace will investigate the log issue today.
+Henry should prepare a recovery checklist.
+A short incident summary needs to be written for the team.

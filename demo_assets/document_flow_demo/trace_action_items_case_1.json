@@ -1,0 +1,37 @@
+{
+  "flow": "document_summary_demo",
+  "status": "finished",
+  "timestamp": "2026-04-13T11:17:25",
+  "workspace_root": "E:\\zero_ai\\workspace",
+  "shared_dir": "E:\\zero_ai\\workspace\\shared",
+  "input_path": "E:\\zero_ai\\workspace\\shared\\input.txt",
+  "output_path": "E:\\zero_ai\\workspace\\shared\\summary.txt",
+  "trace_path": "E:\\zero_ai\\workspace\\shared\\document_flow_trace.json",
+  "input_chars": 200,
+  "summary_chars": 646,
+  "runtime_info": {
+    "plugin_name": "local_ollama",
+    "provider": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "model": "llama3.1:latest",
+    "coder_model": "llama3.1:latest",
+    "timeout": 120
+  },
+  "error": "",
+  "steps": [
+    {
+      "step": 1,
+      "name": "read_input",
+      "path": "E:\\zero_ai\\workspace\\shared\\input.txt"
+    },
+    {
+      "step": 2,
+      "name": "summarize_document"
+    },
+    {
+      "step": 3,
+      "name": "write_summary",
+      "path": "E:\\zero_ai\\workspace\\shared\\summary.txt"
+    }
+  ]
+}

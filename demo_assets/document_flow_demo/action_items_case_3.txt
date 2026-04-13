@@ -1,0 +1,13 @@
+ACTION ITEMS
+
+1. Owner: Unassigned
+   Task: Write a short incident summary for the team
+   Due: Not specified
+
+2. Owner: Grace
+   Task: Investigate the log issue related to the backup script failure
+   Due: Not specified
+
+3. Owner: Henry
+   Task: Prepare a recovery checklist
+   Due: Not specified

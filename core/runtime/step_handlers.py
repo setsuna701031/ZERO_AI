@@ -42,15 +42,12 @@ class ToolStepHandler(BaseStepHandler):
 
         if previous_result is not None:
             tool_input["previous_result"] = previous_result
-
         if task is not None:
             tool_input["task"] = copy.deepcopy(task)
-
         if context is not None:
             tool_input["context"] = copy.deepcopy(context)
 
         tool = self.executor.tool_registry.get_tool(tool_name)
-
         if not tool:
             return {
                 "ok": False,
@@ -70,7 +67,6 @@ class ToolStepHandler(BaseStepHandler):
             }
 
         inner_ok = self.executor._extract_inner_ok(result)
-
         return {
             "ok": inner_ok,
             "error": None if inner_ok else "tool returned failure",
@@ -122,7 +118,6 @@ class CommandStepHandler(BaseStepHandler):
             }
 
         ok = completed.returncode == 0
-
         return {
             "ok": ok,
             "error": None if ok else f"command failed (code {completed.returncode})",
@@ -150,7 +145,6 @@ class CommandStepHandler(BaseStepHandler):
         if first_lower.endswith(".py"):
             script_path = self._resolve_python_script_path(first, cwd)
             python_cmd = sys.executable
-
             rest = parts[1:]
             quoted_script = f'"{script_path}"'
             if rest:
@@ -185,7 +179,8 @@ class WriteFileStepHandler(BaseStepHandler):
         previous_result: Any,
     ) -> Dict[str, Any]:
         path = step.get("path")
-        content = step.get("content", "")
+        content = step.get("content", None)
+        scope = str(step.get("scope", "sandbox")).strip().lower() or "sandbox"
 
         if not path:
             return {
@@ -195,16 +190,28 @@ class WriteFileStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
+        if content is None or bool(step.get("use_previous_text", False)):
+            extracted = self._extract_text_from_previous(previous_result)
+            if extracted is not None:
+                content = extracted
+
+        if content is None:
+            content = ""
+
         try:
-            full_path = self.executor.resolve_file_path(
+            full_path = self.executor.resolve_write_path(
                 relative_path=str(path),
                 task=task,
+                default_scope=scope,
             )
         except Exception as e:
             return {
                 "ok": False,
                 "error": f"path resolve failed: {e}",
-                "result": {},
+                "result": {
+                    "path": str(path),
+                    "scope": scope,
+                },
                 "step": copy.deepcopy(step),
             }
 
@@ -212,7 +219,6 @@ class WriteFileStepHandler(BaseStepHandler):
             parent = os.path.dirname(full_path)
             if parent:
                 os.makedirs(parent, exist_ok=True)
-
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(str(content))
         except Exception as e:
@@ -221,6 +227,7 @@ class WriteFileStepHandler(BaseStepHandler):
                 "error": f"write file failed: {e}",
                 "result": {
                     "path": full_path,
+                    "scope": scope,
                 },
                 "step": copy.deepcopy(step),
             }
@@ -229,12 +236,40 @@ class WriteFileStepHandler(BaseStepHandler):
             "ok": True,
             "error": None,
             "result": {
-                "path": full_path,
-                "content": content,
+                "type": "write_file",
+                "path": str(path),
+                "full_path": full_path,
+                "scope": scope,
+                "bytes": len(str(content).encode("utf-8")),
+                "content": str(content),
             },
             "content": str(content),
             "step": copy.deepcopy(step),
         }
+
+    def _extract_text_from_previous(self, previous_result: Any) -> Optional[str]:
+        if previous_result is None:
+            return None
+
+        if isinstance(previous_result, str):
+            return previous_result
+
+        if not isinstance(previous_result, dict):
+            return None
+
+        for key in ("text", "content", "message", "final_answer"):
+            value = previous_result.get(key)
+            if isinstance(value, str):
+                return value
+
+        result_block = previous_result.get("result")
+        if isinstance(result_block, dict):
+            for key in ("text", "content", "message"):
+                value = result_block.get(key)
+                if isinstance(value, str):
+                    return value
+
+        return None
 
 
 class EnsureFileStepHandler(BaseStepHandler):
@@ -246,6 +281,7 @@ class EnsureFileStepHandler(BaseStepHandler):
         previous_result: Any,
     ) -> Dict[str, Any]:
         path = step.get("path")
+        scope = str(step.get("scope", "sandbox")).strip().lower() or "sandbox"
 
         if not path:
             return {
@@ -256,15 +292,19 @@ class EnsureFileStepHandler(BaseStepHandler):
             }
 
         try:
-            full_path = self.executor.resolve_file_path(
+            full_path = self.executor.resolve_write_path(
                 relative_path=str(path),
                 task=task,
+                default_scope=scope,
             )
         except Exception as e:
             return {
                 "ok": False,
                 "error": f"path resolve failed: {e}",
-                "result": {},
+                "result": {
+                    "path": str(path),
+                    "scope": scope,
+                },
                 "step": copy.deepcopy(step),
             }
 
@@ -284,6 +324,7 @@ class EnsureFileStepHandler(BaseStepHandler):
                 "error": f"ensure file failed: {e}",
                 "result": {
                     "path": full_path,
+                    "scope": scope,
                 },
                 "step": copy.deepcopy(step),
             }
@@ -292,7 +333,10 @@ class EnsureFileStepHandler(BaseStepHandler):
             "ok": True,
             "error": None,
             "result": {
-                "path": full_path,
+                "type": "ensure_file",
+                "path": str(path),
+                "full_path": full_path,
+                "scope": scope,
                 "created": created,
                 "preserved_existing": not created,
             },
@@ -321,9 +365,16 @@ class ReadFileStepHandler(BaseStepHandler):
             }
 
         try:
-            full_path = self.executor.resolve_file_path(
+            candidates = self.executor.resolve_read_candidates(
                 relative_path=str(path),
                 task=task,
+                prefer_scopes=("sandbox", "shared"),
+            )
+            full_path = self.executor.resolve_read_path(
+                relative_path=str(path),
+                task=task,
+                prefer_scopes=("sandbox", "shared"),
+                return_fallback_candidate_if_missing=True,
             )
         except Exception as e:
             return {
@@ -336,9 +387,10 @@ class ReadFileStepHandler(BaseStepHandler):
         if not os.path.exists(full_path):
             return {
                 "ok": False,
-                "error": "file not found",
+                "error": f"file not found: {full_path}",
                 "result": {
                     "path": full_path,
+                    "candidates": candidates,
                 },
                 "step": copy.deepcopy(step),
             }
@@ -352,6 +404,7 @@ class ReadFileStepHandler(BaseStepHandler):
                 "error": f"read file failed: {e}",
                 "result": {
                     "path": full_path,
+                    "candidates": candidates,
                 },
                 "step": copy.deepcopy(step),
             }
@@ -360,8 +413,11 @@ class ReadFileStepHandler(BaseStepHandler):
             "ok": True,
             "error": None,
             "result": {
-                "path": full_path,
+                "type": "read_file",
+                "path": str(path),
+                "full_path": full_path,
                 "content": content,
+                "candidates": candidates,
             },
             "content": content,
             "path": full_path,
@@ -404,8 +460,9 @@ class LLMStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        prompt = step.get("prompt") or step.get("input") or ""
+        prompt = self._build_prompt(step=step, previous_result=previous_result)
         prompt = str(prompt).strip()
+
         if not prompt:
             return {
                 "ok": False,
@@ -434,8 +491,7 @@ class LLMStepHandler(BaseStepHandler):
                 "step": copy.deepcopy(step),
             }
 
-        text = str(llm_result)
-
+        text = self._normalize_llm_result(llm_result)
         return {
             "ok": True,
             "error": None,
@@ -447,3 +503,48 @@ class LLMStepHandler(BaseStepHandler):
             "text": text,
             "step": copy.deepcopy(step),
         }
+
+    def _build_prompt(self, step: Dict[str, Any], previous_result: Any) -> str:
+        prompt_template = step.get("prompt_template")
+        if isinstance(prompt_template, str) and prompt_template.strip():
+            file_content = self._extract_previous_content(previous_result)
+            return prompt_template.replace("{{file_content}}", file_content)
+
+        prompt = step.get("prompt") or step.get("input") or ""
+        return str(prompt)
+
+    def _extract_previous_content(self, previous_result: Any) -> str:
+        if previous_result is None:
+            return ""
+
+        if isinstance(previous_result, str):
+            return previous_result
+
+        if not isinstance(previous_result, dict):
+            return ""
+
+        for key in ("content", "text", "message", "final_answer"):
+            value = previous_result.get(key)
+            if isinstance(value, str):
+                return value
+
+        result_block = previous_result.get("result")
+        if isinstance(result_block, dict):
+            for key in ("content", "text", "message"):
+                value = result_block.get(key)
+                if isinstance(value, str):
+                    return value
+
+        return ""
+
+    def _normalize_llm_result(self, llm_result: Any) -> str:
+        if isinstance(llm_result, str):
+            return llm_result
+
+        if isinstance(llm_result, dict):
+            for key in ("text", "content", "message", "answer", "response"):
+                value = llm_result.get(key)
+                if isinstance(value, str):
+                    return value
+
+        return str(llm_result)
