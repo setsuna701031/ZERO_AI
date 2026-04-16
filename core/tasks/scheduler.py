@@ -178,10 +178,11 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def tick(self, current_tick: Optional[int] = None) -> Dict[str, Any]:
-        if current_tick is not None:
-            self.current_tick = int(current_tick)
-        else:
-            self.current_tick = int(getattr(self, "current_tick", 0)) + 1
+        self.current_tick = (
+            int(current_tick)
+            if current_tick is not None
+            else int(getattr(self, "current_tick", 0)) + 1
+        )
 
         self._unblock_tasks_if_dependencies_done()
 
@@ -199,135 +200,188 @@ class Scheduler(RuntimeTaskScheduler):
                 break
 
             total_dispatched += len(dispatch_results)
-            round_executed: List[Dict[str, Any]] = []
-
-            for dispatch_result in dispatch_results:
-                if not dispatch_result.dispatched or dispatch_result.task is None:
-                    continue
-
-                scheduled_task = dispatch_result.task
-                task_id = str(scheduled_task.task_id or "").strip()
-                if not task_id:
-                    continue
-
-                repo_task = self._get_task_from_repo(task_id)
-                if not isinstance(repo_task, dict):
-                    self.dispatcher.fail_task(
-                        task_id=task_id,
-                        error="task missing from repository",
-                        requeue_on_retry=False,
-                    )
-                    self._mark_repo_task_failed(task_id=task_id, error="task missing from repository")
-                    round_executed.append(
-                        {
-                            "ok": False,
-                            "task_id": task_id,
-                            "status": STATUS_FAILED,
-                            "error": "task missing from repository",
-                        }
-                    )
-                    continue
-
-                repo_task = self._hydrate_task_from_workspace(repo_task)
-
-                current_status = str(repo_task.get("status") or "").strip().lower()
-                if current_status in TERMINAL_STATUSES:
-                    self.worker_pool.release_by_task(task_id)
-                    round_executed.append(
-                        {
-                            "ok": True,
-                            "task_id": task_id,
-                            "status": current_status,
-                            "message": "task already terminal, skipped",
-                        }
-                    )
-                    continue
-
-                try:
-                    runner_result = self.run_one_step(task=repo_task, current_tick=self.current_tick)
-                except Exception as e:
-                    fail_result = self.dispatcher.fail_task(
-                        task_id=task_id,
-                        error=f"run_one_step exception: {e}",
-                        requeue_on_retry=False,
-                    )
-                    self._mark_repo_task_failed(task_id=task_id, error=f"run_one_step exception: {e}")
-                    round_executed.append(
-                        {
-                            "ok": False,
-                            "task_id": task_id,
-                            "status": fail_result.get("final_status", STATUS_FAILED),
-                            "error": str(e),
-                        }
-                    )
-                    continue
-
-                refreshed_repo_task = self._get_task_from_repo(task_id)
-                effective_status, effective_final_answer = self._extract_effective_status_and_answer(
-                    original_task=repo_task,
-                    refreshed_task=refreshed_repo_task,
-                    runner_result=runner_result,
-                )
-
-                if effective_status in {"done", "finished", STATUS_FINISHED, "success", "completed"}:
-                    self.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
-                    self._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
-
-                elif effective_status in {"failed", STATUS_FAILED, "error"}:
-                    fail_error = str(
-                        (runner_result or {}).get("error")
-                        or effective_final_answer
-                        or "task failed"
-                    )
-                    self.dispatcher.fail_task(
-                        task_id=task_id,
-                        error=fail_error,
-                        requeue_on_retry=False,
-                    )
-                    self._mark_repo_task_failed(task_id=task_id, error=fail_error)
-
-                elif effective_status in {STATUS_BLOCKED}:
-                    self.worker_pool.release_by_task(task_id)
-                    blocked_reason = str((runner_result or {}).get("blocked_reason") or "")
-                    self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
-
-                elif effective_status in {"queued", STATUS_QUEUED, "retry", "ready", "running"}:
-                    self.worker_pool.release_by_task(task_id)
-                    if self._can_requeue_task(task_id):
-                        self.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
-                        self._mark_repo_task_queued(
-                            task_id=task_id,
-                            error=str((runner_result or {}).get("error") or ""),
-                        )
-
-                else:
-                    self.worker_pool.release_by_task(task_id)
-
-                round_executed.append(
-                    {
-                        "ok": bool((runner_result or {}).get("ok", True)),
-                        "task_id": task_id,
-                        "worker_id": dispatch_result.worker_id,
-                        "status": effective_status,
-                        "final_answer": effective_final_answer,
-                        "result": runner_result,
-                    }
-                )
-
+            round_executed = self._execute_dispatch_round(
+                dispatch_results=dispatch_results,
+                current_tick=self.current_tick,
+            )
             if not round_executed:
                 break
 
             all_executed_results.extend(round_executed)
 
-            snapshot = self.dispatcher.snapshot()
-            queue_stats = snapshot.get("queue", {})
-            worker_stats = snapshot.get("workers", {})
-            if (
-                int(queue_stats.get("queued_count", 0) or 0) <= 0
-                and int(worker_stats.get("running_count", 0) or 0) <= 0
-            ):
+            if self._scheduler_dispatch_idle():
                 break
 
+        return self._build_tick_result(
+            rounds_used=rounds_used,
+            total_dispatched=total_dispatched,
+            last_synced=last_synced,
+            all_executed_results=all_executed_results,
+        )
+
+    def _execute_dispatch_round(
+        self,
+        dispatch_results: List[Any],
+        current_tick: int,
+    ) -> List[Dict[str, Any]]:
+        round_executed: List[Dict[str, Any]] = []
+
+        for dispatch_result in dispatch_results:
+            handled = self._handle_dispatch_result(
+                dispatch_result=dispatch_result,
+                current_tick=current_tick,
+            )
+            if handled is not None:
+                round_executed.append(handled)
+
+        return round_executed
+
+    def _handle_dispatch_result(
+        self,
+        dispatch_result: Any,
+        current_tick: int,
+    ) -> Optional[Dict[str, Any]]:
+        if not getattr(dispatch_result, "dispatched", False) or getattr(dispatch_result, "task", None) is None:
+            return None
+
+        scheduled_task = dispatch_result.task
+        task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
+        if not task_id:
+            return None
+
+        repo_task = self._get_task_from_repo(task_id)
+        if not isinstance(repo_task, dict):
+            return self._handle_missing_repo_task(task_id=task_id)
+
+        repo_task = self._hydrate_task_from_workspace(repo_task)
+        current_status = str(repo_task.get("status") or "").strip().lower()
+        if current_status in TERMINAL_STATUSES:
+            self.worker_pool.release_by_task(task_id)
+            return {
+                "ok": True,
+                "task_id": task_id,
+                "status": current_status,
+                "message": "task already terminal, skipped",
+            }
+
+        try:
+            runner_result = self.run_one_step(task=repo_task, current_tick=current_tick)
+        except Exception as e:
+            return self._handle_run_one_step_exception(task_id=task_id, error=e)
+
+        return self._finalize_dispatched_task(
+            dispatch_result=dispatch_result,
+            repo_task=repo_task,
+            runner_result=runner_result,
+        )
+
+    def _handle_missing_repo_task(self, task_id: str) -> Dict[str, Any]:
+        self.dispatcher.fail_task(
+            task_id=task_id,
+            error="task missing from repository",
+            requeue_on_retry=False,
+        )
+        self._mark_repo_task_failed(task_id=task_id, error="task missing from repository")
+        return {
+            "ok": False,
+            "task_id": task_id,
+            "status": STATUS_FAILED,
+            "error": "task missing from repository",
+        }
+
+    def _handle_run_one_step_exception(
+        self,
+        task_id: str,
+        error: Exception,
+    ) -> Dict[str, Any]:
+        fail_result = self.dispatcher.fail_task(
+            task_id=task_id,
+            error=f"run_one_step exception: {error}",
+            requeue_on_retry=False,
+        )
+        self._mark_repo_task_failed(task_id=task_id, error=f"run_one_step exception: {error}")
+        return {
+            "ok": False,
+            "task_id": task_id,
+            "status": fail_result.get("final_status", STATUS_FAILED),
+            "error": str(error),
+        }
+
+    def _finalize_dispatched_task(
+        self,
+        dispatch_result: Any,
+        repo_task: Dict[str, Any],
+        runner_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        scheduled_task = dispatch_result.task
+        task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
+
+        refreshed_repo_task = self._get_task_from_repo(task_id)
+        effective_status, effective_final_answer = self._extract_effective_status_and_answer(
+            original_task=repo_task,
+            refreshed_task=refreshed_repo_task,
+            runner_result=runner_result,
+        )
+
+        if effective_status in {"done", "finished", STATUS_FINISHED, "success", "completed"}:
+            self.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
+            self._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
+
+        elif effective_status in {"failed", STATUS_FAILED, "error"}:
+            fail_error = str(
+                (runner_result or {}).get("error")
+                or effective_final_answer
+                or "task failed"
+            )
+            self.dispatcher.fail_task(
+                task_id=task_id,
+                error=fail_error,
+                requeue_on_retry=False,
+            )
+            self._mark_repo_task_failed(task_id=task_id, error=fail_error)
+
+        elif effective_status in {STATUS_BLOCKED}:
+            self.worker_pool.release_by_task(task_id)
+            blocked_reason = str((runner_result or {}).get("blocked_reason") or "")
+            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+
+        elif effective_status in {"queued", STATUS_QUEUED, "retry", "ready", "running"}:
+            self.worker_pool.release_by_task(task_id)
+            if self._can_requeue_task(task_id):
+                self.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
+                self._mark_repo_task_queued(
+                    task_id=task_id,
+                    error=str((runner_result or {}).get("error") or ""),
+                )
+
+        else:
+            self.worker_pool.release_by_task(task_id)
+
+        return {
+            "ok": bool((runner_result or {}).get("ok", True)),
+            "task_id": task_id,
+            "worker_id": getattr(dispatch_result, "worker_id", None),
+            "status": effective_status,
+            "final_answer": effective_final_answer,
+            "result": runner_result,
+        }
+
+    def _scheduler_dispatch_idle(self) -> bool:
+        snapshot = self.dispatcher.snapshot()
+        queue_stats = snapshot.get("queue", {})
+        worker_stats = snapshot.get("workers", {})
+        return (
+            int(queue_stats.get("queued_count", 0) or 0) <= 0
+            and int(worker_stats.get("running_count", 0) or 0) <= 0
+        )
+
+    def _build_tick_result(
+        self,
+        rounds_used: int,
+        total_dispatched: int,
+        last_synced: List[str],
+        all_executed_results: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         snapshot = self.dispatcher.snapshot()
         queue_stats = snapshot.get("queue", {})
         worker_stats = snapshot.get("workers", {})
@@ -441,109 +495,138 @@ class Scheduler(RuntimeTaskScheduler):
 
         current_status = str(task.get("status") or "").strip().lower()
         if current_status in TERMINAL_STATUSES:
-            result = {
-                "ok": True,
-                "action": "terminal_skip",
-                "task_id": self._extract_task_id(task),
-                "status": current_status,
-                "final_answer": task.get("final_answer", ""),
-            }
+            result = self._build_terminal_skip_runner_result(task=task)
             self._sync_runtime_back_to_repo(task=task, runner_result=result)
             return result
+
+        loop_result = self._run_task_via_agent_loop_with_fallback_check(
+            task=task,
+            current_tick=current_tick,
+        )
+        if loop_result is not None:
+            return loop_result
+
+        result = self._run_simple_task_tick(task=task, current_tick=current_tick)
+        self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+        return result
+
+    def _build_terminal_skip_runner_result(
+        self,
+        task: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "action": "terminal_skip",
+            "task_id": self._extract_task_id(task),
+            "status": str(task.get("status") or "").strip().lower(),
+            "final_answer": task.get("final_answer", ""),
+        }
+
+    def _run_task_via_agent_loop_with_fallback_check(
+        self,
+        task: Dict[str, Any],
+        current_tick: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        agent_loop = self._resolve_explicit_agent_loop()
+        run_task_loop_fn = getattr(agent_loop, "run_task_loop", None) if agent_loop is not None else None
+        if not callable(run_task_loop_fn):
+            return None
 
         runner_result: Optional[Dict[str, Any]] = None
         loop_error_text = ""
 
+        try:
+            runner_result = run_task_loop_fn(
+                task=copy.deepcopy(task),
+                current_tick=current_tick if current_tick is not None else getattr(self, "current_tick", 0),
+                user_input=str(task.get("goal") or ""),
+                original_plan=copy.deepcopy(task.get("planner_result") or {}),
+            )
+        except Exception as e:
+            loop_error_text = str(e).strip()
+            runner_result = None
+
+        if isinstance(runner_result, dict):
+            loop_error_text = str(runner_result.get("error") or "").strip()
+
+        if self._should_fallback_to_simple_runner(runner_result=runner_result, loop_error_text=loop_error_text):
+            if self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text):
+                return None
+
+            result = runner_result if isinstance(runner_result, dict) else {
+                "ok": False,
+                "action": "loop_failed",
+                "status": "failed",
+                "error": loop_error_text or "agent loop failed",
+            }
+            self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+            return result
+
+        self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
+        return runner_result
+
+    def _resolve_explicit_agent_loop(self) -> Any:
         agent_loop = getattr(self, "agent_loop", None)
         if agent_loop is None:
             agent_loop = getattr(self, "_agent_loop", None)
+        return agent_loop
 
-        run_task_loop_fn = getattr(agent_loop, "run_task_loop", None) if agent_loop is not None else None
-        if callable(run_task_loop_fn):
-            try:
-                runner_result = run_task_loop_fn(
-                    task=copy.deepcopy(task),
-                    current_tick=current_tick if current_tick is not None else getattr(self, "current_tick", 0),
-                    user_input=str(task.get("goal") or ""),
-                    original_plan=copy.deepcopy(task.get("planner_result") or {}),
-                )
-            except Exception as e:
-                loop_error_text = str(e).strip()
-                runner_result = None
+    def _should_fallback_to_simple_runner(
+        self,
+        runner_result: Optional[Dict[str, Any]],
+        loop_error_text: str,
+    ) -> bool:
+        if not isinstance(runner_result, dict):
+            return True
 
-            if isinstance(runner_result, dict):
-                loop_error_text = str(runner_result.get("error") or "").strip()
+        if loop_error_text:
+            return True
 
-            should_fallback = False
+        action_text = str(runner_result.get("action") or "").strip().lower()
+        status_text = str(runner_result.get("status") or "").strip().lower()
 
-            if not isinstance(runner_result, dict):
-                should_fallback = True
-            else:
-                action_text = str(runner_result.get("action") or "").strip().lower()
-                status_text = str(runner_result.get("status") or "").strip().lower()
+        if action_text in {"failed", "exception_failed"} and loop_error_text:
+            return True
 
-                if loop_error_text:
-                    should_fallback = True
+        if status_text in {"failed", "error"} and loop_error_text:
+            return True
 
-                if action_text in {"failed", "exception_failed"} and loop_error_text:
-                    should_fallback = True
+        return False
 
-                if status_text in {"failed", "error"} and loop_error_text:
-                    should_fallback = True
+    def _is_simple_runner_eligible_fallback(
+        self,
+        loop_error_text: str,
+    ) -> bool:
+        lower_error = str(loop_error_text or "").lower()
+        sandbox_path_error = (
+            "task_id required for sandbox-relative path" in lower_error
+            or "path resolve failed" in lower_error
+        )
+        if sandbox_path_error:
+            return True
 
-            if should_fallback:
-                lower_error = loop_error_text.lower()
-                sandbox_path_error = (
-                    "task_id required for sandbox-relative path" in lower_error
-                    or "path resolve failed" in lower_error
-                )
+        fallback_like_errors = [
+            "unsupported step type",
+            "step_executor",
+            "path resolve failed",
+            "sandbox-relative path",
+        ]
+        return any(token in lower_error for token in fallback_like_errors)
 
-                if not sandbox_path_error:
-                    fallback_like_errors = [
-                        "unsupported step type",
-                        "step_executor",
-                        "path resolve failed",
-                        "sandbox-relative path",
-                    ]
-                    sandbox_path_error = any(token in lower_error for token in fallback_like_errors)
-
-                if not sandbox_path_error:
-                    result = runner_result if isinstance(runner_result, dict) else {
-                        "ok": False,
-                        "action": "loop_failed",
-                        "status": "failed",
-                        "error": loop_error_text or "agent loop failed",
-                    }
-                    self._sync_runtime_back_to_repo(task=task, runner_result=result)
-                    refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
-                    if isinstance(refreshed_task, dict):
-                        refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
-                        if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
-                            self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
-                    return result
-
-            else:
-                self._sync_runtime_back_to_repo(task=task, runner_result=runner_result)
-
-                refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
-                if isinstance(refreshed_task, dict):
-                    refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
-                    if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
-                        self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
-
-                return runner_result
-
-        result = self._run_simple_task_tick(task=task, current_tick=current_tick)
-
-        self._sync_runtime_back_to_repo(task=task, runner_result=result)
+    def _sync_runner_result_and_requeue_if_ready(
+        self,
+        task: Dict[str, Any],
+        runner_result: Dict[str, Any],
+    ) -> None:
+        self._sync_runtime_back_to_repo(task=task, runner_result=runner_result)
 
         refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
-        if isinstance(refreshed_task, dict):
-            refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
-            if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
-                self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+        if not isinstance(refreshed_task, dict):
+            return
 
-        return result
+        refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
+        if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
+            self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
 
     # ------------------------------------------------------------
     # simple fallback executor
@@ -565,56 +648,90 @@ class Scheduler(RuntimeTaskScheduler):
         trace = self._load_trace_for_task(task)
 
         if task_status in TERMINAL_STATUSES:
-            self._trace_status(
-                trace=trace,
+            return self._handle_simple_terminal_task(
                 task=task,
-                status=task_status,
-                tick=self.current_tick,
-                final_answer=str(task.get("final_answer") or ""),
-                extra={"action": "terminal_skip"},
+                trace=trace,
+                task_id=task_id,
+                task_name=task_name,
+                task_status=task_status,
             )
-            self._save_trace_for_task(task=task, trace=trace)
-            return {
-                "ok": True,
-                "action": "terminal_skip",
-                "tick": self.current_tick,
-                "task_id": task_id,
-                "task_name": task_name,
-                "status": task_status,
-                "message": "task already terminal",
-                "final_answer": task.get("final_answer", ""),
-            }
 
         deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
         if not deps_ready:
-            task["status"] = STATUS_BLOCKED
-            task["blocked_reason"] = blocked_reason
-            task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
-
-            self._trace_status(
-                trace=trace,
+            return self._handle_simple_blocked_task(
                 task=task,
-                status=STATUS_BLOCKED,
-                tick=self.current_tick,
-                final_answer="",
-                extra={
-                    "action": "blocked_by_dependencies",
-                    "blocked_reason": blocked_reason,
-                },
+                trace=trace,
+                task_id=task_id,
+                task_name=task_name,
+                blocked_reason=blocked_reason,
             )
-            self._save_trace_for_task(task=task, trace=trace)
 
-            return {
-                "ok": False,
-                "action": "blocked_by_dependencies",
-                "tick": self.current_tick,
-                "task_id": task_id,
-                "task_name": task_name,
-                "status": STATUS_BLOCKED,
-                "blocked_reason": blocked_reason,
-                "error": blocked_reason,
-            }
+        steps, current_step_index, execution_log, results, step_results, last_step_result = (
+            self._load_simple_task_state(task)
+        )
 
+        if current_step_index >= len(steps):
+            return self._handle_simple_finished_task(
+                task=task,
+                trace=trace,
+                task_id=task_id,
+                task_name=task_name,
+                current_step_index=current_step_index,
+                steps=steps,
+                execution_log=execution_log,
+                results=results,
+                step_results=step_results,
+                last_step_result=last_step_result,
+            )
+
+        step = steps[current_step_index]
+        if not isinstance(step, dict):
+            return self._handle_simple_invalid_step(
+                task=task,
+                trace=trace,
+                task_id=task_id,
+                task_name=task_name,
+                results=results,
+                step_results=step_results,
+                last_step_result=last_step_result,
+            )
+
+        try:
+            step_result = self._execute_simple_step(task=task, step=step)
+        except Exception as e:
+            return self._handle_simple_step_exception(
+                task=task,
+                trace=trace,
+                task_id=task_id,
+                task_name=task_name,
+                current_step_index=current_step_index,
+                step=step,
+                error=e,
+                execution_log=execution_log,
+                results=results,
+                step_results=step_results,
+                last_step_result=last_step_result,
+            )
+
+        return self._handle_simple_step_success(
+            task=task,
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            current_step_index=current_step_index,
+            step=step,
+            step_result=step_result,
+            steps=steps,
+            execution_log=execution_log,
+            results=results,
+            step_results=step_results,
+            last_step_result=last_step_result,
+        )
+
+    def _load_simple_task_state(
+        self,
+        task: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], int, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], Any]:
         steps = task.get("steps", [])
         if not isinstance(steps, list):
             steps = []
@@ -634,234 +751,284 @@ class Scheduler(RuntimeTaskScheduler):
             step_results = copy.deepcopy(results)
 
         last_step_result = copy.deepcopy(task.get("last_step_result"))
+        return steps, current_step_index, execution_log, results, step_results, last_step_result
 
-        if current_step_index >= len(steps):
-            task["status"] = "finished"
-            task["final_answer"] = str(task.get("final_answer") or self._build_simple_final_answer(results))
-            task["finished_tick"] = self.current_tick
-            task["last_run_tick"] = self.current_tick
-            task["results"] = results
-            task["step_results"] = step_results
-            task["last_step_result"] = last_step_result
-            task["history"] = self._append_history(task.get("history"), "finished")
+    def _handle_simple_terminal_task(
+        self,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        task_id: str,
+        task_name: str,
+        task_status: str,
+    ) -> Dict[str, Any]:
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status=task_status,
+            tick=self.current_tick,
+            final_answer=str(task.get("final_answer") or ""),
+            extra={"action": "terminal_skip"},
+        )
+        self._save_trace_for_task(task=task, trace=trace)
+        return {
+            "ok": True,
+            "action": "terminal_skip",
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": task_status,
+            "message": "task already terminal",
+            "final_answer": task.get("final_answer", ""),
+        }
 
+    def _handle_simple_blocked_task(
+        self,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        task_id: str,
+        task_name: str,
+        blocked_reason: str,
+    ) -> Dict[str, Any]:
+        task["status"] = STATUS_BLOCKED
+        task["blocked_reason"] = blocked_reason
+        task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
+
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status=STATUS_BLOCKED,
+            tick=self.current_tick,
+            final_answer="",
+            extra={
+                "action": "blocked_by_dependencies",
+                "blocked_reason": blocked_reason,
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
+
+        return {
+            "ok": False,
+            "action": "blocked_by_dependencies",
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": STATUS_BLOCKED,
+            "blocked_reason": blocked_reason,
+            "error": blocked_reason,
+        }
+
+    def _handle_simple_finished_task(
+        self,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        task_id: str,
+        task_name: str,
+        current_step_index: int,
+        steps: List[Dict[str, Any]],
+        execution_log: List[Dict[str, Any]],
+        results: List[Dict[str, Any]],
+        step_results: List[Dict[str, Any]],
+        last_step_result: Any,
+    ) -> Dict[str, Any]:
+        task["status"] = "finished"
+        task["final_answer"] = str(task.get("final_answer") or self._build_simple_final_answer(results))
+        task["finished_tick"] = self.current_tick
+        task["last_run_tick"] = self.current_tick
+        task["results"] = results
+        task["step_results"] = step_results
+        task["last_step_result"] = last_step_result
+        task["history"] = self._append_history(task.get("history"), "finished")
+
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status="finished",
+            tick=self.current_tick,
+            final_answer=task["final_answer"],
+            extra={
+                "action": "simple_task_finished",
+                "current_step_index": current_step_index,
+                "steps_total": len(steps),
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
+
+        return {
+            "ok": True,
+            "action": "simple_task_finished",
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": "finished",
+            "message": "task finished",
+            "final_answer": task["final_answer"],
+            "execution_log": execution_log,
+            "results": results,
+            "step_results": step_results,
+            "last_step_result": last_step_result,
+            "current_step_index": current_step_index,
+            "step_count": len(steps),
+            "steps_total": len(steps),
+            "last_run_tick": self.current_tick,
+            "finished_tick": self.current_tick,
+        }
+
+    def _handle_simple_invalid_step(
+        self,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        task_id: str,
+        task_name: str,
+        results: List[Dict[str, Any]],
+        step_results: List[Dict[str, Any]],
+        last_step_result: Any,
+    ) -> Dict[str, Any]:
+        task["status"] = "failed"
+        task["last_error"] = "invalid step type"
+        task["failure_message"] = "invalid step type"
+        task["last_failure_tick"] = self.current_tick
+        task["last_run_tick"] = self.current_tick
+        task["results"] = results
+        task["step_results"] = step_results
+        task["last_step_result"] = last_step_result
+        task["history"] = self._append_history(task.get("history"), "failed")
+
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status="failed",
+            tick=self.current_tick,
+            final_answer="",
+            extra={
+                "action": "simple_invalid_step",
+                "error": "invalid step type",
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
+
+        return {
+            "ok": False,
+            "action": "simple_invalid_step",
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": "failed",
+            "message": "invalid step type",
+            "error": "invalid step type",
+        }
+
+    def _handle_simple_step_exception(
+        self,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        task_id: str,
+        task_name: str,
+        current_step_index: int,
+        step: Dict[str, Any],
+        error: Exception,
+        execution_log: List[Dict[str, Any]],
+        results: List[Dict[str, Any]],
+        step_results: List[Dict[str, Any]],
+        last_step_result: Any,
+    ) -> Dict[str, Any]:
+        failed_step_result = {
+            "ok": False,
+            "step_index": current_step_index,
+            "step": copy.deepcopy(step),
+            "error": str(error),
+        }
+        execution_log.append(
+            {
+                "tick": self.current_tick,
+                "step_index": current_step_index,
+                "step": copy.deepcopy(step),
+                "ok": False,
+                "error": str(error),
+            }
+        )
+        results.append(copy.deepcopy(failed_step_result))
+        step_results = copy.deepcopy(results)
+        last_step_result = copy.deepcopy(failed_step_result)
+
+        task["execution_log"] = execution_log
+        task["results"] = results
+        task["step_results"] = step_results
+        task["last_step_result"] = last_step_result
+        task["last_error"] = str(error)
+        task["failure_message"] = str(error)
+        task["last_failure_tick"] = self.current_tick
+        task["last_run_tick"] = self.current_tick
+
+        self._trace_step(
+            trace=trace,
+            task=task,
+            step_index=current_step_index,
+            step=step,
+            ok=False,
+            result=None,
+            error=str(error),
+            tick=self.current_tick,
+        )
+
+        replan_result = self._try_replan_task(task=task)
+        task["replan_decision"] = str(replan_result.get("decision") or "")
+        task["replan_summary"] = str(replan_result.get("summary") or "")
+        task["replan_failed_step_type"] = str(replan_result.get("failed_step_type") or "")
+        task["replan_repairable"] = replan_result.get("repairable", None)
+
+        if replan_result.get("replanned"):
+            task["status"] = "queued"
+            task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or str(error))
+            task["current_step_index"] = 0
+            task["history"] = self._append_history(task.get("history"), "replanned")
+            task["history"] = self._append_history(task.get("history"), "queued")
+
+            new_steps = task.get("steps", []) if isinstance(task.get("steps"), list) else []
+            new_steps_total = len(new_steps)
+
+            self._trace_replan(
+                trace=trace,
+                task=task,
+                tick=self.current_tick,
+                replan_result=replan_result,
+            )
             self._trace_status(
                 trace=trace,
                 task=task,
-                status="finished",
+                status="queued",
                 tick=self.current_tick,
-                final_answer=task["final_answer"],
+                final_answer="",
                 extra={
-                    "action": "simple_task_finished",
-                    "current_step_index": current_step_index,
-                    "steps_total": len(steps),
+                    "action": "simple_step_replanned",
+                    "replan_reason": task["replan_reason"],
+                    "replan_count": task.get("replan_count", 0),
+                    "replan_decision": task.get("replan_decision", ""),
+                    "replan_summary": task.get("replan_summary", ""),
+                    "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+                    "replan_repairable": task.get("replan_repairable", None),
+                    "steps_total": new_steps_total,
                 },
             )
             self._save_trace_for_task(task=task, trace=trace)
 
             return {
                 "ok": True,
-                "action": "simple_task_finished",
+                "action": "simple_step_replanned",
                 "tick": self.current_tick,
                 "task_id": task_id,
                 "task_name": task_name,
-                "status": "finished",
-                "message": "task finished",
-                "final_answer": task["final_answer"],
+                "status": "queued",
+                "message": replan_result.get("summary", "task replanned"),
                 "execution_log": execution_log,
                 "results": results,
                 "step_results": step_results,
                 "last_step_result": last_step_result,
-                "current_step_index": current_step_index,
-                "step_count": len(steps),
-                "steps_total": len(steps),
-                "last_run_tick": self.current_tick,
-                "finished_tick": self.current_tick,
-            }
-
-        step = steps[current_step_index]
-        if not isinstance(step, dict):
-            task["status"] = "failed"
-            task["last_error"] = "invalid step type"
-            task["failure_message"] = "invalid step type"
-            task["last_failure_tick"] = self.current_tick
-            task["last_run_tick"] = self.current_tick
-            task["results"] = results
-            task["step_results"] = step_results
-            task["last_step_result"] = last_step_result
-            task["history"] = self._append_history(task.get("history"), "failed")
-
-            self._trace_status(
-                trace=trace,
-                task=task,
-                status="failed",
-                tick=self.current_tick,
-                final_answer="",
-                extra={
-                    "action": "simple_invalid_step",
-                    "error": "invalid step type",
-                },
-            )
-            self._save_trace_for_task(task=task, trace=trace)
-
-            return {
-                "ok": False,
-                "action": "simple_invalid_step",
-                "tick": self.current_tick,
-                "task_id": task_id,
-                "task_name": task_name,
-                "status": "failed",
-                "message": "invalid step type",
-                "error": "invalid step type",
-            }
-
-        try:
-            step_result = self._execute_simple_step(task=task, step=step)
-        except Exception as e:
-            failed_step_result = {
-                "ok": False,
-                "step_index": current_step_index,
-                "step": copy.deepcopy(step),
-                "error": str(e),
-            }
-            execution_log.append(
-                {
-                    "tick": self.current_tick,
-                    "step_index": current_step_index,
-                    "step": copy.deepcopy(step),
-                    "ok": False,
-                    "error": str(e),
-                }
-            )
-            results.append(copy.deepcopy(failed_step_result))
-            step_results = copy.deepcopy(results)
-            last_step_result = copy.deepcopy(failed_step_result)
-
-            task["execution_log"] = execution_log
-            task["results"] = results
-            task["step_results"] = step_results
-            task["last_step_result"] = last_step_result
-            task["last_error"] = str(e)
-            task["failure_message"] = str(e)
-            task["last_failure_tick"] = self.current_tick
-            task["last_run_tick"] = self.current_tick
-
-            self._trace_step(
-                trace=trace,
-                task=task,
-                step_index=current_step_index,
-                step=step,
-                ok=False,
-                result=None,
-                error=str(e),
-                tick=self.current_tick,
-            )
-
-            replan_result = self._try_replan_task(task=task)
-            task["replan_decision"] = str(replan_result.get("decision") or "")
-            task["replan_summary"] = str(replan_result.get("summary") or "")
-            task["replan_failed_step_type"] = str(replan_result.get("failed_step_type") or "")
-            task["replan_repairable"] = replan_result.get("repairable", None)
-
-            if replan_result.get("replanned"):
-                task["status"] = "queued"
-                task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or str(e))
-                task["current_step_index"] = 0
-                task["history"] = self._append_history(task.get("history"), "replanned")
-                task["history"] = self._append_history(task.get("history"), "queued")
-
-                new_steps = task.get("steps", []) if isinstance(task.get("steps"), list) else []
-                new_steps_total = len(new_steps)
-
-                self._trace_replan(
-                    trace=trace,
-                    task=task,
-                    tick=self.current_tick,
-                    replan_result=replan_result,
-                )
-                self._trace_status(
-                    trace=trace,
-                    task=task,
-                    status="queued",
-                    tick=self.current_tick,
-                    final_answer="",
-                    extra={
-                        "action": "simple_step_replanned",
-                        "replan_reason": task["replan_reason"],
-                        "replan_count": task.get("replan_count", 0),
-                        "replan_decision": task.get("replan_decision", ""),
-                        "replan_summary": task.get("replan_summary", ""),
-                        "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-                        "replan_repairable": task.get("replan_repairable", None),
-                        "steps_total": new_steps_total,
-                    },
-                )
-                self._save_trace_for_task(task=task, trace=trace)
-
-                return {
-                    "ok": True,
-                    "action": "simple_step_replanned",
-                    "tick": self.current_tick,
-                    "task_id": task_id,
-                    "task_name": task_name,
-                    "status": "queued",
-                    "message": replan_result.get("summary", "task replanned"),
-                    "execution_log": execution_log,
-                    "results": results,
-                    "step_results": step_results,
-                    "last_step_result": last_step_result,
-                    "current_step_index": 0,
-                    "step_count": new_steps_total,
-                    "steps_total": new_steps_total,
-                    "last_run_tick": self.current_tick,
-                    "last_failure_tick": self.current_tick,
-                    "replan_reason": task["replan_reason"],
-                    "replan_decision": task.get("replan_decision", ""),
-                    "replan_summary": task.get("replan_summary", ""),
-                    "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-                    "replan_repairable": task.get("replan_repairable", None),
-                    "replan_result": replan_result,
-                }
-
-            task["status"] = "failed"
-            task["history"] = self._append_history(task.get("history"), "failed")
-
-            self._trace_status(
-                trace=trace,
-                task=task,
-                status="failed",
-                tick=self.current_tick,
-                final_answer="",
-                extra={
-                    "action": "simple_step_failed",
-                    "error": str(e),
-                    "replan_decision": task.get("replan_decision", ""),
-                    "replan_summary": task.get("replan_summary", ""),
-                    "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-                    "replan_repairable": task.get("replan_repairable", None),
-                    "replan_result": copy.deepcopy(replan_result),
-                },
-            )
-            self._save_trace_for_task(task=task, trace=trace)
-
-            return {
-                "ok": False,
-                "action": "simple_step_failed",
-                "tick": self.current_tick,
-                "task_id": task_id,
-                "task_name": task_name,
-                "status": "failed",
-                "message": "step execution failed",
-                "error": str(e),
-                "execution_log": execution_log,
-                "results": results,
-                "step_results": step_results,
-                "last_step_result": last_step_result,
-                "current_step_index": current_step_index,
-                "step_count": len(steps),
-                "steps_total": len(steps),
+                "current_step_index": 0,
+                "step_count": new_steps_total,
+                "steps_total": new_steps_total,
                 "last_run_tick": self.current_tick,
                 "last_failure_tick": self.current_tick,
+                "replan_reason": task["replan_reason"],
                 "replan_decision": task.get("replan_decision", ""),
                 "replan_summary": task.get("replan_summary", ""),
                 "replan_failed_step_type": task.get("replan_failed_step_type", ""),
@@ -869,6 +1036,67 @@ class Scheduler(RuntimeTaskScheduler):
                 "replan_result": replan_result,
             }
 
+        task["status"] = "failed"
+        task["history"] = self._append_history(task.get("history"), "failed")
+
+        self._trace_status(
+            trace=trace,
+            task=task,
+            status="failed",
+            tick=self.current_tick,
+            final_answer="",
+            extra={
+                "action": "simple_step_failed",
+                "error": str(error),
+                "replan_decision": task.get("replan_decision", ""),
+                "replan_summary": task.get("replan_summary", ""),
+                "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+                "replan_repairable": task.get("replan_repairable", None),
+                "replan_result": copy.deepcopy(replan_result),
+            },
+        )
+        self._save_trace_for_task(task=task, trace=trace)
+
+        return {
+            "ok": False,
+            "action": "simple_step_failed",
+            "tick": self.current_tick,
+            "task_id": task_id,
+            "task_name": task_name,
+            "status": "failed",
+            "message": "step execution failed",
+            "error": str(error),
+            "execution_log": execution_log,
+            "results": results,
+            "step_results": step_results,
+            "last_step_result": last_step_result,
+            "current_step_index": current_step_index,
+            "step_count": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
+            "steps_total": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
+            "last_run_tick": self.current_tick,
+            "last_failure_tick": self.current_tick,
+            "replan_decision": task.get("replan_decision", ""),
+            "replan_summary": task.get("replan_summary", ""),
+            "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+            "replan_repairable": task.get("replan_repairable", None),
+            "replan_result": replan_result,
+        }
+
+    def _handle_simple_step_success(
+        self,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        task_id: str,
+        task_name: str,
+        current_step_index: int,
+        step: Dict[str, Any],
+        step_result: Dict[str, Any],
+        steps: List[Dict[str, Any]],
+        execution_log: List[Dict[str, Any]],
+        results: List[Dict[str, Any]],
+        step_results: List[Dict[str, Any]],
+        last_step_result: Any,
+    ) -> Dict[str, Any]:
         normalized_step_result = {
             "ok": True,
             "step_index": current_step_index,
