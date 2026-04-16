@@ -3927,8 +3927,12 @@ class Scheduler(RuntimeTaskScheduler):
         task["failure_message"] = ""
         task["finished_tick"] = getattr(self, "current_tick", 0)
         task["scheduler_build"] = SCHEDULER_BUILD
+
         if result is not None:
             task["final_answer"] = result
+        else:
+            task["final_answer"] = task.get("final_answer", "")
+
         task["history"] = self._append_history(task.get("history"), "finished")
         self._persist_task_payload(task_id=task_id, task=task)
         self.worker_pool.release_by_task(task_id)
@@ -3939,12 +3943,16 @@ class Scheduler(RuntimeTaskScheduler):
         if not isinstance(task, dict):
             return
 
+        final_error = str(error or task.get("last_error") or task.get("failure_message") or "task failed")
+
         task["status"] = "failed"
-        task["last_error"] = str(error or task.get("last_error") or "task failed")
-        task["failure_message"] = task["last_error"]
+        task["blocked_reason"] = ""
+        task["last_error"] = final_error
+        task["failure_message"] = final_error
         task["last_failure_tick"] = getattr(self, "current_tick", 0)
         task["scheduler_build"] = SCHEDULER_BUILD
         task["history"] = self._append_history(task.get("history"), "failed")
+
         self._persist_task_payload(task_id=task_id, task=task)
         self.worker_pool.release_by_task(task_id)
 
@@ -3960,11 +3968,15 @@ class Scheduler(RuntimeTaskScheduler):
         task["status"] = "queued"
         task["blocked_reason"] = ""
         task["scheduler_build"] = SCHEDULER_BUILD
-        if error:
-            task["last_error"] = str(error)
+
+        final_error = str(error or "").strip()
+        if final_error:
+            task["last_error"] = final_error
+            task["failure_message"] = final_error
         else:
             task["last_error"] = ""
             task["failure_message"] = ""
+
         task["history"] = self._append_history(task.get("history"), "queued")
         self._persist_task_payload(task_id=task_id, task=task)
 
@@ -3977,6 +3989,7 @@ class Scheduler(RuntimeTaskScheduler):
         if current_status in TERMINAL_STATUSES:
             return
 
+        final_reason = str(blocked_reason or task.get("blocked_reason") or "").strip()
         changed = False
 
         if current_status != STATUS_BLOCKED:
@@ -3984,12 +3997,21 @@ class Scheduler(RuntimeTaskScheduler):
             task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
             changed = True
 
-        if str(task.get("blocked_reason") or "") != str(blocked_reason or ""):
-            task["blocked_reason"] = str(blocked_reason or "")
+        if str(task.get("blocked_reason") or "") != final_reason:
+            task["blocked_reason"] = final_reason
             changed = True
 
-        task["scheduler_build"] = SCHEDULER_BUILD
-        changed = True
+        if str(task.get("last_error") or "") != "":
+            task["last_error"] = ""
+            changed = True
+
+        if str(task.get("failure_message") or "") != "":
+            task["failure_message"] = ""
+            changed = True
+
+        if str(task.get("scheduler_build") or "") != SCHEDULER_BUILD:
+            task["scheduler_build"] = SCHEDULER_BUILD
+            changed = True
 
         if changed:
             self._persist_task_payload(task_id=task_id, task=task)
