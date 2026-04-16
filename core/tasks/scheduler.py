@@ -3900,6 +3900,38 @@ class Scheduler(RuntimeTaskScheduler):
         merged = self._refresh_task_public_fields(merged)
         self._persist_task_payload(task_id=task_id, task=merged)
 
+        normalized_status = str(merged.get("status") or "").strip().lower()
+        if not normalized_status:
+            return
+
+        if normalized_status in {"finished", "done", "success", "completed", STATUS_FINISHED}:
+            final_answer = merged.get("final_answer", "")
+            self._mark_repo_task_finished(task_id=task_id, result=final_answer)
+            return
+
+        if normalized_status in {"failed", "error", STATUS_FAILED}:
+            final_error = str(
+                merged.get("last_error")
+                or merged.get("failure_message")
+                or (runner_result or {}).get("error")
+                or "task failed"
+            )
+            self._mark_repo_task_failed(task_id=task_id, error=final_error)
+            return
+
+        if normalized_status in {STATUS_BLOCKED, "blocked"}:
+            blocked_reason = str(merged.get("blocked_reason") or "")
+            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+            return
+
+        if normalized_status in {"queued", STATUS_QUEUED, "ready", "retry"}:
+            queue_error = str(merged.get("last_error") or merged.get("failure_message") or "")
+            self._mark_repo_task_queued(task_id=task_id, error=queue_error)
+            return
+
+        if normalized_status in {"running"}:
+            self._sync_unblocked_state(task_id=task_id)
+            return
     def _extract_effective_status_and_answer(
         self,
         original_task: Optional[Dict[str, Any]],
