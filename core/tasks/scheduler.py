@@ -3055,30 +3055,51 @@ class Scheduler(RuntimeTaskScheduler):
             merged.update(copy.deepcopy(full_task))
             task = merged
 
-        task["status"] = desired_status
         task["depends_on"] = copy.deepcopy(depends_on)
-        task["blocked_reason"] = blocked_reason or ""
         task["scheduler_build"] = SCHEDULER_BUILD
-        task["history"] = [desired_status]
-
         self._persist_task_payload(task_id=task_id, task=task)
 
-        set_status_fn = getattr(self.task_repo, "set_task_status", None)
-        if callable(set_status_fn):
-            try:
-                set_status_fn(task_id, desired_status)
-            except Exception:
-                pass
+        desired = str(desired_status or "").strip().lower()
+        queue_error = str(blocked_reason or "").strip()
 
-        update_task_field_fn = getattr(self.task_repo, "update_task_field", None)
-        if callable(update_task_field_fn):
-            try:
-                update_task_field_fn(task_id, "depends_on", copy.deepcopy(depends_on))
-                update_task_field_fn(task_id, "blocked_reason", blocked_reason or "")
-                update_task_field_fn(task_id, "scheduler_build", SCHEDULER_BUILD)
-                update_task_field_fn(task_id, "history", [desired_status])
-            except Exception:
-                pass
+        if desired in {"finished", STATUS_FINISHED, "done", "success", "completed"}:
+            result = task.get("final_answer", full_task.get("final_answer", ""))
+            self._mark_repo_task_finished(task_id=task_id, result=result)
+            return
+
+        if desired in {"failed", STATUS_FAILED, "error"}:
+            fail_error = str(
+                full_task.get("last_error")
+                or full_task.get("failure_message")
+                or blocked_reason
+                or "task failed"
+            )
+            self._mark_repo_task_failed(task_id=task_id, error=fail_error)
+            return
+
+        if desired in {STATUS_BLOCKED, "blocked"}:
+            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason or "")
+            return
+
+        if desired in {"queued", STATUS_QUEUED, "ready", "retry", "running"}:
+            self._mark_repo_task_queued(task_id=task_id, error=queue_error)
+            refreshed = self._get_task_from_repo(task_id)
+            if isinstance(refreshed, dict) and depends_on:
+                refreshed["depends_on"] = copy.deepcopy(depends_on)
+                refreshed["scheduler_build"] = SCHEDULER_BUILD
+                self._persist_task_payload(task_id=task_id, task=refreshed)
+            return
+
+        refreshed = self._get_task_from_repo(task_id)
+        if not isinstance(refreshed, dict):
+            refreshed = copy.deepcopy(full_task)
+
+        refreshed["status"] = desired_status
+        refreshed["depends_on"] = copy.deepcopy(depends_on)
+        refreshed["blocked_reason"] = blocked_reason or ""
+        refreshed["scheduler_build"] = SCHEDULER_BUILD
+        refreshed["history"] = [desired_status]
+        self._persist_task_payload(task_id=task_id, task=refreshed)
 
 
     def _ensure_task_paths(self, task: Dict[str, Any]) -> Dict[str, Any]:
