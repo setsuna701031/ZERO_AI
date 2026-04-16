@@ -1,12 +1,35 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from pprint import pprint
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from core.runtime.executor import Executor
 from core.runtime.trace_logger import create_trace_logger
 from core.planning.planner import Planner
 
 
-def main():
+def print_block(title: str, data) -> None:
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
+    if isinstance(data, dict):
+        pprint(data, sort_dicts=False)
+    else:
+        print(data)
+
+
+def main() -> None:
+    print("\n[Executor Repair Rules Test]")
+    print(f"project_root = {PROJECT_ROOT}")
+
     trace_logger = create_trace_logger(
         task_id="repair_rules_test",
-        source="test"
+        source="test",
     )
 
     planner = Planner(trace_logger=trace_logger)
@@ -31,8 +54,7 @@ def main():
         ]
     }
 
-    print("==== INITIAL PLAN ====")
-    print(initial_plan)
+    print_block("INITIAL PLAN", initial_plan)
 
     result = executor.execute_plan(
         task_name="repair_rules_test",
@@ -40,8 +62,7 @@ def main():
         iteration=1,
     )
 
-    print("==== FINAL RESULT ====")
-    print(result)
+    print_block("FINAL RESULT", result)
 
 
 if __name__ == "__main__":

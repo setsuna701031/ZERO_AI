@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+from pprint import pprint
 from typing import Any, Dict
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.agent.agent_loop import AgentLoop
 from core.tasks.scheduler import Scheduler
@@ -21,10 +28,6 @@ class MinimalPlanner:
         route: Any = None,
     ) -> Dict[str, Any]:
         text = str(user_input or "").strip()
-
-        # 讓 AgentLoop._extract_steps_from_plan() 能直接讀到 steps
-        # 這裡故意不自己解析，因為 Scheduler.create_task() 之後也會處理
-        # 但為了通過 planner missing 這關，至少回一個合法 plan
         steps = self._parse_inline_steps(text)
 
         return {
@@ -132,7 +135,20 @@ class MinimalPlanner:
         return None
 
 
+def print_block(title: str, data: Any) -> None:
+    print("\n" + "=" * 80)
+    print(title)
+    print("=" * 80)
+    if isinstance(data, dict):
+        pprint(data, sort_dicts=False)
+    else:
+        print(data)
+
+
 def main() -> None:
+    print("\n[AgentLoop Smoke Test]")
+    print(f"project_root = {PROJECT_ROOT}")
+
     scheduler = Scheduler(
         workspace_dir="workspace",
         allow_commands=True,
@@ -151,12 +167,10 @@ def main() -> None:
         ":: step=verify:contains=ok"
     )
 
-    print("=" * 80)
-    print("RUN AGENT LOOP TASK MODE")
-    print("=" * 80)
+    print_block("RUN AGENT LOOP TASK MODE", {"user_input": user_input})
 
     result = loop.run(user_input)
-    print("loop.run result =", result)
+    print_block("loop.run result", result)
 
     if not isinstance(result, dict) or not result.get("ok"):
         print("AgentLoop task mode failed.")
@@ -167,33 +181,36 @@ def main() -> None:
         print("No task_id returned.")
         return
 
-    print("=" * 80)
-    print("TICK SCHEDULER")
-    print("=" * 80)
+    print_block("TICK SCHEDULER", {"task_id": task_id})
 
     for i in range(10):
-        print(f"TICK {i}")
+        print(f"\nTICK {i}")
         tick_result = scheduler.tick()
-        print(tick_result)
-
-    print("=" * 80)
-    print("FINAL TASK STATE")
-    print("=" * 80)
+        pprint(tick_result, sort_dicts=False)
 
     task = scheduler._get_task_from_repo(task_id)
-    print("task_id =", task_id)
-    print("task =", task)
+
+    print_block(
+        "FINAL TASK STATE",
+        {
+            "task_id": task_id,
+            "task": task,
+        },
+    )
 
     if isinstance(task, dict):
-        print("status =", task.get("status"))
-        print("history =", task.get("history"))
-        print("replanned =", task.get("replanned"))
-        print("replan_count =", task.get("replan_count"))
-        print("current_step_index =", task.get("current_step_index"))
-        print("steps_total =", task.get("steps_total"))
-        print("steps =", task.get("steps"))
-        print("final_answer =", task.get("final_answer"))
-        print("last_error =", task.get("last_error"))
+        summary = {
+            "status": task.get("status"),
+            "history": task.get("history"),
+            "replanned": task.get("replanned"),
+            "replan_count": task.get("replan_count"),
+            "current_step_index": task.get("current_step_index"),
+            "steps_total": task.get("steps_total"),
+            "steps": task.get("steps"),
+            "final_answer": task.get("final_answer"),
+            "last_error": task.get("last_error"),
+        }
+        print_block("TASK SUMMARY", summary)
 
 
 if __name__ == "__main__":

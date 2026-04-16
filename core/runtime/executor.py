@@ -13,18 +13,10 @@ class Executor:
     """
     Executor
 
-    強化版功能：
-    1. 逐步執行 plan["steps"]
-    2. 支援 step retry
-    3. 執行後做 verifier / correction
-    4. retry exhausted 後可進入 replan
-    5. 空 plan 不再直接算成功
-    6. planner replan 無效時，使用 deterministic fallback plan
-    7. executor 可做強制修正（forced repair）
-    8. 將強制修正升級為可擴展 repair rule system
-    9. 支援 write_file 失敗時自動 fallback 到 safe path
-    10. 寫入 execution / verifier / correction / lifecycle trace
-    11. 強制所有檔案操作限制在 workspace_root / task_name 內
+    第一輪內部收束版：
+    - 不改外部主線行為
+    - 先收 retry / repair / step execution 的內部責任
+    - 保持目前 smoke tests 可過
     """
 
     SUCCESS_STATUSES = {"done", "success", "ok", "passed"}
@@ -62,9 +54,6 @@ class Executor:
         plan: Dict[str, Any],
         iteration: int,
     ) -> Dict[str, Any]:
-        """
-        執行整個 Plan，必要時進行 replan / forced repair。
-        """
         self.trace_logger.set_task(task_name)
         self.trace_logger.mark_start(
             title="execute agent loop start",
@@ -225,80 +214,13 @@ class Executor:
         )
 
         if not normalized_steps:
-            round_result = {
-                "task_name": task_name,
-                "iteration": iteration,
-                "replan_round": replan_round,
-                "results": [],
-                "success": False,
-                "retry_summary": [],
-                "plan": plan,
-                "normalized_steps": normalized_steps,
-                "empty_plan": True,
-            }
-
-            self.trace_logger.log_correction(
-                title="empty plan detected",
-                message="plan contains zero executable steps",
-                status="failed",
-                source="correction",
-                raw={
-                    "task_name": task_name,
-                    "iteration": iteration,
-                    "replan_round": replan_round,
-                    "plan": plan,
-                },
+            round_result = self._build_empty_plan_round_result(
+                task_name=task_name,
+                iteration=iteration,
+                replan_round=replan_round,
+                plan=plan,
+                normalized_steps=normalized_steps,
             )
-
-            self.trace_logger.mark_end(
-                title="execute round end",
-                message=f"task={task_name}, iteration={iteration}, replan_round={replan_round}, empty_plan=True",
-                status="failed",
-                source="executor",
-                raw=round_result,
-            )
-
-            verify_result = {
-                "task_name": task_name,
-                "passed": False,
-                "step_checks": [],
-                "failed_steps": [
-                    {
-                        "step": None,
-                        "action": "empty_plan",
-                        "status": "failed",
-                        "passed": False,
-                        "reason": "replanned plan is empty",
-                        "step_result": {},
-                    }
-                ],
-                "correction": {
-                    "needs_correction": True,
-                    "action": "replan_again",
-                    "reason": "empty_plan",
-                    "failed_steps": [
-                        {
-                            "step": None,
-                            "action": "empty_plan",
-                            "status": "failed",
-                            "passed": False,
-                            "reason": "replanned plan is empty",
-                            "step_result": {},
-                        }
-                    ],
-                },
-            }
-
-            self.trace_logger.log_verifier(
-                title="verify execution result end",
-                message="passed=False because empty plan",
-                status="failed",
-                source="verifier",
-                raw=verify_result,
-            )
-
-            round_result["verify_result"] = verify_result
-            round_result["needs_correction"] = True
             return round_result
 
         overall_success = True
@@ -343,6 +265,90 @@ class Executor:
         round_result["needs_correction"] = bool(
             verify_result.get("correction", {}).get("needs_correction", False)
         )
+        return round_result
+
+    def _build_empty_plan_round_result(
+        self,
+        task_name: str,
+        iteration: int,
+        replan_round: int,
+        plan: Dict[str, Any],
+        normalized_steps: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        round_result = {
+            "task_name": task_name,
+            "iteration": iteration,
+            "replan_round": replan_round,
+            "results": [],
+            "success": False,
+            "retry_summary": [],
+            "plan": plan,
+            "normalized_steps": normalized_steps,
+            "empty_plan": True,
+        }
+
+        self.trace_logger.log_correction(
+            title="empty plan detected",
+            message="plan contains zero executable steps",
+            status="failed",
+            source="correction",
+            raw={
+                "task_name": task_name,
+                "iteration": iteration,
+                "replan_round": replan_round,
+                "plan": plan,
+            },
+        )
+
+        self.trace_logger.mark_end(
+            title="execute round end",
+            message=f"task={task_name}, iteration={iteration}, replan_round={replan_round}, empty_plan=True",
+            status="failed",
+            source="executor",
+            raw=round_result,
+        )
+
+        verify_result = {
+            "task_name": task_name,
+            "passed": False,
+            "step_checks": [],
+            "failed_steps": [
+                {
+                    "step": None,
+                    "action": "empty_plan",
+                    "status": "failed",
+                    "passed": False,
+                    "reason": "replanned plan is empty",
+                    "step_result": {},
+                }
+            ],
+            "correction": {
+                "needs_correction": True,
+                "action": "replan_again",
+                "reason": "empty_plan",
+                "failed_steps": [
+                    {
+                        "step": None,
+                        "action": "empty_plan",
+                        "status": "failed",
+                        "passed": False,
+                        "reason": "replanned plan is empty",
+                        "step_result": {},
+                    }
+                ],
+            },
+        }
+
+        self.trace_logger.log_verifier(
+            title="verify execution result end",
+            message="passed=False because empty plan",
+            status="failed",
+            source="verifier",
+            raw=verify_result,
+        )
+
+        round_result["verify_result"] = verify_result
+        round_result["needs_correction"] = True
         return round_result
 
     # =========================================================
@@ -538,6 +544,21 @@ class Executor:
             return False
 
         return safe_path.exists() and safe_path.is_dir()
+
+    def _build_safe_fallback_path(self, task_name: str, original_path: str) -> str:
+        normalized = str(original_path or "").strip().replace("\\", "/")
+        filename = normalized.rsplit("/", 1)[-1] if normalized else "output.txt"
+        if not filename:
+            filename = "output.txt"
+        return f"_repaired/{filename}"
+
+    def _ensure_dir_for_task(self, task_name: str, path: str) -> None:
+        normalized = str(path or "").strip().replace("\\", "/")
+        if not normalized:
+            return
+
+        safe_dir = self._resolve_safe_path(task_name=task_name, path=normalized)
+        safe_dir.mkdir(parents=True, exist_ok=True)
 
     # =========================================================
     # Replan
@@ -850,25 +871,18 @@ class Executor:
             attempt += 1
 
             if attempt > 1:
-                self.trace_logger.log_correction(
-                    step_id=f"step_{step_index:02d}",
-                    title="retry step",
-                    message=f"retry attempt={attempt} / max={retry_limit + 1}",
-                    status="retrying",
-                    source="correction",
-                    raw={
-                        "task_name": task_name,
-                        "step_index": step_index,
-                        "attempt": attempt,
-                        "max_attempts": retry_limit + 1,
-                        "step": step,
-                    },
+                self._log_retry_start(
+                    task_name=task_name,
+                    step_index=step_index,
+                    attempt=attempt,
+                    retry_limit=retry_limit,
+                    step=step,
                 )
 
             step_for_attempt = self._build_step_for_attempt(step=step, attempt=attempt)
             result = self._execute_step(task_name, step_index, step_for_attempt)
 
-            if result.get("status") == "error" and self.enable_forced_repair:
+            if self._should_try_safe_path_repair(step=step_for_attempt, result=result):
                 repaired_result = self._try_write_safe_path_repair(
                     task_name=task_name,
                     step_index=step_index,
@@ -878,69 +892,160 @@ class Executor:
                 if repaired_result is not None:
                     result = repaired_result
 
-            history.append(
-                {
-                    "attempt": attempt,
-                    "status": result.get("status"),
-                    "output": result.get("output"),
-                    "path": result.get("path", ""),
-                    "resolved_path": result.get("resolved_path", ""),
-                }
-            )
+            history.append(self._build_retry_history_item(attempt=attempt, result=result))
 
             if result.get("status") in self.SUCCESS_STATUSES:
                 if attempt > 1:
-                    self.trace_logger.log_correction(
-                        step_id=f"step_{step_index:02d}",
-                        title="retry recovered",
-                        message=f"step recovered on attempt {attempt}",
-                        status="success",
-                        source="correction",
-                        raw={
-                            "task_name": task_name,
-                            "step_index": step_index,
-                            "attempt": attempt,
-                            "history": history,
-                        },
+                    self._log_retry_recovered(
+                        task_name=task_name,
+                        step_index=step_index,
+                        attempt=attempt,
+                        history=history,
                     )
 
-                result["retry_info"] = {
-                    "used_retry": attempt > 1,
-                    "attempts": attempt,
-                    "retry_limit": retry_limit,
-                    "recovered": attempt > 1,
-                    "history": history,
-                }
+                result["retry_info"] = self._build_retry_info(
+                    attempt=attempt,
+                    retry_limit=retry_limit,
+                    recovered=(attempt > 1),
+                    history=history,
+                )
                 return result
 
             if attempt > retry_limit:
-                self.trace_logger.log_correction(
-                    step_id=f"step_{step_index:02d}",
-                    title="retry exhausted",
-                    message=f"retry exhausted after {attempt} attempts",
-                    status="failed",
-                    source="correction",
-                    raw={
-                        "task_name": task_name,
-                        "step_index": step_index,
-                        "attempts": attempt,
-                        "retry_limit": retry_limit,
-                        "history": history,
-                        "step": step,
-                    },
+                self._log_retry_exhausted(
+                    task_name=task_name,
+                    step_index=step_index,
+                    attempt=attempt,
+                    retry_limit=retry_limit,
+                    history=history,
+                    step=step,
                 )
 
-                result["retry_info"] = {
-                    "used_retry": attempt > 1,
-                    "attempts": attempt,
-                    "retry_limit": retry_limit,
-                    "recovered": False,
-                    "history": history,
-                }
+                result["retry_info"] = self._build_retry_info(
+                    attempt=attempt,
+                    retry_limit=retry_limit,
+                    recovered=False,
+                    history=history,
+                )
                 return result
 
             if self.retry_delay_seconds > 0:
                 time.sleep(self.retry_delay_seconds)
+
+    def _should_try_safe_path_repair(
+        self,
+        step: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> bool:
+        if not self.enable_forced_repair:
+            return False
+
+        action = str(step.get("action") or step.get("type") or "").strip().lower()
+        if action != "write_file":
+            return False
+
+        return result.get("status") == "error"
+
+    def _build_retry_history_item(
+        self,
+        attempt: int,
+        result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        return {
+            "attempt": attempt,
+            "status": result.get("status"),
+            "output": result.get("output"),
+            "path": result.get("path", ""),
+            "resolved_path": result.get("resolved_path", ""),
+        }
+
+    def _build_retry_info(
+        self,
+        attempt: int,
+        retry_limit: int,
+        recovered: bool,
+        history: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "used_retry": attempt > 1,
+            "attempts": attempt,
+            "retry_limit": retry_limit,
+            "recovered": recovered,
+            "history": history,
+        }
+
+    def _log_retry_start(
+        self,
+        task_name: str,
+        step_index: int,
+        attempt: int,
+        retry_limit: int,
+        step: Dict[str, Any],
+    ) -> None:
+        self.trace_logger.log_correction(
+            step_id=f"step_{step_index:02d}",
+            title="retry step",
+            message=f"retry attempt={attempt} / max={retry_limit + 1}",
+            status="retrying",
+            source="correction",
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "attempt": attempt,
+                "max_attempts": retry_limit + 1,
+                "step": step,
+            },
+        )
+
+    def _log_retry_recovered(
+        self,
+        task_name: str,
+        step_index: int,
+        attempt: int,
+        history: List[Dict[str, Any]],
+    ) -> None:
+        self.trace_logger.log_correction(
+            step_id=f"step_{step_index:02d}",
+            title="retry recovered",
+            message=f"step recovered on attempt {attempt}",
+            status="success",
+            source="correction",
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "attempt": attempt,
+                "history": history,
+            },
+        )
+
+    def _log_retry_exhausted(
+        self,
+        task_name: str,
+        step_index: int,
+        attempt: int,
+        retry_limit: int,
+        history: List[Dict[str, Any]],
+        step: Dict[str, Any],
+    ) -> None:
+        self.trace_logger.log_correction(
+            step_id=f"step_{step_index:02d}",
+            title="retry exhausted",
+            message=f"retry exhausted after {attempt} attempts",
+            status="failed",
+            source="correction",
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "attempts": attempt,
+                "retry_limit": retry_limit,
+                "history": history,
+                "step": step,
+            },
+        )
+
+    # =========================================================
+    # Safe path repair
+    # =========================================================
 
     def _try_write_safe_path_repair(
         self,
@@ -959,14 +1064,7 @@ class Executor:
             return None
 
         fallback_path = self._build_safe_fallback_path(task_name=task_name, original_path=path)
-
-        repaired_step = dict(step)
-        repaired_step["path"] = fallback_path
-        repaired_step["title"] = f"safe-path repair write {fallback_path}"
-        repaired_step["message"] = f"executor redirected write_file from {path} to safe path {fallback_path}"
-        repaired_step["status"] = "done"
-        repaired_step["force_error"] = False
-        repaired_step["simulate_write_failure"] = False
+        repaired_step = self._build_safe_path_repaired_step(step=step, fallback_path=fallback_path, original_path=path)
 
         self.trace_logger.log_correction(
             step_id=f"step_{step_index:02d}",
@@ -991,12 +1089,24 @@ class Executor:
 
         return None
 
-    def _build_safe_fallback_path(self, task_name: str, original_path: str) -> str:
-        normalized = str(original_path or "").strip().replace("\\", "/")
-        filename = normalized.rsplit("/", 1)[-1] if normalized else "output.txt"
-        if not filename:
-            filename = "output.txt"
-        return f"_repaired/{filename}"
+    def _build_safe_path_repaired_step(
+        self,
+        step: Dict[str, Any],
+        fallback_path: str,
+        original_path: str,
+    ) -> Dict[str, Any]:
+        repaired_step = dict(step)
+        repaired_step["path"] = fallback_path
+        repaired_step["title"] = f"safe-path repair write {fallback_path}"
+        repaired_step["message"] = f"executor redirected write_file from {original_path} to safe path {fallback_path}"
+        repaired_step["status"] = "done"
+        repaired_step["force_error"] = False
+        repaired_step["simulate_write_failure"] = False
+        return repaired_step
+
+    # =========================================================
+    # Retry config
+    # =========================================================
 
     def _get_retry_limit(self, step: Dict[str, Any]) -> int:
         raw = step.get("retry_limit", self.default_retry_limit)
@@ -1039,53 +1149,41 @@ class Executor:
         task_dir = self.workspace_root / task_name
         task_dir.mkdir(parents=True, exist_ok=True)
 
-        safe_path: Optional[Path] = None
-        if raw_path:
-            try:
-                safe_path = self._resolve_safe_path(task_name=task_name, path=raw_path)
-            except Exception as exc:
-                error_result = {
-                    "step": step_index,
-                    "action": action,
-                    "path": raw_path,
-                    "resolved_path": "",
-                    "title": title,
-                    "message": message,
-                    "status": "error",
-                    "output": f"unsafe_path: {exc}",
-                    "attempt": attempt,
-                }
-
-                self.trace_logger.log_error(
-                    event_type="execution",
-                    step_id=f"step_{step_index:02d}",
-                    title=title,
-                    message=f"unsafe path rejected: {exc}",
-                    source="executor",
-                    error=exc,
-                    raw={
-                        "task_name": task_name,
-                        "step_index": step_index,
-                        "attempt": attempt,
-                        "step": step,
-                        "error_result": error_result,
-                    },
-                )
-                return error_result
+        safe_path, path_error = self._resolve_step_safe_path(
+            task_name=task_name,
+            raw_path=raw_path,
+        )
+        if path_error is not None:
+            error_result = self._build_step_error_result(
+                step_index=step_index,
+                action=action,
+                path=raw_path,
+                resolved_path="",
+                title=title,
+                message=message,
+                error_message=f"unsafe_path: {path_error}",
+                attempt=attempt,
+            )
+            self._log_step_error(
+                task_name=task_name,
+                step_index=step_index,
+                title=title,
+                message=f"unsafe path rejected: {path_error}",
+                step=step,
+                error=path_error,
+                error_result=error_result,
+                attempt=attempt,
+            )
+            return error_result
 
         try:
-            self.trace_logger.log_execution(
-                step_id=f"step_{step_index:02d}",
-                status="start",
+            self._log_step_start(
+                task_name=task_name,
+                step_index=step_index,
                 title=title,
                 message=message or f"start action={action}",
-                source="executor",
-                raw={
-                    "task_name": task_name,
-                    "step_index": step_index,
-                    "attempt": attempt,
-                    "step": step,
-                },
+                step=step,
+                attempt=attempt,
             )
 
             if bool(step.get("force_error", False)):
@@ -1095,113 +1193,279 @@ class Executor:
             if not normalized_status:
                 normalized_status = "done"
 
-            if action == "mkdir":
-                if safe_path is None:
-                    raise ValueError("mkdir requires path")
-                safe_path.mkdir(parents=True, exist_ok=True)
+            output = self._execute_step_action(
+                action=action,
+                step=step,
+                task_name=task_name,
+                raw_path=raw_path,
+                safe_path=safe_path,
+                default_output=output,
+            )
 
-            elif action == "write_file":
-                if safe_path is None:
-                    raise ValueError("write_file requires path")
-
-                safe_path.parent.mkdir(parents=True, exist_ok=True)
-
-                if bool(step.get("simulate_write_failure", False)):
-                    raise RuntimeError(f"simulated write failure for path {raw_path}")
-
-                content = step.get("content")
-                if content is None:
-                    content = step.get("text")
-                if content is None:
-                    content = step.get("data")
-                if content is None:
-                    content = output
-
-                if isinstance(content, (dict, list)):
-                    safe_path.write_text(
-                        json.dumps(content, indent=2, ensure_ascii=False),
-                        encoding="utf-8",
-                    )
-                else:
-                    safe_path.write_text(str(content), encoding="utf-8")
-
-            elif action == "read_file":
-                if safe_path is None:
-                    raise ValueError("read_file requires path")
-
-                if not safe_path.exists():
-                    raise FileNotFoundError(f"file not found: {raw_path}")
-
-                output = safe_path.read_text(encoding="utf-8")
-
-            step_result = {
-                "step": step_index,
-                "action": action,
-                "path": raw_path,
-                "resolved_path": str(safe_path) if safe_path is not None else "",
-                "title": title,
-                "message": message,
-                "status": normalized_status,
-                "output": output,
-                "attempt": attempt,
-            }
-
-            step_file = task_dir / f"step_{step_index:02d}.json"
-            with open(step_file, "w", encoding="utf-8") as f:
-                json.dump(step_result, f, indent=2, ensure_ascii=False)
-
-            self.trace_logger.log_execution(
-                step_id=f"step_{step_index:02d}",
-                status="success" if normalized_status in self.SUCCESS_STATUSES else normalized_status,
+            step_result = self._build_step_success_result(
+                step_index=step_index,
+                action=action,
+                path=raw_path,
+                resolved_path=str(safe_path) if safe_path is not None else "",
                 title=title,
-                message=f"step file saved: {step_file}",
-                source="executor",
-                raw={
-                    "task_name": task_name,
-                    "step_index": step_index,
-                    "attempt": attempt,
-                    "step_file": str(step_file),
-                    "step_result": step_result,
-                },
+                message=message,
+                status=normalized_status,
+                output=output,
+                attempt=attempt,
+            )
+
+            step_file = self._write_step_result_file(
+                task_dir=task_dir,
+                step_index=step_index,
+                step_result=step_result,
+            )
+
+            self._log_step_success(
+                task_name=task_name,
+                step_index=step_index,
+                title=title,
+                step_file=step_file,
+                step_result=step_result,
+                attempt=attempt,
+                normalized_status=normalized_status,
             )
 
             return step_result
 
         except Exception as exc:
-            error_result = {
-                "step": step_index,
-                "action": action,
-                "path": raw_path,
-                "resolved_path": str(safe_path) if safe_path is not None else "",
-                "title": title,
-                "message": message,
-                "status": "error",
-                "output": str(exc),
-                "attempt": attempt,
-            }
+            error_result = self._build_step_error_result(
+                step_index=step_index,
+                action=action,
+                path=raw_path,
+                resolved_path=str(safe_path) if safe_path is not None else "",
+                title=title,
+                message=message,
+                error_message=str(exc),
+                attempt=attempt,
+            )
 
-            self.trace_logger.log_error(
-                event_type="execution",
-                step_id=f"step_{step_index:02d}",
+            self._log_step_error(
+                task_name=task_name,
+                step_index=step_index,
                 title=title,
                 message=f"execute step failed: {exc}",
-                source="executor",
+                step=step,
                 error=exc,
-                raw={
-                    "task_name": task_name,
-                    "step_index": step_index,
-                    "attempt": attempt,
-                    "step": step,
-                    "error_result": error_result,
-                },
+                error_result=error_result,
+                attempt=attempt,
             )
 
             return error_result
 
-    def _ensure_dir_for_task(self, task_name: str, path: str) -> None:
-        normalized = str(path or "").strip().replace("\\", "/")
-        if not normalized:
+    def _resolve_step_safe_path(
+        self,
+        task_name: str,
+        raw_path: str,
+    ) -> tuple[Optional[Path], Optional[Exception]]:
+        if not raw_path:
+            return None, None
+
+        try:
+            return self._resolve_safe_path(task_name=task_name, path=raw_path), None
+        except Exception as exc:
+            return None, exc
+
+    def _execute_step_action(
+        self,
+        action: str,
+        step: Dict[str, Any],
+        task_name: str,
+        raw_path: str,
+        safe_path: Optional[Path],
+        default_output: Any,
+    ) -> Any:
+        if action == "mkdir":
+            if safe_path is None:
+                raise ValueError("mkdir requires path")
+            safe_path.mkdir(parents=True, exist_ok=True)
+            return default_output
+
+        if action == "write_file":
+            if safe_path is None:
+                raise ValueError("write_file requires path")
+
+            safe_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if bool(step.get("simulate_write_failure", False)):
+                raise RuntimeError(f"simulated write failure for path {raw_path}")
+
+            content = self._resolve_write_content(step=step, fallback_output=default_output)
+            self._write_content_to_path(safe_path=safe_path, content=content)
+            return default_output
+
+        if action == "read_file":
+            if safe_path is None:
+                raise ValueError("read_file requires path")
+
+            if not safe_path.exists():
+                raise FileNotFoundError(f"file not found: {raw_path}")
+
+            return safe_path.read_text(encoding="utf-8")
+
+        return default_output
+
+    def _resolve_write_content(
+        self,
+        step: Dict[str, Any],
+        fallback_output: Any,
+    ) -> Any:
+        content = step.get("content")
+        if content is None:
+            content = step.get("text")
+        if content is None:
+            content = step.get("data")
+        if content is None:
+            content = fallback_output
+        return content
+
+    def _write_content_to_path(
+        self,
+        safe_path: Path,
+        content: Any,
+    ) -> None:
+        if isinstance(content, (dict, list)):
+            safe_path.write_text(
+                json.dumps(content, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
             return
 
-        safe_dir = self._resolve_safe_path(task_name=task_name, path=normalized)
-        safe_dir.mkdir(parents=True, exist_ok=True)
+        safe_path.write_text(str(content), encoding="utf-8")
+
+    def _build_step_success_result(
+        self,
+        step_index: int,
+        action: str,
+        path: str,
+        resolved_path: str,
+        title: str,
+        message: str,
+        status: str,
+        output: Any,
+        attempt: int,
+    ) -> Dict[str, Any]:
+        return {
+            "step": step_index,
+            "action": action,
+            "path": path,
+            "resolved_path": resolved_path,
+            "title": title,
+            "message": message,
+            "status": status,
+            "output": output,
+            "attempt": attempt,
+        }
+
+    def _build_step_error_result(
+        self,
+        step_index: int,
+        action: str,
+        path: str,
+        resolved_path: str,
+        title: str,
+        message: str,
+        error_message: str,
+        attempt: int,
+    ) -> Dict[str, Any]:
+        return {
+            "step": step_index,
+            "action": action,
+            "path": path,
+            "resolved_path": resolved_path,
+            "title": title,
+            "message": message,
+            "status": "error",
+            "output": error_message,
+            "attempt": attempt,
+        }
+
+    def _write_step_result_file(
+        self,
+        task_dir: Path,
+        step_index: int,
+        step_result: Dict[str, Any],
+    ) -> Path:
+        step_file = task_dir / f"step_{step_index:02d}.json"
+        with open(step_file, "w", encoding="utf-8") as f:
+            json.dump(step_result, f, indent=2, ensure_ascii=False)
+        return step_file
+
+    def _log_step_start(
+        self,
+        task_name: str,
+        step_index: int,
+        title: str,
+        message: str,
+        step: Dict[str, Any],
+        attempt: int,
+    ) -> None:
+        self.trace_logger.log_execution(
+            step_id=f"step_{step_index:02d}",
+            status="start",
+            title=title,
+            message=message,
+            source="executor",
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "attempt": attempt,
+                "step": step,
+            },
+        )
+
+    def _log_step_success(
+        self,
+        task_name: str,
+        step_index: int,
+        title: str,
+        step_file: Path,
+        step_result: Dict[str, Any],
+        attempt: int,
+        normalized_status: str,
+    ) -> None:
+        self.trace_logger.log_execution(
+            step_id=f"step_{step_index:02d}",
+            status="success" if normalized_status in self.SUCCESS_STATUSES else normalized_status,
+            title=title,
+            message=f"step file saved: {step_file}",
+            source="executor",
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "attempt": attempt,
+                "step_file": str(step_file),
+                "step_result": step_result,
+            },
+        )
+
+    def _log_step_error(
+        self,
+        task_name: str,
+        step_index: int,
+        title: str,
+        message: str,
+        step: Dict[str, Any],
+        error: Exception | str,
+        error_result: Dict[str, Any],
+        attempt: int,
+    ) -> None:
+        self.trace_logger.log_error(
+            event_type="execution",
+            step_id=f"step_{step_index:02d}",
+            title=title,
+            message=message,
+            source="executor",
+            error=error,
+            raw={
+                "task_name": task_name,
+                "step_index": step_index,
+                "attempt": attempt,
+                "step": step,
+                "error_result": error_result,
+            },
+        )

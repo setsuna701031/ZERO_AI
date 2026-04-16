@@ -15,6 +15,7 @@ class ExecutionGuard:
     2. 限制檔案操作只能在 workspace_root 之下
     3. command 預設關閉
     4. 收束期只有限放行安全 python command
+    5. llm / llm_generate / verify 視為非副作用 step，可直接放行
     """
 
     def __init__(
@@ -35,9 +36,15 @@ class ExecutionGuard:
         step_type = str(step.get("type") or "").strip().lower()
         task_dir_abs = os.path.abspath(task_dir)
 
-        if step_type == "noop":
+        # ---------------------------------------------------------
+        # 無副作用 / 純判定 / 純生成 step
+        # ---------------------------------------------------------
+        if step_type in {"noop", "llm", "llm_generate", "verify", "respond", "final_answer"}:
             return {"ok": True}
 
+        # ---------------------------------------------------------
+        # write
+        # ---------------------------------------------------------
         if step_type == "write_file":
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
@@ -55,6 +62,9 @@ class ExecutionGuard:
                 "resolved_path": full_path,
             }
 
+        # ---------------------------------------------------------
+        # read
+        # ---------------------------------------------------------
         if step_type == "read_file":
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
@@ -72,6 +82,9 @@ class ExecutionGuard:
                 "resolved_path": full_path,
             }
 
+        # ---------------------------------------------------------
+        # command
+        # ---------------------------------------------------------
         if step_type == "command":
             command = str(step.get("command") or "").strip()
             if not command:

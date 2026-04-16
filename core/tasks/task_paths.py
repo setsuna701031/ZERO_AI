@@ -8,17 +8,22 @@ class TaskPathManager:
     """
     統一管理 ZERO Task OS 的 workspace / task / shared / sandbox 路徑。
 
-    原則：
-    - workspace/tasks.json 是全域任務索引
-    - workspace/tasks/<task_id>/... 是單一任務工作目錄
-    - workspace/shared/... 是跨任務共享區
-    - workspace/tasks/<task_id>/sandbox/... 是任務私有工作區
-    - 其他模組不要自己手拼路徑，全部走這個 manager
+    收束後規則：
 
-    路徑語意：
-    - 寫入：預設走 sandbox
-    - 讀取：相對路徑時，sandbox 優先，shared fallback
-    - 明確寫 sandbox/... 或 shared/... 時，照指定 scope
+    1. 有 task_id 時
+       - 寫入預設走 sandbox
+       - 讀取相對路徑時，sandbox 優先，shared fallback
+
+    2. 沒有 task_id 時
+       - 寫入相對路徑預設走 shared
+       - 讀取相對路徑預設走 shared
+       - '.' 代表 workspace_root，方便 workspace-level list / inspect
+
+    3. 明確指定：
+       - shared/... 或 workspace/shared/...   -> shared
+       - sandbox/... 或 workspace/sandbox/... -> sandbox（需要 task_id）
+
+    4. 一律拒絕絕對路徑與 workspace 外逃
     """
 
     def __init__(self, workspace_root: str = "workspace") -> None:
@@ -97,19 +102,18 @@ class TaskPathManager:
 
     def file_in_task_dir(self, task_id: str, relative_path: str) -> str:
         cleaned = self._normalize_relative_path(relative_path)
-        return os.path.join(self.task_dir(task_id), cleaned)
+        return self._join_under_base(self.task_dir(task_id), cleaned)
 
     def file_in_sandbox(self, task_id: str, relative_path: str) -> str:
         cleaned = self._normalize_relative_path(relative_path)
-        return os.path.join(self.sandbox_dir(task_id), cleaned)
+        return self._join_under_base(self.sandbox_dir(task_id), cleaned)
 
     def file_in_shared(self, relative_path: str) -> str:
         cleaned = self._normalize_relative_path(relative_path)
-        if cleaned.startswith("shared" + os.sep):
-            cleaned = cleaned[len("shared" + os.sep):]
-        elif cleaned == "shared":
-            cleaned = ""
-        return os.path.join(self.shared_root, cleaned)
+        scope, relative = self._split_scope(cleaned)
+        if scope == "shared":
+            cleaned = relative
+        return self._join_under_base(self.shared_root, cleaned)
 
     def get_task_paths(self, task_id: str) -> Dict[str, str]:
         task_id = str(task_id).strip()
@@ -150,10 +154,6 @@ class TaskPathManager:
         task_id: str | None = None,
         default_scope: str = "sandbox",
     ) -> str:
-        """
-        向後相容：
-        舊模組若還在呼叫 resolve_path()，維持「寫入路徑解析」語意。
-        """
         return self.resolve_write_path(
             raw_path,
             task=task,
@@ -171,10 +171,13 @@ class TaskPathManager:
     ) -> str:
         """
         寫入規則：
-        - shared/...   -> workspace/shared/...
-        - sandbox/...  -> workspace/tasks/<task_id>/sandbox/...
-        - 一般相對路徑   -> 預設走 sandbox
-        - 絕對路徑       -> 拒絕
+
+        - shared/... 或 workspace/shared/...   -> workspace/shared/...
+        - sandbox/... 或 workspace/sandbox/... -> workspace/tasks/<task_id>/sandbox/...
+        - 一般相對路徑：
+            * 有 task_id -> 預設 sandbox
+            * 沒 task_id -> 預設 shared
+        - 絕對路徑 -> 拒絕
         """
         if not isinstance(raw_path, str) or not raw_path.strip():
             raise ValueError("raw_path is empty")
@@ -184,39 +187,31 @@ class TaskPathManager:
 
         resolved_task_id = self._extract_task_id(task=task, task_id=task_id)
         normalized = self._normalize_relative_path(raw_path)
-        unix_style = normalized.replace("\\", "/")
+        scope, relative = self._split_scope(normalized)
 
-        if unix_style.startswith("shared/"):
-            relative = unix_style[len("shared/"):]
-            final_path = os.path.join(self.shared_root, self._normalize_relative_path(relative))
+        if scope == "shared":
+            final_path = self._join_under_base(self.shared_root, relative)
             return self._ensure_inside_workspace(final_path)
 
-        if unix_style == "shared":
-            return self._ensure_inside_workspace(self.shared_root)
-
-        if unix_style.startswith("sandbox/"):
+        if scope == "sandbox":
             if not resolved_task_id:
                 raise ValueError("sandbox path requires task_id")
-            relative = unix_style[len("sandbox/"):]
-            final_path = os.path.join(
-                self.sandbox_dir(resolved_task_id),
-                self._normalize_relative_path(relative),
-            )
+            final_path = self._join_under_base(self.sandbox_dir(resolved_task_id), relative)
             return self._ensure_inside_workspace(final_path)
 
-        if unix_style == "sandbox":
-            if not resolved_task_id:
-                raise ValueError("sandbox path requires task_id")
-            return self._ensure_inside_workspace(self.sandbox_dir(resolved_task_id))
+        effective_default_scope = str(default_scope).strip().lower()
 
-        if default_scope == "shared":
-            final_path = os.path.join(self.shared_root, normalized)
+        if effective_default_scope == "shared":
+            final_path = self._join_under_base(self.shared_root, normalized)
             return self._ensure_inside_workspace(final_path)
 
-        if not resolved_task_id:
-            raise ValueError("task_id required for sandbox-relative path")
+        if effective_default_scope == "sandbox" and resolved_task_id:
+            final_path = self._join_under_base(self.sandbox_dir(resolved_task_id), normalized)
+            return self._ensure_inside_workspace(final_path)
 
-        final_path = os.path.join(self.sandbox_dir(resolved_task_id), normalized)
+        # 主線友善 fallback：
+        # 沒 task_id 時，相對路徑寫入預設走 shared
+        final_path = self._join_under_base(self.shared_root, normalized)
         return self._ensure_inside_workspace(final_path)
 
     # ============================================================
@@ -235,17 +230,12 @@ class TaskPathManager:
         """
         讀取規則：
 
-        1. 明確 shared/...  -> 直接指向 shared
-        2. 明確 sandbox/... -> 直接指向 sandbox
+        1. 明確 shared/... 或 workspace/shared/...  -> 直接 shared
+        2. 明確 sandbox/... 或 workspace/sandbox/... -> 直接 sandbox
         3. 一般相對路徑：
-           - 先找 sandbox/<raw_path>
-           - 找不到再找 shared/<raw_path>
-           - 若都不存在，預設回傳最後 fallback 的 candidate（shared）
-
-        例：
-        - hello.py
-          -> 先找 workspace/tasks/<task_id>/sandbox/hello.py
-          -> 再找 workspace/shared/hello.py
+           - 有 task_id: sandbox 優先，shared fallback
+           - 沒 task_id: shared
+        4. '.' -> workspace_root
         """
         if not isinstance(raw_path, str) or not raw_path.strip():
             raise ValueError("raw_path is empty")
@@ -254,27 +244,29 @@ class TaskPathManager:
             raise ValueError(f"absolute path not allowed: {raw_path}")
 
         normalized = self._normalize_relative_path(raw_path)
-        unix_style = normalized.replace("\\", "/")
         resolved_task_id = self._extract_task_id(task=task, task_id=task_id)
 
-        # 明確 scope：直接走指定位置
-        if unix_style.startswith("shared/") or unix_style == "shared":
+        if normalized == ".":
+            return self.workspace_root
+
+        scope, _ = self._split_scope(normalized)
+
+        if scope == "shared":
             return self.resolve_write_path(
-                raw_path,
+                normalized,
                 task=task,
                 task_id=resolved_task_id,
                 default_scope="shared",
             )
 
-        if unix_style.startswith("sandbox/") or unix_style == "sandbox":
+        if scope == "sandbox":
             return self.resolve_write_path(
-                raw_path,
+                normalized,
                 task=task,
                 task_id=resolved_task_id,
                 default_scope="sandbox",
             )
 
-        # 一般相對路徑：sandbox 優先，shared fallback
         candidates = self.resolve_read_candidates(
             raw_path,
             task=task,
@@ -287,7 +279,7 @@ class TaskPathManager:
                 return candidate
 
         if return_fallback_candidate_if_missing and candidates:
-            return candidates[-1]
+            return candidates[0]
 
         raise FileNotFoundError(f"read target not found: {raw_path}")
 
@@ -299,13 +291,6 @@ class TaskPathManager:
         task_id: str | None = None,
         prefer_scopes: tuple[str, ...] = ("sandbox", "shared"),
     ) -> List[str]:
-        """
-        回傳讀取候選路徑，方便 debug / trace / executor 使用。
-
-        預設：
-        - sandbox 優先
-        - shared fallback
-        """
         if not isinstance(raw_path, str) or not raw_path.strip():
             raise ValueError("raw_path is empty")
 
@@ -313,48 +298,51 @@ class TaskPathManager:
             raise ValueError(f"absolute path not allowed: {raw_path}")
 
         normalized = self._normalize_relative_path(raw_path)
-        unix_style = normalized.replace("\\", "/")
+        scope, relative = self._split_scope(normalized)
         resolved_task_id = self._extract_task_id(task=task, task_id=task_id)
 
-        # 明確 scope 直接回單一路徑
-        if unix_style.startswith("shared/") or unix_style == "shared":
+        if normalized == ".":
+            return [self.workspace_root]
+
+        if scope == "shared":
             return [
-                self.resolve_write_path(
-                    raw_path,
-                    task=task,
-                    task_id=resolved_task_id,
-                    default_scope="shared",
-                )
+                self._ensure_inside_workspace(self._join_under_base(self.shared_root, relative))
             ]
 
-        if unix_style.startswith("sandbox/") or unix_style == "sandbox":
+        if scope == "sandbox":
+            if not resolved_task_id:
+                raise ValueError("sandbox path requires task_id")
             return [
-                self.resolve_write_path(
-                    raw_path,
-                    task=task,
-                    task_id=resolved_task_id,
-                    default_scope="sandbox",
+                self._ensure_inside_workspace(
+                    self._join_under_base(self.sandbox_dir(resolved_task_id), relative)
                 )
             ]
 
         candidates: List[str] = []
 
-        for scope in prefer_scopes:
-            scope = str(scope).strip().lower()
+        # 沒 task_id 時，主線讀取預設走 shared
+        if not resolved_task_id:
+            candidates.append(
+                self._ensure_inside_workspace(
+                    self._join_under_base(self.shared_root, normalized)
+                )
+            )
+            return candidates
 
-            if scope == "sandbox":
-                if not resolved_task_id:
-                    continue
-                candidate = os.path.join(self.sandbox_dir(resolved_task_id), normalized)
+        for scope_name in prefer_scopes:
+            scope_name = str(scope_name).strip().lower()
+
+            if scope_name == "sandbox":
+                candidate = self._join_under_base(self.sandbox_dir(resolved_task_id), normalized)
                 candidates.append(self._ensure_inside_workspace(candidate))
                 continue
 
-            if scope == "shared":
-                candidate = os.path.join(self.shared_root, normalized)
+            if scope_name == "shared":
+                candidate = self._join_under_base(self.shared_root, normalized)
                 candidates.append(self._ensure_inside_workspace(candidate))
                 continue
 
-            raise ValueError(f"unsupported scope in prefer_scopes: {scope}")
+            raise ValueError(f"unsupported scope in prefer_scopes: {scope_name}")
 
         if not candidates:
             raise ValueError("no read candidates available; task_id may be missing")
@@ -371,12 +359,6 @@ class TaskPathManager:
         task: Dict[str, Any] | None = None,
         prefer_workspace_root: bool = False,
     ) -> str:
-        """
-        command 的 cwd 規則：
-        - 一般 task command 預設跑 task_dir
-        - 若需要讓 command 能以 `python shared/xxx.py` 形式執行，
-          可選 workspace_root
-        """
         if prefer_workspace_root:
             return self.workspace_root
 
@@ -396,10 +378,6 @@ class TaskPathManager:
     # ============================================================
 
     def enrich_task(self, task: Dict[str, object]) -> Dict[str, object]:
-        """
-        把路徑欄位補到 task dict 裡。
-        不修改外部傳入物件，回傳新 dict。
-        """
         if not isinstance(task, dict):
             raise TypeError("task must be dict")
 
@@ -453,13 +431,65 @@ class TaskPathManager:
         text = str(value).strip().replace("/", os.sep).replace("\\", os.sep)
         text = os.path.normpath(text)
 
-        if text in ("", "."):
+        if text == "":
             return ""
+
+        if text == ".":
+            return "."
 
         if text.startswith(".." + os.sep) or text == "..":
             raise ValueError(f"path escapes workspace: {value}")
 
         return text
+
+    def _split_scope(self, normalized_path: str) -> tuple[str, str]:
+        """
+        scope:
+        - shared
+        - sandbox
+        - relative
+        """
+        unix_style = normalized_path.replace("\\", "/").strip("/")
+
+        if unix_style == "":
+            return "relative", ""
+
+        if unix_style == ".":
+            return "relative", "."
+
+        if unix_style == "shared":
+            return "shared", ""
+
+        if unix_style.startswith("shared/"):
+            return "shared", unix_style[len("shared/"):]
+
+        if unix_style == "workspace/shared":
+            return "shared", ""
+
+        if unix_style.startswith("workspace/shared/"):
+            return "shared", unix_style[len("workspace/shared/"):]
+
+        if unix_style == "sandbox":
+            return "sandbox", ""
+
+        if unix_style.startswith("sandbox/"):
+            return "sandbox", unix_style[len("sandbox/"):]
+
+        if unix_style == "workspace/sandbox":
+            return "sandbox", ""
+
+        if unix_style.startswith("workspace/sandbox/"):
+            return "sandbox", unix_style[len("workspace/sandbox/"):]
+
+        return "relative", normalized_path
+
+    def _join_under_base(self, base: str, relative: str) -> str:
+        cleaned = str(relative or "").strip()
+
+        if cleaned in ("", "."):
+            return os.path.abspath(base)
+
+        return os.path.abspath(os.path.join(base, cleaned))
 
     def _ensure_inside_workspace(self, path: str) -> str:
         full = os.path.abspath(path)

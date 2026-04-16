@@ -121,8 +121,10 @@ class Scheduler(RuntimeTaskScheduler):
         self.workspace_dir = resolved_workspace_dir
         self.task_runtime = task_runtime
         self.task_runner = task_runner
+        self.agent_loop = kwargs.get("agent_loop", None)
         self.max_scheduler_rounds_per_tick = max(1, int(max_scheduler_rounds_per_tick))
         self.default_max_replans = max(1, int(default_max_replans))
+        self.llm_client = llm_client
 
         self.task_workspace = TaskWorkspace(os.path.join(self.workspace_dir, "tasks"))
         self.workspace_root = os.path.abspath(self.workspace_dir)
@@ -367,6 +369,69 @@ class Scheduler(RuntimeTaskScheduler):
     # runtime scheduler sync
     # ------------------------------------------------------------
 
+    def _resolve_agent_loop(self) -> Any:
+        agent_loop = getattr(self, "agent_loop", None)
+        if agent_loop is not None:
+            return agent_loop
+
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            manager_loop = getattr(task_manager, "agent_loop", None)
+            if manager_loop is not None:
+                return manager_loop
+
+        return None
+
+    def _run_task_via_agent_loop(
+        self,
+        task: Dict[str, Any],
+        current_tick: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        agent_loop = self._resolve_agent_loop()
+        if agent_loop is None:
+            return None
+
+        run_fn = getattr(agent_loop, "run_task_loop", None)
+        if not callable(run_fn):
+            run_fn = getattr(agent_loop, "run_task", None)
+        if not callable(run_fn):
+            return None
+
+        effective_task = self._hydrate_task_from_workspace(copy.deepcopy(task))
+        effective_user_input = str(effective_task.get("goal") or "").strip()
+        original_plan = effective_task.get("planner_result")
+        if not isinstance(original_plan, dict):
+            original_plan = None
+
+        try:
+            result = run_fn(
+                task=effective_task,
+                current_tick=current_tick,
+                user_input=effective_user_input,
+                original_plan=original_plan,
+            )
+        except TypeError:
+            try:
+                result = run_fn(
+                    task=effective_task,
+                    current_tick=current_tick,
+                )
+            except TypeError:
+                result = run_fn(effective_task)
+
+        if not isinstance(result, dict):
+            return {
+                "ok": bool(result),
+                "mode": "task_loop",
+                "action": "agent_loop_result",
+                "task_id": self._extract_task_id(effective_task),
+                "status": str(effective_task.get("status") or "running"),
+                "raw_result": result,
+            }
+
+        result.setdefault("mode", "task_loop")
+        return result
+
     def run_one_step(
         self,
         task: Dict[str, Any],
@@ -385,6 +450,88 @@ class Scheduler(RuntimeTaskScheduler):
             }
             self._sync_runtime_back_to_repo(task=task, runner_result=result)
             return result
+
+        runner_result: Optional[Dict[str, Any]] = None
+        loop_error_text = ""
+
+        agent_loop = getattr(self, "agent_loop", None)
+        if agent_loop is None:
+            agent_loop = getattr(self, "_agent_loop", None)
+
+        run_task_loop_fn = getattr(agent_loop, "run_task_loop", None) if agent_loop is not None else None
+        if callable(run_task_loop_fn):
+            try:
+                runner_result = run_task_loop_fn(
+                    task=copy.deepcopy(task),
+                    current_tick=current_tick if current_tick is not None else getattr(self, "current_tick", 0),
+                    user_input=str(task.get("goal") or ""),
+                    original_plan=copy.deepcopy(task.get("planner_result") or {}),
+                )
+            except Exception as e:
+                loop_error_text = str(e).strip()
+                runner_result = None
+
+            if isinstance(runner_result, dict):
+                loop_error_text = str(runner_result.get("error") or "").strip()
+
+            should_fallback = False
+
+            if not isinstance(runner_result, dict):
+                should_fallback = True
+            else:
+                action_text = str(runner_result.get("action") or "").strip().lower()
+                status_text = str(runner_result.get("status") or "").strip().lower()
+
+                if loop_error_text:
+                    should_fallback = True
+
+                if action_text in {"failed", "exception_failed"} and loop_error_text:
+                    should_fallback = True
+
+                if status_text in {"failed", "error"} and loop_error_text:
+                    should_fallback = True
+
+            if should_fallback:
+                lower_error = loop_error_text.lower()
+                sandbox_path_error = (
+                    "task_id required for sandbox-relative path" in lower_error
+                    or "path resolve failed" in lower_error
+                )
+
+                if not sandbox_path_error:
+                    fallback_like_errors = [
+                        "unsupported step type",
+                        "step_executor",
+                        "path resolve failed",
+                        "sandbox-relative path",
+                    ]
+                    sandbox_path_error = any(token in lower_error for token in fallback_like_errors)
+
+                if not sandbox_path_error:
+                    result = runner_result if isinstance(runner_result, dict) else {
+                        "ok": False,
+                        "action": "loop_failed",
+                        "status": "failed",
+                        "error": loop_error_text or "agent loop failed",
+                    }
+                    self._sync_runtime_back_to_repo(task=task, runner_result=result)
+                    refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
+                    if isinstance(refreshed_task, dict):
+                        refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
+                        if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
+                            self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+                    return result
+
+            else:
+                self._sync_runtime_back_to_repo(task=task, runner_result=runner_result)
+
+                refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
+                if isinstance(refreshed_task, dict):
+                    refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
+                    if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
+                        self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+
+                return runner_result
 
         result = self._run_simple_task_tick(task=task, current_tick=current_tick)
 
@@ -611,6 +758,11 @@ class Scheduler(RuntimeTaskScheduler):
             )
 
             replan_result = self._try_replan_task(task=task)
+            task["replan_decision"] = str(replan_result.get("decision") or "")
+            task["replan_summary"] = str(replan_result.get("summary") or "")
+            task["replan_failed_step_type"] = str(replan_result.get("failed_step_type") or "")
+            task["replan_repairable"] = replan_result.get("repairable", None)
+
             if replan_result.get("replanned"):
                 task["status"] = "queued"
                 task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or str(e))
@@ -637,6 +789,10 @@ class Scheduler(RuntimeTaskScheduler):
                         "action": "simple_step_replanned",
                         "replan_reason": task["replan_reason"],
                         "replan_count": task.get("replan_count", 0),
+                        "replan_decision": task.get("replan_decision", ""),
+                        "replan_summary": task.get("replan_summary", ""),
+                        "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+                        "replan_repairable": task.get("replan_repairable", None),
                         "steps_total": new_steps_total,
                     },
                 )
@@ -660,6 +816,10 @@ class Scheduler(RuntimeTaskScheduler):
                     "last_run_tick": self.current_tick,
                     "last_failure_tick": self.current_tick,
                     "replan_reason": task["replan_reason"],
+                    "replan_decision": task.get("replan_decision", ""),
+                    "replan_summary": task.get("replan_summary", ""),
+                    "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+                    "replan_repairable": task.get("replan_repairable", None),
                     "replan_result": replan_result,
                 }
 
@@ -675,6 +835,10 @@ class Scheduler(RuntimeTaskScheduler):
                 extra={
                     "action": "simple_step_failed",
                     "error": str(e),
+                    "replan_decision": task.get("replan_decision", ""),
+                    "replan_summary": task.get("replan_summary", ""),
+                    "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+                    "replan_repairable": task.get("replan_repairable", None),
                     "replan_result": copy.deepcopy(replan_result),
                 },
             )
@@ -698,6 +862,10 @@ class Scheduler(RuntimeTaskScheduler):
                 "steps_total": len(steps),
                 "last_run_tick": self.current_tick,
                 "last_failure_tick": self.current_tick,
+                "replan_decision": task.get("replan_decision", ""),
+                "replan_summary": task.get("replan_summary", ""),
+                "replan_failed_step_type": task.get("replan_failed_step_type", ""),
+                "replan_repairable": task.get("replan_repairable", None),
                 "replan_result": replan_result,
             }
 
@@ -818,12 +986,108 @@ class Scheduler(RuntimeTaskScheduler):
             "last_run_tick": self.current_tick,
         }
 
+    def _get_failed_step_payload(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return {}
+
+        last = task.get("last_step_result")
+        if isinstance(last, dict):
+            step = last.get("step")
+            if isinstance(step, dict):
+                return copy.deepcopy(step)
+
+        current_step_index = int(task.get("current_step_index", 0) or 0)
+        steps = task.get("steps", [])
+        if isinstance(steps, list) and 0 <= current_step_index < len(steps):
+            maybe_step = steps[current_step_index]
+            if isinstance(maybe_step, dict):
+                return copy.deepcopy(maybe_step)
+
+        return {}
+
+    def _get_failed_step_type(self, task: Dict[str, Any]) -> str:
+        failed_step = self._get_failed_step_payload(task)
+        return str(failed_step.get("type") or "").strip().lower()
+
+    def _is_repairable_failure(self, task: Dict[str, Any]) -> Tuple[bool, str]:
+        if not isinstance(task, dict):
+            return False, "invalid task payload"
+
+        status = str(task.get("status") or "").strip().lower()
+        if status not in {"failed", "error", "queued"}:
+            return False, f"status not repairable: {status or 'unknown'}"
+
+        replan_count = int(task.get("replan_count", 0) or 0)
+        max_replans = int(task.get("max_replans", self.default_max_replans) or self.default_max_replans)
+        if replan_count >= max_replans:
+            return False, f"replan limit reached: {replan_count}/{max_replans}"
+
+        failed_step_type = self._get_failed_step_type(task)
+        allowed_types = {"verify", "read_file", "run_python", "command", "write_file", "llm", "llm_generate"}
+        if failed_step_type not in allowed_types:
+            return False, f"step type not repairable: {failed_step_type or 'unknown'}"
+
+        error_text = str(task.get("last_error") or task.get("failure_message") or "").strip().lower()
+        hard_fail_signals = [
+            "unsupported step type",
+            "invalid step type",
+            "depends_on task not found",
+            "self dependency",
+            "task already terminal",
+        ]
+        for signal in hard_fail_signals:
+            if signal in error_text:
+                return False, f"hard failure: {signal}"
+
+        if failed_step_type == "verify":
+            if self._verify_step_failure_repairable(task):
+                return True, ""
+            return False, "verify failure not repairable"
+
+        return True, ""
+
+    def _canonicalize_steps_for_compare(self, steps: Any) -> List[Dict[str, Any]]:
+        if not isinstance(steps, list):
+            return []
+
+        canonical: List[Dict[str, Any]] = []
+        for item in steps:
+            if not isinstance(item, dict):
+                canonical.append({"type": str(item)})
+                continue
+
+            normalized: Dict[str, Any] = {}
+            for key in sorted(item.keys()):
+                value = item.get(key)
+                normalized[key] = value.strip() if isinstance(value, str) else value
+            canonical.append(normalized)
+
+        return canonical
+
+    def _is_meaningful_replan(self, old_steps: Any, new_steps: Any) -> bool:
+        return self._canonicalize_steps_for_compare(old_steps) != self._canonicalize_steps_for_compare(new_steps)
+
     def _try_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(task, dict):
             return {
                 "ok": False,
                 "replanned": False,
+                "decision": "error",
                 "summary": "invalid task payload",
+            }
+
+        failed_step_type = self._get_failed_step_type(task)
+        repairable, repairable_reason = self._is_repairable_failure(task)
+        if not repairable:
+            return {
+                "ok": True,
+                "replanned": False,
+                "decision": "skipped",
+                "summary": repairable_reason or "failure not repairable",
+                "repairable": False,
+                "failed_step_type": failed_step_type,
+                "replan_count": int(task.get("replan_count", 0) or 0),
+                "max_replans": int(task.get("max_replans", self.default_max_replans) or self.default_max_replans),
             }
 
         replanner = getattr(self, "replanner", None)
@@ -831,8 +1095,13 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "ok": False,
                 "replanned": False,
+                "decision": "error",
                 "summary": "replanner not available",
+                "repairable": True,
+                "failed_step_type": failed_step_type,
             }
+
+        old_steps = copy.deepcopy(task.get("steps", [])) if isinstance(task.get("steps"), list) else []
 
         try:
             replan_result = replanner.create_replan_for_task(
@@ -843,21 +1112,30 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "ok": False,
                 "replanned": False,
+                "decision": "error",
                 "summary": f"replanner exception: {e}",
+                "repairable": True,
+                "failed_step_type": failed_step_type,
             }
 
         if not isinstance(replan_result, dict):
             return {
                 "ok": False,
                 "replanned": False,
+                "decision": "error",
                 "summary": "invalid replanner result",
+                "repairable": True,
+                "failed_step_type": failed_step_type,
             }
 
         if not bool(replan_result.get("replanned")):
             return {
                 "ok": True,
                 "replanned": False,
+                "decision": "skipped",
                 "summary": str(replan_result.get("summary") or "replan not applied"),
+                "repairable": True,
+                "failed_step_type": failed_step_type,
                 "raw_replan_result": copy.deepcopy(replan_result),
             }
 
@@ -867,7 +1145,21 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "ok": False,
                 "replanned": False,
+                "decision": "error",
                 "summary": "replanner returned empty steps",
+                "repairable": True,
+                "failed_step_type": failed_step_type,
+                "raw_replan_result": copy.deepcopy(replan_result),
+            }
+
+        if not self._is_meaningful_replan(old_steps, new_steps):
+            return {
+                "ok": True,
+                "replanned": False,
+                "decision": "skipped",
+                "summary": "replanner returned equivalent steps",
+                "repairable": True,
+                "failed_step_type": failed_step_type,
                 "raw_replan_result": copy.deepcopy(replan_result),
             }
 
@@ -883,7 +1175,10 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "ok": True,
             "replanned": True,
+            "decision": "accepted",
             "summary": str(replan_result.get("summary") or "task replanned"),
+            "repairable": True,
+            "failed_step_type": failed_step_type,
             "steps_total": len(new_steps),
             "replan_count": task["replan_count"],
             "raw_replan_result": copy.deepcopy(replan_result),
@@ -896,6 +1191,7 @@ class Scheduler(RuntimeTaskScheduler):
     ) -> Dict[str, Any]:
         step_type = str(step.get("type") or "").strip().lower()
         task_dir = self._resolve_task_dir(task)
+        step_scope = self._normalize_step_scope(step.get("scope", None))
 
         guard_step = copy.deepcopy(step)
 
@@ -909,6 +1205,8 @@ class Scheduler(RuntimeTaskScheduler):
             }
 
         elif step_type == "verify":
+            step = self._normalize_verify_step(step)
+            step_scope = self._normalize_step_scope(step.get("scope", None))
             guard_step = {
                 "type": "noop",
                 "message": "verify",
@@ -939,9 +1237,12 @@ class Scheduler(RuntimeTaskScheduler):
             if not raw_path:
                 raise ValueError("ensure_file step missing path")
 
-            full_path = str(guard_result.get("resolved_path") or "")
-            if not full_path:
-                full_path = self._resolve_step_path(raw_path, task_dir=task_dir, shared_dir=self.shared_dir)
+            full_path = self._resolve_guard_target_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                scope=step_scope,
+                resolved_path=str(guard_result.get("resolved_path") or ""),
+            )
 
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
@@ -955,6 +1256,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "type": "ensure_file",
                 "path": raw_path,
                 "full_path": full_path,
+                "scope": step_scope,
                 "created": created,
                 "preserved_existing": not created,
             }
@@ -964,14 +1266,21 @@ class Scheduler(RuntimeTaskScheduler):
             if not raw_path:
                 raise ValueError("write_file step missing path")
 
-            content = step.get("content", "")
+            if bool(step.get("use_previous_text", False)):
+                content = self._extract_text_from_previous_result(task)
+            else:
+                content = step.get("content", "")
+
             if content is None:
                 content = ""
             content = str(content)
 
-            full_path = str(guard_result.get("resolved_path") or "")
-            if not full_path:
-                full_path = self._resolve_step_path(raw_path, task_dir=task_dir, shared_dir=self.shared_dir)
+            full_path = self._resolve_guard_target_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                scope=step_scope,
+                resolved_path=str(guard_result.get("resolved_path") or ""),
+            )
 
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
             with open(full_path, "w", encoding="utf-8") as f:
@@ -981,8 +1290,80 @@ class Scheduler(RuntimeTaskScheduler):
                 "type": "write_file",
                 "path": raw_path,
                 "full_path": full_path,
+                "scope": step_scope,
                 "bytes": len(content.encode("utf-8")),
                 "content": content,
+                "used_previous_text": bool(step.get("use_previous_text", False)),
+            }
+
+
+        if step_type in {"llm", "llm_generate"}:
+            previous_text = self._extract_text_from_previous_result(task)
+            prompt_template = str(step.get("prompt_template") or step.get("prompt") or "").strip()
+            prompt = prompt_template.replace("{{file_content}}", previous_text)
+
+            step_executor = getattr(self, "step_executor", None)
+            result_payload: Dict[str, Any]
+
+            if step_executor is not None:
+                try:
+                    if hasattr(step_executor, "execute_step") and callable(step_executor.execute_step):
+                        step_result = step_executor.execute_step(
+                            task=task,
+                            step=copy.deepcopy(step),
+                            context={"file_content": previous_text},
+                            step_index=int(task.get("current_step_index", 0) or 0),
+                            step_count=len(task.get("steps", [])) if isinstance(task.get("steps", []), list) else 1,
+                            previous_result=task.get("last_step_result"),
+                        )
+                    elif hasattr(step_executor, "execute") and callable(step_executor.execute):
+                        step_result = step_executor.execute(
+                            step=copy.deepcopy(step),
+                            context={"file_content": previous_text},
+                        )
+                    else:
+                        step_result = None
+                except TypeError:
+                    try:
+                        step_result = step_executor.execute_step(
+                            task=task,
+                            step=copy.deepcopy(step),
+                            context={"file_content": previous_text},
+                        )
+                    except Exception as e:
+                        raise RuntimeError(f"llm step execution failed: {e}")
+                except Exception as e:
+                    raise RuntimeError(f"llm step execution failed: {e}")
+
+                if isinstance(step_result, dict):
+                    result_payload = copy.deepcopy(step_result)
+                else:
+                    result_payload = {"text": str(step_result or "")}
+            elif self.llm_client is not None:
+                client = self.llm_client
+                if hasattr(client, "chat") and callable(client.chat):
+                    llm_out = client.chat(prompt)
+                elif hasattr(client, "generate") and callable(client.generate):
+                    llm_out = client.generate(prompt)
+                else:
+                    raise RuntimeError("llm_client has no chat/generate method")
+                result_payload = {"text": str(llm_out or "")}
+            else:
+                raise RuntimeError("no llm backend available for llm step")
+
+            final_text = self._extract_text_from_result_payload(result_payload)
+            if not final_text and isinstance(result_payload, dict):
+                final_text = str(result_payload)
+
+            return {
+                "type": step_type,
+                "mode": str(step.get("mode") or ""),
+                "prompt": prompt,
+                "prompt_template": prompt_template,
+                "input_text": previous_text,
+                "text": final_text,
+                "content": final_text,
+                "result": result_payload,
             }
 
         if step_type == "command":
@@ -1025,6 +1406,7 @@ class Scheduler(RuntimeTaskScheduler):
                 raw_path=raw_path,
                 task_dir=task_dir,
                 shared_dir=self.shared_dir,
+                scope=step_scope,
             )
 
             read_guard = self.execution_guard.check_step(
@@ -1050,6 +1432,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "type": "run_python",
                 "path": raw_path,
                 "full_path": full_path,
+                "scope": step_scope,
                 "python_executable": sys.executable,
                 "returncode": int(completed.returncode),
                 "stdout": completed.stdout,
@@ -1073,6 +1456,7 @@ class Scheduler(RuntimeTaskScheduler):
                 raw_path=raw_path,
                 task_dir=task_dir,
                 shared_dir=self.shared_dir,
+                scope=step_scope,
             )
 
             guard_check = self.execution_guard.check_step(
@@ -1092,24 +1476,30 @@ class Scheduler(RuntimeTaskScheduler):
                 "type": "read_file",
                 "path": raw_path,
                 "full_path": full_path,
+                "scope": step_scope,
                 "content": content,
             }
 
         if step_type == "verify":
-            contains = str(step.get("contains") or "").strip()
+            step = self._normalize_verify_step(step)
+            step_scope = self._normalize_step_scope(step.get("scope", None))
+            contains = step.get("contains", None)
             equals = step.get("equals", None)
+            exists = step.get("exists", None)
             path = str(step.get("path") or "").strip()
 
-            if not contains and equals is None and not path:
-                raise ValueError("verify step requires contains / equals / path")
+            if contains is None and equals is None and exists is None and not path:
+                raise ValueError("verify step requires path / contains / equals / exists")
 
             target_text = ""
+            full_path = ""
 
             if path:
                 full_path = self._resolve_read_path_with_fallback(
                     raw_path=path,
                     task_dir=task_dir,
                     shared_dir=self.shared_dir,
+                    scope=step_scope,
                 )
 
                 read_guard = self.execution_guard.check_step(
@@ -1119,11 +1509,20 @@ class Scheduler(RuntimeTaskScheduler):
                 if not bool(read_guard.get("ok")):
                     raise PermissionError(str(read_guard.get("error") or "guard blocked verify read"))
 
-                if not os.path.exists(full_path):
+                file_exists = os.path.exists(full_path)
+
+                if exists is True and not file_exists:
                     raise FileNotFoundError(f"verify file not found: {full_path}")
 
-                with open(full_path, "r", encoding="utf-8") as f:
-                    target_text = f.read()
+                if exists is False and file_exists:
+                    raise RuntimeError(f"verify failed: file should not exist: {full_path}")
+
+                if (contains is not None or equals is not None or exists is not False) and not file_exists:
+                    raise FileNotFoundError(f"verify file not found: {full_path}")
+
+                if file_exists and (contains is not None or equals is not None):
+                    with open(full_path, "r", encoding="utf-8") as f:
+                        target_text = f.read()
             else:
                 last = task.get("last_step_result")
                 if isinstance(last, dict):
@@ -1138,24 +1537,29 @@ class Scheduler(RuntimeTaskScheduler):
                     else:
                         target_text = str(last_result or "")
 
-            if contains:
-                if contains not in target_text:
-                    raise RuntimeError(f"verify failed: '{contains}' not found")
+            if contains is not None:
+                contains_text = str(contains)
+                if contains_text not in target_text:
+                    raise RuntimeError(f"verify contains failed: '{contains_text}' not found")
 
             if equals is not None:
                 expected = str(equals)
                 if str(target_text).strip() != expected.strip():
                     raise RuntimeError(
-                        f"verify failed: expected exact match '{expected}', got '{str(target_text).strip()}'"
+                        f"verify equals failed: expected exact match '{expected}', got '{str(target_text).strip()}'"
                     )
 
             return {
                 "type": "verify",
                 "ok": True,
+                "path": path,
+                "full_path": full_path,
+                "scope": step_scope,
                 "contains": contains,
                 "equals": equals,
-                "path": path,
+                "exists": exists,
                 "checked_text": target_text,
+                "verified": True,
             }
 
         raise ValueError(f"unsupported step type: {step_type}")
@@ -1170,8 +1574,21 @@ class Scheduler(RuntimeTaskScheduler):
         os.makedirs(sandbox_dir, exist_ok=True)
         return sandbox_dir
 
-    def _resolve_step_path(self, raw_path: str, task_dir: str, shared_dir: str) -> str:
-        normalized = raw_path.replace("\\", "/").strip()
+    def _normalize_step_scope(self, scope: Any) -> str:
+        value = str(scope or "").strip().lower()
+        if value in {"task", "shared", "auto"}:
+            return value
+        return "auto"
+
+    def _resolve_step_path(
+        self,
+        raw_path: str,
+        task_dir: str,
+        shared_dir: str,
+        scope: str = "auto",
+    ) -> str:
+        normalized = str(raw_path or "").replace("\\", "/").strip()
+        step_scope = self._normalize_step_scope(scope)
 
         if os.path.isabs(normalized):
             return os.path.abspath(normalized)
@@ -1184,10 +1601,20 @@ class Scheduler(RuntimeTaskScheduler):
             relative_part = normalized[len("shared/"):].strip("/")
             return os.path.abspath(os.path.join(shared_dir, relative_part))
 
+        if step_scope == "shared":
+            return os.path.abspath(os.path.join(shared_dir, normalized))
+
         return os.path.abspath(os.path.join(task_dir, normalized))
 
-    def _resolve_read_path_with_fallback(self, raw_path: str, task_dir: str, shared_dir: str) -> str:
-        normalized = raw_path.replace("\\", "/").strip()
+    def _resolve_read_path_with_fallback(
+        self,
+        raw_path: str,
+        task_dir: str,
+        shared_dir: str,
+        scope: str = "auto",
+    ) -> str:
+        normalized = str(raw_path or "").replace("\\", "/").strip()
+        step_scope = self._normalize_step_scope(scope)
 
         if os.path.isabs(normalized):
             return os.path.abspath(normalized)
@@ -1201,14 +1628,156 @@ class Scheduler(RuntimeTaskScheduler):
             return os.path.abspath(os.path.join(shared_dir, relative_part))
 
         task_local = os.path.abspath(os.path.join(task_dir, normalized))
+        shared_fallback = os.path.abspath(os.path.join(shared_dir, normalized))
+
+        if step_scope == "task":
+            return task_local
+
+        if step_scope == "shared":
+            return shared_fallback
+
         if os.path.exists(task_local):
             return task_local
 
-        shared_fallback = os.path.abspath(os.path.join(shared_dir, normalized))
         if os.path.exists(shared_fallback):
             return shared_fallback
 
         return task_local
+
+    def _needs_scheduler_path_resolution(self, raw_path: str) -> bool:
+        normalized = str(raw_path or "").replace("\\", "/").strip().lower()
+        return bool(
+            normalized.startswith("shared/")
+            or normalized.startswith("workspace/shared/")
+            or normalized.startswith("workspace/tasks/")
+            or normalized.startswith("tasks/")
+        )
+
+    def _resolve_guard_target_path(
+        self,
+        raw_path: str,
+        task_dir: str,
+        scope: str = "auto",
+        resolved_path: str = "",
+    ) -> str:
+        if resolved_path:
+            normalized_resolved = os.path.abspath(str(resolved_path).strip())
+            normalized_raw = str(raw_path or "").replace("\\", "/").strip().lower()
+            step_scope = self._normalize_step_scope(scope)
+
+            if step_scope == "shared":
+                if normalized_raw.startswith("shared/") or normalized_raw.startswith("workspace/shared/"):
+                    return normalized_resolved
+            elif step_scope == "task":
+                if not (normalized_raw.startswith("shared/") or normalized_raw.startswith("workspace/shared/")):
+                    return normalized_resolved
+            else:
+                return normalized_resolved
+
+        return self._resolve_step_path(
+            raw_path=raw_path,
+            task_dir=task_dir,
+            shared_dir=self.shared_dir,
+            scope=scope,
+        )
+
+
+    def _extract_text_from_result_payload(self, payload: Any) -> str:
+        if isinstance(payload, str):
+            return payload
+
+        if isinstance(payload, dict):
+            for key in ("text", "content", "message", "response", "final_answer", "stdout", "checked_text"):
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            result_block = payload.get("result")
+            if isinstance(result_block, dict):
+                for key in ("text", "content", "message", "response", "final_answer", "stdout", "checked_text"):
+                    value = result_block.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value
+        return ""
+
+    def _extract_text_from_previous_result(self, task: Dict[str, Any]) -> str:
+        if not isinstance(task, dict):
+            return ""
+
+        last = task.get("last_step_result")
+        if isinstance(last, dict):
+            direct = self._extract_text_from_result_payload(last)
+            if direct:
+                return direct
+            result_block = last.get("result")
+            direct = self._extract_text_from_result_payload(result_block)
+            if direct:
+                return direct
+
+        results = task.get("results", [])
+        if isinstance(results, list) and results:
+            last_item = results[-1]
+            direct = self._extract_text_from_result_payload(last_item)
+            if direct:
+                return direct
+
+        return ""
+
+    def _normalize_public_status_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        status = str(task.get("status") or STATUS_CREATED).strip().lower() or STATUS_CREATED
+        task["status"] = status
+
+        steps = task.get("steps", [])
+        if not isinstance(steps, list):
+            steps = []
+            task["steps"] = steps
+
+        try:
+            current_step_index = int(task.get("current_step_index", 0) or 0)
+        except Exception:
+            current_step_index = 0
+
+        if current_step_index < 0:
+            current_step_index = 0
+
+        steps_total = len(steps)
+        task["steps_total"] = steps_total
+
+        if status in {"finished", "done", "success", "completed"}:
+            current_step_index = steps_total if steps_total >= 0 else 0
+            task["current_step"] = None
+        else:
+            if steps_total <= 0:
+                current_step_index = 0
+                task["current_step"] = None
+            else:
+                if current_step_index >= steps_total:
+                    current_step_index = max(0, steps_total - 1)
+                maybe_step = steps[current_step_index]
+                task["current_step"] = copy.deepcopy(maybe_step) if isinstance(maybe_step, dict) else None
+
+        task["current_step_index"] = current_step_index
+
+        task["final_answer"] = str(task.get("final_answer") or "")
+        task["last_error"] = str(task.get("last_error") or "")
+        task["failure_message"] = str(task.get("failure_message") or "")
+        task["blocked_reason"] = str(task.get("blocked_reason") or "")
+
+        state_detail = ""
+        if status == STATUS_BLOCKED:
+            state_detail = task["blocked_reason"]
+        elif status in {"failed", "error"}:
+            state_detail = task["last_error"] or task["failure_message"]
+        elif status in {"finished", "done", "success", "completed"}:
+            state_detail = task["final_answer"]
+        task["state_detail"] = str(state_detail or "")
+
+        if not isinstance(task.get("history"), list):
+            task["history"] = [status]
+
+        return task
 
     def _build_simple_final_answer(self, results: List[Dict[str, Any]]) -> str:
         return build_simple_final_answer(results)
@@ -1487,6 +2056,8 @@ class Scheduler(RuntimeTaskScheduler):
             "scheduler_build": SCHEDULER_BUILD,
         }
 
+        task = self._refresh_task_public_fields(task)
+
         try:
             task = self.task_workspace.create_workspace(task)
             self.task_workspace.save_plan(task, planner_result)
@@ -1712,6 +2283,8 @@ class Scheduler(RuntimeTaskScheduler):
 
         task["status"] = STATUS_BLOCKED
         task["blocked_reason"] = blocked_reason
+        task["last_error"] = ""
+        task["failure_message"] = ""
         task["scheduler_build"] = SCHEDULER_BUILD
         task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
         self._persist_task_payload(task_id=task_id, task=task)
@@ -2279,6 +2852,489 @@ class Scheduler(RuntimeTaskScheduler):
             except Exception:
                 pass
 
+
+    def _ensure_task_paths(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        task_id = self._extract_task_id(task) or str(task.get("task_name") or "unknown_task").strip() or "unknown_task"
+        task["task_name"] = str(task.get("task_name") or task_id).strip() or task_id
+
+        task_dir = str(task.get("task_dir") or "").strip()
+        if not task_dir:
+            task_dir = os.path.join(self.tasks_root, task_id)
+        task["task_dir"] = task_dir
+
+        task["workspace_root"] = str(task.get("workspace_root") or self.workspace_root)
+        task["workspace_dir"] = str(task.get("workspace_dir") or self.tasks_root)
+        task["shared_dir"] = str(task.get("shared_dir") or self.shared_dir)
+
+        task["plan_file"] = str(task.get("plan_file") or os.path.join(task_dir, "plan.json"))
+        task["runtime_state_file"] = str(task.get("runtime_state_file") or os.path.join(task_dir, "runtime_state.json"))
+        task["trace_file"] = str(task.get("trace_file") or os.path.join(task_dir, "trace.json"))
+        task["result_file"] = str(task.get("result_file") or os.path.join(task_dir, "result.json"))
+        task["execution_log_file"] = str(task.get("execution_log_file") or os.path.join(task_dir, "execution_log.json"))
+        task["snapshot_file"] = str(task.get("snapshot_file") or os.path.join(task_dir, "task_snapshot.json"))
+        return task
+
+    def _detect_artifact_scope(self, full_path: str) -> str:
+        path = os.path.abspath(str(full_path or "").strip()) if str(full_path or "").strip() else ""
+        if not path:
+            return "task"
+
+        shared_root = os.path.abspath(self.shared_dir)
+        try:
+            if os.path.commonpath([path, shared_root]) == shared_root:
+                return "shared"
+        except Exception:
+            pass
+
+        return "task"
+
+    def _to_logical_path(self, full_path: str) -> str:
+        path = os.path.abspath(str(full_path or "").strip()) if str(full_path or "").strip() else ""
+        if not path:
+            return ""
+
+        shared_root = os.path.abspath(self.shared_dir)
+        tasks_root = os.path.abspath(self.tasks_root)
+
+        try:
+            if os.path.commonpath([path, shared_root]) == shared_root:
+                rel = os.path.relpath(path, shared_root).replace("\\", "/")
+                return f"workspace/shared/{rel}" if rel != "." else "workspace/shared"
+        except Exception:
+            pass
+
+        try:
+            if os.path.commonpath([path, tasks_root]) == tasks_root:
+                rel = os.path.relpath(path, tasks_root).replace("\\", "/")
+                return f"workspace/tasks/{rel}" if rel != "." else "workspace/tasks"
+        except Exception:
+            pass
+
+        return path.replace("\\", "/")
+
+    def _make_artifact_entry(self, full_path: str) -> Dict[str, Any]:
+        normalized_full_path = os.path.abspath(str(full_path or "").strip()) if str(full_path or "").strip() else ""
+        exists = bool(normalized_full_path and os.path.exists(normalized_full_path))
+        logical_path = self._to_logical_path(normalized_full_path)
+        scope = self._detect_artifact_scope(normalized_full_path)
+
+        return {
+            "path": normalized_full_path,
+            "full_path": normalized_full_path,
+            "logical_path": logical_path,
+            "exists": exists,
+            "name": os.path.basename(normalized_full_path) if normalized_full_path else "",
+            "scope": scope,
+        }
+
+    def _extract_result_artifact_paths(self, task: Dict[str, Any]) -> List[str]:
+        candidates: List[str] = []
+
+        for key in ("result_file", "execution_log_file", "plan_file", "runtime_state_file", "trace_file", "task_dir"):
+            value = str(task.get(key) or "").strip()
+            if value:
+                candidates.append(value)
+
+        results = task.get("results", [])
+        if not isinstance(results, list):
+            results = []
+
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+
+            step_payloads = [item]
+            nested = item.get("result")
+            if isinstance(nested, dict):
+                step_payloads.append(nested)
+
+            for payload in step_payloads:
+                if not isinstance(payload, dict):
+                    continue
+                for key in ("full_path", "path", "output_path", "file_path", "result_path"):
+                    value = str(payload.get(key) or "").strip()
+                    if value:
+                        candidates.append(value)
+
+        deduped: List[str] = []
+        seen = set()
+        for raw_path in candidates:
+            path = str(raw_path or "").strip()
+            if not path:
+                continue
+            normalized = path
+            if not os.path.isabs(normalized):
+                normalized = self._resolve_step_path(
+                    normalized,
+                    task_dir=str(task.get("task_dir") or self.tasks_root),
+                    shared_dir=self.shared_dir,
+                )
+            normalized = os.path.abspath(normalized)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            deduped.append(normalized)
+
+        return deduped
+
+    def _normalize_task_schema(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        normalized = copy.deepcopy(task)
+        normalized = self._ensure_task_paths(normalized)
+
+        defaults = {
+            "task_id": self._extract_task_id(normalized),
+            "task_name": self._extract_task_id(normalized) or str(normalized.get("task_name") or "").strip(),
+            "goal": str(normalized.get("goal") or normalized.get("title") or ""),
+            "title": str(normalized.get("title") or normalized.get("goal") or ""),
+            "status": str(normalized.get("status") or STATUS_CREATED).strip().lower() or STATUS_CREATED,
+            "priority": int(normalized.get("priority", 0) or 0),
+            "current_step_index": int(normalized.get("current_step_index", 0) or 0),
+            "steps": copy.deepcopy(normalized.get("steps", [])) if isinstance(normalized.get("steps"), list) else [],
+            "results": copy.deepcopy(normalized.get("results", [])) if isinstance(normalized.get("results"), list) else [],
+            "step_results": copy.deepcopy(normalized.get("step_results", [])) if isinstance(normalized.get("step_results"), list) else [],
+            "execution_log": copy.deepcopy(normalized.get("execution_log", [])) if isinstance(normalized.get("execution_log"), list) else [],
+            "depends_on": copy.deepcopy(normalized.get("depends_on", [])) if isinstance(normalized.get("depends_on"), list) else [],
+            "history": copy.deepcopy(normalized.get("history", [])) if isinstance(normalized.get("history"), list) else [],
+            "final_answer": str(normalized.get("final_answer") or ""),
+            "last_error": str(normalized.get("last_error") or ""),
+            "failure_message": str(normalized.get("failure_message") or ""),
+            "blocked_reason": str(normalized.get("blocked_reason") or ""),
+            "state_detail": str(normalized.get("state_detail") or ""),
+            "retry_count": int(normalized.get("retry_count", 0) or 0),
+            "replan_count": int(normalized.get("replan_count", 0) or 0),
+            "replan_decision": str(normalized.get("replan_decision") or ""),
+            "replan_summary": str(normalized.get("replan_summary") or ""),
+            "replan_failed_step_type": str(normalized.get("replan_failed_step_type") or ""),
+            "replan_repairable": normalized.get("replan_repairable", None),
+            "completion_mode": str(normalized.get("completion_mode") or ""),
+            "verification_required": normalized.get("verification_required", None),
+            "verification_passed": normalized.get("verification_passed", None),
+            "result_path": str(normalized.get("result_path") or ""),
+            "result_logical_path": str(normalized.get("result_logical_path") or ""),
+            "result_exists": bool(normalized.get("result_exists", False)),
+            "openable": bool(normalized.get("openable", False)),
+            "open_targets": copy.deepcopy(normalized.get("open_targets", [])) if isinstance(normalized.get("open_targets"), list) else [],
+            "artifacts": copy.deepcopy(normalized.get("artifacts", [])) if isinstance(normalized.get("artifacts"), list) else [],
+            "updated_at": int(normalized.get("updated_at", 0) or 0),
+        }
+
+        normalized.update(defaults)
+        normalized["steps_total"] = len(normalized["steps"])
+
+        if normalized["last_step_result"] is None if "last_step_result" in normalized else True:
+            normalized["last_step_result"] = None
+        else:
+            normalized["last_step_result"] = copy.deepcopy(normalized.get("last_step_result"))
+
+        normalized = self._normalize_public_status_fields(normalized)
+
+        if not normalized["history"]:
+            normalized["history"] = [normalized["status"]]
+
+        return normalized
+
+    def _backfill_replan_decision_fields(self, task: Dict[str, Any], replan_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        decision = str(task.get("replan_decision") or "").strip()
+        summary = str(task.get("replan_summary") or "").strip()
+        failed_step_type = str(task.get("replan_failed_step_type") or "").strip()
+        repairable = task.get("replan_repairable", None)
+
+        source = replan_result if isinstance(replan_result, dict) else {}
+        if not decision:
+            decision = str(source.get("decision") or "").strip()
+        if not summary:
+            summary = str(source.get("summary") or "").strip()
+        if not failed_step_type:
+            failed_step_type = str(source.get("failed_step_type") or "").strip()
+        if repairable is None and "repairable" in source:
+            repairable = source.get("repairable")
+
+        if not failed_step_type:
+            failed_step_type = self._get_failed_step_type(task)
+
+        if not decision and (summary or failed_step_type):
+            decision = "accepted" if bool(task.get("replanned")) else "skipped"
+
+        if not summary and decision == "skipped" and failed_step_type:
+            summary = f"step type not repairable: {failed_step_type}"
+
+        if repairable is None and failed_step_type:
+            repairable = failed_step_type in {"verify", "read_file", "run_python", "command", "write_file", "llm", "llm_generate"}
+
+        task["replan_decision"] = decision
+        task["replan_summary"] = summary
+        task["replan_failed_step_type"] = failed_step_type
+        task["replan_repairable"] = repairable
+        return task
+
+    def _normalize_verify_step(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = copy.deepcopy(step if isinstance(step, dict) else {})
+        if not isinstance(normalized, dict):
+            return {}
+
+        path = str(normalized.get("path") or "").strip()
+        contains = normalized.get("contains", None)
+        equals = normalized.get("equals", None)
+        exists = normalized.get("exists", None)
+
+        if path and "," in path and ("contains=" in path or "equals=" in path or "exists=" in path):
+            parts = [p.strip() for p in path.split(",") if p.strip()]
+            if parts:
+                first = parts[0]
+                if not first.startswith("contains=") and not first.startswith("equals=") and not first.startswith("exists="):
+                    path = first
+                    for item in parts[1:]:
+                        if item.startswith("contains=") and contains is None:
+                            contains = item.split("=", 1)[1]
+                        elif item.startswith("equals=") and equals is None:
+                            equals = item.split("=", 1)[1]
+                        elif item.startswith("exists=") and exists is None:
+                            raw = item.split("=", 1)[1].strip().lower()
+                            exists = raw in {"1", "true", "yes", "y"}
+
+        normalized["path"] = path
+        normalized["scope"] = self._normalize_step_scope(normalized.get("scope", None))
+        if contains is not None:
+            normalized["contains"] = contains
+        if equals is not None:
+            normalized["equals"] = equals
+        if exists is not None:
+            normalized["exists"] = exists
+        return normalized
+
+    def _verify_step_failure_repairable(self, task: Dict[str, Any]) -> bool:
+        failed_step_type = self._get_failed_step_type(task)
+        if failed_step_type != "verify":
+            return failed_step_type in {"read_file", "run_python", "command", "write_file", "llm", "llm_generate"}
+
+        error_text = str(task.get("last_error") or task.get("failure_message") or "").strip().lower()
+
+        not_repairable_signals = [
+            "file not found",
+            "path is empty",
+            "requires path",
+            "requires contains",
+            "requires equals",
+            "requires exists",
+            "invalid verify",
+        ]
+        for signal in not_repairable_signals:
+            if signal in error_text:
+                return False
+
+        repairable_signals = [
+            "contains failed",
+            "equals failed",
+            "verify failed",
+        ]
+        for signal in repairable_signals:
+            if signal in error_text:
+                return True
+
+        return False
+
+    def _infer_completion_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        steps = task.get("steps", [])
+        if not isinstance(steps, list):
+            steps = []
+
+        has_verify_step = False
+        for step in steps:
+            if isinstance(step, dict) and str(step.get("type") or "").strip().lower() == "verify":
+                has_verify_step = True
+                break
+
+        status = str(task.get("status") or "").strip().lower()
+        completion_mode = str(task.get("completion_mode") or "").strip().lower()
+        verification_required = task.get("verification_required", None)
+        verification_passed = task.get("verification_passed", None)
+
+        if not completion_mode:
+            completion_mode = "verified" if has_verify_step else "execution_only"
+
+        if verification_required is None:
+            verification_required = bool(has_verify_step)
+
+        if verification_passed is None:
+            if not bool(verification_required):
+                verification_passed = None
+            elif status in {"finished", "done", "success", "completed"}:
+                verification_passed = True
+            elif status in {"failed", "error"}:
+                verification_passed = False
+            else:
+                verification_passed = None
+
+        task["completion_mode"] = completion_mode
+        task["verification_required"] = verification_required
+        task["verification_passed"] = verification_passed
+        return task
+
+    def _clear_stale_replan_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        status = str(task.get("status") or "").strip().lower()
+        if status not in {"finished", "done", "success", "completed"}:
+            return task
+
+        # If the task finished and was not actually replanned, stale replan decision
+        # fields should not leak into public outputs.
+        if not bool(task.get("replanned", False)):
+            task["replan_decision"] = ""
+            task["replan_summary"] = ""
+            task["replan_failed_step_type"] = ""
+            task["replan_repairable"] = None
+
+        return task
+
+    def _build_public_task_record(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = self._normalize_task_schema(task)
+        normalized = self._backfill_replan_decision_fields(normalized)
+        normalized = self._infer_completion_fields(normalized)
+        normalized = self._clear_stale_replan_fields(normalized)
+
+        result_path = str(normalized.get("result_path") or "")
+        result_logical_path = str(normalized.get("result_logical_path") or "")
+        if result_path and not result_logical_path:
+            result_logical_path = self._to_logical_path(result_path)
+
+        open_targets = copy.deepcopy(normalized.get("open_targets", [])) if isinstance(normalized.get("open_targets"), list) else []
+        artifacts = copy.deepcopy(normalized.get("artifacts", [])) if isinstance(normalized.get("artifacts"), list) else []
+        if open_targets and not artifacts:
+            artifacts = copy.deepcopy(open_targets)
+
+        record = {
+            "task_id": self._extract_task_id(normalized),
+            "goal": str(normalized.get("goal") or ""),
+            "status": str(normalized.get("status") or STATUS_CREATED),
+            "current_step_index": int(normalized.get("current_step_index", 0) or 0),
+            "steps_total": int(normalized.get("steps_total", len(normalized.get("steps", []))) or 0),
+            "current_step": copy.deepcopy(normalized.get("current_step")) if isinstance(normalized.get("current_step"), dict) else None,
+            "final_answer": str(normalized.get("final_answer") or ""),
+            "last_error": str(normalized.get("last_error") or ""),
+            "blocked_reason": str(normalized.get("blocked_reason") or ""),
+            "state_detail": str(normalized.get("state_detail") or ""),
+            "result_path": result_path,
+            "result_logical_path": result_logical_path,
+            "result_exists": bool(normalized.get("result_exists")),
+            "openable": bool(normalized.get("openable")),
+            "task_dir": str(normalized.get("task_dir") or ""),
+            "task_dir_logical_path": self._to_logical_path(str(normalized.get("task_dir") or "")),
+            "plan_file": str(normalized.get("plan_file") or ""),
+            "plan_file_logical_path": self._to_logical_path(str(normalized.get("plan_file") or "")),
+            "runtime_state_file": str(normalized.get("runtime_state_file") or ""),
+            "runtime_state_file_logical_path": self._to_logical_path(str(normalized.get("runtime_state_file") or "")),
+            "trace_file": str(normalized.get("trace_file") or ""),
+            "trace_file_logical_path": self._to_logical_path(str(normalized.get("trace_file") or "")),
+            "execution_log_file": str(normalized.get("execution_log_file") or ""),
+            "execution_log_file_logical_path": self._to_logical_path(str(normalized.get("execution_log_file") or "")),
+            "updated_at": int(normalized.get("updated_at", 0) or 0),
+            "replan_count": int(normalized.get("replan_count", 0) or 0),
+            "replanned": bool(normalized.get("replanned", False)),
+            "replan_reason": str(normalized.get("replan_reason") or ""),
+            "replan_decision": str(normalized.get("replan_decision") or ""),
+            "replan_summary": str(normalized.get("replan_summary") or ""),
+            "replan_failed_step_type": str(normalized.get("replan_failed_step_type") or ""),
+            "replan_repairable": normalized.get("replan_repairable", None),
+            "completion_mode": str(normalized.get("completion_mode") or ""),
+            "verification_required": normalized.get("verification_required", None),
+            "verification_passed": normalized.get("verification_passed", None),
+            "history": copy.deepcopy(normalized.get("history", [])) if isinstance(normalized.get("history"), list) else [],
+            "open_targets": open_targets,
+            "artifacts": artifacts,
+        }
+        return record
+
+    def _refresh_task_public_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return task
+
+        task = self._normalize_task_schema(task)
+
+        steps = task.get("steps", [])
+        current_step_index = int(task.get("current_step_index", 0) or 0)
+        current_step = copy.deepcopy(task.get("current_step")) if isinstance(task.get("current_step"), dict) else None
+
+        if not isinstance(task.get("results"), list):
+            task["results"] = []
+        if not isinstance(task.get("step_results"), list):
+            task["step_results"] = copy.deepcopy(task.get("results", []))
+        if task.get("last_step_result") is None and task.get("step_results"):
+            try:
+                task["last_step_result"] = copy.deepcopy(task["step_results"][-1])
+            except Exception:
+                pass
+        if not isinstance(task.get("execution_log"), list):
+            task["execution_log"] = []
+
+        if task["status"] in {"finished", "done", "success", "completed"} and not str(task.get("final_answer") or "").strip():
+            task["final_answer"] = self._build_simple_final_answer(task.get("results", []))
+
+        artifact_paths = self._extract_result_artifact_paths(task)
+        artifact_entries = [self._make_artifact_entry(path) for path in artifact_paths]
+
+        preferred_result_path = ""
+        for entry in artifact_entries:
+            path = str(entry.get("path") or "").strip()
+            if not path:
+                continue
+            if path.endswith("result.json") and entry.get("exists"):
+                preferred_result_path = path
+                break
+        if not preferred_result_path:
+            for entry in artifact_entries:
+                if bool(entry.get("exists")) and os.path.isfile(str(entry.get("path") or "")):
+                    preferred_result_path = str(entry.get("path") or "")
+                    break
+        if not preferred_result_path and artifact_entries:
+            preferred_result_path = str(artifact_entries[0].get("path") or "")
+
+        result_exists = bool(preferred_result_path and os.path.exists(preferred_result_path))
+        if not result_exists:
+            result_exists = bool(
+                str(task.get("final_answer") or "").strip()
+                or task.get("results")
+                or task.get("execution_log")
+            )
+
+        openable = bool(
+            result_exists
+            or any(bool(entry.get("exists")) for entry in artifact_entries)
+            or os.path.exists(str(task.get("task_dir") or ""))
+        )
+
+        try:
+            updated_at = int(time.time())
+        except Exception:
+            updated_at = 0
+
+        task["result_path"] = preferred_result_path
+        task["result_logical_path"] = self._to_logical_path(preferred_result_path)
+        task["result_exists"] = result_exists
+        task["openable"] = openable
+        task["open_targets"] = artifact_entries
+        task["artifacts"] = copy.deepcopy(artifact_entries)
+        task["updated_at"] = updated_at
+
+        task = self._infer_completion_fields(task)
+        task = self._clear_stale_replan_fields(task)
+        task["public_snapshot"] = self._build_public_task_record(task)
+
+        return task
+
     # ------------------------------------------------------------
     # hydration
     # ------------------------------------------------------------
@@ -2293,32 +3349,12 @@ class Scheduler(RuntimeTaskScheduler):
         if not task_id:
             return hydrated
 
-        if not hydrated.get("task_name"):
-            hydrated["task_name"] = task_id
+        hydrated = self._ensure_task_paths(hydrated)
 
         task_dir = str(hydrated.get("task_dir") or "").strip()
-        if not task_dir:
-            task_dir = os.path.join(self.tasks_root, task_id)
-            hydrated["task_dir"] = task_dir
-
-        hydrated.setdefault("workspace_root", self.workspace_root)
-        hydrated.setdefault("workspace_dir", self.tasks_root)
-        hydrated.setdefault("shared_dir", self.shared_dir)
-
         plan_file = str(hydrated.get("plan_file") or "").strip()
-        if not plan_file:
-            plan_file = os.path.join(task_dir, "plan.json")
-            hydrated["plan_file"] = plan_file
-
         runtime_state_file = str(hydrated.get("runtime_state_file") or "").strip()
-        if not runtime_state_file:
-            runtime_state_file = os.path.join(task_dir, "runtime_state.json")
-            hydrated["runtime_state_file"] = runtime_state_file
-
         trace_file = str(hydrated.get("trace_file") or "").strip()
-        if not trace_file:
-            trace_file = os.path.join(task_dir, "trace.json")
-            hydrated["trace_file"] = trace_file
 
         if os.path.exists(plan_file):
             plan_data = self._safe_read_json(plan_file)
@@ -2371,12 +3407,20 @@ class Scheduler(RuntimeTaskScheduler):
                     "replan_count",
                     "replanned",
                     "replan_reason",
+                    "replan_decision",
+                    "replan_summary",
+                    "replan_failed_step_type",
+                    "replan_repairable",
+                    "completion_mode",
+                    "verification_required",
+                    "verification_passed",
                     "max_replans",
                     "planner_result",
                     "history",
                     "execution_log",
                     "result_file",
                     "execution_log_file",
+                    "snapshot_file",
                     "plan_file",
                     "log_file",
                     "runtime_state_file",
@@ -2405,6 +3449,7 @@ class Scheduler(RuntimeTaskScheduler):
             current_status = str(hydrated.get("status") or STATUS_CREATED)
             hydrated["history"] = [current_status]
 
+        hydrated = self._refresh_task_public_fields(hydrated)
         return hydrated
 
     def _safe_read_json(self, path: str) -> Any:
@@ -2476,6 +3521,13 @@ class Scheduler(RuntimeTaskScheduler):
                 "replan_count",
                 "replanned",
                 "replan_reason",
+                "replan_decision",
+                "replan_summary",
+                "replan_failed_step_type",
+                "replan_repairable",
+                "completion_mode",
+                "verification_required",
+                "verification_passed",
                 "max_replans",
                 "planner_result",
                 "history",
@@ -2509,6 +3561,13 @@ class Scheduler(RuntimeTaskScheduler):
                 "last_failure_tick",
                 "finished_tick",
                 "blocked_reason",
+                "replan_decision",
+                "replan_summary",
+                "replan_failed_step_type",
+                "replan_repairable",
+                "completion_mode",
+                "verification_required",
+                "verification_passed",
             ):
                 if key in runner_result:
                     merged[key] = copy.deepcopy(runner_result.get(key))
@@ -2579,6 +3638,17 @@ class Scheduler(RuntimeTaskScheduler):
         merged["shared_dir"] = merged.get("shared_dir") or self.shared_dir
 
         merged["scheduler_build"] = SCHEDULER_BUILD
+
+        inferred_replan_result = None
+        if isinstance(runner_result, dict):
+            maybe_replan = runner_result.get("replan_result")
+            if isinstance(maybe_replan, dict):
+                inferred_replan_result = maybe_replan
+
+        merged = self._backfill_replan_decision_fields(merged, replan_result=inferred_replan_result)
+        merged = self._infer_completion_fields(merged)
+        merged = self._clear_stale_replan_fields(merged)
+        merged = self._refresh_task_public_fields(merged)
         self._persist_task_payload(task_id=task_id, task=merged)
 
     def _extract_effective_status_and_answer(
@@ -2625,6 +3695,8 @@ class Scheduler(RuntimeTaskScheduler):
 
         task["status"] = "finished"
         task["blocked_reason"] = ""
+        task["last_error"] = ""
+        task["failure_message"] = ""
         task["finished_tick"] = getattr(self, "current_tick", 0)
         task["scheduler_build"] = SCHEDULER_BUILD
         if result is not None:
@@ -2662,6 +3734,9 @@ class Scheduler(RuntimeTaskScheduler):
         task["scheduler_build"] = SCHEDULER_BUILD
         if error:
             task["last_error"] = str(error)
+        else:
+            task["last_error"] = ""
+            task["failure_message"] = ""
         task["history"] = self._append_history(task.get("history"), "queued")
         self._persist_task_payload(task_id=task_id, task=task)
 
@@ -2721,10 +3796,15 @@ class Scheduler(RuntimeTaskScheduler):
             task["history"] = self._append_history(task.get("history"), "queued")
 
         task["blocked_reason"] = ""
+        if str(task.get("status") or "").strip().lower() in {"queued", "ready", "retry", STATUS_QUEUED}:
+            task["last_error"] = ""
+            task["failure_message"] = ""
         task["scheduler_build"] = SCHEDULER_BUILD
         self._persist_task_payload(task_id=task_id, task=task)
 
     def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
+        task = self._refresh_task_public_fields(copy.deepcopy(task))
+
         replace_task_fn = getattr(self.task_repo, "replace_task", None)
         upsert_task_fn = getattr(self.task_repo, "upsert_task", None)
 
@@ -2755,10 +3835,49 @@ class Scheduler(RuntimeTaskScheduler):
         self._save_task_snapshot_safe(task)
 
     def _save_task_snapshot_safe(self, task: Dict[str, Any]) -> None:
+        task = self._backfill_replan_decision_fields(copy.deepcopy(task))
+        task = self._infer_completion_fields(task)
+        task = self._clear_stale_replan_fields(task)
+        task = self._refresh_task_public_fields(task)
         try:
             self.task_workspace.save_task_snapshot(task)
         except Exception:
             pass
+
+        snapshot_file = str(task.get("snapshot_file") or "").strip()
+        if snapshot_file:
+            try:
+                os.makedirs(os.path.dirname(snapshot_file), exist_ok=True)
+                with open(snapshot_file, "w", encoding="utf-8") as f:
+                    json.dump(task.get("public_snapshot", {}), f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        result_file = str(task.get("result_file") or "").strip()
+        if result_file:
+            try:
+                os.makedirs(os.path.dirname(result_file), exist_ok=True)
+                public_record = self._build_public_task_record(task)
+                result_payload = {
+                    **public_record,
+                    "results": copy.deepcopy(task.get("results", [])),
+                    "step_results": copy.deepcopy(task.get("step_results", [])),
+                    "last_step_result": copy.deepcopy(task.get("last_step_result")),
+                    "execution_log": copy.deepcopy(task.get("execution_log", [])),
+                }
+                with open(result_file, "w", encoding="utf-8") as f:
+                    json.dump(result_payload, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        execution_log_file = str(task.get("execution_log_file") or "").strip()
+        if execution_log_file:
+            try:
+                os.makedirs(os.path.dirname(execution_log_file), exist_ok=True)
+                with open(execution_log_file, "w", encoding="utf-8") as f:
+                    json.dump(task.get("execution_log", []), f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
 
     def _get_task_from_repo(self, task_id: str) -> Optional[Dict[str, Any]]:
         if not task_id:

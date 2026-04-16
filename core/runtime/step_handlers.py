@@ -20,6 +20,49 @@ class BaseStepHandler:
     ) -> Dict[str, Any]:
         raise NotImplementedError
 
+    def _success(
+        self,
+        *,
+        result: Optional[Dict[str, Any]] = None,
+        step: Optional[Dict[str, Any]] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "ok": True,
+            "error": None,
+            "result": result or {},
+            "step": copy.deepcopy(step or {}),
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
+    def _error(
+        self,
+        *,
+        error_type: str,
+        message: str,
+        step: Optional[Dict[str, Any]] = None,
+        result: Optional[Dict[str, Any]] = None,
+        retryable: bool = False,
+        details: Optional[Dict[str, Any]] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        payload = {
+            "ok": False,
+            "error": {
+                "type": error_type,
+                "message": message,
+                "retryable": retryable,
+                "details": details or {},
+            },
+            "result": result or {},
+            "step": copy.deepcopy(step or {}),
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
 
 class ToolStepHandler(BaseStepHandler):
     def handle(
@@ -30,14 +73,20 @@ class ToolStepHandler(BaseStepHandler):
         previous_result: Any,
     ) -> Dict[str, Any]:
         if self.executor.tool_registry is None:
-            return {
-                "ok": False,
-                "error": "tool_registry missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="tool_registry_missing",
+                message="tool_registry missing",
+                step=step,
+            )
 
-        tool_name = step.get("tool_name")
+        tool_name = str(step.get("tool_name", "")).strip()
+        if not tool_name:
+            return self._error(
+                error_type="tool_name_missing",
+                message="tool_name missing",
+                step=step,
+            )
+
         tool_input = copy.deepcopy(step.get("tool_input", {}) or {})
 
         if previous_result is not None:
@@ -47,32 +96,32 @@ class ToolStepHandler(BaseStepHandler):
         if context is not None:
             tool_input["context"] = copy.deepcopy(context)
 
-        tool = self.executor.tool_registry.get_tool(tool_name)
-        if not tool:
-            return {
-                "ok": False,
-                "error": f"tool not found: {tool_name}",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
-
         try:
-            result = tool.execute(tool_input)
+            result = self.executor.tool_registry.execute_tool(tool_name, tool_input)
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"tool execute failed: {e}",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="tool_execute_exception",
+                message=f"tool execute failed: {e}",
+                step=step,
+                details={"tool_name": tool_name},
+            )
 
         inner_ok = self.executor._extract_inner_ok(result)
-        return {
-            "ok": inner_ok,
-            "error": None if inner_ok else "tool returned failure",
-            "result": result,
-            "step": copy.deepcopy(step),
-        }
+        if inner_ok:
+            return self._success(
+                result=result,
+                step=step,
+                extra={"tool_name": tool_name},
+            )
+
+        return self._error(
+            error_type="tool_step_failed",
+            message="tool returned failure",
+            step=step,
+            result=result,
+            details={"tool_name": tool_name},
+            extra={"tool_name": tool_name},
+        )
 
 
 class CommandStepHandler(BaseStepHandler):
@@ -85,12 +134,11 @@ class CommandStepHandler(BaseStepHandler):
     ) -> Dict[str, Any]:
         command = str(step.get("command", "")).strip()
         if not command:
-            return {
-                "ok": False,
-                "error": "command missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="command_missing",
+                message="command missing",
+                step=step,
+            )
 
         cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
         command = self._auto_python(command, cwd)
@@ -104,32 +152,37 @@ class CommandStepHandler(BaseStepHandler):
                 text=True,
             )
         except Exception as e:
-            return {
-                "ok": False,
-                "error": str(e),
-                "result": {
+            return self._error(
+                error_type="command_execute_exception",
+                message=str(e),
+                step=step,
+                result={
                     "command": command,
                     "cwd": cwd,
                     "stdout": "",
                     "stderr": str(e),
                     "returncode": None,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
         ok = completed.returncode == 0
-        return {
-            "ok": ok,
-            "error": None if ok else f"command failed (code {completed.returncode})",
-            "result": {
-                "command": command,
-                "cwd": cwd,
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
-                "returncode": completed.returncode,
-            },
-            "step": copy.deepcopy(step),
+        result = {
+            "command": command,
+            "cwd": cwd,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "returncode": completed.returncode,
         }
+
+        if ok:
+            return self._success(result=result, step=step)
+
+        return self._error(
+            error_type="command_failed",
+            message=f"command failed (code {completed.returncode})",
+            step=step,
+            result=result,
+        )
 
     def _auto_python(self, command: str, cwd: str) -> str:
         parts = command.split()
@@ -170,6 +223,163 @@ class CommandStepHandler(BaseStepHandler):
         return script
 
 
+class RunPythonStepHandler(BaseStepHandler):
+    def handle(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        path = str(step.get("path", "")).strip()
+        if not path:
+            return self._error(
+                error_type="python_path_missing",
+                message="python path missing",
+                step=step,
+            )
+
+        cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
+        script_path = self._resolve_python_script_path(path=path, step=step, task=task, context=context, cwd=cwd)
+
+        if not os.path.exists(script_path):
+            return self._error(
+                error_type="python_file_not_found",
+                message=f"python file not found: {script_path}",
+                step=step,
+                result={
+                    "path": path,
+                    "resolved_path": script_path,
+                    "cwd": cwd,
+                },
+            )
+
+        command = [sys.executable, script_path]
+
+        extra_args = step.get("args", [])
+        if isinstance(extra_args, list):
+            command.extend(str(x) for x in extra_args if x is not None)
+
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=os.path.dirname(script_path) or cwd,
+                capture_output=True,
+                text=True,
+            )
+        except Exception as e:
+            return self._error(
+                error_type="run_python_exception",
+                message=f"run python failed: {e}",
+                step=step,
+                result={
+                    "path": path,
+                    "resolved_path": script_path,
+                    "cwd": cwd,
+                    "stdout": "",
+                    "stderr": str(e),
+                    "returncode": None,
+                },
+            )
+
+        ok = completed.returncode == 0
+        result = {
+            "type": "run_python",
+            "path": path,
+            "resolved_path": script_path,
+            "cwd": cwd,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "returncode": completed.returncode,
+        }
+
+        if ok:
+            return self._success(
+                result=result,
+                step=step,
+                extra={
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                },
+            )
+
+        return self._error(
+            error_type="python_failed",
+            message=f"python failed (code {completed.returncode})",
+            step=step,
+            result=result,
+            extra={
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+            },
+        )
+
+    def _resolve_python_script_path(
+        self,
+        path: str,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        cwd: str,
+    ) -> str:
+        clean = str(path).strip().strip('"').strip("'")
+        if not clean:
+            return clean
+
+        if os.path.isabs(clean):
+            return clean
+
+        ordered_candidates = []
+
+        def add_candidate(candidate: str) -> None:
+            candidate = str(candidate or "").strip()
+            if not candidate:
+                return
+            normalized = os.path.abspath(candidate)
+            if normalized not in ordered_candidates:
+                ordered_candidates.append(normalized)
+
+        add_candidate(os.path.join(cwd, clean))
+
+        if isinstance(step, dict):
+            for key in ("task_dir", "workspace", "sandbox_dir", "cwd"):
+                base = str(step.get(key, "")).strip()
+                if base:
+                    add_candidate(os.path.join(base, clean))
+
+        if isinstance(task, dict):
+            for key in ("task_dir", "workspace", "sandbox_dir", "cwd", "workspace_dir"):
+                base = str(task.get(key, "")).strip()
+                if base:
+                    add_candidate(os.path.join(base, clean))
+
+        if isinstance(context, dict):
+            for key in ("task_dir", "workspace", "sandbox_dir", "cwd"):
+                base = str(context.get(key, "")).strip()
+                if base:
+                    add_candidate(os.path.join(base, clean))
+
+        add_candidate(os.path.join(os.getcwd(), clean))
+
+        for candidate in ordered_candidates:
+            if os.path.exists(candidate):
+                return candidate
+
+        try:
+            resolved_read = self.executor.resolve_read_path(
+                relative_path=clean,
+                task=task,
+                prefer_scopes=("sandbox", "shared"),
+                return_fallback_candidate_if_missing=True,
+            )
+            if resolved_read and os.path.exists(resolved_read):
+                return resolved_read
+        except Exception:
+            pass
+
+        return ordered_candidates[0] if ordered_candidates else os.path.abspath(os.path.join(cwd, clean))
+
+
 class WriteFileStepHandler(BaseStepHandler):
     def handle(
         self,
@@ -183,12 +393,11 @@ class WriteFileStepHandler(BaseStepHandler):
         scope = str(step.get("scope", "sandbox")).strip().lower() or "sandbox"
 
         if not path:
-            return {
-                "ok": False,
-                "error": "path missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="path_missing",
+                message="path missing",
+                step=step,
+            )
 
         if content is None or bool(step.get("use_previous_text", False)):
             extracted = self._extract_text_from_previous(previous_result)
@@ -205,15 +414,15 @@ class WriteFileStepHandler(BaseStepHandler):
                 default_scope=scope,
             )
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"path resolve failed: {e}",
-                "result": {
+            return self._error(
+                error_type="path_resolve_failed",
+                message=f"path resolve failed: {e}",
+                step=step,
+                result={
                     "path": str(path),
                     "scope": scope,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
         try:
             parent = os.path.dirname(full_path)
@@ -222,30 +431,29 @@ class WriteFileStepHandler(BaseStepHandler):
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write(str(content))
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"write file failed: {e}",
-                "result": {
+            return self._error(
+                error_type="write_file_failed",
+                message=f"write file failed: {e}",
+                step=step,
+                result={
                     "path": full_path,
                     "scope": scope,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
-        return {
-            "ok": True,
-            "error": None,
-            "result": {
-                "type": "write_file",
-                "path": str(path),
-                "full_path": full_path,
-                "scope": scope,
-                "bytes": len(str(content).encode("utf-8")),
-                "content": str(content),
-            },
+        result = {
+            "type": "write_file",
+            "path": str(path),
+            "full_path": full_path,
+            "scope": scope,
+            "bytes": len(str(content).encode("utf-8")),
             "content": str(content),
-            "step": copy.deepcopy(step),
         }
+        return self._success(
+            result=result,
+            step=step,
+            extra={"content": str(content)},
+        )
 
     def _extract_text_from_previous(self, previous_result: Any) -> Optional[str]:
         if previous_result is None:
@@ -284,12 +492,11 @@ class EnsureFileStepHandler(BaseStepHandler):
         scope = str(step.get("scope", "sandbox")).strip().lower() or "sandbox"
 
         if not path:
-            return {
-                "ok": False,
-                "error": "path missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="path_missing",
+                message="path missing",
+                step=step,
+            )
 
         try:
             full_path = self.executor.resolve_write_path(
@@ -298,15 +505,15 @@ class EnsureFileStepHandler(BaseStepHandler):
                 default_scope=scope,
             )
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"path resolve failed: {e}",
-                "result": {
+            return self._error(
+                error_type="path_resolve_failed",
+                message=f"path resolve failed: {e}",
+                step=step,
+                result={
                     "path": str(path),
                     "scope": scope,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
         try:
             parent = os.path.dirname(full_path)
@@ -319,20 +526,18 @@ class EnsureFileStepHandler(BaseStepHandler):
                     f.write("")
                 created = True
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"ensure file failed: {e}",
-                "result": {
+            return self._error(
+                error_type="ensure_file_failed",
+                message=f"ensure file failed: {e}",
+                step=step,
+                result={
                     "path": full_path,
                     "scope": scope,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
-        return {
-            "ok": True,
-            "error": None,
-            "result": {
+        return self._success(
+            result={
                 "type": "ensure_file",
                 "path": str(path),
                 "full_path": full_path,
@@ -340,10 +545,12 @@ class EnsureFileStepHandler(BaseStepHandler):
                 "created": created,
                 "preserved_existing": not created,
             },
-            "path": full_path,
-            "created": created,
-            "step": copy.deepcopy(step),
-        }
+            step=step,
+            extra={
+                "path": full_path,
+                "created": created,
+            },
+        )
 
 
 class ReadFileStepHandler(BaseStepHandler):
@@ -357,12 +564,11 @@ class ReadFileStepHandler(BaseStepHandler):
         path = step.get("path")
 
         if not path:
-            return {
-                "ok": False,
-                "error": "path missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="path_missing",
+                message="path missing",
+                step=step,
+            )
 
         try:
             candidates = self.executor.resolve_read_candidates(
@@ -377,52 +583,288 @@ class ReadFileStepHandler(BaseStepHandler):
                 return_fallback_candidate_if_missing=True,
             )
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"path resolve failed: {e}",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="path_resolve_failed",
+                message=f"path resolve failed: {e}",
+                step=step,
+            )
 
         if not os.path.exists(full_path):
-            return {
-                "ok": False,
-                "error": f"file not found: {full_path}",
-                "result": {
+            return self._error(
+                error_type="file_not_found",
+                message=f"file not found: {full_path}",
+                step=step,
+                result={
                     "path": full_path,
                     "candidates": candidates,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
         try:
             with open(full_path, "r", encoding="utf-8") as f:
                 content = f.read()
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"read file failed: {e}",
-                "result": {
+            return self._error(
+                error_type="read_file_failed",
+                message=f"read file failed: {e}",
+                step=step,
+                result={
                     "path": full_path,
                     "candidates": candidates,
                 },
-                "step": copy.deepcopy(step),
-            }
+            )
 
-        return {
-            "ok": True,
-            "error": None,
-            "result": {
+        return self._success(
+            result={
                 "type": "read_file",
                 "path": str(path),
                 "full_path": full_path,
                 "content": content,
                 "candidates": candidates,
             },
-            "content": content,
-            "path": full_path,
-            "step": copy.deepcopy(step),
-        }
+            step=step,
+            extra={
+                "content": content,
+                "path": full_path,
+            },
+        )
+
+
+class VerifyStepHandler(BaseStepHandler):
+    def handle(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        path = str(step.get("path", "")).strip()
+
+        # 相容你現在的 minimal test：如果沒有 path，但有 contains/equals，
+        # 就直接對 previous_result 做文字驗證
+        if not path and ("contains" in step or "equals" in step):
+            previous_text = self._extract_previous_text(previous_result)
+
+            if "contains" in step:
+                expected = str(step.get("contains", ""))
+                actual = expected in previous_text
+                if actual:
+                    return self._success(
+                        result={
+                            "type": "verify",
+                            "mode": "contains",
+                            "expected": expected,
+                            "actual": actual,
+                            "content": previous_text,
+                        },
+                        step=step,
+                        extra={"content": previous_text},
+                    )
+                return self._error(
+                    error_type="verify_contains_failed",
+                    message=f'verify contains failed: "{expected}" not found',
+                    step=step,
+                    result={
+                        "type": "verify",
+                        "mode": "contains",
+                        "expected": expected,
+                        "actual": actual,
+                        "content": previous_text,
+                    },
+                    extra={"content": previous_text},
+                )
+
+            if "equals" in step:
+                expected = str(step.get("equals", ""))
+                actual_text = previous_text.strip()
+                ok = actual_text == expected
+                if ok:
+                    return self._success(
+                        result={
+                            "type": "verify",
+                            "mode": "equals",
+                            "expected": expected,
+                            "actual": actual_text,
+                            "content": previous_text,
+                        },
+                        step=step,
+                        extra={"content": previous_text},
+                    )
+                return self._error(
+                    error_type="verify_equals_failed",
+                    message=f'verify equals failed: expected "{expected}", got "{actual_text}"',
+                    step=step,
+                    result={
+                        "type": "verify",
+                        "mode": "equals",
+                        "expected": expected,
+                        "actual": actual_text,
+                        "content": previous_text,
+                    },
+                    extra={"content": previous_text},
+                )
+
+        if not path:
+            return self._error(
+                error_type="verify_path_missing",
+                message="verify path missing",
+                step=step,
+            )
+
+        try:
+            candidates = self.executor.resolve_read_candidates(
+                relative_path=path,
+                task=task,
+                prefer_scopes=("sandbox", "shared"),
+            )
+            full_path = self.executor.resolve_read_path(
+                relative_path=path,
+                task=task,
+                prefer_scopes=("sandbox", "shared"),
+                return_fallback_candidate_if_missing=True,
+            )
+        except Exception as e:
+            return self._error(
+                error_type="verify_path_resolve_failed",
+                message=f"verify path resolve failed: {e}",
+                step=step,
+                result={"path": path},
+            )
+
+        if "exists" in step:
+            expected_exists = bool(step.get("exists"))
+            actual_exists = os.path.exists(full_path)
+            ok = actual_exists == expected_exists
+
+            result = {
+                "type": "verify",
+                "mode": "exists",
+                "path": path,
+                "full_path": full_path,
+                "candidates": candidates,
+                "expected": expected_exists,
+                "actual": actual_exists,
+            }
+            if ok:
+                return self._success(result=result, step=step)
+            return self._error(
+                error_type="verify_exists_failed",
+                message=f"verify exists failed: expected {expected_exists}, got {actual_exists}",
+                step=step,
+                result=result,
+            )
+
+        if not os.path.exists(full_path):
+            return self._error(
+                error_type="verify_target_not_found",
+                message=f"verify target not found: {full_path}",
+                step=step,
+                result={
+                    "type": "verify",
+                    "path": path,
+                    "full_path": full_path,
+                    "candidates": candidates,
+                },
+            )
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            return self._error(
+                error_type="verify_read_failed",
+                message=f"verify read failed: {e}",
+                step=step,
+                result={
+                    "type": "verify",
+                    "path": path,
+                    "full_path": full_path,
+                    "candidates": candidates,
+                },
+            )
+
+        if "contains" in step:
+            expected = str(step.get("contains", ""))
+            actual = expected in content
+            result = {
+                "type": "verify",
+                "mode": "contains",
+                "path": path,
+                "full_path": full_path,
+                "candidates": candidates,
+                "expected": expected,
+                "actual": actual,
+                "content": content,
+            }
+            if actual:
+                return self._success(result=result, step=step, extra={"content": content})
+            return self._error(
+                error_type="verify_contains_failed",
+                message=f'verify contains failed: "{expected}" not found',
+                step=step,
+                result=result,
+                extra={"content": content},
+            )
+
+        if "equals" in step:
+            expected = str(step.get("equals", ""))
+            actual = content.strip()
+            ok = actual == expected
+            result = {
+                "type": "verify",
+                "mode": "equals",
+                "path": path,
+                "full_path": full_path,
+                "candidates": candidates,
+                "expected": expected,
+                "actual": actual,
+                "content": content,
+            }
+            if ok:
+                return self._success(result=result, step=step, extra={"content": content})
+            return self._error(
+                error_type="verify_equals_failed",
+                message=f'verify equals failed: expected "{expected}", got "{actual}"',
+                step=step,
+                result=result,
+                extra={"content": content},
+            )
+
+        return self._error(
+            error_type="verify_mode_missing",
+            message="verify step missing mode",
+            step=step,
+            result={
+                "type": "verify",
+                "path": path,
+                "full_path": full_path,
+                "candidates": candidates,
+            },
+        )
+
+    def _extract_previous_text(self, previous_result: Any) -> str:
+        if previous_result is None:
+            return ""
+
+        if isinstance(previous_result, str):
+            return previous_result
+
+        if not isinstance(previous_result, dict):
+            return ""
+
+        for key in ("content", "text", "message", "final_answer"):
+            value = previous_result.get(key)
+            if isinstance(value, str):
+                return value
+
+        result_block = previous_result.get("result")
+        if isinstance(result_block, dict):
+            for key in ("content", "text", "message"):
+                value = result_block.get(key)
+                if isinstance(value, str):
+                    return value
+
+        return ""
 
 
 class RespondStepHandler(BaseStepHandler):
@@ -434,13 +876,11 @@ class RespondStepHandler(BaseStepHandler):
         previous_result: Any,
     ) -> Dict[str, Any]:
         message = step.get("message") or step.get("content", "")
-        return {
-            "ok": True,
-            "error": None,
-            "result": {"message": message},
-            "message": str(message),
-            "step": copy.deepcopy(step),
-        }
+        return self._success(
+            result={"message": message},
+            step=step,
+            extra={"message": str(message)},
+        )
 
 
 class LLMStepHandler(BaseStepHandler):
@@ -453,23 +893,21 @@ class LLMStepHandler(BaseStepHandler):
     ) -> Dict[str, Any]:
         llm_client = getattr(self.executor, "llm_client", None)
         if llm_client is None:
-            return {
-                "ok": False,
-                "error": "llm_client missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="llm_client_missing",
+                message="llm_client missing",
+                step=step,
+            )
 
         prompt = self._build_prompt(step=step, previous_result=previous_result)
         prompt = str(prompt).strip()
 
         if not prompt:
-            return {
-                "ok": False,
-                "error": "llm prompt missing",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="llm_prompt_missing",
+                message="llm prompt missing",
+                step=step,
+            )
 
         try:
             if hasattr(llm_client, "ask") and callable(llm_client.ask):
@@ -477,32 +915,28 @@ class LLMStepHandler(BaseStepHandler):
             elif hasattr(llm_client, "generate") and callable(llm_client.generate):
                 llm_result = llm_client.generate(prompt)
             else:
-                return {
-                    "ok": False,
-                    "error": "llm_client missing ask/generate method",
-                    "result": {},
-                    "step": copy.deepcopy(step),
-                }
+                return self._error(
+                    error_type="llm_client_method_missing",
+                    message="llm_client missing ask/generate method",
+                    step=step,
+                )
         except Exception as e:
-            return {
-                "ok": False,
-                "error": f"llm call failed: {e}",
-                "result": {},
-                "step": copy.deepcopy(step),
-            }
+            return self._error(
+                error_type="llm_call_failed",
+                message=f"llm call failed: {e}",
+                step=step,
+            )
 
         text = self._normalize_llm_result(llm_result)
-        return {
-            "ok": True,
-            "error": None,
-            "result": {
+        return self._success(
+            result={
                 "prompt": prompt,
                 "text": text,
                 "raw": llm_result,
             },
-            "text": text,
-            "step": copy.deepcopy(step),
-        }
+            step=step,
+            extra={"text": text},
+        )
 
     def _build_prompt(self, step: Dict[str, Any], previous_result: Any) -> str:
         prompt_template = step.get("prompt_template")
