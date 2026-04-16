@@ -4058,20 +4058,36 @@ class Scheduler(RuntimeTaskScheduler):
         if not isinstance(task, dict):
             return
 
-        status = str(task.get("status") or "").strip().lower()
-        if status in TERMINAL_STATUSES:
+        current_status = str(task.get("status") or "").strip().lower()
+        if current_status in TERMINAL_STATUSES:
             return
 
-        if status == STATUS_BLOCKED:
+        changed = False
+
+        if current_status == STATUS_BLOCKED:
             task["status"] = "queued"
             task["history"] = self._append_history(task.get("history"), "queued")
+            current_status = "queued"
+            changed = True
 
-        task["blocked_reason"] = ""
-        if str(task.get("status") or "").strip().lower() in {"queued", "ready", "retry", STATUS_QUEUED}:
-            task["last_error"] = ""
-            task["failure_message"] = ""
-        task["scheduler_build"] = SCHEDULER_BUILD
-        self._persist_task_payload(task_id=task_id, task=task)
+        if str(task.get("blocked_reason") or "") != "":
+            task["blocked_reason"] = ""
+            changed = True
+
+        if current_status in {"queued", "ready", "retry", STATUS_QUEUED}:
+            if str(task.get("last_error") or "") != "":
+                task["last_error"] = ""
+                changed = True
+            if str(task.get("failure_message") or "") != "":
+                task["failure_message"] = ""
+                changed = True
+
+        if str(task.get("scheduler_build") or "") != SCHEDULER_BUILD:
+            task["scheduler_build"] = SCHEDULER_BUILD
+            changed = True
+
+        if changed:
+            self._persist_task_payload(task_id=task_id, task=task)
 
     def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
         task = self._refresh_task_public_fields(copy.deepcopy(task))
