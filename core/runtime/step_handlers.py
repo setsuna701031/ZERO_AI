@@ -456,26 +456,35 @@ class WriteFileStepHandler(BaseStepHandler):
         )
 
     def _extract_text_from_previous(self, previous_result: Any) -> Optional[str]:
-        if previous_result is None:
+        return self._extract_text_deep(previous_result)
+
+    def _extract_text_deep(self, payload: Any, depth: int = 0) -> Optional[str]:
+        if depth > 10:
             return None
 
-        if isinstance(previous_result, str):
-            return previous_result
-
-        if not isinstance(previous_result, dict):
+        if payload is None:
             return None
 
-        for key in ("text", "content", "message", "final_answer"):
-            value = previous_result.get(key)
-            if isinstance(value, str):
-                return value
+        if isinstance(payload, str):
+            return payload
 
-        result_block = previous_result.get("result")
-        if isinstance(result_block, dict):
-            for key in ("text", "content", "message"):
-                value = result_block.get(key)
+        if isinstance(payload, dict):
+            for key in ("text", "content", "message", "final_answer", "response", "stdout"):
+                value = payload.get(key)
                 if isinstance(value, str):
                     return value
+
+            for nested_key in ("result", "raw", "data", "payload", "output", "previous_result"):
+                nested = payload.get(nested_key)
+                text = self._extract_text_deep(nested, depth + 1)
+                if isinstance(text, str):
+                    return text
+
+        if isinstance(payload, list):
+            for item in reversed(payload):
+                text = self._extract_text_deep(item, depth + 1)
+                if isinstance(text, str):
+                    return text
 
         return None
 
@@ -640,8 +649,6 @@ class VerifyStepHandler(BaseStepHandler):
     ) -> Dict[str, Any]:
         path = str(step.get("path", "")).strip()
 
-        # 相容你現在的 minimal test：如果沒有 path，但有 contains/equals，
-        # 就直接對 previous_result 做文字驗證
         if not path and ("contains" in step or "equals" in step):
             previous_text = self._extract_previous_text(previous_result)
 
@@ -899,7 +906,7 @@ class LLMStepHandler(BaseStepHandler):
                 step=step,
             )
 
-        prompt = self._build_prompt(step=step, previous_result=previous_result)
+        prompt = self._build_prompt(step=step, previous_result=previous_result, context=context)
         prompt = str(prompt).strip()
 
         if not prompt:
@@ -938,38 +945,53 @@ class LLMStepHandler(BaseStepHandler):
             extra={"text": text},
         )
 
-    def _build_prompt(self, step: Dict[str, Any], previous_result: Any) -> str:
+    def _build_prompt(self, step: Dict[str, Any], previous_result: Any, context: Optional[Dict[str, Any]] = None) -> str:
         prompt_template = step.get("prompt_template")
         if isinstance(prompt_template, str) and prompt_template.strip():
-            file_content = self._extract_previous_content(previous_result)
+            file_content = self._extract_previous_content(previous_result, context=context)
             return prompt_template.replace("{{file_content}}", file_content)
 
         prompt = step.get("prompt") or step.get("input") or ""
         return str(prompt)
 
-    def _extract_previous_content(self, previous_result: Any) -> str:
-        if previous_result is None:
-            return ""
+    def _extract_previous_content(self, previous_result: Any, context: Optional[Dict[str, Any]] = None) -> str:
+        if isinstance(context, dict):
+            file_content = context.get("file_content")
+            if isinstance(file_content, str):
+                return file_content
 
-        if isinstance(previous_result, str):
-            return previous_result
+        text = self._extract_text_deep(previous_result)
+        return text or ""
 
-        if not isinstance(previous_result, dict):
-            return ""
+    def _extract_text_deep(self, payload: Any, depth: int = 0) -> Optional[str]:
+        if depth > 10:
+            return None
 
-        for key in ("content", "text", "message", "final_answer"):
-            value = previous_result.get(key)
-            if isinstance(value, str):
-                return value
+        if payload is None:
+            return None
 
-        result_block = previous_result.get("result")
-        if isinstance(result_block, dict):
-            for key in ("content", "text", "message"):
-                value = result_block.get(key)
+        if isinstance(payload, str):
+            return payload
+
+        if isinstance(payload, dict):
+            for key in ("content", "text", "message", "final_answer", "response", "stdout"):
+                value = payload.get(key)
                 if isinstance(value, str):
                     return value
 
-        return ""
+            for nested_key in ("result", "raw", "data", "payload", "output", "previous_result"):
+                nested = payload.get(nested_key)
+                text = self._extract_text_deep(nested, depth + 1)
+                if isinstance(text, str):
+                    return text
+
+        if isinstance(payload, list):
+            for item in reversed(payload):
+                text = self._extract_text_deep(item, depth + 1)
+                if isinstance(text, str):
+                    return text
+
+        return None
 
     def _normalize_llm_result(self, llm_result: Any) -> str:
         if isinstance(llm_result, str):

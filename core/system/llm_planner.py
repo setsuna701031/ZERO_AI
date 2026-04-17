@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 class LLMPlanner:
     """
-    LLM Brain / LLM Planner
+    LLM Brain / LLM Planner v3
 
     修正版目標：
     1. 保留 LLM JSON 規劃能力
@@ -15,6 +15,14 @@ class LLMPlanner:
     3. 支援 ensure_file，避免「建立但沒內容」被轉成 write_file(path, "")
     4. 支援多子句：例如「幫我建立一個 a.txt，然後再讀出來」
     5. 支援跨子句 last_path 記憶
+    6. 補上 document flow deterministic guard：
+       - summarize input.txt into summary.txt
+       - read input.txt and extract action items into action_items.txt
+       這類句型優先產出 read_file -> llm -> write_file
+    7. 修正 document flow 固定寫死 input.txt / summary.txt / action_items.txt 的問題：
+       - 保留使用者指定的 source path
+       - 保留使用者指定的 output path
+       - 支援 workspace/shared/...、shared/...、任意 *.txt / *.md / *.log / *.json 等路徑
     """
 
     def __init__(
@@ -52,7 +60,6 @@ class LLMPlanner:
                 reason="empty input",
             )
 
-        # 先走 deterministic guard，明確可判斷的檔案/命令需求不要交給 LLM 自由發揮
         deterministic = self._plan_deterministic(text=text)
         if deterministic is not None:
             return deterministic
@@ -104,6 +111,19 @@ class LLMPlanner:
     # ============================================================
 
     def _plan_deterministic(self, text: str) -> Optional[Dict[str, Any]]:
+        document_steps = self._plan_document_flow(text)
+        if document_steps is not None:
+            intent = self._infer_document_intent(document_steps)
+            return self._build_result(
+                ok=True,
+                intent=intent,
+                final_answer=f"已規劃 {len(document_steps)} 個步驟",
+                steps=document_steps[: self.max_steps],
+                error=None,
+                fallback_used=False,
+                reason="document flow deterministic guard matched",
+            )
+
         clauses = self._split_clauses(text)
         if not clauses:
             return None
@@ -114,7 +134,6 @@ class LLMPlanner:
         for clause in clauses:
             clause_steps, last_path = self._plan_single_clause(clause, last_path=last_path)
             if clause_steps is None:
-                # 只要有任一子句判不準，就整句交回 LLM，避免 deterministic 誤傷一般聊天
                 return None
             steps.extend(clause_steps)
 
@@ -133,6 +152,308 @@ class LLMPlanner:
             reason="deterministic guard matched",
         )
 
+    def _normalize_document_flow_text(self, text: str) -> str:
+        lowered = str(text or "").strip().lower()
+
+        prefixes = [
+            "task ",
+            "create task ",
+            "new task ",
+            "submit task ",
+            "please ",
+            "pls ",
+        ]
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if lowered.startswith(prefix):
+                    lowered = lowered[len(prefix):].strip()
+                    changed = True
+
+        return lowered
+
+    def _plan_document_flow(self, text: str) -> Optional[List[Dict[str, Any]]]:
+        lowered = self._normalize_document_flow_text(text)
+        all_paths = self._extract_all_file_paths(text)
+
+        explicit_source = self._extract_document_source_path(text, all_paths)
+        explicit_output = self._extract_document_output_path(text, all_paths)
+
+        action_keywords = [
+            "action item",
+            "action items",
+            "extract action items",
+            "todo",
+            "to-do",
+            "行動項目",
+            "待辦事項",
+        ]
+        summary_keywords = [
+            "summary",
+            "summarize",
+            "summarise",
+            "摘要",
+            "總結",
+        ]
+
+        wants_action_items = any(k in lowered for k in action_keywords)
+        wants_summary = any(k in lowered for k in summary_keywords)
+
+        if wants_action_items:
+            source_path = explicit_source or self._choose_default_document_source(all_paths) or "input.txt"
+            output_path = explicit_output or self._choose_default_action_items_output(all_paths) or "action_items.txt"
+
+            if self._looks_like_document_flow_request(text):
+                return self._build_action_items_steps(source_path, output_path)
+
+        if wants_summary:
+            source_path = explicit_source or self._choose_default_document_source(all_paths) or "input.txt"
+            output_path = explicit_output or self._choose_default_summary_output(all_paths) or "summary.txt"
+
+            if self._looks_like_document_flow_request(text):
+                return self._build_summary_steps(source_path, output_path)
+
+        # 舊型固定流程仍支援，但 output 仍優先保留使用者指定值
+        has_input_txt = "input.txt" in lowered
+        has_action_items_txt = "action_items.txt" in lowered
+        has_summary_txt = "summary.txt" in lowered
+
+        if has_input_txt and (wants_action_items or has_action_items_txt):
+            return self._build_action_items_steps(
+                explicit_source or "input.txt",
+                explicit_output or "action_items.txt",
+            )
+
+        if has_input_txt and (wants_summary or has_summary_txt):
+            return self._build_summary_steps(
+                explicit_source or "input.txt",
+                explicit_output or "summary.txt",
+            )
+
+        return None
+
+    def _looks_like_document_flow_request(self, text: str) -> bool:
+        lowered = self._normalize_document_flow_text(text)
+        doc_markers = [
+            "read ",
+            "summarize ",
+            "summarise ",
+            "summary ",
+            "extract action items",
+            "action items",
+            "摘要",
+            "總結",
+            "行動項目",
+            "待辦事項",
+            "into ",
+            "from ",
+            "->",
+            "write ",
+            "to ",
+        ]
+        return any(marker in lowered for marker in doc_markers)
+
+    def _extract_document_source_path(self, text: str, all_paths: List[str]) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                value = str(match.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_arrow_paths(stripped)
+        if arrow is not None:
+            source_path, _ = arrow
+            return source_path
+
+        if all_paths:
+            return all_paths[0]
+
+        return None
+
+    def _extract_document_output_path(self, text: str, all_paths: List[str]) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                value = str(match.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_arrow_paths(stripped)
+        if arrow is not None:
+            _, output_path = arrow
+            return output_path
+
+        if len(all_paths) >= 2:
+            return all_paths[-1]
+
+        return None
+
+    def _extract_arrow_paths(self, text: str) -> Optional[Tuple[str, str]]:
+        stripped = str(text or "").strip()
+        match = re.search(
+            r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        source_path = str(match.group(1)).strip()
+        output_path = str(match.group(2)).strip()
+        if not source_path or not output_path:
+            return None
+
+        return source_path, output_path
+
+    def _extract_all_file_paths(self, text: str) -> List[str]:
+        if not text:
+            return []
+
+        results: List[str] = []
+        pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b"
+        for match in re.finditer(pattern, text):
+            value = str(match.group(1)).strip()
+            if value and value not in results:
+                results.append(value)
+        return results
+
+    def _choose_default_document_source(self, all_paths: List[str]) -> Optional[str]:
+        for path in all_paths:
+            lowered = path.lower()
+            if lowered.endswith((".txt", ".md", ".log", ".json", ".csv", ".yaml", ".yml")):
+                return path
+        return None
+
+    def _choose_default_summary_output(self, all_paths: List[str]) -> Optional[str]:
+        for path in all_paths:
+            lowered = path.lower()
+            if "summary" in lowered:
+                return path
+        return None
+
+    def _choose_default_action_items_output(self, all_paths: List[str]) -> Optional[str]:
+        for path in all_paths:
+            lowered = path.lower()
+            if "action_items" in lowered or "action-items" in lowered or "actionitems" in lowered:
+                return path
+        return None
+
+    def _build_action_items_steps(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
+        prompt_template = (
+            "You are an assistant that extracts action items from notes.\n\n"
+            "Read the document content below and produce a clean plain-text file.\n\n"
+            "Output rules:\n"
+            "1. Output title must be exactly: ACTION ITEMS\n"
+            "2. For each item use exactly this format:\n"
+            "   1. Owner: <name or Unassigned>\n"
+            "      Task: <clear action>\n"
+            "      Due: <deadline or Not specified>\n"
+            "3. If no explicit owner, use Unassigned.\n"
+            "4. If no explicit deadline or time commitment for the action, use Not specified.\n"
+            "5. Do not output JSON.\n"
+            "6. Do not add explanations before or after the list.\n"
+            "7. Only include real action items. Do not include pure status statements or background facts.\n\n"
+            "Due extraction rules:\n"
+            "- Preserve explicit due phrases when they belong to the action, such as:\n"
+            "  by Monday, by Friday, today, tomorrow, this afternoon, this evening, next week, next month.\n"
+            "- If a sentence says someone will do something by a certain day, keep that due phrase.\n"
+            "- If a sentence describes a past event, such as last night, yesterday, previously, do not treat that as a due date unless it clearly applies to the action.\n"
+            "- Prefer the deadline phrase exactly as written in the notes when reasonable.\n"
+            "- If the time phrase belongs to the action, keep it in Due.\n"
+            "- If there is no due phrase for the action, write Not specified.\n\n"
+            "Owner extraction rules:\n"
+            "- Use a person's name when explicitly stated.\n"
+            "- For group statements like 'we should', use Unassigned unless a real owner is named.\n\n"
+            "Task extraction rules:\n"
+            "- Rewrite each task as a short, clear action.\n"
+            "- Do not copy unnecessary background context into Task unless it is needed for clarity.\n\n"
+            "Document content:\n"
+            "{{file_content}}\n"
+        )
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "action_items",
+                "prompt_template": prompt_template,
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+        ]
+
+    def _build_summary_steps(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
+        prompt_template = (
+            "Summarize the following document into a concise plain-text summary.\n\n"
+            "Rules:\n"
+            "1. Keep it clear and short.\n"
+            "2. Do not use JSON.\n"
+            "3. Do not add extra commentary.\n\n"
+            "Document content:\n"
+            "{{file_content}}\n"
+        )
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": prompt_template,
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+        ]
+
+    def _infer_document_intent(self, steps: List[Dict[str, Any]]) -> str:
+        if len(steps) >= 3:
+            first_type = str(steps[0].get("type") or "").strip().lower()
+            second_type = str(steps[1].get("type") or "").strip().lower()
+            third_type = str(steps[2].get("type") or "").strip().lower()
+            if first_type == "read_file" and second_type == "llm" and third_type == "write_file":
+                llm_mode = str(steps[1].get("mode") or "").strip().lower()
+                if llm_mode == "action_items":
+                    return "action_items"
+                if llm_mode == "summary":
+                    return "summary"
+        if steps:
+            return str(steps[0].get("type") or "respond").strip()
+        return "respond"
+
     def _plan_single_clause(
         self,
         text: str,
@@ -142,12 +463,10 @@ class LLMPlanner:
         if not stripped:
             return [], last_path
 
-        # 1. command
         command = self._extract_command(stripped)
         if command:
             return [{"type": "command", "command": command}], last_path
 
-        # 2. write / ensure_file
         write = self._extract_write_request(stripped)
         if write is not None:
             current_path = str(write.get("path") or "").strip() or (last_path or "")
@@ -173,18 +492,15 @@ class LLMPlanner:
                 }
             ], current_path
 
-        # 3. read
         if self._looks_like_read(stripped):
             read_path = self._resolve_read_path(stripped, last_path=last_path)
             if not read_path:
                 return None, last_path
             return [{"type": "read_file", "path": read_path}], read_path
 
-        # 4. search
         if self._looks_like_search(stripped):
             return [{"type": "web_search", "query": stripped}], last_path
 
-        # 5. 明確回覆型句子，可直接 respond
         if self._looks_like_pure_response(stripped):
             return [{"type": "respond", "message": stripped}], last_path
 
@@ -594,13 +910,21 @@ Input:
         if step_type == "write_file":
             path = str(step.get("path", "") or "").strip()
             content = str(step.get("content", "") or "")
-            if not path:
-                return None
-            return {
+            use_previous_text = bool(step.get("use_previous_text", False))
+            normalized: Dict[str, Any] = {
                 "type": "write_file",
                 "path": path,
-                "content": content,
             }
+            if content:
+                normalized["content"] = content
+            if use_previous_text:
+                normalized["use_previous_text"] = True
+            scope = str(step.get("scope", "") or "").strip()
+            if scope:
+                normalized["scope"] = scope
+            if not path:
+                return None
+            return normalized
 
         if step_type == "ensure_file":
             path = str(step.get("path", "") or "").strip()
@@ -629,14 +953,23 @@ Input:
                 "command": command,
             }
 
-        if step_type == "llm_generate":
+        if step_type in {"llm_generate", "llm"}:
             prompt = str(step.get("prompt", "") or "").strip()
-            if not prompt:
+            prompt_template = str(step.get("prompt_template", "") or "").strip()
+            mode = str(step.get("mode", "") or "").strip()
+
+            normalized: Dict[str, Any] = {"type": "llm"}
+            if prompt:
+                normalized["prompt"] = prompt
+            if prompt_template:
+                normalized["prompt_template"] = prompt_template
+            if mode:
+                normalized["mode"] = mode
+
+            if not prompt and not prompt_template and not mode:
                 return None
-            return {
-                "type": "llm_generate",
-                "prompt": prompt,
-            }
+
+            return normalized
 
         if step_type == "respond":
             message = str(step.get("message", "") or "").strip()
@@ -667,7 +1000,7 @@ Input:
 
         return {
             "ok": ok,
-            "planner_mode": "llm_brain_v1",
+            "planner_mode": "llm_brain_v3",
             "intent": intent,
             "final_answer": final_answer,
             "steps": steps,

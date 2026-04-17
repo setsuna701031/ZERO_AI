@@ -25,6 +25,68 @@ from core.tasks.scheduler_core.task_scheduler_queue import (
 )
 from core.tasks.scheduler_core.worker_pool import WorkerPool
 from core.tools.execution_trace import ExecutionTrace
+from core.tasks.scheduler_core.queue_sync_helpers import (
+    enqueue_repo_task_if_ready,
+    rebuild_ready_queue,
+    task_dependencies_satisfied,
+    unblock_tasks_if_dependencies_done,
+)
+from core.tasks.scheduler_core.dispatch_helpers import (
+    build_tick_result,
+    execute_dispatch_round,
+    finalize_dispatched_task,
+    handle_dispatch_result,
+    handle_missing_repo_task,
+    handle_run_one_step_exception,
+    scheduler_dispatch_idle,
+)
+from core.tasks.scheduler_core.repo_state_helpers import (
+    extract_effective_status_and_answer,
+    mark_repo_task_failed,
+    mark_repo_task_finished,
+    mark_repo_task_queued,
+    sync_blocked_state,
+    sync_runtime_back_to_repo,
+    sync_unblocked_state,
+)
+from core.tasks.scheduler_core.trace_helpers import (
+    get_trace_file_for_task,
+    load_trace_for_task,
+    save_trace_for_task,
+    trace_replan,
+    trace_status,
+    trace_step,
+    trace_summary,
+)
+from core.tasks.scheduler_core.simple_runner_helpers import (
+    handle_simple_blocked_task,
+    handle_simple_finished_task,
+    handle_simple_invalid_step,
+    handle_simple_step_exception,
+    handle_simple_step_success,
+    handle_simple_terminal_task,
+    load_simple_task_state,
+    run_simple_task_tick,
+)
+from core.tasks.scheduler_core.step_path_helpers import (
+    extract_text_from_previous_result,
+    extract_text_from_result_payload,
+    needs_scheduler_path_resolution,
+    normalize_step_scope,
+    resolve_guard_target_path,
+    resolve_read_path_with_fallback,
+    resolve_step_path,
+)
+from core.tasks.scheduler_core.simple_step_executor_helpers import (
+    execute_simple_basic_step,
+    prepare_simple_step_guard,
+)
+from core.tasks.scheduler_core.command_step_helpers import (
+    execute_command_like_step,
+)
+from core.tasks.scheduler_core.llm_step_helpers import (
+    execute_llm_step,
+)
 
 
 SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION"
@@ -53,6 +115,13 @@ READY_STATUSES = {
 
 
 class Scheduler(RuntimeTaskScheduler):
+    SCHEDULER_BUILD = SCHEDULER_BUILD
+    STATUS_BLOCKED = STATUS_BLOCKED
+    STATUS_FAILED = STATUS_FAILED
+    STATUS_FINISHED = STATUS_FINISHED
+    STATUS_QUEUED = STATUS_QUEUED
+    TERMINAL_STATUSES = TERMINAL_STATUSES
+
     """
     收束版 Scheduler + ExecutionTrace
 
@@ -224,88 +293,42 @@ class Scheduler(RuntimeTaskScheduler):
         dispatch_results: List[Any],
         current_tick: int,
     ) -> List[Dict[str, Any]]:
-        round_executed: List[Dict[str, Any]] = []
-
-        for dispatch_result in dispatch_results:
-            handled = self._handle_dispatch_result(
-                dispatch_result=dispatch_result,
-                current_tick=current_tick,
-            )
-            if handled is not None:
-                round_executed.append(handled)
-
-        return round_executed
+        return execute_dispatch_round(
+            scheduler=self,
+            dispatch_results=dispatch_results,
+            current_tick=current_tick,
+        )
 
     def _handle_dispatch_result(
         self,
         dispatch_result: Any,
         current_tick: int,
     ) -> Optional[Dict[str, Any]]:
-        if not getattr(dispatch_result, "dispatched", False) or getattr(dispatch_result, "task", None) is None:
-            return None
-
-        scheduled_task = dispatch_result.task
-        task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
-        if not task_id:
-            return None
-
-        repo_task = self._get_task_from_repo(task_id)
-        if not isinstance(repo_task, dict):
-            return self._handle_missing_repo_task(task_id=task_id)
-
-        repo_task = self._hydrate_task_from_workspace(repo_task)
-        current_status = str(repo_task.get("status") or "").strip().lower()
-        if current_status in TERMINAL_STATUSES:
-            self.worker_pool.release_by_task(task_id)
-            return {
-                "ok": True,
-                "task_id": task_id,
-                "status": current_status,
-                "message": "task already terminal, skipped",
-            }
-
-        try:
-            runner_result = self.run_one_step(task=repo_task, current_tick=current_tick)
-        except Exception as e:
-            return self._handle_run_one_step_exception(task_id=task_id, error=e)
-
-        return self._finalize_dispatched_task(
+        return handle_dispatch_result(
+            scheduler=self,
             dispatch_result=dispatch_result,
-            repo_task=repo_task,
-            runner_result=runner_result,
+            current_tick=current_tick,
+            terminal_statuses=TERMINAL_STATUSES,
         )
 
     def _handle_missing_repo_task(self, task_id: str) -> Dict[str, Any]:
-        self.dispatcher.fail_task(
+        return handle_missing_repo_task(
+            scheduler=self,
             task_id=task_id,
-            error="task missing from repository",
-            requeue_on_retry=False,
+            status_failed=STATUS_FAILED,
         )
-        self._mark_repo_task_failed(task_id=task_id, error="task missing from repository")
-        return {
-            "ok": False,
-            "task_id": task_id,
-            "status": STATUS_FAILED,
-            "error": "task missing from repository",
-        }
 
     def _handle_run_one_step_exception(
         self,
         task_id: str,
         error: Exception,
     ) -> Dict[str, Any]:
-        fail_result = self.dispatcher.fail_task(
+        return handle_run_one_step_exception(
+            scheduler=self,
             task_id=task_id,
-            error=f"run_one_step exception: {error}",
-            requeue_on_retry=False,
+            error=error,
+            status_failed=STATUS_FAILED,
         )
-        self._mark_repo_task_failed(task_id=task_id, error=f"run_one_step exception: {error}")
-        return {
-            "ok": False,
-            "task_id": task_id,
-            "status": fail_result.get("final_status", STATUS_FAILED),
-            "error": str(error),
-        }
 
     def _finalize_dispatched_task(
         self,
@@ -313,67 +336,18 @@ class Scheduler(RuntimeTaskScheduler):
         repo_task: Dict[str, Any],
         runner_result: Dict[str, Any],
     ) -> Dict[str, Any]:
-        scheduled_task = dispatch_result.task
-        task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
-
-        refreshed_repo_task = self._get_task_from_repo(task_id)
-        effective_status, effective_final_answer = self._extract_effective_status_and_answer(
-            original_task=repo_task,
-            refreshed_task=refreshed_repo_task,
+        return finalize_dispatched_task(
+            scheduler=self,
+            dispatch_result=dispatch_result,
+            repo_task=repo_task,
             runner_result=runner_result,
+            status_blocked=STATUS_BLOCKED,
+            status_finished=STATUS_FINISHED,
+            status_failed=STATUS_FAILED,
         )
-
-        if effective_status in {"done", "finished", STATUS_FINISHED, "success", "completed"}:
-            self.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
-            self._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
-
-        elif effective_status in {"failed", STATUS_FAILED, "error"}:
-            fail_error = str(
-                (runner_result or {}).get("error")
-                or effective_final_answer
-                or "task failed"
-            )
-            self.dispatcher.fail_task(
-                task_id=task_id,
-                error=fail_error,
-                requeue_on_retry=False,
-            )
-            self._mark_repo_task_failed(task_id=task_id, error=fail_error)
-
-        elif effective_status in {STATUS_BLOCKED}:
-            self.worker_pool.release_by_task(task_id)
-            blocked_reason = str((runner_result or {}).get("blocked_reason") or "")
-            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
-
-        elif effective_status in {"queued", STATUS_QUEUED, "retry", "ready", "running"}:
-            self.worker_pool.release_by_task(task_id)
-            if self._can_requeue_task(task_id):
-                self.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
-                self._mark_repo_task_queued(
-                    task_id=task_id,
-                    error=str((runner_result or {}).get("error") or ""),
-                )
-
-        else:
-            self.worker_pool.release_by_task(task_id)
-
-        return {
-            "ok": bool((runner_result or {}).get("ok", True)),
-            "task_id": task_id,
-            "worker_id": getattr(dispatch_result, "worker_id", None),
-            "status": effective_status,
-            "final_answer": effective_final_answer,
-            "result": runner_result,
-        }
 
     def _scheduler_dispatch_idle(self) -> bool:
-        snapshot = self.dispatcher.snapshot()
-        queue_stats = snapshot.get("queue", {})
-        worker_stats = snapshot.get("workers", {})
-        return (
-            int(queue_stats.get("queued_count", 0) or 0) <= 0
-            and int(worker_stats.get("running_count", 0) or 0) <= 0
-        )
+        return scheduler_dispatch_idle(scheduler=self)
 
     def _build_tick_result(
         self,
@@ -382,30 +356,14 @@ class Scheduler(RuntimeTaskScheduler):
         last_synced: List[str],
         all_executed_results: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        snapshot = self.dispatcher.snapshot()
-        queue_stats = snapshot.get("queue", {})
-        worker_stats = snapshot.get("workers", {})
-
-        return {
-            "ok": True,
-            "scheduler_build": SCHEDULER_BUILD,
-            "tick": self.current_tick,
-            "rounds_used": rounds_used,
-            "max_scheduler_rounds_per_tick": self.max_scheduler_rounds_per_tick,
-            "synced_task_ids": last_synced,
-            "dispatched_count": total_dispatched,
-            "executed_count": len(all_executed_results),
-            "executed_results": all_executed_results,
-            "snapshot": {
-                "queue": queue_stats,
-                "workers": worker_stats,
-                "queued_count": queue_stats.get("queued_count", 0),
-                "total_count": queue_stats.get("total_count", 0),
-                "running_count": worker_stats.get("running_count", 0),
-                "ready_queue": self.dispatcher.list_queued(),
-                "running_tasks": self.dispatcher.list_running(),
-            },
-        }
+        return build_tick_result(
+            scheduler=self,
+            scheduler_build=SCHEDULER_BUILD,
+            rounds_used=rounds_used,
+            total_dispatched=total_dispatched,
+            last_synced=last_synced,
+            all_executed_results=all_executed_results,
+        )
 
     def _can_requeue_task(self, task_id: str) -> bool:
         task = self._get_task_from_repo(task_id)
@@ -637,121 +595,20 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         current_tick: Optional[int] = None,
     ) -> Dict[str, Any]:
-        if current_tick is not None:
-            self.current_tick = int(current_tick)
-
-        task = self._hydrate_task_from_workspace(task)
-
-        task_id = self._extract_task_id(task)
-        task_name = str(task.get("task_name") or task_id or "unknown_task")
-        task_status = str(task.get("status") or "").strip().lower()
-        trace = self._load_trace_for_task(task)
-
-        if task_status in TERMINAL_STATUSES:
-            return self._handle_simple_terminal_task(
-                task=task,
-                trace=trace,
-                task_id=task_id,
-                task_name=task_name,
-                task_status=task_status,
-            )
-
-        deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
-        if not deps_ready:
-            return self._handle_simple_blocked_task(
-                task=task,
-                trace=trace,
-                task_id=task_id,
-                task_name=task_name,
-                blocked_reason=blocked_reason,
-            )
-
-        steps, current_step_index, execution_log, results, step_results, last_step_result = (
-            self._load_simple_task_state(task)
-        )
-
-        if current_step_index >= len(steps):
-            return self._handle_simple_finished_task(
-                task=task,
-                trace=trace,
-                task_id=task_id,
-                task_name=task_name,
-                current_step_index=current_step_index,
-                steps=steps,
-                execution_log=execution_log,
-                results=results,
-                step_results=step_results,
-                last_step_result=last_step_result,
-            )
-
-        step = steps[current_step_index]
-        if not isinstance(step, dict):
-            return self._handle_simple_invalid_step(
-                task=task,
-                trace=trace,
-                task_id=task_id,
-                task_name=task_name,
-                results=results,
-                step_results=step_results,
-                last_step_result=last_step_result,
-            )
-
-        try:
-            step_result = self._execute_simple_step(task=task, step=step)
-        except Exception as e:
-            return self._handle_simple_step_exception(
-                task=task,
-                trace=trace,
-                task_id=task_id,
-                task_name=task_name,
-                current_step_index=current_step_index,
-                step=step,
-                error=e,
-                execution_log=execution_log,
-                results=results,
-                step_results=step_results,
-                last_step_result=last_step_result,
-            )
-
-        return self._handle_simple_step_success(
+        return run_simple_task_tick(
+            scheduler=self,
             task=task,
-            trace=trace,
-            task_id=task_id,
-            task_name=task_name,
-            current_step_index=current_step_index,
-            step=step,
-            step_result=step_result,
-            steps=steps,
-            execution_log=execution_log,
-            results=results,
-            step_results=step_results,
-            last_step_result=last_step_result,
+            current_tick=current_tick,
         )
 
     def _load_simple_task_state(
         self,
         task: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], int, List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], Any]:
-        steps = task.get("steps", [])
-        if not isinstance(steps, list):
-            steps = []
-
-        current_step_index = int(task.get("current_step_index", 0) or 0)
-
-        execution_log = copy.deepcopy(task.get("execution_log", []))
-        if not isinstance(execution_log, list):
-            execution_log = []
-
-        results = copy.deepcopy(task.get("results", []))
-        if not isinstance(results, list):
-            results = []
-
-        step_results = copy.deepcopy(task.get("step_results", results))
-        if not isinstance(step_results, list):
-            step_results = copy.deepcopy(results)
-
-        last_step_result = copy.deepcopy(task.get("last_step_result"))
-        return steps, current_step_index, execution_log, results, step_results, last_step_result
+        return load_simple_task_state(
+            scheduler=self,
+            task=task,
+        )
 
     def _handle_simple_terminal_task(
         self,
@@ -761,25 +618,14 @@ class Scheduler(RuntimeTaskScheduler):
         task_name: str,
         task_status: str,
     ) -> Dict[str, Any]:
-        self._trace_status(
-            trace=trace,
+        return handle_simple_terminal_task(
+            scheduler=self,
             task=task,
-            status=task_status,
-            tick=self.current_tick,
-            final_answer=str(task.get("final_answer") or ""),
-            extra={"action": "terminal_skip"},
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            task_status=task_status,
         )
-        self._save_trace_for_task(task=task, trace=trace)
-        return {
-            "ok": True,
-            "action": "terminal_skip",
-            "tick": self.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": task_status,
-            "message": "task already terminal",
-            "final_answer": task.get("final_answer", ""),
-        }
 
     def _handle_simple_blocked_task(
         self,
@@ -789,33 +635,14 @@ class Scheduler(RuntimeTaskScheduler):
         task_name: str,
         blocked_reason: str,
     ) -> Dict[str, Any]:
-        task["status"] = STATUS_BLOCKED
-        task["blocked_reason"] = blocked_reason
-        task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
-
-        self._trace_status(
-            trace=trace,
+        return handle_simple_blocked_task(
+            scheduler=self,
             task=task,
-            status=STATUS_BLOCKED,
-            tick=self.current_tick,
-            final_answer="",
-            extra={
-                "action": "blocked_by_dependencies",
-                "blocked_reason": blocked_reason,
-            },
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            blocked_reason=blocked_reason,
         )
-        self._save_trace_for_task(task=task, trace=trace)
-
-        return {
-            "ok": False,
-            "action": "blocked_by_dependencies",
-            "tick": self.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": STATUS_BLOCKED,
-            "blocked_reason": blocked_reason,
-            "error": blocked_reason,
-        }
 
     def _handle_simple_finished_task(
         self,
@@ -830,48 +657,19 @@ class Scheduler(RuntimeTaskScheduler):
         step_results: List[Dict[str, Any]],
         last_step_result: Any,
     ) -> Dict[str, Any]:
-        task["status"] = "finished"
-        task["final_answer"] = str(task.get("final_answer") or self._build_simple_final_answer(results))
-        task["finished_tick"] = self.current_tick
-        task["last_run_tick"] = self.current_tick
-        task["results"] = results
-        task["step_results"] = step_results
-        task["last_step_result"] = last_step_result
-        task["history"] = self._append_history(task.get("history"), "finished")
-
-        self._trace_status(
-            trace=trace,
+        return handle_simple_finished_task(
+            scheduler=self,
             task=task,
-            status="finished",
-            tick=self.current_tick,
-            final_answer=task["final_answer"],
-            extra={
-                "action": "simple_task_finished",
-                "current_step_index": current_step_index,
-                "steps_total": len(steps),
-            },
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            current_step_index=current_step_index,
+            steps=steps,
+            execution_log=execution_log,
+            results=results,
+            step_results=step_results,
+            last_step_result=last_step_result,
         )
-        self._save_trace_for_task(task=task, trace=trace)
-
-        return {
-            "ok": True,
-            "action": "simple_task_finished",
-            "tick": self.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": "finished",
-            "message": "task finished",
-            "final_answer": task["final_answer"],
-            "execution_log": execution_log,
-            "results": results,
-            "step_results": step_results,
-            "last_step_result": last_step_result,
-            "current_step_index": current_step_index,
-            "step_count": len(steps),
-            "steps_total": len(steps),
-            "last_run_tick": self.current_tick,
-            "finished_tick": self.current_tick,
-        }
 
     def _handle_simple_invalid_step(
         self,
@@ -883,39 +681,16 @@ class Scheduler(RuntimeTaskScheduler):
         step_results: List[Dict[str, Any]],
         last_step_result: Any,
     ) -> Dict[str, Any]:
-        task["status"] = "failed"
-        task["last_error"] = "invalid step type"
-        task["failure_message"] = "invalid step type"
-        task["last_failure_tick"] = self.current_tick
-        task["last_run_tick"] = self.current_tick
-        task["results"] = results
-        task["step_results"] = step_results
-        task["last_step_result"] = last_step_result
-        task["history"] = self._append_history(task.get("history"), "failed")
-
-        self._trace_status(
-            trace=trace,
+        return handle_simple_invalid_step(
+            scheduler=self,
             task=task,
-            status="failed",
-            tick=self.current_tick,
-            final_answer="",
-            extra={
-                "action": "simple_invalid_step",
-                "error": "invalid step type",
-            },
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            results=results,
+            step_results=step_results,
+            last_step_result=last_step_result,
         )
-        self._save_trace_for_task(task=task, trace=trace)
-
-        return {
-            "ok": False,
-            "action": "simple_invalid_step",
-            "tick": self.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": "failed",
-            "message": "invalid step type",
-            "error": "invalid step type",
-        }
 
     def _handle_simple_step_exception(
         self,
@@ -931,156 +706,20 @@ class Scheduler(RuntimeTaskScheduler):
         step_results: List[Dict[str, Any]],
         last_step_result: Any,
     ) -> Dict[str, Any]:
-        failed_step_result = {
-            "ok": False,
-            "step_index": current_step_index,
-            "step": copy.deepcopy(step),
-            "error": str(error),
-        }
-        execution_log.append(
-            {
-                "tick": self.current_tick,
-                "step_index": current_step_index,
-                "step": copy.deepcopy(step),
-                "ok": False,
-                "error": str(error),
-            }
-        )
-        results.append(copy.deepcopy(failed_step_result))
-        step_results = copy.deepcopy(results)
-        last_step_result = copy.deepcopy(failed_step_result)
-
-        task["execution_log"] = execution_log
-        task["results"] = results
-        task["step_results"] = step_results
-        task["last_step_result"] = last_step_result
-        task["last_error"] = str(error)
-        task["failure_message"] = str(error)
-        task["last_failure_tick"] = self.current_tick
-        task["last_run_tick"] = self.current_tick
-
-        self._trace_step(
-            trace=trace,
+        return handle_simple_step_exception(
+            scheduler=self,
             task=task,
-            step_index=current_step_index,
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            current_step_index=current_step_index,
             step=step,
-            ok=False,
-            result=None,
-            error=str(error),
-            tick=self.current_tick,
+            error=error,
+            execution_log=execution_log,
+            results=results,
+            step_results=step_results,
+            last_step_result=last_step_result,
         )
-
-        replan_result = self._try_replan_task(task=task)
-        task["replan_decision"] = str(replan_result.get("decision") or "")
-        task["replan_summary"] = str(replan_result.get("summary") or "")
-        task["replan_failed_step_type"] = str(replan_result.get("failed_step_type") or "")
-        task["replan_repairable"] = replan_result.get("repairable", None)
-
-        if replan_result.get("replanned"):
-            task["status"] = "queued"
-            task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or str(error))
-            task["current_step_index"] = 0
-            task["history"] = self._append_history(task.get("history"), "replanned")
-            task["history"] = self._append_history(task.get("history"), "queued")
-
-            new_steps = task.get("steps", []) if isinstance(task.get("steps"), list) else []
-            new_steps_total = len(new_steps)
-
-            self._trace_replan(
-                trace=trace,
-                task=task,
-                tick=self.current_tick,
-                replan_result=replan_result,
-            )
-            self._trace_status(
-                trace=trace,
-                task=task,
-                status="queued",
-                tick=self.current_tick,
-                final_answer="",
-                extra={
-                    "action": "simple_step_replanned",
-                    "replan_reason": task["replan_reason"],
-                    "replan_count": task.get("replan_count", 0),
-                    "replan_decision": task.get("replan_decision", ""),
-                    "replan_summary": task.get("replan_summary", ""),
-                    "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-                    "replan_repairable": task.get("replan_repairable", None),
-                    "steps_total": new_steps_total,
-                },
-            )
-            self._save_trace_for_task(task=task, trace=trace)
-
-            return {
-                "ok": True,
-                "action": "simple_step_replanned",
-                "tick": self.current_tick,
-                "task_id": task_id,
-                "task_name": task_name,
-                "status": "queued",
-                "message": replan_result.get("summary", "task replanned"),
-                "execution_log": execution_log,
-                "results": results,
-                "step_results": step_results,
-                "last_step_result": last_step_result,
-                "current_step_index": 0,
-                "step_count": new_steps_total,
-                "steps_total": new_steps_total,
-                "last_run_tick": self.current_tick,
-                "last_failure_tick": self.current_tick,
-                "replan_reason": task["replan_reason"],
-                "replan_decision": task.get("replan_decision", ""),
-                "replan_summary": task.get("replan_summary", ""),
-                "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-                "replan_repairable": task.get("replan_repairable", None),
-                "replan_result": replan_result,
-            }
-
-        task["status"] = "failed"
-        task["history"] = self._append_history(task.get("history"), "failed")
-
-        self._trace_status(
-            trace=trace,
-            task=task,
-            status="failed",
-            tick=self.current_tick,
-            final_answer="",
-            extra={
-                "action": "simple_step_failed",
-                "error": str(error),
-                "replan_decision": task.get("replan_decision", ""),
-                "replan_summary": task.get("replan_summary", ""),
-                "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-                "replan_repairable": task.get("replan_repairable", None),
-                "replan_result": copy.deepcopy(replan_result),
-            },
-        )
-        self._save_trace_for_task(task=task, trace=trace)
-
-        return {
-            "ok": False,
-            "action": "simple_step_failed",
-            "tick": self.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": "failed",
-            "message": "step execution failed",
-            "error": str(error),
-            "execution_log": execution_log,
-            "results": results,
-            "step_results": step_results,
-            "last_step_result": last_step_result,
-            "current_step_index": current_step_index,
-            "step_count": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
-            "steps_total": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
-            "last_run_tick": self.current_tick,
-            "last_failure_tick": self.current_tick,
-            "replan_decision": task.get("replan_decision", ""),
-            "replan_summary": task.get("replan_summary", ""),
-            "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-            "replan_repairable": task.get("replan_repairable", None),
-            "replan_result": replan_result,
-        }
 
     def _handle_simple_step_success(
         self,
@@ -1097,122 +736,21 @@ class Scheduler(RuntimeTaskScheduler):
         step_results: List[Dict[str, Any]],
         last_step_result: Any,
     ) -> Dict[str, Any]:
-        normalized_step_result = {
-            "ok": True,
-            "step_index": current_step_index,
-            "step": copy.deepcopy(step),
-            "result": copy.deepcopy(step_result),
-        }
-
-        execution_log.append(
-            {
-                "tick": self.current_tick,
-                "step_index": current_step_index,
-                "step": copy.deepcopy(step),
-                "ok": True,
-                "result": copy.deepcopy(step_result),
-            }
-        )
-        results.append(copy.deepcopy(normalized_step_result))
-        step_results = copy.deepcopy(results)
-        last_step_result = copy.deepcopy(normalized_step_result)
-
-        task["execution_log"] = execution_log
-        task["results"] = results
-        task["step_results"] = step_results
-        task["last_step_result"] = last_step_result
-        task["current_step_index"] = current_step_index + 1
-        task["last_run_tick"] = self.current_tick
-
-        self._trace_step(
-            trace=trace,
+        return handle_simple_step_success(
+            scheduler=self,
             task=task,
-            step_index=current_step_index,
+            trace=trace,
+            task_id=task_id,
+            task_name=task_name,
+            current_step_index=current_step_index,
             step=step,
-            ok=True,
-            result=step_result,
-            error="",
-            tick=self.current_tick,
+            step_result=step_result,
+            steps=steps,
+            execution_log=execution_log,
+            results=results,
+            step_results=step_results,
+            last_step_result=last_step_result,
         )
-
-        if task["current_step_index"] >= len(steps):
-            final_answer = self._build_simple_final_answer(
-                [x.get("result", x) if isinstance(x, dict) else x for x in results]
-            )
-            task["status"] = "finished"
-            task["final_answer"] = final_answer
-            task["finished_tick"] = self.current_tick
-            task["history"] = self._append_history(task.get("history"), "finished")
-
-            self._trace_status(
-                trace=trace,
-                task=task,
-                status="finished",
-                tick=self.current_tick,
-                final_answer=final_answer,
-                extra={
-                    "action": "simple_task_finished",
-                    "current_step_index": task["current_step_index"],
-                    "steps_total": len(steps),
-                },
-            )
-            self._save_trace_for_task(task=task, trace=trace)
-
-            return {
-                "ok": True,
-                "action": "simple_task_finished",
-                "tick": self.current_tick,
-                "task_id": task_id,
-                "task_name": task_name,
-                "status": "finished",
-                "message": "task finished",
-                "final_answer": final_answer,
-                "execution_log": execution_log,
-                "results": results,
-                "step_results": step_results,
-                "last_step_result": last_step_result,
-                "current_step_index": task["current_step_index"],
-                "step_count": len(steps),
-                "steps_total": len(steps),
-                "last_run_tick": self.current_tick,
-                "finished_tick": self.current_tick,
-            }
-
-        task["status"] = "queued"
-        task["history"] = self._append_history(task.get("history"), "queued")
-
-        self._trace_status(
-            trace=trace,
-            task=task,
-            status="queued",
-            tick=self.current_tick,
-            final_answer="",
-            extra={
-                "action": "simple_step_executed",
-                "current_step_index": task["current_step_index"],
-                "steps_total": len(steps),
-            },
-        )
-        self._save_trace_for_task(task=task, trace=trace)
-
-        return {
-            "ok": True,
-            "action": "simple_step_executed",
-            "tick": self.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": "queued",
-            "message": "step executed, waiting next tick",
-            "final_answer": "",
-            "execution_log": execution_log,
-            "results": results,
-            "step_results": step_results,
-            "last_step_result": last_step_result,
-            "current_step_index": task["current_step_index"],
-            "step_count": len(steps),
-            "steps_total": len(steps),
-            "last_run_tick": self.current_tick,
-        }
 
     def _get_failed_step_payload(self, task: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(task, dict):
@@ -1421,374 +959,48 @@ class Scheduler(RuntimeTaskScheduler):
         task_dir = self._resolve_task_dir(task)
         step_scope = self._normalize_step_scope(step.get("scope", None))
 
-        guard_step = copy.deepcopy(step)
-
-        if step_type == "run_python":
-            run_path = str(step.get("path") or "").strip()
-            if not run_path:
-                raise ValueError("run_python step missing path")
-            guard_step = {
-                "type": "command",
-                "command": f'{sys.executable} "{run_path}"',
-            }
-
-        elif step_type == "verify":
-            step = self._normalize_verify_step(step)
-            step_scope = self._normalize_step_scope(step.get("scope", None))
-            guard_step = {
-                "type": "noop",
-                "message": "verify",
-            }
-
-        elif step_type == "ensure_file":
-            raw_path = str(step.get("path") or "").strip()
-            if not raw_path:
-                raise ValueError("ensure_file step missing path")
-            guard_step = {
-                "type": "write_file",
-                "path": raw_path,
-                "content": "",
-            }
+        prepared_step, guard_step, step_scope = prepare_simple_step_guard(
+            scheduler=self,
+            step=step,
+            step_type=step_type,
+            step_scope=step_scope,
+        )
+        step = prepared_step
 
         guard_result = self.execution_guard.check_step(step=guard_step, task_dir=task_dir)
         if not bool(guard_result.get("ok")):
             raise PermissionError(str(guard_result.get("error") or "guard blocked execution"))
 
-        if step_type == "noop":
-            return {
-                "type": "noop",
-                "message": str(step.get("message") or "noop ok"),
-            }
+        basic_result = execute_simple_basic_step(
+            scheduler=self,
+            task=task,
+            step=step,
+            step_type=step_type,
+            task_dir=task_dir,
+            step_scope=step_scope,
+            guard_result=guard_result,
+        )
+        if basic_result is not None:
+            return basic_result
 
-        if step_type == "ensure_file":
-            raw_path = str(step.get("path") or "").strip()
-            if not raw_path:
-                raise ValueError("ensure_file step missing path")
+        llm_step_result = execute_llm_step(
+            scheduler=self,
+            task=task,
+            step=step,
+            step_type=step_type,
+        )
+        if llm_step_result is not None:
+            return llm_step_result
 
-            full_path = self._resolve_guard_target_path(
-                raw_path=raw_path,
-                task_dir=task_dir,
-                scope=step_scope,
-                resolved_path=str(guard_result.get("resolved_path") or ""),
-            )
-
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-
-            created = False
-            if not os.path.exists(full_path):
-                with open(full_path, "w", encoding="utf-8") as f:
-                    f.write("")
-                created = True
-
-            return {
-                "type": "ensure_file",
-                "path": raw_path,
-                "full_path": full_path,
-                "scope": step_scope,
-                "created": created,
-                "preserved_existing": not created,
-            }
-
-        if step_type == "write_file":
-            raw_path = str(step.get("path") or "").strip()
-            if not raw_path:
-                raise ValueError("write_file step missing path")
-
-            if bool(step.get("use_previous_text", False)):
-                content = self._extract_text_from_previous_result(task)
-            else:
-                content = step.get("content", "")
-
-            if content is None:
-                content = ""
-            content = str(content)
-
-            full_path = self._resolve_guard_target_path(
-                raw_path=raw_path,
-                task_dir=task_dir,
-                scope=step_scope,
-                resolved_path=str(guard_result.get("resolved_path") or ""),
-            )
-
-            os.makedirs(os.path.dirname(full_path), exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            return {
-                "type": "write_file",
-                "path": raw_path,
-                "full_path": full_path,
-                "scope": step_scope,
-                "bytes": len(content.encode("utf-8")),
-                "content": content,
-                "used_previous_text": bool(step.get("use_previous_text", False)),
-            }
-
-
-        if step_type in {"llm", "llm_generate"}:
-            previous_text = self._extract_text_from_previous_result(task)
-            prompt_template = str(step.get("prompt_template") or step.get("prompt") or "").strip()
-            prompt = prompt_template.replace("{{file_content}}", previous_text)
-
-            step_executor = getattr(self, "step_executor", None)
-            result_payload: Dict[str, Any]
-
-            if step_executor is not None:
-                try:
-                    if hasattr(step_executor, "execute_step") and callable(step_executor.execute_step):
-                        step_result = step_executor.execute_step(
-                            task=task,
-                            step=copy.deepcopy(step),
-                            context={"file_content": previous_text},
-                            step_index=int(task.get("current_step_index", 0) or 0),
-                            step_count=len(task.get("steps", [])) if isinstance(task.get("steps", []), list) else 1,
-                            previous_result=task.get("last_step_result"),
-                        )
-                    elif hasattr(step_executor, "execute") and callable(step_executor.execute):
-                        step_result = step_executor.execute(
-                            step=copy.deepcopy(step),
-                            context={"file_content": previous_text},
-                        )
-                    else:
-                        step_result = None
-                except TypeError:
-                    try:
-                        step_result = step_executor.execute_step(
-                            task=task,
-                            step=copy.deepcopy(step),
-                            context={"file_content": previous_text},
-                        )
-                    except Exception as e:
-                        raise RuntimeError(f"llm step execution failed: {e}")
-                except Exception as e:
-                    raise RuntimeError(f"llm step execution failed: {e}")
-
-                if isinstance(step_result, dict):
-                    result_payload = copy.deepcopy(step_result)
-                else:
-                    result_payload = {"text": str(step_result or "")}
-            elif self.llm_client is not None:
-                client = self.llm_client
-                if hasattr(client, "chat") and callable(client.chat):
-                    llm_out = client.chat(prompt)
-                elif hasattr(client, "generate") and callable(client.generate):
-                    llm_out = client.generate(prompt)
-                else:
-                    raise RuntimeError("llm_client has no chat/generate method")
-                result_payload = {"text": str(llm_out or "")}
-            else:
-                raise RuntimeError("no llm backend available for llm step")
-
-            final_text = self._extract_text_from_result_payload(result_payload)
-            if not final_text and isinstance(result_payload, dict):
-                final_text = str(result_payload)
-
-            return {
-                "type": step_type,
-                "mode": str(step.get("mode") or ""),
-                "prompt": prompt,
-                "prompt_template": prompt_template,
-                "input_text": previous_text,
-                "text": final_text,
-                "content": final_text,
-                "result": result_payload,
-            }
-
-        if step_type == "command":
-            command = str(step.get("command") or "").strip()
-            if not command:
-                raise ValueError("command step missing command")
-
-            completed = subprocess.run(
-                command,
-                shell=True,
-                cwd=task_dir,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-
-            result = {
-                "type": "command",
-                "command": command,
-                "returncode": int(completed.returncode),
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
-                "cwd": task_dir,
-            }
-
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    f"command failed: {command} | returncode={completed.returncode} | stderr={completed.stderr.strip()}"
-                )
-
-            return result
-
-        if step_type == "run_python":
-            raw_path = str(step.get("path") or "").strip()
-            if not raw_path:
-                raise ValueError("run_python step missing path")
-
-            full_path = self._resolve_read_path_with_fallback(
-                raw_path=raw_path,
-                task_dir=task_dir,
-                shared_dir=self.shared_dir,
-                scope=step_scope,
-            )
-
-            read_guard = self.execution_guard.check_step(
-                step={"type": "read_file", "path": full_path},
-                task_dir=task_dir,
-            )
-            if not bool(read_guard.get("ok")):
-                raise PermissionError(str(read_guard.get("error") or "guard blocked python file read"))
-
-            if not os.path.exists(full_path):
-                raise FileNotFoundError(f"python file not found: {full_path}")
-
-            completed = subprocess.run(
-                [sys.executable, full_path],
-                cwd=task_dir,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-
-            result = {
-                "type": "run_python",
-                "path": raw_path,
-                "full_path": full_path,
-                "scope": step_scope,
-                "python_executable": sys.executable,
-                "returncode": int(completed.returncode),
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
-                "cwd": task_dir,
-            }
-
-            if completed.returncode != 0:
-                raise RuntimeError(
-                    f"python run failed: {raw_path} | returncode={completed.returncode} | stderr={completed.stderr.strip()}"
-                )
-
-            return result
-
-        if step_type == "read_file":
-            raw_path = str(step.get("path") or "").strip()
-            if not raw_path:
-                raise ValueError("read_file step missing path")
-
-            full_path = self._resolve_read_path_with_fallback(
-                raw_path=raw_path,
-                task_dir=task_dir,
-                shared_dir=self.shared_dir,
-                scope=step_scope,
-            )
-
-            guard_check = self.execution_guard.check_step(
-                step={"type": "read_file", "path": full_path},
-                task_dir=task_dir,
-            )
-            if not bool(guard_check.get("ok")):
-                raise PermissionError(str(guard_check.get("error") or "guard blocked read"))
-
-            if not os.path.exists(full_path):
-                raise FileNotFoundError(f"file not found: {full_path}")
-
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            return {
-                "type": "read_file",
-                "path": raw_path,
-                "full_path": full_path,
-                "scope": step_scope,
-                "content": content,
-            }
-
-        if step_type == "verify":
-            step = self._normalize_verify_step(step)
-            step_scope = self._normalize_step_scope(step.get("scope", None))
-            contains = step.get("contains", None)
-            equals = step.get("equals", None)
-            exists = step.get("exists", None)
-            path = str(step.get("path") or "").strip()
-
-            if contains is None and equals is None and exists is None and not path:
-                raise ValueError("verify step requires path / contains / equals / exists")
-
-            target_text = ""
-            full_path = ""
-
-            if path:
-                full_path = self._resolve_read_path_with_fallback(
-                    raw_path=path,
-                    task_dir=task_dir,
-                    shared_dir=self.shared_dir,
-                    scope=step_scope,
-                )
-
-                read_guard = self.execution_guard.check_step(
-                    step={"type": "read_file", "path": full_path},
-                    task_dir=task_dir,
-                )
-                if not bool(read_guard.get("ok")):
-                    raise PermissionError(str(read_guard.get("error") or "guard blocked verify read"))
-
-                file_exists = os.path.exists(full_path)
-
-                if exists is True and not file_exists:
-                    raise FileNotFoundError(f"verify file not found: {full_path}")
-
-                if exists is False and file_exists:
-                    raise RuntimeError(f"verify failed: file should not exist: {full_path}")
-
-                if (contains is not None or equals is not None or exists is not False) and not file_exists:
-                    raise FileNotFoundError(f"verify file not found: {full_path}")
-
-                if file_exists and (contains is not None or equals is not None):
-                    with open(full_path, "r", encoding="utf-8") as f:
-                        target_text = f.read()
-            else:
-                last = task.get("last_step_result")
-                if isinstance(last, dict):
-                    last_result = last.get("result")
-                    if isinstance(last_result, dict):
-                        if "stdout" in last_result:
-                            target_text = str(last_result.get("stdout") or "")
-                        elif "content" in last_result:
-                            target_text = str(last_result.get("content") or "")
-                        else:
-                            target_text = json.dumps(last_result, ensure_ascii=False)
-                    else:
-                        target_text = str(last_result or "")
-
-            if contains is not None:
-                contains_text = str(contains)
-                if contains_text not in target_text:
-                    raise RuntimeError(f"verify contains failed: '{contains_text}' not found")
-
-            if equals is not None:
-                expected = str(equals)
-                if str(target_text).strip() != expected.strip():
-                    raise RuntimeError(
-                        f"verify equals failed: expected exact match '{expected}', got '{str(target_text).strip()}'"
-                    )
-
-            return {
-                "type": "verify",
-                "ok": True,
-                "path": path,
-                "full_path": full_path,
-                "scope": step_scope,
-                "contains": contains,
-                "equals": equals,
-                "exists": exists,
-                "checked_text": target_text,
-                "verified": True,
-            }
+        command_like_result = execute_command_like_step(
+            scheduler=self,
+            step=step,
+            step_type=step_type,
+            task_dir=task_dir,
+            step_scope=step_scope,
+        )
+        if command_like_result is not None:
+            return command_like_result
 
         raise ValueError(f"unsupported step type: {step_type}")
 
@@ -1803,10 +1015,7 @@ class Scheduler(RuntimeTaskScheduler):
         return sandbox_dir
 
     def _normalize_step_scope(self, scope: Any) -> str:
-        value = str(scope or "").strip().lower()
-        if value in {"task", "shared", "auto"}:
-            return value
-        return "auto"
+        return normalize_step_scope(scope)
 
     def _resolve_step_path(
         self,
@@ -1815,24 +1024,12 @@ class Scheduler(RuntimeTaskScheduler):
         shared_dir: str,
         scope: str = "auto",
     ) -> str:
-        normalized = str(raw_path or "").replace("\\", "/").strip()
-        step_scope = self._normalize_step_scope(scope)
-
-        if os.path.isabs(normalized):
-            return os.path.abspath(normalized)
-
-        if normalized.startswith("workspace/shared/"):
-            relative_part = normalized[len("workspace/shared/"):].strip("/")
-            return os.path.abspath(os.path.join(shared_dir, relative_part))
-
-        if normalized.startswith("shared/"):
-            relative_part = normalized[len("shared/"):].strip("/")
-            return os.path.abspath(os.path.join(shared_dir, relative_part))
-
-        if step_scope == "shared":
-            return os.path.abspath(os.path.join(shared_dir, normalized))
-
-        return os.path.abspath(os.path.join(task_dir, normalized))
+        return resolve_step_path(
+            raw_path=raw_path,
+            task_dir=task_dir,
+            shared_dir=shared_dir,
+            scope=scope,
+        )
 
     def _resolve_read_path_with_fallback(
         self,
@@ -1841,45 +1038,15 @@ class Scheduler(RuntimeTaskScheduler):
         shared_dir: str,
         scope: str = "auto",
     ) -> str:
-        normalized = str(raw_path or "").replace("\\", "/").strip()
-        step_scope = self._normalize_step_scope(scope)
-
-        if os.path.isabs(normalized):
-            return os.path.abspath(normalized)
-
-        if normalized.startswith("workspace/shared/"):
-            relative_part = normalized[len("workspace/shared/"):].strip("/")
-            return os.path.abspath(os.path.join(shared_dir, relative_part))
-
-        if normalized.startswith("shared/"):
-            relative_part = normalized[len("shared/"):].strip("/")
-            return os.path.abspath(os.path.join(shared_dir, relative_part))
-
-        task_local = os.path.abspath(os.path.join(task_dir, normalized))
-        shared_fallback = os.path.abspath(os.path.join(shared_dir, normalized))
-
-        if step_scope == "task":
-            return task_local
-
-        if step_scope == "shared":
-            return shared_fallback
-
-        if os.path.exists(task_local):
-            return task_local
-
-        if os.path.exists(shared_fallback):
-            return shared_fallback
-
-        return task_local
+        return resolve_read_path_with_fallback(
+            raw_path=raw_path,
+            task_dir=task_dir,
+            shared_dir=shared_dir,
+            scope=scope,
+        )
 
     def _needs_scheduler_path_resolution(self, raw_path: str) -> bool:
-        normalized = str(raw_path or "").replace("\\", "/").strip().lower()
-        return bool(
-            normalized.startswith("shared/")
-            or normalized.startswith("workspace/shared/")
-            or normalized.startswith("workspace/tasks/")
-            or normalized.startswith("tasks/")
-        )
+        return needs_scheduler_path_resolution(raw_path)
 
     def _resolve_guard_target_path(
         self,
@@ -1888,65 +1055,64 @@ class Scheduler(RuntimeTaskScheduler):
         scope: str = "auto",
         resolved_path: str = "",
     ) -> str:
-        if resolved_path:
-            normalized_resolved = os.path.abspath(str(resolved_path).strip())
-            normalized_raw = str(raw_path or "").replace("\\", "/").strip().lower()
-            step_scope = self._normalize_step_scope(scope)
-
-            if step_scope == "shared":
-                if normalized_raw.startswith("shared/") or normalized_raw.startswith("workspace/shared/"):
-                    return normalized_resolved
-            elif step_scope == "task":
-                if not (normalized_raw.startswith("shared/") or normalized_raw.startswith("workspace/shared/")):
-                    return normalized_resolved
-            else:
-                return normalized_resolved
-
-        return self._resolve_step_path(
+        return resolve_guard_target_path(
             raw_path=raw_path,
             task_dir=task_dir,
             shared_dir=self.shared_dir,
             scope=scope,
+            resolved_path=resolved_path,
         )
 
-
     def _extract_text_from_result_payload(self, payload: Any) -> str:
-        if isinstance(payload, str):
-            return payload
+        def _extract_text_deep(value: Any, depth: int = 0) -> str:
+            if depth > 8:
+                return ""
 
-        if isinstance(payload, dict):
-            for key in ("text", "content", "message", "response", "final_answer", "stdout", "checked_text"):
-                value = payload.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value
-            result_block = payload.get("result")
-            if isinstance(result_block, dict):
+            if value is None:
+                return ""
+
+            if isinstance(value, str):
+                return value
+
+            if isinstance(value, dict):
                 for key in ("text", "content", "message", "response", "final_answer", "stdout", "checked_text"):
-                    value = result_block.get(key)
-                    if isinstance(value, str) and value.strip():
-                        return value
-        return ""
+                    item = value.get(key)
+                    if isinstance(item, str) and item.strip():
+                        return item
+
+                for nested_key in ("result", "raw", "data", "payload", "previous_result"):
+                    nested = value.get(nested_key)
+                    nested_text = _extract_text_deep(nested, depth + 1)
+                    if nested_text.strip():
+                        return nested_text
+
+            if isinstance(value, list):
+                for item in reversed(value):
+                    nested_text = _extract_text_deep(item, depth + 1)
+                    if nested_text.strip():
+                        return nested_text
+
+            return ""
+
+        return _extract_text_deep(payload)
 
     def _extract_text_from_previous_result(self, task: Dict[str, Any]) -> str:
         if not isinstance(task, dict):
             return ""
 
-        last = task.get("last_step_result")
-        if isinstance(last, dict):
-            direct = self._extract_text_from_result_payload(last)
-            if direct:
-                return direct
-            result_block = last.get("result")
-            direct = self._extract_text_from_result_payload(result_block)
-            if direct:
-                return direct
+        for key in ("last_step_result",):
+            value = task.get(key)
+            text = self._extract_text_from_result_payload(value)
+            if text.strip():
+                return text
 
-        results = task.get("results", [])
-        if isinstance(results, list) and results:
-            last_item = results[-1]
-            direct = self._extract_text_from_result_payload(last_item)
-            if direct:
-                return direct
+        for list_key in ("step_results", "results", "execution_log"):
+            items = task.get(list_key, [])
+            if isinstance(items, list) and items:
+                for item in reversed(items):
+                    text = self._extract_text_from_result_payload(item)
+                    if text.strip():
+                        return text
 
         return ""
 
@@ -2008,6 +1174,18 @@ class Scheduler(RuntimeTaskScheduler):
         return task
 
     def _build_simple_final_answer(self, results: List[Dict[str, Any]]) -> str:
+        if isinstance(results, list) and results:
+            for item in reversed(results):
+                text = self._extract_text_from_result_payload(item)
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+
+                if isinstance(item, dict):
+                    nested = item.get("result")
+                    text = self._extract_text_from_result_payload(nested)
+                    if isinstance(text, str) and text.strip():
+                        return text.strip()
+
         return build_simple_final_answer(results)
 
     # ------------------------------------------------------------
@@ -2015,34 +1193,13 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def _get_trace_file_for_task(self, task: Dict[str, Any]) -> str:
-        if not isinstance(task, dict):
-            return os.path.join(self.tasks_root, "unknown_task", "trace.json")
-
-        task_dir = str(task.get("task_dir") or "").strip()
-        if not task_dir:
-            task_id = self._extract_task_id(task) or "unknown_task"
-            task_dir = os.path.join(self.tasks_root, task_id)
-
-        os.makedirs(task_dir, exist_ok=True)
-
-        trace_file = str(task.get("trace_file") or "").strip()
-        if trace_file:
-            return trace_file
-
-        return os.path.join(task_dir, "trace.json")
+        return get_trace_file_for_task(scheduler=self, task=task)
 
     def _load_trace_for_task(self, task: Dict[str, Any]) -> ExecutionTrace:
-        trace_path = self._get_trace_file_for_task(task)
-        trace = ExecutionTrace(trace_file=trace_path)
-        trace.load(trace_path)
-        task["trace_file"] = trace_path
-        return trace
+        return load_trace_for_task(scheduler=self, task=task)
 
     def _save_trace_for_task(self, task: Dict[str, Any], trace: ExecutionTrace) -> Optional[str]:
-        trace_path = self._get_trace_file_for_task(task)
-        saved = trace.save(trace_path)
-        task["trace_file"] = trace_path
-        return saved
+        return save_trace_for_task(scheduler=self, task=task, trace=trace)
 
     def _trace_summary(
         self,
@@ -2052,11 +1209,13 @@ class Scheduler(RuntimeTaskScheduler):
         tick: Optional[int] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        trace.add_summary_event(
-            task_id=self._extract_task_id(task),
+        return trace_summary(
+            scheduler=self,
+            trace=trace,
+            task=task,
             summary=summary,
             tick=tick,
-            extra=copy.deepcopy(extra) if isinstance(extra, dict) else None,
+            extra=extra,
         )
 
     def _trace_status(
@@ -2068,12 +1227,14 @@ class Scheduler(RuntimeTaskScheduler):
         final_answer: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        trace.add_status_event(
-            task_id=self._extract_task_id(task),
+        return trace_status(
+            scheduler=self,
+            trace=trace,
+            task=task,
             status=status,
             tick=tick,
             final_answer=final_answer,
-            extra=copy.deepcopy(extra) if isinstance(extra, dict) else None,
+            extra=extra,
         )
 
     def _trace_step(
@@ -2087,13 +1248,15 @@ class Scheduler(RuntimeTaskScheduler):
         error: str = "",
         tick: Optional[int] = None,
     ) -> None:
-        trace.add_step_event(
-            task_id=self._extract_task_id(task),
+        return trace_step(
+            scheduler=self,
+            trace=trace,
+            task=task,
             step_index=step_index,
-            step=copy.deepcopy(step),
-            ok=bool(ok),
-            result=copy.deepcopy(result) if isinstance(result, dict) else None,
-            error=str(error or ""),
+            step=step,
+            ok=ok,
+            result=result,
+            error=error,
             tick=tick,
         )
 
@@ -2104,33 +1267,12 @@ class Scheduler(RuntimeTaskScheduler):
         tick: Optional[int],
         replan_result: Dict[str, Any],
     ) -> None:
-        raw_replan_result = replan_result.get("raw_replan_result", {})
-        if not isinstance(raw_replan_result, dict):
-            raw_replan_result = {}
-
-        plan = raw_replan_result.get("plan", {})
-        if not isinstance(plan, dict):
-            plan = {}
-
-        meta = plan.get("meta", {})
-        if not isinstance(meta, dict):
-            meta = {}
-
-        new_steps = plan.get("steps", [])
-        if not isinstance(new_steps, list):
-            new_steps = []
-
-        trace.add_replan_event(
-            task_id=self._extract_task_id(task),
-            failed_step_index=int(meta.get("failed_step_index", -1) or -1),
-            failed_step_type=str(meta.get("failed_step_type") or ""),
-            error_type=str(meta.get("error_type") or ""),
-            failed_error=str(meta.get("failed_error") or ""),
-            repair_mode=str(meta.get("repair_mode") or ""),
-            replan_count=int(replan_result.get("replan_count", task.get("replan_count", 0)) or 0),
-            max_replans=int(meta.get("max_replans", task.get("max_replans", 0)) or 0),
-            new_steps=copy.deepcopy(new_steps),
+        return trace_replan(
+            scheduler=self,
+            trace=trace,
+            task=task,
             tick=tick,
+            replan_result=replan_result,
         )
 
     # ------------------------------------------------------------
@@ -2679,67 +1821,20 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def rebuild_ready_queue(self) -> List[str]:
-        tasks = self._list_repo_tasks()
-        if not isinstance(tasks, list):
-            return []
-
-        synced_ids: List[str] = []
-
-        for task in tasks:
-            if not isinstance(task, dict):
-                continue
-
-            task = self._hydrate_task_from_workspace(task)
-            task_id = self._extract_task_id(task)
-            if not task_id:
-                continue
-
-            status = str(task.get("status") or "").strip().lower()
-
-            if status in TERMINAL_STATUSES:
-                self.worker_pool.release_by_task(task_id)
-                continue
-
-            if self._enqueue_repo_task_if_ready(task):
-                synced_ids.append(task_id)
-
-        return synced_ids
+        return rebuild_ready_queue(
+            scheduler=self,
+            terminal_statuses=TERMINAL_STATUSES,
+        )
 
     def _enqueue_repo_task_if_ready(self, task: Dict[str, Any], overwrite: bool = False) -> bool:
-        task = self._hydrate_task_from_workspace(task)
-
-        task_id = self._extract_task_id(task)
-        if not task_id:
-            return False
-
-        if self.worker_pool.get_running_task(task_id) is not None:
-            return False
-
-        status = str(task.get("status") or "").strip().lower()
-        if status in TERMINAL_STATUSES:
-            return False
-
-        if self._queue_contains_task(task_id) and not overwrite:
-            return False
-
-        deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
-
-        if not deps_ready:
-            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
-            return False
-
-        self._sync_unblocked_state(task_id=task_id)
-
-        refreshed_task = self._get_task_from_repo(task_id)
-        if isinstance(refreshed_task, dict):
-            task = refreshed_task
-
-        status = str(task.get("status") or "").strip().lower()
-        if status not in READY_STATUSES:
-            return False
-
-        scheduled_task = self._repo_task_to_scheduled_task(task)
-        return self.scheduler_queue.enqueue(scheduled_task, overwrite=overwrite)
+        return enqueue_repo_task_if_ready(
+            scheduler=self,
+            task=task,
+            overwrite=overwrite,
+            terminal_statuses=TERMINAL_STATUSES,
+            ready_statuses=READY_STATUSES,
+            status_blocked=STATUS_BLOCKED,
+        )
 
     def _repo_task_to_scheduled_task(self, task: Dict[str, Any]) -> ScheduledTask:
         task = self._hydrate_task_from_workspace(task)
@@ -2833,82 +1928,14 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def _task_dependencies_satisfied(self, task: Dict[str, Any]) -> Tuple[bool, str]:
-        task = self._hydrate_task_from_workspace(task)
-        depends_on = task.get("depends_on", [])
-
-        if depends_on is None:
-            return True, ""
-
-        if not isinstance(depends_on, list):
-            return False, "invalid depends_on"
-
-        normalized_deps = self._normalize_depends_on(depends_on)
-        if isinstance(normalized_deps, dict):
-            normalized_deps = normalized_deps.get("depends_on", [])
-        if not isinstance(normalized_deps, list):
-            normalized_deps = []
-
-        task_id = self._extract_task_id(task)
-        if task_id and task_id in normalized_deps:
-            return False, f"self dependency: {task_id}"
-
-        if not normalized_deps:
-            return True, ""
-
-        for dep_id in normalized_deps:
-            dep_task = self._get_task_from_repo(dep_id)
-            if not isinstance(dep_task, dict):
-                return False, f"dependency not found: {dep_id}"
-
-            dep_status = str(dep_task.get("status") or "").strip().lower()
-            if dep_status not in {"finished", "done", "success", "completed"}:
-                return False, f"waiting dependency: {dep_id}"
-
-        return True, ""
+        return task_dependencies_satisfied(scheduler=self, task=task)
 
     def _unblock_tasks_if_dependencies_done(self) -> None:
-        tasks = self._list_repo_tasks()
-        if not isinstance(tasks, list):
-            return
-
-        for task in tasks:
-            if not isinstance(task, dict):
-                continue
-
-            task = self._hydrate_task_from_workspace(task)
-
-            task_id = self._extract_task_id(task)
-            if not task_id:
-                continue
-
-            status = str(task.get("status") or "").strip().lower()
-            if status != STATUS_BLOCKED:
-                continue
-
-            deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
-
-            if deps_ready:
-                task["status"] = "queued"
-                task["blocked_reason"] = ""
-                task["history"] = self._append_history(task.get("history"), "queued")
-                task["scheduler_build"] = SCHEDULER_BUILD
-                self._persist_task_payload(task_id=task_id, task=task)
-                self._enqueue_repo_task_if_ready(task, overwrite=True)
-
-                trace = self._load_trace_for_task(task)
-                self._trace_status(
-                    trace=trace,
-                    task=task,
-                    status="queued",
-                    tick=getattr(self, "current_tick", 0),
-                    final_answer="",
-                    extra={
-                        "action": "unblocked_by_dependencies",
-                    },
-                )
-                self._save_trace_for_task(task=task, trace=trace)
-            else:
-                self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+        unblock_tasks_if_dependencies_done(
+            scheduler=self,
+            scheduler_build=SCHEDULER_BUILD,
+            status_blocked=STATUS_BLOCKED,
+        )
 
     def _normalize_depends_on(
         self,
@@ -3717,409 +2744,38 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         runner_result: Optional[Dict[str, Any]] = None,
     ) -> None:
-        task_id = str(
-            task.get("task_id")
-            or task.get("task_name")
-            or task.get("id")
-            or ""
-        ).strip()
-        if not task_id:
-            return
-
-        repo_task = self._get_task_from_repo(task_id)
-        base_task = copy.deepcopy(repo_task if isinstance(repo_task, dict) else task)
-        base_task = self._hydrate_task_from_workspace(base_task)
-
-        runtime_state = None
-        if self.task_runtime is not None and hasattr(self.task_runtime, "load_runtime_state"):
-            try:
-                runtime_state = self.task_runtime.load_runtime_state(base_task)
-            except Exception:
-                runtime_state = None
-
-        merged = copy.deepcopy(base_task)
-
-        if isinstance(runtime_state, dict):
-            for key in (
-                "status",
-                "priority",
-                "retry_count",
-                "max_retries",
-                "retry_delay",
-                "next_retry_tick",
-                "timeout_ticks",
-                "wait_until_tick",
-                "created_tick",
-                "last_run_tick",
-                "last_failure_tick",
-                "finished_tick",
-                "depends_on",
-                "blocked_reason",
-                "failure_type",
-                "failure_message",
-                "last_error",
-                "final_answer",
-                "cancel_requested",
-                "cancel_reason",
-                "current_step_index",
-                "steps",
-                "steps_total",
-                "results",
-                "step_results",
-                "last_step_result",
-                "replan_count",
-                "replanned",
-                "replan_reason",
-                "replan_decision",
-                "replan_summary",
-                "replan_failed_step_type",
-                "replan_repairable",
-                "completion_mode",
-                "verification_required",
-                "verification_passed",
-                "max_replans",
-                "planner_result",
-                "history",
-                "execution_log",
-                "result_file",
-                "execution_log_file",
-                "plan_file",
-                "log_file",
-                "runtime_state_file",
-                "trace_file",
-                "workspace_root",
-                "workspace_dir",
-                "shared_dir",
-                "task_dir",
-                "scheduler_build",
-            ):
-                if key in runtime_state:
-                    merged[key] = copy.deepcopy(runtime_state.get(key))
-
-        if isinstance(runner_result, dict):
-            for key in (
-                "status",
-                "final_answer",
-                "execution_log",
-                "results",
-                "step_results",
-                "last_step_result",
-                "current_step_index",
-                "steps_total",
-                "last_run_tick",
-                "last_failure_tick",
-                "finished_tick",
-                "blocked_reason",
-                "replan_decision",
-                "replan_summary",
-                "replan_failed_step_type",
-                "replan_repairable",
-                "completion_mode",
-                "verification_required",
-                "verification_passed",
-            ):
-                if key in runner_result:
-                    merged[key] = copy.deepcopy(runner_result.get(key))
-
-        if isinstance(runner_result, dict):
-            replan_result = runner_result.get("replan_result")
-            if isinstance(replan_result, dict) and bool(replan_result.get("replanned")):
-                raw_replan_result = replan_result.get("raw_replan_result", {})
-                if isinstance(raw_replan_result, dict):
-                    plan = raw_replan_result.get("plan", {})
-                else:
-                    plan = {}
-
-                new_steps = plan.get("steps", []) if isinstance(plan, dict) else []
-
-                if isinstance(new_steps, list) and new_steps:
-                    merged["steps"] = copy.deepcopy(new_steps)
-                    merged["steps_total"] = len(new_steps)
-                    merged["current_step_index"] = 0
-                else:
-                    merged["current_step_index"] = 0
-
-                merged["replanned"] = True
-                merged["replan_count"] = int(
-                    replan_result.get("replan_count", merged.get("replan_count", 0)) or 0
-                )
-                merged["planner_result"] = copy.deepcopy(plan) if isinstance(plan, dict) else {}
-                merged["replan_reason"] = str(
-                    runner_result.get("replan_reason")
-                    or merged.get("last_error")
-                    or merged.get("failure_message")
-                    or ""
-                )
-
-                status_from_runner = str(runner_result.get("status") or "").strip().lower()
-                if status_from_runner:
-                    merged["status"] = status_from_runner
-
-        if not isinstance(merged.get("results"), list):
-            merged["results"] = []
-        if not isinstance(merged.get("step_results"), list):
-            merged["step_results"] = copy.deepcopy(merged.get("results", []))
-
-        if merged.get("last_step_result") is None and merged.get("step_results"):
-            try:
-                merged["last_step_result"] = copy.deepcopy(merged["step_results"][-1])
-            except Exception:
-                pass
-
-        steps = merged.get("steps", [])
-        if isinstance(steps, list):
-            merged["steps_total"] = int(merged.get("steps_total", len(steps)) or len(steps))
-        else:
-            merged["steps_total"] = int(merged.get("steps_total", 0) or 0)
-
-        if merged.get("current_step_index") is None:
-            merged["current_step_index"] = 0
-
-        merged["task_name"] = merged.get("task_name") or task_id
-        merged["task_dir"] = merged.get("task_dir") or os.path.join(self.tasks_root, task_id)
-        merged["plan_file"] = merged.get("plan_file") or os.path.join(merged["task_dir"], "plan.json")
-        merged["runtime_state_file"] = merged.get("runtime_state_file") or os.path.join(
-            merged["task_dir"], "runtime_state.json"
+        return sync_runtime_back_to_repo(
+            scheduler=self,
+            task=task,
+            runner_result=runner_result,
         )
-        merged["trace_file"] = merged.get("trace_file") or os.path.join(merged["task_dir"], "trace.json")
-        merged["workspace_root"] = merged.get("workspace_root") or self.workspace_root
-        merged["workspace_dir"] = merged.get("workspace_dir") or self.tasks_root
-        merged["shared_dir"] = merged.get("shared_dir") or self.shared_dir
 
-        merged["scheduler_build"] = SCHEDULER_BUILD
-
-        inferred_replan_result = None
-        if isinstance(runner_result, dict):
-            maybe_replan = runner_result.get("replan_result")
-            if isinstance(maybe_replan, dict):
-                inferred_replan_result = maybe_replan
-
-        merged = self._backfill_replan_decision_fields(merged, replan_result=inferred_replan_result)
-        merged = self._infer_completion_fields(merged)
-        merged = self._clear_stale_replan_fields(merged)
-        merged = self._refresh_task_public_fields(merged)
-        self._persist_task_payload(task_id=task_id, task=merged)
-
-        normalized_status = str(merged.get("status") or "").strip().lower()
-        if not normalized_status:
-            return
-
-        if normalized_status in {"finished", "done", "success", "completed", STATUS_FINISHED}:
-            final_answer = merged.get("final_answer", "")
-            self._mark_repo_task_finished(task_id=task_id, result=final_answer)
-            return
-
-        if normalized_status in {"failed", "error", STATUS_FAILED}:
-            final_error = str(
-                merged.get("last_error")
-                or merged.get("failure_message")
-                or (runner_result or {}).get("error")
-                or "task failed"
-            )
-            self._mark_repo_task_failed(task_id=task_id, error=final_error)
-            return
-
-        if normalized_status in {STATUS_BLOCKED, "blocked"}:
-            blocked_reason = str(merged.get("blocked_reason") or "")
-            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
-            return
-
-        if normalized_status in {"queued", STATUS_QUEUED, "ready", "retry"}:
-            queue_error = str(merged.get("last_error") or merged.get("failure_message") or "")
-            self._mark_repo_task_queued(task_id=task_id, error=queue_error)
-            return
-
-        if normalized_status in {"running"}:
-            self._sync_unblocked_state(task_id=task_id)
-            return
     def _extract_effective_status_and_answer(
         self,
         original_task: Optional[Dict[str, Any]],
         refreshed_task: Optional[Dict[str, Any]],
         runner_result: Optional[Dict[str, Any]],
     ) -> Tuple[str, Any]:
-        candidates: List[Dict[str, Any]] = []
-
-        if isinstance(runner_result, dict):
-            candidates.append(runner_result)
-        if isinstance(refreshed_task, dict):
-            candidates.append(refreshed_task)
-        if isinstance(original_task, dict):
-            candidates.append(original_task)
-
-        status = ""
-        final_answer: Any = ""
-
-        for source in candidates:
-            source_status = str(source.get("status") or "").strip().lower()
-            if source_status:
-                status = source_status
-                break
-
-        for source in candidates:
-            if "final_answer" in source:
-                value = source.get("final_answer")
-                if value not in (None, ""):
-                    final_answer = value
-                    break
-
-        return status, final_answer
-
-    # ------------------------------------------------------------
-    # repo state sync helpers
-    # ------------------------------------------------------------
+        return extract_effective_status_and_answer(
+            original_task=original_task,
+            refreshed_task=refreshed_task,
+            runner_result=runner_result,
+        )
 
     def _mark_repo_task_finished(self, task_id: str, result: Any = None) -> None:
-        task = self._get_task_from_repo(task_id)
-        if not isinstance(task, dict):
-            return
-
-        task["status"] = "finished"
-        task["blocked_reason"] = ""
-        task["last_error"] = ""
-        task["failure_message"] = ""
-        task["finished_tick"] = getattr(self, "current_tick", 0)
-        task["scheduler_build"] = SCHEDULER_BUILD
-
-        if result is not None:
-            task["final_answer"] = result
-        else:
-            task["final_answer"] = task.get("final_answer", "")
-
-        task["history"] = self._append_history(task.get("history"), "finished")
-        self._persist_task_payload(task_id=task_id, task=task)
-        self.worker_pool.release_by_task(task_id)
-        self._unblock_tasks_if_dependencies_done()
+        return mark_repo_task_finished(scheduler=self, task_id=task_id, result=result)
 
     def _mark_repo_task_failed(self, task_id: str, error: str = "") -> None:
-        task = self._get_task_from_repo(task_id)
-        if not isinstance(task, dict):
-            return
-
-        final_error = str(error or task.get("last_error") or task.get("failure_message") or "task failed")
-
-        task["status"] = "failed"
-        task["blocked_reason"] = ""
-        task["last_error"] = final_error
-        task["failure_message"] = final_error
-        task["last_failure_tick"] = getattr(self, "current_tick", 0)
-        task["scheduler_build"] = SCHEDULER_BUILD
-        task["history"] = self._append_history(task.get("history"), "failed")
-
-        self._persist_task_payload(task_id=task_id, task=task)
-        self.worker_pool.release_by_task(task_id)
+        return mark_repo_task_failed(scheduler=self, task_id=task_id, error=error)
 
     def _mark_repo_task_queued(self, task_id: str, error: str = "") -> None:
-        task = self._get_task_from_repo(task_id)
-        if not isinstance(task, dict):
-            return
-
-        current_status = str(task.get("status") or "").strip().lower()
-        if current_status in TERMINAL_STATUSES:
-            return
-
-        task["status"] = "queued"
-        task["blocked_reason"] = ""
-        task["scheduler_build"] = SCHEDULER_BUILD
-
-        final_error = str(error or "").strip()
-        if final_error:
-            task["last_error"] = final_error
-            task["failure_message"] = final_error
-        else:
-            task["last_error"] = ""
-            task["failure_message"] = ""
-
-        task["history"] = self._append_history(task.get("history"), "queued")
-        self._persist_task_payload(task_id=task_id, task=task)
+        return mark_repo_task_queued(scheduler=self, task_id=task_id, error=error)
 
     def _sync_blocked_state(self, task_id: str, blocked_reason: str) -> None:
-        task = self._get_task_from_repo(task_id)
-        if not isinstance(task, dict):
-            return
-
-        current_status = str(task.get("status") or "").strip().lower()
-        if current_status in TERMINAL_STATUSES:
-            return
-
-        final_reason = str(blocked_reason or task.get("blocked_reason") or "").strip()
-        changed = False
-
-        if current_status != STATUS_BLOCKED:
-            task["status"] = STATUS_BLOCKED
-            task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
-            changed = True
-
-        if str(task.get("blocked_reason") or "") != final_reason:
-            task["blocked_reason"] = final_reason
-            changed = True
-
-        if str(task.get("last_error") or "") != "":
-            task["last_error"] = ""
-            changed = True
-
-        if str(task.get("failure_message") or "") != "":
-            task["failure_message"] = ""
-            changed = True
-
-        if str(task.get("scheduler_build") or "") != SCHEDULER_BUILD:
-            task["scheduler_build"] = SCHEDULER_BUILD
-            changed = True
-
-        if changed:
-            self._persist_task_payload(task_id=task_id, task=task)
-
-        trace = self._load_trace_for_task(task)
-        self._trace_status(
-            trace=trace,
-            task=task,
-            status=STATUS_BLOCKED,
-            tick=getattr(self, "current_tick", 0),
-            final_answer="",
-            extra={
-                "action": "sync_blocked_state",
-                "blocked_reason": str(blocked_reason or ""),
-            },
-        )
-        self._save_trace_for_task(task=task, trace=trace)
-
-        self.worker_pool.release_by_task(task_id)
+        return sync_blocked_state(scheduler=self, task_id=task_id, blocked_reason=blocked_reason)
 
     def _sync_unblocked_state(self, task_id: str) -> None:
-        task = self._get_task_from_repo(task_id)
-        if not isinstance(task, dict):
-            return
-
-        current_status = str(task.get("status") or "").strip().lower()
-        if current_status in TERMINAL_STATUSES:
-            return
-
-        changed = False
-
-        if current_status == STATUS_BLOCKED:
-            task["status"] = "queued"
-            task["history"] = self._append_history(task.get("history"), "queued")
-            current_status = "queued"
-            changed = True
-
-        if str(task.get("blocked_reason") or "") != "":
-            task["blocked_reason"] = ""
-            changed = True
-
-        if current_status in {"queued", "ready", "retry", STATUS_QUEUED}:
-            if str(task.get("last_error") or "") != "":
-                task["last_error"] = ""
-                changed = True
-            if str(task.get("failure_message") or "") != "":
-                task["failure_message"] = ""
-                changed = True
-
-        if str(task.get("scheduler_build") or "") != SCHEDULER_BUILD:
-            task["scheduler_build"] = SCHEDULER_BUILD
-            changed = True
-
-        if changed:
-            self._persist_task_payload(task_id=task_id, task=task)
+        return sync_unblocked_state(scheduler=self, task_id=task_id)
 
     def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
         task = self._refresh_task_public_fields(copy.deepcopy(task))

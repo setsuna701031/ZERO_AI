@@ -1,8 +1,8 @@
 # ZERO
 
-Local-first engineering agent prototype with a controllable CLI surface.
+ZERO is a local-first engineering agent prototype built for controllable execution, explicit task flow, and inspectable runtime behavior.
 
-ZERO is a local-first agent system focused on controllable task execution, runtime visibility, model-selectable CLI operation, and incremental stabilization of an inspectable runtime stack.
+Instead of treating the agent as a black box, ZERO is being developed to make task progression, tool use, and file-producing workflows easier to inspect, validate, and stabilize.
 
 It is being built as an engineering-oriented control surface rather than a consumer chatbot UI. The current emphasis is on local execution, inspectable runtime state, task lifecycle control, practical CLI-based operation, and keeping the core agent path observable while the system is being hardened.
 

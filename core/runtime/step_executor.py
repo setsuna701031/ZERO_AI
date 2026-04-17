@@ -11,7 +11,6 @@ from core.runtime.step_handlers import (
     WriteFileStepHandler,
     ReadFileStepHandler,
     RespondStepHandler,
-    LLMStepHandler,
     EnsureFileStepHandler,
     VerifyStepHandler,
     RunPythonStepHandler,
@@ -24,11 +23,12 @@ class StepExecutor:
     """
     ZERO Step Executor
 
-    這版收束目標：
+    本版修正：
     1. step handler 輸出統一 envelope
     2. unsupported / exception 錯誤格式統一
     3. execute_steps 批次結果格式統一
     4. 與目前 tool registry 的 outer/inner ok 結構對齊
+    5. 直接在 StepExecutor 內接管 llm / llm_generate，修正 document flow 的 {{file_content}} 注入
     """
 
     def __init__(
@@ -80,8 +80,10 @@ class StepExecutor:
         self.register_handler("verify", VerifyStepHandler(self).handle)
         self.register_handler("respond", RespondStepHandler(self).handle)
         self.register_handler("final_answer", RespondStepHandler(self).handle)
-        self.register_handler("llm", LLMStepHandler(self).handle)
-        self.register_handler("llm_generate", LLMStepHandler(self).handle)
+
+        # 直接由 StepExecutor 自己處理，避免外部 handler 吃掉 file_content
+        self.register_handler("llm", self._handle_llm_step)
+        self.register_handler("llm_generate", self._handle_llm_step)
 
     def execute(
         self,
@@ -338,7 +340,7 @@ class StepExecutor:
                     merged[key] = task.get(key)
 
         if isinstance(context, dict):
-            for key in ("workspace", "cwd", "task_dir", "sandbox_dir"):
+            for key in ("workspace", "cwd", "task_dir", "sandbox_dir", "file_content"):
                 if key not in merged and key in context:
                     merged[key] = context.get(key)
 
@@ -482,3 +484,112 @@ class StepExecutor:
                 return False
 
         return True
+
+    # ============================================================
+    # LLM helpers
+    # ============================================================
+
+    def _handle_llm_step(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        prompt_template = str(step.get("prompt_template") or step.get("prompt") or "").strip()
+        previous_text = self._extract_previous_text(previous_result=previous_result, context=context)
+
+        if not previous_text and isinstance(step.get("file_content"), str):
+            previous_text = str(step.get("file_content") or "")
+
+        prompt = prompt_template.replace("{{file_content}}", previous_text)
+
+        llm_text = self._call_llm(prompt)
+
+        return {
+            "ok": True,
+            "type": "llm",
+            "mode": str(step.get("mode") or ""),
+            "prompt": prompt,
+            "prompt_template": prompt_template,
+            "input_text": previous_text,
+            "text": llm_text,
+            "content": llm_text,
+            "result": {
+                "prompt": prompt,
+                "text": llm_text,
+            },
+            "error": None,
+        }
+
+    def _extract_previous_text(
+        self,
+        previous_result: Any,
+        context: Optional[Dict[str, Any]],
+    ) -> str:
+        if isinstance(context, dict):
+            file_content = context.get("file_content")
+            if isinstance(file_content, str) and file_content:
+                return file_content
+
+        text = self._extract_text_deep(previous_result)
+        if text:
+            return text
+
+        return ""
+
+    def _extract_text_deep(self, payload: Any, depth: int = 0) -> str:
+        if depth > 8:
+            return ""
+
+        if payload is None:
+            return ""
+
+        if isinstance(payload, str):
+            return payload
+
+        if isinstance(payload, dict):
+            for key in ("text", "content", "message", "response", "final_answer", "stdout"):
+                value = payload.get(key)
+                if isinstance(value, str) and value:
+                    return value
+
+            # read_file / nested result 常見 shape
+            for nested_key in ("result", "raw", "data", "payload", "output"):
+                nested = payload.get(nested_key)
+                text = self._extract_text_deep(nested, depth + 1)
+                if text:
+                    return text
+
+        if isinstance(payload, list):
+            for item in reversed(payload):
+                text = self._extract_text_deep(item, depth + 1)
+                if text:
+                    return text
+
+        return ""
+
+    def _call_llm(self, prompt: str) -> str:
+        client = self.llm_client
+        if client is None:
+            raise RuntimeError("llm_client is missing")
+
+        if hasattr(client, "generate_general") and callable(client.generate_general):
+            data = client.generate_general(prompt)
+            if isinstance(data, dict):
+                return str(data.get("response", "") or "")
+            return str(data or "")
+
+        if hasattr(client, "chat_general") and callable(client.chat_general):
+            return str(client.chat_general(prompt) or "")
+
+        if hasattr(client, "generate") and callable(client.generate):
+            data = client.generate(prompt)
+            if isinstance(data, dict):
+                return str(data.get("response", "") or "")
+            return str(data or "")
+
+        if hasattr(client, "chat") and callable(client.chat):
+            return str(client.chat(prompt) or "")
+
+        raise RuntimeError("llm_client has no usable generate/chat method")
