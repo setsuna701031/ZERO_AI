@@ -9,19 +9,22 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v22
+    Deterministic Planner v26
 
     本版重點：
-    1. 強化 document flow 偵測：
-       - read input.txt and extract action items into action_items.txt
-       - summarize input.txt into summary.txt
-       - input.txt -> action_items.txt
-       - input.txt -> summary.txt
-    2. 修正 read path 誤吞整句問題
-    3. fallback 一律使用 llm
-    4. document flow 輸出檔固定寫到 shared，避免 single-shot 沒 task_id 時炸掉
-    5. 升級 action-items prompt，強化 due date/time 抽取品質
-    6. 保留原本 command / write / ensure / read / search 規則
+    1. 保留 document flow 偵測
+    2. 保留 command / write / ensure / read / search 規則
+    3. 保留 run_python 規則
+    4. 保留 verify 規則
+    5. verify 類句型先於 document flow 判定
+    6. 修正 action_items / summary task 句型優先序：
+       - task summarize input.txt into summary.txt
+       - task read input.txt and extract action items into action_items.txt
+       這類 task goal 不再被一般 read_file 規則提前吃掉
+    7. 修正 document flow 固定寫死 input.txt / summary.txt / action_items.txt 的問題：
+       - 保留使用者指定的 source path
+       - 保留使用者指定的 output path
+       - 支援 workspace/shared/...、shared/...、任意 *.txt / *.md / *.log / *.json 等路徑
     """
 
     _banner_printed = False
@@ -46,7 +49,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v22 (ACTION ITEMS PROMPT UPGRADE) ###")
+            print("### USING PLANNER v26 (DOCUMENT FLOW PRESERVE USER PATHS) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -149,6 +152,21 @@ class Planner:
     def _plan_steps(self, text: str, route: Any = None) -> Tuple[List[Dict[str, Any]], bool]:
         stripped = str(text or "").strip()
 
+        # --------------------------------------------------------
+        # verify routing first
+        # 目的：避免 verify ... exists/contains/equals 被 document flow 吃掉
+        # --------------------------------------------------------
+        early_verify = self._extract_verify_request(stripped, last_path=None)
+        if early_verify:
+            verify_path = str(early_verify.get("path") or "").strip()
+            self.trace_logger.log_decision(
+                title="early verify detected",
+                message=verify_path or stripped,
+                source="planner",
+                raw={"step": early_verify},
+            )
+            return [early_verify], False
+
         special_document_steps = self._plan_document_flow(stripped)
         if special_document_steps is not None:
             self.trace_logger.log_decision(
@@ -188,30 +206,46 @@ class Planner:
     # document flow
     # ============================================================
 
-    def _plan_document_flow(self, text: str) -> Optional[List[Dict[str, Any]]]:
+    def _normalize_document_flow_text(self, text: str) -> str:
         lowered = str(text or "").strip().lower()
 
+        prefixes = [
+            "task ",
+            "create task ",
+            "new task ",
+            "submit task ",
+            "please ",
+            "pls ",
+        ]
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if lowered.startswith(prefix):
+                    lowered = lowered[len(prefix):].strip()
+                    changed = True
+
+        return lowered
+
+    def _plan_document_flow(self, text: str) -> Optional[List[Dict[str, Any]]]:
+        lowered = self._normalize_document_flow_text(text)
+        all_paths = self._extract_all_file_paths(text)
+
+        explicit_source = self._extract_document_source_path(text, all_paths)
+        explicit_output = self._extract_document_output_path(text, all_paths)
+
         explicit_action_patterns = [
-            r"read\s+input\.txt\s+and\s+extract\s+action\s+items\s+into\s+action_items\.txt",
-            r"extract\s+action\s+items\s+from\s+input\.txt\s+into\s+action_items\.txt",
-            r"input\.txt\s*->\s*action_items\.txt",
+            r"read\s+.+?\s+and\s+extract\s+action\s+items\s+into\s+.+",
+            r"extract\s+action\s+items\s+from\s+.+?\s+into\s+.+",
+            r"extract\s+action\s+items\s+into\s+.+?\s+from\s+.+",
+            r".+?\s*->\s*.+",
         ]
-        for pattern in explicit_action_patterns:
-            if re.search(pattern, lowered):
-                return self._build_action_items_steps("input.txt", "action_items.txt")
-
         explicit_summary_patterns = [
-            r"read\s+input\.txt\s+and\s+summari[sz]e\s+(?:it\s+)?into\s+summary\.txt",
-            r"summari[sz]e\s+input\.txt\s+into\s+summary\.txt",
-            r"input\.txt\s*->\s*summary\.txt",
+            r"read\s+.+?\s+and\s+summari[sz]e\s+(?:it\s+)?into\s+.+",
+            r"summari[sz]e\s+.+?\s+into\s+.+",
+            r"summary\s+.+?\s+into\s+.+",
+            r".+?\s*->\s*.+",
         ]
-        for pattern in explicit_summary_patterns:
-            if re.search(pattern, lowered):
-                return self._build_summary_steps("input.txt", "summary.txt")
-
-        has_input_txt = "input.txt" in lowered
-        has_action_items_txt = "action_items.txt" in lowered
-        has_summary_txt = "summary.txt" in lowered
 
         action_keywords = [
             "action item",
@@ -219,10 +253,8 @@ class Planner:
             "extract action items",
             "todo",
             "to-do",
-            "meeting notes",
             "行動項目",
             "待辦事項",
-            "會議紀錄",
         ]
         summary_keywords = [
             "summary",
@@ -232,21 +264,166 @@ class Planner:
             "總結",
         ]
 
-        wants_action_items = any(k in lowered for k in action_keywords) or has_action_items_txt
-        wants_summary = any(k in lowered for k in summary_keywords) or has_summary_txt
-
-        if has_input_txt and wants_action_items:
-            return self._build_action_items_steps("input.txt", "action_items.txt")
-
-        if has_input_txt and wants_summary:
-            return self._build_summary_steps("input.txt", "summary.txt")
+        wants_action_items = any(k in lowered for k in action_keywords)
+        wants_summary = any(k in lowered for k in summary_keywords)
 
         if wants_action_items:
-            return self._build_action_items_steps("input.txt", "action_items.txt")
+            source_path = explicit_source or self._choose_default_document_source(all_paths) or "input.txt"
+            output_path = explicit_output or self._choose_default_action_items_output(all_paths) or "action_items.txt"
 
-        if wants_summary and ("txt" in lowered or "document" in lowered or "文件" in lowered or "檔案" in lowered):
-            return self._build_summary_steps("input.txt", "summary.txt")
+            if self._looks_like_document_flow_request(text):
+                return self._build_action_items_steps(source_path, output_path)
 
+            for pattern in explicit_action_patterns:
+                if re.search(pattern, lowered):
+                    return self._build_action_items_steps(source_path, output_path)
+
+        if wants_summary:
+            source_path = explicit_source or self._choose_default_document_source(all_paths) or "input.txt"
+            output_path = explicit_output or self._choose_default_summary_output(all_paths) or "summary.txt"
+
+            if self._looks_like_document_flow_request(text):
+                return self._build_summary_steps(source_path, output_path)
+
+            for pattern in explicit_summary_patterns:
+                if re.search(pattern, lowered):
+                    return self._build_summary_steps(source_path, output_path)
+
+        # 關鍵：input.txt / summary.txt / action_items.txt 舊型固定流程仍支援
+        has_input_txt = "input.txt" in lowered
+        has_action_items_txt = "action_items.txt" in lowered
+        has_summary_txt = "summary.txt" in lowered
+
+        if has_input_txt and (wants_action_items or has_action_items_txt):
+            return self._build_action_items_steps("input.txt", explicit_output or "action_items.txt")
+
+        if has_input_txt and (wants_summary or has_summary_txt):
+            return self._build_summary_steps("input.txt", explicit_output or "summary.txt")
+
+        return None
+
+    def _looks_like_document_flow_request(self, text: str) -> bool:
+        lowered = self._normalize_document_flow_text(text)
+        doc_markers = [
+            "read ",
+            "summarize ",
+            "summarise ",
+            "summary ",
+            "extract action items",
+            "action items",
+            "摘要",
+            "總結",
+            "行動項目",
+            "待辦事項",
+            "into ",
+            "from ",
+            "->",
+        ]
+        return any(marker in lowered for marker in doc_markers)
+
+    def _extract_document_source_path(self, text: str, all_paths: List[str]) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if m:
+                value = str(m.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_arrow_paths(stripped)
+        if arrow is not None:
+            source_path, _ = arrow
+            return source_path
+
+        if all_paths:
+            return all_paths[0]
+
+        return None
+
+    def _extract_document_output_path(self, text: str, all_paths: List[str]) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if m:
+                value = str(m.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_arrow_paths(stripped)
+        if arrow is not None:
+            _, output_path = arrow
+            return output_path
+
+        if len(all_paths) >= 2:
+            return all_paths[-1]
+
+        return None
+
+    def _extract_arrow_paths(self, text: str) -> Optional[Tuple[str, str]]:
+        stripped = str(text or "").strip()
+        m = re.search(
+            r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if not m:
+            return None
+
+        source_path = str(m.group(1)).strip()
+        output_path = str(m.group(2)).strip()
+        if not source_path or not output_path:
+            return None
+
+        return source_path, output_path
+
+    def _extract_all_file_paths(self, text: str) -> List[str]:
+        if not text:
+            return []
+
+        results: List[str] = []
+        pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b"
+        for m in re.finditer(pattern, text):
+            value = str(m.group(1)).strip()
+            if value and value not in results:
+                results.append(value)
+        return results
+
+    def _choose_default_document_source(self, all_paths: List[str]) -> Optional[str]:
+        for path in all_paths:
+            lowered = path.lower()
+            if lowered.endswith((".txt", ".md", ".log", ".json", ".csv", ".yaml", ".yml")):
+                return path
+        return None
+
+    def _choose_default_summary_output(self, all_paths: List[str]) -> Optional[str]:
+        for path in all_paths:
+            lowered = path.lower()
+            if "summary" in lowered:
+                return path
+        return None
+
+    def _choose_default_action_items_output(self, all_paths: List[str]) -> Optional[str]:
+        for path in all_paths:
+            lowered = path.lower()
+            if "action_items" in lowered or "action-items" in lowered or "actionitems" in lowered:
+                return path
         return None
 
     def _build_action_items_steps(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
@@ -360,6 +537,27 @@ class Planner:
             )
             return [{"type": "command", "command": cmd}], False, last_path
 
+        run_python = self._extract_run_python_request(stripped)
+        if run_python:
+            self.trace_logger.log_decision(
+                title="run_python detected",
+                message=run_python["path"],
+                source="planner",
+                raw=run_python,
+            )
+            return [run_python], False, run_python["path"]
+
+        verify = self._extract_verify_request(stripped, last_path=last_path)
+        if verify:
+            verify_path = str(verify.get("path") or "").strip() or last_path
+            self.trace_logger.log_decision(
+                title="verify detected",
+                message=verify_path,
+                source="planner",
+                raw=verify,
+            )
+            return [verify], False, verify_path or last_path
+
         write = self._extract_write_request(stripped)
         if write:
             current_path = str(write.get("path") or "").strip() or last_path
@@ -435,7 +633,7 @@ class Planner:
     ) -> Dict[str, Any]:
         return {
             "ok": error is None,
-            "planner_mode": "deterministic_v22",
+            "planner_mode": "deterministic_v26",
             "intent": intent,
             "final_answer": final_answer,
             "steps": steps,
@@ -470,6 +668,151 @@ class Planner:
         lowered = text.lower().strip()
         if lowered.startswith(("python ", "python3 ", "cmd ", "powershell ", "py ")):
             return text.strip()
+        return None
+
+    # ============================================================
+    # run_python
+    # ============================================================
+
+    def _extract_run_python_request(self, text: str) -> Optional[Dict[str, Any]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        file_path = self._extract_file_path(stripped)
+        if not file_path or not file_path.lower().endswith(".py"):
+            return None
+
+        run_markers = [
+            "run python file",
+            "run python script",
+            "run file",
+            "execute python file",
+            "execute python script",
+            "execute file",
+            "執行 python",
+            "執行python",
+            "執行檔案",
+            "執行腳本",
+            "跑 python",
+            "跑python",
+            "運行 python",
+            "run ",
+            "execute ",
+        ]
+
+        if any(marker in lowered for marker in run_markers):
+            return {
+                "type": "run_python",
+                "path": file_path,
+            }
+
+        return None
+
+    # ============================================================
+    # verify
+    # ============================================================
+
+    def _extract_verify_request(self, text: str, last_path: Optional[str]) -> Optional[Dict[str, Any]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        verify_markers = [
+            "verify",
+            "check that",
+            "confirm that",
+            "確認",
+            "檢查",
+            "驗證",
+        ]
+        if not any(marker in lowered for marker in verify_markers):
+            return None
+
+        path = self._extract_file_path(stripped) or last_path
+
+        exists_match = re.search(
+            r"(?:verify|check that|confirm that)\s+(.+?)\s+exists\b",
+            lowered,
+            flags=re.IGNORECASE,
+        )
+        if exists_match and path:
+            return {
+                "type": "verify",
+                "path": path,
+                "exists": True,
+            }
+
+        not_exists_match = re.search(
+            r"(?:verify|check that|confirm that)\s+(.+?)\s+does not exist\b",
+            lowered,
+            flags=re.IGNORECASE,
+        )
+        if not_exists_match and path:
+            return {
+                "type": "verify",
+                "path": path,
+                "exists": False,
+            }
+
+        contains_match = re.search(
+            r"(?:contains|contain)\s+(.+)$",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if contains_match and path:
+            raw = contains_match.group(1).strip()
+            raw = self._strip_quotes(raw)
+            if raw:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "contains": raw,
+                }
+
+        equals_match = re.search(
+            r"(?:equals|equal to|is exactly)\s+(.+)$",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if equals_match and path:
+            raw = equals_match.group(1).strip()
+            raw = self._strip_quotes(raw)
+            if raw:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "equals": raw,
+                }
+
+        zh_exists = any(k in stripped for k in ["存在", "有沒有", "是否存在"])
+        if zh_exists and path:
+            return {
+                "type": "verify",
+                "path": path,
+                "exists": True,
+            }
+
+        zh_contains_match = re.search(r"(?:包含|含有)\s+(.+)$", stripped)
+        if zh_contains_match and path:
+            raw = zh_contains_match.group(1).strip()
+            raw = self._strip_quotes(raw)
+            if raw:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "contains": raw,
+                }
+
+        zh_equals_match = re.search(r"(?:等於|是否為|是不是|是否等於)\s+(.+)$", stripped)
+        if zh_equals_match and path:
+            raw = zh_equals_match.group(1).strip()
+            raw = self._strip_quotes(raw)
+            if raw:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "equals": raw,
+                }
+
         return None
 
     # ============================================================
@@ -548,6 +891,9 @@ class Planner:
 
     def _extract_write_request(self, text: str) -> Optional[Dict[str, Any]]:
         lowered = text.lower()
+
+        if self._extract_run_python_request(text):
+            return None
 
         has_write_intent = any(k in text for k in ["寫", "建立", "新增", "創建", "產生"]) or any(
             k in lowered for k in ["create", "write", "make", "generate"]
@@ -670,6 +1016,18 @@ class Planner:
         return enriched
 
     def _infer_intent(self, text: str, route: Any, steps: List[Dict[str, Any]]) -> str:
-        if steps:
-            return steps[0].get("type", "unknown")
-        return "respond"
+        if not steps:
+            return "respond"
+
+        first_type = str(steps[0].get("type") or "").strip().lower()
+        if len(steps) >= 3:
+            second_type = str(steps[1].get("type") or "").strip().lower()
+            third_type = str(steps[2].get("type") or "").strip().lower()
+            if first_type == "read_file" and second_type == "llm" and third_type == "write_file":
+                llm_mode = str(steps[1].get("mode") or "").strip().lower()
+                if llm_mode == "action_items":
+                    return "action_items"
+                if llm_mode == "summary":
+                    return "summary"
+
+        return first_type or "unknown"
