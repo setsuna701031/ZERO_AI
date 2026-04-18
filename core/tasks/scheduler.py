@@ -497,11 +497,12 @@ class Scheduler(RuntimeTaskScheduler):
 
         runner_result: Optional[Dict[str, Any]] = None
         loop_error_text = ""
+        effective_tick = current_tick if current_tick is not None else getattr(self, "current_tick", 0)
 
         try:
             runner_result = run_task_loop_fn(
                 task=copy.deepcopy(task),
-                current_tick=current_tick if current_tick is not None else getattr(self, "current_tick", 0),
+                current_tick=effective_tick,
                 user_input=str(task.get("goal") or ""),
                 original_plan=copy.deepcopy(task.get("planner_result") or {}),
             )
@@ -523,10 +524,67 @@ class Scheduler(RuntimeTaskScheduler):
                 "error": loop_error_text or "agent loop failed",
             }
             self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+            self._trace_agent_loop_result(task=task, runner_result=result, tick=effective_tick)
             return result
 
         self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
+        self._trace_agent_loop_result(task=task, runner_result=runner_result, tick=effective_tick)
         return runner_result
+
+    def _trace_agent_loop_result(
+        self,
+        task: Dict[str, Any],
+        runner_result: Optional[Dict[str, Any]],
+        tick: Optional[int] = None,
+    ) -> None:
+        task_id = self._extract_task_id(task)
+        refreshed_task = self._get_task_from_repo(task_id) if task_id else None
+        trace_task = refreshed_task if isinstance(refreshed_task, dict) else self._hydrate_task_from_workspace(copy.deepcopy(task))
+
+        try:
+            trace = self._load_trace_for_task(trace_task)
+        except Exception:
+            return
+
+        result_dict = runner_result if isinstance(runner_result, dict) else {}
+        result_task = result_dict.get("task") if isinstance(result_dict.get("task"), dict) else {}
+        status = str(
+            result_dict.get("status")
+            or result_task.get("status")
+            or trace_task.get("status")
+            or ""
+        ).strip().lower()
+        final_answer = str(
+            result_dict.get("final_answer")
+            or result_task.get("final_answer")
+            or trace_task.get("final_answer")
+            or ""
+        )
+
+        extra = {
+            "action": str(result_dict.get("action") or "agent_loop_cycle"),
+            "mode": str(result_dict.get("mode") or "task_loop"),
+            "loop_backend": result_dict.get("loop_backend"),
+            "decision": result_task.get("last_decision", result_dict.get("last_decision", "")),
+            "decision_reason": result_task.get("last_decision_reason", result_dict.get("last_decision_reason", "")),
+            "next_action": result_task.get("next_action", result_dict.get("next_action", "")),
+            "terminal_reason": result_task.get("terminal_reason", result_dict.get("terminal_reason", "")),
+            "loop_cycle_count": result_task.get("loop_cycle_count", result_dict.get("loop_cycle_count")),
+            "error": str(result_dict.get("error") or ""),
+        }
+
+        try:
+            self._trace_status(
+                trace=trace,
+                task=trace_task,
+                status=status or str(trace_task.get("status") or ""),
+                tick=tick,
+                final_answer=final_answer,
+                extra=extra,
+            )
+            self._save_trace_for_task(task=trace_task, trace=trace)
+        except Exception:
+            pass
 
     def _resolve_explicit_agent_loop(self) -> Any:
         agent_loop = getattr(self, "agent_loop", None)
@@ -2727,13 +2785,6 @@ class Scheduler(RuntimeTaskScheduler):
                     "task_dir",
                     "goal",
                     "title",
-                    "last_observation",
-                    "last_decision",
-                    "last_decision_reason",
-                    "next_action",
-                    "terminal_reason",
-                    "loop_cycle_count",
-                    "loop_history",
                 ):
                     if key in runtime_data:
                         hydrated[key] = copy.deepcopy(runtime_data.get(key))
@@ -2841,16 +2892,6 @@ class Scheduler(RuntimeTaskScheduler):
         task = self._infer_completion_fields(task)
         task = self._clear_stale_replan_fields(task)
         task = self._refresh_task_public_fields(task)
-
-        task.setdefault("last_observation", {})
-        task.setdefault("last_decision", "")
-        task.setdefault("last_decision_reason", "")
-        task.setdefault("next_action", "")
-        task.setdefault("terminal_reason", "")
-        task["loop_cycle_count"] = int(task.get("loop_cycle_count", 0) or 0)
-        if not isinstance(task.get("loop_history"), list):
-            task["loop_history"] = []
-
         try:
             self.task_workspace.save_task_snapshot(task)
         except Exception:
@@ -2865,24 +2906,6 @@ class Scheduler(RuntimeTaskScheduler):
             except Exception:
                 pass
 
-        runtime_state_file = str(task.get("runtime_state_file") or "").strip()
-        if runtime_state_file:
-            try:
-                os.makedirs(os.path.dirname(runtime_state_file), exist_ok=True)
-                with open(runtime_state_file, "w", encoding="utf-8") as f:
-                    json.dump(task, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-
-        trace_file = str(task.get("trace_file") or "").strip()
-        if trace_file:
-            try:
-                os.makedirs(os.path.dirname(trace_file), exist_ok=True)
-                trace = self._load_trace_for_task(task)
-                self._save_trace_for_task(task=task, trace=trace)
-            except Exception:
-                pass
-
         result_file = str(task.get("result_file") or "").strip()
         if result_file:
             try:
@@ -2894,17 +2917,7 @@ class Scheduler(RuntimeTaskScheduler):
                     "step_results": copy.deepcopy(task.get("step_results", [])),
                     "last_step_result": copy.deepcopy(task.get("last_step_result")),
                     "execution_log": copy.deepcopy(task.get("execution_log", [])),
-                    "last_observation": copy.deepcopy(task.get("last_observation", {})),
-                    "last_decision": copy.deepcopy(task.get("last_decision", "")),
-                    "last_decision_reason": copy.deepcopy(task.get("last_decision_reason", "")),
-                    "next_action": copy.deepcopy(task.get("next_action", "")),
-                    "terminal_reason": copy.deepcopy(task.get("terminal_reason", "")),
-                    "loop_cycle_count": int(task.get("loop_cycle_count", 0) or 0),
-                    "loop_history": copy.deepcopy(task.get("loop_history", [])),
                 }
-                for key in ("mode", "action", "write_back"):
-                    if key in task:
-                        result_payload[key] = copy.deepcopy(task.get(key))
                 with open(result_file, "w", encoding="utf-8") as f:
                     json.dump(result_payload, f, ensure_ascii=False, indent=2)
             except Exception:
