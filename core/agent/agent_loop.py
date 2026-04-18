@@ -687,6 +687,7 @@ class AgentLoop:
             "task_snapshot_saved": False,
             "plan_saved": False,
             "runtime_state_ensured": False,
+            "runtime_state_saved": False,
             "repo_persisted": False,
             "errors": [],
         }
@@ -700,6 +701,118 @@ class AgentLoop:
 
         if runtime is None and scheduler is not None:
             runtime = getattr(scheduler, "task_runtime", None)
+
+        runtime_state: Optional[Dict[str, Any]] = None
+        loop_keys = (
+            "last_observation",
+            "last_decision",
+            "last_decision_reason",
+            "next_action",
+            "terminal_reason",
+            "loop_cycle_count",
+            "loop_history",
+        )
+
+        if runtime is not None:
+            try:
+                load_fn = getattr(runtime, "load_runtime_state", None)
+                if callable(load_fn):
+                    loaded = load_fn(task)
+                    if isinstance(loaded, dict):
+                        runtime_state = copy.deepcopy(loaded)
+            except Exception as e:
+                write_back["ok"] = False
+                write_back["errors"].append(f"load_runtime_state failed: {e}")
+
+            if not isinstance(runtime_state, dict):
+                runtime_state = {}
+
+            for key in loop_keys:
+                if key in task:
+                    runtime_state[key] = copy.deepcopy(task.get(key))
+
+            for key in (
+                "status",
+                "final_answer",
+                "last_error",
+                "failure_message",
+                "blocked_reason",
+                "current_step_index",
+                "steps",
+                "steps_total",
+                "results",
+                "step_results",
+                "execution_log",
+                "last_step_result",
+                "planner_result",
+                "history",
+                "task_name",
+                "task_id",
+                "goal",
+                "task_dir",
+                "runtime_state_file",
+                "plan_file",
+                "result_file",
+                "execution_log_file",
+                "log_file",
+                "workspace_root",
+                "workspace_dir",
+                "shared_dir",
+            ):
+                if key in task:
+                    runtime_state[key] = copy.deepcopy(task.get(key))
+
+            ensure_fn = getattr(runtime, "ensure_runtime_state", None)
+            if callable(ensure_fn):
+                try:
+                    ensured = ensure_fn(task)
+                    if isinstance(ensured, dict):
+                        runtime_state = copy.deepcopy(ensured)
+                    write_back["runtime_state_ensured"] = True
+                except Exception as e:
+                    write_back["ok"] = False
+                    write_back["errors"].append(f"ensure_runtime_state failed: {e}")
+
+            for key in loop_keys:
+                if key in task:
+                    runtime_state[key] = copy.deepcopy(task.get(key))
+
+            save_runtime_state_fn = getattr(runtime, "save_runtime_state", None)
+            if callable(save_runtime_state_fn):
+                try:
+                    saved = save_runtime_state_fn(task, runtime_state)
+                    if isinstance(saved, dict):
+                        runtime_state = copy.deepcopy(saved)
+                    write_back["runtime_state_saved"] = True
+                except Exception as e:
+                    write_back["ok"] = False
+                    write_back["errors"].append(f"save_runtime_state failed: {e}")
+            else:
+                save_state_fn = getattr(runtime, "save_state", None)
+                if callable(save_state_fn):
+                    try:
+                        saved = save_state_fn(task, runtime_state)
+                        if isinstance(saved, dict):
+                            runtime_state = copy.deepcopy(saved)
+                        write_back["runtime_state_saved"] = True
+                    except TypeError:
+                        try:
+                            save_state_fn(task)
+                            write_back["runtime_state_saved"] = True
+                        except Exception as e:
+                            write_back["ok"] = False
+                            write_back["errors"].append(f"save_state failed: {e}")
+                    except Exception as e:
+                        write_back["ok"] = False
+                        write_back["errors"].append(f"save_state failed: {e}")
+
+            sync_task_fn = getattr(runtime, "_sync_task_from_runtime_state", None)
+            if callable(sync_task_fn) and isinstance(runtime_state, dict):
+                try:
+                    sync_task_fn(task, runtime_state)
+                except Exception as e:
+                    write_back["ok"] = False
+                    write_back["errors"].append(f"_sync_task_from_runtime_state failed: {e}")
 
         if workspace is not None:
             save_snapshot_fn = getattr(workspace, "save_task_snapshot", None)
@@ -720,21 +833,6 @@ class AgentLoop:
                     write_back["ok"] = False
                     write_back["errors"].append(f"save_plan failed: {e}")
 
-        if runtime is not None:
-            for method_name in ("ensure_runtime_state", "save_runtime_state", "save_state"):
-                fn = getattr(runtime, method_name, None)
-                if callable(fn):
-                    try:
-                        fn(task)
-                        write_back["runtime_state_ensured"] = True
-                        break
-                    except TypeError:
-                        continue
-                    except Exception as e:
-                        write_back["ok"] = False
-                        write_back["errors"].append(f"{method_name} failed: {e}")
-                        break
-
         if scheduler is not None:
             persist_fn = getattr(scheduler, "_persist_task_payload", None)
             if callable(persist_fn):
@@ -751,6 +849,9 @@ class AgentLoop:
                     except Exception as e:
                         write_back["ok"] = False
                         write_back["errors"].append(f"_persist_task_payload failed: {e}")
+
+        if isinstance(runtime_state, dict):
+            write_back["runtime_state"] = copy.deepcopy(runtime_state)
 
         return write_back
 
