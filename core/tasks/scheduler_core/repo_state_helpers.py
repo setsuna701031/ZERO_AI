@@ -16,6 +16,33 @@ LOOP_STATE_KEYS = (
 )
 
 
+
+
+def _save_runtime_state_from_merged(scheduler: Any, merged: Dict[str, Any]) -> None:
+    runtime = getattr(scheduler, "task_runtime", None)
+    if runtime is None:
+        return
+
+    save_fn = getattr(runtime, "save_runtime_state", None)
+    if not callable(save_fn):
+        return
+
+    state_payload: Dict[str, Any] = copy.deepcopy(merged)
+
+    load_fn = getattr(runtime, "load_runtime_state", None)
+    if callable(load_fn):
+        try:
+            loaded = load_fn(merged)
+            if isinstance(loaded, dict):
+                loaded.update(copy.deepcopy(merged))
+                state_payload = loaded
+        except Exception:
+            pass
+
+    try:
+        save_fn(merged, state_payload)
+    except Exception:
+        pass
 def extract_effective_status_and_answer(
     original_task: Optional[Dict[str, Any]],
     refreshed_task: Optional[Dict[str, Any]],
@@ -363,6 +390,7 @@ def sync_runtime_back_to_repo(
     merged = scheduler._infer_completion_fields(merged)
     merged = scheduler._clear_stale_replan_fields(merged)
     merged = scheduler._refresh_task_public_fields(merged)
+    _save_runtime_state_from_merged(scheduler, merged)
     scheduler._persist_task_payload(task_id=task_id, task=merged)
 
     normalized_status = str(merged.get("status") or "").strip().lower()

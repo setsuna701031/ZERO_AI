@@ -154,9 +154,13 @@ class Planner:
 
         # --------------------------------------------------------
         # verify routing first
-        # 目的：避免 verify ... exists/contains/equals 被 document flow 吃掉
+        # 目的：避免純 verify ... exists/contains/equals 被 document flow 吃掉
+        # 注意：多子句任務不能整句直接被 verify 吃掉，也不能因檔名含 verify 誤觸發
         # --------------------------------------------------------
-        early_verify = self._extract_verify_request(stripped, last_path=None)
+        looks_multi_clause = len(self._split_clauses(stripped)) > 1
+        early_verify = None
+        if not looks_multi_clause and self._has_verify_intent(stripped):
+            early_verify = self._extract_verify_request(stripped, last_path=None)
         if early_verify:
             verify_path = str(early_verify.get("path") or "").strip()
             self.trace_logger.log_decision(
@@ -568,6 +572,7 @@ class Planner:
                 normalized_step = {
                     "type": "write_file",
                     "path": current_path or "",
+                    "scope": self._infer_path_scope(current_path or ""),
                     "content": content,
                 }
                 step_type = "write detected"
@@ -575,6 +580,7 @@ class Planner:
                 normalized_step = {
                     "type": "ensure_file",
                     "path": current_path or "",
+                    "scope": self._infer_path_scope(current_path or ""),
                 }
                 step_type = "ensure_file detected"
 
@@ -712,74 +718,97 @@ class Planner:
     # verify
     # ============================================================
 
+    def _infer_path_scope(self, path: str) -> str:
+        normalized = str(path or "").replace("\\", "/").strip().lower()
+        if normalized.startswith("workspace/shared/") or normalized.startswith("shared/"):
+            return "shared"
+        return "auto"
+
+    def _has_verify_intent(self, text: str) -> bool:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return False
+
+        lowered = stripped.lower()
+
+        english_patterns = [
+            r"^verify\b",
+            r"^verifies\b",
+            r"^verified\b",
+            r"\bcheck that\b",
+            r"\bchecks that\b",
+            r"\bconfirm that\b",
+            r"\bconfirms that\b",
+            r"\bcheck whether\b",
+            r"\bconfirm whether\b",
+            r"\bfile exists\b",
+            r"\bdoes not exist\b",
+            r"\bcontains\b",
+            r"\bequals\b",
+            r"\bis exactly\b",
+        ]
+        if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in english_patterns):
+            return True
+
+        zh_markers = ["確認", "檢查", "驗證", "是否存在", "有沒有", "包含", "含有", "等於", "是否為", "是不是", "是否等於"]
+        return any(marker in stripped for marker in zh_markers)
+
     def _extract_verify_request(self, text: str, last_path: Optional[str]) -> Optional[Dict[str, Any]]:
         stripped = str(text or "").strip()
         lowered = stripped.lower()
 
-        verify_markers = [
-            "verify",
-            "check that",
-            "confirm that",
-            "確認",
-            "檢查",
-            "驗證",
-        ]
-        if not any(marker in lowered for marker in verify_markers):
+        if not self._has_verify_intent(stripped):
             return None
 
         path = self._extract_file_path(stripped) or last_path
 
-        exists_match = re.search(
-            r"(?:verify|check that|confirm that)\s+(.+?)\s+exists\b",
-            lowered,
-            flags=re.IGNORECASE,
-        )
-        if exists_match and path:
-            return {
-                "type": "verify",
-                "path": path,
-                "exists": True,
-            }
+        exists_patterns = [
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(.+?)\s+exists\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(?:the\s+)?file\s+exists\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+it\s+exists\b",
+        ]
+        for pattern in exists_patterns:
+            if re.search(pattern, lowered, flags=re.IGNORECASE) and path:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "exists": True,
+                }
 
-        not_exists_match = re.search(
-            r"(?:verify|check that|confirm that)\s+(.+?)\s+does not exist\b",
-            lowered,
-            flags=re.IGNORECASE,
-        )
-        if not_exists_match and path:
-            return {
-                "type": "verify",
-                "path": path,
-                "exists": False,
-            }
+        not_exists_patterns = [
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(.+?)\s+does not exist\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(?:the\s+)?file\s+does not exist\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+it\s+does not exist\b",
+        ]
+        for pattern in not_exists_patterns:
+            if re.search(pattern, lowered, flags=re.IGNORECASE) and path:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "exists": False,
+                }
 
-        contains_match = re.search(
-            r"(?:contains|contain)\s+(.+)$",
-            stripped,
-            flags=re.IGNORECASE,
-        )
+        contains_match = re.search(r"(?:contains|contain)\s+(.+)$", stripped, flags=re.IGNORECASE)
         if contains_match and path:
-            raw = contains_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(contains_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "contains": raw,
                 }
 
-        equals_match = re.search(
-            r"(?:equals|equal to|is exactly)\s+(.+)$",
-            stripped,
-            flags=re.IGNORECASE,
-        )
+        equals_match = re.search(r"(?:equals|equal to|is exactly)\s+(.+)$", stripped, flags=re.IGNORECASE)
         if equals_match and path:
-            raw = equals_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(equals_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "equals": raw,
                 }
 
@@ -788,30 +817,39 @@ class Planner:
             return {
                 "type": "verify",
                 "path": path,
+                "scope": self._infer_path_scope(path),
                 "exists": True,
             }
 
         zh_contains_match = re.search(r"(?:包含|含有)\s+(.+)$", stripped)
         if zh_contains_match and path:
-            raw = zh_contains_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(zh_contains_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "contains": raw,
                 }
 
         zh_equals_match = re.search(r"(?:等於|是否為|是不是|是否等於)\s+(.+)$", stripped)
         if zh_equals_match and path:
-            raw = zh_equals_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(zh_equals_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "equals": raw,
                 }
+
+        if path and re.search(r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck\b|\bconfirm\b)", lowered, flags=re.IGNORECASE):
+            return {
+                "type": "verify",
+                "path": path,
+                "scope": self._infer_path_scope(path),
+                "exists": True,
+            }
 
         return None
 
@@ -890,26 +928,69 @@ class Planner:
         return None
 
     def _extract_write_request(self, text: str) -> Optional[Dict[str, Any]]:
-        lowered = text.lower()
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
 
-        if self._extract_run_python_request(text):
+        if self._extract_run_python_request(stripped):
             return None
 
-        has_write_intent = any(k in text for k in ["寫", "建立", "新增", "創建", "產生"]) or any(
-            k in lowered for k in ["create", "write", "make", "generate"]
+        has_write_intent = any(k in stripped for k in ["寫", "建立", "新增", "創建", "產生"]) or any(
+            k in lowered for k in ["create", "write", "writes", "make", "generate"]
         )
         if not has_write_intent:
             return None
 
-        path = self._extract_file_path(text)
+        normalized = re.sub(
+            r"^(?:create\s+a\s+task\s+that\s+|create\s+task\s+that\s+|please\s+|pls\s+)",
+            "",
+            stripped,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        path = self._extract_file_path(normalized) or self._extract_file_path(stripped)
         if not path:
             return None
 
-        content, has_explicit_content = self._extract_write_content(text)
+        content = ""
+        has_explicit_content = False
+
+        english_match = re.search(
+            r"(?:write|writes)\s+(.+?)\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if english_match:
+            raw_content = english_match.group(1).strip()
+            target_path = english_match.group(2).strip()
+            if target_path:
+                path = target_path
+            if raw_content:
+                content = self._normalize_special_content(self._strip_quotes(raw_content))
+                has_explicit_content = True
+
+        if not has_explicit_content:
+            chinese_match = re.search(
+                r"(?:寫入|寫|建立|新增|創建)\s+(.+?)\s+(?:到|進|至)\s+([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+            if chinese_match:
+                raw_content = chinese_match.group(1).strip()
+                target_path = chinese_match.group(2).strip()
+                if target_path:
+                    path = target_path
+                if raw_content:
+                    content = self._normalize_special_content(self._strip_quotes(raw_content))
+                    has_explicit_content = True
+
+        if not has_explicit_content:
+            content, has_explicit_content = self._extract_write_content(normalized)
+
         return {
             "path": path,
             "content": content,
             "has_explicit_content": has_explicit_content,
+            "scope": self._infer_path_scope(path),
         }
 
     def _extract_write_content(self, text: str) -> Tuple[str, bool]:
