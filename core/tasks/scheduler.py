@@ -10,7 +10,6 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.planning.replanner import Replanner
-from core.planning.planner import Planner
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
@@ -496,41 +495,8 @@ class Scheduler(RuntimeTaskScheduler):
         if not callable(run_task_loop_fn):
             return None
 
-        task_id = self._extract_task_id(task)
-        task_dir = str(task.get("task_dir") or "").strip()
-        if not task_dir and task_id:
-            task_dir = os.path.join(self.tasks_root, task_id)
-
-        def _write_loop_fallback_trace(label: str, payload: Dict[str, Any]) -> None:
-            try:
-                if not task_dir:
-                    return
-                os.makedirs(task_dir, exist_ok=True)
-                trace_path = os.path.join(task_dir, "loop_fallback_trace.log")
-                record = {
-                    "ts": int(time.time()),
-                    "tick": current_tick if current_tick is not None else getattr(self, "current_tick", 0),
-                    "task_id": task_id,
-                    "label": label,
-                    "payload": payload,
-                }
-                with open(trace_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            except Exception:
-                pass
-
         runner_result: Optional[Dict[str, Any]] = None
         loop_error_text = ""
-
-        _write_loop_fallback_trace(
-            "agent_loop_attempt",
-            {
-                "goal": str(task.get("goal") or ""),
-                "has_planner_result": isinstance(task.get("planner_result"), dict),
-                "agent_loop_type": type(agent_loop).__name__,
-                "run_method": getattr(run_task_loop_fn, "__name__", "unknown"),
-            },
-        )
 
         try:
             runner_result = run_task_loop_fn(
@@ -542,60 +508,12 @@ class Scheduler(RuntimeTaskScheduler):
         except Exception as e:
             loop_error_text = str(e).strip()
             runner_result = None
-            _write_loop_fallback_trace(
-                "agent_loop_exception",
-                {
-                    "error": loop_error_text,
-                    "exception_class": e.__class__.__name__,
-                },
-            )
 
         if isinstance(runner_result, dict):
             loop_error_text = str(runner_result.get("error") or "").strip()
-            _write_loop_fallback_trace(
-                "agent_loop_result",
-                {
-                    "ok": bool(runner_result.get("ok", False)),
-                    "action": str(runner_result.get("action") or ""),
-                    "status": str(runner_result.get("status") or ""),
-                    "mode": str(runner_result.get("mode") or ""),
-                    "error": loop_error_text,
-                    "has_task": isinstance(runner_result.get("task"), dict),
-                    "has_write_back": isinstance(runner_result.get("write_back"), dict),
-                },
-            )
-        else:
-            _write_loop_fallback_trace(
-                "agent_loop_result",
-                {
-                    "ok": False,
-                    "action": "invalid_result",
-                    "status": "",
-                    "mode": "",
-                    "error": loop_error_text,
-                    "result_type": type(runner_result).__name__ if runner_result is not None else "NoneType",
-                },
-            )
 
-        should_fallback = self._should_fallback_to_simple_runner(
-            runner_result=runner_result,
-            loop_error_text=loop_error_text,
-        )
-        eligible_simple_fallback = self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text)
-
-        if should_fallback:
-            _write_loop_fallback_trace(
-                "agent_loop_fallback_decision",
-                {
-                    "should_fallback": True,
-                    "eligible_simple_fallback": eligible_simple_fallback,
-                    "loop_error_text": loop_error_text,
-                    "runner_result_action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
-                    "runner_result_status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
-                },
-            )
-
-            if eligible_simple_fallback:
+        if self._should_fallback_to_simple_runner(runner_result=runner_result, loop_error_text=loop_error_text):
+            if self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text):
                 return None
 
             result = runner_result if isinstance(runner_result, dict) else {
@@ -607,14 +525,6 @@ class Scheduler(RuntimeTaskScheduler):
             self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
             return result
 
-        _write_loop_fallback_trace(
-            "agent_loop_accepted",
-            {
-                "should_fallback": False,
-                "status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
-                "action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
-            },
-        )
         self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
         return runner_result
 
@@ -2817,6 +2727,13 @@ class Scheduler(RuntimeTaskScheduler):
                     "task_dir",
                     "goal",
                     "title",
+                    "last_observation",
+                    "last_decision",
+                    "last_decision_reason",
+                    "next_action",
+                    "terminal_reason",
+                    "loop_cycle_count",
+                    "loop_history",
                 ):
                     if key in runtime_data:
                         hydrated[key] = copy.deepcopy(runtime_data.get(key))
@@ -2924,6 +2841,16 @@ class Scheduler(RuntimeTaskScheduler):
         task = self._infer_completion_fields(task)
         task = self._clear_stale_replan_fields(task)
         task = self._refresh_task_public_fields(task)
+
+        task.setdefault("last_observation", {})
+        task.setdefault("last_decision", "")
+        task.setdefault("last_decision_reason", "")
+        task.setdefault("next_action", "")
+        task.setdefault("terminal_reason", "")
+        task["loop_cycle_count"] = int(task.get("loop_cycle_count", 0) or 0)
+        if not isinstance(task.get("loop_history"), list):
+            task["loop_history"] = []
+
         try:
             self.task_workspace.save_task_snapshot(task)
         except Exception:
@@ -2938,6 +2865,24 @@ class Scheduler(RuntimeTaskScheduler):
             except Exception:
                 pass
 
+        runtime_state_file = str(task.get("runtime_state_file") or "").strip()
+        if runtime_state_file:
+            try:
+                os.makedirs(os.path.dirname(runtime_state_file), exist_ok=True)
+                with open(runtime_state_file, "w", encoding="utf-8") as f:
+                    json.dump(task, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        trace_file = str(task.get("trace_file") or "").strip()
+        if trace_file:
+            try:
+                os.makedirs(os.path.dirname(trace_file), exist_ok=True)
+                trace = self._load_trace_for_task(task)
+                self._save_trace_for_task(task=task, trace=trace)
+            except Exception:
+                pass
+
         result_file = str(task.get("result_file") or "").strip()
         if result_file:
             try:
@@ -2949,7 +2894,17 @@ class Scheduler(RuntimeTaskScheduler):
                     "step_results": copy.deepcopy(task.get("step_results", [])),
                     "last_step_result": copy.deepcopy(task.get("last_step_result")),
                     "execution_log": copy.deepcopy(task.get("execution_log", [])),
+                    "last_observation": copy.deepcopy(task.get("last_observation", {})),
+                    "last_decision": copy.deepcopy(task.get("last_decision", "")),
+                    "last_decision_reason": copy.deepcopy(task.get("last_decision_reason", "")),
+                    "next_action": copy.deepcopy(task.get("next_action", "")),
+                    "terminal_reason": copy.deepcopy(task.get("terminal_reason", "")),
+                    "loop_cycle_count": int(task.get("loop_cycle_count", 0) or 0),
+                    "loop_history": copy.deepcopy(task.get("loop_history", [])),
                 }
+                for key in ("mode", "action", "write_back"):
+                    if key in task:
+                        result_payload[key] = copy.deepcopy(task.get(key))
                 with open(result_file, "w", encoding="utf-8") as f:
                     json.dump(result_payload, f, ensure_ascii=False, indent=2)
             except Exception:
@@ -3021,73 +2976,6 @@ class Scheduler(RuntimeTaskScheduler):
     # Planner
     # ------------------------------------------------------------
 
-    def _try_plan_document_flow_via_planner_module(self, goal: str) -> Optional[Dict[str, Any]]:
-        clean_goal = str(goal or "").strip()
-        if not clean_goal:
-            return None
-
-        lowered = clean_goal.lower()
-        looks_like_summary = (
-            ("summary" in lowered or "summarize" in lowered or "summarise" in lowered or "摘要" in clean_goal or "總結" in clean_goal)
-            and ("read " in lowered or " into " in lowered or "->" in clean_goal)
-        )
-        looks_like_action_items = (
-            ("action item" in lowered or "action items" in lowered or "待辦事項" in clean_goal or "行動項目" in clean_goal)
-            and ("read " in lowered or " into " in lowered or "->" in clean_goal)
-        )
-
-        if not (looks_like_summary or looks_like_action_items):
-            return None
-
-        try:
-            planner = Planner(
-                workspace_dir=self.workspace_dir,
-                workspace_root=self.workspace_dir,
-                debug=bool(getattr(self, "debug", False)),
-            )
-            plan = planner.plan(
-                context={
-                    "user_input": clean_goal,
-                    "workspace": self.workspace_dir,
-                },
-                user_input=clean_goal,
-                route={
-                    "mode": "task",
-                    "task": True,
-                },
-            )
-        except Exception:
-            return None
-
-        if not isinstance(plan, dict):
-            return None
-
-        steps = plan.get("steps", [])
-        if not isinstance(steps, list) or not steps:
-            return None
-
-        first_type = str(steps[0].get("type") or "").strip().lower() if len(steps) >= 1 and isinstance(steps[0], dict) else ""
-        second_type = str(steps[1].get("type") or "").strip().lower() if len(steps) >= 2 and isinstance(steps[1], dict) else ""
-        third_type = str(steps[2].get("type") or "").strip().lower() if len(steps) >= 3 and isinstance(steps[2], dict) else ""
-        second_mode = str(steps[1].get("mode") or "").strip().lower() if len(steps) >= 2 and isinstance(steps[1], dict) else ""
-
-        is_document_flow = (
-            len(steps) >= 3
-            and first_type == "read_file"
-            and second_type == "llm"
-            and third_type == "write_file"
-            and second_mode in {"summary", "action_items"}
-        )
-        if not is_document_flow:
-            return None
-
-        normalized = copy.deepcopy(plan)
-        normalized["planner_mode"] = str(plan.get("planner_mode") or "deterministic_v26")
-        normalized["intent"] = str(plan.get("intent") or second_mode or "document_flow")
-        normalized["final_answer"] = str(plan.get("final_answer") or f"已規劃 {len(steps)} 個步驟")
-        normalized["steps"] = copy.deepcopy(steps)
-        return normalized
-
     def _plan_goal(self, goal: str) -> Dict[str, Any]:
         clean_goal = str(goal or "").strip()
 
@@ -3096,10 +2984,6 @@ class Scheduler(RuntimeTaskScheduler):
             steps = external_plan.get("steps", [])
             if isinstance(steps, list) and steps:
                 return external_plan
-
-        document_flow_plan = self._try_plan_document_flow_via_planner_module(clean_goal)
-        if isinstance(document_flow_plan, dict):
-            return document_flow_plan
 
         command_step = self._try_plan_command(clean_goal)
         if isinstance(command_step, dict):
@@ -3110,15 +2994,6 @@ class Scheduler(RuntimeTaskScheduler):
                 "steps": [command_step],
             }
 
-        read_step = self._try_plan_read_file(clean_goal)
-        if isinstance(read_step, dict):
-            return {
-                "planner_mode": "deterministic_v6_task_os_fallback",
-                "intent": "read_file",
-                "final_answer": "已規劃 1 個步驟",
-                "steps": [read_step],
-            }
-
         write_step = self._try_plan_write_file(clean_goal)
         if isinstance(write_step, dict):
             return {
@@ -3126,6 +3001,15 @@ class Scheduler(RuntimeTaskScheduler):
                 "intent": "write_file",
                 "final_answer": "已規劃 1 個步驟",
                 "steps": [write_step],
+            }
+
+        read_step = self._try_plan_read_file(clean_goal)
+        if isinstance(read_step, dict):
+            return {
+                "planner_mode": "deterministic_v6_task_os_fallback",
+                "intent": "read_file",
+                "final_answer": "已規劃 1 個步驟",
+                "steps": [read_step],
             }
 
         if self._looks_like_hello_world_python(clean_goal):

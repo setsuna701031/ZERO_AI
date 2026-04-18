@@ -89,6 +89,69 @@ class AgentLoop:
     # public entry
     # ============================================================
 
+
+    def _ensure_loop_state_defaults(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:
+        task_dict.setdefault("loop_cycle_count", 0)
+        task_dict.setdefault("loop_history", [])
+        task_dict.setdefault("last_observation", {})
+        task_dict.setdefault("last_decision", "")
+        task_dict.setdefault("last_decision_reason", "")
+        task_dict.setdefault("next_action", "")
+        task_dict.setdefault("terminal_reason", "")
+        return task_dict
+
+    def _overlay_loop_state(
+        self,
+        target: Dict[str, Any],
+        source: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if not isinstance(target, dict) or not isinstance(source, dict):
+            return target
+
+        for key in (
+            "last_observation",
+            "last_decision",
+            "last_decision_reason",
+            "next_action",
+            "terminal_reason",
+            "loop_cycle_count",
+            "loop_history",
+        ):
+            if key in source:
+                target[key] = copy.deepcopy(source.get(key))
+        return target
+
+
+    def _dump_loop_state_debug(
+        self,
+        *,
+        task: Optional[Dict[str, Any]],
+        stage: str,
+    ) -> None:
+        if not isinstance(task, dict):
+            return
+        task_dir = str(task.get("task_dir") or "").strip()
+        if not task_dir:
+            return
+        payload = {
+            "stage": stage,
+            "task_id": str(task.get("task_id") or task.get("task_name") or ""),
+            "last_observation": copy.deepcopy(task.get("last_observation", {})),
+            "last_decision": copy.deepcopy(task.get("last_decision", "")),
+            "last_decision_reason": copy.deepcopy(task.get("last_decision_reason", "")),
+            "next_action": copy.deepcopy(task.get("next_action", "")),
+            "terminal_reason": copy.deepcopy(task.get("terminal_reason", "")),
+            "loop_cycle_count": int(task.get("loop_cycle_count", 0) or 0),
+            "loop_history": copy.deepcopy(task.get("loop_history", [])),
+        }
+        try:
+            os.makedirs(task_dir, exist_ok=True)
+            debug_path = os.path.join(task_dir, "loop_state_debug.jsonl")
+            with open(debug_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
     def run(self, user_input: str) -> Dict[str, Any]:
         user_text = str(user_input or "").strip()
         if not user_text:
@@ -191,13 +254,7 @@ class AgentLoop:
                 or ""
             ).strip()
 
-            task_dict.setdefault("loop_cycle_count", 0)
-            task_dict.setdefault("loop_history", [])
-            task_dict.setdefault("last_observation", {})
-            task_dict.setdefault("last_decision", "")
-            task_dict.setdefault("last_decision_reason", "")
-            task_dict.setdefault("next_action", "")
-            task_dict.setdefault("terminal_reason", "")
+            self._ensure_loop_state_defaults(task_dict)
 
             loop_start_snapshot = self._snapshot_task_state(task_dict)
 
@@ -288,6 +345,7 @@ class AgentLoop:
                 loop_history = []
             loop_history.append(history_item)
             effective_task["loop_history"] = loop_history
+            self._dump_loop_state_debug(task=effective_task, stage="after_effective_task_update")
 
             write_back = self._write_back_loop_state(
                 task=effective_task,
@@ -300,6 +358,21 @@ class AgentLoop:
                 fallback=effective_user_input,
             )
 
+            result_task = self._ensure_loop_state_defaults(copy.deepcopy(effective_task))
+            result_task = self._overlay_loop_state(result_task, effective_task)
+
+            runtime_state_from_write_back = None
+            if isinstance(write_back, dict):
+                maybe_runtime_state = write_back.get("runtime_state")
+                if isinstance(maybe_runtime_state, dict):
+                    runtime_state_from_write_back = maybe_runtime_state
+
+            if isinstance(runtime_state_from_write_back, dict):
+                self._overlay_loop_state(runtime_state_from_write_back, effective_task)
+                write_back["runtime_state"] = runtime_state_from_write_back
+
+            self._dump_loop_state_debug(task=result_task, stage="before_result_return")
+
             result: Dict[str, Any] = {
                 "ok": bool(normalized_runner_result.get("ok", True)),
                 "mode": "task_loop",
@@ -307,7 +380,7 @@ class AgentLoop:
                 "loop_backend": backend_name,
                 "current_tick": int(current_tick),
                 "task_id": task_id,
-                "task": effective_task,
+                "task": result_task,
                 "status": str(
                     normalized_runner_result.get("status")
                     or effective_task.get("status")
@@ -496,7 +569,8 @@ class AgentLoop:
         if isinstance(candidate_task, dict):
             merged = copy.deepcopy(effective_task)
             merged.update(copy.deepcopy(candidate_task))
-            effective_task = merged
+            effective_task = self._overlay_loop_state(merged, candidate_task)
+            effective_task = self._ensure_loop_state_defaults(effective_task)
 
         overlay_keys = [
             "status",
@@ -682,6 +756,7 @@ class AgentLoop:
         task: Dict[str, Any],
         plan: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
+        self._dump_loop_state_debug(task=task, stage="write_back_entry")
         write_back = {
             "ok": True,
             "task_snapshot_saved": False,
@@ -1589,13 +1664,7 @@ class AgentLoop:
         created_task.setdefault("replanned", False)
         created_task.setdefault("replan_reason", "")
         created_task.setdefault("replan_count", 0)
-        created_task.setdefault("loop_cycle_count", 0)
-        created_task.setdefault("loop_history", [])
-        created_task.setdefault("last_observation", {})
-        created_task.setdefault("last_decision", "")
-        created_task.setdefault("last_decision_reason", "")
-        created_task.setdefault("next_action", "")
-        created_task.setdefault("terminal_reason", "")
+        self._ensure_loop_state_defaults(created_task)
 
         self._save_task_plan_and_runtime(
             task=created_task,
@@ -1656,13 +1725,7 @@ class AgentLoop:
         task["steps"] = self._extract_steps_from_plan(plan)
         task["steps_total"] = len(task["steps"])
         task["final_answer"] = ""
-        task.setdefault("loop_cycle_count", 0)
-        task.setdefault("loop_history", [])
-        task.setdefault("last_observation", {})
-        task.setdefault("last_decision", "")
-        task.setdefault("last_decision_reason", "")
-        task.setdefault("next_action", "")
-        task.setdefault("terminal_reason", "")
+        self._ensure_loop_state_defaults(task)
 
         if self.task_workspace is not None:
             try:
@@ -1835,14 +1898,8 @@ class AgentLoop:
             "current_step": None,
             "final_result": None,
             "final_answer": "",
-            "loop_cycle_count": 0,
-            "loop_history": [],
-            "last_observation": {},
-            "last_decision": "",
-            "last_decision_reason": "",
-            "next_action": "",
-            "terminal_reason": "",
         }
+        self._ensure_loop_state_defaults(task)
 
         if isinstance(route, dict):
             task["route"] = copy.deepcopy(route)
