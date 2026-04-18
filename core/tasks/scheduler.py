@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.planning.replanner import Replanner
+from core.planning.planner import Planner
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
@@ -495,26 +496,106 @@ class Scheduler(RuntimeTaskScheduler):
         if not callable(run_task_loop_fn):
             return None
 
+        task_id = self._extract_task_id(task)
+        task_dir = str(task.get("task_dir") or "").strip()
+        if not task_dir and task_id:
+            task_dir = os.path.join(self.tasks_root, task_id)
+
+        def _write_loop_fallback_trace(label: str, payload: Dict[str, Any]) -> None:
+            try:
+                if not task_dir:
+                    return
+                os.makedirs(task_dir, exist_ok=True)
+                trace_path = os.path.join(task_dir, "loop_fallback_trace.log")
+                record = {
+                    "ts": int(time.time()),
+                    "tick": current_tick if current_tick is not None else getattr(self, "current_tick", 0),
+                    "task_id": task_id,
+                    "label": label,
+                    "payload": payload,
+                }
+                with open(trace_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
         runner_result: Optional[Dict[str, Any]] = None
         loop_error_text = ""
-        effective_tick = current_tick if current_tick is not None else getattr(self, "current_tick", 0)
+
+        _write_loop_fallback_trace(
+            "agent_loop_attempt",
+            {
+                "goal": str(task.get("goal") or ""),
+                "has_planner_result": isinstance(task.get("planner_result"), dict),
+                "agent_loop_type": type(agent_loop).__name__,
+                "run_method": getattr(run_task_loop_fn, "__name__", "unknown"),
+            },
+        )
 
         try:
             runner_result = run_task_loop_fn(
                 task=copy.deepcopy(task),
-                current_tick=effective_tick,
+                current_tick=current_tick if current_tick is not None else getattr(self, "current_tick", 0),
                 user_input=str(task.get("goal") or ""),
                 original_plan=copy.deepcopy(task.get("planner_result") or {}),
             )
         except Exception as e:
             loop_error_text = str(e).strip()
             runner_result = None
+            _write_loop_fallback_trace(
+                "agent_loop_exception",
+                {
+                    "error": loop_error_text,
+                    "exception_class": e.__class__.__name__,
+                },
+            )
 
         if isinstance(runner_result, dict):
             loop_error_text = str(runner_result.get("error") or "").strip()
+            _write_loop_fallback_trace(
+                "agent_loop_result",
+                {
+                    "ok": bool(runner_result.get("ok", False)),
+                    "action": str(runner_result.get("action") or ""),
+                    "status": str(runner_result.get("status") or ""),
+                    "mode": str(runner_result.get("mode") or ""),
+                    "error": loop_error_text,
+                    "has_task": isinstance(runner_result.get("task"), dict),
+                    "has_write_back": isinstance(runner_result.get("write_back"), dict),
+                },
+            )
+        else:
+            _write_loop_fallback_trace(
+                "agent_loop_result",
+                {
+                    "ok": False,
+                    "action": "invalid_result",
+                    "status": "",
+                    "mode": "",
+                    "error": loop_error_text,
+                    "result_type": type(runner_result).__name__ if runner_result is not None else "NoneType",
+                },
+            )
 
-        if self._should_fallback_to_simple_runner(runner_result=runner_result, loop_error_text=loop_error_text):
-            if self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text):
+        should_fallback = self._should_fallback_to_simple_runner(
+            runner_result=runner_result,
+            loop_error_text=loop_error_text,
+        )
+        eligible_simple_fallback = self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text)
+
+        if should_fallback:
+            _write_loop_fallback_trace(
+                "agent_loop_fallback_decision",
+                {
+                    "should_fallback": True,
+                    "eligible_simple_fallback": eligible_simple_fallback,
+                    "loop_error_text": loop_error_text,
+                    "runner_result_action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
+                    "runner_result_status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
+                },
+            )
+
+            if eligible_simple_fallback:
                 return None
 
             result = runner_result if isinstance(runner_result, dict) else {
@@ -524,67 +605,18 @@ class Scheduler(RuntimeTaskScheduler):
                 "error": loop_error_text or "agent loop failed",
             }
             self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
-            self._trace_agent_loop_result(task=task, runner_result=result, tick=effective_tick)
             return result
 
-        self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
-        self._trace_agent_loop_result(task=task, runner_result=runner_result, tick=effective_tick)
-        return runner_result
-
-    def _trace_agent_loop_result(
-        self,
-        task: Dict[str, Any],
-        runner_result: Optional[Dict[str, Any]],
-        tick: Optional[int] = None,
-    ) -> None:
-        task_id = self._extract_task_id(task)
-        refreshed_task = self._get_task_from_repo(task_id) if task_id else None
-        trace_task = refreshed_task if isinstance(refreshed_task, dict) else self._hydrate_task_from_workspace(copy.deepcopy(task))
-
-        try:
-            trace = self._load_trace_for_task(trace_task)
-        except Exception:
-            return
-
-        result_dict = runner_result if isinstance(runner_result, dict) else {}
-        result_task = result_dict.get("task") if isinstance(result_dict.get("task"), dict) else {}
-        status = str(
-            result_dict.get("status")
-            or result_task.get("status")
-            or trace_task.get("status")
-            or ""
-        ).strip().lower()
-        final_answer = str(
-            result_dict.get("final_answer")
-            or result_task.get("final_answer")
-            or trace_task.get("final_answer")
-            or ""
+        _write_loop_fallback_trace(
+            "agent_loop_accepted",
+            {
+                "should_fallback": False,
+                "status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
+                "action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
+            },
         )
-
-        extra = {
-            "action": str(result_dict.get("action") or "agent_loop_cycle"),
-            "mode": str(result_dict.get("mode") or "task_loop"),
-            "loop_backend": result_dict.get("loop_backend"),
-            "decision": result_task.get("last_decision", result_dict.get("last_decision", "")),
-            "decision_reason": result_task.get("last_decision_reason", result_dict.get("last_decision_reason", "")),
-            "next_action": result_task.get("next_action", result_dict.get("next_action", "")),
-            "terminal_reason": result_task.get("terminal_reason", result_dict.get("terminal_reason", "")),
-            "loop_cycle_count": result_task.get("loop_cycle_count", result_dict.get("loop_cycle_count")),
-            "error": str(result_dict.get("error") or ""),
-        }
-
-        try:
-            self._trace_status(
-                trace=trace,
-                task=trace_task,
-                status=status or str(trace_task.get("status") or ""),
-                tick=tick,
-                final_answer=final_answer,
-                extra=extra,
-            )
-            self._save_trace_for_task(task=trace_task, trace=trace)
-        except Exception:
-            pass
+        self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
+        return runner_result
 
     def _resolve_explicit_agent_loop(self) -> Any:
         agent_loop = getattr(self, "agent_loop", None)
@@ -2989,8 +3021,115 @@ class Scheduler(RuntimeTaskScheduler):
     # Planner
     # ------------------------------------------------------------
 
+
+    def _should_force_deterministic_task_planner(self, goal: str) -> bool:
+        text = str(goal or "").strip().lower()
+        if not text:
+            return False
+
+        shared_markers = [
+            "workspace/shared/",
+            "shared/",
+            "workspace\\shared\\",
+            "shared\\",
+        ]
+        verify_markers = [
+            " verify ",
+            " verifies ",
+            " verified ",
+            " verify",
+            "verifies the file exists",
+            "verify the file exists",
+            "check that",
+            "confirm that",
+            "contains",
+            "equals",
+            "exists",
+            "確認",
+            "檢查",
+            "驗證",
+        ]
+
+        if any(marker in text for marker in shared_markers):
+            return True
+        return any(marker in text for marker in verify_markers)
+
+    def _plan_goal_via_forced_deterministic_planner(self, goal: str) -> Optional[Dict[str, Any]]:
+        context = {
+            "user_input": goal,
+            "workspace": self.workspace_dir,
+        }
+        route = {
+            "mode": "task",
+            "task": True,
+        }
+
+        planners: List[Any] = []
+
+        agent_loop = getattr(self, "agent_loop", None)
+        deterministic_planner = getattr(agent_loop, "planner", None) if agent_loop is not None else None
+        if deterministic_planner is not None:
+            planners.append(deterministic_planner)
+
+        try:
+            planners.append(
+                Planner(
+                    workspace_dir=self.workspace_dir,
+                    workspace_root=self.workspace_dir,
+                    debug=bool(getattr(self, "debug", False)),
+                )
+            )
+        except Exception:
+            pass
+
+        seen = set()
+        unique_planners: List[Any] = []
+        for planner in planners:
+            if planner is None:
+                continue
+            pid = id(planner)
+            if pid in seen:
+                continue
+            seen.add(pid)
+            unique_planners.append(planner)
+
+        for planner in unique_planners:
+            plan = None
+            plan_fn = getattr(planner, "plan", None)
+            if callable(plan_fn):
+                try:
+                    plan = plan_fn(context=context, user_input=goal, route=route)
+                except TypeError:
+                    try:
+                        plan = plan_fn(user_input=goal, context=context, route=route)
+                    except TypeError:
+                        try:
+                            plan = plan_fn(goal)
+                        except Exception:
+                            plan = None
+                except Exception:
+                    plan = None
+
+            if plan is None:
+                plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+
+            normalized = self._normalize_external_plan(plan)
+            if isinstance(normalized, dict):
+                steps = normalized.get("steps", [])
+                if isinstance(steps, list) and steps:
+                    return normalized
+
+        return None
+
     def _plan_goal(self, goal: str) -> Dict[str, Any]:
         clean_goal = str(goal or "").strip()
+
+        if self._should_force_deterministic_task_planner(clean_goal):
+            forced_plan = self._plan_goal_via_forced_deterministic_planner(clean_goal)
+            if isinstance(forced_plan, dict):
+                steps = forced_plan.get("steps", [])
+                if isinstance(steps, list) and steps:
+                    return forced_plan
 
         external_plan = self._plan_goal_via_agent_planners(clean_goal)
         if isinstance(external_plan, dict):

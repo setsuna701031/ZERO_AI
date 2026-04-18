@@ -41,6 +41,7 @@ def prepare_simple_step_guard(
             "type": "write_file",
             "path": raw_path,
             "content": "",
+            "scope": effective_scope,
         }
 
     return prepared_step, guard_step, effective_scope
@@ -66,12 +67,20 @@ def execute_simple_basic_step(
         if not raw_path:
             raise ValueError("ensure_file step missing path")
 
-        full_path = scheduler._resolve_guard_target_path(
-            raw_path=raw_path,
-            task_dir=task_dir,
-            scope=step_scope,
-            resolved_path=str(guard_result.get("resolved_path") or ""),
-        )
+        if str(step_scope or "").strip().lower() == "shared":
+            full_path = scheduler._resolve_step_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                shared_dir=scheduler.shared_dir,
+                scope="shared",
+            )
+        else:
+            full_path = scheduler._resolve_guard_target_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                scope=step_scope,
+                resolved_path=str(guard_result.get("resolved_path") or ""),
+            )
 
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
@@ -104,12 +113,20 @@ def execute_simple_basic_step(
             content = ""
         content = str(content)
 
-        full_path = scheduler._resolve_guard_target_path(
-            raw_path=raw_path,
-            task_dir=task_dir,
-            scope=step_scope,
-            resolved_path=str(guard_result.get("resolved_path") or ""),
-        )
+        if str(step_scope or "").strip().lower() == "shared":
+            full_path = scheduler._resolve_step_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                shared_dir=scheduler.shared_dir,
+                scope="shared",
+            )
+        else:
+            full_path = scheduler._resolve_guard_target_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                scope=step_scope,
+                resolved_path=str(guard_result.get("resolved_path") or ""),
+            )
 
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         with open(full_path, "w", encoding="utf-8") as f:
