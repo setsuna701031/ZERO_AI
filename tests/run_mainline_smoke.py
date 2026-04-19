@@ -26,6 +26,14 @@ SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
         "document_task_smoke",
         [PYTHON_EXE, "tests/run_document_task_smoke.py"],
     ),
+    (
+        "requirement_demo_smoke",
+        [PYTHON_EXE, "tests/run_requirement_demo_smoke.py"],
+    ),
+    (
+        "execution_demo_smoke",
+        [PYTHON_EXE, "tests/run_execution_demo_smoke.py"],
+    ),
 ]
 
 
