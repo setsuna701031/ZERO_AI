@@ -46,6 +46,7 @@ This repository has now reached a stronger engineering checkpoint with the follo
 - runtime smoke is passing again
 - a unified entrypoint exists through `main.py`
 - a second representative scenario now exists through requirement-pack delivery flow
+- a third representative scenario now exists through execution-proof flow
 
 This means the current version is already suitable for:
 
@@ -73,6 +74,7 @@ python main.py runtime
 python main.py smoke
 python main.py doc-demo
 python main.py requirement-demo
+python main.py execution-demo
 python main.py health
 ```
 
@@ -92,6 +94,9 @@ python main.py health
 
 - `requirement-demo`  
   Run the requirement-to-delivery-pack demo flow.
+
+- `execution-demo`  
+  Run the execution-proof demo flow.
 
 - `health`  
   Show health information.
@@ -127,13 +132,57 @@ python main.py smoke
 python main.py doc-demo
 ```
 
+Run a complete document-task lifecycle demo:
+
+- create task
+- submit
+- execute
+- inspect result
+- inspect shared artifacts
+
+Expected outputs:
+
+- `workspace/shared/summary_demo.txt`
+- `workspace/shared/action_items_demo.txt`
+
 ### 5. Run the requirement-pack demo
 
 ```bash
 python main.py requirement-demo
 ```
 
-### 6. Start interactive mode
+Run a requirement-to-delivery-pack lifecycle demo:
+
+- submit
+- execute
+- generate multiple artifacts
+- inspect result
+- inspect task state
+
+Expected outputs:
+
+- `workspace/shared/project_summary.txt`
+- `workspace/shared/implementation_plan.txt`
+- `workspace/shared/acceptance_checklist.txt`
+
+### 6. Run the execution-proof demo
+
+```bash
+python main.py execution-demo
+```
+
+Run a complete task lifecycle demo:
+
+- submit
+- execute
+- artifact generation
+- result inspection
+
+Expected output:
+
+- `workspace/shared/hello.py`
+
+### 7. Start interactive mode
 
 ```bash
 python main.py start
@@ -166,6 +215,12 @@ Requirement-pack command:
 
 ```bash
 python app.py task requirement-pack requirement.txt
+```
+
+Execution-proof command:
+
+```bash
+python app.py task execution-proof
 ```
 
 These explicit commands create official tasks through the normal task lifecycle instead of relying only on free-form natural-language task goals.
@@ -214,6 +269,7 @@ This improves operator clarity because the system now surfaces real outputs such
 - `workspace/shared/project_summary.txt`
 - `workspace/shared/implementation_plan.txt`
 - `workspace/shared/acceptance_checklist.txt`
+- `workspace/shared/hello.py`
 
 instead of only task-local JSON/runtime records.
 
@@ -276,6 +332,27 @@ The requirement-pack flow currently generates:
 - `workspace/shared/acceptance_checklist.txt`
 
 This is the current second representative scenario because it shows that ZERO can turn a requirement document into a multi-artifact delivery package instead of only summarizing a file.
+
+### 8. Execution Proof Task scenario
+
+The unified entrypoint can now run a third representative scenario through:
+
+```bash
+python main.py execution-demo
+```
+
+This flow:
+
+- creates an execution-proof task through explicit CLI entry
+- writes a real artifact to shared workspace
+- verifies the artifact content
+- exposes the finished task through `task result` / `task show`
+
+The execution-proof flow currently generates:
+
+- `workspace/shared/hello.py`
+
+This is the current third representative scenario because it shows that ZERO can perform a minimal engineering execution task with artifact output and verification instead of only producing document-style text outputs.
 
 ---
 
@@ -364,6 +441,28 @@ This is the current best multi-artifact demo because it shows:
 - shared artifact visibility
 - result/show-based inspection
 
+### Demo Flow E — Execution Proof Task
+
+```bash
+python main.py execution-demo
+```
+
+Demonstrates:
+
+- task submission
+- execution
+- artifact generation
+- result inspection
+
+This is the current simplest engineering-execution demo because it shows:
+
+- explicit execution task entry
+- lifecycle execution
+- real file generation
+- shared artifact visibility
+- minimal verification
+- result/show-based inspection
+
 ---
 
 ## Why the Current Architecture Matters
@@ -432,6 +531,21 @@ This image is useful because it shows:
 - shared artifact visibility
 - inspectable task-show output for the requirement-pack flow
 
+### Execution-proof checkpoint
+
+The strongest checkpoint for the third representative scenario is the execution demo pass capture:
+
+![Execution demo pass](docs/images/checkpoints/checkpoint_execution_demo_pass.png)
+
+This image is important because it shows:
+
+- execution-demo completion
+- generated `hello.py` artifact
+- shared artifact visibility
+- unified entrypoint proof through `[execution-demo] PASS`
+
+Verified via runtime and mainline smoke validation.
+
 ### Additional checkpoint images
 
 - `checkpoint_task_result_action_items_finished.png`
@@ -439,6 +553,7 @@ This image is useful because it shows:
 - `checkpoint_task_result_and_show_summary_mainline.png`
 - `checkpoint_requirement_demo_pass.png`
 - `checkpoint_requirement_pack_task_show.png`
+- `checkpoint_execution_demo_pass.png`
 
 These are useful for README support, devlog proof, demo material, and future public-facing checkpoint presentation because they show:
 
