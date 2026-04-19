@@ -9,7 +9,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v26
+    Deterministic Planner v27
 
     本版重點：
     1. 保留 document flow 偵測
@@ -17,14 +17,12 @@ class Planner:
     3. 保留 run_python 規則
     4. 保留 verify 規則
     5. verify 類句型先於 document flow 判定
-    6. 修正 action_items / summary task 句型優先序：
-       - task summarize input.txt into summary.txt
-       - task read input.txt and extract action items into action_items.txt
-       這類 task goal 不再被一般 read_file 規則提前吃掉
-    7. 修正 document flow 固定寫死 input.txt / summary.txt / action_items.txt 的問題：
-       - 保留使用者指定的 source path
-       - 保留使用者指定的 output path
-       - 支援 workspace/shared/...、shared/...、任意 *.txt / *.md / *.log / *.json 等路徑
+    6. 修正 action_items / summary task 句型優先序
+    7. 保留使用者指定的 source / output path
+    8. 新增「結構化 document task 入口」：
+       - planner 會先看 context / route / kwargs 裡是否有結構化 document task
+       - 若有，直接依 task_type + mode 產 steps
+       - 若沒有，再退回自然語句 regex 規劃
     """
 
     _banner_printed = False
@@ -49,7 +47,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v26 (DOCUMENT FLOW PRESERVE USER PATHS) ###")
+            print("### USING PLANNER v27 (STRUCTURED DOCUMENT TASK ENTRY) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -73,26 +71,63 @@ class Planner:
             raw={
                 "context": context,
                 "route": route,
+                "kwargs": kwargs,
             },
         )
 
-        if not text:
-            result = self._build_plan_result(
-                steps=[],
-                intent="respond",
-                final_answer="空白輸入",
-                fallback_used=False,
-                error=None,
-            )
-            self.trace_logger.log_decision(
-                title="planner result",
-                message="empty input",
-                source="planner",
-                raw=result,
-            )
-            return result
-
         try:
+            structured_document_steps = self._plan_structured_document_task(
+                context=context,
+                route=route,
+                kwargs=kwargs,
+            )
+
+            if structured_document_steps is not None:
+                task_name = self._infer_task_name(
+                    task_dir=str(context.get("workspace", "") or ""),
+                    goal=text or "structured_document_task",
+                )
+
+                steps = self._apply_step_metadata(structured_document_steps, task_name=task_name)
+                intent = self._infer_intent(text=text, route=route, steps=steps)
+
+                result = self._build_plan_result(
+                    steps=steps,
+                    intent=intent,
+                    final_answer=f"已規劃 {len(steps)} 個步驟",
+                    fallback_used=False,
+                    error=None,
+                )
+
+                self.trace_logger.log_decision(
+                    title="planner structured document result",
+                    message=f"steps={len(steps)}, intent={intent}",
+                    source="planner",
+                    raw={
+                        "steps": steps,
+                        "intent": intent,
+                        "task_name": task_name,
+                        "result": result,
+                    },
+                )
+                return result
+
+            if not text:
+                result = self._build_plan_result(
+                    steps=[],
+                    intent="respond",
+                    final_answer="空白輸入",
+                    fallback_used=False,
+                    error=None,
+                )
+                self.trace_logger.log_decision(
+                    title="planner result",
+                    message="empty input",
+                    source="planner",
+                    raw=result,
+                )
+                return result
+
             raw_steps, fallback_used = self._plan_steps(text=text, route=route)
 
             task_name = self._infer_task_name(
@@ -144,6 +179,198 @@ class Planner:
 
     def run(self, *args, **kwargs):
         return self.plan(*args, **kwargs)
+
+    # ============================================================
+    # structured document task
+    # ============================================================
+
+    def _plan_structured_document_task(
+        self,
+        context: Optional[Dict[str, Any]] = None,
+        route: Any = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+        context = context or {}
+        kwargs = kwargs or {}
+
+        payload = self._extract_structured_document_payload(
+            context=context,
+            route=route,
+            kwargs=kwargs,
+        )
+        if not payload:
+            return None
+
+        task_type = str(payload.get("task_type") or "").strip().lower()
+        mode = str(payload.get("mode") or "").strip().lower()
+        input_file = str(payload.get("input_file") or "").strip()
+        output_file = str(payload.get("output_file") or "").strip()
+
+        if task_type != "document":
+            return None
+
+        if mode in ("summary", "summarize", "summarise"):
+            source_path = input_file or "input.txt"
+            output_path = output_file or "summary.txt"
+
+            self.trace_logger.log_decision(
+                title="structured document task detected",
+                message=f"mode=summary, source={source_path}, output={output_path}",
+                source="planner",
+                raw={"payload": payload},
+            )
+            return self._build_summary_steps(source_path, output_path)
+
+        if mode in ("action_items", "action-items", "actionitems", "todo", "to_do"):
+            source_path = input_file or "input.txt"
+            output_path = output_file or "action_items.txt"
+
+            self.trace_logger.log_decision(
+                title="structured document task detected",
+                message=f"mode=action_items, source={source_path}, output={output_path}",
+                source="planner",
+                raw={"payload": payload},
+            )
+            return self._build_action_items_steps(source_path, output_path)
+
+        self.trace_logger.log_decision(
+            title="structured document task ignored",
+            message=f"unsupported mode={mode or '(empty)'}",
+            source="planner",
+            raw={"payload": payload},
+        )
+        return None
+
+    def _extract_structured_document_payload(
+        self,
+        context: Dict[str, Any],
+        route: Any = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        kwargs = kwargs or {}
+
+        candidate_dicts: List[Dict[str, Any]] = []
+
+        if isinstance(context, dict):
+            candidate_dicts.append(context)
+
+            for key in ("task", "task_payload", "task_data", "payload", "document_task"):
+                value = context.get(key)
+                if isinstance(value, dict):
+                    candidate_dicts.append(value)
+
+        if isinstance(route, dict):
+            candidate_dicts.append(route)
+            for key in ("task", "payload", "document_task"):
+                value = route.get(key)
+                if isinstance(value, dict):
+                    candidate_dicts.append(value)
+
+        if isinstance(kwargs, dict):
+            candidate_dicts.append(kwargs)
+            for key in ("task", "task_payload", "payload", "document_task"):
+                value = kwargs.get(key)
+                if isinstance(value, dict):
+                    candidate_dicts.append(value)
+
+        for candidate in candidate_dicts:
+            normalized = self._normalize_structured_document_payload(candidate)
+            if normalized is not None:
+                return normalized
+
+        return None
+
+    def _normalize_structured_document_payload(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(data, dict):
+            return None
+
+        task_type = self._pick_first_non_empty(
+            data,
+            [
+                "task_type",
+                "type",
+                "job_type",
+                "workflow_type",
+            ],
+        )
+        mode = self._pick_first_non_empty(
+            data,
+            [
+                "mode",
+                "document_mode",
+                "task_mode",
+                "operation",
+                "action",
+            ],
+        )
+        input_file = self._pick_first_non_empty(
+            data,
+            [
+                "input_file",
+                "input_path",
+                "source_file",
+                "source_path",
+                "file_path",
+                "path",
+            ],
+        )
+        output_file = self._pick_first_non_empty(
+            data,
+            [
+                "output_file",
+                "output_path",
+                "target_file",
+                "target_path",
+                "result_file",
+                "result_path",
+            ],
+        )
+
+        if not task_type:
+            return None
+
+        lowered_type = str(task_type).strip().lower()
+        if lowered_type not in ("document", "doc", "document_flow"):
+            return None
+
+        normalized: Dict[str, Any] = {
+            "task_type": "document",
+            "mode": str(mode or "").strip(),
+            "input_file": str(input_file or "").strip(),
+            "output_file": str(output_file or "").strip(),
+        }
+
+        if not normalized["mode"]:
+            inferred_mode = self._infer_document_mode_from_output(normalized["output_file"])
+            if inferred_mode:
+                normalized["mode"] = inferred_mode
+
+        if not normalized["mode"]:
+            return None
+
+        return normalized
+
+    def _pick_first_non_empty(self, data: Dict[str, Any], keys: List[str]) -> str:
+        for key in keys:
+            value = data.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return ""
+
+    def _infer_document_mode_from_output(self, output_file: str) -> str:
+        lowered = str(output_file or "").strip().lower()
+        if not lowered:
+            return ""
+
+        if "action_items" in lowered or "action-items" in lowered or "actionitems" in lowered:
+            return "action_items"
+        if "summary" in lowered:
+            return "summary"
+
+        return ""
 
     # ============================================================
     # core planning
@@ -639,7 +866,7 @@ class Planner:
     ) -> Dict[str, Any]:
         return {
             "ok": error is None,
-            "planner_mode": "deterministic_v26",
+            "planner_mode": "deterministic_v27",
             "intent": intent,
             "final_answer": final_answer,
             "steps": steps,

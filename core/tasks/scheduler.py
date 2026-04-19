@@ -1453,8 +1453,9 @@ class Scheduler(RuntimeTaskScheduler):
 
         parsed = self._parse_goal_overrides(goal.strip())
         clean_goal = parsed["clean_goal"]
+        document_payload = copy.deepcopy(parsed.get("document_payload") or {}) if isinstance(parsed, dict) else {}
 
-        planner_result = self._plan_goal(clean_goal)
+        planner_result = self._plan_goal(clean_goal, document_payload=document_payload)
 
         override_steps = parsed.get("steps")
         if isinstance(override_steps, list):
@@ -1492,6 +1493,11 @@ class Scheduler(RuntimeTaskScheduler):
             "task_name": task_name,
             "title": clean_goal,
             "goal": clean_goal,
+            "task_type": str(document_payload.get("task_type") or ""),
+            "document_mode": str(document_payload.get("mode") or ""),
+            "input_file": str(document_payload.get("input_file") or ""),
+            "output_file": str(document_payload.get("output_file") or ""),
+            "document_payload": copy.deepcopy(document_payload),
             "status": initial_status,
             "priority": int(priority),
             "current_step_index": 0,
@@ -1560,6 +1566,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "goal": clean_goal,
                 "steps_total": len(steps),
                 "depends_on": copy.deepcopy(normalized_depends_on),
+                "document_payload": copy.deepcopy(document_payload),
             },
         )
         self._trace_status(
@@ -3121,8 +3128,23 @@ class Scheduler(RuntimeTaskScheduler):
 
         return None
 
-    def _plan_goal(self, goal: str) -> Dict[str, Any]:
+    def _plan_goal(
+        self,
+        goal: str,
+        document_payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         clean_goal = str(goal or "").strip()
+        normalized_document_payload = copy.deepcopy(document_payload) if isinstance(document_payload, dict) else None
+
+        if normalized_document_payload:
+            external_plan = self._plan_goal_via_agent_planners(
+                clean_goal,
+                document_payload=normalized_document_payload,
+            )
+            if isinstance(external_plan, dict):
+                steps = external_plan.get("steps", [])
+                if isinstance(steps, list) and steps:
+                    return external_plan
 
         if self._should_force_deterministic_task_planner(clean_goal):
             forced_plan = self._plan_goal_via_forced_deterministic_planner(clean_goal)
@@ -3131,7 +3153,10 @@ class Scheduler(RuntimeTaskScheduler):
                 if isinstance(steps, list) and steps:
                     return forced_plan
 
-        external_plan = self._plan_goal_via_agent_planners(clean_goal)
+        external_plan = self._plan_goal_via_agent_planners(
+            clean_goal,
+            document_payload=normalized_document_payload,
+        )
         if isinstance(external_plan, dict):
             steps = external_plan.get("steps", [])
             if isinstance(steps, list) and steps:
@@ -3193,10 +3218,44 @@ class Scheduler(RuntimeTaskScheduler):
             "steps": [],
         }
 
-    def _plan_goal_via_agent_planners(self, goal: str) -> Optional[Dict[str, Any]]:
+    def _plan_goal_via_agent_planners(
+        self,
+        goal: str,
+        document_payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         agent_loop = getattr(self, "agent_loop", None)
         if agent_loop is None:
             return None
+
+        planners: List[Any] = []
+        llm_planner = getattr(agent_loop, "llm_planner", None)
+        deterministic_planner = getattr(agent_loop, "planner", None)
+
+        if llm_planner is not None:
+            planners.append(llm_planner)
+        if deterministic_planner is not None:
+            planners.append(deterministic_planner)
+
+        context = {
+            "user_input": goal,
+            "workspace": self.workspace_dir,
+        }
+        route = {
+            "mode": "task",
+            "task": True,
+        }
+
+        if isinstance(document_payload, dict) and document_payload:
+            context.update(copy.deepcopy(document_payload))
+            route["document_task"] = True
+
+        for planner in planners:
+            plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+            normalized = self._normalize_external_plan(plan)
+            if normalized is not None:
+                return normalized
+
+        return None
 
         planners: List[Any] = []
         llm_planner = getattr(agent_loop, "llm_planner", None)
@@ -3327,6 +3386,150 @@ class Scheduler(RuntimeTaskScheduler):
             "clean_goal": clean_goal,
             "depends_on": depends_on,
             "steps": steps if steps else None,
+            "document_payload": self._extract_document_task_payload(clean_goal),
+        }
+
+
+    def _extract_all_document_file_paths(self, text: str) -> List[str]:
+        if not text:
+            return []
+
+        results: List[str] = []
+        pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b"
+        for match in re.finditer(pattern, text):
+            value = str(match.group(1)).strip()
+            if value and value not in results:
+                results.append(value)
+        return results
+
+    def _extract_document_arrow_paths(self, text: str) -> Optional[Tuple[str, str]]:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return None
+
+        match = re.search(
+            r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        source_path = str(match.group(1)).strip()
+        output_path = str(match.group(2)).strip()
+        if not source_path or not output_path:
+            return None
+
+        return source_path, output_path
+
+    def _extract_document_source_path(self, text: str, all_paths: List[str]) -> str:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                value = str(match.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_document_arrow_paths(stripped)
+        if arrow is not None:
+            return arrow[0]
+
+        if all_paths:
+            return all_paths[0]
+
+        return ""
+
+    def _extract_document_output_path(self, text: str, all_paths: List[str]) -> str:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                value = str(match.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_document_arrow_paths(stripped)
+        if arrow is not None:
+            return arrow[1]
+
+        if len(all_paths) >= 2:
+            return all_paths[-1]
+
+        return ""
+
+    def _extract_document_task_payload(self, goal: str) -> Optional[Dict[str, str]]:
+        stripped = str(goal or "").strip()
+        if not stripped:
+            return None
+
+        lowered = stripped.lower()
+        all_paths = self._extract_all_document_file_paths(stripped)
+
+        action_keywords = [
+            "action item",
+            "action items",
+            "extract action items",
+            "todo",
+            "to-do",
+            "行動項目",
+            "待辦事項",
+        ]
+        summary_keywords = [
+            "summary",
+            "summarize",
+            "summarise",
+            "摘要",
+            "總結",
+        ]
+
+        wants_action_items = any(keyword in lowered for keyword in action_keywords)
+        wants_summary = any(keyword in lowered for keyword in summary_keywords)
+
+        if not wants_action_items and not wants_summary:
+            output_hint = self._extract_document_output_path(stripped, all_paths).lower()
+            if "action_items" in output_hint or "action-items" in output_hint or "actionitems" in output_hint:
+                wants_action_items = True
+            elif "summary" in output_hint:
+                wants_summary = True
+
+        if not wants_action_items and not wants_summary:
+            return None
+
+        input_file = self._extract_document_source_path(stripped, all_paths) or "input.txt"
+
+        if wants_action_items:
+            output_file = self._extract_document_output_path(stripped, all_paths) or "action_items.txt"
+            return {
+                "task_type": "document",
+                "mode": "action_items",
+                "input_file": input_file,
+                "output_file": output_file,
+            }
+
+        output_file = self._extract_document_output_path(stripped, all_paths) or "summary.txt"
+        return {
+            "task_type": "document",
+            "mode": "summary",
+            "input_file": input_file,
+            "output_file": output_file,
         }
 
     def _parse_inline_step(self, text: str) -> Optional[Dict[str, Any]]:

@@ -396,6 +396,113 @@ Keep the latest terminal screenshots showing:
 These are useful as devlog proof and future demo / README evidence.
 
 
+## 2026-04 Document Task Mainline Integration Pass
+
+This pass focused on moving document flow from a direct/demo execution path into the official task lifecycle.
+
+### Completed
+
+Structured document-task support was extended across the mainline path:
+
+- `core/planning/planner.py`
+- `app.py`
+- `core/tasks/scheduler.py`
+
+What changed:
+
+- planner gained a structured document-task entry path
+- app direct-flow handling now builds and forwards document task context
+- scheduler task creation / planning path now preserves document-task payload into planner context
+- document tasks can now run through the official task lifecycle instead of only a direct one-shot path
+
+Mainline flows now verified through official task path:
+
+- `task create`
+- `task submit`
+- `task run`
+- `task result`
+- `task show`
+
+Validated document task modes:
+
+1. Summary task
+   - goal: `summarize input.txt into summary.txt`
+
+2. Action-items task
+   - goal: `read input.txt and extract action items into action_items.txt`
+
+### Validation
+
+Confirmed working through the official task mainline:
+
+- summary document task: PASS
+- action-items document task: PASS
+- `task create`: PASS
+- `task submit`: PASS
+- `task run`: PASS
+- `task result`: PASS
+- `task show`: PASS
+
+Confirmed behavior:
+
+- task record was written into `workspace/tasks.json`
+- task workspace directory was created under `workspace/tasks/<task_id>/`
+- task reached `finished`
+- step progress reached `3/3`
+- final answer was returned through official task result reporting
+- task artifacts were written under the task directory:
+  - `result.json`
+  - `plan.json`
+  - `runtime_state.json`
+  - `execution_log.json`
+  - `trace.json`
+  - `task_snapshot.json`
+
+Shared output artifacts also remained valid:
+
+- `workspace/shared/summary.txt`
+- `workspace/shared/action_items.txt`
+
+### Why This Matters
+
+This pass moved document flow from “it works as a direct execution shortcut” to “it works through the official task lifecycle.”
+
+That matters because the system is no longer relying only on an isolated demo path. Document processing is now integrated into the same mainline used by the broader task system:
+
+- task creation
+- scheduling
+- execution
+- task-state persistence
+- result inspection
+- artifact tracking
+
+This is a more meaningful checkpoint than direct-flow success alone, because it proves that document tasks can survive the real task OS path instead of only a narrow shortcut.
+
+### Result
+
+Stable checkpoint after document-task mainline integration:
+
+- summary mainline task flow: working
+- action-items mainline task flow: working
+- structured document-task context path: working
+- official task lifecycle integration: working
+- task result / task show reporting: working
+- shared output artifact generation: working
+
+### Evidence Kept
+
+Keep the latest terminal evidence showing:
+
+- `task create` -> `task submit` -> `task run` for summary task
+- `task result` and `task show` for finished summary task
+- `task result` for finished action-items task
+- `workspace/tasks.json` containing the created document tasks
+- `workspace/tasks/<task_id>/` directories created for the finished tasks
+- `workspace/shared/summary.txt`
+- `workspace/shared/action_items.txt`
+
+These are strong proof points for future devlog, README, demo, and external presentation material.
+
 
 
 

@@ -4,6 +4,7 @@ import copy
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1037,6 +1038,160 @@ def _build_health_info(system: Any) -> Dict[str, Any]:
     return merged
 
 
+def _extract_all_file_paths_from_text(text: str) -> List[str]:
+    if not text:
+        return []
+
+    results: List[str] = []
+    pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b"
+    for match in re.finditer(pattern, text):
+        value = str(match.group(1)).strip()
+        if value and value not in results:
+            results.append(value)
+    return results
+
+
+def _extract_arrow_paths_from_text(text: str) -> Optional[Tuple[str, str]]:
+    stripped = _safe_str(text)
+    if not stripped:
+        return None
+
+    match = re.search(
+        r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    source_path = _safe_str(match.group(1))
+    output_path = _safe_str(match.group(2))
+    if not source_path or not output_path:
+        return None
+    return source_path, output_path
+
+
+def _extract_document_source_path_from_text(text: str, all_paths: List[str]) -> str:
+    stripped = _safe_str(text)
+
+    patterns = [
+        r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            value = _safe_str(match.group(1))
+            if value:
+                return value
+
+    arrow = _extract_arrow_paths_from_text(stripped)
+    if arrow is not None:
+        return arrow[0]
+
+    if all_paths:
+        return all_paths[0]
+
+    return ""
+
+
+def _extract_document_output_path_from_text(text: str, all_paths: List[str]) -> str:
+    stripped = _safe_str(text)
+
+    patterns = [
+        r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            value = _safe_str(match.group(1))
+            if value:
+                return value
+
+    arrow = _extract_arrow_paths_from_text(stripped)
+    if arrow is not None:
+        return arrow[1]
+
+    if len(all_paths) >= 2:
+        return all_paths[-1]
+
+    return ""
+
+
+def _extract_document_task_payload(text: str) -> Optional[Dict[str, str]]:
+    stripped = _safe_str(text)
+    if not stripped:
+        return None
+
+    lowered = stripped.lower()
+    all_paths = _extract_all_file_paths_from_text(stripped)
+
+    action_keywords = [
+        "action item",
+        "action items",
+        "extract action items",
+        "todo",
+        "to-do",
+        "行動項目",
+        "待辦事項",
+    ]
+    summary_keywords = [
+        "summary",
+        "summarize",
+        "summarise",
+        "摘要",
+        "總結",
+    ]
+
+    wants_action_items = any(keyword in lowered for keyword in action_keywords)
+    wants_summary = any(keyword in lowered for keyword in summary_keywords)
+
+    if not wants_action_items and not wants_summary:
+        output_hint = _extract_document_output_path_from_text(stripped, all_paths).lower()
+        if "action_items" in output_hint or "action-items" in output_hint or "actionitems" in output_hint:
+            wants_action_items = True
+        elif "summary" in output_hint:
+            wants_summary = True
+
+    if not wants_action_items and not wants_summary:
+        return None
+
+    input_file = _extract_document_source_path_from_text(stripped, all_paths) or "input.txt"
+
+    if wants_action_items:
+        output_file = _extract_document_output_path_from_text(stripped, all_paths) or "action_items.txt"
+        return {
+            "task_type": "document",
+            "mode": "action_items",
+            "input_file": input_file,
+            "output_file": output_file,
+        }
+
+    output_file = _extract_document_output_path_from_text(stripped, all_paths) or "summary.txt"
+    return {
+        "task_type": "document",
+        "mode": "summary",
+        "input_file": input_file,
+        "output_file": output_file,
+    }
+
+
+def _build_direct_flow_context(text: str) -> Dict[str, Any]:
+    context: Dict[str, Any] = {"user_input": text}
+    payload = _extract_document_task_payload(text)
+    if payload:
+        context.update(payload)
+    return context
+
+
 def _should_use_direct_step_flow(text: str) -> bool:
     stripped = _safe_str(text)
     if not stripped:
@@ -1068,24 +1223,13 @@ def _should_use_direct_step_flow(text: str) -> bool:
     ):
         return True
 
-    if "input.txt" in lowered and (
-        "summary.txt" in lowered
-        or "action_items.txt" in lowered
-        or "summarize" in lowered
-        or "summarise" in lowered
-        or "summary" in lowered
-        or "action item" in lowered
-        or "action items" in lowered
-        or "extract action items" in lowered
-    ):
+    if _extract_document_task_payload(stripped) is not None:
         return True
 
     return False
 
 
 def re_search_any(text: str, patterns: List[str]) -> bool:
-    import re
-
     for pattern in patterns:
         if re.search(pattern, text, flags=re.IGNORECASE):
             return True
@@ -1179,8 +1323,10 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
     if planner is None or step_executor is None:
         return False
 
+    direct_context = _build_direct_flow_context(text)
+
     try:
-        plan_result = planner.plan(context={"user_input": text}, user_input=text)
+        plan_result = planner.plan(context=direct_context, user_input=text)
     except Exception as e:
         print_json(
             {
@@ -1188,6 +1334,7 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
                 "error": f"planner direct flow failed: {e}",
                 "traceback": traceback.format_exc(),
                 "input": text,
+                "context": direct_context,
             }
         )
         return True
@@ -1198,6 +1345,7 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
                 "ok": False,
                 "error": "planner returned invalid result",
                 "input": text,
+                "context": direct_context,
                 "planner_result": plan_result,
             }
         )
@@ -1210,6 +1358,7 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
                 "ok": False,
                 "error": "planner returned no steps",
                 "input": text,
+                "context": direct_context,
                 "planner_result": plan_result,
             }
         )
@@ -1219,7 +1368,7 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
         execution_result = step_executor.execute_steps(
             steps=steps,
             task=None,
-            context={"user_input": text},
+            context=direct_context,
         )
     except Exception as e:
         print_json(
@@ -1228,6 +1377,7 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
                 "error": f"step executor direct flow failed: {e}",
                 "traceback": traceback.format_exc(),
                 "input": text,
+                "context": direct_context,
                 "planner_result": plan_result,
             }
         )
