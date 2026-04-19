@@ -504,5 +504,74 @@ Keep the latest terminal evidence showing:
 These are strong proof points for future devlog, README, demo, and external presentation material.
 
 
+## 2026-04 Document Task CLI Entry Pass
+
+This pass focused on making document-task creation more explicit at the CLI layer instead of relying only on free-form natural-language task goals.
+
+### Completed
+
+`app.py` was extended with explicit document-task command entries:
+
+- `task doc-summary <input> <output>`
+- `task doc-action-items <input> <output>`
+
+These commands now create official tasks through the normal task system rather than bypassing the mainline.
+
+### Validation
+
+Confirmed working flow through the official task lifecycle:
+
+1. create document task through CLI command
+2. submit task
+3. run task
+4. inspect task result
+
+Validated commands:
+
+- `python app.py task doc-summary input.txt summary_cli.txt`
+- `python app.py task doc-action-items input.txt action_items_cli.txt`
+
+Confirmed behavior:
+
+- task creation succeeded
+- task reached `finished`
+- `task result` returned the expected final answer
+- task directory artifacts were created under `workspace/tasks/<task_id>/`
+- document-task behavior remained consistent with the mainline integration pass
+
+### Why This Matters
+
+This pass makes document-task entry cleaner and more stable.
+
+Before this, document-task creation depended mainly on natural-language task goals such as:
+
+- `summarize input.txt into summary.txt`
+- `read input.txt and extract action items into action_items.txt`
+
+That path still works, but explicit CLI entry is better for:
+
+- repeatable demos
+- easier operator usage
+- cleaner future UI / API integration
+- reducing ambiguity at the command layer
+
+### Result
+
+Stable checkpoint after explicit document-task CLI entry:
+
+- explicit summary task CLI entry: working
+- explicit action-items task CLI entry: working
+- official task lifecycle path preserved: working
+- task result reporting preserved: working
+
+### Evidence Kept
+
+Keep the latest terminal evidence showing:
+
+- `task doc-summary` task creation and completion
+- `task doc-action-items` task creation and completion
+- `task result` for the finished action-items CLI task
+
+These are useful proof points for future README, demo, and operator-facing documentation.
 
 

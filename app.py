@@ -65,6 +65,8 @@ def print_help() -> None:
     print("  task create <goal>")
     print("  task submit [task_id]")
     print("  task run [count]")
+    print("  task doc-summary <input> <output>")
+    print("  task doc-action-items <input> <output>")
     print("  chat <message>")
     print("  ask <message>")
     print("  doc summary")
@@ -88,6 +90,8 @@ def print_help() -> None:
     print("  python app.py task retry <task_id>")
     print("  python app.py task rerun <task_id>")
     print("  python app.py task purge finished")
+    print("  python app.py task doc-summary input.txt summary.txt")
+    print("  python app.py task doc-action-items input.txt action_items.txt")
     print('  python app.py chat "你好"')
     print('  python app.py ask "幫我建立一個檔案"')
     print("  python app.py doc summary")
@@ -943,6 +947,12 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         ("retry ", "/task_retry "),
         ("rerun ", "/task_rerun "),
         ("purge ", "/task_purge "),
+        ("task doc-summary ", "/task_doc_summary "),
+        ("task doc-action-items ", "/task_doc_action_items "),
+        ("task doc-action_items ", "/task_doc_action_items "),
+        ("task doc action-items ", "/task_doc_action_items "),
+        ("task doc action_items ", "/task_doc_action_items "),
+        ("task doc summary ", "/task_doc_summary "),
     ]
     for prefix, target in prefixes:
         if lowered.startswith(prefix):
@@ -1190,6 +1200,33 @@ def _build_direct_flow_context(text: str) -> Dict[str, Any]:
     if payload:
         context.update(payload)
     return context
+
+
+def _build_doc_task_goal(mode: str, input_file: str, output_file: str) -> str:
+    mode_text = _safe_str(mode).lower()
+    input_path = _safe_str(input_file)
+    output_path = _safe_str(output_file)
+
+    if not input_path or not output_path:
+        return ""
+
+    if mode_text == "summary":
+        return f"summarize {input_path} into {output_path}"
+
+    if mode_text in {"action_items", "action-items", "actionitems"}:
+        return f"read {input_path} and extract action items into {output_path}"
+
+    return ""
+
+
+def _parse_doc_task_args(raw: str) -> Tuple[str, str]:
+    text = _safe_str(raw)
+    if not text:
+        return "", ""
+    parts = text.split()
+    if len(parts) < 2:
+        return "", ""
+    return parts[0].strip(), parts[1].strip()
 
 
 def _should_use_direct_step_flow(text: str) -> bool:
@@ -1506,6 +1543,42 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
             return
         print_json(_purge_tasks(system, mode))
         return
+    if text.startswith("/task_doc_summary "):
+        raw_args = text.split(maxsplit=1)[1].strip()
+        input_file, output_file = _parse_doc_task_args(raw_args)
+        if not input_file or not output_file:
+            print_json({"ok": False, "error": "usage: task doc-summary <input> <output>"})
+            return
+        goal = _build_doc_task_goal("summary", input_file, output_file)
+        result = _create_task(system, goal)
+        if isinstance(result, dict):
+            created_task = result.get("task", {}) if isinstance(result.get("task"), dict) else {}
+            created_task_id = str(result.get("task_id") or result.get("task_name") or created_task.get("task_id") or created_task.get("task_name") or "").strip()
+            if created_task_id:
+                cli_state["last_created_task_id"] = created_task_id
+        print_json(result)
+        if cli_state.get("last_created_task_id"):
+            print("[hint]")
+            print(f"下一步可執行：submit {cli_state['last_created_task_id']}")
+        return
+    if text.startswith("/task_doc_action_items "):
+        raw_args = text.split(maxsplit=1)[1].strip()
+        input_file, output_file = _parse_doc_task_args(raw_args)
+        if not input_file or not output_file:
+            print_json({"ok": False, "error": "usage: task doc-action-items <input> <output>"})
+            return
+        goal = _build_doc_task_goal("action_items", input_file, output_file)
+        result = _create_task(system, goal)
+        if isinstance(result, dict):
+            created_task = result.get("task", {}) if isinstance(result.get("task"), dict) else {}
+            created_task_id = str(result.get("task_id") or result.get("task_name") or created_task.get("task_id") or created_task.get("task_name") or "").strip()
+            if created_task_id:
+                cli_state["last_created_task_id"] = created_task_id
+        print_json(result)
+        if cli_state.get("last_created_task_id"):
+            print("[hint]")
+            print(f"下一步可執行：submit {cli_state['last_created_task_id']}")
+        return
     if text.startswith("/task_create "):
         goal = text.split(maxsplit=1)[1].strip()
         result = _create_task(system, goal)
@@ -1629,7 +1702,25 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
     if first == "task":
         if len(parts) == 1:
             return "/help"
+
         sub = parts[1].lower()
+
+        if sub == "doc-summary" and len(parts) >= 4:
+            return "/task_doc_summary " + " ".join(parts[2:4])
+
+        if sub == "doc-action-items" and len(parts) >= 4:
+            return "/task_doc_action_items " + " ".join(parts[2:4])
+
+        if sub == "doc-action_items" and len(parts) >= 4:
+            return "/task_doc_action_items " + " ".join(parts[2:4])
+
+        if sub == "doc" and len(parts) >= 5:
+            doc_mode = parts[2].lower()
+            if doc_mode == "summary":
+                return "/task_doc_summary " + " ".join(parts[3:5])
+            if doc_mode in {"action-items", "action_items", "actionitems"}:
+                return "/task_doc_action_items " + " ".join(parts[3:5])
+
         if sub == "list":
             return "/task_list"
         if sub == "show" and len(parts) >= 3:
