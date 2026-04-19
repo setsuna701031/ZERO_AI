@@ -6,53 +6,48 @@ This pass focused on stabilizing the inner execution path before pushing farther
 
 ### Completed
 
-* Tool layer first-pass stabilization
-
-  * `core/tools/tool\\\_registry.py`
-  * `core/tools/command\\\_tool.py`
-  * `core/tools/file\\\_tool.py`
-  * `core/tools/workspace\\\_tool.py`
-  * `core/tasks/task\\\_paths.py`
-* Step executor first-pass outer-envelope stabilization
-
-  * `core/runtime/step\\\_executor.py`
-* Step handlers first-pass normalization
-
-  * `core/runtime/step\\\_handlers.py`
-* Executor first-pass internal responsibility cleanup
-
-  * `core/runtime/executor.py`
-* Scheduler first-pass internal responsibility cleanup
-
-  * `core/tasks/scheduler.py`
+- Tool layer first-pass stabilization
+  - `core/tools/tool_registry.py`
+  - `core/tools/command_tool.py`
+  - `core/tools/file_tool.py`
+  - `core/tools/workspace_tool.py`
+  - `core/tasks/task_paths.py`
+- Step executor first-pass outer-envelope stabilization
+  - `core/runtime/step_executor.py`
+- Step handlers first-pass normalization
+  - `core/runtime/step_handlers.py`
+- Executor first-pass internal responsibility cleanup
+  - `core/runtime/executor.py`
+- Scheduler first-pass internal responsibility cleanup
+  - `core/tasks/scheduler.py`
 
 ### Validation Added
 
 Tool layer validation:
 
-* `tests/test\\\_file\\\_tool.py`
-* `tests/test\\\_workspace\\\_tool.py`
-* `tests/test\\\_tool\\\_registry.py`
-* `tests/run\\\_tool\\\_layer\\\_smoke.py`
+- `tests/test_file_tool.py`
+- `tests/test_workspace_tool.py`
+- `tests/test_tool_registry.py`
+- `tests/run_tool_layer_smoke.py`
 
 Runtime / execution validation:
 
-* `tests/test\\\_step\\\_executor.py`
-* `tests/test\\\_executor\\\_repair\\\_rules.py`
-* `tests/test\\\_executor\\\_safe\\\_path\\\_repair.py`
-* `tests/test\\\_executor\\\_smoke.py`
-* `tests/test\\\_agent\\\_loop.py`
-* `tests/test\\\_scheduler\\\_smoke.py`
-* `tests/run\\\_runtime\\\_smoke.py`
+- `tests/test_step_executor.py`
+- `tests/test_executor_repair_rules.py`
+- `tests/test_executor_safe_path_repair.py`
+- `tests/test_executor_smoke.py`
+- `tests/test_agent_loop.py`
+- `tests/test_scheduler_smoke.py`
+- `tests/run_runtime_smoke.py`
 
 ### Current Validation Status
 
 Confirmed passing during this stabilization pass:
 
-* `python tests/run\\\_tool\\\_layer\\\_smoke.py`
-* `python tests/run\\\_runtime\\\_smoke.py`
-* `python tests/test\\\_executor\\\_smoke.py`
-* `python tests/test\\\_scheduler\\\_smoke.py`
+- `python tests/run_tool_layer_smoke.py`
+- `python tests/run_runtime_smoke.py`
+- `python tests/test_executor_smoke.py`
+- `python tests/test_scheduler_smoke.py`
 
 ### Why This Matters
 
@@ -64,337 +59,178 @@ The main value of this pass is not only capability. It is reduced fragility whil
 
 Current stable checkpoint:
 
-* Tool layer smoke: PASS
-* Runtime smoke: PASS
-* Executor smoke: PASS
-* Scheduler smoke: PASS
+- Tool layer smoke: PASS
+- Runtime smoke: PASS
+- Executor smoke: PASS
+- Scheduler smoke: PASS
 
 ### Notes
 
 This pass prioritized:
 
-* local-first execution
-* inspectable runtime state
-* stable task lifecycle behavior
-* safer internal refactoring boundaries
-* repeatable smoke validation
+- local-first execution
+- inspectable runtime state
+- stable task lifecycle behavior
+- safer internal refactoring boundaries
+- repeatable smoke validation
 
 It did **not** prioritize polished UI or broad public packaging yet.
 
-
-
-\## 2026-04 Scheduler Consolidation Pass
-
-
+## 2026-04 Scheduler Consolidation Pass
 
 This pass focused on reducing scheduler responsibility mixing before pushing farther into new capability work.
 
-
-
-\### Completed
-
-
+### Completed
 
 Scheduler internal responsibility split completed across helper layers:
 
-
-
-\- `core/tasks/scheduler\\\_core/queue\\\_sync\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/dispatch\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/repo\\\_state\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/trace\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/simple\\\_runner\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/step\\\_path\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/simple\\\_step\\\_executor\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/command\\\_step\\\_helpers.py`
-
-\- `core/tasks/scheduler\\\_core/llm\\\_step\\\_helpers.py`
-
-
+- `core/tasks/scheduler_core/queue_sync_helpers.py`
+- `core/tasks/scheduler_core/dispatch_helpers.py`
+- `core/tasks/scheduler_core/repo_state_helpers.py`
+- `core/tasks/scheduler_core/trace_helpers.py`
+- `core/tasks/scheduler_core/simple_runner_helpers.py`
+- `core/tasks/scheduler_core/step_path_helpers.py`
+- `core/tasks/scheduler_core/simple_step_executor_helpers.py`
+- `core/tasks/scheduler_core/command_step_helpers.py`
+- `core/tasks/scheduler_core/llm_step_helpers.py`
 
 Main scheduler remained the orchestration shell while queue sync, dispatch flow, repo/runtime sync, trace handling, simple runner flow, path handling, step execution helpers, command execution, and LLM step handling were pulled into dedicated modules.
 
-
-
-\### Validation
-
-
+### Validation
 
 This consolidation pass was validated repeatedly during each extraction step with:
 
-
-
-\- `python tests/test\\\_scheduler\\\_smoke.py`
-
-\- `python tests/run\\\_runtime\\\_smoke.py`
-
-
+- `python tests/test_scheduler_smoke.py`
+- `python tests/run_runtime_smoke.py`
 
 Confirmed passing after the consolidation sequence:
 
+- Scheduler smoke: PASS
+- Runtime smoke: PASS
 
-
-\- Scheduler smoke: PASS
-
-\- Runtime smoke: PASS
-
-
-
-\### Why This Matters
-
-
+### Why This Matters
 
 This pass reduced responsibility mixing inside `core/tasks/scheduler.py` and made future debugging more local and less fragile.
 
-
-
 The value of this pass was not adding new user-facing capability. It was making the scheduler execution chain more inspectable and safer to change without destabilizing the rest of the runtime.
 
-
-
-\### Result
-
-
+### Result
 
 Stable checkpoint after scheduler consolidation:
 
+- scheduler helper extraction completed
+- scheduler smoke: PASS
+- runtime smoke: PASS
 
-
-\- scheduler helper extraction completed
-
-\- scheduler smoke: PASS
-
-\- runtime smoke: PASS
-
-
-
-
-
-\## 2026-04 Document Flow Repair Pass
-
-
+## 2026-04 Document Flow Repair Pass
 
 This pass focused on fixing the real document flow path from planning to LLM prompt injection to file output persistence.
 
-
-
-\### Problems Found
-
-
+### Problems Found
 
 The document flow initially had multiple breakpoints:
 
+- deterministic document planning was overriding user-specified output paths
+- the active planning path was going through `core/system/llm_planner.py`, not only `core/planning/planner.py`
+- `{{file_content}}` was not reliably injected into LLM prompt templates
+- `write_file` with `use_previous_text=true` could complete while still writing empty files
+- `task result` could show finished while the expected shared artifact was empty
 
-
-\- deterministic document planning was overriding user-specified output paths
-
-\- the active planning path was going through `core/system/llm\\\_planner.py`, not only `core/planning/planner.py`
-
-\- `{{file\\\_content}}` was not reliably injected into LLM prompt templates
-
-\- `write\\\_file` with `use\\\_previous\\\_text=true` could complete while still writing empty files
-
-\- `task result` could show finished while the expected shared artifact was empty
-
-
-
-\### Fixes Applied
-
-
+### Fixes Applied
 
 Planning path preservation:
 
-
-
-\- `core/system/llm\\\_planner.py`
-
-\- `core/planning/planner.py`
-
-
+- `core/system/llm_planner.py`
+- `core/planning/planner.py`
 
 These changes preserved user-specified source and output paths such as:
 
-
-
-\- `workspace/shared/input.txt`
-
-\- `workspace/shared/summary\\\_v2.txt`
-
-\- `workspace/shared/action\\\_items\\\_v2.txt`
-
-
+- `workspace/shared/input.txt`
+- `workspace/shared/summary_v2.txt`
+- `workspace/shared/action_items_v2.txt`
 
 LLM prompt injection / execution path fixes:
 
+- `core/runtime/step_executor.py`
+- `core/tasks/scheduler_core/llm_step_helpers.py`
+- `core/tasks/scheduler.py`
 
-
-\- `core/runtime/step\\\_executor.py`
-
-\- `core/tasks/scheduler\\\_core/llm\\\_step\\\_helpers.py`
-
-\- `core/tasks/scheduler.py`
-
-
-
-These changes repaired the path where document content from `read\\\_file` must actually reach the LLM step.
-
-
+These changes repaired the path where document content from `read_file` must actually reach the LLM step.
 
 Write-back / previous-result extraction fixes:
 
+- `core/runtime/step_handlers.py`
 
+This change repaired `write_file` with `use_previous_text=true` so the previous LLM text is actually written into the target shared file instead of producing an empty artifact.
 
-\- `core/runtime/step\\\_handlers.py`
-
-
-
-This change repaired `write\\\_file` with `use\\\_previous\\\_text=true` so the previous LLM text is actually written into the target shared file instead of producing an empty artifact.
-
-
-
-\### Real Flow Validation
-
-
+### Real Flow Validation
 
 Validated with real task runs, not only smoke tests.
 
-
-
 Confirmed working flows:
 
+1. Summary flow
+   - input: `workspace/shared/input.txt`
+   - output: `workspace/shared/summary_v2.txt`
 
-
-1\. Summary flow
-
-&#x20;  - input: `workspace/shared/input.txt`
-
-&#x20;  - output: `workspace/shared/summary\\\_v2.txt`
-
-
-
-2\. Action items flow
-
-&#x20;  - input: `workspace/shared/input.txt`
-
-&#x20;  - output: `workspace/shared/action\\\_items\\\_v2.txt`
-
-
+2. Action items flow
+   - input: `workspace/shared/input.txt`
+   - output: `workspace/shared/action_items_v2.txt`
 
 Confirmed behavior:
 
+- planner preserved the requested output path
+- task reached `finished`
+- `task result` returned the final answer
+- shared output files were actually written
+- generated artifacts matched expected document-flow behavior
 
+### Example Validated Outputs
 
-\- planner preserved the requested output path
+Summary flow produced a real plain-text summary in `summary_v2.txt`.
 
-\- task reached `finished`
+Action-items flow produced a structured plain-text result in `action_items_v2.txt` with:
 
-\- `task result` returned the final answer
+- `ACTION ITEMS` heading
+- owner / task / due layout
+- extracted items such as:
+  - Unassigned / Finish API draft / By Friday
+  - Bob / Test upload flow / Next week
 
-\- shared output files were actually written
-
-\- generated artifacts matched expected document-flow behavior
-
-
-
-\### Example Validated Outputs
-
-
-
-Summary flow produced a real plain-text summary in `summary\\\_v2.txt`.
-
-
-
-Action-items flow produced a structured plain-text result in `action\\\_items\\\_v2.txt` with:
-
-
-
-\- `ACTION ITEMS` heading
-
-\- owner / task / due layout
-
-\- extracted items such as:
-
-&#x20; - Unassigned / Finish API draft / By Friday
-
-&#x20; - Bob / Test upload flow / Next week
-
-
-
-\### Why This Matters
-
-
+### Why This Matters
 
 This pass moved document flow from “planner can propose the steps” to “the full mainline actually executes and writes user-visible artifacts.”
 
-
-
 This is more important than a synthetic smoke pass because it proves the end-to-end path works:
 
+- planning
+- task submit
+- task tick
+- LLM execution
+- previous-result handoff
+- shared file output
+- final task result reporting
 
-
-\- planning
-
-\- task submit
-
-\- task tick
-
-\- LLM execution
-
-\- previous-result handoff
-
-\- shared file output
-
-\- final task result reporting
-
-
-
-\### Result
-
-
+### Result
 
 Stable document-flow checkpoint:
 
+- summary flow: working
+- action-items flow: working
+- output path preservation: working
+- LLM file-content injection: working
+- `use_previous_text` write-back: working
+- finished task result + shared artifact output: working
 
-
-\- summary flow: working
-
-\- action-items flow: working
-
-\- output path preservation: working
-
-\- LLM file-content injection: working
-
-\- `use\\\_previous\\\_text` write-back: working
-
-\- finished task result + shared artifact output: working
-
-
-
-\### Evidence Kept
-
-
+### Evidence Kept
 
 Keep the latest terminal screenshots showing:
 
-
-
-\- scheduler smoke + runtime smoke pass
-
-\- summary flow finished + `summary\_v2.txt` written
-
-\- action-items flow finished + `action\_items\_v2.txt` written
-
-
+- scheduler smoke + runtime smoke pass
+- summary flow finished + `summary_v2.txt` written
+- action-items flow finished + `action_items_v2.txt` written
 
 These are useful as devlog proof and future demo / README evidence.
-
 
 ## 2026-04 Document Task Mainline Integration Pass
 
@@ -503,7 +339,6 @@ Keep the latest terminal evidence showing:
 
 These are strong proof points for future devlog, README, demo, and external presentation material.
 
-
 ## 2026-04 Document Task CLI Entry Pass
 
 This pass focused on making document-task creation more explicit at the CLI layer instead of relying only on free-form natural-language task goals.
@@ -574,4 +409,169 @@ Keep the latest terminal evidence showing:
 
 These are useful proof points for future README, demo, and operator-facing documentation.
 
+## 2026-04 Shared Artifact Visibility Pass
 
+This pass focused on improving task result visibility for completed document tasks.
+
+### Completed
+
+`app.py` was updated so that:
+
+- `task result <task_id>`
+- `task show <task_id>`
+
+now display shared-scope artifacts in addition to task-local runtime files.
+
+This means completed document tasks now expose shared outputs more directly instead of requiring the operator to remember that final artifacts are usually written under `workspace/shared/`.
+
+### Validation
+
+Confirmed working on finished document tasks:
+
+- `task result` shows `shared_artifacts`
+- `task show` shows `shared_artifacts`
+
+Confirmed shared-scope paths were visible in task output, including examples such as:
+
+- `workspace/shared/input.txt`
+- `workspace/shared/action_items_cli.txt`
+
+### Why This Matters
+
+Before this pass, task output mainly exposed task-local runtime files such as:
+
+- `result.json`
+- `plan.json`
+- `runtime_state.json`
+- `execution_log.json`
+- `trace.json`
+
+Those are useful for engineering inspection, but operators usually care most about the actual shared output artifact.
+
+This pass improves operator clarity, demo usability, and result discoverability without changing planner or scheduler core behavior.
+
+### Result
+
+Stable checkpoint after shared artifact visibility update:
+
+- task-local runtime paths: still visible
+- shared output artifacts: now visible
+- `task result` usability: improved
+- `task show` usability: improved
+
+## 2026-04 Document Task Smoke and Mainline Validation Pass
+
+This pass focused on locking the document-task checkpoint with repeatable validation.
+
+### Completed
+
+Added:
+
+- `tests/run_document_task_smoke.py`
+- `tests/run_mainline_smoke.py`
+
+`run_document_task_smoke.py` validates both document-task flows end-to-end:
+
+1. summary flow
+2. action-items flow
+
+The smoke covers:
+
+- task creation
+- task submission
+- task execution
+- task completion
+- shared output generation
+- `task result` output
+- `task show` output
+
+`run_mainline_smoke.py` was added as a higher-level validation entry for stable mainline checks.
+
+### Validation
+
+Confirmed passing:
+
+- summary document-task smoke: PASS
+- action-items document-task smoke: PASS
+- document-task smoke overall: PASS
+- stable mainline smoke: PASS
+
+Example outputs confirmed:
+
+- `summary_smoke.txt` created under `workspace/shared/`
+- `action_items_smoke.txt` created under `workspace/shared/`
+- smoke runner reported `ALL PASS`
+
+### Why This Matters
+
+Before this pass, document-task validation depended mostly on manual CLI testing.
+
+After this pass, the repository now has a repeatable smoke path that helps protect the document-task mainline against future regressions when `app.py`, scheduler, planner, or related task plumbing changes.
+
+This is a stronger engineering checkpoint because the feature is no longer only “working now” — it is also guarded by repeatable validation.
+
+### Result
+
+Stable checkpoint after document-task smoke integration:
+
+- document summary smoke: working
+- document action-items smoke: working
+- shared artifact validation: working
+- mainline smoke entry: working
+- repeatable regression protection: improved
+
+## 2026-04 AgentLoop Run Compatibility and Runtime Smoke Recovery Pass
+
+This pass focused on restoring runtime validation compatibility after `tests/test_agent_loop.py` exposed an interface mismatch.
+
+### Problem
+
+`runtime_smoke` was failing because:
+
+- `tests/test_agent_loop.py` called `loop.run(user_input)`
+- `core/agent/agent_loop.py` no longer exposed a compatible `run(...)` entry
+
+This caused runtime validation to fail with:
+
+- `AttributeError: 'AgentLoop' object has no attribute 'run'`
+
+### Completed
+
+`core/agent/agent_loop.py` was updated with a minimal compatibility `run(user_input: str)` entry.
+
+The fix was intentionally kept small:
+
+- restore compatibility with test expectations
+- preserve current direct / llm / task / single-shot routing structure
+- preserve forced planner-based document-task routing
+- avoid broad restructuring of the main AgentLoop body
+
+### Validation
+
+Confirmed passing after the compatibility restoration:
+
+- `tests/test_agent_loop.py`: PASS
+- `tests/run_runtime_smoke.py`: PASS
+- `tests/run_mainline_smoke.py`: PASS
+
+### Why This Matters
+
+This pass does not just fix a broken test.
+
+It restores a critical part of the runtime validation chain, which means the project once again has:
+
+- direct feature validation
+- task validation
+- runtime validation
+- stable mainline validation
+
+That makes the current checkpoint more trustworthy, because document-task stabilization is no longer isolated from runtime-level validation.
+
+### Result
+
+Stable checkpoint after AgentLoop compatibility recovery:
+
+- AgentLoop `run(...)` compatibility: restored
+- runtime smoke: restored
+- mainline smoke after runtime recovery: passing
+- validation chain completeness: improved
