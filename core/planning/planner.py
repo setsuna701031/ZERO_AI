@@ -9,7 +9,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v27
+    Deterministic Planner v28
 
     本版重點：
     1. 保留 document flow 偵測
@@ -19,10 +19,8 @@ class Planner:
     5. verify 類句型先於 document flow 判定
     6. 修正 action_items / summary task 句型優先序
     7. 保留使用者指定的 source / output path
-    8. 新增「結構化 document task 入口」：
-       - planner 會先看 context / route / kwargs 裡是否有結構化 document task
-       - 若有，直接依 task_type + mode 產 steps
-       - 若沒有，再退回自然語句 regex 規劃
+    8. 新增「結構化 document task 入口」
+    9. 新增 requirement-pack 多交付物規劃入口
     """
 
     _banner_printed = False
@@ -47,7 +45,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v27 (STRUCTURED DOCUMENT TASK ENTRY) ###")
+            print("### USING PLANNER v28 (DOCUMENT + REQUIREMENT PACK ENTRY) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -233,6 +231,17 @@ class Planner:
             )
             return self._build_action_items_steps(source_path, output_path)
 
+        if mode in ("requirement_pack", "requirement-pack", "requirementpack"):
+            source_path = input_file or "requirement.txt"
+
+            self.trace_logger.log_decision(
+                title="structured document task detected",
+                message=f"mode=requirement_pack, source={source_path}",
+                source="planner",
+                raw={"payload": payload},
+            )
+            return self._build_requirement_pack_steps(source_path)
+
         self.trace_logger.log_decision(
             title="structured document task ignored",
             message=f"unsupported mode={mode or '(empty)'}",
@@ -369,6 +378,8 @@ class Planner:
             return "action_items"
         if "summary" in lowered:
             return "summary"
+        if "acceptance_checklist" in lowered or "implementation_plan" in lowered or "project_summary" in lowered:
+            return "requirement_pack"
 
         return ""
 
@@ -509,6 +520,11 @@ class Planner:
                 if re.search(pattern, lowered):
                     return self._build_action_items_steps(source_path, output_path)
 
+        requirement_pack = self._extract_requirement_pack_request(text, all_paths)
+        if requirement_pack is not None:
+            source_path = requirement_pack.get("input_file") or "requirement.txt"
+            return self._build_requirement_pack_steps(source_path)
+
         if wants_summary:
             source_path = explicit_source or self._choose_default_document_source(all_paths) or "input.txt"
             output_path = explicit_output or self._choose_default_summary_output(all_paths) or "summary.txt"
@@ -532,6 +548,43 @@ class Planner:
             return self._build_summary_steps("input.txt", explicit_output or "summary.txt")
 
         return None
+
+    def _extract_requirement_pack_request(self, text: str, all_paths: List[str]) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = self._normalize_document_flow_text(text)
+
+        requirement_markers = [
+            "requirement",
+            "requirements",
+            "spec",
+            "specification",
+            "需求",
+            "需求書",
+        ]
+        output_markers = [
+            "project_summary.txt",
+            "implementation_plan.txt",
+            "acceptance_checklist.txt",
+        ]
+
+        has_requirement_source = any(marker in lowered for marker in requirement_markers)
+        has_requirement_outputs = all(marker in lowered for marker in output_markers)
+
+        if not has_requirement_outputs:
+            return None
+
+        source_path = self._extract_document_source_path(stripped, all_paths)
+        if not source_path:
+            if has_requirement_source:
+                source_path = "requirement.txt"
+            else:
+                return None
+
+        return {
+            "task_type": "document",
+            "mode": "requirement_pack",
+            "input_file": source_path,
+        }
 
     def _looks_like_document_flow_request(self, text: str) -> bool:
         lowered = self._normalize_document_flow_text(text)
@@ -734,6 +787,111 @@ class Planner:
                 "path": output_path,
                 "scope": "shared",
                 "use_previous_text": True,
+            },
+        ]
+
+    def _build_requirement_pack_steps(self, source_path: str) -> List[Dict[str, Any]]:
+        summary_prompt = (
+            "Read the requirement document below and produce a concise plain-text project summary.\n\n"
+            "Required sections:\n"
+            "1. Project Goal\n"
+            "2. Key Requirements\n"
+            "3. Constraints\n"
+            "4. Expected Deliverables\n\n"
+            "Rules:\n"
+            "- Keep it clear and engineering-oriented.\n"
+            "- Do not use JSON.\n"
+            "- Do not add extra commentary outside the summary.\n\n"
+            "Requirement document:\n"
+            "{{file_content}}\n"
+        )
+
+        implementation_prompt = (
+            "Read the requirement document below and produce a plain-text implementation plan.\n\n"
+            "Required sections:\n"
+            "1. Implementation Steps\n"
+            "2. Recommended Execution Order\n"
+            "3. Risks and Dependencies\n"
+            "4. Verification Focus\n\n"
+            "Rules:\n"
+            "- Keep the plan practical and engineering-oriented.\n"
+            "- Use numbered steps where useful.\n"
+            "- Do not use JSON.\n"
+            "- Do not add extra commentary outside the plan.\n\n"
+            "Requirement document:\n"
+            "{{file_content}}\n"
+        )
+
+        checklist_prompt = (
+            "Read the requirement document below and produce a plain-text acceptance checklist.\n\n"
+            "The output must contain exactly these section titles:\n"
+            "Acceptance Criteria\n"
+            "Verification\n"
+            "Deliverable\n\n"
+            "Rules:\n"
+            "- Each section must contain concrete bullet points.\n"
+            "- Keep it plain text.\n"
+            "- Do not use JSON.\n"
+            "- Do not add extra commentary outside the checklist.\n\n"
+            "Requirement document:\n"
+            "{{file_content}}\n"
+        )
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": summary_prompt,
+            },
+            {
+                "type": "write_file",
+                "path": "project_summary.txt",
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": implementation_prompt,
+            },
+            {
+                "type": "write_file",
+                "path": "implementation_plan.txt",
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": checklist_prompt,
+            },
+            {
+                "type": "write_file",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+            {
+                "type": "verify",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "contains": "Acceptance Criteria",
+            },
+            {
+                "type": "verify",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "contains": "Verification",
+            },
+            {
+                "type": "verify",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "contains": "Deliverable",
             },
         ]
 

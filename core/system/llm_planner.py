@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 class LLMPlanner:
     """
-    LLM Brain / LLM Planner v3
+    LLM Brain / LLM Planner v4
 
     修正版目標：
     1. 保留 LLM JSON 規劃能力
@@ -15,14 +15,9 @@ class LLMPlanner:
     3. 支援 ensure_file，避免「建立但沒內容」被轉成 write_file(path, "")
     4. 支援多子句：例如「幫我建立一個 a.txt，然後再讀出來」
     5. 支援跨子句 last_path 記憶
-    6. 補上 document flow deterministic guard：
-       - summarize input.txt into summary.txt
-       - read input.txt and extract action items into action_items.txt
-       這類句型優先產出 read_file -> llm -> write_file
-    7. 修正 document flow 固定寫死 input.txt / summary.txt / action_items.txt 的問題：
-       - 保留使用者指定的 source path
-       - 保留使用者指定的 output path
-       - 支援 workspace/shared/...、shared/...、任意 *.txt / *.md / *.log / *.json 等路徑
+    6. 保留 summary / action-items document flow deterministic guard
+    7. 保留使用者指定的 source / output path
+    8. 新增 requirement-pack deterministic guard
     """
 
     def __init__(
@@ -34,6 +29,17 @@ class LLMPlanner:
         self.llm_client = llm_client
         self.debug = debug
         self.max_steps = max_steps
+
+
+
+    def _effective_max_steps(self, steps: List[Dict[str, Any]]) -> int:
+        if not isinstance(steps, list):
+            return self.max_steps
+
+        if any(str(step.get("path") or "").strip().lower() == "project_summary.txt" for step in steps if isinstance(step, dict)):
+            return max(self.max_steps, len(steps))
+
+        return self.max_steps
 
     # ============================================================
     # public api
@@ -118,7 +124,7 @@ class LLMPlanner:
                 ok=True,
                 intent=intent,
                 final_answer=f"已規劃 {len(document_steps)} 個步驟",
-                steps=document_steps[: self.max_steps],
+                steps=document_steps[: self._effective_max_steps(document_steps)],
                 error=None,
                 fallback_used=False,
                 reason="document flow deterministic guard matched",
@@ -146,7 +152,7 @@ class LLMPlanner:
             ok=True,
             intent=intent,
             final_answer=f"已規劃 {len(steps)} 個步驟",
-            steps=steps[: self.max_steps],
+            steps=steps[: self._effective_max_steps(steps)],
             error=None,
             fallback_used=False,
             reason="deterministic guard matched",
@@ -207,6 +213,11 @@ class LLMPlanner:
             if self._looks_like_document_flow_request(text):
                 return self._build_action_items_steps(source_path, output_path)
 
+        requirement_pack = self._extract_requirement_pack_request(text, all_paths)
+        if requirement_pack is not None:
+            source_path = requirement_pack.get("input_file") or "requirement.txt"
+            return self._build_requirement_pack_steps(source_path)
+
         if wants_summary:
             source_path = explicit_source or self._choose_default_document_source(all_paths) or "input.txt"
             output_path = explicit_output or self._choose_default_summary_output(all_paths) or "summary.txt"
@@ -232,6 +243,43 @@ class LLMPlanner:
             )
 
         return None
+
+    def _extract_requirement_pack_request(self, text: str, all_paths: List[str]) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = self._normalize_document_flow_text(text)
+
+        requirement_markers = [
+            "requirement",
+            "requirements",
+            "spec",
+            "specification",
+            "需求",
+            "需求書",
+        ]
+        output_markers = [
+            "project_summary.txt",
+            "implementation_plan.txt",
+            "acceptance_checklist.txt",
+        ]
+
+        has_requirement_source = any(marker in lowered for marker in requirement_markers)
+        has_requirement_outputs = all(marker in lowered for marker in output_markers)
+
+        if not has_requirement_outputs:
+            return None
+
+        source_path = self._extract_document_source_path(stripped, all_paths)
+        if not source_path:
+            if has_requirement_source:
+                source_path = "requirement.txt"
+            else:
+                return None
+
+        return {
+            "task_type": "document",
+            "mode": "requirement_pack",
+            "input_file": source_path,
+        }
 
     def _looks_like_document_flow_request(self, text: str) -> bool:
         lowered = self._normalize_document_flow_text(text)
@@ -410,6 +458,111 @@ class LLMPlanner:
             },
         ]
 
+    def _build_requirement_pack_steps(self, source_path: str) -> List[Dict[str, Any]]:
+        summary_prompt = (
+            "Read the requirement document below and produce a concise plain-text project summary.\n\n"
+            "Required sections:\n"
+            "1. Project Goal\n"
+            "2. Key Requirements\n"
+            "3. Constraints\n"
+            "4. Expected Deliverables\n\n"
+            "Rules:\n"
+            "- Keep it clear and engineering-oriented.\n"
+            "- Do not use JSON.\n"
+            "- Do not add extra commentary outside the summary.\n\n"
+            "Requirement document:\n"
+            "{{file_content}}\n"
+        )
+
+        implementation_prompt = (
+            "Read the requirement document below and produce a plain-text implementation plan.\n\n"
+            "Required sections:\n"
+            "1. Implementation Steps\n"
+            "2. Recommended Execution Order\n"
+            "3. Risks and Dependencies\n"
+            "4. Verification Focus\n\n"
+            "Rules:\n"
+            "- Keep the plan practical and engineering-oriented.\n"
+            "- Use numbered steps where useful.\n"
+            "- Do not use JSON.\n"
+            "- Do not add extra commentary outside the plan.\n\n"
+            "Requirement document:\n"
+            "{{file_content}}\n"
+        )
+
+        checklist_prompt = (
+            "Read the requirement document below and produce a plain-text acceptance checklist.\n\n"
+            "The output must contain exactly these section titles:\n"
+            "Acceptance Criteria\n"
+            "Verification\n"
+            "Deliverable\n\n"
+            "Rules:\n"
+            "- Each section must contain concrete bullet points.\n"
+            "- Keep it plain text.\n"
+            "- Do not use JSON.\n"
+            "- Do not add extra commentary outside the checklist.\n\n"
+            "Requirement document:\n"
+            "{{file_content}}\n"
+        )
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": summary_prompt,
+            },
+            {
+                "type": "write_file",
+                "path": "project_summary.txt",
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": implementation_prompt,
+            },
+            {
+                "type": "write_file",
+                "path": "implementation_plan.txt",
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt_template": checklist_prompt,
+            },
+            {
+                "type": "write_file",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "use_previous_text": True,
+            },
+            {
+                "type": "verify",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "contains": "Acceptance Criteria",
+            },
+            {
+                "type": "verify",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "contains": "Verification",
+            },
+            {
+                "type": "verify",
+                "path": "acceptance_checklist.txt",
+                "scope": "shared",
+                "contains": "Deliverable",
+            },
+        ]
+
     def _build_summary_steps(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
         prompt_template = (
             "Summarize the following document into a concise plain-text summary.\n\n"
@@ -446,8 +599,11 @@ class LLMPlanner:
             third_type = str(steps[2].get("type") or "").strip().lower()
             if first_type == "read_file" and second_type == "llm" and third_type == "write_file":
                 llm_mode = str(steps[1].get("mode") or "").strip().lower()
+                third_path = str(steps[2].get("path") or "").strip().lower()
                 if llm_mode == "action_items":
                     return "action_items"
+                if llm_mode == "summary" and third_path == "project_summary.txt":
+                    return "requirement_pack"
                 if llm_mode == "summary":
                     return "summary"
         if steps:
@@ -866,7 +1022,8 @@ Input:
             raw_steps = []
 
         steps: List[Dict[str, Any]] = []
-        for item in raw_steps[: self.max_steps]:
+        effective_limit = self._effective_max_steps(raw_steps)
+        for item in raw_steps[: effective_limit]:
             normalized = self._normalize_step(item)
             if normalized is not None:
                 steps.append(normalized)
@@ -1000,7 +1157,7 @@ Input:
 
         return {
             "ok": ok,
-            "planner_mode": "llm_brain_v3",
+            "planner_mode": "llm_brain_v4",
             "intent": intent,
             "final_answer": final_answer,
             "steps": steps,
