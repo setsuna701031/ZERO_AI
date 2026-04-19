@@ -14,28 +14,41 @@ MAINLINE_SMOKE_PATH = REPO_ROOT / "tests" / "run_mainline_smoke.py"
 SHARED_DIR = REPO_ROOT / "workspace" / "shared"
 
 
+def safe_print(text: str = "") -> None:
+    value = str(text or "")
+    try:
+        print(value)
+        return
+    except UnicodeEncodeError:
+        pass
+
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    sanitized = value.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    print(sanitized)
+
+
 def print_help() -> None:
-    print("ZERO unified entry")
-    print("")
-    print("Usage:")
-    print("  python main.py start")
-    print("  python main.py runtime")
-    print("  python main.py smoke")
-    print("  python main.py doc-demo")
-    print("  python main.py requirement-demo")
-    print("  python main.py execution-demo")
-    print("  python main.py health")
-    print("  python main.py help")
-    print("")
-    print("Commands:")
-    print("  start             Launch interactive ZERO CLI")
-    print("  runtime           Show runtime information")
-    print("  smoke             Run stable mainline smoke validation")
-    print("  doc-demo          Run end-to-end document demo flow")
-    print("  requirement-demo  Run requirement-pack demo flow")
-    print("  execution-demo    Run execution-proof demo flow")
-    print("  health            Show health information")
-    print("  help              Show this help")
+    safe_print("ZERO unified entry")
+    safe_print("")
+    safe_print("Usage:")
+    safe_print("  python main.py start")
+    safe_print("  python main.py runtime")
+    safe_print("  python main.py smoke")
+    safe_print("  python main.py doc-demo")
+    safe_print("  python main.py requirement-demo")
+    safe_print("  python main.py execution-demo")
+    safe_print("  python main.py health")
+    safe_print("  python main.py help")
+    safe_print("")
+    safe_print("Commands:")
+    safe_print("  start             Launch interactive ZERO CLI")
+    safe_print("  runtime           Show runtime information")
+    safe_print("  smoke             Run stable mainline smoke validation")
+    safe_print("  doc-demo          Run end-to-end document demo flow")
+    safe_print("  requirement-demo  Run requirement-pack demo flow")
+    safe_print("  execution-demo    Run execution-proof demo flow")
+    safe_print("  health            Show health information")
+    safe_print("  help              Show this help")
 
 
 def run_process(args: List[str], capture: bool = False) -> subprocess.CompletedProcess:
@@ -144,7 +157,7 @@ def create_task(command_name: str, *args: str) -> str:
     task_id = parse_task_id(result.stdout)
     if not task_id:
         raise RuntimeError(f"Could not parse task_id from {command_name}\n{result.stdout}")
-    print(f"[task] created {command_name}: {task_id}")
+    safe_print(f"[task] created {command_name}: {task_id}")
     return task_id
 
 
@@ -153,7 +166,7 @@ def submit_task(task_id: str) -> None:
     require_success(result, f"submit {task_id}")
     if '"ok": false' in (result.stdout or "").lower():
         raise RuntimeError(f"Submit failed for {task_id}\n{result.stdout}")
-    print(f"[task] submitted: {task_id}")
+    safe_print(f"[task] submitted: {task_id}")
 
 
 def get_task_result_text(task_id: str) -> str:
@@ -177,7 +190,7 @@ def wait_until_finished(task_id: str, max_ticks: int = 10) -> None:
         last_output = result_text
         lowered = result_text.lower()
         if "status: finished" in lowered or "status: completed" in lowered:
-            print(f"[task] finished: {task_id}")
+            safe_print(f"[task] finished: {task_id}")
             return
         if "status: failed" in lowered:
             raise RuntimeError(f"Task failed: {task_id}\n{result_text}")
@@ -189,7 +202,7 @@ def wait_until_finished(task_id: str, max_ticks: int = 10) -> None:
 
 def run_doc_demo() -> int:
     input_path = write_doc_demo_input()
-    print(f"[doc-demo] input ready: {input_path}")
+    safe_print(f"[doc-demo] input ready: {input_path}")
 
     summary_task_id = create_task("doc-summary", "input.txt", "summary_demo.txt")
     submit_task(summary_task_id)
@@ -205,25 +218,25 @@ def run_doc_demo() -> int:
     summary_output = SHARED_DIR / "summary_demo.txt"
     action_output = SHARED_DIR / "action_items_demo.txt"
 
-    print("")
-    print("[doc-demo] summary task result")
-    print("----------------------------------------")
-    print(summary_result.rstrip())
-    print("")
-    print("[doc-demo] action-items task result")
-    print("----------------------------------------")
-    print(action_result.rstrip())
-    print("")
-    print("[doc-demo] outputs")
-    print(f"  summary: {summary_output}")
-    print(f"  action items: {action_output}")
-    print("[doc-demo] PASS")
+    safe_print("")
+    safe_print("[doc-demo] summary task result")
+    safe_print("----------------------------------------")
+    safe_print(summary_result.rstrip())
+    safe_print("")
+    safe_print("[doc-demo] action-items task result")
+    safe_print("----------------------------------------")
+    safe_print(action_result.rstrip())
+    safe_print("")
+    safe_print("[doc-demo] outputs")
+    safe_print(f"  summary: {summary_output}")
+    safe_print(f"  action items: {action_output}")
+    safe_print("[doc-demo] PASS")
     return 0
 
 
 def run_requirement_demo() -> int:
     input_path = write_requirement_demo_input()
-    print(f"[requirement-demo] input ready: {input_path}")
+    safe_print(f"[requirement-demo] input ready: {input_path}")
 
     task_id = create_task("requirement-pack", "requirement.txt")
     submit_task(task_id)
@@ -236,20 +249,20 @@ def run_requirement_demo() -> int:
     implementation_plan_path = SHARED_DIR / "implementation_plan.txt"
     acceptance_checklist_path = SHARED_DIR / "acceptance_checklist.txt"
 
-    print("")
-    print("[requirement-demo] task result")
-    print("----------------------------------------")
-    print(result_text.rstrip())
-    print("")
-    print("[requirement-demo] task show")
-    print("----------------------------------------")
-    print(show_text.rstrip())
-    print("")
-    print("[requirement-demo] outputs")
-    print(f"  project summary: {project_summary_path}")
-    print(f"  implementation plan: {implementation_plan_path}")
-    print(f"  acceptance checklist: {acceptance_checklist_path}")
-    print("[requirement-demo] PASS")
+    safe_print("")
+    safe_print("[requirement-demo] task result")
+    safe_print("----------------------------------------")
+    safe_print(result_text.rstrip())
+    safe_print("")
+    safe_print("[requirement-demo] task show")
+    safe_print("----------------------------------------")
+    safe_print(show_text.rstrip())
+    safe_print("")
+    safe_print("[requirement-demo] outputs")
+    safe_print(f"  project summary: {project_summary_path}")
+    safe_print(f"  implementation plan: {implementation_plan_path}")
+    safe_print(f"  acceptance checklist: {acceptance_checklist_path}")
+    safe_print("[requirement-demo] PASS")
     return 0
 
 
@@ -259,7 +272,7 @@ def run_execution_demo() -> int:
     if hello_path.exists():
         hello_path.unlink()
 
-    print(f"[execution-demo] target: {hello_path}")
+    safe_print(f"[execution-demo] target: {hello_path}")
 
     task_id = create_task("execution-proof")
     submit_task(task_id)
@@ -268,18 +281,18 @@ def run_execution_demo() -> int:
     result_text = get_task_result_text(task_id)
     show_text = get_task_show_text(task_id)
 
-    print("")
-    print("[execution-demo] task result")
-    print("----------------------------------------")
-    print(result_text.rstrip())
-    print("")
-    print("[execution-demo] task show")
-    print("----------------------------------------")
-    print(show_text.rstrip())
-    print("")
-    print("[execution-demo] outputs")
-    print(f"  hello.py: {hello_path}")
-    print("[execution-demo] PASS")
+    safe_print("")
+    safe_print("[execution-demo] task result")
+    safe_print("----------------------------------------")
+    safe_print(result_text.rstrip())
+    safe_print("")
+    safe_print("[execution-demo] task show")
+    safe_print("----------------------------------------")
+    safe_print(show_text.rstrip())
+    safe_print("")
+    safe_print("[execution-demo] outputs")
+    safe_print(f"  hello.py: {hello_path}")
+    safe_print("[execution-demo] PASS")
     return 0
 
 
@@ -320,8 +333,8 @@ def main(argv: List[str]) -> int:
     if command == "execution-demo":
         return run_execution_demo()
 
-    print(f"Unknown command: {command}")
-    print("")
+    safe_print(f"Unknown command: {command}")
+    safe_print("")
     print_help()
     return 1
 
