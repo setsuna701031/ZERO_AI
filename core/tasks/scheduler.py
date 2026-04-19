@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.planning.replanner import Replanner
+from core.planning.planner import Planner
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
@@ -486,12 +487,50 @@ class Scheduler(RuntimeTaskScheduler):
         current_tick: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         agent_loop = self._resolve_explicit_agent_loop()
-        run_task_loop_fn = getattr(agent_loop, "run_task_loop", None) if agent_loop is not None else None
+        if agent_loop is None:
+            return None
+
+        run_task_loop_fn = getattr(agent_loop, "run_task_loop", None)
+        if not callable(run_task_loop_fn):
+            run_task_loop_fn = getattr(agent_loop, "run_task", None)
         if not callable(run_task_loop_fn):
             return None
 
+        task_id = self._extract_task_id(task)
+        task_dir = str(task.get("task_dir") or "").strip()
+        if not task_dir and task_id:
+            task_dir = os.path.join(self.tasks_root, task_id)
+
+        def _write_loop_fallback_trace(label: str, payload: Dict[str, Any]) -> None:
+            try:
+                if not task_dir:
+                    return
+                os.makedirs(task_dir, exist_ok=True)
+                trace_path = os.path.join(task_dir, "loop_fallback_trace.log")
+                record = {
+                    "ts": int(time.time()),
+                    "tick": current_tick if current_tick is not None else getattr(self, "current_tick", 0),
+                    "task_id": task_id,
+                    "label": label,
+                    "payload": payload,
+                }
+                with open(trace_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
         runner_result: Optional[Dict[str, Any]] = None
         loop_error_text = ""
+
+        _write_loop_fallback_trace(
+            "agent_loop_attempt",
+            {
+                "goal": str(task.get("goal") or ""),
+                "has_planner_result": isinstance(task.get("planner_result"), dict),
+                "agent_loop_type": type(agent_loop).__name__,
+                "run_method": getattr(run_task_loop_fn, "__name__", "unknown"),
+            },
+        )
 
         try:
             runner_result = run_task_loop_fn(
@@ -503,12 +542,60 @@ class Scheduler(RuntimeTaskScheduler):
         except Exception as e:
             loop_error_text = str(e).strip()
             runner_result = None
+            _write_loop_fallback_trace(
+                "agent_loop_exception",
+                {
+                    "error": loop_error_text,
+                    "exception_class": e.__class__.__name__,
+                },
+            )
 
         if isinstance(runner_result, dict):
             loop_error_text = str(runner_result.get("error") or "").strip()
+            _write_loop_fallback_trace(
+                "agent_loop_result",
+                {
+                    "ok": bool(runner_result.get("ok", False)),
+                    "action": str(runner_result.get("action") or ""),
+                    "status": str(runner_result.get("status") or ""),
+                    "mode": str(runner_result.get("mode") or ""),
+                    "error": loop_error_text,
+                    "has_task": isinstance(runner_result.get("task"), dict),
+                    "has_write_back": isinstance(runner_result.get("write_back"), dict),
+                },
+            )
+        else:
+            _write_loop_fallback_trace(
+                "agent_loop_result",
+                {
+                    "ok": False,
+                    "action": "invalid_result",
+                    "status": "",
+                    "mode": "",
+                    "error": loop_error_text,
+                    "result_type": type(runner_result).__name__ if runner_result is not None else "NoneType",
+                },
+            )
 
-        if self._should_fallback_to_simple_runner(runner_result=runner_result, loop_error_text=loop_error_text):
-            if self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text):
+        should_fallback = self._should_fallback_to_simple_runner(
+            runner_result=runner_result,
+            loop_error_text=loop_error_text,
+        )
+        eligible_simple_fallback = self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text)
+
+        if should_fallback:
+            _write_loop_fallback_trace(
+                "agent_loop_fallback_decision",
+                {
+                    "should_fallback": True,
+                    "eligible_simple_fallback": eligible_simple_fallback,
+                    "loop_error_text": loop_error_text,
+                    "runner_result_action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
+                    "runner_result_status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
+                },
+            )
+
+            if eligible_simple_fallback:
                 return None
 
             result = runner_result if isinstance(runner_result, dict) else {
@@ -520,14 +607,37 @@ class Scheduler(RuntimeTaskScheduler):
             self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
             return result
 
+        _write_loop_fallback_trace(
+            "agent_loop_accepted",
+            {
+                "should_fallback": False,
+                "status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
+                "action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
+            },
+        )
         self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
         return runner_result
 
     def _resolve_explicit_agent_loop(self) -> Any:
         agent_loop = getattr(self, "agent_loop", None)
-        if agent_loop is None:
-            agent_loop = getattr(self, "_agent_loop", None)
-        return agent_loop
+        if agent_loop is not None:
+            return agent_loop
+
+        agent_loop = getattr(self, "_agent_loop", None)
+        if agent_loop is not None:
+            return agent_loop
+
+        task_manager = getattr(self, "task_manager", None)
+        if task_manager is not None:
+            manager_loop = getattr(task_manager, "agent_loop", None)
+            if manager_loop is not None:
+                return manager_loop
+
+            manager_loop = getattr(task_manager, "_agent_loop", None)
+            if manager_loop is not None:
+                return manager_loop
+
+        return None
 
     def _should_fallback_to_simple_runner(
         self,
@@ -1343,8 +1453,9 @@ class Scheduler(RuntimeTaskScheduler):
 
         parsed = self._parse_goal_overrides(goal.strip())
         clean_goal = parsed["clean_goal"]
+        document_payload = copy.deepcopy(parsed.get("document_payload") or {}) if isinstance(parsed, dict) else {}
 
-        planner_result = self._plan_goal(clean_goal)
+        planner_result = self._plan_goal(clean_goal, document_payload=document_payload)
 
         override_steps = parsed.get("steps")
         if isinstance(override_steps, list):
@@ -1382,6 +1493,11 @@ class Scheduler(RuntimeTaskScheduler):
             "task_name": task_name,
             "title": clean_goal,
             "goal": clean_goal,
+            "task_type": str(document_payload.get("task_type") or ""),
+            "document_mode": str(document_payload.get("mode") or ""),
+            "input_file": str(document_payload.get("input_file") or ""),
+            "output_file": str(document_payload.get("output_file") or ""),
+            "document_payload": copy.deepcopy(document_payload),
             "status": initial_status,
             "priority": int(priority),
             "current_step_index": 0,
@@ -1450,6 +1566,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "goal": clean_goal,
                 "steps_total": len(steps),
                 "depends_on": copy.deepcopy(normalized_depends_on),
+                "document_payload": copy.deepcopy(document_payload),
             },
         )
         self._trace_status(
@@ -2911,10 +3028,135 @@ class Scheduler(RuntimeTaskScheduler):
     # Planner
     # ------------------------------------------------------------
 
-    def _plan_goal(self, goal: str) -> Dict[str, Any]:
-        clean_goal = str(goal or "").strip()
 
-        external_plan = self._plan_goal_via_agent_planners(clean_goal)
+    def _should_force_deterministic_task_planner(self, goal: str) -> bool:
+        text = str(goal or "").strip().lower()
+        if not text:
+            return False
+
+        shared_markers = [
+            "workspace/shared/",
+            "shared/",
+            "workspace\\shared\\",
+            "shared\\",
+        ]
+        verify_markers = [
+            " verify ",
+            " verifies ",
+            " verified ",
+            " verify",
+            "verifies the file exists",
+            "verify the file exists",
+            "check that",
+            "confirm that",
+            "contains",
+            "equals",
+            "exists",
+            "確認",
+            "檢查",
+            "驗證",
+        ]
+
+        if any(marker in text for marker in shared_markers):
+            return True
+        return any(marker in text for marker in verify_markers)
+
+    def _plan_goal_via_forced_deterministic_planner(self, goal: str) -> Optional[Dict[str, Any]]:
+        context = {
+            "user_input": goal,
+            "workspace": self.workspace_dir,
+        }
+        route = {
+            "mode": "task",
+            "task": True,
+        }
+
+        planners: List[Any] = []
+
+        agent_loop = getattr(self, "agent_loop", None)
+        deterministic_planner = getattr(agent_loop, "planner", None) if agent_loop is not None else None
+        if deterministic_planner is not None:
+            planners.append(deterministic_planner)
+
+        try:
+            planners.append(
+                Planner(
+                    workspace_dir=self.workspace_dir,
+                    workspace_root=self.workspace_dir,
+                    debug=bool(getattr(self, "debug", False)),
+                )
+            )
+        except Exception:
+            pass
+
+        seen = set()
+        unique_planners: List[Any] = []
+        for planner in planners:
+            if planner is None:
+                continue
+            pid = id(planner)
+            if pid in seen:
+                continue
+            seen.add(pid)
+            unique_planners.append(planner)
+
+        for planner in unique_planners:
+            plan = None
+            plan_fn = getattr(planner, "plan", None)
+            if callable(plan_fn):
+                try:
+                    plan = plan_fn(context=context, user_input=goal, route=route)
+                except TypeError:
+                    try:
+                        plan = plan_fn(user_input=goal, context=context, route=route)
+                    except TypeError:
+                        try:
+                            plan = plan_fn(goal)
+                        except Exception:
+                            plan = None
+                except Exception:
+                    plan = None
+
+            if plan is None:
+                plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+
+            normalized = self._normalize_external_plan(plan)
+            if isinstance(normalized, dict):
+                steps = normalized.get("steps", [])
+                if isinstance(steps, list) and steps:
+                    return normalized
+
+        return None
+
+    def _plan_goal(
+        self,
+        goal: str,
+        document_payload: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        clean_goal = str(goal or "").strip()
+        normalized_document_payload = copy.deepcopy(document_payload) if isinstance(document_payload, dict) else None
+
+        if normalized_document_payload:
+            external_plan = self._plan_goal_via_agent_planners(
+                clean_goal,
+                document_payload=normalized_document_payload,
+            )
+            if isinstance(external_plan, dict):
+                steps = external_plan.get("steps", [])
+                if isinstance(steps, list) and steps:
+                    return external_plan
+
+        if self._should_force_deterministic_task_planner(clean_goal):
+            forced_plan = self._plan_goal_via_forced_deterministic_planner(clean_goal)
+            if isinstance(forced_plan, dict):
+                steps = forced_plan.get("steps", [])
+                if isinstance(steps, list) and steps:
+                    return forced_plan
+
+        external_plan = self._plan_goal_via_agent_planners(
+            clean_goal,
+            document_payload=normalized_document_payload,
+        )
         if isinstance(external_plan, dict):
             steps = external_plan.get("steps", [])
             if isinstance(steps, list) and steps:
@@ -2976,10 +3218,44 @@ class Scheduler(RuntimeTaskScheduler):
             "steps": [],
         }
 
-    def _plan_goal_via_agent_planners(self, goal: str) -> Optional[Dict[str, Any]]:
+    def _plan_goal_via_agent_planners(
+        self,
+        goal: str,
+        document_payload: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         agent_loop = getattr(self, "agent_loop", None)
         if agent_loop is None:
             return None
+
+        planners: List[Any] = []
+        llm_planner = getattr(agent_loop, "llm_planner", None)
+        deterministic_planner = getattr(agent_loop, "planner", None)
+
+        if llm_planner is not None:
+            planners.append(llm_planner)
+        if deterministic_planner is not None:
+            planners.append(deterministic_planner)
+
+        context = {
+            "user_input": goal,
+            "workspace": self.workspace_dir,
+        }
+        route = {
+            "mode": "task",
+            "task": True,
+        }
+
+        if isinstance(document_payload, dict) and document_payload:
+            context.update(copy.deepcopy(document_payload))
+            route["document_task"] = True
+
+        for planner in planners:
+            plan = self._call_planner_like(planner, context=context, user_input=goal, route=route)
+            normalized = self._normalize_external_plan(plan)
+            if normalized is not None:
+                return normalized
+
+        return None
 
         planners: List[Any] = []
         llm_planner = getattr(agent_loop, "llm_planner", None)
@@ -3110,6 +3386,150 @@ class Scheduler(RuntimeTaskScheduler):
             "clean_goal": clean_goal,
             "depends_on": depends_on,
             "steps": steps if steps else None,
+            "document_payload": self._extract_document_task_payload(clean_goal),
+        }
+
+
+    def _extract_all_document_file_paths(self, text: str) -> List[str]:
+        if not text:
+            return []
+
+        results: List[str] = []
+        pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b"
+        for match in re.finditer(pattern, text):
+            value = str(match.group(1)).strip()
+            if value and value not in results:
+                results.append(value)
+        return results
+
+    def _extract_document_arrow_paths(self, text: str) -> Optional[Tuple[str, str]]:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return None
+
+        match = re.search(
+            r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        source_path = str(match.group(1)).strip()
+        output_path = str(match.group(2)).strip()
+        if not source_path or not output_path:
+            return None
+
+        return source_path, output_path
+
+    def _extract_document_source_path(self, text: str, all_paths: List[str]) -> str:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                value = str(match.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_document_arrow_paths(stripped)
+        if arrow is not None:
+            return arrow[0]
+
+        if all_paths:
+            return all_paths[0]
+
+        return ""
+
+    def _extract_document_output_path(self, text: str, all_paths: List[str]) -> str:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+            r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                value = str(match.group(1)).strip()
+                if value:
+                    return value
+
+        arrow = self._extract_document_arrow_paths(stripped)
+        if arrow is not None:
+            return arrow[1]
+
+        if len(all_paths) >= 2:
+            return all_paths[-1]
+
+        return ""
+
+    def _extract_document_task_payload(self, goal: str) -> Optional[Dict[str, str]]:
+        stripped = str(goal or "").strip()
+        if not stripped:
+            return None
+
+        lowered = stripped.lower()
+        all_paths = self._extract_all_document_file_paths(stripped)
+
+        action_keywords = [
+            "action item",
+            "action items",
+            "extract action items",
+            "todo",
+            "to-do",
+            "行動項目",
+            "待辦事項",
+        ]
+        summary_keywords = [
+            "summary",
+            "summarize",
+            "summarise",
+            "摘要",
+            "總結",
+        ]
+
+        wants_action_items = any(keyword in lowered for keyword in action_keywords)
+        wants_summary = any(keyword in lowered for keyword in summary_keywords)
+
+        if not wants_action_items and not wants_summary:
+            output_hint = self._extract_document_output_path(stripped, all_paths).lower()
+            if "action_items" in output_hint or "action-items" in output_hint or "actionitems" in output_hint:
+                wants_action_items = True
+            elif "summary" in output_hint:
+                wants_summary = True
+
+        if not wants_action_items and not wants_summary:
+            return None
+
+        input_file = self._extract_document_source_path(stripped, all_paths) or "input.txt"
+
+        if wants_action_items:
+            output_file = self._extract_document_output_path(stripped, all_paths) or "action_items.txt"
+            return {
+                "task_type": "document",
+                "mode": "action_items",
+                "input_file": input_file,
+                "output_file": output_file,
+            }
+
+        output_file = self._extract_document_output_path(stripped, all_paths) or "summary.txt"
+        return {
+            "task_type": "document",
+            "mode": "summary",
+            "input_file": input_file,
+            "output_file": output_file,
         }
 
     def _parse_inline_step(self, text: str) -> Optional[Dict[str, Any]]:

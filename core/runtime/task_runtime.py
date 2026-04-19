@@ -376,7 +376,6 @@ class TaskRuntime:
             "final_result": copy.deepcopy(task.get("final_result")),
             "created_at": self._now(),
             "updated_at": self._now(),
-            # Agent Loop v2 decision record fields
             "last_observation": copy.deepcopy(task.get("last_observation", {})) if isinstance(task.get("last_observation"), dict) else {},
             "last_decision": str(task.get("last_decision") or ""),
             "last_decision_reason": str(task.get("last_decision_reason") or ""),
@@ -435,48 +434,40 @@ class TaskRuntime:
         normalized.setdefault("created_at", self._now())
         normalized["updated_at"] = self._now()
 
-        # Preserve Agent Loop v2 decision record fields
-        if "last_observation" in task and isinstance(task.get("last_observation"), dict):
-            normalized["last_observation"] = copy.deepcopy(task.get("last_observation"))
-        elif not isinstance(normalized.get("last_observation"), dict):
-            normalized["last_observation"] = {}
-
-        normalized["last_decision"] = str(
-            task.get("last_decision")
-            if task.get("last_decision") is not None
-            else normalized.get("last_decision", "")
-            or ""
-        )
-        normalized["last_decision_reason"] = str(
-            task.get("last_decision_reason")
-            if task.get("last_decision_reason") is not None
-            else normalized.get("last_decision_reason", "")
-            or ""
-        )
-        normalized["next_action"] = str(
-            task.get("next_action")
-            if task.get("next_action") is not None
-            else normalized.get("next_action", "")
-            or ""
-        )
-        normalized["terminal_reason"] = str(
-            task.get("terminal_reason")
-            if task.get("terminal_reason") is not None
-            else normalized.get("terminal_reason", "")
-            or ""
-        )
-        normalized["loop_cycle_count"] = int(
-            task.get("loop_cycle_count")
-            if task.get("loop_cycle_count") is not None
-            else normalized.get("loop_cycle_count", 0)
-            or 0
+        normalized["last_observation"] = self._prefer_nonempty_dict(
+            normalized.get("last_observation"),
+            task.get("last_observation"),
+            default={},
         )
 
-        task_loop_history = task.get("loop_history")
-        if isinstance(task_loop_history, list):
-            normalized["loop_history"] = copy.deepcopy(task_loop_history)
-        elif not isinstance(normalized.get("loop_history"), list):
-            normalized["loop_history"] = []
+        normalized["last_decision"] = self._prefer_nonempty_str(
+            normalized.get("last_decision"),
+            task.get("last_decision"),
+        )
+        normalized["last_decision_reason"] = self._prefer_nonempty_str(
+            normalized.get("last_decision_reason"),
+            task.get("last_decision_reason"),
+        )
+        normalized["next_action"] = self._prefer_nonempty_str(
+            normalized.get("next_action"),
+            task.get("next_action"),
+        )
+        normalized["terminal_reason"] = self._prefer_nonempty_str(
+            normalized.get("terminal_reason"),
+            task.get("terminal_reason"),
+        )
+
+        normalized["loop_cycle_count"] = self._prefer_positive_int(
+            normalized.get("loop_cycle_count"),
+            task.get("loop_cycle_count"),
+            default=0,
+        )
+
+        normalized["loop_history"] = self._prefer_nonempty_list(
+            normalized.get("loop_history"),
+            task.get("loop_history"),
+            default=[],
+        )
 
         return normalized
 
@@ -499,20 +490,23 @@ class TaskRuntime:
     def _sync_loop_fields_from_task(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         synced = copy.deepcopy(state)
 
-        if isinstance(task.get("last_observation"), dict):
+        if isinstance(task.get("last_observation"), dict) and task.get("last_observation"):
             synced["last_observation"] = copy.deepcopy(task.get("last_observation"))
 
         for key in ("last_decision", "last_decision_reason", "next_action", "terminal_reason"):
-            if key in task:
-                synced[key] = str(task.get(key) or "")
+            value = task.get(key)
+            if value is not None and str(value).strip():
+                synced[key] = str(value).strip()
 
         if "loop_cycle_count" in task:
             try:
-                synced["loop_cycle_count"] = int(task.get("loop_cycle_count") or 0)
+                value = int(task.get("loop_cycle_count") or 0)
+                if value > 0:
+                    synced["loop_cycle_count"] = value
             except Exception:
-                synced["loop_cycle_count"] = int(synced.get("loop_cycle_count", 0) or 0)
+                pass
 
-        if isinstance(task.get("loop_history"), list):
+        if isinstance(task.get("loop_history"), list) and task.get("loop_history"):
             synced["loop_history"] = copy.deepcopy(task.get("loop_history"))
 
         return synced
@@ -537,7 +531,6 @@ class TaskRuntime:
         task["failure_decision"] = copy.deepcopy(state.get("failure_decision"))
         task["runtime_state"] = copy.deepcopy(state)
 
-        # Agent Loop v2 decision record fields
         task["last_observation"] = copy.deepcopy(state.get("last_observation", {}))
         task["last_decision"] = state.get("last_decision", "")
         task["last_decision_reason"] = state.get("last_decision_reason", "")
@@ -618,3 +611,43 @@ class TaskRuntime:
 
         if self.debug:
             print(label, payload)
+
+    def _prefer_nonempty_str(self, primary: Any, secondary: Any, default: str = "") -> str:
+        primary_text = str(primary or "").strip()
+        if primary_text:
+            return primary_text
+        secondary_text = str(secondary or "").strip()
+        if secondary_text:
+            return secondary_text
+        return default
+
+    def _prefer_positive_int(self, primary: Any, secondary: Any, default: int = 0) -> int:
+        try:
+            primary_int = int(primary or 0)
+            if primary_int > 0:
+                return primary_int
+        except Exception:
+            pass
+
+        try:
+            secondary_int = int(secondary or 0)
+            if secondary_int > 0:
+                return secondary_int
+        except Exception:
+            pass
+
+        return int(default or 0)
+
+    def _prefer_nonempty_list(self, primary: Any, secondary: Any, default: Optional[list] = None) -> list:
+        if isinstance(primary, list) and primary:
+            return copy.deepcopy(primary)
+        if isinstance(secondary, list) and secondary:
+            return copy.deepcopy(secondary)
+        return copy.deepcopy(default if isinstance(default, list) else [])
+
+    def _prefer_nonempty_dict(self, primary: Any, secondary: Any, default: Optional[dict] = None) -> dict:
+        if isinstance(primary, dict) and primary:
+            return copy.deepcopy(primary)
+        if isinstance(secondary, dict) and secondary:
+            return copy.deepcopy(secondary)
+        return copy.deepcopy(default if isinstance(default, dict) else {})

@@ -396,6 +396,182 @@ Keep the latest terminal screenshots showing:
 These are useful as devlog proof and future demo / README evidence.
 
 
+## 2026-04 Document Task Mainline Integration Pass
 
+This pass focused on moving document flow from a direct/demo execution path into the official task lifecycle.
+
+### Completed
+
+Structured document-task support was extended across the mainline path:
+
+- `core/planning/planner.py`
+- `app.py`
+- `core/tasks/scheduler.py`
+
+What changed:
+
+- planner gained a structured document-task entry path
+- app direct-flow handling now builds and forwards document task context
+- scheduler task creation / planning path now preserves document-task payload into planner context
+- document tasks can now run through the official task lifecycle instead of only a direct one-shot path
+
+Mainline flows now verified through official task path:
+
+- `task create`
+- `task submit`
+- `task run`
+- `task result`
+- `task show`
+
+Validated document task modes:
+
+1. Summary task
+   - goal: `summarize input.txt into summary.txt`
+
+2. Action-items task
+   - goal: `read input.txt and extract action items into action_items.txt`
+
+### Validation
+
+Confirmed working through the official task mainline:
+
+- summary document task: PASS
+- action-items document task: PASS
+- `task create`: PASS
+- `task submit`: PASS
+- `task run`: PASS
+- `task result`: PASS
+- `task show`: PASS
+
+Confirmed behavior:
+
+- task record was written into `workspace/tasks.json`
+- task workspace directory was created under `workspace/tasks/<task_id>/`
+- task reached `finished`
+- step progress reached `3/3`
+- final answer was returned through official task result reporting
+- task artifacts were written under the task directory:
+  - `result.json`
+  - `plan.json`
+  - `runtime_state.json`
+  - `execution_log.json`
+  - `trace.json`
+  - `task_snapshot.json`
+
+Shared output artifacts also remained valid:
+
+- `workspace/shared/summary.txt`
+- `workspace/shared/action_items.txt`
+
+### Why This Matters
+
+This pass moved document flow from “it works as a direct execution shortcut” to “it works through the official task lifecycle.”
+
+That matters because the system is no longer relying only on an isolated demo path. Document processing is now integrated into the same mainline used by the broader task system:
+
+- task creation
+- scheduling
+- execution
+- task-state persistence
+- result inspection
+- artifact tracking
+
+This is a more meaningful checkpoint than direct-flow success alone, because it proves that document tasks can survive the real task OS path instead of only a narrow shortcut.
+
+### Result
+
+Stable checkpoint after document-task mainline integration:
+
+- summary mainline task flow: working
+- action-items mainline task flow: working
+- structured document-task context path: working
+- official task lifecycle integration: working
+- task result / task show reporting: working
+- shared output artifact generation: working
+
+### Evidence Kept
+
+Keep the latest terminal evidence showing:
+
+- `task create` -> `task submit` -> `task run` for summary task
+- `task result` and `task show` for finished summary task
+- `task result` for finished action-items task
+- `workspace/tasks.json` containing the created document tasks
+- `workspace/tasks/<task_id>/` directories created for the finished tasks
+- `workspace/shared/summary.txt`
+- `workspace/shared/action_items.txt`
+
+These are strong proof points for future devlog, README, demo, and external presentation material.
+
+
+## 2026-04 Document Task CLI Entry Pass
+
+This pass focused on making document-task creation more explicit at the CLI layer instead of relying only on free-form natural-language task goals.
+
+### Completed
+
+`app.py` was extended with explicit document-task command entries:
+
+- `task doc-summary <input> <output>`
+- `task doc-action-items <input> <output>`
+
+These commands now create official tasks through the normal task system rather than bypassing the mainline.
+
+### Validation
+
+Confirmed working flow through the official task lifecycle:
+
+1. create document task through CLI command
+2. submit task
+3. run task
+4. inspect task result
+
+Validated commands:
+
+- `python app.py task doc-summary input.txt summary_cli.txt`
+- `python app.py task doc-action-items input.txt action_items_cli.txt`
+
+Confirmed behavior:
+
+- task creation succeeded
+- task reached `finished`
+- `task result` returned the expected final answer
+- task directory artifacts were created under `workspace/tasks/<task_id>/`
+- document-task behavior remained consistent with the mainline integration pass
+
+### Why This Matters
+
+This pass makes document-task entry cleaner and more stable.
+
+Before this, document-task creation depended mainly on natural-language task goals such as:
+
+- `summarize input.txt into summary.txt`
+- `read input.txt and extract action items into action_items.txt`
+
+That path still works, but explicit CLI entry is better for:
+
+- repeatable demos
+- easier operator usage
+- cleaner future UI / API integration
+- reducing ambiguity at the command layer
+
+### Result
+
+Stable checkpoint after explicit document-task CLI entry:
+
+- explicit summary task CLI entry: working
+- explicit action-items task CLI entry: working
+- official task lifecycle path preserved: working
+- task result reporting preserved: working
+
+### Evidence Kept
+
+Keep the latest terminal evidence showing:
+
+- `task doc-summary` task creation and completion
+- `task doc-action-items` task creation and completion
+- `task result` for the finished action-items CLI task
+
+These are useful proof points for future README, demo, and operator-facing documentation.
 
 

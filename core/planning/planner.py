@@ -9,7 +9,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v26
+    Deterministic Planner v27
 
     本版重點：
     1. 保留 document flow 偵測
@@ -17,14 +17,12 @@ class Planner:
     3. 保留 run_python 規則
     4. 保留 verify 規則
     5. verify 類句型先於 document flow 判定
-    6. 修正 action_items / summary task 句型優先序：
-       - task summarize input.txt into summary.txt
-       - task read input.txt and extract action items into action_items.txt
-       這類 task goal 不再被一般 read_file 規則提前吃掉
-    7. 修正 document flow 固定寫死 input.txt / summary.txt / action_items.txt 的問題：
-       - 保留使用者指定的 source path
-       - 保留使用者指定的 output path
-       - 支援 workspace/shared/...、shared/...、任意 *.txt / *.md / *.log / *.json 等路徑
+    6. 修正 action_items / summary task 句型優先序
+    7. 保留使用者指定的 source / output path
+    8. 新增「結構化 document task 入口」：
+       - planner 會先看 context / route / kwargs 裡是否有結構化 document task
+       - 若有，直接依 task_type + mode 產 steps
+       - 若沒有，再退回自然語句 regex 規劃
     """
 
     _banner_printed = False
@@ -49,7 +47,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v26 (DOCUMENT FLOW PRESERVE USER PATHS) ###")
+            print("### USING PLANNER v27 (STRUCTURED DOCUMENT TASK ENTRY) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -73,26 +71,63 @@ class Planner:
             raw={
                 "context": context,
                 "route": route,
+                "kwargs": kwargs,
             },
         )
 
-        if not text:
-            result = self._build_plan_result(
-                steps=[],
-                intent="respond",
-                final_answer="空白輸入",
-                fallback_used=False,
-                error=None,
-            )
-            self.trace_logger.log_decision(
-                title="planner result",
-                message="empty input",
-                source="planner",
-                raw=result,
-            )
-            return result
-
         try:
+            structured_document_steps = self._plan_structured_document_task(
+                context=context,
+                route=route,
+                kwargs=kwargs,
+            )
+
+            if structured_document_steps is not None:
+                task_name = self._infer_task_name(
+                    task_dir=str(context.get("workspace", "") or ""),
+                    goal=text or "structured_document_task",
+                )
+
+                steps = self._apply_step_metadata(structured_document_steps, task_name=task_name)
+                intent = self._infer_intent(text=text, route=route, steps=steps)
+
+                result = self._build_plan_result(
+                    steps=steps,
+                    intent=intent,
+                    final_answer=f"已規劃 {len(steps)} 個步驟",
+                    fallback_used=False,
+                    error=None,
+                )
+
+                self.trace_logger.log_decision(
+                    title="planner structured document result",
+                    message=f"steps={len(steps)}, intent={intent}",
+                    source="planner",
+                    raw={
+                        "steps": steps,
+                        "intent": intent,
+                        "task_name": task_name,
+                        "result": result,
+                    },
+                )
+                return result
+
+            if not text:
+                result = self._build_plan_result(
+                    steps=[],
+                    intent="respond",
+                    final_answer="空白輸入",
+                    fallback_used=False,
+                    error=None,
+                )
+                self.trace_logger.log_decision(
+                    title="planner result",
+                    message="empty input",
+                    source="planner",
+                    raw=result,
+                )
+                return result
+
             raw_steps, fallback_used = self._plan_steps(text=text, route=route)
 
             task_name = self._infer_task_name(
@@ -146,6 +181,198 @@ class Planner:
         return self.plan(*args, **kwargs)
 
     # ============================================================
+    # structured document task
+    # ============================================================
+
+    def _plan_structured_document_task(
+        self,
+        context: Optional[Dict[str, Any]] = None,
+        route: Any = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+        context = context or {}
+        kwargs = kwargs or {}
+
+        payload = self._extract_structured_document_payload(
+            context=context,
+            route=route,
+            kwargs=kwargs,
+        )
+        if not payload:
+            return None
+
+        task_type = str(payload.get("task_type") or "").strip().lower()
+        mode = str(payload.get("mode") or "").strip().lower()
+        input_file = str(payload.get("input_file") or "").strip()
+        output_file = str(payload.get("output_file") or "").strip()
+
+        if task_type != "document":
+            return None
+
+        if mode in ("summary", "summarize", "summarise"):
+            source_path = input_file or "input.txt"
+            output_path = output_file or "summary.txt"
+
+            self.trace_logger.log_decision(
+                title="structured document task detected",
+                message=f"mode=summary, source={source_path}, output={output_path}",
+                source="planner",
+                raw={"payload": payload},
+            )
+            return self._build_summary_steps(source_path, output_path)
+
+        if mode in ("action_items", "action-items", "actionitems", "todo", "to_do"):
+            source_path = input_file or "input.txt"
+            output_path = output_file or "action_items.txt"
+
+            self.trace_logger.log_decision(
+                title="structured document task detected",
+                message=f"mode=action_items, source={source_path}, output={output_path}",
+                source="planner",
+                raw={"payload": payload},
+            )
+            return self._build_action_items_steps(source_path, output_path)
+
+        self.trace_logger.log_decision(
+            title="structured document task ignored",
+            message=f"unsupported mode={mode or '(empty)'}",
+            source="planner",
+            raw={"payload": payload},
+        )
+        return None
+
+    def _extract_structured_document_payload(
+        self,
+        context: Dict[str, Any],
+        route: Any = None,
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        kwargs = kwargs or {}
+
+        candidate_dicts: List[Dict[str, Any]] = []
+
+        if isinstance(context, dict):
+            candidate_dicts.append(context)
+
+            for key in ("task", "task_payload", "task_data", "payload", "document_task"):
+                value = context.get(key)
+                if isinstance(value, dict):
+                    candidate_dicts.append(value)
+
+        if isinstance(route, dict):
+            candidate_dicts.append(route)
+            for key in ("task", "payload", "document_task"):
+                value = route.get(key)
+                if isinstance(value, dict):
+                    candidate_dicts.append(value)
+
+        if isinstance(kwargs, dict):
+            candidate_dicts.append(kwargs)
+            for key in ("task", "task_payload", "payload", "document_task"):
+                value = kwargs.get(key)
+                if isinstance(value, dict):
+                    candidate_dicts.append(value)
+
+        for candidate in candidate_dicts:
+            normalized = self._normalize_structured_document_payload(candidate)
+            if normalized is not None:
+                return normalized
+
+        return None
+
+    def _normalize_structured_document_payload(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not isinstance(data, dict):
+            return None
+
+        task_type = self._pick_first_non_empty(
+            data,
+            [
+                "task_type",
+                "type",
+                "job_type",
+                "workflow_type",
+            ],
+        )
+        mode = self._pick_first_non_empty(
+            data,
+            [
+                "mode",
+                "document_mode",
+                "task_mode",
+                "operation",
+                "action",
+            ],
+        )
+        input_file = self._pick_first_non_empty(
+            data,
+            [
+                "input_file",
+                "input_path",
+                "source_file",
+                "source_path",
+                "file_path",
+                "path",
+            ],
+        )
+        output_file = self._pick_first_non_empty(
+            data,
+            [
+                "output_file",
+                "output_path",
+                "target_file",
+                "target_path",
+                "result_file",
+                "result_path",
+            ],
+        )
+
+        if not task_type:
+            return None
+
+        lowered_type = str(task_type).strip().lower()
+        if lowered_type not in ("document", "doc", "document_flow"):
+            return None
+
+        normalized: Dict[str, Any] = {
+            "task_type": "document",
+            "mode": str(mode or "").strip(),
+            "input_file": str(input_file or "").strip(),
+            "output_file": str(output_file or "").strip(),
+        }
+
+        if not normalized["mode"]:
+            inferred_mode = self._infer_document_mode_from_output(normalized["output_file"])
+            if inferred_mode:
+                normalized["mode"] = inferred_mode
+
+        if not normalized["mode"]:
+            return None
+
+        return normalized
+
+    def _pick_first_non_empty(self, data: Dict[str, Any], keys: List[str]) -> str:
+        for key in keys:
+            value = data.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return ""
+
+    def _infer_document_mode_from_output(self, output_file: str) -> str:
+        lowered = str(output_file or "").strip().lower()
+        if not lowered:
+            return ""
+
+        if "action_items" in lowered or "action-items" in lowered or "actionitems" in lowered:
+            return "action_items"
+        if "summary" in lowered:
+            return "summary"
+
+        return ""
+
+    # ============================================================
     # core planning
     # ============================================================
 
@@ -154,9 +381,13 @@ class Planner:
 
         # --------------------------------------------------------
         # verify routing first
-        # 目的：避免 verify ... exists/contains/equals 被 document flow 吃掉
+        # 目的：避免純 verify ... exists/contains/equals 被 document flow 吃掉
+        # 注意：多子句任務不能整句直接被 verify 吃掉，也不能因檔名含 verify 誤觸發
         # --------------------------------------------------------
-        early_verify = self._extract_verify_request(stripped, last_path=None)
+        looks_multi_clause = len(self._split_clauses(stripped)) > 1
+        early_verify = None
+        if not looks_multi_clause and self._has_verify_intent(stripped):
+            early_verify = self._extract_verify_request(stripped, last_path=None)
         if early_verify:
             verify_path = str(early_verify.get("path") or "").strip()
             self.trace_logger.log_decision(
@@ -568,6 +799,7 @@ class Planner:
                 normalized_step = {
                     "type": "write_file",
                     "path": current_path or "",
+                    "scope": self._infer_path_scope(current_path or ""),
                     "content": content,
                 }
                 step_type = "write detected"
@@ -575,6 +807,7 @@ class Planner:
                 normalized_step = {
                     "type": "ensure_file",
                     "path": current_path or "",
+                    "scope": self._infer_path_scope(current_path or ""),
                 }
                 step_type = "ensure_file detected"
 
@@ -633,7 +866,7 @@ class Planner:
     ) -> Dict[str, Any]:
         return {
             "ok": error is None,
-            "planner_mode": "deterministic_v26",
+            "planner_mode": "deterministic_v27",
             "intent": intent,
             "final_answer": final_answer,
             "steps": steps,
@@ -712,74 +945,97 @@ class Planner:
     # verify
     # ============================================================
 
+    def _infer_path_scope(self, path: str) -> str:
+        normalized = str(path or "").replace("\\", "/").strip().lower()
+        if normalized.startswith("workspace/shared/") or normalized.startswith("shared/"):
+            return "shared"
+        return "auto"
+
+    def _has_verify_intent(self, text: str) -> bool:
+        stripped = str(text or "").strip()
+        if not stripped:
+            return False
+
+        lowered = stripped.lower()
+
+        english_patterns = [
+            r"^verify\b",
+            r"^verifies\b",
+            r"^verified\b",
+            r"\bcheck that\b",
+            r"\bchecks that\b",
+            r"\bconfirm that\b",
+            r"\bconfirms that\b",
+            r"\bcheck whether\b",
+            r"\bconfirm whether\b",
+            r"\bfile exists\b",
+            r"\bdoes not exist\b",
+            r"\bcontains\b",
+            r"\bequals\b",
+            r"\bis exactly\b",
+        ]
+        if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in english_patterns):
+            return True
+
+        zh_markers = ["確認", "檢查", "驗證", "是否存在", "有沒有", "包含", "含有", "等於", "是否為", "是不是", "是否等於"]
+        return any(marker in stripped for marker in zh_markers)
+
     def _extract_verify_request(self, text: str, last_path: Optional[str]) -> Optional[Dict[str, Any]]:
         stripped = str(text or "").strip()
         lowered = stripped.lower()
 
-        verify_markers = [
-            "verify",
-            "check that",
-            "confirm that",
-            "確認",
-            "檢查",
-            "驗證",
-        ]
-        if not any(marker in lowered for marker in verify_markers):
+        if not self._has_verify_intent(stripped):
             return None
 
         path = self._extract_file_path(stripped) or last_path
 
-        exists_match = re.search(
-            r"(?:verify|check that|confirm that)\s+(.+?)\s+exists\b",
-            lowered,
-            flags=re.IGNORECASE,
-        )
-        if exists_match and path:
-            return {
-                "type": "verify",
-                "path": path,
-                "exists": True,
-            }
+        exists_patterns = [
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(.+?)\s+exists\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(?:the\s+)?file\s+exists\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+it\s+exists\b",
+        ]
+        for pattern in exists_patterns:
+            if re.search(pattern, lowered, flags=re.IGNORECASE) and path:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "exists": True,
+                }
 
-        not_exists_match = re.search(
-            r"(?:verify|check that|confirm that)\s+(.+?)\s+does not exist\b",
-            lowered,
-            flags=re.IGNORECASE,
-        )
-        if not_exists_match and path:
-            return {
-                "type": "verify",
-                "path": path,
-                "exists": False,
-            }
+        not_exists_patterns = [
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(.+?)\s+does not exist\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+(?:the\s+)?file\s+does not exist\b",
+            r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck that\b|\bchecks that\b|\bconfirm that\b|\bconfirms that\b)\s+it\s+does not exist\b",
+        ]
+        for pattern in not_exists_patterns:
+            if re.search(pattern, lowered, flags=re.IGNORECASE) and path:
+                return {
+                    "type": "verify",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "exists": False,
+                }
 
-        contains_match = re.search(
-            r"(?:contains|contain)\s+(.+)$",
-            stripped,
-            flags=re.IGNORECASE,
-        )
+        contains_match = re.search(r"(?:contains|contain)\s+(.+)$", stripped, flags=re.IGNORECASE)
         if contains_match and path:
-            raw = contains_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(contains_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "contains": raw,
                 }
 
-        equals_match = re.search(
-            r"(?:equals|equal to|is exactly)\s+(.+)$",
-            stripped,
-            flags=re.IGNORECASE,
-        )
+        equals_match = re.search(r"(?:equals|equal to|is exactly)\s+(.+)$", stripped, flags=re.IGNORECASE)
         if equals_match and path:
-            raw = equals_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(equals_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "equals": raw,
                 }
 
@@ -788,30 +1044,39 @@ class Planner:
             return {
                 "type": "verify",
                 "path": path,
+                "scope": self._infer_path_scope(path),
                 "exists": True,
             }
 
         zh_contains_match = re.search(r"(?:包含|含有)\s+(.+)$", stripped)
         if zh_contains_match and path:
-            raw = zh_contains_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(zh_contains_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "contains": raw,
                 }
 
         zh_equals_match = re.search(r"(?:等於|是否為|是不是|是否等於)\s+(.+)$", stripped)
         if zh_equals_match and path:
-            raw = zh_equals_match.group(1).strip()
-            raw = self._strip_quotes(raw)
+            raw = self._strip_quotes(zh_equals_match.group(1).strip())
             if raw:
                 return {
                     "type": "verify",
                     "path": path,
+                    "scope": self._infer_path_scope(path),
                     "equals": raw,
                 }
+
+        if path and re.search(r"(?:^verify\b|\bverifies\b|\bverified\b|\bcheck\b|\bconfirm\b)", lowered, flags=re.IGNORECASE):
+            return {
+                "type": "verify",
+                "path": path,
+                "scope": self._infer_path_scope(path),
+                "exists": True,
+            }
 
         return None
 
@@ -890,26 +1155,69 @@ class Planner:
         return None
 
     def _extract_write_request(self, text: str) -> Optional[Dict[str, Any]]:
-        lowered = text.lower()
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
 
-        if self._extract_run_python_request(text):
+        if self._extract_run_python_request(stripped):
             return None
 
-        has_write_intent = any(k in text for k in ["寫", "建立", "新增", "創建", "產生"]) or any(
-            k in lowered for k in ["create", "write", "make", "generate"]
+        has_write_intent = any(k in stripped for k in ["寫", "建立", "新增", "創建", "產生"]) or any(
+            k in lowered for k in ["create", "write", "writes", "make", "generate"]
         )
         if not has_write_intent:
             return None
 
-        path = self._extract_file_path(text)
+        normalized = re.sub(
+            r"^(?:create\s+a\s+task\s+that\s+|create\s+task\s+that\s+|please\s+|pls\s+)",
+            "",
+            stripped,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        path = self._extract_file_path(normalized) or self._extract_file_path(stripped)
         if not path:
             return None
 
-        content, has_explicit_content = self._extract_write_content(text)
+        content = ""
+        has_explicit_content = False
+
+        english_match = re.search(
+            r"(?:write|writes)\s+(.+?)\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if english_match:
+            raw_content = english_match.group(1).strip()
+            target_path = english_match.group(2).strip()
+            if target_path:
+                path = target_path
+            if raw_content:
+                content = self._normalize_special_content(self._strip_quotes(raw_content))
+                has_explicit_content = True
+
+        if not has_explicit_content:
+            chinese_match = re.search(
+                r"(?:寫入|寫|建立|新增|創建)\s+(.+?)\s+(?:到|進|至)\s+([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))\b",
+                normalized,
+                flags=re.IGNORECASE,
+            )
+            if chinese_match:
+                raw_content = chinese_match.group(1).strip()
+                target_path = chinese_match.group(2).strip()
+                if target_path:
+                    path = target_path
+                if raw_content:
+                    content = self._normalize_special_content(self._strip_quotes(raw_content))
+                    has_explicit_content = True
+
+        if not has_explicit_content:
+            content, has_explicit_content = self._extract_write_content(normalized)
+
         return {
             "path": path,
             "content": content,
             "has_explicit_content": has_explicit_content,
+            "scope": self._infer_path_scope(path),
         }
 
     def _extract_write_content(self, text: str) -> Tuple[str, bool]:

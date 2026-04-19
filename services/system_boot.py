@@ -4,6 +4,7 @@ import copy
 import importlib
 import json
 import os
+import traceback
 from typing import Any, Dict, List, Optional, Type
 
 from core.planning.task_replanner import TaskReplanner
@@ -101,21 +102,6 @@ def _read_int_env(name: str, default: int) -> int:
 
 
 def _build_llm_boot_config() -> Dict[str, Any]:
-    """
-    統一 LLM boot 設定入口。
-
-    新命名優先：
-    - ZERO_LLM_PLUGIN
-    - ZERO_MODEL
-    - ZERO_CODER_MODEL
-    - ZERO_LLM_BASE_URL
-    - ZERO_LLM_TIMEOUT
-
-    舊命名 fallback：
-    - ZERO_LLM_MODEL
-    - ZERO_LLM_CODER_MODEL
-    - OLLAMA_BASE_URL
-    """
     plugin_name = os.environ.get("ZERO_LLM_PLUGIN", "").strip() or None
 
     model = (
@@ -150,6 +136,7 @@ def _build_llm_boot_config() -> Dict[str, Any]:
 class ZeroSystem:
     def __init__(self, workspace: str = "workspace") -> None:
         self.workspace = os.path.abspath(workspace)
+        self.boot_errors: Dict[str, Dict[str, Any]] = {}
 
         self.path_manager = TaskPathManager(workspace_root=self.workspace)
         self.path_manager.ensure_workspace()
@@ -314,48 +301,7 @@ class ZeroSystem:
 
         agent_loop_cls = _resolve_agent_loop_class()
         if agent_loop_cls is not None:
-            try:
-                self.agent_loop = agent_loop_cls(
-                    router=self.router,
-                    planner=self.planner,
-                    llm_planner=self.llm_planner,
-                    step_executor=self.step_executor,
-                    verifier=self.verifier,
-                    safety_guard=self.safety_guard,
-                    memory_store=self.memory_store,
-                    runtime_store=self.runtime_store,
-                    scheduler=self.scheduler,
-                    task_manager=self.scheduler,
-                    task_workspace=self.task_workspace,
-                    task_runtime=self.task_runtime,
-                    task_runner=self.task_runner,
-                    replanner=self.replanner,
-                    llm_client=self.llm_client,
-                    debug=False,
-                )
-            except TypeError:
-                try:
-                    self.agent_loop = agent_loop_cls(
-                        router=self.router,
-                        planner=self.planner,
-                        step_executor=self.step_executor,
-                        verifier=self.verifier,
-                        safety_guard=self.safety_guard,
-                        memory_store=self.memory_store,
-                        runtime_store=self.runtime_store,
-                        scheduler=self.scheduler,
-                        task_manager=self.scheduler,
-                        task_workspace=self.task_workspace,
-                        task_runtime=self.task_runtime,
-                        task_runner=self.task_runner,
-                        replanner=self.replanner,
-                        llm_client=self.llm_client,
-                        debug=False,
-                    )
-                except Exception:
-                    self.agent_loop = None
-            except Exception:
-                self.agent_loop = None
+            self.agent_loop = self._build_agent_loop(agent_loop_cls)
 
         try:
             setattr(self.scheduler, "agent_loop", self.agent_loop)
@@ -373,6 +319,69 @@ class ZeroSystem:
             pass
 
         self.tick_count = 0
+
+    def _record_boot_error(self, component: str, stage: str, error: Exception) -> None:
+        self.boot_errors[component] = {
+            "stage": stage,
+            "error": f"{error.__class__.__name__}: {error}",
+            "traceback": traceback.format_exc(),
+        }
+
+    def _build_agent_loop(self, agent_loop_cls: Type[Any]) -> Any:
+        first_error: Optional[Exception] = None
+
+        try:
+            return agent_loop_cls(
+                router=self.router,
+                planner=self.planner,
+                llm_planner=self.llm_planner,
+                step_executor=self.step_executor,
+                verifier=self.verifier,
+                safety_guard=self.safety_guard,
+                memory_store=self.memory_store,
+                runtime_store=self.runtime_store,
+                scheduler=self.scheduler,
+                task_manager=self.scheduler,
+                task_workspace=self.task_workspace,
+                task_runtime=self.task_runtime,
+                task_runner=self.task_runner,
+                replanner=self.replanner,
+                llm_client=self.llm_client,
+                debug=False,
+            )
+        except TypeError as e:
+            first_error = e
+            self._record_boot_error("agent_loop_primary", "constructor", e)
+        except Exception as e:
+            self._record_boot_error("agent_loop_primary", "constructor", e)
+            return None
+
+        try:
+            return agent_loop_cls(
+                router=self.router,
+                planner=self.planner,
+                step_executor=self.step_executor,
+                verifier=self.verifier,
+                safety_guard=self.safety_guard,
+                memory_store=self.memory_store,
+                runtime_store=self.runtime_store,
+                scheduler=self.scheduler,
+                task_manager=self.scheduler,
+                task_workspace=self.task_workspace,
+                task_runtime=self.task_runtime,
+                task_runner=self.task_runner,
+                replanner=self.replanner,
+                llm_client=self.llm_client,
+                debug=False,
+            )
+        except Exception as e:
+            self._record_boot_error("agent_loop_fallback", "constructor", e)
+            if first_error is not None:
+                print("[boot_system] agent_loop primary constructor failed:")
+                print(self.boot_errors["agent_loop_primary"]["error"])
+            print("[boot_system] agent_loop fallback constructor failed:")
+            print(f"{e.__class__.__name__}: {e}")
+            return None
 
     def tick(self) -> Dict[str, Any]:
         self.tick_count += 1
@@ -455,6 +464,7 @@ class ZeroSystem:
             "task_runtime_type": type(self.task_runtime).__name__,
             "tick_count": self.tick_count,
             "scheduler_status": copy.deepcopy(scheduler_status),
+            "boot_errors": copy.deepcopy(self.boot_errors),
         }
 
     def get_queue_rows(self) -> Any:
