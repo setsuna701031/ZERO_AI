@@ -23,6 +23,7 @@ def print_help() -> None:
     print("  python main.py smoke")
     print("  python main.py doc-demo")
     print("  python main.py requirement-demo")
+    print("  python main.py execution-demo")
     print("  python main.py health")
     print("  python main.py help")
     print("")
@@ -32,6 +33,7 @@ def print_help() -> None:
     print("  smoke             Run stable mainline smoke validation")
     print("  doc-demo          Run end-to-end document demo flow")
     print("  requirement-demo  Run requirement-pack demo flow")
+    print("  execution-demo    Run execution-proof demo flow")
     print("  health            Show health information")
     print("  help              Show this help")
 
@@ -251,6 +253,36 @@ def run_requirement_demo() -> int:
     return 0
 
 
+def run_execution_demo() -> int:
+    ensure_required_paths()
+    hello_path = SHARED_DIR / "hello.py"
+    if hello_path.exists():
+        hello_path.unlink()
+
+    print(f"[execution-demo] target: {hello_path}")
+
+    task_id = create_task("execution-proof")
+    submit_task(task_id)
+    wait_until_finished(task_id, max_ticks=5)
+
+    result_text = get_task_result_text(task_id)
+    show_text = get_task_show_text(task_id)
+
+    print("")
+    print("[execution-demo] task result")
+    print("----------------------------------------")
+    print(result_text.rstrip())
+    print("")
+    print("[execution-demo] task show")
+    print("----------------------------------------")
+    print(show_text.rstrip())
+    print("")
+    print("[execution-demo] outputs")
+    print(f"  hello.py: {hello_path}")
+    print("[execution-demo] PASS")
+    return 0
+
+
 def main(argv: List[str]) -> int:
     command = argv[1].strip().lower() if len(argv) >= 2 else "help"
 
@@ -284,6 +316,9 @@ def main(argv: List[str]) -> int:
 
     if command == "requirement-demo":
         return run_requirement_demo()
+
+    if command == "execution-demo":
+        return run_execution_demo()
 
     print(f"Unknown command: {command}")
     print("")
