@@ -1,120 +1,165 @@
 # ZERO
 
-ZERO is a local-first engineering agent prototype built for controllable execution, explicit task flow, and inspectable runtime behavior.
+ZERO is a local-first engineering agent system focused on controllable task execution, inspectable runtime state, and verifiable artifact-producing workflows.
 
-Instead of treating the agent as a black box, ZERO is being developed as an engineering-oriented control surface: task progression can be inspected, runtime state can be checked, CLI behavior is explicit, and file-producing workflows can be validated through the official task lifecycle.
-
-This repository is currently aimed at engineers, builders, and serious operators who care about:
-
-- local-first execution
-- controllable task flow
-- inspectable runtime state
-- explicit CLI control
-- task lifecycle visibility
-- reproducible engineering checkpoints
+This project is not being positioned as a polished consumer chatbot.  
+It is being built as an engineering-first agent runtime where task flow, execution state, results, and artifacts can be inspected directly instead of disappearing into a black box.
 
 ---
 
 ## Tagline
 
-**A local-first engineering agent with controllable task flow, inspectable runtime state, and explicit CLI-based operation.**
+**A local-first engineering agent with controllable task flow, inspectable runtime behavior, and a unified operational entrypoint.**
 
 ---
 
 ## What ZERO Is
 
-ZERO is not being positioned as a polished consumer chatbot.
-
-The current system is better understood as:
+ZERO is currently best understood as:
 
 - a local-first task-and-agent runtime
-- a controllable CLI surface for creating, running, inspecting, and validating tasks
-- an execution stack that is being hardened through repeatable engineering checkpoints
-- an engineering-first prototype designed to make mainline behavior easier to inspect instead of hiding it
+- a controllable CLI surface for task creation, execution, inspection, and validation
+- an execution stack with repeatable smoke validation
+- an engineering-oriented system where artifacts, runtime state, and result paths are visible
 
-This means the current emphasis is on:
+The current emphasis is on:
 
-- execution control
+- controllable execution
+- artifact-producing task workflows
 - runtime visibility
-- task persistence
-- result inspection
-- artifact tracking
-- operator clarity over UI polish
+- repeatable validation
+- clear operator-facing entrypoints
+- mainline stability before broader expansion
 
 ---
 
-## Current Focus
+## Current Release Checkpoint
 
-- Local-first execution
-- Runtime visibility
-- Controllable task flow
-- CLI-based task and agent control
-- Model/plugin-selectable launch behavior
-- Mainline stabilization
-- Document-task execution through the official task lifecycle
-- Explicit document-task CLI entry
+This repository has now reached a stronger engineering checkpoint with the following properties:
+
+- document tasks work through the official task lifecycle
+- explicit document-task CLI entry is available
+- `task result` and `task show` expose shared artifacts
+- document-task smoke validation exists
+- stable mainline smoke validation exists
+- AgentLoop `run(...)` compatibility has been restored
+- runtime smoke is passing again
+- a unified entrypoint exists through `main.py`
+
+This means the current version is already suitable for:
+
+- engineering demos
+- checkpoint validation
+- runtime inspection
+- repeatable smoke verification
+- operator-facing task execution demonstrations
+
+---
+
+## Unified Entry Point
+
+The repository now includes a unified outer entrypoint:
+
+```bash
+python main.py help
+```
+
+Supported commands:
+
+```bash
+python main.py start
+python main.py runtime
+python main.py smoke
+python main.py doc-demo
+python main.py health
+```
+
+### What each command does
+
+- `start`  
+  Launch interactive ZERO CLI.
+
+- `runtime`  
+  Show runtime information, including current plugin / model configuration.
+
+- `smoke`  
+  Run stable mainline smoke validation.
+
+- `doc-demo`  
+  Run the end-to-end document demo flow through the real task system.
+
+- `health`  
+  Show health information.
+
+This means the project no longer depends only on scattered internal commands for demonstration.  
+It now has a cleaner shell for runtime inspection, smoke validation, and representative demo execution.
+
+---
+
+## Quick Start
+
+### 1. Show help
+
+```bash
+python main.py help
+```
+
+### 2. Check runtime
+
+```bash
+python main.py runtime
+```
+
+### 3. Run stable mainline smoke validation
+
+```bash
+python main.py smoke
+```
+
+### 4. Run the document demo
+
+```bash
+python main.py doc-demo
+```
+
+### 5. Start interactive mode
+
+```bash
+python main.py start
+```
+
+---
+
+## Core CLI Surface
+
+The core task / agent CLI remains in `app.py`.
+
+Examples:
+
+```bash
+python app.py runtime
+python app.py health
+python app.py task list
+python app.py task show <task_id>
+python app.py task result <task_id>
+```
+
+Document-task commands:
+
+```bash
+python app.py task doc-summary input.txt summary_cli.txt
+python app.py task doc-action-items input.txt action_items_cli.txt
+```
+
+These explicit commands create official tasks through the normal task lifecycle instead of relying only on free-form natural-language task goals.
 
 ---
 
 ## What Is Working Now
 
-### 1. Dual-mode CLI
+### 1. Official document-task mainline integration
 
-Interactive mode:
-
-```bash
-python app.py
-```
-
-One-shot command mode:
-
-```bash
-python app.py <command>
-```
-
-### 2. Runtime visibility
-
-```bash
-python app.py runtime
-python app.py health
-```
-
-### 3. Task lifecycle commands
-
-```bash
-python app.py task list
-python app.py task show <task_id>
-python app.py task result <task_id>
-python app.py task open <task_id>
-python app.py task delete <task_id>
-python app.py task retry <task_id>
-python app.py task rerun <task_id>
-python app.py task purge finished
-python app.py task purge failed
-python app.py task purge all
-```
-
-### 4. Model / plugin override from CLI
-
-```bash
-python app.py chat "hello" --model llama3.1:latest
-python app.py chat "hello" --plugin local_ollama
-python app.py ask "Create a demo.txt file with content demo test, then read it back" --model llama3.1:latest
-```
-
-### 5. Cleaner one-shot CLI output
-
-Boot banners are suppressed in one-shot command mode so task output and runtime inspection are easier to read.
-
-### 6. Task result visibility
-
-Task results can be inspected from CLI instead of requiring direct manual reading of raw state files.
-
-### 7. Document task mainline integration
-
-Document workflows are no longer limited to a direct/demo path.
-
-Validated document tasks now work through the official task lifecycle:
+Document workflows now work through the official task lifecycle:
 
 - `task create`
 - `task submit`
@@ -122,298 +167,258 @@ Validated document tasks now work through the official task lifecycle:
 - `task result`
 - `task show`
 
-Validated task goals include:
+Validated document goals include:
 
 ```bash
 python app.py task create "summarize input.txt into summary.txt"
 python app.py task create "read input.txt and extract action items into action_items.txt"
 ```
 
-### 8. Explicit document-task CLI entry
-
-Document task creation now also has cleaner CLI entrypoints:
+### 2. Explicit document-task CLI entry
 
 ```bash
 python app.py task doc-summary input.txt summary_cli.txt
 python app.py task doc-action-items input.txt action_items_cli.txt
 ```
 
-These commands create official tasks through the normal task system instead of relying only on free-form natural-language task goals.
+### 3. Shared artifact visibility
+
+For completed document tasks, both:
+
+- `task result <task_id>`
+- `task show <task_id>`
+
+now expose shared-scope artifacts in addition to task-local runtime files.
+
+This improves operator clarity because the system now surfaces real outputs such as:
+
+- `workspace/shared/summary.txt`
+- `workspace/shared/action_items.txt`
+
+instead of only task-local JSON/runtime records.
+
+### 4. Runtime validation recovery
+
+`tests/test_agent_loop.py` and `tests/run_runtime_smoke.py` are passing again after restoring `AgentLoop.run(...)` compatibility.
+
+### 5. Stable mainline smoke
+
+The repository now has a stable mainline smoke runner through:
+
+```bash
+python tests/run_mainline_smoke.py
+```
+
+and via the unified entrypoint:
+
+```bash
+python main.py smoke
+```
+
+### 6. End-to-end document demo
+
+The unified entrypoint can run a real document demo through:
+
+```bash
+python main.py doc-demo
+```
+
+This demo:
+
+- prepares input under `workspace/shared/`
+- creates official tasks
+- submits and runs them
+- waits for completion
+- prints task results
+- confirms shared output artifact locations
 
 ---
 
-## Why the Document Task Work Matters
+## Validation Layers
 
-This is one of the most important current checkpoints in the repository.
+### Stable mainline validation
 
-The system now demonstrates that a file-processing workflow can move through the official task lifecycle instead of only through a narrow direct shortcut.
+```bash
+python main.py smoke
+```
 
-That means the following chain has been validated for document tasks:
+Equivalent direct path:
 
-- task creation
-- scheduling
-- execution
-- result reporting
-- artifact persistence
-- task inspection
+```bash
+python tests/run_mainline_smoke.py
+```
 
-This is a stronger engineering checkpoint than “the planner can propose the steps,” because it proves the mainline can actually carry the task to completion.
+Stable mainline smoke currently includes:
 
----
-
-## Current Validation Layers
-
-The project includes layered validation for the main execution path:
-
-- tool layer smoke
-- runtime smoke
-- executor smoke
+- tool-layer smoke
 - scheduler smoke
+- document-task smoke
 
-Current validation commands:
+### Runtime validation
 
 ```bash
-python tests/run_tool_layer_smoke.py
 python tests/run_runtime_smoke.py
-python tests/test_executor_smoke.py
-python tests/test_scheduler_smoke.py
 ```
 
----
-
-## Quick Start
-
-### Interactive mode
+### Document-task smoke
 
 ```bash
-python app.py
+python tests/run_document_task_smoke.py
 ```
 
-### Runtime inspection
+This validates both:
 
-```bash
-python app.py runtime
-python app.py health
-```
+- summary flow
+- action-items flow
 
-### Chat from CLI
-
-```bash
-python app.py chat "hello"
-```
-
-### Ask from CLI
-
-```bash
-python app.py ask "Create a demo.txt file with content demo test, then read it back"
-```
-
-### Inspect task results
-
-```bash
-python app.py task list
-python app.py task show <task_id>
-python app.py task result <task_id>
-```
-
-### Run smoke validation
-
-```bash
-python tests/run_tool_layer_smoke.py
-python tests/run_runtime_smoke.py
-python tests/test_executor_smoke.py
-python tests/test_scheduler_smoke.py
-```
-
----
-
-## Example Command Set
-
-### Runtime / model control
-
-```bash
-python app.py runtime
-python app.py health
-python app.py chat "hello" --model llama3.1:latest
-python app.py chat "hello" --plugin local_ollama
-```
-
-### Task control
-
-```bash
-python app.py task list
-python app.py task show <task_id>
-python app.py task result <task_id>
-python app.py task open <task_id>
-python app.py task delete <task_id>
-python app.py task purge finished
-```
-
-### Document task commands
-
-```bash
-python app.py task doc-summary input.txt summary_cli.txt
-python app.py task doc-action-items input.txt action_items_cli.txt
-```
+with real artifact generation under `workspace/shared/`.
 
 ---
 
 ## Demo Flow
 
-### Demo flow A — runtime and CLI control
+### Demo Flow A — Runtime inspection
 
 ```bash
-python app.py runtime
-python app.py chat "hello"
-python app.py task list
+python main.py runtime
 ```
 
-### Demo flow B — document summary through task lifecycle
+### Demo Flow B — Stable validation
 
 ```bash
-python app.py task doc-summary input.txt summary_cli.txt
-python app.py task list
-python app.py task submit <task_id>
-python app.py task run 1
-python app.py task result <task_id>
-python app.py task show <task_id>
+python main.py smoke
 ```
 
-### Demo flow C — document action items through task lifecycle
+### Demo Flow C — End-to-end document demo
 
 ```bash
-python app.py task doc-action-items input.txt action_items_cli.txt
-python app.py task list
-python app.py task submit <task_id>
-python app.py task run 1
-python app.py task result <task_id>
+python main.py doc-demo
 ```
+
+This is currently the best single representative demo because it shows:
+
+- unified entrypoint
+- task lifecycle execution
+- finished task results
+- artifact paths
+- shared output files
+- repeatable validation style
+
+---
+
+## Why the Current Architecture Matters
+
+The current repository is not trying to hide execution complexity.
+
+Instead, it is explicitly moving toward a system where an operator can see:
+
+- what task was created
+- what state the task is in
+- what result was produced
+- what artifact paths exist
+- what smoke validations pass
+- where runtime failures occur
+
+That is important because the current goal is not just “generate a response.”  
+The goal is to build a local-first agent execution system that can support reliable engineering workflows.
 
 ---
 
 ## Evidence / Checkpoints
 
-Relevant checkpoint images are being kept under:
+Relevant checkpoint images are kept under:
 
 ```text
 docs/images/checkpoints/
 ```
 
-Current checkpoint evidence includes:
+### Primary engineering checkpoint
+
+The strongest single checkpoint image right now is the summary mainline result/show capture:
+
+![Task result and show summary mainline](docs/images/checkpoints/checkpoint_task_result_and_show_summary_mainline.png)
+
+This image is important because it shows, in one place:
+
+- finished task state
+- `task result` visibility
+- `task show` visibility
+- task path visibility
+- shared artifact visibility
+
+### Additional checkpoint images
 
 - `checkpoint_task_result_action_items_finished.png`
 - `checkpoint_task_result_action_items_mainline.png`
 - `checkpoint_task_result_and_show_summary_mainline.png`
 
-These are useful for README support, devlog proof, and demo / presentation material because they show:
+These are useful for README support, devlog proof, demo material, and future public-facing checkpoint presentation because they show:
 
 - CLI invocation
 - finished task state
-- visible final answer
-- task artifact paths
-- inspectable task result / show output
-
----
-
-## Current Stabilization Milestones
-
-### Mainline Stabilization Pass
-
-Completed in this stage:
-
-- tool layer first-pass stabilization
-- step executor first-pass outer-envelope stabilization
-- step handlers first-pass normalization
-- executor first-pass internal responsibility cleanup
-- scheduler first-pass internal responsibility cleanup
-- smoke entrypoints for tool layer, runtime, executor, and scheduler
-
-### Scheduler Consolidation Pass
-
-Completed in this stage:
-
-- queue sync helper extraction
-- dispatch helper extraction
-- repo/runtime sync helper extraction
-- trace helper extraction
-- simple runner helper extraction
-- path helper extraction
-- command / LLM helper extraction
-
-### Document Flow Repair Pass
-
-Validated in this stage:
-
-- document flow preserved requested output path
-- LLM file-content injection worked
-- `use_previous_text` write-back worked
-- shared output artifacts were written
-
-### Document Task Mainline Integration Pass
-
-Validated in this stage:
-
-- summary task mainline flow: working
-- action-items task mainline flow: working
-- official task lifecycle integration: working
-- `task result` and `task show` reporting: working
-
-### Document Task CLI Entry Pass
-
-Validated in this stage:
-
-- explicit summary task CLI entry: working
-- explicit action-items task CLI entry: working
-- explicit CLI entry preserves official task lifecycle behavior
+- final answer visibility
+- task path visibility
+- shared artifact visibility
+- task result / task show inspection
 
 ---
 
 ## Repository Orientation
 
-Key areas in the current system include:
+Key areas in the current repository include:
 
-- `app.py` — CLI entry surface
-- `core/planning/` — planning / replanning layer
+- `main.py` — unified outer entrypoint for runtime / smoke / demo
+- `app.py` — core CLI and task surface
+- `core/planning/` — planner / replanner layer
 - `core/runtime/` — runtime execution layer
 - `core/tasks/` — scheduler, task persistence, task lifecycle
+- `tests/` — smoke tests and validation scripts
 - `docs/devlog.md` — engineering progress records
 - `docs/images/checkpoints/` — checkpoint evidence images
 
 ---
 
-## Positioning
+## Current Positioning
 
 ZERO is currently best described as:
 
-**A local-first engineering agent prototype with a controllable CLI surface.**
+**A local-first engineering agent system with a controllable task lifecycle, visible artifacts, repeatable smoke validation, and a unified operational entrypoint.**
 
-Right now the system is optimized for:
+It is optimized right now for:
 
+- engineering clarity
 - local execution
-- inspectable runtime state
-- operator-facing command control
-- practical task execution
-- result and artifact inspection
-- incremental hardening of the execution stack
+- runtime inspection
+- stable checkpoints
+- task/result/artifact visibility
+- validation before broader expansion
 
-It is not yet primarily focused on:
+It is not yet primarily optimized for:
 
-- polished end-user UI
-- mass-market onboarding
-- consumer-first chat experience
+- polished consumer UX
+- mass onboarding
 - broad workflow packaging
-- one-click productized distribution
+- sensor integration
+- one-click installer-grade distribution
+
+The current “one-click” work is at the engineering-entrypoint stage, not final packaged deployment.
 
 ---
 
 ## Current State in One Sentence
 
-This version is already strong enough to demo, explain, validate, and be understood by engineers.
+This version is now strong enough to demo, validate, inspect, and explain through a unified entrypoint instead of only through scattered internal commands.
 
 ---
 
 ## Notes
 
-The current repository should be read as an engineering checkpoint, not as a finished end-user product.
+The current repository should still be read as an engineering checkpoint, not as a finished mass-market product.
 
-The most important value right now is not surface polish. It is that the mainline is becoming more observable, more controllable, and less fragile while capability is being added.
+What matters most right now is that ZERO is becoming:
+
+- more controllable
+- more inspectable
+- more reproducible
+- more demo-ready
+- less dependent on hidden internal flows
