@@ -45,6 +45,7 @@ This repository has now reached a stronger engineering checkpoint with the follo
 - AgentLoop `run(...)` compatibility has been restored
 - runtime smoke is passing again
 - a unified entrypoint exists through `main.py`
+- a second representative scenario now exists through requirement-pack delivery flow
 
 This means the current version is already suitable for:
 
@@ -71,6 +72,7 @@ python main.py start
 python main.py runtime
 python main.py smoke
 python main.py doc-demo
+python main.py requirement-demo
 python main.py health
 ```
 
@@ -87,6 +89,9 @@ python main.py health
 
 - `doc-demo`  
   Run the end-to-end document demo flow through the real task system.
+
+- `requirement-demo`  
+  Run the requirement-to-delivery-pack demo flow.
 
 - `health`  
   Show health information.
@@ -122,7 +127,13 @@ python main.py smoke
 python main.py doc-demo
 ```
 
-### 5. Start interactive mode
+### 5. Run the requirement-pack demo
+
+```bash
+python main.py requirement-demo
+```
+
+### 6. Start interactive mode
 
 ```bash
 python main.py start
@@ -149,6 +160,12 @@ Document-task commands:
 ```bash
 python app.py task doc-summary input.txt summary_cli.txt
 python app.py task doc-action-items input.txt action_items_cli.txt
+```
+
+Requirement-pack command:
+
+```bash
+python app.py task requirement-pack requirement.txt
 ```
 
 These explicit commands create official tasks through the normal task lifecycle instead of relying only on free-form natural-language task goals.
@@ -183,7 +200,7 @@ python app.py task doc-action-items input.txt action_items_cli.txt
 
 ### 3. Shared artifact visibility
 
-For completed document tasks, both:
+For completed tasks, both:
 
 - `task result <task_id>`
 - `task show <task_id>`
@@ -194,6 +211,9 @@ This improves operator clarity because the system now surfaces real outputs such
 
 - `workspace/shared/summary.txt`
 - `workspace/shared/action_items.txt`
+- `workspace/shared/project_summary.txt`
+- `workspace/shared/implementation_plan.txt`
+- `workspace/shared/acceptance_checklist.txt`
 
 instead of only task-local JSON/runtime records.
 
@@ -231,6 +251,31 @@ This demo:
 - waits for completion
 - prints task results
 - confirms shared output artifact locations
+
+### 7. Requirement → Delivery Pack scenario
+
+The unified entrypoint can now run a second representative scenario through:
+
+```bash
+python main.py requirement-demo
+```
+
+This flow:
+
+- prepares `workspace/shared/requirement.txt`
+- creates an official requirement-pack task
+- runs the task through lifecycle execution
+- generates multiple delivery artifacts
+- verifies acceptance checklist structure
+- exposes outputs through `task result` / `task show`
+
+The requirement-pack flow currently generates:
+
+- `workspace/shared/project_summary.txt`
+- `workspace/shared/implementation_plan.txt`
+- `workspace/shared/acceptance_checklist.txt`
+
+This is the current second representative scenario because it shows that ZERO can turn a requirement document into a multi-artifact delivery package instead of only summarizing a file.
 
 ---
 
@@ -275,7 +320,7 @@ with real artifact generation under `workspace/shared/`.
 
 ---
 
-## Demo Flow
+## Demo Flows
 
 ### Demo Flow A — Runtime inspection
 
@@ -295,7 +340,7 @@ python main.py smoke
 python main.py doc-demo
 ```
 
-This is currently the best single representative demo because it shows:
+This is the clearest single-file-processing demo because it shows:
 
 - unified entrypoint
 - task lifecycle execution
@@ -303,6 +348,21 @@ This is currently the best single representative demo because it shows:
 - artifact paths
 - shared output files
 - repeatable validation style
+
+### Demo Flow D — Requirement to Delivery Pack
+
+```bash
+python main.py requirement-demo
+```
+
+This is the current best multi-artifact demo because it shows:
+
+- requirement-driven task creation
+- lifecycle execution
+- multiple generated artifacts
+- checklist-oriented verification
+- shared artifact visibility
+- result/show-based inspection
 
 ---
 
@@ -346,11 +406,39 @@ This image is important because it shows, in one place:
 - task path visibility
 - shared artifact visibility
 
+### Requirement-pack checkpoint
+
+The strongest checkpoint for the second representative scenario is the requirement demo pass capture:
+
+![Requirement demo pass](docs/images/checkpoints/checkpoint_requirement_demo_pass.png)
+
+This image is important because it shows:
+
+- requirement-demo completion
+- generated delivery artifacts
+- shared artifact visibility
+- unified entrypoint proof through `[requirement-demo] PASS`
+
+### Requirement-pack task inspection checkpoint
+
+The engineering evidence companion image for that scenario is the task-show capture:
+
+![Requirement pack task show](docs/images/checkpoints/checkpoint_requirement_pack_task_show.png)
+
+This image is useful because it shows:
+
+- acceptance checklist content
+- task/runtime path visibility
+- shared artifact visibility
+- inspectable task-show output for the requirement-pack flow
+
 ### Additional checkpoint images
 
 - `checkpoint_task_result_action_items_finished.png`
 - `checkpoint_task_result_action_items_mainline.png`
 - `checkpoint_task_result_and_show_summary_mainline.png`
+- `checkpoint_requirement_demo_pass.png`
+- `checkpoint_requirement_pack_task_show.png`
 
 These are useful for README support, devlog proof, demo material, and future public-facing checkpoint presentation because they show:
 
@@ -360,6 +448,7 @@ These are useful for README support, devlog proof, demo material, and future pub
 - task path visibility
 - shared artifact visibility
 - task result / task show inspection
+- representative scenario completion
 
 ---
 
@@ -367,11 +456,12 @@ These are useful for README support, devlog proof, demo material, and future pub
 
 Key areas in the current repository include:
 
-- `main.py` — unified outer entrypoint for runtime / smoke / demo
+- `main.py` — unified outer entrypoint for runtime / smoke / demos
 - `app.py` — core CLI and task surface
 - `core/planning/` — planner / replanner layer
 - `core/runtime/` — runtime execution layer
 - `core/tasks/` — scheduler, task persistence, task lifecycle
+- `core/system/llm_planner.py` — deterministic + LLM planning bridge
 - `tests/` — smoke tests and validation scripts
 - `docs/devlog.md` — engineering progress records
 - `docs/images/checkpoints/` — checkpoint evidence images
@@ -407,7 +497,7 @@ The current “one-click” work is at the engineering-entrypoint stage, not fin
 
 ## Current State in One Sentence
 
-This version is now strong enough to demo, validate, inspect, and explain through a unified entrypoint instead of only through scattered internal commands.
+This version is now strong enough to demo, validate, inspect, and explain through a unified entrypoint with multiple representative scenarios instead of only through scattered internal commands.
 
 ---
 
