@@ -89,6 +89,63 @@ class AgentLoop:
     # public entry
     # ============================================================
 
+    def run(self, user_input: str) -> Dict[str, Any]:
+        text = str(user_input or "").strip()
+        if not text:
+            return {
+                "ok": False,
+                "mode": "empty",
+                "error": "user_input is empty",
+                "final_answer": "",
+            }
+
+        context = self._build_context(text)
+        route = self._call_router(context, text)
+
+        if self.debug:
+            print("[AgentLoop] user_input =", text)
+            print("[AgentLoop] route =", route)
+
+        if self._should_force_planner_document_flow(text):
+            forced_route: Dict[str, Any] = {}
+            if isinstance(route, dict):
+                forced_route.update(copy.deepcopy(route))
+            forced_route["mode"] = "task"
+            forced_route["task"] = True
+            forced_route["forced_document_flow"] = True
+            route = forced_route
+
+            if self.debug:
+                print("[AgentLoop] forced document flow route =", route)
+
+        direct_result = self._try_handle_direct_route(
+            context=context,
+            user_input=text,
+            route=route,
+        )
+        if direct_result is not None:
+            return direct_result
+
+        llm_result = self._try_handle_llm_route(
+            context=context,
+            user_input=text,
+            route=route,
+        )
+        if llm_result is not None:
+            return llm_result
+
+        if self._should_enter_task_mode(route, text):
+            return self._run_task_mode(
+                context=context,
+                user_input=text,
+                route=route,
+            )
+
+        return self._run_single_shot_mode(
+            context=context,
+            user_input=text,
+            route=route,
+        )
 
     def _ensure_loop_state_defaults(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:
         task_dict.setdefault("loop_cycle_count", 0)
@@ -120,6 +177,7 @@ class AgentLoop:
             if key in source:
                 target[key] = copy.deepcopy(source.get(key))
         return target
+
     def _extract_loop_final_answer(
         self,
         *,
