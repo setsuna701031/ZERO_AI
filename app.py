@@ -501,6 +501,23 @@ def _build_artifact_targets(task: Dict[str, Any]) -> List[Dict[str, Any]]:
     add_target(paths.get("task_dir"), _extract_task_id(merged_task), "dir", "task")
     return targets
 
+def _extract_shared_artifact_paths(task: Dict[str, Any]) -> List[str]:
+    shared_paths: List[str] = []
+    seen = set()
+
+    for item in _build_artifact_targets(task):
+        if not isinstance(item, dict):
+            continue
+        scope = _safe_str(item.get("scope")).lower()
+        path = _safe_str(item.get("path"))
+        if scope != "shared" or not path or path in seen:
+            continue
+        seen.add(path)
+        shared_paths.append(path)
+
+    return shared_paths
+
+
 
 def _pick_open_target(task: Dict[str, Any], selector: str = "") -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     merged_task = _merge_task_with_snapshot(task)
@@ -703,6 +720,7 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     last_error = _extract_last_error(task)
     blocked_reason = _extract_blocked_reason(task)
     paths = _extract_paths(task)
+    shared_artifacts = _extract_shared_artifact_paths(task)
     print(f"task_id: {task_id}")
     print(f"status: {status}")
     print(f"step: {step_progress}")
@@ -725,6 +743,10 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
         print("paths:")
         for key, value in paths.items():
             print(f"  {key}: {value}")
+    if shared_artifacts:
+        print("shared_artifacts:")
+        for path in shared_artifacts:
+            print(f"  - {path}")
 
 
 def _print_task_result(task: Dict[str, Any]) -> None:
@@ -735,6 +757,7 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     last_error = _extract_last_error(task)
     blocked_reason = _extract_blocked_reason(task)
     paths = _extract_paths(task)
+    shared_artifacts = _extract_shared_artifact_paths(task)
     print(f"task_id: {task_id}")
     print(f"status: {status}")
     print("final_answer:")
@@ -757,6 +780,10 @@ def _print_task_result(task: Dict[str, Any]) -> None:
                 print("paths:")
                 any_path = True
             print(f"  {key}: {value}")
+    if shared_artifacts:
+        print("shared_artifacts:")
+        for path in shared_artifacts:
+            print(f"  - {path}")
 
 
 def _create_task(system: Any, goal: str) -> Dict[str, Any]:
