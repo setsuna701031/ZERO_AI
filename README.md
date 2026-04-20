@@ -539,17 +539,19 @@ docs/images/checkpoints/
 
 ### Primary engineering checkpoint
 
-The strongest single checkpoint image right now is the summary mainline result/show capture:
+The strongest single checkpoint image right now is the mainline smoke result:
 
-![Task result and show summary mainline](docs/images/checkpoints/checkpoint_task_result_and_show_summary_mainline.png)
+![Mainline smoke all pass](docs/images/checkpoints/checkpoint_mainline_smoke_all_pass.png)
 
-This image is important because it shows, in one place:
+This image is important because it shows the core mainline validation path reaching full PASS.
 
-- finished task state
-- `task result` visibility
-- `task show` visibility
-- task path visibility
-- shared artifact visibility
+### Runtime checkpoint
+
+The strongest runtime stability checkpoint is:
+
+![Runtime smoke pass](docs/images/checkpoints/checkpoint_runtime_smoke_pass.png)
+
+This image is important because it shows the runtime validation path remaining stable after the recent interface and execution-path stabilization work.
 
 ### Requirement-pack checkpoint
 
@@ -564,18 +566,17 @@ This image is important because it shows:
 - shared artifact visibility
 - unified entrypoint proof through `[requirement-demo] PASS`
 
-### Requirement-pack task inspection checkpoint
+### Requirement-pack outputs checkpoint
 
-The engineering evidence companion image for that scenario is the task-show capture:
+The strongest proof-of-output companion image for that scenario is:
 
-![Requirement pack task show](docs/images/checkpoints/checkpoint_requirement_pack_task_show.png)
+![Requirement demo outputs](docs/images/checkpoints/checkpoint_requirement_demo_outputs.png)
 
 This image is useful because it shows:
 
-- acceptance checklist content
-- task/runtime path visibility
-- shared artifact visibility
-- inspectable task-show output for the requirement-pack flow
+- output artifact paths
+- generated delivery files
+- direct proof that the requirement scenario produced deliverables instead of only terminal text
 
 ### Execution-proof checkpoint
 
@@ -590,18 +591,24 @@ This image is important because it shows:
 - shared artifact visibility
 - unified entrypoint proof through `[execution-demo] PASS`
 
-Verified via runtime and mainline smoke validation.
+### Integration checkpoint
+
+A strong whole-system companion checkpoint is:
+
+![Task OS integration tests passed](docs/images/checkpoints/checkpoint_task_os_integration_tests_passed.png)
+
+This image is useful because it shows that the broader task OS integration path is not isolated from the demo path.
 
 ### Additional checkpoint images
 
+These are useful as secondary support images:
+
+- `checkpoint_requirement_pack_task_show.png`
 - `checkpoint_task_result_action_items_finished.png`
 - `checkpoint_task_result_action_items_mainline.png`
 - `checkpoint_task_result_and_show_summary_mainline.png`
-- `checkpoint_requirement_demo_pass.png`
-- `checkpoint_requirement_pack_task_show.png`
-- `checkpoint_execution_demo_pass.png`
 
-These are useful for README support, devlog proof, demo material, and future public-facing checkpoint presentation because they show:
+They remain useful for README support, devlog proof, demo material, and future public-facing checkpoint presentation because they show:
 
 - CLI invocation
 - finished task state
