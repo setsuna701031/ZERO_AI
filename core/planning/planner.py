@@ -37,9 +37,15 @@ class Planner:
     7. 保留使用者指定的 source / output path
     8. 新增「結構化 document task 入口」
     9. 新增 requirement-pack 多交付物規劃入口
+
+    本次收束補強：
+    10. planner result contract 固定化
+    11. step schema 正規化，確保最小共通欄位穩定
+    12. 避免不同規劃分支回傳格式漂移
     """
 
     _banner_printed = False
+    PLANNER_MODE = "deterministic_v28"
 
     def __init__(
         self,
@@ -102,7 +108,10 @@ class Planner:
                     goal=text or "structured_document_task",
                 )
 
-                steps = self._apply_step_metadata(structured_document_steps, task_name=task_name)
+                steps = self._apply_step_metadata(
+                    structured_document_steps,
+                    task_name=task_name,
+                )
                 intent = self._infer_intent(text=text, route=route, steps=steps)
 
                 result = self._build_plan_result(
@@ -222,6 +231,7 @@ class Planner:
         early_verify = None
         if not looks_multi_clause and self._has_verify_intent(stripped):
             early_verify = self._extract_verify_request(stripped, last_path=None)
+
         if early_verify:
             verify_path = str(early_verify.get("path") or "").strip()
             self.trace_logger.log_decision(
@@ -306,21 +316,26 @@ class Planner:
         if run_python:
             self.trace_logger.log_decision(
                 title="run_python detected",
-                message=run_python["path"],
+                message=str(run_python.get("path") or ""),
                 source="planner",
                 raw=run_python,
             )
-            return [run_python], False, run_python["path"]
+            run_path = str(run_python.get("path") or "").strip() or last_path
+            if run_path:
+                run_python["path"] = run_path
+            return [run_python], False, run_python.get("path") or last_path
 
         verify = self._extract_verify_request(stripped, last_path=last_path)
         if verify:
             verify_path = str(verify.get("path") or "").strip() or last_path
             self.trace_logger.log_decision(
                 title="verify detected",
-                message=verify_path,
+                message=verify_path or "",
                 source="planner",
                 raw=verify,
             )
+            if verify_path:
+                verify["path"] = verify_path
             return [verify], False, verify_path or last_path
 
         write = self._extract_write_request(stripped)
@@ -387,7 +402,7 @@ class Planner:
         return [{"type": "llm", "prompt": stripped}], True, last_path
 
     # ============================================================
-    # result builder
+    # result builder / contract normalization
     # ============================================================
 
     def _build_plan_result(
@@ -398,18 +413,84 @@ class Planner:
         fallback_used: bool,
         error: Optional[str],
     ) -> Dict[str, Any]:
-        return {
+        normalized_steps = self._normalize_steps(steps)
+
+        result = {
             "ok": error is None,
-            "planner_mode": "deterministic_v27",
-            "intent": intent,
-            "final_answer": final_answer,
-            "steps": steps,
+            "planner_mode": self.PLANNER_MODE,
+            "intent": str(intent or "respond"),
+            "final_answer": str(final_answer or ""),
+            "steps": normalized_steps,
             "error": error,
             "meta": {
-                "fallback_used": fallback_used,
-                "step_count": len(steps),
+                "fallback_used": bool(fallback_used),
+                "step_count": len(normalized_steps),
             },
         }
+
+        return result
+
+    def _normalize_steps(self, steps: Any) -> List[Dict[str, Any]]:
+        if not isinstance(steps, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        fallback_task_name = self._infer_task_name(task_dir="", goal="planner_steps")
+
+        for idx, step in enumerate(steps, start=1):
+            normalized.append(
+                self._normalize_step(
+                    step=step,
+                    index=idx,
+                    fallback_task_name=fallback_task_name,
+                )
+            )
+
+        return normalized
+
+    def _normalize_step(
+        self,
+        step: Any,
+        index: int,
+        fallback_task_name: str,
+    ) -> Dict[str, Any]:
+        if isinstance(step, dict):
+            item = dict(step)
+        else:
+            item = {"type": "unknown", "value": step}
+
+        step_type = str(item.get("type") or "unknown").strip() or "unknown"
+        task_name = str(item.get("task_name") or fallback_task_name).strip() or fallback_task_name
+        step_id = str(item.get("id") or f"{task_name}_step_{index}").strip() or f"{task_name}_step_{index}"
+
+        normalized = dict(item)
+        normalized["type"] = step_type
+        normalized["task_name"] = task_name
+        normalized["id"] = step_id
+
+        # 常見欄位保底，避免 agent_loop 讀值時遇到 None / 缺欄位亂飄
+        if step_type in {"read_file", "write_file", "ensure_file", "run_python", "verify_file"}:
+            normalized["path"] = str(normalized.get("path") or "")
+
+        if step_type == "command":
+            normalized["command"] = str(normalized.get("command") or "")
+
+        if step_type == "web_search":
+            normalized["query"] = str(normalized.get("query") or "")
+
+        if step_type == "llm":
+            normalized["prompt"] = str(normalized.get("prompt") or "")
+            if "mode" in normalized and normalized["mode"] is not None:
+                normalized["mode"] = str(normalized.get("mode") or "")
+
+        if step_type == "write_file":
+            normalized["content"] = str(normalized.get("content") or "")
+            normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
+
+        if step_type == "ensure_file":
+            normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
+
+        return normalized
 
     # ============================================================
     # clause splitting
@@ -466,20 +547,26 @@ class Planner:
     # ============================================================
 
     def _infer_task_name(self, task_dir: str, goal: str) -> str:
-        return "task_" + hashlib.sha1(goal.encode("utf-8")).hexdigest()[:6]
+        _ = task_dir
+        safe_goal = str(goal or "task")
+        return "task_" + hashlib.sha1(safe_goal.encode("utf-8")).hexdigest()[:6]
 
     def _apply_step_metadata(self, steps: List[Dict[str, Any]], task_name: str) -> List[Dict[str, Any]]:
         enriched: List[Dict[str, Any]] = []
 
         for idx, step in enumerate(steps, start=1):
-            item = dict(step)
+            item = dict(step or {})
             item.setdefault("id", f"{task_name}_step_{idx}")
             item.setdefault("task_name", task_name)
+            item.setdefault("type", "unknown")
             enriched.append(item)
 
         return enriched
 
     def _infer_intent(self, text: str, route: Any, steps: List[Dict[str, Any]]) -> str:
+        _ = text
+        _ = route
+
         if not steps:
             return "respond"
 

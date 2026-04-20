@@ -26,27 +26,15 @@ from core.runtime.task_runner import TaskRunner
 
 class AgentLoop:
     """
-    ZERO Agent Loop v2 - decision record first pass
+    ZERO Agent Loop v3 - interface contract stabilization
 
     本版重點：
     1. 保留 direct / task / llm / single-shot 主幹
-    2. document flow 仍強制走 planner + task mode
-    3. task mode 仍優先 scheduler.create_task + submit_existing_task
-    4. run_task_loop() 保持 single-task / one-step-per-cycle
-    5. 每一輪 loop 顯性輸出：
-       - observation
-       - decision
-       - decision_reason
-       - next_action
-       - terminal_reason
-    6. decision record 會回寫到 task：
-       - last_observation
-       - last_decision
-       - last_decision_reason
-       - next_action
-       - terminal_reason
-       - loop_cycle_count
-       - loop_history
+    2. 保留 document flow 強制走 planner + task mode
+    3. 保留 task mode scheduler.create_task + submit_existing_task 流程
+    4. 不重寫既有主線行為，只補 interface contract 收束
+    5. planner result / execution result / final response 皆做正規化
+    6. 減少 agent_loop 對 planner 回傳細節飄移的依賴
     """
 
     def __init__(
@@ -103,12 +91,16 @@ class AgentLoop:
     def run(self, user_input: str) -> Dict[str, Any]:
         text = str(user_input or "").strip()
         if not text:
-            return {
-                "ok": False,
-                "mode": "empty",
-                "error": "user_input is empty",
-                "final_answer": "",
-            }
+            return self._make_agent_response(
+                ok=False,
+                mode="empty",
+                context={},
+                route=None,
+                plan=None,
+                execution=None,
+                final_answer="",
+                error="user_input is empty",
+            )
 
         context = self._build_context(text)
         route = self._call_router(context, text)
@@ -135,7 +127,7 @@ class AgentLoop:
             route=route,
         )
         if direct_result is not None:
-            return direct_result
+            return self._normalize_agent_response(direct_result)
 
         llm_result = self._try_handle_llm_route(
             context=context,
@@ -143,19 +135,23 @@ class AgentLoop:
             route=route,
         )
         if llm_result is not None:
-            return llm_result
+            return self._normalize_agent_response(llm_result)
 
         if self._should_enter_task_mode(route, text):
-            return self._run_task_mode(
+            return self._normalize_agent_response(
+                self._run_task_mode(
+                    context=context,
+                    user_input=text,
+                    route=route,
+                )
+            )
+
+        return self._normalize_agent_response(
+            self._run_single_shot_mode(
                 context=context,
                 user_input=text,
                 route=route,
             )
-
-        return self._run_single_shot_mode(
-            context=context,
-            user_input=text,
-            route=route,
         )
 
     def _ensure_loop_state_defaults(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -216,6 +212,225 @@ class AgentLoop:
         return self._extract_final_answer(runner_result, None, fallback)
 
     # ============================================================
+    # contract normalization
+    # ============================================================
+
+    def _make_agent_response(
+        self,
+        *,
+        ok: bool,
+        mode: str,
+        context: Optional[Dict[str, Any]],
+        route: Any,
+        plan: Any,
+        execution: Any,
+        final_answer: str,
+        error: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "ok": bool(ok),
+            "mode": str(mode or "unknown"),
+            "context": context if isinstance(context, dict) else {},
+            "route": copy.deepcopy(route),
+            "plan": self._normalize_plan_result(plan),
+            "execution": self._normalize_execution_result(execution),
+            "final_answer": str(final_answer or ""),
+            "error": error,
+        }
+
+        if isinstance(extra, dict):
+            for key, value in extra.items():
+                if key in result:
+                    continue
+                result[key] = value
+
+        return result
+
+    def _normalize_agent_response(self, result: Any) -> Dict[str, Any]:
+        if not isinstance(result, dict):
+            return self._make_agent_response(
+                ok=False,
+                mode="invalid_response",
+                context={},
+                route=None,
+                plan=None,
+                execution=None,
+                final_answer="",
+                error="agent_loop returned invalid response",
+                extra={"raw_result": copy.deepcopy(result)},
+            )
+
+        normalized = dict(result)
+        normalized["ok"] = bool(normalized.get("ok", True))
+        normalized["mode"] = str(normalized.get("mode") or "unknown")
+        normalized["context"] = normalized.get("context") if isinstance(normalized.get("context"), dict) else {}
+        normalized["route"] = copy.deepcopy(normalized.get("route"))
+        normalized["plan"] = self._normalize_plan_result(normalized.get("plan"))
+        normalized["execution"] = self._normalize_execution_result(normalized.get("execution"))
+        normalized["final_answer"] = str(normalized.get("final_answer") or "")
+        normalized["error"] = normalized.get("error")
+        return normalized
+
+    def _normalize_plan_result(self, plan: Any) -> Optional[Dict[str, Any]]:
+        if plan is None:
+            return None
+
+        if not isinstance(plan, dict):
+            return {
+                "ok": False,
+                "planner_mode": "invalid_plan",
+                "intent": "respond",
+                "final_answer": "",
+                "steps": [],
+                "error": "planner returned non-dict result",
+                "meta": {
+                    "fallback_used": False,
+                    "step_count": 0,
+                },
+                "raw_plan": copy.deepcopy(plan),
+            }
+
+        steps = self._normalize_steps(self._extract_steps_from_plan(plan))
+
+        normalized = dict(plan)
+        normalized["ok"] = bool(normalized.get("ok", True))
+        normalized["planner_mode"] = str(normalized.get("planner_mode") or "unknown")
+        normalized["intent"] = str(normalized.get("intent") or "respond")
+        normalized["final_answer"] = str(normalized.get("final_answer") or "")
+        normalized["steps"] = steps
+        normalized["error"] = normalized.get("error")
+
+        meta = normalized.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["fallback_used"] = bool(meta.get("fallback_used", False))
+        meta["step_count"] = len(steps)
+        normalized["meta"] = meta
+
+        return normalized
+
+    def _normalize_execution_result(self, execution: Any) -> Optional[Dict[str, Any]]:
+        if execution is None:
+            return None
+
+        if not isinstance(execution, dict):
+            return {
+                "ok": False,
+                "steps_executed": 0,
+                "results": [],
+                "last_result": None,
+                "final_answer": "",
+                "error": "execution returned non-dict result",
+                "raw_execution": copy.deepcopy(execution),
+            }
+
+        normalized = dict(execution)
+        normalized["ok"] = bool(normalized.get("ok", True))
+        normalized["steps_executed"] = self._safe_int(normalized.get("steps_executed", 0), 0)
+
+        results = normalized.get("results")
+        if not isinstance(results, list):
+            results = []
+        normalized["results"] = self._normalize_execution_items(results)
+
+        last_result = normalized.get("last_result")
+        if isinstance(last_result, dict):
+            normalized["last_result"] = copy.deepcopy(last_result)
+        elif normalized["results"]:
+            last_item = normalized["results"][-1]
+            if isinstance(last_item, dict) and isinstance(last_item.get("result"), dict):
+                normalized["last_result"] = copy.deepcopy(last_item.get("result"))
+            else:
+                normalized["last_result"] = None
+        else:
+            normalized["last_result"] = None
+
+        normalized["final_answer"] = str(normalized.get("final_answer") or "")
+        if "error" in normalized:
+            normalized["error"] = normalized.get("error")
+        else:
+            normalized["error"] = None
+
+        return normalized
+
+    def _normalize_execution_items(self, items: List[Any]) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+
+        for idx, item in enumerate(items, start=1):
+            if isinstance(item, dict):
+                step = item.get("step")
+                result = item.get("result")
+                step_index = self._safe_int(item.get("step_index", idx), idx)
+
+                normalized.append(
+                    {
+                        "step_index": step_index,
+                        "step": self._normalize_step(step, step_index),
+                        "result": copy.deepcopy(result) if isinstance(result, dict) else {"ok": False, "raw_result": result},
+                    }
+                )
+                continue
+
+            normalized.append(
+                {
+                    "step_index": idx,
+                    "step": self._normalize_step(None, idx),
+                    "result": {"ok": False, "raw_result": item},
+                }
+            )
+
+        return normalized
+
+    def _normalize_steps(self, steps: Any) -> List[Dict[str, Any]]:
+        if not isinstance(steps, list):
+            return []
+
+        task_name = self._make_task_id()
+        return [self._normalize_step(step, idx, task_name=task_name) for idx, step in enumerate(steps, start=1)]
+
+    def _normalize_step(
+        self,
+        step: Any,
+        index: int,
+        task_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if isinstance(step, dict):
+            normalized = dict(step)
+        else:
+            normalized = {"type": "unknown", "value": step}
+
+        resolved_task_name = str(normalized.get("task_name") or task_name or "task_unknown").strip() or "task_unknown"
+        resolved_step_type = str(normalized.get("type") or "unknown").strip() or "unknown"
+        resolved_step_id = str(normalized.get("id") or f"{resolved_task_name}_step_{index}").strip() or f"{resolved_task_name}_step_{index}"
+
+        normalized["type"] = resolved_step_type
+        normalized["task_name"] = resolved_task_name
+        normalized["id"] = resolved_step_id
+
+        if resolved_step_type in {"read_file", "write_file", "ensure_file", "run_python", "verify", "verify_file"}:
+            normalized["path"] = str(normalized.get("path") or "")
+
+        if resolved_step_type == "command":
+            normalized["command"] = str(normalized.get("command") or "")
+
+        if resolved_step_type == "web_search":
+            normalized["query"] = str(normalized.get("query") or "")
+
+        if resolved_step_type == "llm":
+            normalized["prompt"] = str(normalized.get("prompt") or "")
+            if "mode" in normalized and normalized["mode"] is not None:
+                normalized["mode"] = str(normalized.get("mode") or "")
+
+        if resolved_step_type == "write_file":
+            normalized["content"] = str(normalized.get("content") or "")
+
+        if "scope" in normalized and normalized["scope"] is not None:
+            normalized["scope"] = str(normalized.get("scope") or "")
+
+        return normalized
+
+    # ============================================================
     # special routing guard
     # ============================================================
 
@@ -246,13 +461,16 @@ class AgentLoop:
 
         step = route.get("step")
         if not isinstance(step, dict):
-            return {
-                "ok": False,
-                "mode": "direct",
-                "context": context,
-                "route": route,
-                "error": "router returned direct mode but step missing",
-            }
+            return self._make_agent_response(
+                ok=False,
+                mode="direct",
+                context=context,
+                route=route,
+                plan=None,
+                execution=None,
+                final_answer="",
+                error="router returned direct mode but step missing",
+            )
 
         execution_result = self._execute_direct_step(
             step=step,
@@ -264,15 +482,17 @@ class AgentLoop:
         execution_result = self._run_verifier(execution_result)
         execution_result = self._run_safety_guard(execution_result)
 
-        return {
-            "ok": bool(execution_result.get("ok", True)) if isinstance(execution_result, dict) else True,
-            "mode": "direct",
-            "context": context,
-            "route": route,
-            "plan": None,
-            "execution": execution_result,
-            "final_answer": self._extract_final_answer(execution_result, None, user_input),
-        }
+        normalized_execution = self._normalize_execution_result(execution_result)
+
+        return self._make_agent_response(
+            ok=bool(normalized_execution.get("ok", True)) if isinstance(normalized_execution, dict) else True,
+            mode="direct",
+            context=context,
+            route=route,
+            plan=None,
+            execution=normalized_execution,
+            final_answer=self._extract_final_answer(normalized_execution, None, user_input),
+        )
 
     def _try_handle_llm_route(
         self,
@@ -287,15 +507,15 @@ class AgentLoop:
             return None
 
         if self.llm_client is None:
-            return {
-                "ok": True,
-                "mode": "llm",
-                "context": context,
-                "route": route,
-                "plan": None,
-                "execution": None,
-                "final_answer": "目前聊天模式尚未啟用。",
-            }
+            return self._make_agent_response(
+                ok=True,
+                mode="llm",
+                context=context,
+                route=route,
+                plan=None,
+                execution=None,
+                final_answer="目前聊天模式尚未啟用。",
+            )
 
         if self.llm_planner is None:
             fallback_result = self._run_single_shot_mode(
@@ -312,6 +532,7 @@ class AgentLoop:
             user_input=user_input,
             route=route,
         )
+        llm_plan = self._normalize_plan_result(llm_plan)
 
         if self.debug:
             print("[AgentLoop] llm_plan =", llm_plan)
@@ -341,15 +562,15 @@ class AgentLoop:
         steps = self._extract_steps_from_plan(llm_plan)
 
         if not steps:
-            return {
-                "ok": True,
-                "mode": "llm",
-                "context": context,
-                "route": route,
-                "plan": llm_plan,
-                "execution": None,
-                "final_answer": self._extract_final_answer(None, llm_plan, user_input),
-            }
+            return self._make_agent_response(
+                ok=True,
+                mode="llm",
+                context=context,
+                route=route,
+                plan=llm_plan,
+                execution=None,
+                final_answer=self._extract_final_answer(None, llm_plan, user_input),
+            )
 
         execution_result = self._execute_single_shot_steps(
             steps=steps,
@@ -360,16 +581,17 @@ class AgentLoop:
 
         execution_result = self._run_verifier(execution_result)
         execution_result = self._run_safety_guard(execution_result)
+        normalized_execution = self._normalize_execution_result(execution_result)
 
-        return {
-            "ok": bool(execution_result.get("ok", True)) if isinstance(execution_result, dict) else True,
-            "mode": "llm",
-            "context": context,
-            "route": route,
-            "plan": llm_plan,
-            "execution": execution_result,
-            "final_answer": self._extract_final_answer(execution_result, llm_plan, user_input),
-        }
+        return self._make_agent_response(
+            ok=bool(normalized_execution.get("ok", True)) if isinstance(normalized_execution, dict) else True,
+            mode="llm",
+            context=context,
+            route=route,
+            plan=llm_plan,
+            execution=normalized_execution,
+            final_answer=self._extract_final_answer(normalized_execution, llm_plan, user_input),
+        )
 
     def _execute_direct_step(
         self,
@@ -386,8 +608,10 @@ class AgentLoop:
                 "final_answer": "step_executor missing",
             }
 
+        normalized_step = self._normalize_step(step, 1)
+
         step_result = self._call_step_executor(
-            step=step,
+            step=normalized_step,
             context=context,
             user_input=user_input,
             route=route,
@@ -401,7 +625,7 @@ class AgentLoop:
                 "ok": False,
                 "error": "step_executor returned invalid result",
                 "raw_result": step_result,
-                "step": copy.deepcopy(step),
+                "step": copy.deepcopy(normalized_step),
             }
 
         return {
@@ -410,7 +634,7 @@ class AgentLoop:
             "results": [
                 {
                     "step_index": 1,
-                    "step": copy.deepcopy(step),
+                    "step": copy.deepcopy(normalized_step),
                     "result": copy.deepcopy(step_result),
                 }
             ],
@@ -431,28 +655,36 @@ class AgentLoop:
         user_input: str,
         route: Any,
     ) -> Dict[str, Any]:
-        plan = self._call_planner(
+        raw_plan = self._call_planner(
             context=context,
             user_input=user_input,
             route=route,
         )
+        plan = self._normalize_plan_result(raw_plan)
 
-        if isinstance(plan, dict) and plan.get("ok") is False and plan.get("_planner_error"):
-            return {
-                "ok": False,
-                "mode": "single_shot",
-                "error": plan.get("error", "planner call failed"),
-                "traceback": plan.get("traceback"),
-            }
+        if isinstance(plan, dict) and plan.get("ok") is False and raw_plan is not None and isinstance(raw_plan, dict) and raw_plan.get("_planner_error"):
+            return self._make_agent_response(
+                ok=False,
+                mode="single_shot",
+                context=context,
+                route=route,
+                plan=plan,
+                execution=None,
+                final_answer="",
+                error=plan.get("error", "planner call failed"),
+                extra={"traceback": raw_plan.get("traceback")},
+            )
 
         if plan is None:
-            return {
-                "ok": True,
-                "mode": "single_shot",
-                "context": context,
-                "route": route,
-                "final_answer": user_input,
-            }
+            return self._make_agent_response(
+                ok=True,
+                mode="single_shot",
+                context=context,
+                route=route,
+                plan=None,
+                execution=None,
+                final_answer=user_input,
+            )
 
         steps = self._extract_steps_from_plan(plan)
 
@@ -460,15 +692,15 @@ class AgentLoop:
             print("[AgentLoop] single-shot steps =", steps)
 
         if not steps:
-            return {
-                "ok": True,
-                "mode": "single_shot",
-                "context": context,
-                "route": route,
-                "plan": plan,
-                "execution": None,
-                "final_answer": self._extract_final_answer(None, plan, user_input),
-            }
+            return self._make_agent_response(
+                ok=True,
+                mode="single_shot",
+                context=context,
+                route=route,
+                plan=plan,
+                execution=None,
+                final_answer=self._extract_final_answer(None, plan, user_input),
+            )
 
         execution_result = self._execute_single_shot_steps(
             steps=steps,
@@ -479,25 +711,26 @@ class AgentLoop:
 
         execution_result = self._run_verifier(execution_result)
         execution_result = self._run_safety_guard(execution_result)
+        normalized_execution = self._normalize_execution_result(execution_result)
 
         try:
             self._maybe_write_document_flow_trace(
                 steps=steps,
-                execution_result=execution_result,
+                execution_result=normalized_execution or {},
             )
         except Exception as e:
             if self.debug:
                 print(f"[AgentLoop] document flow trace write failed: {e}")
 
-        return {
-            "ok": bool(execution_result.get("ok", True)) if isinstance(execution_result, dict) else True,
-            "mode": "single_shot",
-            "context": context,
-            "route": route,
-            "plan": plan,
-            "execution": execution_result,
-            "final_answer": self._extract_final_answer(execution_result, plan, user_input),
-        }
+        return self._make_agent_response(
+            ok=bool(normalized_execution.get("ok", True)) if isinstance(normalized_execution, dict) else True,
+            mode="single_shot",
+            context=context,
+            route=route,
+            plan=plan,
+            execution=normalized_execution,
+            final_answer=self._extract_final_answer(normalized_execution, plan, user_input),
+        )
 
     def _execute_single_shot_steps(
         self,
@@ -514,11 +747,13 @@ class AgentLoop:
                 "final_answer": "step_executor missing",
             }
 
+        normalized_steps = self._normalize_steps(steps)
+
         results: List[Dict[str, Any]] = []
         previous_result: Any = None
         last_result: Dict[str, Any] = {}
 
-        for index, step in enumerate(steps, start=1):
+        for index, step in enumerate(normalized_steps, start=1):
             step_result = self._call_step_executor(
                 step=step,
                 context=context,
@@ -526,7 +761,7 @@ class AgentLoop:
                 route=route,
                 previous_result=previous_result,
                 step_index=index,
-                step_count=len(steps),
+                step_count=len(normalized_steps),
             )
 
             if not isinstance(step_result, dict):
@@ -555,14 +790,16 @@ class AgentLoop:
                     "results": results,
                     "last_result": last_result,
                     "final_answer": self._summarize_step_result(last_result, failed=True),
+                    "error": step_result.get("error"),
                 }
 
         return {
             "ok": True,
-            "steps_executed": len(steps),
+            "steps_executed": len(normalized_steps),
             "results": results,
             "last_result": last_result,
             "final_answer": self._summarize_step_result(last_result, failed=False),
+            "error": None,
         }
 
     # ============================================================
@@ -595,33 +832,49 @@ class AgentLoop:
     ) -> Dict[str, Any]:
         task_entry = self.scheduler or self.task_manager
         if task_entry is None:
-            return {
-                "ok": False,
-                "mode": "task",
-                "error": "scheduler/task_manager missing",
-            }
+            return self._make_agent_response(
+                ok=False,
+                mode="task",
+                context=context,
+                route=route,
+                plan=None,
+                execution=None,
+                final_answer="",
+                error="scheduler/task_manager missing",
+            )
 
         if self.planner is None:
-            return {
-                "ok": False,
-                "mode": "task",
-                "error": "planner missing",
-            }
+            return self._make_agent_response(
+                ok=False,
+                mode="task",
+                context=context,
+                route=route,
+                plan=None,
+                execution=None,
+                final_answer="",
+                error="planner missing",
+            )
 
         try:
-            plan = self._call_planner(
+            raw_plan = self._call_planner(
                 context=context,
                 user_input=user_input,
                 route=route,
             )
+            plan = self._normalize_plan_result(raw_plan)
 
-            if isinstance(plan, dict) and plan.get("ok") is False and plan.get("_planner_error"):
-                return {
-                    "ok": False,
-                    "mode": "task",
-                    "error": plan.get("error", "planner call failed"),
-                    "traceback": plan.get("traceback"),
-                }
+            if isinstance(plan, dict) and plan.get("ok") is False and raw_plan is not None and isinstance(raw_plan, dict) and raw_plan.get("_planner_error"):
+                return self._make_agent_response(
+                    ok=False,
+                    mode="task",
+                    context=context,
+                    route=route,
+                    plan=plan,
+                    execution=None,
+                    final_answer="",
+                    error=plan.get("error", "planner call failed"),
+                    extra={"traceback": raw_plan.get("traceback")},
+                )
 
             if self._supports_scheduler_create_submit(task_entry):
                 return self._run_task_mode_via_scheduler(
@@ -641,12 +894,17 @@ class AgentLoop:
             )
 
         except Exception as e:
-            return {
-                "ok": False,
-                "mode": "task",
-                "error": f"task mode failed: {e}",
-                "traceback": __import__("traceback").format_exc(),
-            }
+            return self._make_agent_response(
+                ok=False,
+                mode="task",
+                context=context,
+                route=route,
+                plan=None,
+                execution=None,
+                final_answer="",
+                error=f"task mode failed: {e}",
+                extra={"traceback": __import__("traceback").format_exc()},
+            )
 
     def _run_task_mode_via_scheduler(
         self,
@@ -656,6 +914,8 @@ class AgentLoop:
         route: Any,
         plan: Any,
     ) -> Dict[str, Any]:
+        normalized_plan = self._normalize_plan_result(plan)
+
         priority = self._route_int(route, "priority", 0)
         max_replans = self._route_int(route, "max_replans", 1)
         timeout_ticks = self._route_int(route, "timeout_ticks", 0)
@@ -669,16 +929,21 @@ class AgentLoop:
         )
 
         if not isinstance(create_result, dict) or not create_result.get("ok"):
-            return {
-                "ok": False,
-                "mode": "task",
-                "error": (
+            return self._make_agent_response(
+                ok=False,
+                mode="task",
+                context=context,
+                route=route,
+                plan=normalized_plan,
+                execution=None,
+                final_answer="",
+                error=(
                     create_result.get("error", "scheduler.create_task failed")
                     if isinstance(create_result, dict)
                     else "scheduler.create_task failed"
                 ),
-                "create_result": create_result,
-            }
+                extra={"create_result": create_result},
+            )
 
         created_task = create_result.get("task")
         if not isinstance(created_task, dict):
@@ -688,15 +953,20 @@ class AgentLoop:
             created_task = self._normalize_task_input(created_task)
 
         if not isinstance(created_task, dict):
-            return {
-                "ok": False,
-                "mode": "task",
-                "error": "created task missing or invalid",
-                "create_result": create_result,
-            }
+            return self._make_agent_response(
+                ok=False,
+                mode="task",
+                context=context,
+                route=route,
+                plan=normalized_plan,
+                execution=None,
+                final_answer="",
+                error="created task missing or invalid",
+                extra={"create_result": create_result},
+            )
 
-        created_task["planner_result"] = plan if isinstance(plan, dict) else {}
-        created_task["steps"] = self._extract_steps_from_plan(plan)
+        created_task["planner_result"] = normalized_plan if isinstance(normalized_plan, dict) else {}
+        created_task["steps"] = self._extract_steps_from_plan(normalized_plan)
         created_task["steps_total"] = len(created_task["steps"])
         created_task["final_answer"] = ""
         created_task["max_replans"] = max_replans
@@ -733,19 +1003,22 @@ class AgentLoop:
         submit_result = task_entry.submit_existing_task(task_id)
         refreshed_task = self._get_task_from_entry(task_entry, task_id) or created_task
 
-        return {
-            "ok": True,
-            "mode": "task",
-            "context": context,
-            "route": route,
-            "task": refreshed_task,
-            "task_id": task_id,
-            "task_dir": refreshed_task.get("task_dir"),
-            "plan": refreshed_task.get("planner_result"),
-            "create_result": create_result,
-            "submit_result": submit_result,
-            "final_answer": f"已建立任務：{refreshed_task.get('title') or refreshed_task.get('goal')}",
-        }
+        return self._make_agent_response(
+            ok=True,
+            mode="task",
+            context=context,
+            route=route,
+            plan=refreshed_task.get("planner_result"),
+            execution=None,
+            final_answer=f"已建立任務：{refreshed_task.get('title') or refreshed_task.get('goal')}",
+            extra={
+                "task": refreshed_task,
+                "task_id": task_id,
+                "task_dir": refreshed_task.get("task_dir"),
+                "create_result": create_result,
+                "submit_result": submit_result,
+            },
+        )
 
     def _run_task_mode_legacy_enqueue(
         self,
@@ -755,6 +1028,8 @@ class AgentLoop:
         route: Any,
         plan: Any,
     ) -> Dict[str, Any]:
+        normalized_plan = self._normalize_plan_result(plan)
+
         task = self._build_task_shell(
             user_input=user_input,
             context=context,
@@ -765,15 +1040,20 @@ class AgentLoop:
             try:
                 task = self.task_workspace.create_workspace(task)
             except Exception as e:
-                return {
-                    "ok": False,
-                    "mode": "task",
-                    "error": f"task_workspace.create_workspace failed: {e}",
-                    "traceback": __import__("traceback").format_exc(),
-                }
+                return self._make_agent_response(
+                    ok=False,
+                    mode="task",
+                    context=context,
+                    route=route,
+                    plan=normalized_plan,
+                    execution=None,
+                    final_answer="",
+                    error=f"task_workspace.create_workspace failed: {e}",
+                    extra={"traceback": __import__("traceback").format_exc()},
+                )
 
-        task["planner_result"] = plan if isinstance(plan, dict) else {}
-        task["steps"] = self._extract_steps_from_plan(plan)
+        task["planner_result"] = normalized_plan if isinstance(normalized_plan, dict) else {}
+        task["steps"] = self._extract_steps_from_plan(normalized_plan)
         task["steps_total"] = len(task["steps"])
         task["final_answer"] = ""
         self._ensure_loop_state_defaults(task)
@@ -796,18 +1076,21 @@ class AgentLoop:
         if isinstance(enqueued_task_dict, dict):
             task = enqueued_task_dict
 
-        return {
-            "ok": True,
-            "mode": "task",
-            "context": context,
-            "route": route,
-            "task": task,
-            "task_id": task.get("task_id") or task.get("id") or task.get("task_name"),
-            "task_dir": task.get("task_dir"),
-            "plan": task.get("planner_result"),
-            "enqueue_result": enqueue_result,
-            "final_answer": f"已建立任務：{task.get('title') or task.get('goal')}",
-        }
+        return self._make_agent_response(
+            ok=True,
+            mode="task",
+            context=context,
+            route=route,
+            plan=task.get("planner_result"),
+            execution=None,
+            final_answer=f"已建立任務：{task.get('title') or task.get('goal')}",
+            extra={
+                "task": task,
+                "task_id": task.get("task_id") or task.get("id") or task.get("task_name"),
+                "task_dir": task.get("task_dir"),
+                "enqueue_result": enqueue_result,
+            },
+        )
 
     # ============================================================
     # loop helpers
@@ -832,19 +1115,19 @@ class AgentLoop:
     def _extract_steps_from_plan(self, plan: Any) -> list:
         if isinstance(plan, dict):
             if isinstance(plan.get("steps"), list):
-                return copy.deepcopy(plan["steps"])
+                return self._normalize_steps(copy.deepcopy(plan["steps"]))
 
             nested_plan = plan.get("plan")
             if isinstance(nested_plan, dict) and isinstance(nested_plan.get("steps"), list):
-                return copy.deepcopy(nested_plan["steps"])
+                return self._normalize_steps(copy.deepcopy(nested_plan["steps"]))
 
             for key in ("actions", "tasks"):
                 value = plan.get(key)
                 if isinstance(value, list):
-                    return copy.deepcopy(value)
+                    return self._normalize_steps(copy.deepcopy(value))
 
         if isinstance(plan, list):
-            return copy.deepcopy(plan)
+            return self._normalize_steps(copy.deepcopy(plan))
 
         return []
 
@@ -1221,7 +1504,7 @@ class AgentLoop:
             if returncode == 0:
                 return "命令執行完成"
 
-        if step_type == "verify":
+        if step_type in {"verify", "verify_file"}:
             if payload.get("verified") is True:
                 checked = str(payload.get("checked_text") or "").strip()
                 if checked:
