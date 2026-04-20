@@ -8,17 +8,17 @@ This pass focused on stabilizing the inner execution path before pushing farther
 
 * Tool layer first-pass stabilization
 
-  * `core/tools/tool\_registry.py`
-  * `core/tools/command\_tool.py`
-  * `core/tools/file\_tool.py`
-  * `core/tools/workspace\_tool.py`
-  * `core/tasks/task\_paths.py`
+  * `core/tools/tool\\\_registry.py`
+  * `core/tools/command\\\_tool.py`
+  * `core/tools/file\\\_tool.py`
+  * `core/tools/workspace\\\_tool.py`
+  * `core/tasks/task\\\_paths.py`
 * Step executor first-pass outer-envelope stabilization
 
-  * `core/runtime/step\_executor.py`
+  * `core/runtime/step\\\_executor.py`
 * Step handlers first-pass normalization
 
-  * `core/runtime/step\_handlers.py`
+  * `core/runtime/step\\\_handlers.py`
 * Executor first-pass internal responsibility cleanup
 
   * `core/runtime/executor.py`
@@ -30,29 +30,29 @@ This pass focused on stabilizing the inner execution path before pushing farther
 
 Tool layer validation:
 
-* `tests/test\_file\_tool.py`
-* `tests/test\_workspace\_tool.py`
-* `tests/test\_tool\_registry.py`
-* `tests/run\_tool\_layer\_smoke.py`
+* `tests/test\\\_file\\\_tool.py`
+* `tests/test\\\_workspace\\\_tool.py`
+* `tests/test\\\_tool\\\_registry.py`
+* `tests/run\\\_tool\\\_layer\\\_smoke.py`
 
 Runtime / execution validation:
 
-* `tests/test\_step\_executor.py`
-* `tests/test\_executor\_repair\_rules.py`
-* `tests/test\_executor\_safe\_path\_repair.py`
-* `tests/test\_executor\_smoke.py`
-* `tests/test\_agent\_loop.py`
-* `tests/test\_scheduler\_smoke.py`
-* `tests/run\_runtime\_smoke.py`
+* `tests/test\\\_step\\\_executor.py`
+* `tests/test\\\_executor\\\_repair\\\_rules.py`
+* `tests/test\\\_executor\\\_safe\\\_path\\\_repair.py`
+* `tests/test\\\_executor\\\_smoke.py`
+* `tests/test\\\_agent\\\_loop.py`
+* `tests/test\\\_scheduler\\\_smoke.py`
+* `tests/run\\\_runtime\\\_smoke.py`
 
 ### Current Validation Status
 
 Confirmed passing during this stabilization pass:
 
-* `python tests/run\_tool\_layer\_smoke.py`
-* `python tests/run\_runtime\_smoke.py`
-* `python tests/test\_executor\_smoke.py`
-* `python tests/test\_scheduler\_smoke.py`
+* `python tests/run\\\_tool\\\_layer\\\_smoke.py`
+* `python tests/run\\\_runtime\\\_smoke.py`
+* `python tests/test\\\_executor\\\_smoke.py`
+* `python tests/test\\\_scheduler\\\_smoke.py`
 
 ### Why This Matters
 
@@ -89,15 +89,15 @@ This pass focused on reducing scheduler responsibility mixing before pushing far
 
 Scheduler internal responsibility split completed across helper layers:
 
-* `core/tasks/scheduler\_core/queue\_sync\_helpers.py`
-* `core/tasks/scheduler\_core/dispatch\_helpers.py`
-* `core/tasks/scheduler\_core/repo\_state\_helpers.py`
-* `core/tasks/scheduler\_core/trace\_helpers.py`
-* `core/tasks/scheduler\_core/simple\_runner\_helpers.py`
-* `core/tasks/scheduler\_core/step\_path\_helpers.py`
-* `core/tasks/scheduler\_core/simple\_step\_executor\_helpers.py`
-* `core/tasks/scheduler\_core/command\_step\_helpers.py`
-* `core/tasks/scheduler\_core/llm\_step\_helpers.py`
+* `core/tasks/scheduler\\\_core/queue\\\_sync\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/dispatch\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/repo\\\_state\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/trace\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/simple\\\_runner\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/step\\\_path\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/simple\\\_step\\\_executor\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/command\\\_step\\\_helpers.py`
+* `core/tasks/scheduler\\\_core/llm\\\_step\\\_helpers.py`
 
 Main scheduler remained the orchestration shell while queue sync, dispatch flow, repo/runtime sync, trace handling, simple runner flow, path handling, step execution helpers, command execution, and LLM step handling were pulled into dedicated modules.
 
@@ -105,8 +105,8 @@ Main scheduler remained the orchestration shell while queue sync, dispatch flow,
 
 This consolidation pass was validated repeatedly during each extraction step with:
 
-* `python tests/test\_scheduler\_smoke.py`
-* `python tests/run\_runtime\_smoke.py`
+* `python tests/test\\\_scheduler\\\_smoke.py`
+* `python tests/run\\\_runtime\\\_smoke.py`
 
 Confirmed passing after the consolidation sequence:
 
@@ -136,37 +136,37 @@ This pass focused on fixing the real document flow path from planning to LLM pro
 The document flow initially had multiple breakpoints:
 
 * deterministic document planning was overriding user-specified output paths
-* the active planning path was going through `core/system/llm\_planner.py`, not only `core/planning/planner.py`
-* `{{file\_content}}` was not reliably injected into LLM prompt templates
-* `write\_file` with `use\_previous\_text=true` could complete while still writing empty files
+* the active planning path was going through `core/system/llm\\\_planner.py`, not only `core/planning/planner.py`
+* `{{file\\\_content}}` was not reliably injected into LLM prompt templates
+* `write\\\_file` with `use\\\_previous\\\_text=true` could complete while still writing empty files
 * `task result` could show finished while the expected shared artifact was empty
 
 ### Fixes Applied
 
 Planning path preservation:
 
-* `core/system/llm\_planner.py`
+* `core/system/llm\\\_planner.py`
 * `core/planning/planner.py`
 
 These changes preserved user-specified source and output paths such as:
 
 * `workspace/shared/input.txt`
-* `workspace/shared/summary\_v2.txt`
-* `workspace/shared/action\_items\_v2.txt`
+* `workspace/shared/summary\\\_v2.txt`
+* `workspace/shared/action\\\_items\\\_v2.txt`
 
 LLM prompt injection / execution path fixes:
 
-* `core/runtime/step\_executor.py`
-* `core/tasks/scheduler\_core/llm\_step\_helpers.py`
+* `core/runtime/step\\\_executor.py`
+* `core/tasks/scheduler\\\_core/llm\\\_step\\\_helpers.py`
 * `core/tasks/scheduler.py`
 
-These changes repaired the path where document content from `read\_file` must actually reach the LLM step.
+These changes repaired the path where document content from `read\\\_file` must actually reach the LLM step.
 
 Write-back / previous-result extraction fixes:
 
-* `core/runtime/step\_handlers.py`
+* `core/runtime/step\\\_handlers.py`
 
-This change repaired `write\_file` with `use\_previous\_text=true` so the previous LLM text is actually written into the target shared file instead of producing an empty artifact.
+This change repaired `write\\\_file` with `use\\\_previous\\\_text=true` so the previous LLM text is actually written into the target shared file instead of producing an empty artifact.
 
 ### Real Flow Validation
 
@@ -177,11 +177,11 @@ Confirmed working flows:
 1. Summary flow
 
    * input: `workspace/shared/input.txt`
-   * output: `workspace/shared/summary\_v2.txt`
+   * output: `workspace/shared/summary\\\_v2.txt`
 2. Action items flow
 
    * input: `workspace/shared/input.txt`
-   * output: `workspace/shared/action\_items\_v2.txt`
+   * output: `workspace/shared/action\\\_items\\\_v2.txt`
 
 Confirmed behavior:
 
@@ -193,9 +193,9 @@ Confirmed behavior:
 
 ### Example Validated Outputs
 
-Summary flow produced a real plain-text summary in `summary\_v2.txt`.
+Summary flow produced a real plain-text summary in `summary\\\_v2.txt`.
 
-Action-items flow produced a structured plain-text result in `action\_items\_v2.txt` with:
+Action-items flow produced a structured plain-text result in `action\\\_items\\\_v2.txt` with:
 
 * `ACTION ITEMS` heading
 * owner / task / due layout
@@ -226,7 +226,7 @@ Stable document-flow checkpoint:
 * action-items flow: working
 * output path preservation: working
 * LLM file-content injection: working
-* `use\_previous\_text` write-back: working
+* `use\\\_previous\\\_text` write-back: working
 * finished task result + shared artifact output: working
 
 ### Evidence Kept
@@ -234,8 +234,8 @@ Stable document-flow checkpoint:
 Keep the latest terminal screenshots showing:
 
 * scheduler smoke + runtime smoke pass
-* summary flow finished + `summary\_v2.txt` written
-* action-items flow finished + `action\_items\_v2.txt` written
+* summary flow finished + `summary\\\_v2.txt` written
+* action-items flow finished + `action\\\_items\\\_v2.txt` written
 
 These are useful as devlog proof and future demo / README evidence.
 
@@ -273,7 +273,7 @@ Validated document task modes:
    * goal: `summarize input.txt into summary.txt`
 2. Action-items task
 
-   * goal: `read input.txt and extract action items into action\_items.txt`
+   * goal: `read input.txt and extract action items into action\\\_items.txt`
 
 ### Validation
 
@@ -290,7 +290,7 @@ Confirmed working through the official task mainline:
 Confirmed behavior:
 
 * task record was written into `workspace/tasks.json`
-* task workspace directory was created under `workspace/tasks/<task\_id>/`
+* task workspace directory was created under `workspace/tasks/<task\\\_id>/`
 * task reached `finished`
 * step progress reached `3/3`
 * final answer was returned through official task result reporting
@@ -298,15 +298,15 @@ Confirmed behavior:
 
   * `result.json`
   * `plan.json`
-  * `runtime\_state.json`
-  * `execution\_log.json`
+  * `runtime\\\_state.json`
+  * `execution\\\_log.json`
   * `trace.json`
-  * `task\_snapshot.json`
+  * `task\\\_snapshot.json`
 
 Shared output artifacts also remained valid:
 
 * `workspace/shared/summary.txt`
-* `workspace/shared/action\_items.txt`
+* `workspace/shared/action\\\_items.txt`
 
 ### Why This Matters
 
@@ -342,9 +342,9 @@ Keep the latest terminal evidence showing:
 * `task result` and `task show` for finished summary task
 * `task result` for finished action-items task
 * `workspace/tasks.json` containing the created document tasks
-* `workspace/tasks/<task\_id>/` directories created for the finished tasks
+* `workspace/tasks/<task\\\_id>/` directories created for the finished tasks
 * `workspace/shared/summary.txt`
-* `workspace/shared/action\_items.txt`
+* `workspace/shared/action\\\_items.txt`
 
 These are strong proof points for future devlog, README, demo, and external presentation material.
 
@@ -372,15 +372,15 @@ Confirmed working flow through the official task lifecycle:
 
 Validated commands:
 
-* `python app.py task doc-summary input.txt summary\_cli.txt`
-* `python app.py task doc-action-items input.txt action\_items\_cli.txt`
+* `python app.py task doc-summary input.txt summary\\\_cli.txt`
+* `python app.py task doc-action-items input.txt action\\\_items\\\_cli.txt`
 
 Confirmed behavior:
 
 * task creation succeeded
 * task reached `finished`
 * `task result` returned the expected final answer
-* task directory artifacts were created under `workspace/tasks/<task\_id>/`
+* task directory artifacts were created under `workspace/tasks/<task\\\_id>/`
 * document-task behavior remained consistent with the mainline integration pass
 
 ### Why This Matters
@@ -390,7 +390,7 @@ This pass makes document-task entry cleaner and more stable.
 Before this, document-task creation depended mainly on natural-language task goals such as:
 
 * `summarize input.txt into summary.txt`
-* `read input.txt and extract action items into action\_items.txt`
+* `read input.txt and extract action items into action\\\_items.txt`
 
 That path still works, but explicit CLI entry is better for:
 
@@ -426,8 +426,8 @@ This pass focused on improving task result visibility for completed document tas
 
 `app.py` was updated so that:
 
-* `task result <task\_id>`
-* `task show <task\_id>`
+* `task result <task\\\_id>`
+* `task show <task\\\_id>`
 
 now display shared-scope artifacts in addition to task-local runtime files.
 
@@ -437,13 +437,13 @@ This means completed document tasks now expose shared outputs more directly inst
 
 Confirmed working on finished document tasks:
 
-* `task result` shows `shared\_artifacts`
-* `task show` shows `shared\_artifacts`
+* `task result` shows `shared\\\_artifacts`
+* `task show` shows `shared\\\_artifacts`
 
 Confirmed shared-scope paths were visible in task output, including examples such as:
 
 * `workspace/shared/input.txt`
-* `workspace/shared/action\_items\_cli.txt`
+* `workspace/shared/action\\\_items\\\_cli.txt`
 
 ### Why This Matters
 
@@ -451,8 +451,8 @@ Before this pass, task output mainly exposed task-local runtime files such as:
 
 * `result.json`
 * `plan.json`
-* `runtime\_state.json`
-* `execution\_log.json`
+* `runtime\\\_state.json`
+* `execution\\\_log.json`
 * `trace.json`
 
 Those are useful for engineering inspection, but operators usually care most about the actual shared output artifact.
@@ -476,10 +476,10 @@ This pass focused on locking the document-task checkpoint with repeatable valida
 
 Added:
 
-* `tests/run\_document\_task\_smoke.py`
-* `tests/run\_mainline\_smoke.py`
+* `tests/run\\\_document\\\_task\\\_smoke.py`
+* `tests/run\\\_mainline\\\_smoke.py`
 
-`run\_document\_task\_smoke.py` validates both document-task flows end-to-end:
+`run\\\_document\\\_task\\\_smoke.py` validates both document-task flows end-to-end:
 
 1. summary flow
 2. action-items flow
@@ -494,7 +494,7 @@ The smoke covers:
 * `task result` output
 * `task show` output
 
-`run\_mainline\_smoke.py` was added as a higher-level validation entry for stable mainline checks.
+`run\\\_mainline\\\_smoke.py` was added as a higher-level validation entry for stable mainline checks.
 
 ### Validation
 
@@ -507,8 +507,8 @@ Confirmed passing:
 
 Example outputs confirmed:
 
-* `summary\_smoke.txt` created under `workspace/shared/`
-* `action\_items\_smoke.txt` created under `workspace/shared/`
+* `summary\\\_smoke.txt` created under `workspace/shared/`
+* `action\\\_items\\\_smoke.txt` created under `workspace/shared/`
 * smoke runner reported `ALL PASS`
 
 ### Why This Matters
@@ -531,14 +531,14 @@ Stable checkpoint after document-task smoke integration:
 
 ## 2026-04 AgentLoop Run Compatibility and Runtime Smoke Recovery Pass
 
-This pass focused on restoring runtime validation compatibility after `tests/test\_agent\_loop.py` exposed an interface mismatch.
+This pass focused on restoring runtime validation compatibility after `tests/test\\\_agent\\\_loop.py` exposed an interface mismatch.
 
 ### Problem
 
-`runtime\_smoke` was failing because:
+`runtime\\\_smoke` was failing because:
 
-* `tests/test\_agent\_loop.py` called `loop.run(user\_input)`
-* `core/agent/agent\_loop.py` no longer exposed a compatible `run(...)` entry
+* `tests/test\\\_agent\\\_loop.py` called `loop.run(user\\\_input)`
+* `core/agent/agent\\\_loop.py` no longer exposed a compatible `run(...)` entry
 
 This caused runtime validation to fail with:
 
@@ -546,7 +546,7 @@ This caused runtime validation to fail with:
 
 ### Completed
 
-`core/agent/agent\_loop.py` was updated with a minimal compatibility `run(user\_input: str)` entry.
+`core/agent/agent\\\_loop.py` was updated with a minimal compatibility `run(user\\\_input: str)` entry.
 
 The fix was intentionally kept small:
 
@@ -559,9 +559,9 @@ The fix was intentionally kept small:
 
 Confirmed passing after the compatibility restoration:
 
-* `tests/test\_agent\_loop.py`: PASS
-* `tests/run\_runtime\_smoke.py`: PASS
-* `tests/run\_mainline\_smoke.py`: PASS
+* `tests/test\\\_agent\\\_loop.py`: PASS
+* `tests/run\\\_runtime\\\_smoke.py`: PASS
+* `tests/run\\\_mainline\\\_smoke.py`: PASS
 
 ### Why This Matters
 
@@ -587,7 +587,7 @@ Stable checkpoint after AgentLoop compatibility recovery:
 
 
 
-\## 2026-04-19 - Mainline smoke folded with requirement/execution demos
+## 2026-04-19 - Mainline smoke folded with requirement/execution demos
 
 
 
@@ -597,13 +597,11 @@ Today I finished folding the new demo smoke coverage into the stable mainline sm
 
 What was completed:
 
-\- Added `tests/run\_requirement\_demo\_smoke.py`
+* Added `tests/run\_requirement\_demo\_smoke.py`
+* Added `tests/run\_execution\_demo\_smoke.py`
+* Folded both into `tests/run\_mainline\_smoke.py`
 
-\- Added `tests/run\_execution\_demo\_smoke.py`
-
-\- Folded both into `tests/run\_mainline\_smoke.py`
-
-\- Verified `python tests/run\_mainline\_smoke.py` passes end-to-end
+\- Verified `python tests/run\\\_mainline\\\_smoke.py` passes end-to-end
 
 
 
@@ -621,9 +619,8 @@ Current result:
 
 Still excluded for now:
 
-\- runtime\_smoke
-
-\- Reason: currently blocked by `tests/test\_agent\_loop.py`
+* runtime\_smoke
+* Reason: currently blocked by `tests/test\_agent\_loop.py`
 
 \- Known blocker: `AttributeError: 'AgentLoop' object has no attribute 'run'`
 
@@ -641,7 +638,270 @@ Impact:
 
 Next step:
 
-\- Investigate and repair the runtime/agent\_loop path
+* Investigate and repair the runtime/agent\_loop path
 
 \- Unblock runtime smoke so it can eventually be folded into the mainline validation suite
+
+## 2026-04 Smoke Script Rename and Runner Sync Pass
+
+This pass focused on removing naming ambiguity inside `tests/` after several manual smoke scripts were still using misleading `test\_\*.py` names.
+
+### Problem
+
+Some files under `tests/` looked like pytest tests by name, but were actually direct-execution smoke scripts with `main()` entrypoints.
+
+This created two kinds of confusion:
+
+* operators could incorrectly try to run them with pytest
+* smoke runners could drift behind after renames and start referencing missing files
+
+The most visible cases were:
+
+* `tests/test\_agent\_loop.py`
+* `tests/test\_scheduler\_smoke.py`
+* `tests/test\_executor\_smoke.py`
+
+### Completed
+
+Renamed manual smoke / diagnostic scripts to `run\_\*.py` naming:
+
+* `tests/test\_agent\_loop.py` -> `tests/run\_agent\_loop\_smoke.py`
+* `tests/test\_scheduler\_smoke.py` -> `tests/run\_scheduler\_smoke.py`
+* `tests/test\_executor\_smoke.py` -> `tests/run\_executor\_smoke.py`
+* `tests/test\_agent\_loop\_reflection.py` -> `tests/run\_agent\_loop\_reflection.py`
+
+Updated smoke runners to follow the renamed paths:
+
+* `tests/run\_runtime\_smoke.py`
+* `tests/run\_mainline\_smoke.py`
+
+### Validation
+
+Confirmed passing after rename and runner sync:
+
+* `python tests/run\_runtime\_smoke.py`
+* `python tests/run\_mainline\_smoke.py`
+
+Confirmed result:
+
+* runtime smoke: PASS
+* mainline smoke: PASS
+* renamed scheduler smoke path: PASS
+* renamed agent loop smoke path: PASS
+
+### Why This Matters
+
+This pass did not add new capability.
+
+Its value was reducing test/smoke-role ambiguity inside the repository and keeping validation entrypoints aligned with what the files actually are.
+
+That matters because the repository now separates these categories more clearly:
+
+* `test\_\*.py` for real test-style checks
+* `run\_\*.py` for direct-execution smoke and diagnostic scripts
+
+This reduces future operator confusion and lowers the chance of smoke runner breakage during maintenance.
+
+### Result
+
+Stable checkpoint after smoke-script rename and runner sync:
+
+* smoke script naming: cleaner
+* runtime smoke after rename: passing
+* mainline smoke after rename: passing
+* repository validation structure: clearer
+
+### Evidence Kept
+
+Keep the latest terminal screenshots showing:
+
+* runtime smoke pass after script rename
+* mainline smoke all pass after script rename
+* clean git state after push
+
+These are useful proof points for future devlog, README, and internal checkpoint tracking.
+
+
+
+\## 2026-04 AgentLoop Structure Cleanup Pass
+
+
+
+This pass focused on reducing responsibility mixing inside `core/agent/agent\_loop.py` without breaking the current mainline validation chain.
+
+
+
+\### Problem
+
+
+
+`agent\_loop.py` had started accumulating too many different kinds of responsibilities in one file:
+
+
+
+\* route / mode policy decisions
+
+\* component invocation compatibility glue
+
+\* document-flow trace writing
+
+\* main control flow for direct / llm / task / single-shot paths
+
+
+
+This increased the risk that future changes would keep adding more special-case logic into the main loop body.
+
+
+
+\### Completed
+
+
+
+Three focused extractions were completed.
+
+
+
+\#### 1. Route policy extraction
+
+
+
+Added:
+
+
+
+\* `core/agent/agent\_route\_policy.py`
+
+
+
+Moved route / mode decision rules out of the main loop, including:
+
+
+
+\* document-flow forced planner detection
+
+\* summary/action-items document-flow matching
+
+\* explicit task-request detection
+
+\* task-mode entry decision
+
+
+
+\#### 2. Component invocation adapter extraction
+
+
+
+Added:
+
+
+
+\* `core/agent/agent\_component\_invoker.py`
+
+
+
+Moved callable compatibility / adapter glue out of the main loop, including:
+
+
+
+\* router invocation
+
+\* planner invocation
+
+\* llm planner invocation
+
+\* step executor invocation
+
+\* verifier / safety guard wrapper calls
+
+
+
+\#### 3. Document flow trace writer extraction
+
+
+
+Added:
+
+
+
+\* `core/agent/document\_flow\_trace\_writer.py`
+
+
+
+Moved document-flow trace generation / payload extraction / runtime-info collection out of the main loop.
+
+
+
+\### Validation
+
+
+
+Confirmed passing after each extraction step:
+
+
+
+\* `python tests/run\_runtime\_smoke.py`
+
+\* `python tests/run\_mainline\_smoke.py`
+
+\* `python tests/run\_agent\_loop\_smoke.py`
+
+
+
+Confirmed result after the cleanup sequence:
+
+
+
+\* runtime smoke: PASS
+
+\* mainline smoke: PASS
+
+\* agent loop smoke: PASS
+
+
+
+\### Why This Matters
+
+
+
+This pass did not primarily add new user-facing capability.
+
+
+
+Its value was structural:
+
+
+
+\* `agent\_loop.py` is now closer to a true orchestration shell
+
+\* policy logic is more explicit
+
+\* invocation compatibility glue is separated
+
+\* document-flow tracing no longer lives inside the main loop body
+
+
+
+This makes future changes safer, because new route rules, adapter logic, or trace behavior no longer need to pile directly into the core loop file.
+
+
+
+\### Result
+
+
+
+Stable checkpoint after AgentLoop structure cleanup:
+
+
+
+\* route policy: extracted
+
+\* component invoker: extracted
+
+\* document flow trace writer: extracted
+
+\* runtime smoke: passing
+
+\* mainline smoke: passing
+
+\* agent loop smoke: passing
 
