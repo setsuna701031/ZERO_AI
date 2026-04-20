@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import copy
-import json
-import os
 import time
-from datetime import datetime
 from typing import Any, Dict, Optional, List
 
 from core.agent.agent_component_invoker import (
@@ -22,6 +19,7 @@ from core.agent.agent_route_policy import (
     should_enter_task_mode,
     should_force_planner_document_flow,
 )
+from core.agent.document_flow_trace_writer import maybe_write_document_flow_trace
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 
@@ -577,205 +575,13 @@ class AgentLoop:
         steps: List[Dict[str, Any]],
         execution_result: Dict[str, Any],
     ) -> None:
-        if not isinstance(execution_result, dict):
-            return
-        if not execution_result.get("ok", False):
-            return
-        if not isinstance(steps, list) or len(steps) < 3:
-            return
-
-        flow_kind = self._detect_document_flow_kind(steps)
-        if not flow_kind:
-            return
-
-        step_results = execution_result.get("results")
-        if not isinstance(step_results, list) or len(step_results) < 3:
-            return
-
-        read_result = self._get_result_payload(step_results, 0)
-        llm_result = self._get_result_payload(step_results, 1)
-        write_result = self._get_result_payload(step_results, 2)
-
-        input_full_path = self._extract_path_from_payload(read_result) or self._default_shared_path("input.txt")
-        output_full_path = self._extract_path_from_payload(write_result) or self._default_shared_path(
-            "action_items.txt" if flow_kind == "action_items" else "summary.txt"
+        maybe_write_document_flow_trace(
+            steps=steps,
+            execution_result=execution_result,
+            llm_client=self.llm_client,
+            step_executor=self.step_executor,
+            debug=self.debug,
         )
-
-        input_content = self._extract_content_from_payload(read_result)
-        output_content = self._extract_content_from_payload(write_result)
-        if not output_content:
-            output_content = self._extract_content_from_payload(llm_result)
-
-        runtime_info = self._get_runtime_info()
-
-        trace = self._build_document_flow_trace(
-            flow_kind=flow_kind,
-            input_path=input_full_path,
-            output_path=output_full_path,
-            input_text=input_content,
-            output_text=output_content,
-            runtime_info=runtime_info,
-        )
-
-        trace_path = self._default_shared_path("document_flow_trace.json")
-        os.makedirs(os.path.dirname(trace_path), exist_ok=True)
-        with open(trace_path, "w", encoding="utf-8") as f:
-            json.dump(trace, f, ensure_ascii=False, indent=2)
-
-        if self.debug:
-            print(f"[AgentLoop] wrote document flow trace: {trace_path}")
-
-    def _detect_document_flow_kind(self, steps: List[Dict[str, Any]]) -> str:
-        if len(steps) < 3:
-            return ""
-
-        step1 = steps[0] if isinstance(steps[0], dict) else {}
-        step2 = steps[1] if isinstance(steps[1], dict) else {}
-        step3 = steps[2] if isinstance(steps[2], dict) else {}
-
-        type1 = str(step1.get("type", "")).strip().lower()
-        type2 = str(step2.get("type", "")).strip().lower()
-        type3 = str(step3.get("type", "")).strip().lower()
-
-        mode2 = str(step2.get("mode", "")).strip().lower()
-        path3 = str(step3.get("path", "")).strip().lower()
-
-        if type1 != "read_file" or type2 not in {"llm", "llm_generate"} or type3 != "write_file":
-            return ""
-
-        if mode2 == "action_items" or "action_items" in path3 or "action-items" in path3:
-            return "action_items"
-
-        if mode2 == "summary" or "summary" in path3:
-            return "summary"
-
-        return ""
-
-    def _build_document_flow_trace(
-        self,
-        *,
-        flow_kind: str,
-        input_path: str,
-        output_path: str,
-        input_text: str,
-        output_text: str,
-        runtime_info: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        if flow_kind == "action_items":
-            return {
-                "flow": "document_action_items_demo",
-                "status": "finished",
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "workspace_root": os.path.abspath("workspace"),
-                "shared_dir": self._default_shared_dir(),
-                "input_path": input_path,
-                "output_path": output_path,
-                "trace_path": self._default_shared_path("document_flow_trace.json"),
-                "input_chars": len(input_text),
-                "action_items_chars": len(output_text),
-                "runtime_info": runtime_info,
-                "error": "",
-                "steps": [
-                    {"step": 1, "name": "read_input", "path": input_path},
-                    {"step": 2, "name": "extract_action_items"},
-                    {"step": 3, "name": "write_action_items", "path": output_path},
-                ],
-            }
-
-        return {
-            "flow": "document_summary_demo",
-            "status": "finished",
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "workspace_root": os.path.abspath("workspace"),
-            "shared_dir": self._default_shared_dir(),
-            "input_path": input_path,
-            "output_path": output_path,
-            "trace_path": self._default_shared_path("document_flow_trace.json"),
-            "input_chars": len(input_text),
-            "summary_chars": len(output_text),
-            "runtime_info": runtime_info,
-            "error": "",
-            "steps": [
-                {"step": 1, "name": "read_input", "path": input_path},
-                {"step": 2, "name": "summarize_document"},
-                {"step": 3, "name": "write_summary", "path": output_path},
-            ],
-        }
-
-    def _get_result_payload(self, execution_results: List[Dict[str, Any]], index: int) -> Dict[str, Any]:
-        if not isinstance(execution_results, list):
-            return {}
-        if index < 0 or index >= len(execution_results):
-            return {}
-        item = execution_results[index]
-        if not isinstance(item, dict):
-            return {}
-        result = item.get("result")
-        if isinstance(result, dict):
-            return result
-        return {}
-
-    def _extract_path_from_payload(self, payload: Dict[str, Any]) -> str:
-        if not isinstance(payload, dict):
-            return ""
-        result_block = payload.get("result")
-        if isinstance(result_block, dict):
-            for key in ("full_path", "path"):
-                value = result_block.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-        for key in ("full_path", "path"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        return ""
-
-    def _extract_content_from_payload(self, payload: Dict[str, Any]) -> str:
-        if not isinstance(payload, dict):
-            return ""
-        result_block = payload.get("result")
-        if isinstance(result_block, dict):
-            for key in ("content", "text", "message"):
-                value = result_block.get(key)
-                if isinstance(value, str):
-                    return value
-        for key in ("content", "text", "message"):
-            value = payload.get(key)
-            if isinstance(value, str):
-                return value
-        return ""
-
-    def _get_runtime_info(self) -> Dict[str, Any]:
-        llm_client = self.llm_client
-        if llm_client is None and self.step_executor is not None:
-            llm_client = getattr(self.step_executor, "llm_client", None)
-
-        if llm_client is None:
-            return {}
-
-        get_runtime_info = getattr(llm_client, "get_runtime_info", None)
-        if callable(get_runtime_info):
-            try:
-                info = get_runtime_info()
-                if isinstance(info, dict):
-                    return info
-            except Exception:
-                return {}
-
-        return {
-            "plugin_name": str(getattr(llm_client, "plugin_name", "") or ""),
-            "provider": str(getattr(llm_client, "provider", "") or ""),
-            "base_url": str(getattr(llm_client, "base_url", "") or ""),
-            "model": str(getattr(llm_client, "model", "") or ""),
-            "coder_model": str(getattr(llm_client, "coder_model", "") or ""),
-            "timeout": getattr(llm_client, "timeout", None),
-        }
-
-    def _default_shared_dir(self) -> str:
-        return os.path.abspath(os.path.join("workspace", "shared"))
-
-    def _default_shared_path(self, filename: str) -> str:
-        return os.path.abspath(os.path.join("workspace", "shared", filename))
 
     # ============================================================
     # task mode
