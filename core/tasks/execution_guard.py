@@ -3,19 +3,20 @@ from __future__ import annotations
 import os
 import re
 import shlex
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 class ExecutionGuard:
     """
-    最小可用執行守門員（B 方案收束版）
+    最小可用執行守門員（收束修正版）
 
     目標：
     1. 所有 write_file / read_file / command 都先經過這裡
     2. 限制檔案操作只能在 workspace_root 之下
     3. command 預設關閉
     4. 收束期只有限放行安全 python command
-    5. llm / llm_generate / verify 視為非副作用 step，可直接放行
+    5. llm / llm_generate / verify / respond 視為非副作用 step，可直接放行
+    6. 允許 trusted python interpreter + trusted script path
     """
 
     def __init__(
@@ -28,6 +29,14 @@ class ExecutionGuard:
         self.shared_dir = os.path.abspath(shared_dir)
         self.allow_commands = bool(allow_commands)
 
+        # 專案根目錄 = workspace 的上一層
+        self.project_root = os.path.abspath(os.path.join(self.workspace_root, os.pardir))
+
+        # 收束期可信腳本白名單（位於 project root）
+        self.trusted_project_scripts = {
+            "main.py",
+        }
+
     def check_step(
         self,
         step: Dict[str, Any],
@@ -39,22 +48,30 @@ class ExecutionGuard:
         # ---------------------------------------------------------
         # 無副作用 / 純判定 / 純生成 step
         # ---------------------------------------------------------
-        if step_type in {"noop", "llm", "llm_generate", "verify", "respond", "final_answer"}:
+        if step_type in {
+            "noop",
+            "llm",
+            "llm_generate",
+            "verify",
+            "verify_file",
+            "respond",
+            "final_answer",
+        }:
             return {"ok": True}
 
         # ---------------------------------------------------------
         # write
         # ---------------------------------------------------------
-        if step_type == "write_file":
+        if step_type in {"write_file", "ensure_file"}:
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
-                return {"ok": False, "error": "write_file step missing path"}
+                return {"ok": False, "error": f"{step_type} step missing path"}
 
             full_path = self._resolve_path(raw_path=raw_path, task_dir=task_dir_abs)
             if not self._is_under_workspace(full_path):
                 return {
                     "ok": False,
-                    "error": f"write_file blocked: path outside workspace: {full_path}",
+                    "error": f"{step_type} blocked: path outside workspace: {full_path}",
                 }
 
             return {
@@ -83,6 +100,27 @@ class ExecutionGuard:
             }
 
         # ---------------------------------------------------------
+        # run_python
+        # ---------------------------------------------------------
+        if step_type == "run_python":
+            raw_path = str(step.get("path") or "").strip()
+            if not raw_path:
+                return {"ok": False, "error": "run_python step missing path"}
+
+            script_path = self._resolve_script_path(raw_path=raw_path, task_dir=task_dir_abs)
+            if self._is_allowed_python_script(script_path):
+                return {
+                    "ok": True,
+                    "guard_mode": "safe_run_python",
+                    "resolved_script_path": script_path,
+                }
+
+            return {
+                "ok": False,
+                "error": f"python script blocked by guard: {script_path}",
+            }
+
+        # ---------------------------------------------------------
         # command
         # ---------------------------------------------------------
         if step_type == "command":
@@ -105,23 +143,30 @@ class ExecutionGuard:
         lowered = normalized.lower()
 
         # 收束期白名單：
-        # 1. python -c "print('hello')" 類型
-        # 2. python / py 執行 workspace 內腳本
+        # 1. python -c "print(...)"
+        # 2. trusted python interpreter + trusted script path
+        # 3. 直接執行 .py 也允許，但腳本仍必須落在允許範圍
         if self._is_safe_inline_python(lowered):
             return {"ok": True, "guard_mode": "safe_python_inline"}
 
-        script_check = self._extract_python_script_path(normalized)
-        if script_check is not None:
-            script_path = self._resolve_path(raw_path=script_check, task_dir=task_dir)
-            if not self._is_under_workspace(script_path):
+        script_info = self._extract_python_script_info(normalized)
+        if script_info is not None:
+            script_path = self._resolve_script_path(
+                raw_path=script_info["script_path"],
+                task_dir=task_dir,
+            )
+
+            if not self._is_allowed_python_script(script_path):
                 return {
                     "ok": False,
-                    "error": f"python script blocked outside workspace: {script_path}",
+                    "error": f"python script blocked by guard: {script_path}",
                 }
+
             return {
                 "ok": True,
                 "guard_mode": "safe_python_script",
                 "resolved_script_path": script_path,
+                "python_command": script_info["python_command"],
             }
 
         return {
@@ -130,37 +175,97 @@ class ExecutionGuard:
         }
 
     def _is_safe_inline_python(self, lowered_command: str) -> bool:
-        # 只放行非常小範圍的 inline python 測試
         patterns = [
             r'^python\s+-c\s+"print\(.+\)"$',
             r"^python\s+-c\s+'print\(.+\)'$",
             r'^py\s+-c\s+"print\(.+\)"$',
             r"^py\s+-c\s+'print\(.+\)'$",
+            r'^python\.exe\s+-c\s+"print\(.+\)"$',
+            r"^python\.exe\s+-c\s+'print\(.+\)'$",
+            r'^py\.exe\s+-c\s+"print\(.+\)"$',
+            r"^py\.exe\s+-c\s+'print\(.+\)'$",
+            r'^".*python(?:\.exe)?"\s+-c\s+"print\(.+\)"$',
+            r"^'.*python(?:\.exe)?'\s+-c\s+'print\(.+\)'$",
         ]
         return any(re.match(p, lowered_command) for p in patterns)
 
-    def _extract_python_script_path(self, command: str) -> str | None:
+    def _extract_python_script_info(self, command: str) -> Optional[Dict[str, str]]:
         try:
             parts = shlex.split(command, posix=False)
         except Exception:
             parts = command.split()
 
-        if len(parts) < 2:
+        if not parts:
             return None
 
-        exe = str(parts[0]).strip().lower()
-        if exe not in {"python", "py", "python.exe", "py.exe"}:
-            return None
+        first = str(parts[0]).strip().strip('"').strip("'")
+        first_lower = first.lower()
+        exe_basename = os.path.basename(first_lower)
 
-        # python -c ... 不算腳本
-        if len(parts) >= 2 and str(parts[1]).strip().lower() == "-c":
-            return None
+        # case 1: python/py/python.exe/py.exe <script>
+        if exe_basename in {"python", "py", "python.exe", "py.exe"}:
+            if len(parts) < 2:
+                return None
 
-        script_path = str(parts[1]).strip().strip('"').strip("'")
-        if not script_path:
-            return None
+            second = str(parts[1]).strip().strip('"').strip("'")
+            if not second:
+                return None
 
-        return script_path
+            if second.lower() == "-c":
+                return None
+
+            return {
+                "python_command": first,
+                "script_path": second,
+            }
+
+        # case 2: directly running a .py-like script command
+        if first_lower.endswith(".py"):
+            return {
+                "python_command": "",
+                "script_path": first,
+            }
+
+        return None
+
+    def _resolve_script_path(self, raw_path: str, task_dir: str) -> str:
+        clean = str(raw_path or "").strip().strip('"').strip("'")
+        if not clean:
+            return clean
+
+        if os.path.isabs(clean):
+            return os.path.abspath(clean)
+
+        # shared/<file>
+        if clean.replace("\\", "/").startswith("shared/"):
+            relative_part = clean.replace("\\", "/")[len("shared/"):].strip("/")
+            return os.path.abspath(os.path.join(self.shared_dir, relative_part))
+
+        # task local
+        candidate_task = os.path.abspath(os.path.join(task_dir, clean))
+        if os.path.exists(candidate_task):
+            return candidate_task
+
+        # project root
+        candidate_project = os.path.abspath(os.path.join(self.project_root, clean))
+        if os.path.exists(candidate_project):
+            return candidate_project
+
+        # fallback task path
+        return candidate_task
+
+    def _is_allowed_python_script(self, script_path: str) -> bool:
+        abs_script = os.path.abspath(script_path)
+
+        if self._is_under_workspace(abs_script):
+            return True
+
+        if self._is_under_project_root(abs_script):
+            rel = os.path.relpath(abs_script, self.project_root).replace("\\", "/")
+            if rel in self.trusted_project_scripts:
+                return True
+
+        return False
 
     def _resolve_path(self, raw_path: str, task_dir: str) -> str:
         normalized = str(raw_path or "").replace("\\", "/").strip()
@@ -178,5 +283,12 @@ class ExecutionGuard:
         try:
             common = os.path.commonpath([self.workspace_root, os.path.abspath(path)])
             return common == self.workspace_root
+        except Exception:
+            return False
+
+    def _is_under_project_root(self, path: str) -> bool:
+        try:
+            common = os.path.commonpath([self.project_root, os.path.abspath(path)])
+            return common == self.project_root
         except Exception:
             return False

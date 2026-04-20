@@ -23,12 +23,14 @@ class StepExecutor:
     """
     ZERO Step Executor
 
-    本版修正：
+    本版重點：
     1. step handler 輸出統一 envelope
     2. unsupported / exception 錯誤格式統一
     3. execute_steps 批次結果格式統一
     4. 與目前 tool registry 的 outer/inner ok 結構對齊
     5. 直接在 StepExecutor 內接管 llm / llm_generate，修正 document flow 的 {{file_content}} 注入
+    6. 補 execution contract 收束：message / final_answer / normalized payload
+    7. 保留既有 batch summary contract：failed_step / completed_steps 維持舊測試語意
     """
 
     def __init__(
@@ -78,12 +80,19 @@ class StepExecutor:
         self.register_handler("workspace_read", ReadFileStepHandler(self).handle)
         self.register_handler("ensure_file", EnsureFileStepHandler(self).handle)
         self.register_handler("verify", VerifyStepHandler(self).handle)
+        self.register_handler("verify_file", VerifyStepHandler(self).handle)
         self.register_handler("respond", RespondStepHandler(self).handle)
         self.register_handler("final_answer", RespondStepHandler(self).handle)
 
         # 直接由 StepExecutor 自己處理，避免外部 handler 吃掉 file_content
         self.register_handler("llm", self._handle_llm_step)
         self.register_handler("llm_generate", self._handle_llm_step)
+
+    def register_handlers(self, handlers: Dict[str, StepHandler]) -> None:
+        if not isinstance(handlers, dict):
+            raise TypeError("handlers must be a dict")
+        for step_type, handler in handlers.items():
+            self.register_handler(step_type, handler)
 
     def execute(
         self,
@@ -127,6 +136,7 @@ class StepExecutor:
             step_count=step_count,
         )
 
+        step_payload = self._normalize_step_payload(step_payload)
         step_type = str(step_payload.get("type", "")).strip().lower()
 
         if self.debug:
@@ -168,13 +178,19 @@ class StepExecutor:
         previous_result: Any = None
         total_steps = len(steps or [])
 
-        for i, raw_step in enumerate(steps or []):
+        normalized_task = self._normalize_task(task)
+        normalized_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+        normalized_steps = [self._normalize_step_payload(copy.deepcopy(step or {})) for step in (steps or [])]
+
+        for zero_based_index, raw_step in enumerate(normalized_steps):
+            one_based_index = zero_based_index + 1
+
             result = self.execute_step(
                 step=raw_step,
-                task=task,
-                context=context,
+                task=normalized_task,
+                context=normalized_context,
                 previous_result=previous_result,
-                step_index=i,
+                step_index=one_based_index,
                 step_count=total_steps,
             )
             results.append(result)
@@ -184,20 +200,29 @@ class StepExecutor:
                 return {
                     "ok": False,
                     "summary": "step execution failed",
+                    "message": self._extract_step_message(result, failed=True),
+                    "final_answer": self._extract_step_final_answer(result, failed=True),
                     "step_count": total_steps,
-                    "completed_steps": i,
-                    "failed_step": i,
+                    # 維持既有測試契約：這兩個欄位用 0-based
+                    "completed_steps": zero_based_index,
+                    "failed_step": zero_based_index,
                     "results": results,
-                    "error": result.get("error"),
+                    "last_result": copy.deepcopy(result),
+                    "error": copy.deepcopy(result.get("error")),
                 }
 
+        last_result = copy.deepcopy(results[-1]) if results else None
         return {
             "ok": True,
             "summary": "all steps executed",
+            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
+            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
             "step_count": total_steps,
+            # success case 維持舊語意：完成數量 = 總步數
             "completed_steps": total_steps,
             "failed_step": None,
             "results": results,
+            "last_result": last_result,
             "error": None,
         }
 
@@ -352,6 +377,41 @@ class StepExecutor:
 
         return merged
 
+    def _normalize_step_payload(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        payload = copy.deepcopy(step or {})
+
+        step_type = str(payload.get("type") or "unknown").strip().lower()
+        payload["type"] = step_type
+
+        if "step_index" in payload:
+            payload["step_index"] = self._safe_int(payload.get("step_index"), payload.get("step_index"))
+
+        if "step_count" in payload:
+            payload["step_count"] = self._safe_int(payload.get("step_count"), payload.get("step_count"))
+
+        if step_type in {"read_file", "write_file", "ensure_file", "run_python", "verify", "verify_file"}:
+            payload["path"] = str(payload.get("path") or "")
+
+        if step_type == "command":
+            payload["command"] = str(payload.get("command") or "")
+
+        if step_type == "tool":
+            payload["tool_name"] = str(payload.get("tool_name") or payload.get("tool") or "")
+
+        if step_type in {"llm", "llm_generate"}:
+            payload["prompt"] = str(payload.get("prompt") or "")
+            payload["prompt_template"] = str(payload.get("prompt_template") or payload.get("prompt") or "")
+            if "mode" in payload and payload["mode"] is not None:
+                payload["mode"] = str(payload.get("mode") or "")
+
+        if step_type == "write_file":
+            payload["content"] = str(payload.get("content") or "")
+
+        if "scope" in payload and payload["scope"] is not None:
+            payload["scope"] = str(payload.get("scope") or "")
+
+        return payload
+
     def _normalize_step_result(
         self,
         raw_result: Any,
@@ -365,6 +425,9 @@ class StepExecutor:
 
         ok = self._extract_inner_ok(inner_result)
         step_type = str(step.get("type", "")).strip().lower()
+        task_id = self._extract_task_id(task)
+        message = self._extract_message_from_inner_result(inner_result, step_type=step_type, ok=ok)
+        final_answer = self._extract_final_answer_from_inner_result(inner_result, step_type=step_type, ok=ok)
 
         if ok:
             return {
@@ -372,21 +435,28 @@ class StepExecutor:
                 "step_type": step_type,
                 "step_index": step.get("step_index"),
                 "step_count": step.get("step_count"),
-                "task_id": self._extract_task_id(task),
+                "task_id": task_id,
                 "step": copy.deepcopy(step),
                 "result": inner_result,
+                "message": message,
+                "final_answer": final_answer,
                 "error": None,
             }
 
         error_payload = self._extract_error_payload(inner_result)
+        if not error_payload.get("message") and message:
+            error_payload["message"] = message
+
         return {
             "ok": False,
             "step_type": step_type,
             "step_index": step.get("step_index"),
             "step_count": step.get("step_count"),
-            "task_id": self._extract_task_id(task),
+            "task_id": task_id,
             "step": copy.deepcopy(step),
             "result": inner_result,
+            "message": message or error_payload.get("message") or "step failed",
+            "final_answer": final_answer or error_payload.get("message") or "step failed",
             "error": error_payload,
         }
 
@@ -407,6 +477,8 @@ class StepExecutor:
             "task_id": self._extract_task_id(task),
             "step": copy.deepcopy(step),
             "result": {},
+            "message": message,
+            "final_answer": message,
             "error": {
                 "type": error_type,
                 "message": message,
@@ -424,6 +496,8 @@ class StepExecutor:
                 error_dict["message"] = str(error_dict)
             if "retryable" not in error_dict:
                 error_dict["retryable"] = False
+            if "details" not in error_dict or not isinstance(error_dict.get("details"), dict):
+                error_dict["details"] = {}
             return error_dict
 
         if isinstance(result.get("error"), str) and result.get("error"):
@@ -485,6 +559,99 @@ class StepExecutor:
 
         return True
 
+    def _extract_message_from_inner_result(
+        self,
+        result: Dict[str, Any],
+        step_type: str,
+        ok: bool,
+    ) -> str:
+        for key in ("message", "content", "text", "response", "answer", "final_answer"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        nested_result = result.get("result")
+        if isinstance(nested_result, dict):
+            for key in ("message", "content", "text", "response", "answer", "final_answer"):
+                value = nested_result.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        if step_type == "write_file":
+            path = str(result.get("path") or "").strip()
+            return f"已寫入檔案：{path}" if path else "已寫入檔案"
+
+        if step_type == "read_file":
+            path = str(result.get("path") or "").strip()
+            return f"已讀取檔案：{path}" if path else "已讀取檔案"
+
+        if step_type in {"verify", "verify_file"} and ok:
+            return "verify ok"
+
+        if step_type == "command" and ok:
+            return "命令執行完成"
+
+        if step_type in {"llm", "llm_generate"} and ok:
+            return "LLM 已完成回應"
+
+        if not ok:
+            error = result.get("error")
+            if isinstance(error, dict):
+                msg = error.get("message")
+                if isinstance(msg, str) and msg.strip():
+                    return msg.strip()
+            if isinstance(error, str) and error.strip():
+                return error.strip()
+            return "step failed"
+
+        return "執行完成"
+
+    def _extract_final_answer_from_inner_result(
+        self,
+        result: Dict[str, Any],
+        step_type: str,
+        ok: bool,
+    ) -> str:
+        for key in ("final_answer", "answer", "response", "message", "content", "text"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        nested_result = result.get("result")
+        if isinstance(nested_result, dict):
+            for key in ("final_answer", "answer", "response", "message", "content", "text"):
+                value = nested_result.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        return self._extract_message_from_inner_result(result=result, step_type=step_type, ok=ok)
+
+    def _extract_step_message(self, result: Any, failed: bool) -> str:
+        if not isinstance(result, dict):
+            return "執行失敗" if failed else "執行完成"
+
+        value = result.get("message")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+        error = result.get("error")
+        if failed and isinstance(error, dict):
+            msg = error.get("message")
+            if isinstance(msg, str) and msg.strip():
+                return msg.strip()
+
+        return "執行失敗" if failed else "執行完成"
+
+    def _extract_step_final_answer(self, result: Any, failed: bool) -> str:
+        if not isinstance(result, dict):
+            return "執行失敗" if failed else "執行完成"
+
+        value = result.get("final_answer")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+        return self._extract_step_message(result, failed=failed)
+
     # ============================================================
     # LLM helpers
     # ============================================================
@@ -496,6 +663,8 @@ class StepExecutor:
         context: Optional[Dict[str, Any]],
         previous_result: Any,
     ) -> Dict[str, Any]:
+        _ = task
+
         prompt_template = str(step.get("prompt_template") or step.get("prompt") or "").strip()
         previous_text = self._extract_previous_text(previous_result=previous_result, context=context)
 
@@ -503,7 +672,6 @@ class StepExecutor:
             previous_text = str(step.get("file_content") or "")
 
         prompt = prompt_template.replace("{{file_content}}", previous_text)
-
         llm_text = self._call_llm(prompt)
 
         return {
@@ -515,9 +683,13 @@ class StepExecutor:
             "input_text": previous_text,
             "text": llm_text,
             "content": llm_text,
+            "message": llm_text,
+            "final_answer": llm_text,
             "result": {
                 "prompt": prompt,
                 "text": llm_text,
+                "message": llm_text,
+                "final_answer": llm_text,
             },
             "error": None,
         }
@@ -554,7 +726,6 @@ class StepExecutor:
                 if isinstance(value, str) and value:
                     return value
 
-            # read_file / nested result 常見 shape
             for nested_key in ("result", "raw", "data", "payload", "output"):
                 nested = payload.get(nested_key)
                 text = self._extract_text_deep(nested, depth + 1)
@@ -593,3 +764,9 @@ class StepExecutor:
             return str(client.chat(prompt) or "")
 
         raise RuntimeError("llm_client has no usable generate/chat method")
+
+    def _safe_int(self, value: Any, default: Any = 0) -> Any:
+        try:
+            return int(value)
+        except Exception:
+            return default
