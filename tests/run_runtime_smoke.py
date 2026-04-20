@@ -12,7 +12,7 @@ TEST_FILES = [
     "test_step_executor.py",
     "test_executor_repair_rules.py",
     "test_executor_safe_path_repair.py",
-    "test_agent_loop.py",
+    "run_agent_loop_smoke.py",
     "test_scheduler_smoke.py",
 ]
 
@@ -22,6 +22,13 @@ def run_one(test_file: str) -> tuple[bool, int]:
     print("\n" + "=" * 100)
     print(f"RUN: {test_file}")
     print("=" * 100)
+
+    if not test_path.exists():
+        print(f"ERROR: missing test file: {test_path}")
+        print("-" * 100)
+        print(f"RESULT: {test_file} -> FAIL (exit=2)")
+        print("-" * 100)
+        return False, 2
 
     result = subprocess.run(
         [sys.executable, str(test_path)],
@@ -42,8 +49,8 @@ def main() -> None:
     print(f"project_root = {PROJECT_ROOT}")
     print(f"python       = {sys.executable}")
 
-    passed = []
-    failed = []
+    passed: list[str] = []
+    failed: list[tuple[str, int]] = []
 
     for test_file in TEST_FILES:
         ok, code = run_one(test_file)

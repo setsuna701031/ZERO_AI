@@ -9,10 +9,8 @@ from typing import List, Tuple
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON_EXE = sys.executable
 
-# 目前先只收「穩定可過」的主線驗證。
-# runtime_smoke 暫時不放進來，因為它目前會被 tests/test_agent_loop.py 阻塞：
-# AttributeError: 'AgentLoop' object has no attribute 'run'
-# 這個問題後面單獨修，不在這支主線 smoke runner 裡硬綁死。
+# 目前主線 smoke 收「穩定可過」的主線驗證。
+# runtime_smoke 已重新驗證可跑通，現在納回 mainline。
 SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
     (
         "tool_layer_smoke",
@@ -33,6 +31,10 @@ SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
     (
         "execution_demo_smoke",
         [PYTHON_EXE, "tests/run_execution_demo_smoke.py"],
+    ),
+    (
+        "runtime_smoke",
+        [PYTHON_EXE, "tests/run_runtime_smoke.py"],
     ),
 ]
 
@@ -77,7 +79,7 @@ def main() -> int:
         print(f"  - {label}")
     print("")
     print("[mainline-smoke] excluded for now:")
-    print("  - runtime_smoke (currently blocked by tests/test_agent_loop.py)")
+    print("  - none")
     print("")
 
     for label, cmd in SMOKE_COMMANDS:
