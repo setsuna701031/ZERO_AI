@@ -4,317 +4,204 @@
 
 This file maps the current public-facing proof assets for ZERO.
 
-It is meant to answer four practical questions:
+It answers:
 
 1. Which video belongs to which demo?
 2. Which checkpoint image supports which README section?
 3. Which assets are suitable for public use?
-4. Which assets should stay internal-only for now?
-
-This is not a deep engineering log.  
-It is a presentation / proof indexing document.
+4. Which assets should stay internal?
 
 ---
 
-## Public Demo Video Map
+## 🔥 Core Showcase Positioning (Updated)
 
-### 1. Requirement Demo — Execution Proof
+Current public-facing hierarchy:
+
+1. **Mini Build Demo (Primary Showcase)**
+2. Requirement Demo (Planning / multi-artifact showcase)
+3. Document Flow Demo (practical workflow)
+4. Runtime / mainline validation (stability proof)
+
+This aligns with README positioning:
+
+Mini Build = strongest execution proof  
+Requirement Demo = strongest planning proof  
+
+---
+
+## 🎬 Public Demo Video Map
+
+### 1. Mini Build Demo — Execution Proof (PRIMARY)
 
 File:
-- `demos/07_requirement_demo/requirement_demo_execution_pass_2026-04-20.mp4`
+- demos/08_mini_build_demo/mini_build_demo_execution_pass_2026-04-20.mp4
 
 What it shows:
-- fixed requirement input exists
-- `python main.py requirement-demo` is executed
-- requirement demo runs through the mainline path
-- terminal ends with PASS
-- output artifact paths are shown
+
+- requirement input
+- numbers input
+- python main.py mini-build-demo execution
+- planning outputs
+- generated number_stats.py
+- script execution
+- stats_result.txt output
+- PASS
 
 Use:
-- public demo
-- README support
-- investor / operator proof
-- GitHub demo reference
+
+- README main showcase
+- GitHub demo
+- investor proof
+- execution capability proof
 
 Public status:
-- safe to show publicly
+- safe
 
 ---
 
-### 2. Requirement Demo — Outputs Showcase
+### 2. Requirement Demo — Execution Proof
 
 File:
-- `demos/07_requirement_demo/requirement_demo_outputs_2026-04-20.mp4`
+- demos/07_requirement_demo/requirement_demo_execution_pass_2026-04-20.mp4
 
 What it shows:
-- generated requirement outputs are opened directly
-- `project_summary.txt`
-- `implementation_plan.txt`
-- `acceptance_checklist.txt`
+
+- requirement input
+- execution through mainline
+- PASS
+- artifact paths
 
 Use:
-- public demo
-- README support
-- capability explanation
-- product/showcase material
+
+- planning capability demo
+- README secondary showcase
 
 Public status:
-- safe to show publicly
+- safe
 
 ---
 
-## Public Checkpoint Image Map
-
-### A. Mainline Stability
+### 3. Requirement Demo — Outputs Showcase
 
 File:
-- `docs/images/checkpoints/checkpoint_mainline_smoke_all_pass.png`
+- demos/07_requirement_demo/requirement_demo_outputs_2026-04-20.mp4
 
-README role:
-- mainline stability proof
-- validation checkpoint support
+What it shows:
 
-Use:
-- public README
-- public proof
-- technical checkpoint support
-
-Public status:
-- safe to show publicly
-
----
-
-### B. Runtime Stability
-
-File:
-- `docs/images/checkpoints/checkpoint_runtime_smoke_pass.png`
-
-README role:
-- runtime validation proof
-- stability checkpoint support
+- generated outputs
+- project_summary.txt
+- implementation_plan.txt
+- acceptance_checklist.txt
 
 Use:
-- public README
-- public proof
-- technical checkpoint support
+
+- visual explanation
+- artifact proof
 
 Public status:
-- safe to show publicly
+- safe
 
 ---
 
-### C. Requirement Demo Pass
+## 🖼️ Public Checkpoint Image Map
 
-File:
-- `docs/images/checkpoints/checkpoint_requirement_demo_pass.png`
+### A. Mini Build Demo (PRIMARY)
 
-README role:
-- requirement demo representative checkpoint
-- unified entrypoint proof
+- docs/images/checkpoints/checkpoint_mini_build_demo_pass.png
 
-Use:
-- public README
-- public proof
-- showcase support
-
-Public status:
-- safe to show publicly
+Role:
+- main execution proof
 
 ---
 
-### D. Requirement Demo Outputs
+### B. Requirement Demo
 
-File:
-- `docs/images/checkpoints/checkpoint_requirement_demo_outputs.png`
+- checkpoint_requirement_demo_pass.png
+- checkpoint_requirement_demo_outputs.png
 
-README role:
-- requirement demo output proof
-- multi-deliverable evidence
-
-Use:
-- public README
-- public proof
-- showcase support
-
-Public status:
-- safe to show publicly
+Role:
+- planning + artifact proof
 
 ---
 
-### E. Execution Demo Pass
+### C. Stability
 
-File:
-- `docs/images/checkpoints/checkpoint_execution_demo_pass.png`
+- checkpoint_mainline_smoke_all_pass.png
+- checkpoint_runtime_smoke_pass.png
 
-README role:
-- execution-proof scenario checkpoint
-- artifact generation proof
-
-Use:
-- public README
-- public proof
-- showcase support
-
-Public status:
-- safe to show publicly
+Role:
+- system reliability proof
 
 ---
 
-### F. Task OS Integration Tests Passed
+### D. Supporting
 
-File:
-- `docs/images/checkpoints/checkpoint_task_os_integration_tests_passed.png`
+- checkpoint_execution_demo_pass.png
+- checkpoint_task_os_integration_tests_passed.png
 
-README role:
-- broader system confidence checkpoint
-- supporting engineering proof
-
-Use:
-- public technical support proof
-- internal review
-- optional public README support
-
-Public status:
-- generally safe to show publicly
+Role:
+- additional confidence
 
 ---
 
-## Secondary Support Images
+## 📊 Public vs Internal
 
-These are useful, but they are not the primary public checkpoint set.
-
-### Secondary images
-
-- `docs/images/checkpoints/checkpoint_requirement_pack_task_show.png`
-- `docs/images/checkpoints/checkpoint_task_result_action_items_finished.png`
-- `docs/images/checkpoints/checkpoint_task_result_action_items_mainline.png`
-- `docs/images/checkpoints/checkpoint_task_result_and_show_summary_mainline.png`
-
-Use:
-- deeper technical walkthroughs
-- internal explanation
-- devlog support
-- appendix material
-- follow-up proof when someone asks for more detail
-
-Public status:
-- mostly safe, but better used selectively instead of as front-page proof
-
----
-
-## Internal-Only / Lower-Priority Proof
-
-These are useful engineering records, but they should not be prioritized for public-facing README use.
-
-Examples:
-- DAG intermediate-state screenshots
-- temporary rename / migration screenshots
-- queue-unblock snapshots
-- one-off repair screenshots
-- duplicate pass screenshots with weaker naming or older context
-
-Reason:
-- too implementation-specific
-- lower presentation value
-- can distract from the stronger story
-- better kept for internal debugging history
-
-Public status:
-- keep internal unless needed
-
----
-
-## README Mapping
-
-Current README proof structure should mainly point to these:
-
-### Primary README checkpoint set
-
-- `checkpoint_mainline_smoke_all_pass.png`
-- `checkpoint_runtime_smoke_pass.png`
-- `checkpoint_requirement_demo_pass.png`
-- `checkpoint_requirement_demo_outputs.png`
-- `checkpoint_execution_demo_pass.png`
-- `checkpoint_task_os_integration_tests_passed.png`
-
-### README support role by section
-
-**Validation / stability sections**
-- `checkpoint_mainline_smoke_all_pass.png`
-- `checkpoint_runtime_smoke_pass.png`
-
-**Requirement demo sections**
-- `checkpoint_requirement_demo_pass.png`
-- `checkpoint_requirement_demo_outputs.png`
-
-**Execution demo sections**
-- `checkpoint_execution_demo_pass.png`
-
-**Whole-system support / confidence**
-- `checkpoint_task_os_integration_tests_passed.png`
-
----
-
-## Public vs Internal Summary
-
-### Public-safe assets
+### Public-safe
 
 Videos:
-- `requirement_demo_execution_pass_2026-04-20.mp4`
-- `requirement_demo_outputs_2026-04-20.mp4`
+- mini_build_demo_execution_pass_2026-04-20.mp4
+- requirement_demo_execution_pass_2026-04-20.mp4
+- requirement_demo_outputs_2026-04-20.mp4
 
 Images:
-- `checkpoint_mainline_smoke_all_pass.png`
-- `checkpoint_runtime_smoke_pass.png`
-- `checkpoint_requirement_demo_pass.png`
-- `checkpoint_requirement_demo_outputs.png`
-- `checkpoint_execution_demo_pass.png`
-- `checkpoint_task_os_integration_tests_passed.png`
-
-### Better kept as internal/supporting material
-
-- requirement pack task-show detail image
-- action-items result/show detail images
-- summary task result/show detail images
-- DAG intermediate workflow screenshots
-- migration / rename / unblock proof screenshots
-- duplicate or older smoke proof screenshots
+- mainline_smoke_all_pass
+- runtime_smoke_pass
+- requirement_demo_pass
+- requirement_demo_outputs
+- execution_demo_pass
+- mini_build_demo_pass
+- task_os_integration
 
 ---
 
-## Current Recommendation
+### Internal / secondary
 
-For public-facing use right now:
+- detailed task screenshots
+- DAG internals
+- debug logs
+- intermediate runs
 
-1. Lead with requirement demo proof
-2. Support with mainline + runtime stability proof
-3. Show execution demo as a second representative scenario
-4. Keep the more detailed task-result screenshots as secondary appendix material
+---
 
-This keeps the external story clean:
+## 🧭 Final External Story
 
-- the system is stable
-- the system can run
-- the system can generate artifacts
-- the system can show proof
-- the system is not only a chat wrapper
+When presenting ZERO:
+
+1. Start with Mini Build Demo (execution)
+2. Show Requirement Demo (planning)
+3. Mention document flow (practical use)
+4. Back it with smoke validation
+
+This creates a clean narrative:
+
+- system is stable
+- system can plan
+- system can execute
+- system produces real artifacts
+- system verifies results
 
 ---
 
 ## Current Status
 
-This proof map matches the current repository state after:
+Aligned with:
 
-- mainline stabilization
-- execution-path stabilization
-- requirement demo showcase setup
-- README alignment
-- checkpoint naming cleanup
-- devlog update
+- README (Mini Build = primary)
+- demo.md structure
+- devlog checkpoints
 
-It should be updated again when:
+Update this file when:
 
-- new public demo videos are added
-- new checkpoint images replace current ones
-- some assets move from internal-only to public-safe
-- the public README proof structure changes
+- new demo assets added
+- new execution capabilities added
+- positioning changes again

@@ -1,203 +1,132 @@
-# ZERO
+# ZERO AI
 
-ZERO is a local-first engineering agent system focused on controllable task execution, inspectable runtime state, and verifiable artifact-producing workflows.
+A local-first AI engineering agent that turns requirements into executable results.
 
-This project is not being positioned as a polished consumer chatbot.  
-It is being built as an engineering-first agent runtime where task flow, execution state, results, and artifacts can be inspected directly instead of disappearing into a black box.
+**Requirement → Planning → Code → Execution → Verification**
 
----
-
-## Tagline
-
-**A local-first engineering agent with controllable task flow, inspectable runtime behavior, and a unified operational entrypoint.**
+ZERO is not a chatbot.  
+It is a system that builds and runs solutions.
 
 ---
 
-## What ZERO Is
+## 🔧 Core Showcase
 
-ZERO is currently best understood as:
+### 🚀 Mini Build Agent (Primary Demo)
 
-- a local-first task-and-agent runtime
-- a controllable CLI surface for task creation, execution, inspection, and validation
-- an execution stack with repeatable smoke validation
-- an engineering-oriented system where artifacts, runtime state, and result paths are visible
+```bash
+python main.py mini-build-demo
+```
 
-The current emphasis is on:
+This demo shows a complete engineering loop:
 
-- controllable execution
-- artifact-producing task workflows
-- runtime visibility
-- repeatable validation
-- clear operator-facing entrypoints
-- mainline stability before broader expansion
+- read a requirement document  
+- generate planning outputs  
+- generate Python code  
+- execute the generated script  
+- write result artifacts  
+- verify the final output  
+
+### 📦 Output Artifacts
+
+- workspace/shared/project_summary.txt  
+- workspace/shared/implementation_plan.txt  
+- workspace/shared/acceptance_checklist.txt  
+- workspace/shared/number_stats.py  
+- workspace/shared/stats_result.txt  
+
+### ✅ What this proves
+
+- not just text generation  
+- real file outputs  
+- code generation + execution  
+- result verification  
+
+📂 Demo assets:  
+demos/08_mini_build_demo/
 
 ---
 
-## Current Release Checkpoint
+## 📦 Additional Demo
 
-This repository has now reached a stronger engineering checkpoint with the following properties:
-
-- document tasks work through the official task lifecycle
-- explicit document-task CLI entry is available
-- `task result` and `task show` expose shared artifacts
-- document-task smoke validation exists
-- stable mainline smoke validation exists
-- AgentLoop `run(...)` compatibility has been restored
-- runtime smoke is passing again
-- a unified entrypoint exists through `main.py`
-- a second representative scenario now exists through requirement-pack delivery flow
-- a third representative scenario now exists through execution-proof flow
-- planner / agent loop interface contracts have been stabilized
-- execution / guard command policy path has been stabilized
-- requirement demo now has dedicated showcase assets
-
-This means the current version is already suitable for:
-
-- engineering demos
-- checkpoint validation
-- runtime inspection
-- repeatable smoke verification
-- operator-facing task execution demonstrations
-
----
-
-## Unified Entry Point
-
-The repository now includes a unified outer entrypoint:
-
-```bash
-python main.py help
-```
-
-Supported commands:
-
-```bash
-python main.py start
-python main.py runtime
-python main.py smoke
-python main.py doc-demo
-python main.py requirement-demo
-python main.py execution-demo
-python main.py health
-```
-
-### What each command does
-
-- `start`  
-  Launch interactive ZERO CLI.
-
-- `runtime`  
-  Show runtime information, including current plugin / model configuration.
-
-- `smoke`  
-  Run stable mainline smoke validation.
-
-- `doc-demo`  
-  Run the end-to-end document demo flow through the real task system.
-
-- `requirement-demo`  
-  Run the requirement-to-delivery-pack demo flow.
-
-- `execution-demo`  
-  Run the execution-proof demo flow.
-
-- `health`  
-  Show health information.
-
-This means the project no longer depends only on scattered internal commands for demonstration.  
-It now has a cleaner shell for runtime inspection, smoke validation, and representative demo execution.
-
----
-
-## Quick Start
-
-### 1. Show help
-
-```bash
-python main.py help
-```
-
-### 2. Check runtime
-
-```bash
-python main.py runtime
-```
-
-### 3. Run stable mainline smoke validation
-
-```bash
-python main.py smoke
-```
-
-### 4. Run the document demo
-
-```bash
-python main.py doc-demo
-```
-
-Run a complete document-task lifecycle demo:
-
-- create task
-- submit
-- execute
-- inspect result
-- inspect shared artifacts
-
-Expected outputs:
-
-- `workspace/shared/summary_demo.txt`
-- `workspace/shared/action_items_demo.txt`
-
-### 5. Run the requirement-pack demo
+### Requirement Demo
 
 ```bash
 python main.py requirement-demo
 ```
 
-Run a requirement-to-delivery-pack lifecycle demo:
+Demonstrates:
 
-- submit
-- execute
-- generate multiple artifacts
-- inspect result
-- inspect task state
+- requirement input  
+- planning output  
+- multi-artifact generation  
+- result inspection  
 
-Expected outputs:
+### Output Artifacts
 
-- `workspace/shared/project_summary.txt`
-- `workspace/shared/implementation_plan.txt`
-- `workspace/shared/acceptance_checklist.txt`
+- workspace/shared/project_summary.txt  
+- workspace/shared/implementation_plan.txt  
+- workspace/shared/acceptance_checklist.txt  
 
-### 6. Run the execution-proof demo
+📂 Demo assets:  
+demos/07_requirement_demo/
 
+---
+
+## ⚙️ Capabilities
+
+- Requirement understanding  
+- Planning system (planning pack)  
+- Code generation  
+- Tool execution  
+- Output verification  
+- Task lifecycle control  
+- Artifact visibility  
+
+---
+
+## 🧠 What makes this different
+
+This is not an LLM wrapper.
+
+ZERO:
+
+- executes tasks, not just responds  
+- produces real artifacts (code, files)  
+- exposes runtime state  
+- verifies outputs through execution  
+
+It demonstrates a **complete engineering agent loop**.
+
+---
+
+## 🚀 Quick Start
+
+### Show help
 ```bash
-python main.py execution-demo
+python main.py help
 ```
 
-Run a complete task lifecycle demo:
-
-- submit
-- execute
-- artifact generation
-- result inspection
-
-Expected output:
-
-- `workspace/shared/hello.py`
-
-### 7. Start interactive mode
-
+### Check runtime
 ```bash
-python main.py start
+python main.py runtime
+```
+
+### Run validation
+```bash
+python main.py smoke
+```
+
+### Run demos
+```bash
+python main.py doc-demo
+python main.py requirement-demo
+python main.py execution-demo
+python main.py mini-build-demo
 ```
 
 ---
 
-## Core CLI Surface
-
-The core task / agent CLI remains in `app.py`.
-
-Examples:
+## 🧱 Core CLI
 
 ```bash
 python app.py runtime
@@ -207,477 +136,46 @@ python app.py task show <task_id>
 python app.py task result <task_id>
 ```
 
-Document-task commands:
+### Document tasks
 
 ```bash
-python app.py task doc-summary input.txt summary_cli.txt
-python app.py task doc-action-items input.txt action_items_cli.txt
+python app.py task doc-summary input.txt summary.txt
+python app.py task doc-action-items input.txt action_items.txt
 ```
-
-Requirement-pack command:
-
-```bash
-python app.py task requirement-pack requirement.txt
-```
-
-Execution-proof command:
-
-```bash
-python app.py task execution-proof
-```
-
-These explicit commands create official tasks through the normal task lifecycle instead of relying only on free-form natural-language task goals.
 
 ---
 
-## What Is Working Now
+## 🏗️ System Structure
 
-### 1. Official document-task mainline integration
-
-Document workflows now work through the official task lifecycle:
-
-- `task create`
-- `task submit`
-- `task run`
-- `task result`
-- `task show`
-
-Validated document goals include:
-
-```bash
-python app.py task create "summarize input.txt into summary.txt"
-python app.py task create "read input.txt and extract action items into action_items.txt"
-```
-
-### 2. Explicit document-task CLI entry
-
-```bash
-python app.py task doc-summary input.txt summary_cli.txt
-python app.py task doc-action-items input.txt action_items_cli.txt
-```
-
-### 3. Shared artifact visibility
-
-For completed tasks, both:
-
-- `task result <task_id>`
-- `task show <task_id>`
-
-now expose shared-scope artifacts in addition to task-local runtime files.
-
-This improves operator clarity because the system now surfaces real outputs such as:
-
-- `workspace/shared/summary.txt`
-- `workspace/shared/action_items.txt`
-- `workspace/shared/project_summary.txt`
-- `workspace/shared/implementation_plan.txt`
-- `workspace/shared/acceptance_checklist.txt`
-- `workspace/shared/hello.py`
-
-instead of only task-local JSON/runtime records.
-
-### 4. Runtime validation recovery
-
-`tests/test_agent_loop.py` and `tests/run_runtime_smoke.py` are passing again after restoring `AgentLoop.run(...)` compatibility.
-
-### 5. Stable mainline smoke
-
-The repository now has a stable mainline smoke runner through:
-
-```bash
-python tests/run_mainline_smoke.py
-```
-
-and via the unified entrypoint:
-
-```bash
-python main.py smoke
-```
-
-### 6. End-to-end document demo
-
-The unified entrypoint can run a real document demo through:
-
-```bash
-python main.py doc-demo
-```
-
-This demo:
-
-- prepares input under `workspace/shared/`
-- creates official tasks
-- submits and runs them
-- waits for completion
-- prints task results
-- confirms shared output artifact locations
-
-### 7. Requirement → Delivery Pack scenario
-
-The unified entrypoint can now run a second representative scenario through:
-
-```bash
-python main.py requirement-demo
-```
-
-This flow:
-
-- prepares `workspace/shared/requirement.txt`
-- creates an official requirement-pack task
-- runs the task through lifecycle execution
-- generates multiple delivery artifacts
-- verifies acceptance checklist structure
-- exposes outputs through `task result` / `task show`
-
-The requirement-pack flow currently generates:
-
-- `workspace/shared/project_summary.txt`
-- `workspace/shared/implementation_plan.txt`
-- `workspace/shared/acceptance_checklist.txt`
-
-This is the current second representative scenario because it shows that ZERO can turn a requirement document into a multi-artifact delivery package instead of only summarizing a file.
-
-### 8. Execution Proof Task scenario
-
-The unified entrypoint can now run a third representative scenario through:
-
-```bash
-python main.py execution-demo
-```
-
-This flow:
-
-- creates an execution-proof task through explicit CLI entry
-- writes a real artifact to shared workspace
-- verifies the artifact content
-- exposes the finished task through `task result` / `task show`
-
-The execution-proof flow currently generates:
-
-- `workspace/shared/hello.py`
-
-This is the current third representative scenario because it shows that ZERO can perform a minimal engineering execution task with artifact output and verification instead of only producing document-style text outputs.
+- main.py → unified entrypoint  
+- app.py → core CLI  
+- core/planning/ → planner  
+- core/runtime/ → execution layer  
+- core/tasks/ → scheduler + lifecycle  
+- tests/ → validation  
+- demos/ → showcase assets  
+- docs/ → devlog + checkpoints  
 
 ---
 
-## Validation Layers
+## 📊 Current Position
 
-### Stable mainline validation
+ZERO is:
 
-```bash
-python main.py smoke
-```
+- local-first  
+- execution-oriented  
+- artifact-producing  
+- inspectable  
+- reproducible  
 
-Equivalent direct path:
+Not optimized yet for:
 
-```bash
-python tests/run_mainline_smoke.py
-```
-
-Stable mainline smoke currently includes:
-
-- tool-layer smoke
-- scheduler smoke
-- document-task smoke
-
-### Runtime validation
-
-```bash
-python tests/run_runtime_smoke.py
-```
-
-### Document-task smoke
-
-```bash
-python tests/run_document_task_smoke.py
-```
-
-This validates both:
-
-- summary flow
-- action-items flow
-
-with real artifact generation under `workspace/shared/`.
+- polished UI  
+- one-click install  
+- mass users  
 
 ---
 
-## Demo Flows
+## 📌 One-line Summary
 
-### Demo Flow A — Runtime inspection
-
-```bash
-python main.py runtime
-```
-
-### Demo Flow B — Stable validation
-
-```bash
-python main.py smoke
-```
-
-### Demo Flow C — End-to-end document demo
-
-```bash
-python main.py doc-demo
-```
-
-This is the clearest single-file-processing demo because it shows:
-
-- unified entrypoint
-- task lifecycle execution
-- finished task results
-- artifact paths
-- shared output files
-- repeatable validation style
-
-### Demo Flow D — Requirement to Delivery Pack
-
-```bash
-python main.py requirement-demo
-```
-
-This is the current best multi-artifact demo because it shows:
-
-- requirement-driven task creation
-- lifecycle execution
-- multiple generated artifacts
-- checklist-oriented verification
-- shared artifact visibility
-- result/show-based inspection
-
-### Demo Flow E — Execution Proof Task
-
-```bash
-python main.py execution-demo
-```
-
-Demonstrates:
-
-- task submission
-- execution
-- artifact generation
-- result inspection
-
-This is the current simplest engineering-execution demo because it shows:
-
-- explicit execution task entry
-- lifecycle execution
-- real file generation
-- shared artifact visibility
-- minimal verification
-- result/show-based inspection
-
----
-
-## Requirement Demo Showcase Assets
-
-The requirement demo now has two dedicated video assets under:
-
-```text
-demos/07_requirement_demo/
-```
-
-Current files:
-
-- `requirement_demo_execution_pass_2026-04-20.mp4`
-- `requirement_demo_outputs_2026-04-20.mp4`
-
-### What these two videos show
-
-**Execution proof**
-- the fixed requirement input exists
-- `python main.py requirement-demo` runs through the real mainline path
-- the demo ends with PASS
-- output artifact locations are shown in terminal
-
-**Outputs showcase**
-- generated outputs are opened directly
-- the requirement pack deliverables can be reviewed as real files
-- the scenario is easier to understand visually without waiting through full execution again
-
-### Why this matters
-
-This turns the requirement scenario from a terminal-only engineering proof into a reusable showcase package.
-
-The requirement demo now has:
-
-- fixed input
-- repeatable command
-- stable outputs
-- terminal proof
-- output proof
-- a dedicated demo asset folder
-
-That makes it much easier to present the system to someone who was not involved in development.
-
----
-
-## Why the Current Architecture Matters
-
-The current repository is not trying to hide execution complexity.
-
-Instead, it is explicitly moving toward a system where an operator can see:
-
-- what task was created
-- what state the task is in
-- what result was produced
-- what artifact paths exist
-- what smoke validations pass
-- where runtime failures occur
-
-That is important because the current goal is not just “generate a response.”  
-The goal is to build a local-first agent execution system that can support reliable engineering workflows.
-
----
-
-## Evidence / Checkpoints
-
-Relevant checkpoint images are kept under:
-
-```text
-docs/images/checkpoints/
-```
-
-### Primary engineering checkpoint
-
-The strongest single checkpoint image right now is the mainline smoke result:
-
-![Mainline smoke all pass](docs/images/checkpoints/checkpoint_mainline_smoke_all_pass.png)
-
-This image is important because it shows the core mainline validation path reaching full PASS.
-
-### Runtime checkpoint
-
-The strongest runtime stability checkpoint is:
-
-![Runtime smoke pass](docs/images/checkpoints/checkpoint_runtime_smoke_pass.png)
-
-This image is important because it shows the runtime validation path remaining stable after the recent interface and execution-path stabilization work.
-
-### Requirement-pack checkpoint
-
-The strongest checkpoint for the second representative scenario is the requirement demo pass capture:
-
-![Requirement demo pass](docs/images/checkpoints/checkpoint_requirement_demo_pass.png)
-
-This image is important because it shows:
-
-- requirement-demo completion
-- generated delivery artifacts
-- shared artifact visibility
-- unified entrypoint proof through `[requirement-demo] PASS`
-
-### Requirement-pack outputs checkpoint
-
-The strongest proof-of-output companion image for that scenario is:
-
-![Requirement demo outputs](docs/images/checkpoints/checkpoint_requirement_demo_outputs.png)
-
-This image is useful because it shows:
-
-- output artifact paths
-- generated delivery files
-- direct proof that the requirement scenario produced deliverables instead of only terminal text
-
-### Execution-proof checkpoint
-
-The strongest checkpoint for the third representative scenario is the execution demo pass capture:
-
-![Execution demo pass](docs/images/checkpoints/checkpoint_execution_demo_pass.png)
-
-This image is important because it shows:
-
-- execution-demo completion
-- generated `hello.py` artifact
-- shared artifact visibility
-- unified entrypoint proof through `[execution-demo] PASS`
-
-### Integration checkpoint
-
-A strong whole-system companion checkpoint is:
-
-![Task OS integration tests passed](docs/images/checkpoints/checkpoint_task_os_integration_tests_passed.png)
-
-This image is useful because it shows that the broader task OS integration path is not isolated from the demo path.
-
-### Additional checkpoint images
-
-These are useful as secondary support images:
-
-- `checkpoint_requirement_pack_task_show.png`
-- `checkpoint_task_result_action_items_finished.png`
-- `checkpoint_task_result_action_items_mainline.png`
-- `checkpoint_task_result_and_show_summary_mainline.png`
-
-They remain useful for README support, devlog proof, demo material, and future public-facing checkpoint presentation because they show:
-
-- CLI invocation
-- finished task state
-- final answer visibility
-- task path visibility
-- shared artifact visibility
-- task result / task show inspection
-- representative scenario completion
-
----
-
-## Repository Orientation
-
-Key areas in the current repository include:
-
-- `main.py` — unified outer entrypoint for runtime / smoke / demos
-- `app.py` — core CLI and task surface
-- `core/planning/` — planner / replanner layer
-- `core/runtime/` — runtime execution layer
-- `core/tasks/` — scheduler, task persistence, task lifecycle
-- `core/system/llm_planner.py` — deterministic + LLM planning bridge
-- `tests/` — smoke tests and validation scripts
-- `docs/devlog.md` — engineering progress records
-- `docs/images/checkpoints/` — checkpoint evidence images
-- `demos/` — recorded demo assets
-
----
-
-## Current Positioning
-
-ZERO is currently best described as:
-
-**A local-first engineering agent system with a controllable task lifecycle, visible artifacts, repeatable smoke validation, and a unified operational entrypoint.**
-
-It is optimized right now for:
-
-- engineering clarity
-- local execution
-- runtime inspection
-- stable checkpoints
-- task/result/artifact visibility
-- validation before broader expansion
-
-It is not yet primarily optimized for:
-
-- polished consumer UX
-- mass onboarding
-- broad workflow packaging
-- sensor integration
-- one-click installer-grade distribution
-
-The current “one-click” work is at the engineering-entrypoint stage, not final packaged deployment.
-
----
-
-## Current State in One Sentence
-
-This version is now strong enough to demo, validate, inspect, and explain through a unified entrypoint with multiple representative scenarios instead of only through scattered internal commands.
-
----
-
-## Notes
-
-The current repository should still be read as an engineering checkpoint, not as a finished mass-market product.
-
-What matters most right now is that ZERO is becoming:
-
-- more controllable
-- more inspectable
-- more reproducible
-- more demo-ready
-- less dependent on hidden internal flows
+ZERO is a local-first engineering agent that can turn requirements into executable, verifiable results through a controllable task system.

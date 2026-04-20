@@ -909,3 +909,124 @@ Stable checkpoint after this pass:
 * README / demo docs: aligned
 * checkpoint image naming: aligned
 * demo video assets: organized
+
+## 2026-04-20 - Mini-build demo showcase checkpoint
+
+This checkpoint focused on adding a stronger execution-oriented showcase on top of the stabilized mainline.
+
+### What was established
+
+A new representative scenario was added through:
+
+* `python main.py mini-build-demo`
+
+This scenario was designed to demonstrate a compact engineering workflow:
+
+* requirement input
+* planning output
+* generated Python artifact
+* script execution
+* result verification
+
+### Fixed inputs
+
+The mini-build demo now uses fixed workspace inputs:
+
+* `workspace/shared/requirement.txt`
+* `workspace/shared/numbers_input.txt`
+
+The requirement defines a small engineering build task around a statistics utility.  
+The numbers input provides the fixed data used for execution verification.
+
+### Generated outputs
+
+Validated mini-build outputs now include:
+
+* `workspace/shared/project_summary.txt`
+* `workspace/shared/implementation_plan.txt`
+* `workspace/shared/acceptance_checklist.txt`
+* `workspace/shared/number_stats.py`
+* `workspace/shared/stats_result.txt`
+
+### What the flow proves
+
+This scenario now proves that ZERO can move beyond planning-only delivery and complete a compact requirement-to-build chain:
+
+* read requirement
+* generate planning bundle
+* generate executable script
+* run that script locally
+* write result file
+* verify output values
+
+Validated result fields include:
+
+* `sum`
+* `average`
+* `max`
+* `min`
+
+### Validation result
+
+Confirmed successful run:
+
+* `python main.py mini-build-demo`: PASS
+
+Confirmed visible proof in terminal:
+
+* generated `number_stats.py`
+* generated `stats_result.txt`
+* verified statistics output
+* `[mini-build-demo] PASS`
+
+### Showcase assets organized
+
+Mini-build demo assets were organized under:
+
+* `demos/08_mini_build_demo/mini_build_demo_execution_pass_2026-04-20.mp4`
+
+A dedicated checkpoint image should be kept as:
+
+* `docs/images/checkpoints/checkpoint_mini_build_demo_pass.png`
+
+### Documentation alignment
+
+Public-facing documentation was extended to include this new showcase.
+
+Updated / to update together:
+
+* `README.md`
+* `docs/demo.md`
+* `docs/proof_map.md`
+* `docs/devlog.md`
+
+### Why This Matters
+
+This checkpoint is important because it upgrades the outward story of the system.
+
+Before this, the strongest public-facing examples were mainly:
+
+* planning-oriented requirement delivery
+* minimal execution proof
+
+Now the project also has a compact execution showcase that demonstrates:
+
+* requirement-driven flow
+* planning artifacts
+* generated implementation artifact
+* real execution
+* result verification
+
+That is a stronger proof that ZERO is not only producing documentation or chat-like outputs.  
+It can now show a small but complete engineering loop.
+
+### Result
+
+Stable checkpoint after this pass:
+
+* mini-build demo entry: established
+* requirement → planning → implementation → execution → verification chain: demonstrated
+* generated script output: validated
+* result file output: validated
+* mini-build demo video asset: organized
+* public-facing showcase coverage: expanded
