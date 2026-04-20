@@ -1,342 +1,318 @@
-\# Document Flow Demo
+# ZERO Demo Guide
 
+## Overview
 
+This document defines the current main demo paths for ZERO.
 
-\## Overview
+The goal is not to show isolated toy outputs, but to show that ZERO can run a real local agent workflow with stable execution, file outputs, task orchestration, and repeatable validation.
 
+At the current stage, the strongest demo chain is:
 
+1. Requirement Demo
+2. Document Flow Demo
+3. Runtime / mainline smoke validation
 
-This demo shows a practical local document-processing workflow inside ZERO.
+These three parts together show that ZERO is not just a chat wrapper. It can plan, execute, write artifacts, and preserve a stable runnable path.
 
+---
 
+## Demo 1: Requirement Demo
 
-Instead of only replying in chat, ZERO reads a real input file, processes it with a local LLM pipeline, writes a useful output file, and preserves a trace file that can be inspected in the Trace Viewer.
+### Goal
 
+Show that ZERO can take a real requirement file and turn it into multiple useful deliverables through the task pipeline.
 
+This is currently the strongest mainline showcase because it demonstrates:
+
+- task creation
+- planner output entering task mode
+- execution through the main path
+- artifact generation
+- stable end-to-end completion
+
+### Input
+
+- `workspace/shared/requirement.txt`
+
+This file should contain a simple but realistic project requirement in English.
+
+Example idea:
+
+- a small product concept
+- a lightweight internal tool
+- a simple engineering request
+- a feature requirement with scope and expected outcome
+
+### Command
+
+Run the demo from project root:
+
+```powershell
+python main.py requirement-demo
+```
+
+### Expected Outputs
+
+The requirement demo should generate these shared artifacts:
+
+- `workspace/shared/project_summary.txt`
+- `workspace/shared/implementation_plan.txt`
+- `workspace/shared/acceptance_checklist.txt`
+
+### What This Demo Proves
+
+This demo proves that ZERO can:
+
+- read a requirement file
+- create a task from it
+- execute through the mainline path
+- generate multiple downstream deliverables
+- preserve task state and task artifacts
+- complete without breaking runtime smoke / mainline validation
+
+### What To Show On Screen
+
+For a live demo or recording, show these in order:
+
+1. the input requirement file
+2. the command:
+   - `python main.py requirement-demo`
+3. terminal output showing task creation and submission
+4. generated output files in `workspace/shared/`
+5. the contents of:
+   - `project_summary.txt`
+   - `implementation_plan.txt`
+   - `acceptance_checklist.txt`
+
+### Success Criteria
+
+The demo is successful when:
+
+- the task is created successfully
+- the task reaches finished state
+- the three output files are generated
+- the output files contain usable content
+- the mainline smoke path remains stable after the run
+
+### Why This Demo Matters
+
+This is currently more valuable than a simple single-file rewrite demo because it shows multi-deliverable generation through the actual system path.
+
+For external viewers, this is much closer to a real engineering assistant workflow:
+
+requirement in → structured project outputs out
+
+---
+
+## Demo 2: Document Flow Demo
+
+### Goal
+
+Show a practical local document-processing workflow inside ZERO.
+
+Instead of only replying in chat, ZERO reads a real input file, processes it with a local LLM pipeline, writes a useful output file, and preserves a trace file that can be inspected later.
 
 This makes the demo closer to a real local agent workflow than a simple text-generation example.
 
+---
 
-
-\---
-
-
-
-\## Current Capabilities
-
-
-
-\### 1. Action Items Extraction
-
-
+### Capability A: Action Items Extraction
 
 Input:
 
-\- `input.txt`
-
-
+- `workspace/shared/input.txt`
 
 Output:
 
-\- `action\_items.txt`
-
-
+- `workspace/shared/action_items.txt`
 
 Flow:
 
-\- `read\_input`
-
-\- `extract\_action\_items`
-
-\- `write\_action\_items`
-
-
+- `read_input`
+- `extract_action_items`
+- `write_action_items`
 
 Purpose:
 
-\- Convert meeting notes or raw project notes into clear action items with:
+Convert meeting notes or raw project notes into clear action items with:
 
-&#x20; - Owner
+- Owner
+- Task
+- Due
 
-&#x20; - Task
+Example result characteristics:
 
-&#x20; - Due
+- identify named owners
+- assign `Unassigned` when no explicit owner exists
+- preserve due phrases such as:
+  - `By Monday`
+  - `Today`
+  - `This afternoon`
+  - `Tomorrow`
 
+---
 
-
-Example result:
-
-\- identify named owners
-
-\- assign `Unassigned` when no explicit owner exists
-
-\- preserve due phrases such as:
-
-&#x20; - `By Monday`
-
-&#x20; - `Today`
-
-&#x20; - `This afternoon`
-
-&#x20; - `Tomorrow`
-
-
-
-\---
-
-
-
-\### 2. Document Summary
-
-
+### Capability B: Document Summary
 
 Input:
 
-\- `input.txt`
-
-
+- `workspace/shared/input.txt`
 
 Output:
 
-\- `summary.txt`
-
-
+- `workspace/shared/summary.txt`
 
 Flow:
 
-\- `read\_input`
-
-\- `summarize\_document`
-
-\- `write\_summary`
-
-
+- `read_input`
+- `summarize_document`
+- `write_summary`
 
 Purpose:
 
-\- Convert raw notes or documents into a concise English summary for review, reporting, or fast understanding.
+Convert raw notes or documents into a concise English summary for review, reporting, or fast understanding.
 
+Example result characteristics:
 
+- executive summary
+- key takeaways
+- concise structured output suitable for demos and technical review
 
-Example result:
+---
 
-\- executive summary
+## Trace Support
 
-\- key takeaways
+Document flow runs generate a structured trace file:
 
-\- concise structured output suitable for demos and technical review
+- `workspace/shared/document_flow_trace.json`
 
+This allows the system to preserve the actual document-processing path instead of only showing a final file result.
 
+### Action Items Trace
 
-\---
+- `read_input`
+- `extract_action_items`
+- `write_action_items`
 
+### Summary Trace
 
+- `read_input`
+- `summarize_document`
+- `write_summary`
 
-\## Trace Viewer Support
+---
 
+## Shared Workspace Files
 
+Runtime demo files are typically written under:
 
-Both flows generate a structured trace file:
+- `workspace/shared/`
 
+Common demo files include:
 
+- `input.txt`
+- `action_items.txt`
+- `summary.txt`
+- `document_flow_trace.json`
+- `requirement.txt`
+- `project_summary.txt`
+- `implementation_plan.txt`
+- `acceptance_checklist.txt`
 
-\- `document\_flow\_trace.json`
+---
 
+## Runtime Validation
 
+The demo path is not considered complete unless runtime validation also passes.
 
-This allows the Trace Viewer to show the actual document-processing path step by step instead of only showing a final file result.
+Current validation focus:
 
+- `test_step_executor.py`
+- `test_executor_repair_rules.py`
+- `test_executor_safe_path_repair.py`
+- `run_agent_loop_smoke.py`
+- `run_scheduler_smoke.py`
 
+Mainline validation target:
 
-\### Action Items Trace
+- runtime smoke PASS
+- mainline smoke PASS
 
-\- `read\_input`
+### Why This Matters
 
-\- `extract\_action\_items`
+This means the demos are not standing on a broken base.
 
-\- `write\_action\_items`
+The showcase is stronger because the system is not only producing artifacts — it is producing them on top of a validated mainline path.
 
+---
 
+## Demo Assets To Keep
 
-\### Summary Trace
+Important assets worth preserving:
 
-\- `read\_input`
+- successful requirement demo terminal screenshots
+- generated requirement demo output files
+- successful document flow terminal screenshots
+- generated `action_items.txt`
+- generated `summary.txt`
+- `document_flow_trace.json`
+- runtime smoke PASS screenshot
+- mainline ALL PASS screenshot
+- task summary / artifact proof screenshots
 
-\- `summarize\_document`
+Recommended storage direction:
 
-\- `write\_summary`
+- `demo_assets/requirement_demo/`
+- `demo_assets/document_flow_demo/`
+- `docs/images/`
 
+---
 
+## Why These Demos Matter
 
-\---
+These demos show that ZERO can do more than answer text prompts.
 
+They demonstrate that ZERO can:
 
+- read real files
+- create tasks
+- plan execution
+- write deliverables back to disk
+- preserve execution traces
+- survive repeated smoke validation
+- maintain a stable local-first workflow
 
-\## Shared Workspace Files
+That gives ZERO a more agent-like and system-like identity, instead of being only a chatbot shell.
 
+---
 
+## Current Demo Status
 
-Runtime demo files are written under:
+Current main demo status:
 
+- Requirement demo: available
+- Document flow demo: available
+- Runtime smoke: validated
+- Mainline smoke: validated
 
+Current recommendation:
 
-\- `workspace/shared/`
+Do not expand the demo surface too aggressively yet.
 
+First keep the current demo chain stable, repeatable, and easy to present.
 
+---
 
-Typical files:
+## Recommended Next Directions
 
-\- `input.txt`
+After this stage, reasonable next steps are:
 
-\- `action\_items.txt`
+- unify requirement demo and document demo under one clean demo entry structure
+- add a cleaner UI or remote-control layer later
+- export deliverables in more structured formats
+- connect generated outputs into downstream task workflows
+- refine public-facing README and showcase wording
 
-\- `summary.txt`
+For the current stage, the priority is clear:
 
-\- `document\_flow\_trace.json`
-
-
-
-\---
-
-
-
-\## Demo Assets
-
-
-
-The current demo asset set includes:
-
-
-
-\- validated action-items extraction cases
-
-\- validated summary generation case
-
-\- trace JSON examples
-
-\- successful terminal execution screenshots
-
-\- Trace Viewer screenshots
-
-
-
-These assets are preserved under:
-
-
-
-\- `demo\_assets/document\_flow\_demo/`
-
-
-
-\---
-
-
-
-\## Why This Demo Matters
-
-
-
-This is not just a rewrite example.
-
-
-
-It demonstrates that ZERO can:
-
-
-
-\- read a real file
-
-\- process non-structured text into useful outputs
-
-\- write result files back to disk
-
-\- preserve a machine-readable execution trace
-
-\- support repeated multi-case validation
-
-
-
-That gives the system a more agent-like, workflow-oriented shape instead of being only a chatbot interface.
-
-
-
-\---
-
-
-
-\## Validation Status
-
-
-
-Document Flow Demo Set v1 is complete.
-
-
-
-Completed:
-
-\- action-items extraction flow
-
-\- summary flow
-
-\- trace alignment for both flows
-
-\- multi-case validation
-
-\- demo asset preservation
-
-
-
-\---
-
-
-
-\## Demo Value
-
-
-
-This demo is useful because it is:
-
-
-
-\- local-first
-
-\- file-based
-
-\- repeatable
-
-\- inspectable through trace
-
-\- easy to present visually
-
-
-
-It is a strong early showcase for ZERO because the value is visible immediately:
-
-raw notes go in, structured output comes out, and the pipeline remains observable.
-
-
-
-\---
-
-
-
-\## Next Possible Directions
-
-
-
-Potential next steps:
-
-
-
-\- unify action-items and summary into one selectable document demo entry
-
-\- add lightweight API or UI wrappers
-
-\- support structured JSON export
-
-\- connect extracted action items into later task systems
-
-
-
-For the current stage, this demo already stands as a complete and presentable document-processing capability.
-
+keep the mainline stable, keep the demos repeatable, and keep the evidence.

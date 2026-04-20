@@ -47,6 +47,9 @@ This repository has now reached a stronger engineering checkpoint with the follo
 - a unified entrypoint exists through `main.py`
 - a second representative scenario now exists through requirement-pack delivery flow
 - a third representative scenario now exists through execution-proof flow
+- planner / agent loop interface contracts have been stabilized
+- execution / guard command policy path has been stabilized
+- requirement demo now has dedicated showcase assets
 
 This means the current version is already suitable for:
 
@@ -465,6 +468,49 @@ This is the current simplest engineering-execution demo because it shows:
 
 ---
 
+## Requirement Demo Showcase Assets
+
+The requirement demo now has two dedicated video assets under:
+
+```text
+demos/07_requirement_demo/
+```
+
+Current files:
+
+- `requirement_demo_execution_pass_2026-04-20.mp4`
+- `requirement_demo_outputs_2026-04-20.mp4`
+
+### What these two videos show
+
+**Execution proof**
+- the fixed requirement input exists
+- `python main.py requirement-demo` runs through the real mainline path
+- the demo ends with PASS
+- output artifact locations are shown in terminal
+
+**Outputs showcase**
+- generated outputs are opened directly
+- the requirement pack deliverables can be reviewed as real files
+- the scenario is easier to understand visually without waiting through full execution again
+
+### Why this matters
+
+This turns the requirement scenario from a terminal-only engineering proof into a reusable showcase package.
+
+The requirement demo now has:
+
+- fixed input
+- repeatable command
+- stable outputs
+- terminal proof
+- output proof
+- a dedicated demo asset folder
+
+That makes it much easier to present the system to someone who was not involved in development.
+
+---
+
 ## Why the Current Architecture Matters
 
 The current repository is not trying to hide execution complexity.
@@ -580,6 +626,7 @@ Key areas in the current repository include:
 - `tests/` — smoke tests and validation scripts
 - `docs/devlog.md` — engineering progress records
 - `docs/images/checkpoints/` — checkpoint evidence images
+- `demos/` — recorded demo assets
 
 ---
 
