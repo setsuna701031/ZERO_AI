@@ -13,7 +13,7 @@ TEST_FILES = [
     "test_executor_repair_rules.py",
     "test_executor_safe_path_repair.py",
     "run_agent_loop_smoke.py",
-    "test_scheduler_smoke.py",
+    "run_scheduler_smoke.py",
 ]
 
 

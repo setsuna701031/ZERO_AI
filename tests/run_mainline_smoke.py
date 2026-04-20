@@ -9,8 +9,6 @@ from typing import List, Tuple
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON_EXE = sys.executable
 
-# 目前主線 smoke 收「穩定可過」的主線驗證。
-# runtime_smoke 已重新驗證可跑通，現在納回 mainline。
 SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
     (
         "tool_layer_smoke",
@@ -18,7 +16,7 @@ SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
     ),
     (
         "scheduler_smoke",
-        [PYTHON_EXE, "tests/test_scheduler_smoke.py"],
+        [PYTHON_EXE, "tests/run_scheduler_smoke.py"],
     ),
     (
         "document_task_smoke",
