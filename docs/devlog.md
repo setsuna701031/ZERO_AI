@@ -18,27 +18,27 @@ This pass focused on stabilizing the inner execution path before pushing farther
 
 
 
-&#x20; \* `core/tools/tool\_registry.py`
+&#x20; \* `core/tools/tool\\\_registry.py`
 
-&#x20; \* `core/tools/command\_tool.py`
+&#x20; \* `core/tools/command\\\_tool.py`
 
-&#x20; \* `core/tools/file\_tool.py`
+&#x20; \* `core/tools/file\\\_tool.py`
 
-&#x20; \* `core/tools/workspace\_tool.py`
+&#x20; \* `core/tools/workspace\\\_tool.py`
 
-&#x20; \* `core/tasks/task\_paths.py`
+&#x20; \* `core/tasks/task\\\_paths.py`
 
 \* Step executor first-pass outer-envelope stabilization
 
 
 
-&#x20; \* `core/runtime/step\_executor.py`
+&#x20; \* `core/runtime/step\\\_executor.py`
 
 \* Step handlers first-pass normalization
 
 
 
-&#x20; \* `core/runtime/step\_handlers.py`
+&#x20; \* `core/runtime/step\\\_handlers.py`
 
 \* Executor first-pass internal responsibility cleanup
 
@@ -62,13 +62,13 @@ Tool layer validation:
 
 
 
-\* `tests/test\_file\_tool.py`
+\* `tests/test\\\_file\\\_tool.py`
 
-\* `tests/test\_workspace\_tool.py`
+\* `tests/test\\\_workspace\\\_tool.py`
 
-\* `tests/test\_tool\_registry.py`
+\* `tests/test\\\_tool\\\_registry.py`
 
-\* `tests/run\_tool\_layer\_smoke.py`
+\* `tests/run\\\_tool\\\_layer\\\_smoke.py`
 
 
 
@@ -76,19 +76,19 @@ Runtime / execution validation:
 
 
 
-\* `tests/test\_step\_executor.py`
+\* `tests/test\\\_step\\\_executor.py`
 
-\* `tests/test\_executor\_repair\_rules.py`
+\* `tests/test\\\_executor\\\_repair\\\_rules.py`
 
-\* `tests/test\_executor\_safe\_path\_repair.py`
+\* `tests/test\\\_executor\\\_safe\\\_path\\\_repair.py`
 
-\* `tests/test\_executor\_smoke.py`
+\* `tests/test\\\_executor\\\_smoke.py`
 
-\* `tests/test\_agent\_loop.py`
+\* `tests/test\\\_agent\\\_loop.py`
 
-\* `tests/test\_scheduler\_smoke.py`
+\* `tests/test\\\_scheduler\\\_smoke.py`
 
-\* `tests/run\_runtime\_smoke.py`
+\* `tests/run\\\_runtime\\\_smoke.py`
 
 
 
@@ -100,13 +100,13 @@ Confirmed passing during this stabilization pass:
 
 
 
-\* `python tests/run\_tool\_layer\_smoke.py`
+\* `python tests/run\\\_tool\\\_layer\\\_smoke.py`
 
-\* `python tests/run\_runtime\_smoke.py`
+\* `python tests/run\\\_runtime\\\_smoke.py`
 
-\* `python tests/test\_executor\_smoke.py`
+\* `python tests/test\\\_executor\\\_smoke.py`
 
-\* `python tests/test\_scheduler\_smoke.py`
+\* `python tests/test\\\_scheduler\\\_smoke.py`
 
 
 
@@ -180,23 +180,23 @@ Scheduler internal responsibility split completed across helper layers:
 
 
 
-\* `core/tasks/scheduler\_core/queue\_sync\_helpers.py`
+\* `core/tasks/scheduler\\\_core/queue\\\_sync\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/dispatch\_helpers.py`
+\* `core/tasks/scheduler\\\_core/dispatch\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/repo\_state\_helpers.py`
+\* `core/tasks/scheduler\\\_core/repo\\\_state\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/trace\_helpers.py`
+\* `core/tasks/scheduler\\\_core/trace\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/simple\_runner\_helpers.py`
+\* `core/tasks/scheduler\\\_core/simple\\\_runner\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/step\_path\_helpers.py`
+\* `core/tasks/scheduler\\\_core/step\\\_path\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/simple\_step\_executor\_helpers.py`
+\* `core/tasks/scheduler\\\_core/simple\\\_step\\\_executor\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/command\_step\_helpers.py`
+\* `core/tasks/scheduler\\\_core/command\\\_step\\\_helpers.py`
 
-\* `core/tasks/scheduler\_core/llm\_step\_helpers.py`
+\* `core/tasks/scheduler\\\_core/llm\\\_step\\\_helpers.py`
 
 
 
@@ -212,9 +212,9 @@ This consolidation pass was validated repeatedly during each extraction step wit
 
 
 
-\* `python tests/test\_scheduler\_smoke.py`
+\* `python tests/test\\\_scheduler\\\_smoke.py`
 
-\* `python tests/run\_runtime\_smoke.py`
+\* `python tests/run\\\_runtime\\\_smoke.py`
 
 
 
@@ -274,11 +274,11 @@ The document flow initially had multiple breakpoints:
 
 \* deterministic document planning was overriding user-specified output paths
 
-\* the active planning path was going through `core/system/llm\_planner.py`, not only `core/planning/planner.py`
+\* the active planning path was going through `core/system/llm\\\_planner.py`, not only `core/planning/planner.py`
 
-\* `{{file\_content}}` was not reliably injected into LLM prompt templates
+\* `{{file\\\_content}}` was not reliably injected into LLM prompt templates
 
-\* `write\_file` with `use\_previous\_text=true` could complete while still writing empty files
+\* `write\\\_file` with `use\\\_previous\\\_text=true` could complete while still writing empty files
 
 \* `task result` could show finished while the expected shared artifact was empty
 
@@ -292,7 +292,7 @@ Planning path preservation:
 
 
 
-\* `core/system/llm\_planner.py`
+\* `core/system/llm\\\_planner.py`
 
 \* `core/planning/planner.py`
 
@@ -304,9 +304,9 @@ These changes preserved user-specified source and output paths such as:
 
 \* `workspace/shared/input.txt`
 
-\* `workspace/shared/summary\_v2.txt`
+\* `workspace/shared/summary\\\_v2.txt`
 
-\* `workspace/shared/action\_items\_v2.txt`
+\* `workspace/shared/action\\\_items\\\_v2.txt`
 
 
 
@@ -314,15 +314,15 @@ LLM prompt injection / execution path fixes:
 
 
 
-\* `core/runtime/step\_executor.py`
+\* `core/runtime/step\\\_executor.py`
 
-\* `core/tasks/scheduler\_core/llm\_step\_helpers.py`
+\* `core/tasks/scheduler\\\_core/llm\\\_step\\\_helpers.py`
 
 \* `core/tasks/scheduler.py`
 
 
 
-These changes repaired the path where document content from `read\_file` must actually reach the LLM step.
+These changes repaired the path where document content from `read\\\_file` must actually reach the LLM step.
 
 
 
@@ -330,11 +330,11 @@ Write-back / previous-result extraction fixes:
 
 
 
-\* `core/runtime/step\_handlers.py`
+\* `core/runtime/step\\\_handlers.py`
 
 
 
-This change repaired `write\_file` with `use\_previous\_text=true` so the previous LLM text is actually written into the target shared file instead of producing an empty artifact.
+This change repaired `write\\\_file` with `use\\\_previous\\\_text=true` so the previous LLM text is actually written into the target shared file instead of producing an empty artifact.
 
 
 
@@ -356,7 +356,7 @@ Confirmed working flows:
 
 &#x20;  \* input: `workspace/shared/input.txt`
 
-&#x20;  \* output: `workspace/shared/summary\_v2.txt`
+&#x20;  \* output: `workspace/shared/summary\\\_v2.txt`
 
 2\. Action items flow
 
@@ -364,7 +364,7 @@ Confirmed working flows:
 
 &#x20;  \* input: `workspace/shared/input.txt`
 
-&#x20;  \* output: `workspace/shared/action\_items\_v2.txt`
+&#x20;  \* output: `workspace/shared/action\\\_items\\\_v2.txt`
 
 
 
@@ -388,11 +388,11 @@ Confirmed behavior:
 
 
 
-Summary flow produced a real plain-text summary in `summary\_v2.txt`.
+Summary flow produced a real plain-text summary in `summary\\\_v2.txt`.
 
 
 
-Action-items flow produced a structured plain-text result in `action\_items\_v2.txt` with:
+Action-items flow produced a structured plain-text result in `action\\\_items\\\_v2.txt` with:
 
 
 
@@ -454,7 +454,7 @@ Stable document-flow checkpoint:
 
 \* LLM file-content injection: working
 
-\* `use\_previous\_text` write-back: working
+\* `use\\\_previous\\\_text` write-back: working
 
 \* finished task result + shared artifact output: working
 
@@ -470,9 +470,9 @@ Keep the latest terminal screenshots showing:
 
 \* scheduler smoke + runtime smoke pass
 
-\* summary flow finished + `summary\_v2.txt` written
+\* summary flow finished + `summary\\\_v2.txt` written
 
-\* action-items flow finished + `action\_items\_v2.txt` written
+\* action-items flow finished + `action\\\_items\\\_v2.txt` written
 
 
 
@@ -548,7 +548,7 @@ Validated document task modes:
 
 
 
-&#x20;  \* goal: `read input.txt and extract action items into action\_items.txt`
+&#x20;  \* goal: `read input.txt and extract action items into action\\\_items.txt`
 
 
 
@@ -582,7 +582,7 @@ Confirmed behavior:
 
 \* task record was written into `workspace/tasks.json`
 
-\* task workspace directory was created under `workspace/tasks/<task\_id>/`
+\* task workspace directory was created under `workspace/tasks/<task\\\_id>/`
 
 \* task reached `finished`
 
@@ -598,13 +598,13 @@ Confirmed behavior:
 
 &#x20; \* `plan.json`
 
-&#x20; \* `runtime\_state.json`
+&#x20; \* `runtime\\\_state.json`
 
-&#x20; \* `execution\_log.json`
+&#x20; \* `execution\\\_log.json`
 
 &#x20; \* `trace.json`
 
-&#x20; \* `task\_snapshot.json`
+&#x20; \* `task\\\_snapshot.json`
 
 
 
@@ -614,7 +614,7 @@ Shared output artifacts also remained valid:
 
 \* `workspace/shared/summary.txt`
 
-\* `workspace/shared/action\_items.txt`
+\* `workspace/shared/action\\\_items.txt`
 
 
 
@@ -686,11 +686,11 @@ Keep the latest terminal evidence showing:
 
 \* `workspace/tasks.json` containing the created document tasks
 
-\* `workspace/tasks/<task\_id>/` directories created for the finished tasks
+\* `workspace/tasks/<task\\\_id>/` directories created for the finished tasks
 
 \* `workspace/shared/summary.txt`
 
-\* `workspace/shared/action\_items.txt`
+\* `workspace/shared/action\\\_items.txt`
 
 
 
@@ -746,9 +746,9 @@ Validated commands:
 
 
 
-\* `python app.py task doc-summary input.txt summary\_cli.txt`
+\* `python app.py task doc-summary input.txt summary\\\_cli.txt`
 
-\* `python app.py task doc-action-items input.txt action\_items\_cli.txt`
+\* `python app.py task doc-action-items input.txt action\\\_items\\\_cli.txt`
 
 
 
@@ -762,7 +762,7 @@ Confirmed behavior:
 
 \* `task result` returned the expected final answer
 
-\* task directory artifacts were created under `workspace/tasks/<task\_id>/`
+\* task directory artifacts were created under `workspace/tasks/<task\\\_id>/`
 
 \* document-task behavior remained consistent with the mainline integration pass
 
@@ -782,7 +782,7 @@ Before this, document-task creation depended mainly on natural-language task goa
 
 \* `summarize input.txt into summary.txt`
 
-\* `read input.txt and extract action items into action\_items.txt`
+\* `read input.txt and extract action items into action\\\_items.txt`
 
 
 
@@ -854,9 +854,9 @@ This pass focused on improving task result visibility for completed document tas
 
 
 
-\* `task result <task\_id>`
+\* `task result <task\\\_id>`
 
-\* `task show <task\_id>`
+\* `task show <task\\\_id>`
 
 
 
@@ -876,9 +876,9 @@ Confirmed working on finished document tasks:
 
 
 
-\* `task result` shows `shared\_artifacts`
+\* `task result` shows `shared\\\_artifacts`
 
-\* `task show` shows `shared\_artifacts`
+\* `task show` shows `shared\\\_artifacts`
 
 
 
@@ -888,7 +888,7 @@ Confirmed shared-scope paths were visible in task output, including examples suc
 
 \* `workspace/shared/input.txt`
 
-\* `workspace/shared/action\_items\_cli.txt`
+\* `workspace/shared/action\\\_items\\\_cli.txt`
 
 
 
@@ -904,9 +904,9 @@ Before this pass, task output mainly exposed task-local runtime files such as:
 
 \* `plan.json`
 
-\* `runtime\_state.json`
+\* `runtime\\\_state.json`
 
-\* `execution\_log.json`
+\* `execution\\\_log.json`
 
 \* `trace.json`
 
@@ -954,13 +954,13 @@ Added:
 
 
 
-\* `tests/run\_document\_task\_smoke.py`
+\* `tests/run\\\_document\\\_task\\\_smoke.py`
 
-\* `tests/run\_mainline\_smoke.py`
+\* `tests/run\\\_mainline\\\_smoke.py`
 
 
 
-`run\_document\_task\_smoke.py` validates both document-task flows end-to-end:
+`run\\\_document\\\_task\\\_smoke.py` validates both document-task flows end-to-end:
 
 
 
@@ -990,7 +990,7 @@ The smoke covers:
 
 
 
-`run\_mainline\_smoke.py` was added as a higher-level validation entry for stable mainline checks.
+`run\\\_mainline\\\_smoke.py` was added as a higher-level validation entry for stable mainline checks.
 
 
 
@@ -1016,9 +1016,9 @@ Example outputs confirmed:
 
 
 
-\* `summary\_smoke.txt` created under `workspace/shared/`
+\* `summary\\\_smoke.txt` created under `workspace/shared/`
 
-\* `action\_items\_smoke.txt` created under `workspace/shared/`
+\* `action\\\_items\\\_smoke.txt` created under `workspace/shared/`
 
 \* smoke runner reported `ALL PASS`
 
@@ -1064,7 +1064,7 @@ Stable checkpoint after document-task smoke integration:
 
 
 
-This pass focused on restoring runtime validation compatibility after `tests/test\_agent\_loop.py` exposed an interface mismatch.
+This pass focused on restoring runtime validation compatibility after `tests/test\\\_agent\\\_loop.py` exposed an interface mismatch.
 
 
 
@@ -1072,13 +1072,13 @@ This pass focused on restoring runtime validation compatibility after `tests/tes
 
 
 
-`runtime\_smoke` was failing because:
+`runtime\\\_smoke` was failing because:
 
 
 
-\* `tests/test\_agent\_loop.py` called `loop.run(user\_input)`
+\* `tests/test\\\_agent\\\_loop.py` called `loop.run(user\\\_input)`
 
-\* `core/agent/agent\_loop.py` no longer exposed a compatible `run(...)` entry
+\* `core/agent/agent\\\_loop.py` no longer exposed a compatible `run(...)` entry
 
 
 
@@ -1094,7 +1094,7 @@ This caused runtime validation to fail with:
 
 
 
-`core/agent/agent\_loop.py` was updated with a minimal compatibility `run(user\_input: str)` entry.
+`core/agent/agent\\\_loop.py` was updated with a minimal compatibility `run(user\\\_input: str)` entry.
 
 
 
@@ -1120,11 +1120,11 @@ Confirmed passing after the compatibility restoration:
 
 
 
-\* `tests/test\_agent\_loop.py`: PASS
+\* `tests/test\\\_agent\\\_loop.py`: PASS
 
-\* `tests/run\_runtime\_smoke.py`: PASS
+\* `tests/run\\\_runtime\\\_smoke.py`: PASS
 
-\* `tests/run\_mainline\_smoke.py`: PASS
+\* `tests/run\\\_mainline\\\_smoke.py`: PASS
 
 
 
@@ -1184,13 +1184,13 @@ Today I finished folding the new demo smoke coverage into the stable mainline sm
 
 
 
-\* Added `tests/run\_requirement\_demo\_smoke.py`
+\* Added `tests/run\\\_requirement\\\_demo\\\_smoke.py`
 
-\* Added `tests/run\_execution\_demo\_smoke.py`
+\* Added `tests/run\\\_execution\\\_demo\\\_smoke.py`
 
-\* Folded both into `tests/run\_mainline\_smoke.py`
+\* Folded both into `tests/run\\\_mainline\\\_smoke.py`
 
-\* Verified `python tests/run\_mainline\_smoke.py` passes end-to-end
+\* Verified `python tests/run\\\_mainline\\\_smoke.py` passes end-to-end
 
 
 
@@ -1212,9 +1212,9 @@ Today I finished folding the new demo smoke coverage into the stable mainline sm
 
 
 
-\* `runtime\_smoke`
+\* `runtime\\\_smoke`
 
-\* Reason: currently blocked by `tests/test\_agent\_loop.py`
+\* Reason: currently blocked by `tests/test\\\_agent\\\_loop.py`
 
 \* Known blocker: `AttributeError: 'AgentLoop' object has no attribute 'run'`
 
@@ -1236,7 +1236,7 @@ Today I finished folding the new demo smoke coverage into the stable mainline sm
 
 
 
-\* Investigate and repair the runtime / `agent\_loop` path
+\* Investigate and repair the runtime / `agent\\\_loop` path
 
 \* Unblock runtime smoke so it can eventually be folded into the mainline validation suite
 
@@ -1246,7 +1246,7 @@ Today I finished folding the new demo smoke coverage into the stable mainline sm
 
 
 
-This pass focused on removing naming ambiguity inside `tests/` after several manual smoke scripts were still using misleading `test\_\*.py` names.
+This pass focused on removing naming ambiguity inside `tests/` after several manual smoke scripts were still using misleading `test\\\_\\\*.py` names.
 
 
 
@@ -1272,11 +1272,11 @@ The most visible cases were:
 
 
 
-\* `tests/test\_agent\_loop.py`
+\* `tests/test\\\_agent\\\_loop.py`
 
-\* `tests/test\_scheduler\_smoke.py`
+\* `tests/test\\\_scheduler\\\_smoke.py`
 
-\* `tests/test\_executor\_smoke.py`
+\* `tests/test\\\_executor\\\_smoke.py`
 
 
 
@@ -1284,17 +1284,17 @@ The most visible cases were:
 
 
 
-Renamed manual smoke / diagnostic scripts to `run\_\*.py` naming:
+Renamed manual smoke / diagnostic scripts to `run\\\_\\\*.py` naming:
 
 
 
-\* `tests/test\_agent\_loop.py` -> `tests/run\_agent\_loop\_smoke.py`
+\* `tests/test\\\_agent\\\_loop.py` -> `tests/run\\\_agent\\\_loop\\\_smoke.py`
 
-\* `tests/test\_scheduler\_smoke.py` -> `tests/run\_scheduler\_smoke.py`
+\* `tests/test\\\_scheduler\\\_smoke.py` -> `tests/run\\\_scheduler\\\_smoke.py`
 
-\* `tests/test\_executor\_smoke.py` -> `tests/run\_executor\_smoke.py`
+\* `tests/test\\\_executor\\\_smoke.py` -> `tests/run\\\_executor\\\_smoke.py`
 
-\* `tests/test\_agent\_loop\_reflection.py` -> `tests/run\_agent\_loop\_reflection.py`
+\* `tests/test\\\_agent\\\_loop\\\_reflection.py` -> `tests/run\\\_agent\\\_loop\\\_reflection.py`
 
 
 
@@ -1302,9 +1302,9 @@ Updated smoke runners to follow the renamed paths:
 
 
 
-\* `tests/run\_runtime\_smoke.py`
+\* `tests/run\\\_runtime\\\_smoke.py`
 
-\* `tests/run\_mainline\_smoke.py`
+\* `tests/run\\\_mainline\\\_smoke.py`
 
 
 
@@ -1316,9 +1316,9 @@ Confirmed passing after rename and runner sync:
 
 
 
-\* `python tests/run\_runtime\_smoke.py`
+\* `python tests/run\\\_runtime\\\_smoke.py`
 
-\* `python tests/run\_mainline\_smoke.py`
+\* `python tests/run\\\_mainline\\\_smoke.py`
 
 
 
@@ -1352,9 +1352,9 @@ That matters because the repository now separates these categories more clearly:
 
 
 
-\* `test\_\*.py` for real test-style checks
+\* `test\\\_\\\*.py` for real test-style checks
 
-\* `run\_\*.py` for direct-execution smoke and diagnostic scripts
+\* `run\\\_\\\*.py` for direct-execution smoke and diagnostic scripts
 
 
 
@@ -1404,7 +1404,7 @@ These are useful proof points for future devlog, README, and internal checkpoint
 
 
 
-This pass focused on reducing responsibility mixing inside `core/agent/agent\_loop.py` without breaking the current mainline validation chain.
+This pass focused on reducing responsibility mixing inside `core/agent/agent\\\_loop.py` without breaking the current mainline validation chain.
 
 
 
@@ -1412,7 +1412,7 @@ This pass focused on reducing responsibility mixing inside `core/agent/agent\_lo
 
 
 
-`agent\_loop.py` had started accumulating too many different kinds of responsibilities in one file:
+`agent\\\_loop.py` had started accumulating too many different kinds of responsibilities in one file:
 
 
 
@@ -1446,7 +1446,7 @@ Added:
 
 
 
-\* `core/agent/agent\_route\_policy.py`
+\* `core/agent/agent\\\_route\\\_policy.py`
 
 
 
@@ -1472,7 +1472,7 @@ Added:
 
 
 
-\* `core/agent/agent\_component\_invoker.py`
+\* `core/agent/agent\\\_component\\\_invoker.py`
 
 
 
@@ -1500,7 +1500,7 @@ Added:
 
 
 
-\* `core/agent/document\_flow\_trace\_writer.py`
+\* `core/agent/document\\\_flow\\\_trace\\\_writer.py`
 
 
 
@@ -1516,11 +1516,11 @@ Confirmed passing after each extraction step:
 
 
 
-\* `python tests/run\_runtime\_smoke.py`
+\* `python tests/run\\\_runtime\\\_smoke.py`
 
-\* `python tests/run\_mainline\_smoke.py`
+\* `python tests/run\\\_mainline\\\_smoke.py`
 
-\* `python tests/run\_agent\_loop\_smoke.py`
+\* `python tests/run\\\_agent\\\_loop\\\_smoke.py`
 
 
 
@@ -1548,7 +1548,7 @@ Its value was structural:
 
 
 
-\* `agent\_loop.py` is now closer to a true orchestration shell
+\* `agent\\\_loop.py` is now closer to a true orchestration shell
 
 \* policy logic is more explicit
 
@@ -1606,13 +1606,13 @@ Completed:
 
 \* `core/planning/planner.py`
 
-\* `core/planning/planner\_rule\_parser.py`
+\* `core/planning/planner\\\_rule\\\_parser.py`
 
-\* `core/agent/agent\_loop.py`
+\* `core/agent/agent\\\_loop.py`
 
-\* `core/runtime/step\_executor.py`
+\* `core/runtime/step\\\_executor.py`
 
-\* `core/tasks/execution\_guard.py`
+\* `core/tasks/execution\\\_guard.py`
 
 
 
@@ -1640,15 +1640,15 @@ Confirmed passing after the stabilization sequence:
 
 
 
-\* `python tests/run\_runtime\_smoke.py`
+\* `python tests/run\\\_runtime\\\_smoke.py`
 
-\* `python tests/run\_mainline\_smoke.py`
+\* `python tests/run\\\_mainline\\\_smoke.py`
 
-\* `python tests/test\_step\_executor.py`
+\* `python tests/test\\\_step\\\_executor.py`
 
-\* `python tests/run\_agent\_loop\_smoke.py`
+\* `python tests/run\\\_agent\\\_loop\\\_smoke.py`
 
-\* `python tests/run\_scheduler\_smoke.py`
+\* `python tests/run\\\_scheduler\\\_smoke.py`
 
 
 
@@ -1696,11 +1696,11 @@ Validated generated outputs:
 
 
 
-\* `workspace/shared/project\_summary.txt`
+\* `workspace/shared/project\\\_summary.txt`
 
-\* `workspace/shared/implementation\_plan.txt`
+\* `workspace/shared/implementation\\\_plan.txt`
 
-\* `workspace/shared/acceptance\_checklist.txt`
+\* `workspace/shared/acceptance\\\_checklist.txt`
 
 
 
@@ -1708,9 +1708,9 @@ Requirement demo assets were organized under:
 
 
 
-\* `demos/07\_requirement\_demo/requirement\_demo\_execution\_pass\_2026-04-20.mp4`
+\* `demos/07\\\_requirement\\\_demo/requirement\\\_demo\\\_execution\\\_pass\\\_2026-04-20.mp4`
 
-\* `demos/07\_requirement\_demo/requirement\_demo\_outputs\_2026-04-20.mp4`
+\* `demos/07\\\_requirement\\\_demo/requirement\\\_demo\\\_outputs\\\_2026-04-20.mp4`
 
 
 
@@ -1760,17 +1760,17 @@ Primary current checkpoint set:
 
 
 
-\* `checkpoint\_mainline\_smoke\_all\_pass.png`
+\* `checkpoint\\\_mainline\\\_smoke\\\_all\\\_pass.png`
 
-\* `checkpoint\_runtime\_smoke\_pass.png`
+\* `checkpoint\\\_runtime\\\_smoke\\\_pass.png`
 
-\* `checkpoint\_requirement\_demo\_pass.png`
+\* `checkpoint\\\_requirement\\\_demo\\\_pass.png`
 
-\* `checkpoint\_requirement\_demo\_outputs.png`
+\* `checkpoint\\\_requirement\\\_demo\\\_outputs.png`
 
-\* `checkpoint\_execution\_demo\_pass.png`
+\* `checkpoint\\\_execution\\\_demo\\\_pass.png`
 
-\* `checkpoint\_task\_os\_integration\_tests\_passed.png`
+\* `checkpoint\\\_task\\\_os\\\_integration\\\_tests\\\_passed.png`
 
 
 
@@ -1868,11 +1868,11 @@ The mini-build demo now uses fixed workspace inputs:
 
 \* `workspace/shared/requirement.txt`
 
-\* `workspace/shared/numbers\_input.txt`
+\* `workspace/shared/numbers\\\_input.txt`
 
 
 
-The requirement defines a small engineering build task around a statistics utility.  
+The requirement defines a small engineering build task around a statistics utility.
 
 The numbers input provides the fixed data used for execution verification.
 
@@ -1886,15 +1886,15 @@ Validated mini-build outputs now include:
 
 
 
-\* `workspace/shared/project\_summary.txt`
+\* `workspace/shared/project\\\_summary.txt`
 
-\* `workspace/shared/implementation\_plan.txt`
+\* `workspace/shared/implementation\\\_plan.txt`
 
-\* `workspace/shared/acceptance\_checklist.txt`
+\* `workspace/shared/acceptance\\\_checklist.txt`
 
-\* `workspace/shared/number\_stats.py`
+\* `workspace/shared/number\\\_stats.py`
 
-\* `workspace/shared/stats\_result.txt`
+\* `workspace/shared/stats\\\_result.txt`
 
 
 
@@ -1950,13 +1950,13 @@ Confirmed visible proof in terminal:
 
 
 
-\* generated `number\_stats.py`
+\* generated `number\\\_stats.py`
 
-\* generated `stats\_result.txt`
+\* generated `stats\\\_result.txt`
 
 \* verified statistics output
 
-\* `\[mini-build-demo] PASS`
+\* `\\\[mini-build-demo] PASS`
 
 
 
@@ -1968,7 +1968,7 @@ Mini-build demo assets were organized under:
 
 
 
-\* `demos/08\_mini\_build\_demo/mini\_build\_demo\_execution\_pass\_2026-04-20.mp4`
+\* `demos/08\\\_mini\\\_build\\\_demo/mini\\\_build\\\_demo\\\_execution\\\_pass\\\_2026-04-20.mp4`
 
 
 
@@ -1976,7 +1976,7 @@ A dedicated checkpoint image should be kept as:
 
 
 
-\* `docs/images/checkpoints/checkpoint\_mini\_build\_demo\_pass.png`
+\* `docs/images/checkpoints/checkpoint\\\_mini\\\_build\\\_demo\\\_pass.png`
 
 
 
@@ -1996,7 +1996,7 @@ Updated / to update together:
 
 \* `docs/demo.md`
 
-\* `docs/proof\_map.md`
+\* `docs/proof\\\_map.md`
 
 \* `docs/devlog.md`
 
@@ -2036,7 +2036,7 @@ Now the project also has a compact execution showcase that demonstrates:
 
 
 
-That is a stronger proof that ZERO is not only producing documentation or chat-like outputs.  
+That is a stronger proof that ZERO is not only producing documentation or chat-like outputs.
 
 It can now show a small but complete engineering loop.
 
@@ -2084,9 +2084,9 @@ Confirmed:
 
 
 
-\* `execution\_trace` remained at the outer step result layer
+\* `execution\\\_trace` remained at the outer step result layer
 
-\* nested inner `execution\_trace` was removed
+\* nested inner `execution\\\_trace` was removed
 
 \* summary flow completed successfully under manual ticks
 
@@ -2106,7 +2106,7 @@ Confirmed:
 
 
 
-\* command execution no longer defaulted into `workspace/tasks/<task\_id>/`
+\* command execution no longer defaulted into `workspace/tasks/<task\\\_id>/`
 
 \* command execution now runs from project root when no explicit command cwd is provided
 
@@ -2128,7 +2128,7 @@ Confirmed:
 
 \* original step payload is preserved without misleading execution-only cwd fields
 
-\* actual command execution cwd is explicitly recorded as `effective\_cwd`
+\* actual command execution cwd is explicitly recorded as `effective\\\_cwd`
 
 \* nested command result also records the real cwd used for execution
 
@@ -2144,7 +2144,7 @@ This checkpoint improves trust in the runtime execution record.
 
 
 
-The value is not only that command tasks now work more reliably.  
+The value is not only that command tasks now work more reliably.
 
 It is that runtime inspection is cleaner and less misleading:
 
@@ -2213,4 +2213,22 @@ v32 step 2: passed
 \* original step preserved
 
 \* effective\_cwd recorded explicitly
+
+
+
+v32 step 3: passed
+
+\- command stdout retained
+
+\- parsed\_output added
+
+\- output\_text added
+
+
+
+v32 step 4: passed
+
+\- command message/final\_answer summarized
+
+\- large JSON stdout no longer pollutes top-level message fields
 
