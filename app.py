@@ -270,10 +270,81 @@ def _find_first_value(data: Any, keys: List[str]) -> Any:
     return None
 
 
+def _summarize_parsed_output(parsed: Any) -> str:
+    if isinstance(parsed, dict):
+        parts: List[str] = []
+        if "ok" in parsed:
+            parts.append("ok" if bool(parsed.get("ok")) else "failed")
+        if isinstance(parsed.get("mode"), str) and parsed.get("mode", "").strip():
+            parts.append(f"mode={parsed.get('mode')}")
+        if "count" in parsed:
+            parts.append(f"count={parsed.get('count')}")
+        if isinstance(parsed.get("results"), list):
+            parts.append(f"results={len(parsed.get('results', []))}")
+        if "executed_count" in parsed:
+            parts.append(f"executed={parsed.get('executed_count')}")
+        if parts:
+            return ", ".join(parts)
+    return ""
+
+
+def _extract_display_payload(task: Any, depth: int = 0) -> Dict[str, Any]:
+    if depth > 8 or not isinstance(task, dict):
+        return {}
+
+    candidates: List[Dict[str, Any]] = [task]
+
+    for key in ("last_step_result", "result", "execution", "task"):
+        value = task.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+
+    step_results = task.get("step_results")
+    if isinstance(step_results, list) and step_results:
+        last_item = step_results[-1]
+        if isinstance(last_item, dict):
+            candidates.append(last_item)
+            nested = last_item.get("result")
+            if isinstance(nested, dict):
+                candidates.append(nested)
+
+    results = task.get("results")
+    if isinstance(results, list) and results:
+        last_item = results[-1]
+        if isinstance(last_item, dict):
+            candidates.append(last_item)
+            nested = last_item.get("result")
+            if isinstance(nested, dict):
+                candidates.append(nested)
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        if any(candidate.get(k) not in (None, "", [], {}) for k in ("summary_text", "parsed_output", "output_text", "final_answer", "message", "stdout", "stderr")):
+            return candidate
+        nested = _extract_display_payload(candidate, depth + 1)
+        if nested:
+            return nested
+
+    return {}
+
+
 def _extract_final_answer(task: Dict[str, Any]) -> str:
-    value = _find_first_value(task, ["final_answer", "answer", "response", "message", "summary", "result_text", "content"])
-    if isinstance(value, str):
+    payload = _extract_display_payload(task)
+
+    value = _find_first_value(payload or task, ["summary_text", "final_answer", "answer", "response", "message", "summary", "result_text", "content", "output_text"])
+    if isinstance(value, str) and value.strip():
         return value.strip()
+
+    parsed_output = _find_first_value(payload or task, ["parsed_output"])
+    summary = _summarize_parsed_output(parsed_output)
+    if summary:
+        return summary
+
+    value = _find_first_value(payload or task, ["stdout", "stderr"])
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+
     return ""
 
 
@@ -433,12 +504,20 @@ def _load_task_snapshot(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 def _merge_task_with_snapshot(task: Dict[str, Any]) -> Dict[str, Any]:
     merged = copy.deepcopy(task if isinstance(task, dict) else {})
+
     snapshot = _load_task_snapshot(task)
-    if not isinstance(snapshot, dict):
-        return merged
-    for key, value in snapshot.items():
-        if key not in merged or merged.get(key) in (None, "", [], {}):
-            merged[key] = copy.deepcopy(value)
+    if isinstance(snapshot, dict):
+        for key, value in snapshot.items():
+            if key not in merged or merged.get(key) in (None, "", [], {}):
+                merged[key] = copy.deepcopy(value)
+
+    runtime_state_path = _extract_paths(merged).get("runtime_state_path", "")
+    runtime_state = _load_json_file(runtime_state_path)
+    if isinstance(runtime_state, dict):
+        for key, value in runtime_state.items():
+            if key not in merged or merged.get(key) in (None, "", [], {}):
+                merged[key] = copy.deepcopy(value)
+
     return merged
 
 
@@ -762,6 +841,11 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     blocked_reason = _extract_blocked_reason(task)
     paths = _extract_paths(task)
     shared_artifacts = _extract_shared_artifact_paths(task)
+    payload = _extract_display_payload(task)
+    parsed_output = _find_first_value(payload, ["parsed_output"])
+    output_text = _find_first_value(payload, ["output_text"])
+    summary_text = _find_first_value(payload, ["summary_text"])
+
     print(f"task_id: {task_id}")
     print(f"status: {status}")
     print("final_answer:")
@@ -769,6 +853,18 @@ def _print_task_result(task: Dict[str, Any]) -> None:
         print(textwrap.indent(final_answer, "  "))
     else:
         print("  <empty>")
+
+    if isinstance(summary_text, str) and summary_text.strip() and summary_text.strip() != final_answer.strip():
+        print("summary_text:")
+        print(textwrap.indent(summary_text.strip(), "  "))
+
+    if isinstance(parsed_output, (dict, list)):
+        print("parsed_output:")
+        print(textwrap.indent(json.dumps(parsed_output, ensure_ascii=False, indent=2), "  "))
+    elif isinstance(output_text, str) and output_text.strip() and output_text.strip() != final_answer.strip():
+        print("output_text:")
+        print(textwrap.indent(output_text.strip(), "  "))
+
     if blocked_reason:
         print("blocked_reason:")
         print(textwrap.indent(blocked_reason, "  "))
