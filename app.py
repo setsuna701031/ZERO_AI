@@ -1007,7 +1007,80 @@ def _print_task_result(task: Dict[str, Any]) -> None:
             print(f"  - {path}")
 
 
+
+
+def _normalize_goal_text(goal: Any) -> str:
+    return _single_line(goal)
+
+
+def _is_command_like_goal(goal: Any) -> bool:
+    text = _normalize_goal_text(goal)
+    if not text:
+        return False
+
+    lowered = text.lower()
+
+    command_prefixes = (
+        'python ',
+        'py ',
+        'cmd ',
+        'cmd.exe ',
+        'powershell ',
+        'pwsh ',
+        'bash ',
+        'sh ',
+        './',
+        '.\\',
+    )
+    if lowered.startswith(command_prefixes):
+        return True
+
+    if re.match(r'^[a-z]:\\.*\.(?:exe|bat|cmd|ps1|py)(?:\s|$)', text, flags=re.IGNORECASE):
+        return True
+
+    if re.match(r'^[A-Za-z0-9_./\-]+\.(?:py|ps1|bat|cmd|exe)(?:\s|$)', text, flags=re.IGNORECASE):
+        return True
+
+    command_patterns = [
+        r'python\s+app\.py',
+        r'python\s+[A-Za-z0-9_./\-]+\.py',
+        r'py\s+[A-Za-z0-9_./\-]+\.py',
+        r'(?:cmd|powershell|pwsh|bash|sh)',
+        r'task\s+(?:run|show|result|list|open|delete|retry|rerun|purge|submit|create)',
+    ]
+    return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in command_patterns)
+
+
+def _build_command_like_goal_blocked(goal: Any) -> Dict[str, Any]:
+    normalized_goal = _normalize_goal_text(goal)
+    return {
+        'ok': False,
+        'error': 'command-like goal is not allowed in task semantic path',
+        'error_type': 'command_like_goal_blocked',
+        'message': '請不要把 CLI / command 當成 task goal。請直接執行命令，或改寫成真正的任務語意。',
+        'goal': normalized_goal,
+        'examples': {
+            'blocked': [
+                'python app.py task run task_xxx',
+                'powershell -File script.ps1',
+                'python some_script.py',
+            ],
+            'allowed': [
+                'summarize input.txt into summary.txt',
+                'extract action items from input.txt into action_items.txt',
+                'generate report from input.txt',
+            ],
+        },
+        'hint': 'CLI 操作請直接跑命令；task create 只接受真正的 goal sentence。',
+    }
+
 def _create_task(system: Any, goal: str) -> Dict[str, Any]:
+    normalized_goal = _normalize_goal_text(goal)
+    if not normalized_goal:
+        return {"ok": False, "error": "task goal is empty", "error_type": "empty_goal"}
+    if _is_command_like_goal(normalized_goal):
+        return _build_command_like_goal_blocked(normalized_goal)
+
     scheduler = _get_scheduler(system)
     create_fn = getattr(scheduler, "create_task", None)
     if callable(create_fn):
@@ -1080,6 +1153,123 @@ def _rerun_task(system: Any, task_id: str) -> Dict[str, Any]:
     return _spawn_task_from_existing(system, task_id, action_name="task_rerun")
 
 
+
+
+def _is_task_id_token(value: Any) -> bool:
+    text = _safe_str(value)
+    return bool(re.fullmatch(r"task_\d+", text))
+
+
+def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str, Any]:
+    normalized_task_id = _safe_str(task_id)
+    if not normalized_task_id:
+        return {"ok": False, "error": "task_id is required", "mode": "target_task"}
+
+    task = _get_task(system, normalized_task_id)
+    if not isinstance(task, dict):
+        return {"ok": False, "error": "task not found", "task_id": normalized_task_id, "mode": "target_task"}
+
+    status = _extract_status(task).lower()
+    if status == "created":
+        submit_result = _submit_existing_task(system, normalized_task_id)
+        if not isinstance(submit_result, dict) or not submit_result.get("ok", False):
+            return {
+                "ok": False,
+                "error": "submit existing task failed",
+                "task_id": normalized_task_id,
+                "mode": "target_task",
+                "submit_result": submit_result,
+            }
+
+    scheduler = _get_scheduler(system)
+
+    direct_methods = [
+        "run_task",
+        "run_task_by_id",
+        "run_until_task_complete",
+        "execute_task",
+        "execute_task_by_id",
+        "run_single_task",
+    ]
+    for owner in (scheduler, system):
+        if owner is None:
+            continue
+        for method_name in direct_methods:
+            method = getattr(owner, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                direct_result = method(normalized_task_id)
+                refreshed = _get_task(system, normalized_task_id)
+                return {
+                    "ok": True if not isinstance(direct_result, dict) else bool(direct_result.get("ok", True)),
+                    "mode": "target_task",
+                    "task_id": normalized_task_id,
+                    "driver": method_name,
+                    "result": direct_result,
+                    "task": refreshed,
+                }
+            except TypeError:
+                continue
+            except Exception as e:
+                return {
+                    "ok": False,
+                    "mode": "target_task",
+                    "task_id": normalized_task_id,
+                    "driver": method_name,
+                    "error": f"{method_name} failed: {e}",
+                }
+
+    ticks: List[Dict[str, Any]] = []
+    idle = False
+    started = False
+
+    for i in range(max(1, int(max_ticks))):
+        tick_result = _run_once(system)
+        ticks.append({"tick_index": i + 1, "result": tick_result})
+
+        current_task = _get_task(system, normalized_task_id)
+        if isinstance(current_task, dict):
+            current_status = _extract_status(current_task).lower()
+            current_step = _format_step_progress(current_task)
+            if current_status in {"running", "processing"}:
+                started = True
+            if current_status in TERMINAL_STATUSES:
+                return {
+                    "ok": True,
+                    "mode": "target_task",
+                    "task_id": normalized_task_id,
+                    "status": current_status,
+                    "step": current_step,
+                    "ticks": ticks,
+                    "task": current_task,
+                    "idle": False,
+                    "started": started or current_status in TERMINAL_STATUSES,
+                }
+
+        if isinstance(tick_result, dict):
+            tick_status = _safe_str(tick_result.get("status")).lower()
+            tick_action = _safe_str(tick_result.get("action")).lower()
+            if tick_status == "idle" or tick_action == "scheduler_idle":
+                idle = True
+                break
+
+    current_task = _get_task(system, normalized_task_id)
+    current_status = _extract_status(current_task).lower() if isinstance(current_task, dict) else "unknown"
+    current_step = _format_step_progress(current_task) if isinstance(current_task, dict) else "-"
+
+    return {
+        "ok": current_status in TERMINAL_STATUSES,
+        "mode": "target_task",
+        "task_id": normalized_task_id,
+        "status": current_status,
+        "step": current_step,
+        "ticks": ticks,
+        "task": current_task,
+        "idle": idle,
+        "started": started,
+        "error": None if current_status in TERMINAL_STATUSES else "target task did not reach terminal status",
+    }
 def _run_once(system: Any) -> Dict[str, Any]:
     scheduler = _get_scheduler(system)
     run_fn = getattr(scheduler, "run_once", None)
@@ -2042,10 +2232,14 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         return
     if text.startswith("/task_run"):
         parts = text.split()
-        explicit_count = len(parts) >= 2
-        if explicit_count:
+        explicit_arg = parts[1].strip() if len(parts) >= 2 else ""
+        if explicit_arg:
+            if _is_task_id_token(explicit_arg):
+                run_result = _run_target_task(system, explicit_arg, max_ticks=50)
+                print_json(run_result)
+                return
             try:
-                count = max(1, int(parts[1]))
+                count = max(1, int(explicit_arg))
             except Exception:
                 count = 1
             results = [{"tick_index": i + 1, "result": _run_once(system)} for i in range(count)]

@@ -2250,3 +2250,39 @@ v33 step 2: passed
 - task show now shows parsed_output summary block
 - normalized command result is now visible in main CLI display
 - no need to inspect runtime_state.json for basic command output understanding
+
+v33 step 2 smoke: passed
+
+- parsed_output summary block verified on a newly created command task
+- task result displays summarized parsed_output correctly
+- task show displays summarized parsed_output correctly
+- CLI display path is repeatable, not single-task only
+
+v34 step 1: passed
+
+- command-like goals are now blocked from task semantic path
+- task create accepts real goal sentences only
+- CLI/command input is no longer treated as task intent
+- semantic task path and command path begin to separate
+
+v34 step 2b: passed
+
+- planner routing precedence fixed
+- summary now uses semantic_summary_pipeline
+- action_items now uses semantic_action_items_pipeline
+- report now uses semantic_report_pipeline
+- semantic type now determines planner execution route
+
+v34 step 3: passed
+
+- semantic summary pipeline produces summary.txt
+- semantic action_items pipeline produces action_items.txt
+- semantic report pipeline produces report.txt
+- semantic routes are not only planned, but also land real shared artifacts
+
+v34 step 4: passed
+
+- task run <task_id> now executes the requested task
+- targeted semantic report task reaches finished 3/3
+- previous_result substitution now lands real report content
+- report.txt is no longer written as literal {{previous_result}}

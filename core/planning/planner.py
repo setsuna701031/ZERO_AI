@@ -25,7 +25,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v30
+    Deterministic Planner v34
 
     本版重點：
     1. 保留 document flow 偵測
@@ -36,13 +36,20 @@ class Planner:
     6. 保留結構化 document task 入口
     7. planner result contract 固定化
     8. step schema 正規化
-    9. 保留 v29 action layer
-    10. 新增 multi-step deterministic planner：
-        - read_file -> llm(summary/action_items) -> write_file
+    9. 保留 action layer
+    10. semantic execution routing：
+        - summary -> fixed summary pipeline
+        - action_items -> fixed action-items pipeline
+        - report -> fixed report pipeline
+        - generic_task -> fallback to generic planner path
+    11. routing precedence fixed:
+        - semantic route first
+        - structured document task second
+        - generic planner path last
     """
 
     _banner_printed = False
-    PLANNER_MODE = "deterministic_v30"
+    PLANNER_MODE = "deterministic_v34_semantic_routing"
 
     def __init__(
         self,
@@ -64,7 +71,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v30 (MULTI-STEP + ACTION LAYER + DOCUMENT ENTRY) ###")
+            print("### USING PLANNER v34 (SEMANTIC ROUTING + FIXED PRECEDENCE + ACTION LAYER + DOCUMENT ENTRY) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -93,6 +100,61 @@ class Planner:
         )
 
         try:
+            if not text:
+                result = self._build_plan_result(
+                    steps=[],
+                    intent="respond",
+                    final_answer="空白輸入",
+                    fallback_used=False,
+                    error=None,
+                    semantic_type="generic_task",
+                    execution_route="empty_input",
+                )
+                self.trace_logger.log_decision(
+                    title="planner result",
+                    message="empty input",
+                    source="planner",
+                    raw=result,
+                )
+                return result
+
+            semantic_steps, semantic_type, execution_route = self._plan_semantic_route(
+                text=text,
+                context=context,
+            )
+            if semantic_steps is not None:
+                task_name = self._infer_task_name(
+                    task_dir=str(context.get("workspace", "") or ""),
+                    goal=text,
+                )
+                steps = self._apply_step_metadata(semantic_steps, task_name=task_name)
+                intent = self._infer_intent(text=text, route=route, steps=steps)
+
+                result = self._build_plan_result(
+                    steps=steps,
+                    intent=intent,
+                    final_answer=f"已規劃 {len(steps)} 個步驟",
+                    fallback_used=False,
+                    error=None,
+                    semantic_type=semantic_type,
+                    execution_route=execution_route,
+                )
+
+                self.trace_logger.log_decision(
+                    title="planner semantic route result",
+                    message=f"steps={len(steps)}, semantic_type={semantic_type}, route={execution_route}",
+                    source="planner",
+                    raw={
+                        "steps": steps,
+                        "intent": intent,
+                        "semantic_type": semantic_type,
+                        "execution_route": execution_route,
+                        "task_name": task_name,
+                        "result": result,
+                    },
+                )
+                return result
+
             structured_document_steps = self._plan_structured_document_task(
                 context=context,
                 route=route,
@@ -109,6 +171,7 @@ class Planner:
                     structured_document_steps,
                     task_name=task_name,
                 )
+                semantic_type = self._infer_semantic_type(text=text, context=context, steps=steps)
                 intent = self._infer_intent(text=text, route=route, steps=steps)
 
                 result = self._build_plan_result(
@@ -117,34 +180,21 @@ class Planner:
                     final_answer=f"已規劃 {len(steps)} 個步驟",
                     fallback_used=False,
                     error=None,
+                    semantic_type=semantic_type,
+                    execution_route="structured_document_task",
                 )
 
                 self.trace_logger.log_decision(
                     title="planner structured document result",
-                    message=f"steps={len(steps)}, intent={intent}",
+                    message=f"steps={len(steps)}, intent={intent}, semantic_type={semantic_type}",
                     source="planner",
                     raw={
                         "steps": steps,
                         "intent": intent,
+                        "semantic_type": semantic_type,
                         "task_name": task_name,
                         "result": result,
                     },
-                )
-                return result
-
-            if not text:
-                result = self._build_plan_result(
-                    steps=[],
-                    intent="respond",
-                    final_answer="空白輸入",
-                    fallback_used=False,
-                    error=None,
-                )
-                self.trace_logger.log_decision(
-                    title="planner result",
-                    message="empty input",
-                    source="planner",
-                    raw=result,
                 )
                 return result
 
@@ -156,6 +206,7 @@ class Planner:
             )
 
             steps = self._apply_step_metadata(raw_steps, task_name=task_name)
+            semantic_type = self._infer_semantic_type(text=text, context=context, steps=steps)
             intent = self._infer_intent(text=text, route=route, steps=steps)
 
             result = self._build_plan_result(
@@ -164,15 +215,18 @@ class Planner:
                 final_answer=f"已規劃 {len(steps)} 個步驟",
                 fallback_used=fallback_used,
                 error=None,
+                semantic_type=semantic_type,
+                execution_route="generic_planner_path",
             )
 
             self.trace_logger.log_decision(
                 title="planner result",
-                message=f"steps={len(steps)}, intent={intent}, fallback={fallback_used}",
+                message=f"steps={len(steps)}, intent={intent}, semantic_type={semantic_type}, fallback={fallback_used}",
                 source="planner",
                 raw={
                     "steps": steps,
                     "intent": intent,
+                    "semantic_type": semantic_type,
                     "task_name": task_name,
                     "result": result,
                 },
@@ -187,6 +241,8 @@ class Planner:
                 final_answer=error_message,
                 fallback_used=False,
                 error=error_message,
+                semantic_type="generic_task",
+                execution_route="planner_exception",
             )
 
             self.trace_logger.log_decision(
@@ -215,6 +271,194 @@ class Planner:
             route=route,
             kwargs=kwargs,
             trace_logger=self.trace_logger,
+        )
+
+    # ============================================================
+    # semantic routing
+    # ============================================================
+
+    def _plan_semantic_route(
+        self,
+        text: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Optional[List[Dict[str, Any]]], str, str]:
+        context = context or {}
+        semantic_type = self._infer_semantic_type(text=text, context=context, steps=None)
+
+        if semantic_type == "summary":
+            parsed = self._match_semantic_document_task(text=text, semantic_type="summary")
+            if parsed is None:
+                return None, semantic_type, "semantic_summary_unmatched"
+
+            steps = self._build_semantic_document_pipeline(
+                source_path=parsed["source_path"],
+                output_path=parsed["output_path"],
+                llm_mode="summary",
+                prompt=self._build_semantic_summary_prompt(parsed["source_path"]),
+            )
+            return steps, semantic_type, "semantic_summary_pipeline"
+
+        if semantic_type == "action_items":
+            parsed = self._match_semantic_document_task(text=text, semantic_type="action_items")
+            if parsed is None:
+                return None, semantic_type, "semantic_action_items_unmatched"
+
+            steps = self._build_semantic_document_pipeline(
+                source_path=parsed["source_path"],
+                output_path=parsed["output_path"],
+                llm_mode="action_items",
+                prompt=self._build_semantic_action_items_prompt(parsed["source_path"]),
+            )
+            return steps, semantic_type, "semantic_action_items_pipeline"
+
+        if semantic_type == "report":
+            parsed = self._match_semantic_document_task(text=text, semantic_type="report")
+            if parsed is None:
+                return None, semantic_type, "semantic_report_unmatched"
+
+            steps = self._build_semantic_document_pipeline(
+                source_path=parsed["source_path"],
+                output_path=parsed["output_path"],
+                llm_mode="report",
+                prompt=self._build_semantic_report_prompt(parsed["source_path"]),
+            )
+            return steps, semantic_type, "semantic_report_pipeline"
+
+        return None, semantic_type, "generic_planner_path"
+
+    def _infer_semantic_type(
+        self,
+        text: str,
+        context: Optional[Dict[str, Any]] = None,
+        steps: Optional[List[Dict[str, Any]]] = None,
+    ) -> str:
+        context = context or {}
+
+        explicit = str(
+            context.get("semantic_type")
+            or context.get("task_type")
+            or context.get("mode")
+            or ""
+        ).strip().lower()
+
+        normalized_explicit = self._normalize_semantic_type(explicit)
+        if normalized_explicit != "generic_task":
+            return normalized_explicit
+
+        lowered = str(text or "").strip().lower()
+
+        if any(token in lowered for token in ["action items", "action-items", "action_items", "extract actions", "todo list"]):
+            return "action_items"
+
+        if any(token in lowered for token in ["summarize", "summary", "make summary", "create summary"]):
+            return "summary"
+
+        if any(token in lowered for token in ["generate report", "create report", "write report", "report from"]):
+            return "report"
+
+        if isinstance(steps, list) and len(steps) >= 3:
+            first_type = str(steps[0].get("type") or "").strip().lower()
+            second_type = str(steps[1].get("type") or "").strip().lower()
+            third_type = str(steps[2].get("type") or "").strip().lower()
+            if first_type == "read_file" and second_type == "llm" and third_type == "write_file":
+                llm_mode = str(steps[1].get("mode") or "").strip().lower()
+                normalized_mode = self._normalize_semantic_type(llm_mode)
+                if normalized_mode != "generic_task":
+                    return normalized_mode
+
+        return "generic_task"
+
+    def _normalize_semantic_type(self, value: str) -> str:
+        lowered = str(value or "").strip().lower()
+        if lowered in {"summary", "summarize"}:
+            return "summary"
+        if lowered in {"action_items", "action-items", "actionitems"}:
+            return "action_items"
+        if lowered in {"report", "generate_report"}:
+            return "report"
+        return "generic_task"
+
+    def _match_semantic_document_task(
+        self,
+        text: str,
+        semantic_type: str,
+    ) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        output_path = self._detect_output_path_from_text(stripped, llm_mode=semantic_type)
+        source_path = self._detect_source_path_from_text(stripped, output_path=output_path or "")
+
+        if not source_path:
+            return None
+
+        if not output_path:
+            if semantic_type == "summary":
+                output_path = "workspace/shared/summary.txt"
+            elif semantic_type == "action_items":
+                output_path = "workspace/shared/action_items.txt"
+            elif semantic_type == "report":
+                output_path = "workspace/shared/report.txt"
+
+        if not output_path:
+            return None
+
+        return {
+            "source_path": source_path,
+            "output_path": output_path,
+        }
+
+    def _build_semantic_document_pipeline(
+        self,
+        source_path: str,
+        output_path: str,
+        llm_mode: str,
+        prompt: str,
+    ) -> List[Dict[str, Any]]:
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": llm_mode,
+                "prompt": prompt,
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": self._infer_path_scope(output_path),
+                "content": "{{previous_result}}",
+            },
+        ]
+
+    def _build_semantic_summary_prompt(self, source_path: str) -> str:
+        return (
+            "Summarize the following document into a concise plain-text summary.\n\n"
+            "Rules:\n"
+            "1. Keep it clear and short.\n"
+            "2. Do not use JSON.\n"
+            "3. Do not add extra commentary.\n\n"
+            f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+        )
+
+    def _build_semantic_action_items_prompt(self, source_path: str) -> str:
+        return (
+            "Extract action items from the following document as concise plain text.\n\n"
+            "Rules:\n"
+            "1. Focus on actionable tasks only.\n"
+            "2. Prefer bullet-style plain text.\n"
+            "3. Do not use JSON.\n\n"
+            f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+        )
+
+    def _build_semantic_report_prompt(self, source_path: str) -> str:
+        return (
+            "Generate a concise structured report from the following document.\n\n"
+            "Rules:\n"
+            "1. Use plain text.\n"
+            "2. Include brief sections for summary, key points, and next steps.\n"
+            "3. Do not use JSON.\n\n"
+            f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
         )
 
     # ============================================================
@@ -346,6 +590,8 @@ class Planner:
             return "action_items"
         if any(token in lowered for token in ["summarize", "summary", "make summary", "create summary"]):
             return "summary"
+        if any(token in lowered for token in ["generate report", "create report", "write report", "report from"]):
+            return "report"
         return None
 
     def _detect_output_path_from_text(self, text: str, llm_mode: str) -> Optional[str]:
@@ -366,11 +612,12 @@ class Planner:
             if self._looks_like_file_candidate(candidate):
                 return candidate
 
-        # default output names
         if llm_mode == "summary":
             return "workspace/shared/summary.txt"
         if llm_mode == "action_items":
             return "workspace/shared/action_items.txt"
+        if llm_mode == "report":
+            return "workspace/shared/report.txt"
         return None
 
     def _detect_source_path_from_text(self, text: str, output_path: str) -> Optional[str]:
@@ -397,7 +644,7 @@ class Planner:
                 return candidate
 
         summarize_match = re.search(
-            r"\b(?:summarize|summary|action items from|extract actions from)\s+([^\s,;]+)",
+            r"\b(?:summarize|summary|action items from|extract actions from|generate report from|report from)\s+([^\s,;]+)",
             text,
             flags=re.IGNORECASE,
         )
@@ -413,6 +660,8 @@ class Planner:
             return f"Summarize the content from {source_path} into concise plain text."
         if llm_mode == "action_items":
             return f"Extract action items from the content of {source_path} as concise plain text."
+        if llm_mode == "report":
+            return f"Generate a concise structured report from the content of {source_path}."
         return f"Process the content from {source_path}."
 
     # ============================================================
@@ -438,10 +687,6 @@ class Planner:
         if not stripped:
             return [], False, last_path
 
-        # ========================================================
-        # v29/v30 ACTION LAYER
-        # ========================================================
-
         action_steps, action_last_path = self._plan_action_clause(
             text=stripped,
             lowered=lowered,
@@ -458,10 +703,6 @@ class Planner:
                 },
             )
             return action_steps, False, action_last_path
-
-        # ========================================================
-        # existing deterministic rules
-        # ========================================================
 
         cmd = self._extract_command(stripped)
         if cmd:
@@ -813,6 +1054,8 @@ class Planner:
         final_answer: str,
         fallback_used: bool,
         error: Optional[str],
+        semantic_type: str = "generic_task",
+        execution_route: str = "generic_planner_path",
     ) -> Dict[str, Any]:
         normalized_steps = self._normalize_steps(steps)
 
@@ -820,12 +1063,16 @@ class Planner:
             "ok": error is None,
             "planner_mode": self.PLANNER_MODE,
             "intent": str(intent or "respond"),
+            "semantic_type": str(semantic_type or "generic_task"),
+            "execution_route": str(execution_route or "generic_planner_path"),
             "final_answer": str(final_answer or ""),
             "steps": normalized_steps,
             "error": error,
             "meta": {
                 "fallback_used": bool(fallback_used),
                 "step_count": len(normalized_steps),
+                "semantic_type": str(semantic_type or "generic_task"),
+                "execution_route": str(execution_route or "generic_planner_path"),
             },
         }
 
@@ -981,5 +1228,7 @@ class Planner:
                     return "action_items"
                 if llm_mode == "summary":
                     return "summary"
+                if llm_mode == "report":
+                    return "report"
 
         return first_type or "unknown"

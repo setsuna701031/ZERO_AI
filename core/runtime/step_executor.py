@@ -157,6 +157,11 @@ class StepExecutor:
         )
 
         step_payload = self._normalize_step_payload(step_payload)
+        step_payload = self._apply_previous_result_substitution(
+            step=step_payload,
+            previous_result=previous_result,
+            context=normalized_context,
+        )
         step_type = str(step_payload.get("type", "")).strip().lower()
 
         if self.debug:
@@ -581,6 +586,66 @@ class StepExecutor:
             payload["max_attempts"] = self._safe_int(payload.get("max_attempts"), payload.get("max_attempts"))
 
         return payload
+
+
+    def _apply_previous_result_substitution(
+        self,
+        step: Dict[str, Any],
+        previous_result: Any,
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        payload = copy.deepcopy(step or {})
+        step_type = str(payload.get("type") or "").strip().lower()
+
+        if step_type != "write_file":
+            return payload
+
+        raw_content = payload.get("content")
+        if not isinstance(raw_content, str) or not raw_content:
+            return payload
+
+        previous_text = self._extract_previous_text(previous_result=previous_result, context=context)
+        previous_json = self._extract_previous_json_text(previous_result=previous_result)
+
+        replaced = str(raw_content)
+
+        if "{{previous_result_text}}" in replaced:
+            replaced = replaced.replace("{{previous_result_text}}", previous_text)
+
+        if "{{previous_result}}" in replaced:
+            replacement = previous_text or previous_json
+            replaced = replaced.replace("{{previous_result}}", replacement)
+
+        payload["content"] = replaced
+        return payload
+
+    def _extract_previous_json_text(self, previous_result: Any) -> str:
+        candidate = self._extract_json_like_payload(previous_result)
+        if candidate in (None, "", [], {}):
+            return ""
+
+        try:
+            if isinstance(candidate, str):
+                return candidate
+            return json.dumps(candidate, ensure_ascii=False, indent=2)
+        except Exception:
+            return str(candidate)
+
+    def _extract_json_like_payload(self, payload: Any, depth: int = 0) -> Any:
+        if depth > 8 or payload is None:
+            return None
+
+        if isinstance(payload, (dict, list)):
+            if isinstance(payload, dict):
+                for key in ("parsed_output", "result", "output", "data", "raw", "payload"):
+                    if key in payload:
+                        nested = self._extract_json_like_payload(payload.get(key), depth + 1)
+                        if nested not in (None, "", [], {}):
+                            return nested
+                return payload
+            return payload
+
+        return None
 
     def _normalize_step_result(
         self,
