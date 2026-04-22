@@ -25,7 +25,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v34
+    Deterministic Planner v35
 
     本版重點：
     1. 保留 document flow 偵測
@@ -41,6 +41,7 @@ class Planner:
         - summary -> fixed summary pipeline
         - action_items -> fixed action-items pipeline
         - report -> fixed report pipeline
+        - requirement_pack -> fixed requirement-pack pipeline
         - generic_task -> fallback to generic planner path
     11. routing precedence fixed:
         - semantic route first
@@ -49,7 +50,7 @@ class Planner:
     """
 
     _banner_printed = False
-    PLANNER_MODE = "deterministic_v34_semantic_routing"
+    PLANNER_MODE = "deterministic_v35_requirement_pack_routing"
 
     def __init__(
         self,
@@ -71,7 +72,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v34 (SEMANTIC ROUTING + FIXED PRECEDENCE + ACTION LAYER + DOCUMENT ENTRY) ###")
+            print("### USING PLANNER v35 (REQUIREMENT PACK + SEMANTIC ROUTING + FIXED PRECEDENCE + ACTION LAYER + DOCUMENT ENTRY) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -324,6 +325,14 @@ class Planner:
             )
             return steps, semantic_type, "semantic_report_pipeline"
 
+        if semantic_type == "requirement_pack":
+            parsed = self._match_requirement_pack_task(text=text)
+            if parsed is None:
+                return None, semantic_type, "semantic_requirement_pack_unmatched"
+
+            steps = self._build_requirement_pack_pipeline(source_path=parsed["source_path"])
+            return steps, semantic_type, "semantic_requirement_pack_pipeline"
+
         return None, semantic_type, "generic_planner_path"
 
     def _infer_semantic_type(
@@ -346,6 +355,12 @@ class Planner:
             return normalized_explicit
 
         lowered = str(text or "").strip().lower()
+
+        if any(token in lowered for token in ["requirement-pack", "requirement pack"]):
+            return "requirement_pack"
+
+        if "project_summary.txt" in lowered and "implementation_plan.txt" in lowered and "acceptance_checklist.txt" in lowered:
+            return "requirement_pack"
 
         if any(token in lowered for token in ["action items", "action-items", "action_items", "extract actions", "todo list"]):
             return "action_items"
@@ -376,6 +391,8 @@ class Planner:
             return "action_items"
         if lowered in {"report", "generate_report"}:
             return "report"
+        if lowered in {"requirement_pack", "requirement-pack", "requirement pack"}:
+            return "requirement_pack"
         return "generic_task"
 
     def _match_semantic_document_task(
@@ -406,6 +423,24 @@ class Planner:
             "output_path": output_path,
         }
 
+    def _match_requirement_pack_task(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        if "project_summary.txt" not in lowered or "implementation_plan.txt" not in lowered or "acceptance_checklist.txt" not in lowered:
+            return None
+
+        source_path = self._detect_source_path_from_text(stripped, output_path="")
+        if not source_path:
+            read_match = re.search(r"\bread\s+([^\s,;]+)", stripped, flags=re.IGNORECASE)
+            if read_match:
+                source_path = self._normalize_requested_path(read_match.group(1))
+
+        if not source_path:
+            return None
+
+        return {"source_path": source_path}
+
     def _build_semantic_document_pipeline(
         self,
         source_path: str,
@@ -427,6 +462,51 @@ class Planner:
                 "type": "write_file",
                 "path": output_path,
                 "scope": self._infer_path_scope(output_path),
+                "content": "{{previous_result}}",
+            },
+        ]
+
+    def _build_requirement_pack_pipeline(self, source_path: str) -> List[Dict[str, Any]]:
+        project_summary_path = "workspace/shared/project_summary.txt"
+        implementation_plan_path = "workspace/shared/implementation_plan.txt"
+        acceptance_checklist_path = "workspace/shared/acceptance_checklist.txt"
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "project_summary",
+                "prompt": self._build_requirement_project_summary_prompt(source_path),
+            },
+            {
+                "type": "write_file",
+                "path": project_summary_path,
+                "scope": self._infer_path_scope(project_summary_path),
+                "content": "{{previous_result}}",
+            },
+            {
+                "type": "llm",
+                "mode": "implementation_plan",
+                "prompt": self._build_requirement_implementation_plan_prompt(source_path),
+            },
+            {
+                "type": "write_file",
+                "path": implementation_plan_path,
+                "scope": self._infer_path_scope(implementation_plan_path),
+                "content": "{{previous_result}}",
+            },
+            {
+                "type": "llm",
+                "mode": "acceptance_checklist",
+                "prompt": self._build_requirement_acceptance_checklist_prompt(source_path),
+            },
+            {
+                "type": "write_file",
+                "path": acceptance_checklist_path,
+                "scope": self._infer_path_scope(acceptance_checklist_path),
                 "content": "{{previous_result}}",
             },
         ]
@@ -459,6 +539,45 @@ class Planner:
             "2. Include brief sections for summary, key points, and next steps.\n"
             "3. Do not use JSON.\n\n"
             f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+        )
+
+    def _build_requirement_project_summary_prompt(self, source_path: str) -> str:
+        return (
+            "Create project_summary.txt from the requirement document below.\n\n"
+            "Rules:\n"
+            "1. Use plain text only.\n"
+            "2. Start with the heading: Project Summary\n"
+            "3. Keep it concise and engineering-oriented.\n"
+            "4. Include goal, scope, and expected outputs.\n"
+            "5. Mention project_summary.txt, implementation_plan.txt, and acceptance_checklist.txt explicitly.\n\n"
+            f"Requirement content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+        )
+
+    def _build_requirement_implementation_plan_prompt(self, source_path: str) -> str:
+        return (
+            "Create implementation_plan.txt from the requirement document below.\n\n"
+            "Rules:\n"
+            "1. Use plain text only.\n"
+            "2. Start with the heading: Implementation Plan\n"
+            "3. Make it practical and engineering-oriented.\n"
+            "4. Include phases, concrete steps, and expected deliverables.\n"
+            "5. Mention project_summary.txt, implementation_plan.txt, and acceptance_checklist.txt explicitly.\n\n"
+            f"Requirement content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+        )
+
+    def _build_requirement_acceptance_checklist_prompt(self, source_path: str) -> str:
+        return (
+            "Create acceptance_checklist.txt from the requirement document below.\n\n"
+            "Rules:\n"
+            "1. Use plain text only.\n"
+            "2. Start with the heading: Acceptance Checklist\n"
+            "3. The output must include these section headings exactly:\n"
+            "   - Acceptance Criteria\n"
+            "   - Verification\n"
+            "   - Deliverable\n"
+            "4. Keep it clear and checklist-oriented.\n"
+            "5. Mention project_summary.txt, implementation_plan.txt, and acceptance_checklist.txt explicitly when relevant.\n\n"
+            f"Requirement content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
         )
 
     # ============================================================
@@ -1224,11 +1343,18 @@ class Planner:
 
             if first_type == "read_file" and second_type == "llm" and third_type == "write_file":
                 llm_mode = str(steps[1].get("mode") or "").strip().lower()
-                if llm_mode == "action_items":
-                    return "action_items"
-                if llm_mode == "summary":
-                    return "summary"
-                if llm_mode == "report":
-                    return "report"
+                normalized_mode = self._normalize_semantic_type(llm_mode)
+                if normalized_mode != "generic_task":
+                    return normalized_mode
+
+        if len(steps) >= 7:
+            if first_type == "read_file":
+                second_type = str(steps[1].get("type") or "").strip().lower()
+                third_type = str(steps[2].get("type") or "").strip().lower()
+                last_type = str(steps[-1].get("type") or "").strip().lower()
+                if second_type == "llm" and third_type == "write_file" and last_type == "write_file":
+                    first_mode = str(steps[1].get("mode") or "").strip().lower()
+                    if first_mode == "project_summary":
+                        return "requirement_pack"
 
         return first_type or "unknown"

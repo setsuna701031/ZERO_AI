@@ -2301,3 +2301,14 @@ v34 semantic task smoke: passed
   - report_smoke.txt
 - previous_result placeholder leak is no longer present in report_smoke.txt
 - semantic-task smoke now provides repeatable regression coverage for the new semantic task path
+
+v35 requirement-pack semantic pipeline: passed
+
+- planner now routes requirement-pack into a fixed semantic artifact pipeline
+- requirement-demo now writes real shared artifacts:
+  - project_summary.txt
+  - implementation_plan.txt
+  - acceptance_checklist.txt
+- requirement_demo_smoke now passes against real file outputs
+- mainline_smoke returns ALL PASS after integrating requirement-pack fix
+- requirement-pack path is no longer a description-only completion; it now lands real artifacts

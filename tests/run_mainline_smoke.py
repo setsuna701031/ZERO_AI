@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import locale
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,10 @@ SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
         [PYTHON_EXE, "tests/run_document_task_smoke.py"],
     ),
     (
+        "semantic_task_smoke",
+        [PYTHON_EXE, "tests/run_semantic_task_smoke.py"],
+    ),
+    (
         "requirement_demo_smoke",
         [PYTHON_EXE, "tests/run_requirement_demo_smoke.py"],
     ),
@@ -37,6 +42,26 @@ SMOKE_COMMANDS: List[Tuple[str, List[str]]] = [
 ]
 
 
+def _decode_bytes(data: bytes) -> str:
+    encoding_candidates = [
+        "utf-8",
+        locale.getpreferredencoding(False) or "",
+        "cp950",
+        "cp936",
+        "cp1252",
+    ]
+
+    for enc in encoding_candidates:
+        if not enc:
+            continue
+        try:
+            return data.decode(enc)
+        except Exception:
+            pass
+
+    return data.decode("utf-8", errors="replace")
+
+
 def run_one(label: str, cmd: List[str]) -> None:
     print(f"[mainline-smoke] running: {label}")
     print(f"[mainline-smoke] command: {' '.join(cmd)}")
@@ -45,18 +70,19 @@ def run_one(label: str, cmd: List[str]) -> None:
         cmd,
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        text=False,
     )
 
-    if result.stdout.strip():
-        print(f"[mainline-smoke] stdout ({label}):")
-        print(result.stdout.rstrip())
+    stdout = _decode_bytes(result.stdout or b"")
+    stderr = _decode_bytes(result.stderr or b"")
 
-    if result.stderr.strip():
+    if stdout.strip():
+        print(f"[mainline-smoke] stdout ({label}):")
+        print(stdout.rstrip())
+
+    if stderr.strip():
         print(f"[mainline-smoke] stderr ({label}):")
-        print(result.stderr.rstrip())
+        print(stderr.rstrip())
 
     if result.returncode != 0:
         raise RuntimeError(

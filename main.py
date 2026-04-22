@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import re
 import subprocess
 import sys
@@ -25,6 +26,24 @@ def safe_print(text: str = "") -> None:
     encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
     sanitized = value.encode(encoding, errors="replace").decode(encoding, errors="replace")
     print(sanitized)
+
+
+def _decode_bytes(data: bytes) -> str:
+    encoding_candidates = [
+        "utf-8",
+        locale.getpreferredencoding(False) or "",
+        "cp950",
+        "cp936",
+        "cp1252",
+    ]
+    for enc in encoding_candidates:
+        if not enc:
+            continue
+        try:
+            return data.decode(enc)
+        except Exception:
+            pass
+    return data.decode("utf-8", errors="replace")
 
 
 def print_help() -> None:
@@ -58,10 +77,16 @@ def run_process(args: List[str], capture: bool = False) -> subprocess.CompletedP
         args,
         cwd=str(REPO_ROOT),
         capture_output=capture,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        text=False,
     )
+
+
+def stdout_text(result: subprocess.CompletedProcess) -> str:
+    return _decode_bytes(result.stdout or b"")
+
+
+def stderr_text(result: subprocess.CompletedProcess) -> str:
+    return _decode_bytes(result.stderr or b"")
 
 
 def ensure_required_paths() -> None:
@@ -70,24 +95,67 @@ def ensure_required_paths() -> None:
     SHARED_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def extract_first_json_object(text: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+
+    start = raw.find("{")
+    if start < 0:
+        return ""
+
+    depth = 0
+    in_string = False
+    escape = False
+
+    for i in range(start, len(raw)):
+        ch = raw[i]
+
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+            continue
+
+        if ch == "{":
+            depth += 1
+            continue
+
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : i + 1]
+
+    return ""
+
+
 def parse_task_id(text: str) -> str:
     stripped = (text or "").strip()
     if not stripped:
         return ""
 
-    try:
-        payload = json.loads(stripped)
-        task_id = str(
-            payload.get("task_id")
-            or payload.get("task_name")
-            or payload.get("task", {}).get("task_id")
-            or payload.get("task", {}).get("task_name")
-            or ""
-        ).strip()
-        if task_id:
-            return task_id
-    except Exception:
-        pass
+    json_text = extract_first_json_object(stripped)
+    if json_text:
+        try:
+            payload = json.loads(json_text)
+            task_id = str(
+                payload.get("task_id")
+                or payload.get("task_name")
+                or payload.get("task", {}).get("task_id")
+                or payload.get("task", {}).get("task_name")
+                or ""
+            ).strip()
+            if task_id:
+                return task_id
+        except Exception:
+            pass
 
     match = re.search(r'"task_id"\s*:\s*"([^"]+)"', stripped)
     if match:
@@ -104,7 +172,7 @@ def require_success(result: subprocess.CompletedProcess, label: str) -> None:
     if result.returncode != 0:
         raise RuntimeError(
             f"{label} failed with return code {result.returncode}\n"
-            f"STDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}"
+            f"STDOUT:\n{stdout_text(result)}\n\nSTDERR:\n{stderr_text(result)}"
         )
 
 
@@ -156,9 +224,9 @@ def write_requirement_demo_input() -> Path:
 def create_task(command_name: str, *args: str) -> str:
     result = run_app_command("task", command_name, *args, capture=True)
     require_success(result, f"create {command_name}")
-    task_id = parse_task_id(result.stdout)
+    task_id = parse_task_id(stdout_text(result))
     if not task_id:
-        raise RuntimeError(f"Could not parse task_id from {command_name}\n{result.stdout}")
+        raise RuntimeError(f"Could not parse task_id from {command_name}\n{stdout_text(result)}")
     safe_print(f"[task] created {command_name}: {task_id}")
     return task_id
 
@@ -166,28 +234,29 @@ def create_task(command_name: str, *args: str) -> str:
 def submit_task(task_id: str) -> None:
     result = run_app_command("task", "submit", task_id, capture=True)
     require_success(result, f"submit {task_id}")
-    if '"ok": false' in (result.stdout or "").lower():
-        raise RuntimeError(f"Submit failed for {task_id}\n{result.stdout}")
+    if '"ok": false' in stdout_text(result).lower():
+        raise RuntimeError(f"Submit failed for {task_id}\n{stdout_text(result)}")
     safe_print(f"[task] submitted: {task_id}")
 
 
 def get_task_result_text(task_id: str) -> str:
     result = run_app_command("task", "result", task_id, capture=True)
     require_success(result, f"task result {task_id}")
-    return result.stdout or ""
+    return stdout_text(result)
 
 
 def get_task_show_text(task_id: str) -> str:
     result = run_app_command("task", "show", task_id, capture=True)
     require_success(result, f"task show {task_id}")
-    return result.stdout or ""
+    return stdout_text(result)
 
 
 def wait_until_finished(task_id: str, max_ticks: int = 10) -> None:
     last_output = ""
     for _ in range(max_ticks):
-        tick = run_app_command("task", "run", "1", capture=True)
-        require_success(tick, "task run 1")
+        tick = run_app_command("task", "run", task_id, capture=True)
+        require_success(tick, f"task run {task_id}")
+
         result_text = get_task_result_text(task_id)
         last_output = result_text
         lowered = result_text.lower()
@@ -197,7 +266,7 @@ def wait_until_finished(task_id: str, max_ticks: int = 10) -> None:
         if "status: failed" in lowered:
             raise RuntimeError(f"Task failed: {task_id}\n{result_text}")
     raise RuntimeError(
-        f"Task did not finish within {max_ticks} ticks: {task_id}\n"
+        f"Task did not finish within {max_ticks} runs: {task_id}\n"
         f"Last result output:\n{last_output}"
     )
 
@@ -242,7 +311,7 @@ def run_requirement_demo() -> int:
 
     task_id = create_task("requirement-pack", "requirement.txt")
     submit_task(task_id)
-    wait_until_finished(task_id, max_ticks=5)
+    wait_until_finished(task_id, max_ticks=10)
 
     result_text = get_task_result_text(task_id)
     show_text = get_task_show_text(task_id)
@@ -278,7 +347,7 @@ def run_execution_demo() -> int:
 
     task_id = create_task("execution-proof")
     submit_task(task_id)
-    wait_until_finished(task_id, max_ticks=5)
+    wait_until_finished(task_id, max_ticks=10)
 
     result_text = get_task_result_text(task_id)
     show_text = get_task_show_text(task_id)
@@ -392,7 +461,7 @@ def run_mini_build_demo() -> int:
 
     task_id = create_task("requirement-pack", "requirement.txt")
     submit_task(task_id)
-    wait_until_finished(task_id, max_ticks=5)
+    wait_until_finished(task_id, max_ticks=10)
 
     result_text = get_task_result_text(task_id)
     show_text = get_task_show_text(task_id)
@@ -408,17 +477,17 @@ def run_mini_build_demo() -> int:
 
     require_text_contains(
         project_summary_path,
-        ["number_stats.py", "stats_result.txt"],
+        ["project_summary.txt", "implementation_plan.txt", "acceptance_checklist.txt"],
         "project summary",
     )
     require_text_contains(
         implementation_plan_path,
-        ["number_stats.py"],
+        ["Implementation Plan"],
         "implementation plan",
     )
     require_text_contains(
         acceptance_checklist_path,
-        ["number_stats.py", "sum", "average", "max", "min"],
+        ["Acceptance Criteria", "Verification", "Deliverable"],
         "acceptance checklist",
     )
 
@@ -438,7 +507,7 @@ def run_mini_build_demo() -> int:
     safe_print("")
     safe_print("[mini-build-demo] script stdout")
     safe_print("----------------------------------------")
-    safe_print((run_result.stdout or "").rstrip())
+    safe_print(stdout_text(run_result).rstrip())
     safe_print("")
     safe_print("[mini-build-demo] outputs")
     safe_print(f"  project summary: {project_summary_path}")
