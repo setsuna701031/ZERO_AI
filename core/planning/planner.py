@@ -25,7 +25,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v28
+    Deterministic Planner v30
 
     本版重點：
     1. 保留 document flow 偵測
@@ -33,19 +33,16 @@ class Planner:
     3. 保留 run_python 規則
     4. 保留 verify 規則
     5. verify 類句型先於 document flow 判定
-    6. 修正 action_items / summary task 句型優先序
-    7. 保留使用者指定的 source / output path
-    8. 新增「結構化 document task 入口」
-    9. 新增 requirement-pack 多交付物規劃入口
-
-    本次收束補強：
-    10. planner result contract 固定化
-    11. step schema 正規化，確保最小共通欄位穩定
-    12. 避免不同規劃分支回傳格式漂移
+    6. 保留結構化 document task 入口
+    7. planner result contract 固定化
+    8. step schema 正規化
+    9. 保留 v29 action layer
+    10. 新增 multi-step deterministic planner：
+        - read_file -> llm(summary/action_items) -> write_file
     """
 
     _banner_printed = False
-    PLANNER_MODE = "deterministic_v28"
+    PLANNER_MODE = "deterministic_v30"
 
     def __init__(
         self,
@@ -67,7 +64,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v28 (DOCUMENT + REQUIREMENT PACK ENTRY) ###")
+            print("### USING PLANNER v30 (MULTI-STEP + ACTION LAYER + DOCUMENT ENTRY) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -246,6 +243,16 @@ class Planner:
         if special_document_steps is not None:
             return special_document_steps, False
 
+        multi_steps = self._plan_multi_step_task(stripped)
+        if multi_steps is not None:
+            self.trace_logger.log_decision(
+                title="multi-step detected",
+                message=stripped,
+                source="planner",
+                raw={"steps": multi_steps},
+            )
+            return multi_steps, False
+
         clauses = self._split_clauses(text)
 
         self.trace_logger.log_decision(
@@ -282,6 +289,133 @@ class Planner:
         )
 
     # ============================================================
+    # multi-step task planning
+    # ============================================================
+
+    def _plan_multi_step_task(self, text: str) -> Optional[List[Dict[str, Any]]]:
+        parsed = self._match_read_transform_write(text)
+        if parsed is None:
+            return None
+
+        source_path = parsed["source_path"]
+        output_path = parsed["output_path"]
+        llm_mode = parsed["llm_mode"]
+
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": llm_mode,
+                "prompt": self._build_transform_prompt(llm_mode=llm_mode, source_path=source_path),
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": self._infer_path_scope(output_path),
+                "content": "{{previous_result}}",
+            },
+        ]
+
+    def _match_read_transform_write(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        llm_mode = self._detect_transform_mode(lowered)
+        if llm_mode is None:
+            return None
+
+        output_path = self._detect_output_path_from_text(stripped, llm_mode=llm_mode)
+        if not output_path:
+            return None
+
+        source_path = self._detect_source_path_from_text(stripped, output_path=output_path)
+        if not source_path:
+            return None
+
+        return {
+            "source_path": source_path,
+            "output_path": output_path,
+            "llm_mode": llm_mode,
+        }
+
+    def _detect_transform_mode(self, lowered: str) -> Optional[str]:
+        if any(token in lowered for token in ["action items", "action-items", "todo list", "extract actions"]):
+            return "action_items"
+        if any(token in lowered for token in ["summarize", "summary", "make summary", "create summary"]):
+            return "summary"
+        return None
+
+    def _detect_output_path_from_text(self, text: str, llm_mode: str) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"\bto\s+([^\s,;]+)",
+            r"\binto\s+([^\s,;]+)",
+            r"\bas\s+([^\s,;]+)",
+            r"\bwrite\s+(?:to\s+)?([^\s,;]+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if not match:
+                continue
+            candidate = self._normalize_requested_path(match.group(1))
+            if self._looks_like_file_candidate(candidate):
+                return candidate
+
+        # default output names
+        if llm_mode == "summary":
+            return "workspace/shared/summary.txt"
+        if llm_mode == "action_items":
+            return "workspace/shared/action_items.txt"
+        return None
+
+    def _detect_source_path_from_text(self, text: str, output_path: str) -> Optional[str]:
+        raw_candidates = re.findall(
+            r"(?:[A-Za-z]:[\\/][^\s,;]+|(?:workspace|shared|sandbox)[\\/][^\s,;]+|[^\s,;]+\.(?:txt|md|json|log|csv))",
+            text,
+            flags=re.IGNORECASE,
+        )
+
+        normalized_candidates: List[str] = []
+        for candidate in raw_candidates:
+            normalized = self._normalize_requested_path(candidate)
+            if normalized and normalized not in normalized_candidates:
+                normalized_candidates.append(normalized)
+
+        for candidate in normalized_candidates:
+            if candidate != output_path:
+                return candidate
+
+        read_match = re.search(r"\bread\s+([^\s,;]+)", text, flags=re.IGNORECASE)
+        if read_match:
+            candidate = self._normalize_requested_path(read_match.group(1))
+            if candidate and candidate != output_path:
+                return candidate
+
+        summarize_match = re.search(
+            r"\b(?:summarize|summary|action items from|extract actions from)\s+([^\s,;]+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if summarize_match:
+            candidate = self._normalize_requested_path(summarize_match.group(1))
+            if candidate and candidate != output_path:
+                return candidate
+
+        return None
+
+    def _build_transform_prompt(self, llm_mode: str, source_path: str) -> str:
+        if llm_mode == "summary":
+            return f"Summarize the content from {source_path} into concise plain text."
+        if llm_mode == "action_items":
+            return f"Extract action items from the content of {source_path} as concise plain text."
+        return f"Process the content from {source_path}."
+
+    # ============================================================
     # per-clause planning
     # ============================================================
 
@@ -292,6 +426,7 @@ class Planner:
         last_path: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], bool, Optional[str]]:
         stripped = str(text or "").strip()
+        lowered = stripped.lower()
 
         self.trace_logger.log_decision(
             title="analyze clause",
@@ -302,6 +437,31 @@ class Planner:
 
         if not stripped:
             return [], False, last_path
+
+        # ========================================================
+        # v29/v30 ACTION LAYER
+        # ========================================================
+
+        action_steps, action_last_path = self._plan_action_clause(
+            text=stripped,
+            lowered=lowered,
+            last_path=last_path,
+        )
+        if action_steps is not None:
+            self.trace_logger.log_decision(
+                title="action layer detected",
+                message=stripped,
+                source="planner",
+                raw={
+                    "steps": action_steps,
+                    "last_path": action_last_path,
+                },
+            )
+            return action_steps, False, action_last_path
+
+        # ========================================================
+        # existing deterministic rules
+        # ========================================================
 
         cmd = self._extract_command(stripped)
         if cmd:
@@ -402,6 +562,247 @@ class Planner:
         return [{"type": "llm", "prompt": stripped}], True, last_path
 
     # ============================================================
+    # action layer
+    # ============================================================
+
+    def _plan_action_clause(
+        self,
+        text: str,
+        lowered: str,
+        last_path: Optional[str] = None,
+    ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+        explicit_write = self._match_write_file_request(text)
+        if explicit_write is not None:
+            path = explicit_write["path"]
+            content = explicit_write["content"]
+
+            return [
+                {
+                    "type": "ensure_file",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                },
+                {
+                    "type": "write_file",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "content": content,
+                },
+            ], path
+
+        command_request = self._match_command_request(text)
+        if command_request is not None:
+            return [
+                {
+                    "type": "command",
+                    "command": command_request,
+                }
+            ], last_path
+
+        python_request = self._match_run_python_request(text)
+        if python_request is not None:
+            return [
+                {
+                    "type": "run_python",
+                    "path": python_request,
+                }
+            ], python_request
+
+        hello_shortcut = self._match_hello_file_shortcut(lowered)
+        if hello_shortcut is not None:
+            path, content = hello_shortcut
+            return [
+                {
+                    "type": "ensure_file",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                },
+                {
+                    "type": "write_file",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "content": content,
+                },
+            ], path
+
+        create_empty = self._match_create_empty_file_request(text)
+        if create_empty is not None:
+            return [
+                {
+                    "type": "ensure_file",
+                    "path": create_empty,
+                    "scope": self._infer_path_scope(create_empty),
+                }
+            ], create_empty
+
+        append_write = self._match_write_into_existing_request(text, last_path=last_path)
+        if append_write is not None:
+            path = append_write["path"]
+            content = append_write["content"]
+            return [
+                {
+                    "type": "write_file",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "content": content,
+                }
+            ], path
+
+        return None, last_path
+
+    def _match_hello_file_shortcut(self, lowered: str) -> Optional[Tuple[str, str]]:
+        candidates = {
+            "write hello file",
+            "create hello file",
+            "make hello file",
+            "write a hello file",
+            "create a hello file",
+            "make a hello file",
+        }
+        if lowered in candidates:
+            return "workspace/shared/hello.txt", "hello"
+        return None
+
+    def _match_command_request(self, text: str) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"^(?:run|execute|do)\s+command\s*:\s*(.+)$",
+            r"^(?:run|execute)\s+this\s+command\s*:\s*(.+)$",
+            r"^(?:cmd|command)\s*:\s*(.+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                command = str(match.group(1) or "").strip()
+                if command:
+                    return command
+
+        return None
+
+    def _match_run_python_request(self, text: str) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"^(?:run|execute)\s+python\s+file\s+(.+\.py)$",
+            r"^(?:run|execute)\s+(.+\.py)$",
+            r"^python\s+(.+\.py)$",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if match:
+                path = str(match.group(1) or "").strip()
+                if path:
+                    return path
+
+        return None
+
+    def _match_create_empty_file_request(self, text: str) -> Optional[str]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"^(?:create|make|ensure)\s+file\s+(.+)$",
+            r"^(?:create|make|ensure)\s+an?\s+empty\s+file\s+(.+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if not match:
+                continue
+
+            raw_path = str(match.group(1) or "").strip()
+            path = self._normalize_requested_path(raw_path)
+            if path:
+                return path
+
+        return None
+
+    def _match_write_file_request(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"^(?:write|create|make)\s+file\s+(.+?)\s+with\s+content\s+(.+)$",
+            r"^(?:write|create|make)\s+(.+?)\s+with\s+content\s+(.+)$",
+            r"^(?:write|save)\s+(.+?)\s+to\s+(.+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if not match:
+                continue
+
+            left = str(match.group(1) or "").strip()
+            right = str(match.group(2) or "").strip()
+
+            if " to " in stripped.lower() and pattern.endswith(r"\s+to\s+(.+)$"):
+                content = left
+                path = self._normalize_requested_path(right)
+            else:
+                path = self._normalize_requested_path(left)
+                content = self._strip_wrapping_quotes(right)
+
+            if path and content != "":
+                return {
+                    "path": path,
+                    "content": content,
+                }
+
+        return None
+
+    def _match_write_into_existing_request(self, text: str, last_path: Optional[str]) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"^(?:write|save)\s+(.+)$",
+            r"^(?:put)\s+(.+)\s+into\s+file$",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if not match:
+                continue
+
+            content = self._strip_wrapping_quotes(str(match.group(1) or "").strip())
+            if content and last_path:
+                return {
+                    "path": last_path,
+                    "content": content,
+                }
+
+        return None
+
+    def _normalize_requested_path(self, raw_path: str) -> str:
+        candidate = self._strip_wrapping_quotes(str(raw_path or "").strip())
+        candidate = candidate.replace("\\", "/").strip()
+
+        if not candidate:
+            return ""
+
+        if candidate.startswith("workspace/") or candidate.startswith("shared/") or candidate.startswith("sandbox/"):
+            return candidate
+
+        if re.match(r"^[A-Za-z]:/", candidate):
+            return candidate
+
+        if "/" in candidate:
+            return candidate
+
+        return f"workspace/shared/{candidate}"
+
+    def _strip_wrapping_quotes(self, text: str) -> str:
+        value = str(text or "").strip()
+        if len(value) >= 2:
+            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                return value[1:-1]
+        return value
+
+    def _looks_like_file_candidate(self, value: str) -> bool:
+        lowered = str(value or "").strip().lower()
+        return lowered.endswith((".txt", ".md", ".json", ".log", ".csv"))
+
+    # ============================================================
     # result builder / contract normalization
     # ============================================================
 
@@ -468,7 +869,6 @@ class Planner:
         normalized["task_name"] = task_name
         normalized["id"] = step_id
 
-        # 常見欄位保底，避免 agent_loop 讀值時遇到 None / 缺欄位亂飄
         if step_type in {"read_file", "write_file", "ensure_file", "run_python", "verify_file"}:
             normalized["path"] = str(normalized.get("path") or "")
 
@@ -480,8 +880,7 @@ class Planner:
 
         if step_type == "llm":
             normalized["prompt"] = str(normalized.get("prompt") or "")
-            if "mode" in normalized and normalized["mode"] is not None:
-                normalized["mode"] = str(normalized.get("mode") or "")
+            normalized["mode"] = str(normalized.get("mode") or "")
 
         if step_type == "write_file":
             normalized["content"] = str(normalized.get("content") or "")
@@ -571,9 +970,11 @@ class Planner:
             return "respond"
 
         first_type = str(steps[0].get("type") or "").strip().lower()
+
         if len(steps) >= 3:
             second_type = str(steps[1].get("type") or "").strip().lower()
             third_type = str(steps[2].get("type") or "").strip().lower()
+
             if first_type == "read_file" and second_type == "llm" and third_type == "write_file":
                 llm_mode = str(steps[1].get("mode") or "").strip().lower()
                 if llm_mode == "action_items":

@@ -154,6 +154,231 @@ class AgentLoop:
             )
         )
 
+
+    def run_task_loop(
+        self,
+        task: Dict[str, Any],
+        current_tick: int = 0,
+        user_input: str = "",
+        original_plan: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            effective_task = self._normalize_task_input(task)
+        except Exception as e:
+            return {
+                "ok": False,
+                "mode": "task_loop",
+                "action": "invalid_task_input",
+                "status": "failed",
+                "final_answer": "",
+                "error": f"invalid task input: {e}",
+                "task": copy.deepcopy(task) if isinstance(task, dict) else {"raw_task": task},
+                "execution": None,
+            }
+
+        self._ensure_loop_state_defaults(effective_task)
+        effective_task.setdefault("results", [])
+        effective_task.setdefault("step_results", [])
+        effective_task.setdefault("execution_log", [])
+        effective_task.setdefault("execution_trace", [])
+        effective_task.setdefault("last_step_result", None)
+        effective_task.setdefault("last_error", None)
+        effective_task.setdefault("final_answer", "")
+
+        if isinstance(original_plan, dict):
+            effective_task["planner_result"] = copy.deepcopy(original_plan)
+            if not isinstance(effective_task.get("steps"), list) or not effective_task.get("steps"):
+                effective_task["steps"] = self._extract_steps_from_plan(original_plan)
+                effective_task["steps_total"] = len(effective_task["steps"])
+
+        runner = self.task_runner
+        if runner is None:
+            return {
+                "ok": False,
+                "mode": "task_loop",
+                "action": "task_runner_missing",
+                "status": "failed",
+                "final_answer": "",
+                "error": "task_runner missing",
+                "task": copy.deepcopy(effective_task),
+                "execution": None,
+            }
+
+        runner_result = runner.run_task(
+            task=effective_task,
+            current_tick=current_tick,
+            user_input=user_input,
+            original_plan=original_plan,
+        )
+        if not isinstance(runner_result, dict):
+            return {
+                "ok": False,
+                "mode": "task_loop",
+                "action": "invalid_runner_result",
+                "status": "failed",
+                "final_answer": "",
+                "error": "task_runner returned non-dict result",
+                "task": copy.deepcopy(effective_task),
+                "raw_result": copy.deepcopy(runner_result),
+                "execution": None,
+            }
+
+        self._sync_task_from_runner_result(effective_task, runner_result)
+        self._ensure_loop_state_defaults(effective_task)
+
+        runtime_state = runner_result.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            self._overlay_loop_state(effective_task, runtime_state)
+
+        execution = self._build_task_loop_execution(
+            runner_result=runner_result,
+            effective_task=effective_task,
+        )
+        normalized_execution = self._normalize_execution_result(execution)
+
+        final_answer = self._extract_loop_final_answer(
+            runner_result=runner_result,
+            effective_task=effective_task,
+            fallback=user_input,
+        )
+
+        return {
+            "ok": bool(runner_result.get("ok", True)),
+            "mode": "task_loop",
+            "action": str(runner_result.get("action") or "task_loop_tick"),
+            "status": str(effective_task.get("status") or runner_result.get("status") or "running"),
+            "final_answer": final_answer,
+            "error": runner_result.get("error"),
+            "task": copy.deepcopy(effective_task),
+            "runtime_state": copy.deepcopy(runner_result.get("runtime_state")) if isinstance(runner_result.get("runtime_state"), dict) else None,
+            "execution": normalized_execution,
+            "last_result": copy.deepcopy(runner_result.get("last_result")) if isinstance(runner_result.get("last_result"), dict) else None,
+        }
+
+    def run_task(
+        self,
+        task: Dict[str, Any],
+        current_tick: int = 0,
+        user_input: str = "",
+        original_plan: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return self.run_task_loop(
+            task=task,
+            current_tick=current_tick,
+            user_input=user_input,
+            original_plan=original_plan,
+        )
+
+    def _build_task_loop_execution(
+        self,
+        *,
+        runner_result: Dict[str, Any],
+        effective_task: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        results = effective_task.get("results")
+        if not isinstance(results, list):
+            results = []
+
+        execution_trace = self._extract_execution_trace_from_runner_result(
+            runner_result=runner_result,
+            task=effective_task,
+        )
+
+        steps_executed = 0
+        if isinstance(results, list):
+            steps_executed = len(results)
+        if steps_executed <= 0:
+            steps_executed = self._safe_int(runner_result.get("current_step_index"), 0)
+        if steps_executed <= 0:
+            steps_executed = self._safe_int(effective_task.get("current_step_index"), 0)
+
+        execution: Dict[str, Any] = {
+            "ok": bool(runner_result.get("ok", True)),
+            "steps_executed": steps_executed,
+            "results": copy.deepcopy(results),
+            "execution_trace": execution_trace,
+            "last_result": copy.deepcopy(runner_result.get("last_result")) if isinstance(runner_result.get("last_result"), dict) else copy.deepcopy(effective_task.get("last_step_result")),
+            "final_answer": str(runner_result.get("final_answer") or effective_task.get("final_answer") or ""),
+            "error": runner_result.get("error"),
+        }
+        return execution
+
+    def _extract_execution_trace_from_runner_result(
+        self,
+        *,
+        runner_result: Dict[str, Any],
+        task: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        trace = runner_result.get("execution_trace")
+        if isinstance(trace, list):
+            return [copy.deepcopy(item) for item in trace if isinstance(item, dict)]
+
+        runtime_state = runner_result.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            trace = runtime_state.get("execution_trace")
+            if isinstance(trace, list):
+                return [copy.deepcopy(item) for item in trace if isinstance(item, dict)]
+
+        trace = task.get("execution_trace")
+        if isinstance(trace, list):
+            return [copy.deepcopy(item) for item in trace if isinstance(item, dict)]
+
+        last_result = runner_result.get("last_result")
+        if isinstance(last_result, dict):
+            step = last_result.get("step") if isinstance(last_result.get("step"), dict) else None
+            step_index = self._safe_int(last_result.get("step_index"), self._safe_int(task.get("current_step_index"), 0) or 1)
+            return [self._make_execution_trace_event(step_index=step_index, step=step, step_result=last_result)]
+
+        return []
+
+    def _sync_task_from_runner_result(
+        self,
+        task: Dict[str, Any],
+        runner_result: Dict[str, Any],
+    ) -> None:
+        if not isinstance(task, dict) or not isinstance(runner_result, dict):
+            return
+
+        runtime_state = runner_result.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            for key in (
+                "status",
+                "current_step_index",
+                "steps_total",
+                "steps",
+                "results",
+                "step_results",
+                "execution_log",
+                "execution_trace",
+                "last_step_result",
+                "last_error",
+                "final_answer",
+                "final_result",
+                "failure_type",
+                "failure_message",
+                "failure_decision",
+            ):
+                if key in runtime_state:
+                    task[key] = copy.deepcopy(runtime_state.get(key))
+            task["runtime_state"] = copy.deepcopy(runtime_state)
+
+        for key in (
+            "status",
+            "current_step_index",
+            "steps_total",
+            "results",
+            "step_results",
+            "execution_log",
+            "execution_trace",
+            "last_step_result",
+            "last_error",
+            "final_answer",
+            "final_result",
+        ):
+            if key in runner_result:
+                task[key] = copy.deepcopy(runner_result.get(key))
+
+
     def _ensure_loop_state_defaults(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:
         task_dict.setdefault("loop_cycle_count", 0)
         task_dict.setdefault("loop_history", [])
@@ -345,6 +570,12 @@ class AgentLoop:
                 normalized["last_result"] = None
         else:
             normalized["last_result"] = None
+
+        execution_trace = normalized.get("execution_trace")
+        if isinstance(execution_trace, list):
+            normalized["execution_trace"] = [copy.deepcopy(item) for item in execution_trace if isinstance(item, dict)]
+        else:
+            normalized["execution_trace"] = []
 
         normalized["final_answer"] = str(normalized.get("final_answer") or "")
         if "error" in normalized:
@@ -628,6 +859,14 @@ class AgentLoop:
                 "step": copy.deepcopy(normalized_step),
             }
 
+        execution_trace = [
+            self._make_execution_trace_event(
+                step_index=1,
+                step=normalized_step,
+                step_result=step_result,
+            )
+        ]
+
         return {
             "ok": bool(step_result.get("ok", True)),
             "steps_executed": 1,
@@ -638,6 +877,7 @@ class AgentLoop:
                     "result": copy.deepcopy(step_result),
                 }
             ],
+            "execution_trace": execution_trace,
             "last_result": step_result,
             "final_answer": self._summarize_step_result(
                 step_result,
@@ -750,6 +990,7 @@ class AgentLoop:
         normalized_steps = self._normalize_steps(steps)
 
         results: List[Dict[str, Any]] = []
+        execution_trace: List[Dict[str, Any]] = []
         previous_result: Any = None
         last_result: Dict[str, Any] = {}
 
@@ -779,6 +1020,13 @@ class AgentLoop:
                     "result": copy.deepcopy(step_result),
                 }
             )
+            execution_trace.append(
+                self._make_execution_trace_event(
+                    step_index=index,
+                    step=step,
+                    step_result=step_result,
+                )
+            )
 
             last_result = step_result
             previous_result = step_result
@@ -788,6 +1036,7 @@ class AgentLoop:
                     "ok": False,
                     "steps_executed": index,
                     "results": results,
+                    "execution_trace": execution_trace,
                     "last_result": last_result,
                     "final_answer": self._summarize_step_result(last_result, failed=True),
                     "error": step_result.get("error"),
@@ -797,6 +1046,7 @@ class AgentLoop:
             "ok": True,
             "steps_executed": len(normalized_steps),
             "results": results,
+            "execution_trace": execution_trace,
             "last_result": last_result,
             "final_answer": self._summarize_step_result(last_result, failed=False),
             "error": None,
@@ -979,6 +1229,7 @@ class AgentLoop:
         created_task.setdefault("results", [])
         created_task.setdefault("step_results", [])
         created_task.setdefault("execution_log", [])
+        created_task.setdefault("execution_trace", [])
         created_task.setdefault("last_step_result", None)
         created_task.setdefault("last_error", None)
         created_task.setdefault("current_step_index", 0)
@@ -1185,6 +1436,7 @@ class AgentLoop:
             "results": [],
             "step_results": [],
             "execution_log": [],
+            "execution_trace": [],
             "last_step_result": None,
             "last_error": None,
             "current_step": None,
@@ -1432,6 +1684,56 @@ class AgentLoop:
             safety_guard=self.safety_guard,
             execution_result=execution_result,
         )
+
+    # ============================================================
+    # execution trace helpers
+    # ============================================================
+
+    def _make_execution_trace_event(
+        self,
+        *,
+        step_index: int,
+        step: Optional[Dict[str, Any]],
+        step_result: Any,
+    ) -> Dict[str, Any]:
+        safe_step = copy.deepcopy(step) if isinstance(step, dict) else {}
+        safe_result = copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result}
+
+        error_payload = safe_result.get("error")
+        if not isinstance(error_payload, dict):
+            error_payload = {}
+
+        error_details = error_payload.get("details")
+        if not isinstance(error_details, dict):
+            error_details = {}
+
+        retry_payload = safe_result.get("retry")
+        if not isinstance(retry_payload, dict):
+            retry_payload = {}
+
+        event: Dict[str, Any] = {
+            "step_index": self._safe_int(step_index, 0),
+            "step_type": str(
+                safe_result.get("step_type")
+                or safe_step.get("type")
+                or ""
+            ).strip().lower(),
+            "ok": bool(safe_result.get("ok", False)),
+            "message": str(safe_result.get("message") or ""),
+            "final_answer": str(safe_result.get("final_answer") or ""),
+            "error_type": str(error_payload.get("type") or ""),
+            "classification": error_details.get("classification"),
+            "attempts": self._safe_int(retry_payload.get("attempts", 1), 1),
+            "max_attempts": self._safe_int(retry_payload.get("max_attempts", 1), 1),
+            "retry_used": bool(retry_payload.get("used", False)),
+        }
+
+        if isinstance(safe_result.get("step"), dict):
+            event["step_id"] = str(safe_result["step"].get("id") or "")
+        elif isinstance(safe_step, dict):
+            event["step_id"] = str(safe_step.get("id") or "")
+
+        return event
 
     # ============================================================
     # result formatting

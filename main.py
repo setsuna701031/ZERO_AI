@@ -37,6 +37,7 @@ def print_help() -> None:
     safe_print("  python main.py doc-demo")
     safe_print("  python main.py requirement-demo")
     safe_print("  python main.py execution-demo")
+    safe_print("  python main.py mini-build-demo")
     safe_print("  python main.py health")
     safe_print("  python main.py help")
     safe_print("")
@@ -47,6 +48,7 @@ def print_help() -> None:
     safe_print("  doc-demo          Run end-to-end document demo flow")
     safe_print("  requirement-demo  Run requirement-pack demo flow")
     safe_print("  execution-demo    Run execution-proof demo flow")
+    safe_print("  mini-build-demo   Run engineering mini build demo flow")
     safe_print("  health            Show health information")
     safe_print("  help              Show this help")
 
@@ -296,6 +298,162 @@ def run_execution_demo() -> int:
     return 0
 
 
+def write_mini_build_script() -> Path:
+    ensure_required_paths()
+    script_path = SHARED_DIR / "number_stats.py"
+    script_path.write_text(
+        (
+            "from pathlib import Path\n"
+            "\n"
+            "base = Path(__file__).resolve().parent\n"
+            "input_path = base / 'numbers_input.txt'\n"
+            "output_path = base / 'stats_result.txt'\n"
+            "\n"
+            "numbers = []\n"
+            "for line in input_path.read_text(encoding='utf-8').splitlines():\n"
+            "    stripped = line.strip()\n"
+            "    if not stripped:\n"
+            "        continue\n"
+            "    numbers.append(float(stripped))\n"
+            "\n"
+            "if not numbers:\n"
+            "    raise SystemExit('No numbers found in numbers_input.txt')\n"
+            "\n"
+            "total = sum(numbers)\n"
+            "average = total / len(numbers)\n"
+            "maximum = max(numbers)\n"
+            "minimum = min(numbers)\n"
+            "\n"
+            "def fmt(value: float) -> str:\n"
+            "    if float(value).is_integer():\n"
+            "        return str(int(value))\n"
+            "    return f'{value:.2f}'\n"
+            "\n"
+            "output_path.write_text(\n"
+            "    '\\n'.join([\n"
+            "        f'sum: {fmt(total)}',\n"
+            "        f'average: {fmt(average)}',\n"
+            "        f'max: {fmt(maximum)}',\n"
+            "        f'min: {fmt(minimum)}',\n"
+            "    ]) + '\\n',\n"
+            "    encoding='utf-8',\n"
+            ")\n"
+            "\n"
+            "print(output_path.read_text(encoding='utf-8').rstrip())\n"
+        ),
+        encoding="utf-8",
+    )
+    return script_path
+
+
+def run_python_file(path: Path) -> subprocess.CompletedProcess:
+    return run_process([sys.executable, str(path)], capture=True)
+
+
+def require_file_exists(path: Path, label: str) -> None:
+    if not path.exists():
+        raise RuntimeError(f"{label} missing: {path}")
+
+
+def require_text_contains(path: Path, required_tokens: List[str], label: str) -> str:
+    require_file_exists(path, label)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    missing = [token for token in required_tokens if token not in text]
+    if missing:
+        raise RuntimeError(
+            f"{label} missing required content: {missing}\n"
+            f"PATH: {path}\n"
+            f"CONTENT:\n{text}"
+        )
+    return text
+
+
+def run_mini_build_demo() -> int:
+    ensure_required_paths()
+
+    requirement_path = SHARED_DIR / "requirement.txt"
+    numbers_input_path = SHARED_DIR / "numbers_input.txt"
+    project_summary_path = SHARED_DIR / "project_summary.txt"
+    implementation_plan_path = SHARED_DIR / "implementation_plan.txt"
+    acceptance_checklist_path = SHARED_DIR / "acceptance_checklist.txt"
+    script_path = SHARED_DIR / "number_stats.py"
+    stats_result_path = SHARED_DIR / "stats_result.txt"
+
+    require_file_exists(requirement_path, "mini-build requirement")
+    require_file_exists(numbers_input_path, "mini-build numbers input")
+
+    if script_path.exists():
+        script_path.unlink()
+    if stats_result_path.exists():
+        stats_result_path.unlink()
+
+    safe_print(f"[mini-build-demo] requirement: {requirement_path}")
+    safe_print(f"[mini-build-demo] numbers input: {numbers_input_path}")
+
+    task_id = create_task("requirement-pack", "requirement.txt")
+    submit_task(task_id)
+    wait_until_finished(task_id, max_ticks=5)
+
+    result_text = get_task_result_text(task_id)
+    show_text = get_task_show_text(task_id)
+
+    safe_print("")
+    safe_print("[mini-build-demo] requirement-pack result")
+    safe_print("----------------------------------------")
+    safe_print(result_text.rstrip())
+    safe_print("")
+    safe_print("[mini-build-demo] requirement-pack show")
+    safe_print("----------------------------------------")
+    safe_print(show_text.rstrip())
+
+    require_text_contains(
+        project_summary_path,
+        ["number_stats.py", "stats_result.txt"],
+        "project summary",
+    )
+    require_text_contains(
+        implementation_plan_path,
+        ["number_stats.py"],
+        "implementation plan",
+    )
+    require_text_contains(
+        acceptance_checklist_path,
+        ["number_stats.py", "sum", "average", "max", "min"],
+        "acceptance checklist",
+    )
+
+    script_path = write_mini_build_script()
+    safe_print("")
+    safe_print(f"[mini-build-demo] generated script: {script_path}")
+
+    run_result = run_python_file(script_path)
+    require_success(run_result, "run number_stats.py")
+
+    stats_text = require_text_contains(
+        stats_result_path,
+        ["sum:", "average:", "max:", "min:"],
+        "stats result",
+    )
+
+    safe_print("")
+    safe_print("[mini-build-demo] script stdout")
+    safe_print("----------------------------------------")
+    safe_print((run_result.stdout or "").rstrip())
+    safe_print("")
+    safe_print("[mini-build-demo] outputs")
+    safe_print(f"  project summary: {project_summary_path}")
+    safe_print(f"  implementation plan: {implementation_plan_path}")
+    safe_print(f"  acceptance checklist: {acceptance_checklist_path}")
+    safe_print(f"  python utility: {script_path}")
+    safe_print(f"  stats result: {stats_result_path}")
+    safe_print("")
+    safe_print("[mini-build-demo] verified stats_result.txt")
+    safe_print("----------------------------------------")
+    safe_print(stats_text.rstrip())
+    safe_print("[mini-build-demo] PASS")
+    return 0
+
+
 def main(argv: List[str]) -> int:
     command = argv[1].strip().lower() if len(argv) >= 2 else "help"
 
@@ -332,6 +490,9 @@ def main(argv: List[str]) -> int:
 
     if command == "execution-demo":
         return run_execution_demo()
+
+    if command == "mini-build-demo":
+        return run_mini_build_demo()
 
     safe_print(f"Unknown command: {command}")
     safe_print("")

@@ -108,6 +108,7 @@ TERMINAL_STATUSES = {
 }
 
 READY_STATUSES = {
+    STATUS_CREATED,
     "queued",
     "ready",
     "retry",
@@ -259,28 +260,28 @@ class Scheduler(RuntimeTaskScheduler):
         all_executed_results: List[Dict[str, Any]] = []
         total_dispatched = 0
         last_synced: List[str] = []
-        rounds_used = 0
+        rounds_used = 1
 
-        for _ in range(self.max_scheduler_rounds_per_tick):
-            rounds_used += 1
-            last_synced = self.rebuild_ready_queue()
+        # v31: one dispatch round per tick
+        last_synced = self.rebuild_ready_queue()
 
-            dispatch_results = self.dispatcher.dispatch_until_full()
-            if not dispatch_results:
-                break
-
-            total_dispatched += len(dispatch_results)
-            round_executed = self._execute_dispatch_round(
-                dispatch_results=dispatch_results,
-                current_tick=self.current_tick,
+        dispatch_results = self.dispatcher.dispatch_until_full()
+        if not dispatch_results:
+            return self._build_tick_result(
+                rounds_used=rounds_used,
+                total_dispatched=0,
+                last_synced=last_synced,
+                all_executed_results=[],
             )
-            if not round_executed:
-                break
 
+        total_dispatched = len(dispatch_results)
+
+        round_executed = self._execute_dispatch_round(
+            dispatch_results=dispatch_results,
+            current_tick=self.current_tick,
+        )
+        if round_executed:
             all_executed_results.extend(round_executed)
-
-            if self._scheduler_dispatch_idle():
-                break
 
         return self._build_tick_result(
             rounds_used=rounds_used,
@@ -357,7 +358,7 @@ class Scheduler(RuntimeTaskScheduler):
         last_synced: List[str],
         all_executed_results: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        return build_tick_result(
+        result = build_tick_result(
             scheduler=self,
             scheduler_build=SCHEDULER_BUILD,
             rounds_used=rounds_used,
@@ -365,6 +366,73 @@ class Scheduler(RuntimeTaskScheduler):
             last_synced=last_synced,
             all_executed_results=all_executed_results,
         )
+
+        if not isinstance(result, dict):
+            return result
+
+        executed_results = result.get("executed_results")
+        if isinstance(executed_results, list):
+            promoted = self._promote_execution_trace_in_executed_results(executed_results)
+            result["executed_results"] = promoted
+
+            aggregated_trace: List[Dict[str, Any]] = []
+            for item in promoted:
+                if not isinstance(item, dict):
+                    continue
+                trace = item.get("execution_trace")
+                if isinstance(trace, list):
+                    aggregated_trace.extend(
+                        copy.deepcopy(event) for event in trace if isinstance(event, dict)
+                    )
+
+            if aggregated_trace:
+                result["execution_trace"] = aggregated_trace
+
+        return result
+
+    def _extract_execution_trace_from_payload(self, payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, dict):
+            direct = payload.get("execution_trace")
+            if isinstance(direct, list):
+                return [copy.deepcopy(item) for item in direct if isinstance(item, dict)]
+
+            for key in ("result", "raw_result", "runner_result", "last_result", "task"):
+                nested = payload.get(key)
+                extracted = self._extract_execution_trace_from_payload(nested)
+                if extracted:
+                    return extracted
+
+        if isinstance(payload, list):
+            for item in payload:
+                extracted = self._extract_execution_trace_from_payload(item)
+                if extracted:
+                    return extracted
+
+        return []
+
+    def _promote_execution_trace_in_executed_results(
+        self,
+        executed_results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        promoted: List[Dict[str, Any]] = []
+
+        for item in executed_results:
+            if not isinstance(item, dict):
+                promoted.append(item)
+                continue
+
+            normalized = copy.deepcopy(item)
+            trace = self._extract_execution_trace_from_payload(normalized)
+            if trace:
+                normalized["execution_trace"] = trace
+
+                result_payload = normalized.get("result")
+                if isinstance(result_payload, dict) and "execution_trace" not in result_payload:
+                    result_payload["execution_trace"] = copy.deepcopy(trace)
+
+            promoted.append(normalized)
+
+        return promoted
 
     def _can_requeue_task(self, task_id: str) -> bool:
         task = self._get_task_from_repo(task_id)

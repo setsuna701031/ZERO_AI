@@ -101,6 +101,13 @@ def _read_int_env(name: str, default: int) -> int:
         return default
 
 
+def _read_bool_env(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
 def _build_llm_boot_config() -> Dict[str, Any]:
     plugin_name = os.environ.get("ZERO_LLM_PLUGIN", "").strip() or None
 
@@ -166,6 +173,9 @@ class ZeroSystem:
         self.llm_client = None
         self.llm_planner = None
         self.agent_loop = None
+
+        # 預設關閉 llm planner，避免 deterministic planner 被搶走
+        self.enable_llm_planner = _read_bool_env("ZERO_ENABLE_LLM_PLANNER", False)
 
         self.task_repository = TaskRepository(self.tasks_db_path)
 
@@ -259,22 +269,26 @@ class ZeroSystem:
             except Exception:
                 self.planner = None
 
-        llm_planner_cls = _resolve_llm_planner_class()
-        if llm_planner_cls is not None and self.llm_client is not None:
-            try:
-                self.llm_planner = llm_planner_cls(
-                    llm_client=self.llm_client,
-                    debug=False,
-                )
-            except TypeError:
+        # llm_planner 改成可選，不再預設啟用
+        if self.enable_llm_planner:
+            llm_planner_cls = _resolve_llm_planner_class()
+            if llm_planner_cls is not None and self.llm_client is not None:
                 try:
                     self.llm_planner = llm_planner_cls(
                         llm_client=self.llm_client,
+                        debug=False,
                     )
+                except TypeError:
+                    try:
+                        self.llm_planner = llm_planner_cls(
+                            llm_client=self.llm_client,
+                        )
+                    except Exception:
+                        self.llm_planner = None
                 except Exception:
                     self.llm_planner = None
-            except Exception:
-                self.llm_planner = None
+        else:
+            self.llm_planner = None
 
         self.replanner = TaskReplanner(
             workspace_dir=self.workspace,
@@ -455,6 +469,7 @@ class ZeroSystem:
             "planner_type": type(self.planner).__name__ if self.planner is not None else None,
             "llm_client_type": type(self.llm_client).__name__ if self.llm_client is not None else None,
             "llm_planner_type": type(self.llm_planner).__name__ if self.llm_planner is not None else None,
+            "llm_planner_enabled": self.enable_llm_planner,
             "agent_loop_type": type(self.agent_loop).__name__ if self.agent_loop is not None else None,
             "verifier_type": type(self.verifier).__name__ if self.verifier is not None else None,
             "replanner_type": type(self.replanner).__name__,

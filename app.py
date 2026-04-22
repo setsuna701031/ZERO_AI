@@ -886,6 +886,61 @@ def _run_once(system: Any) -> Dict[str, Any]:
     return {"ok": False, "error": "run method not available"}
 
 
+def _find_created_task_for_autorun(system: Any, cli_state: Dict[str, Any]) -> str:
+    last_created_task_id = _safe_str(cli_state.get("last_created_task_id"))
+    if last_created_task_id:
+        task = _get_task(system, last_created_task_id)
+        if isinstance(task, dict) and _extract_status(task).lower() == "created":
+            return last_created_task_id
+
+    created_tasks: List[Dict[str, Any]] = []
+    for task in _list_tasks(system):
+        if not isinstance(task, dict):
+            continue
+        if _extract_status(task).lower() != "created":
+            continue
+        created_tasks.append(task)
+
+    if not created_tasks:
+        return ""
+
+    def sort_key(task: Dict[str, Any]) -> Tuple[int, str]:
+        task_id = _extract_task_id(task)
+        m = re.search(r"(\d+)$", task_id)
+        serial = int(m.group(1)) if m else 0
+        return (serial, task_id)
+
+    created_tasks.sort(key=sort_key)
+    chosen = created_tasks[-1]
+    return _extract_task_id(chosen)
+
+
+def _auto_submit_created_task_if_needed(system: Any, cli_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    task_id = _find_created_task_for_autorun(system, cli_state)
+    if not task_id:
+        return None
+    result = _submit_existing_task(system, task_id)
+    if isinstance(result, dict) and result.get("ok"):
+        cli_state["last_created_task_id"] = task_id
+    return result
+
+
+def _run_until_idle(system: Any, max_ticks: int = 50) -> Dict[str, Any]:
+    results: List[Dict[str, Any]] = []
+    idle = False
+    for i in range(max(1, int(max_ticks))):
+        tick_result = _run_once(system)
+        results.append({"tick_index": i + 1, "result": tick_result})
+        if not isinstance(tick_result, dict):
+            break
+        status = _safe_str(tick_result.get("status")).lower()
+        action = _safe_str(tick_result.get("action")).lower()
+        if status == "idle" or action == "scheduler_idle":
+            idle = True
+            break
+    return {"ok": True, "count": len(results), "results": results, "idle": idle}
+
+
 def _delete_task_from_repo(system: Any, task_id: str) -> Dict[str, Any]:
     scheduler = _get_scheduler(system)
     repo = getattr(scheduler, "task_repo", None)
@@ -960,7 +1015,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         "runtime": "/runtime",
         "list": "/task_list",
         "tick": "/task_run 1",
-        "run": "/task_run 1",
+        "run": "/task_run",
         "doc summary": "/doc_summary",
     }
     if lowered in mapping:
@@ -1001,7 +1056,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
     if lowered == "task list":
         return "/task_list"
     if lowered == "task run":
-        return "/task_run 1"
+        return "/task_run"
     task_prefixes = [
         ("task run ", "/task_run "),
         ("task create ", "/task_create "),
@@ -1770,14 +1825,34 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         return
     if text.startswith("/task_run"):
         parts = text.split()
-        count = 1
-        if len(parts) >= 2:
+        explicit_count = len(parts) >= 2
+        if explicit_count:
             try:
                 count = max(1, int(parts[1]))
             except Exception:
                 count = 1
-        results = [{"tick_index": i + 1, "result": _run_once(system)} for i in range(count)]
-        print_json({"ok": True, "count": count, "results": results})
+            results = [{"tick_index": i + 1, "result": _run_once(system)} for i in range(count)]
+            print_json({"ok": True, "count": count, "results": results, "mode": "manual_ticks"})
+            return
+
+        auto_submit_result = _auto_submit_created_task_if_needed(system, cli_state)
+        auto_submit_payload = None
+        if isinstance(auto_submit_result, dict):
+            auto_submit_payload = auto_submit_result
+            if not auto_submit_result.get("ok"):
+                print_json({
+                    "ok": False,
+                    "mode": "auto_run",
+                    "error": auto_submit_result.get("error", "auto submit failed"),
+                    "submit_result": auto_submit_result,
+                })
+                return
+
+        run_result = _run_until_idle(system, max_ticks=50)
+        if auto_submit_payload is not None:
+            run_result["auto_submit"] = auto_submit_payload
+        run_result["mode"] = "auto_run"
+        print_json(run_result)
         return
     if text.lower().startswith("chat "):
         message = text[5:].strip()
@@ -1913,7 +1988,7 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
         if sub == "submit":
             return "/task_submit " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_submit"
         if sub == "run":
-            return "/task_run " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_run 1"
+            return "/task_run " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_run"
         return None
     if first == "chat":
         return "chat " + " ".join(parts[1:]) if len(parts) >= 2 else None
@@ -1928,7 +2003,7 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
     if first in one_arg_map:
         if len(parts) >= 2:
             return one_arg_map[first] + " ".join(parts[1:])
-        return "/task_submit" if first == "submit" else "/task_run 1" if first == "run" else None
+        return "/task_submit" if first == "submit" else "/task_run" if first == "run" else None
     return " ".join(parts)
 
 

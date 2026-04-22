@@ -491,6 +491,7 @@ class TaskScheduler:
                 "error": f"invalid runner result type: {type(runner_result).__name__}",
                 "final_answer": "",
                 "execution_log": [],
+                "execution_trace": [],
                 "current_step_index": current_step_index,
                 "step_count": step_count,
                 "raw_result": runner_result,
@@ -518,6 +519,18 @@ class TaskScheduler:
         elif isinstance(state_from_runner, dict) and isinstance(state_from_runner.get("execution_log"), list):
             execution_log = copy.deepcopy(state_from_runner.get("execution_log"))
 
+        execution_trace = []
+        if isinstance(runner_result.get("execution_trace"), list):
+            execution_trace = [copy.deepcopy(item) for item in runner_result.get("execution_trace") if isinstance(item, dict)]
+        elif isinstance(state_from_runner, dict) and isinstance(state_from_runner.get("execution_trace"), list):
+            execution_trace = [copy.deepcopy(item) for item in state_from_runner.get("execution_trace") if isinstance(item, dict)]
+        else:
+            raw_result = runner_result.get("raw_result")
+            if isinstance(raw_result, dict):
+                raw_trace = raw_result.get("execution_trace")
+                if isinstance(raw_trace, list):
+                    execution_trace = [copy.deepcopy(item) for item in raw_trace if isinstance(item, dict)]
+
         final_answer = runner_result.get("final_answer", "")
         if not final_answer and isinstance(state_from_runner, dict):
             final_answer = state_from_runner.get("final_answer", "")
@@ -533,6 +546,7 @@ class TaskScheduler:
             "error": runner_result.get("error"),
             "final_answer": final_answer,
             "execution_log": execution_log,
+            "execution_trace": execution_trace,
             "current_step_index": current_step_index,
             "step_count": step_count,
             "raw_result": copy.deepcopy(runner_result),

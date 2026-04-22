@@ -4,7 +4,7 @@ import copy
 import json
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from core.runtime.runtime_state_machine import RuntimeStateMachine
 from core.runtime.failure_policy import FailurePolicy
@@ -170,22 +170,33 @@ class TaskRuntime:
                 execution_log = []
                 state["execution_log"] = execution_log
 
+            execution_trace = state.setdefault("execution_trace", [])
+            if not isinstance(execution_trace, list):
+                execution_trace = []
+                state["execution_trace"] = execution_trace
+
+            sanitized_step_result = self._sanitize_step_result_for_storage(step_result)
+
             step_record = {
                 "step_index": idx,
                 "step": copy.deepcopy(current_step),
-                "result": copy.deepcopy(step_result),
+                "result": copy.deepcopy(sanitized_step_result),
                 "tick": current_tick,
                 "ts": self._now(),
             }
 
-            results.append(step_record)
-            step_results.append(step_record)
-            execution_log.append(step_record)
+            results.append(copy.deepcopy(step_record))
+            step_results.append(copy.deepcopy(step_record))
+            execution_log.append(copy.deepcopy(step_record))
 
-            state["last_step_result"] = copy.deepcopy(step_result)
+            incoming_trace = self._extract_execution_trace_from_step_result(sanitized_step_result)
+            if incoming_trace:
+                execution_trace.extend(copy.deepcopy(incoming_trace))
+
+            state["last_step_result"] = copy.deepcopy(step_record)
             state["last_error"] = None
 
-            result_payload = step_result.get("result")
+            result_payload = sanitized_step_result.get("result")
             if isinstance(result_payload, dict):
                 for key in ("message", "content", "text", "final_answer", "stdout"):
                     value = result_payload.get(key)
@@ -193,11 +204,12 @@ class TaskRuntime:
                         state["last_output"] = value.strip()
                         break
 
-            for key in ("message", "content", "text", "final_answer", "stdout"):
-                value = step_result.get(key)
-                if isinstance(value, str) and value.strip():
-                    state["last_output"] = value.strip()
-                    break
+            if not str(state.get("last_output") or "").strip():
+                for key in ("message", "content", "text", "final_answer", "stdout"):
+                    value = sanitized_step_result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        state["last_output"] = value.strip()
+                        break
 
         next_index = idx + 1
         state["current_step_index"] = next_index
@@ -258,8 +270,24 @@ class TaskRuntime:
         state["last_error"] = None
 
         if isinstance(final_result, dict):
-            state["final_result"] = copy.deepcopy(final_result)
-            state["last_step_result"] = copy.deepcopy(final_result)
+            sanitized_final_result = self._sanitize_step_result_for_storage(final_result)
+            state["final_result"] = copy.deepcopy(sanitized_final_result)
+
+            if not isinstance(state.get("last_step_result"), dict):
+                state["last_step_result"] = {
+                    "step_index": self._safe_int(
+                        sanitized_final_result.get("step_index"),
+                        int(state.get("steps_total", 0) or 0),
+                    ),
+                    "step": copy.deepcopy(
+                        sanitized_final_result.get("step")
+                        if isinstance(sanitized_final_result.get("step"), dict)
+                        else None
+                    ),
+                    "result": copy.deepcopy(sanitized_final_result),
+                    "tick": current_tick,
+                    "ts": self._now(),
+                }
 
         resolved_final_answer = str(final_answer or "").strip()
         if not resolved_final_answer and isinstance(final_result, dict):
@@ -365,15 +393,16 @@ class TaskRuntime:
             "results": copy.deepcopy(task.get("results", [])) if isinstance(task.get("results"), list) else [],
             "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results"), list) else [],
             "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log"), list) else [],
+            "execution_trace": copy.deepcopy(task.get("execution_trace", [])) if isinstance(task.get("execution_trace"), list) else [],
             "current_step_index": int(task.get("current_step_index", 0) or 0),
             "steps_total": len(task_steps),
             "replan_count": int(task.get("replan_count", 0) or 0),
             "max_replans": int(task.get("max_replans", 1) or 1),
-            "last_step_result": copy.deepcopy(task.get("last_step_result")),
+            "last_step_result": self._sanitize_last_step_record(task.get("last_step_result")),
             "last_error": task.get("last_error"),
             "last_output": str(task.get("last_output") or ""),
             "final_answer": str(task.get("final_answer") or ""),
-            "final_result": copy.deepcopy(task.get("final_result")),
+            "final_result": self._sanitize_step_result_for_storage(task.get("final_result")) if isinstance(task.get("final_result"), dict) else copy.deepcopy(task.get("final_result")),
             "created_at": self._now(),
             "updated_at": self._now(),
             "last_observation": copy.deepcopy(task.get("last_observation", {})) if isinstance(task.get("last_observation"), dict) else {},
@@ -419,18 +448,36 @@ class TaskRuntime:
 
         if not isinstance(normalized.get("results"), list):
             normalized["results"] = []
+        else:
+            normalized["results"] = [self._sanitize_step_record(item) for item in normalized["results"] if isinstance(item, dict)]
+
         if not isinstance(normalized.get("step_results"), list):
             normalized["step_results"] = copy.deepcopy(normalized["results"])
+        else:
+            normalized["step_results"] = [self._sanitize_step_record(item) for item in normalized["step_results"] if isinstance(item, dict)]
+
         if not isinstance(normalized.get("execution_log"), list):
             normalized["execution_log"] = []
+        else:
+            normalized["execution_log"] = [self._sanitize_step_record(item) for item in normalized["execution_log"] if isinstance(item, dict)]
 
-        normalized["last_step_result"] = copy.deepcopy(
+        if not isinstance(normalized.get("execution_trace"), list):
+            normalized["execution_trace"] = []
+        else:
+            normalized["execution_trace"] = [copy.deepcopy(item) for item in normalized["execution_trace"] if isinstance(item, dict)]
+
+        normalized["last_step_result"] = self._sanitize_last_step_record(
             normalized.get("last_step_result", task.get("last_step_result"))
         )
         normalized["last_error"] = normalized.get("last_error", task.get("last_error"))
         normalized["last_output"] = str(normalized.get("last_output", task.get("last_output", "")) or "")
         normalized["final_answer"] = str(normalized.get("final_answer", task.get("final_answer", "")) or "")
-        normalized["final_result"] = copy.deepcopy(normalized.get("final_result", task.get("final_result")))
+        final_result_value = normalized.get("final_result", task.get("final_result"))
+        if isinstance(final_result_value, dict):
+            normalized["final_result"] = self._sanitize_step_result_for_storage(final_result_value)
+        else:
+            normalized["final_result"] = copy.deepcopy(final_result_value)
+
         normalized.setdefault("created_at", self._now())
         normalized["updated_at"] = self._now()
 
@@ -522,6 +569,7 @@ class TaskRuntime:
         task["results"] = copy.deepcopy(state.get("results", task.get("results", [])))
         task["step_results"] = copy.deepcopy(state.get("step_results", task.get("step_results", [])))
         task["execution_log"] = copy.deepcopy(state.get("execution_log", task.get("execution_log", [])))
+        task["execution_trace"] = copy.deepcopy(state.get("execution_trace", task.get("execution_trace", [])))
         task["last_step_result"] = copy.deepcopy(state.get("last_step_result"))
         task["last_error"] = state.get("last_error")
         task["final_answer"] = state.get("final_answer", task.get("final_answer", ""))
@@ -538,6 +586,71 @@ class TaskRuntime:
         task["terminal_reason"] = state.get("terminal_reason", "")
         task["loop_cycle_count"] = state.get("loop_cycle_count", 0)
         task["loop_history"] = copy.deepcopy(state.get("loop_history", []))
+
+    # ============================================================
+    # trace sanitation / extraction
+    # ============================================================
+
+    def _extract_execution_trace_from_step_result(
+        self,
+        step_result: Optional[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        if not isinstance(step_result, dict):
+            return []
+
+        existing_trace = step_result.get("execution_trace")
+        if isinstance(existing_trace, list):
+            return [copy.deepcopy(item) for item in existing_trace if isinstance(item, dict)]
+
+        result_payload = step_result.get("result")
+        if isinstance(result_payload, dict):
+            nested_trace = result_payload.get("execution_trace")
+            if isinstance(nested_trace, list):
+                return [copy.deepcopy(item) for item in nested_trace if isinstance(item, dict)]
+
+        return []
+
+    def _sanitize_step_result_for_storage(self, step_result: Any) -> Any:
+        if not isinstance(step_result, dict):
+            return copy.deepcopy(step_result)
+
+        sanitized = copy.deepcopy(step_result)
+
+        outer_trace = self._extract_execution_trace_from_step_result(sanitized)
+        if outer_trace:
+            sanitized["execution_trace"] = copy.deepcopy(outer_trace)
+
+        result_payload = sanitized.get("result")
+        if isinstance(result_payload, dict):
+            result_payload.pop("execution_trace", None)
+
+            nested_result = result_payload.get("result")
+            if isinstance(nested_result, dict):
+                nested_result.pop("execution_trace", None)
+
+        return sanitized
+
+    def _sanitize_step_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        sanitized = copy.deepcopy(record)
+        result_payload = sanitized.get("result")
+        if isinstance(result_payload, dict):
+            sanitized["result"] = self._sanitize_step_result_for_storage(result_payload)
+        return sanitized
+
+    def _sanitize_last_step_record(self, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return copy.deepcopy(value)
+
+        if isinstance(value.get("result"), dict) and "tick" in value and "ts" in value:
+            return self._sanitize_step_record(value)
+
+        return {
+            "step_index": self._safe_int(value.get("step_index"), 0),
+            "step": copy.deepcopy(value.get("step")) if isinstance(value.get("step"), dict) else None,
+            "result": self._sanitize_step_result_for_storage(value),
+            "tick": None,
+            "ts": None,
+        }
 
     def _extract_final_answer_from_step_result(self, step_result: Optional[Dict[str, Any]]) -> str:
         if not isinstance(step_result, dict):
@@ -557,97 +670,155 @@ class TaskRuntime:
 
         return ""
 
-    def _normalize_failure_type(self, value: Any) -> str:
-        text = str(value or "").strip().lower()
-        if text in FAILURE_TYPES:
-            return text
-        return DEFAULT_FAILURE_TYPE
-
-    def _task_name(self, task: Dict[str, Any]) -> str:
-        return str(task.get("task_name") or task.get("task_id") or "unknown_task")
-
-    def _task_id(self, task: Dict[str, Any]) -> str:
-        return str(task.get("task_id") or task.get("task_name") or "")
-
-    def _task_goal(self, task: Dict[str, Any]) -> str:
-        return str(task.get("goal") or task.get("title") or "")
-
-    def _task_dir(self, task: Dict[str, Any]) -> str:
-        return str(task.get("task_dir") or f"{self.workspace_root}/tasks/{self._task_name(task)}")
+    # ============================================================
+    # file / task helpers
+    # ============================================================
 
     def _get_runtime_state_file(self, task: Dict[str, Any]) -> str:
-        task_dir = self._task_dir(task)
-        return os.path.join(task_dir, "runtime_state.json")
+        if isinstance(task, dict):
+            value = str(task.get("runtime_state_file") or "").strip()
+            if value:
+                return value
 
-    def _read_json(self, path: str, default: Any = None) -> Any:
+            task_dir = str(task.get("task_dir") or "").strip()
+            if task_dir:
+                return os.path.join(task_dir, "runtime_state.json")
+
+            task_name = str(
+                task.get("task_name")
+                or task.get("task_id")
+                or task.get("id")
+                or ""
+            ).strip()
+            if task_name:
+                return os.path.join(self.workspace_root, "tasks", task_name, "runtime_state.json")
+
+        return os.path.join(self.workspace_root, "tasks", "unknown_task", "runtime_state.json")
+
+    def _task_name(self, task: Dict[str, Any]) -> str:
+        return str(
+            task.get("task_name")
+            or task.get("task_id")
+            or task.get("id")
+            or "unknown_task"
+        ).strip()
+
+    def _task_id(self, task: Dict[str, Any]) -> str:
+        return str(
+            task.get("task_id")
+            or task.get("id")
+            or task.get("task_name")
+            or "unknown_task"
+        ).strip()
+
+    def _task_goal(self, task: Dict[str, Any]) -> str:
+        return str(task.get("goal") or task.get("title") or "").strip()
+
+    def _task_dir(self, task: Dict[str, Any]) -> str:
+        value = str(task.get("task_dir") or "").strip()
+        if value:
+            return value
+        return os.path.join(self.workspace_root, "tasks", self._task_name(task))
+
+    def _normalize_failure_type(self, failure_type: str) -> str:
+        value = str(failure_type or DEFAULT_FAILURE_TYPE).strip().lower()
+        if value in FAILURE_TYPES:
+            return value
+        return DEFAULT_FAILURE_TYPE
+
+    # ============================================================
+    # generic helpers
+    # ============================================================
+
+    def _prefer_nonempty_dict(self, primary: Any, fallback: Any, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if isinstance(primary, dict) and primary:
+            return copy.deepcopy(primary)
+        if isinstance(fallback, dict) and fallback:
+            return copy.deepcopy(fallback)
+        return copy.deepcopy(default if isinstance(default, dict) else {})
+
+    def _prefer_nonempty_str(self, primary: Any, fallback: Any, default: str = "") -> str:
+        if primary is not None and str(primary).strip():
+            return str(primary).strip()
+        if fallback is not None and str(fallback).strip():
+            return str(fallback).strip()
+        return default
+
+    def _prefer_positive_int(self, primary: Any, fallback: Any, default: int = 0) -> int:
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            value = int(primary)
+            if value >= 0:
+                return value
+        except Exception:
+            pass
+
+        try:
+            value = int(fallback)
+            if value >= 0:
+                return value
+        except Exception:
+            pass
+
+        return default
+
+    def _prefer_nonempty_list(self, primary: Any, fallback: Any, default: Optional[List[Any]] = None) -> List[Any]:
+        if isinstance(primary, list) and primary:
+            return copy.deepcopy(primary)
+        if isinstance(fallback, list) and fallback:
+            return copy.deepcopy(fallback)
+        return copy.deepcopy(default if isinstance(default, list) else [])
+
+    def _safe_int(self, value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
+
+    def _ensure_parent_dir(self, file_path: str) -> None:
+        parent = os.path.dirname(file_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+
+    def _read_json(self, file_path: str, default: Any) -> Any:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return copy.deepcopy(default)
 
-    def _write_json(self, path: str, data: Any) -> None:
-        with open(path, "w", encoding="utf-8") as f:
+    def _write_json(self, file_path: str, data: Any) -> None:
+        self._ensure_parent_dir(file_path)
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def _ensure_parent_dir(self, path: str) -> None:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
 
     def _now(self) -> str:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def _trace(self, label: str, payload: Dict[str, Any], runtime_state_file: str = "") -> None:
-        trace_path = runtime_state_file.replace("runtime_state.json", "trace.log")
-        line = {
-            "ts": self._now(),
-            "label": label,
-            "payload": payload,
-        }
+    def _trace(
+        self,
+        label: str,
+        payload: Any,
+        runtime_state_file: Optional[str] = None,
+    ) -> None:
         try:
+            if runtime_state_file:
+                base_dir = os.path.dirname(runtime_state_file)
+            else:
+                base_dir = self.workspace_root
+
+            if not base_dir:
+                return
+
+            os.makedirs(base_dir, exist_ok=True)
+            trace_path = os.path.join(base_dir, self.trace_log_filename)
+
+            record = {
+                "ts": self._now(),
+                "label": label,
+                "payload": payload,
+            }
+
             with open(trace_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(line, ensure_ascii=False) + "\n")
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
             pass
-
-        if self.debug:
-            print(label, payload)
-
-    def _prefer_nonempty_str(self, primary: Any, secondary: Any, default: str = "") -> str:
-        primary_text = str(primary or "").strip()
-        if primary_text:
-            return primary_text
-        secondary_text = str(secondary or "").strip()
-        if secondary_text:
-            return secondary_text
-        return default
-
-    def _prefer_positive_int(self, primary: Any, secondary: Any, default: int = 0) -> int:
-        try:
-            primary_int = int(primary or 0)
-            if primary_int > 0:
-                return primary_int
-        except Exception:
-            pass
-
-        try:
-            secondary_int = int(secondary or 0)
-            if secondary_int > 0:
-                return secondary_int
-        except Exception:
-            pass
-
-        return int(default or 0)
-
-    def _prefer_nonempty_list(self, primary: Any, secondary: Any, default: Optional[list] = None) -> list:
-        if isinstance(primary, list) and primary:
-            return copy.deepcopy(primary)
-        if isinstance(secondary, list) and secondary:
-            return copy.deepcopy(secondary)
-        return copy.deepcopy(default if isinstance(default, list) else [])
-
-    def _prefer_nonempty_dict(self, primary: Any, secondary: Any, default: Optional[dict] = None) -> dict:
-        if isinstance(primary, dict) and primary:
-            return copy.deepcopy(primary)
-        if isinstance(secondary, dict) and secondary:
-            return copy.deepcopy(secondary)
-        return copy.deepcopy(default if isinstance(default, dict) else {})
