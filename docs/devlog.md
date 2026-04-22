@@ -2286,3 +2286,18 @@ v34 step 4: passed
 - targeted semantic report task reaches finished 3/3
 - previous_result substitution now lands real report content
 - report.txt is no longer written as literal {{previous_result}}
+
+v34 semantic task smoke: passed
+
+- added tests/run_semantic_task_smoke.py
+- command-like task goals are blocked by smoke validation
+- summary semantic pipeline validated
+- action_items semantic pipeline validated
+- report semantic pipeline validated
+- targeted task run validated through smoke
+- shared semantic artifacts validated:
+  - summary_smoke.txt
+  - action_items_smoke.txt
+  - report_smoke.txt
+- previous_result placeholder leak is no longer present in report_smoke.txt
+- semantic-task smoke now provides repeatable regression coverage for the new semantic task path
