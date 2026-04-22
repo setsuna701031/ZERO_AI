@@ -2244,3 +2244,9 @@ v33 step 1: passed
 
 \- large raw stdout no longer pollutes main CLI display
 
+
+v33 step 2: passed
+- task result now shows parsed_output summary block
+- task show now shows parsed_output summary block
+- normalized command result is now visible in main CLI display
+- no need to inspect runtime_state.json for basic command output understanding

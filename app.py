@@ -329,6 +329,47 @@ def _extract_display_payload(task: Any, depth: int = 0) -> Dict[str, Any]:
     return {}
 
 
+def _deep_find_first_value(data: Any, keys: List[str], depth: int = 0) -> Any:
+    if depth > 12:
+        return None
+
+    if isinstance(data, dict):
+        for key in keys:
+            value = data.get(key)
+            if value not in (None, "", [], {}):
+                return value
+
+        preferred_nested_keys = (
+            "last_step_result",
+            "result",
+            "execution",
+            "task",
+            "step_results",
+            "results",
+            "execution_log",
+        )
+
+        for nested_key in preferred_nested_keys:
+            nested = data.get(nested_key)
+            value = _deep_find_first_value(nested, keys, depth + 1)
+            if value not in (None, "", [], {}):
+                return value
+
+        for nested in data.values():
+            value = _deep_find_first_value(nested, keys, depth + 1)
+            if value not in (None, "", [], {}):
+                return value
+
+    if isinstance(data, list):
+        for item in data:
+            value = _deep_find_first_value(item, keys, depth + 1)
+            if value not in (None, "", [], {}):
+                return value
+
+    return None
+
+
+
 def _extract_final_answer(task: Dict[str, Any]) -> str:
     payload = _extract_display_payload(task)
 
@@ -346,6 +387,71 @@ def _extract_final_answer(task: Dict[str, Any]) -> str:
         return value.strip()
 
     return ""
+
+
+def _extract_parsed_output(task: Dict[str, Any]) -> Any:
+    value = _deep_find_first_value(task, ["parsed_output"])
+    if value not in (None, "", [], {}):
+        return value
+
+    runtime_state = _load_json_file(_extract_paths(task).get("runtime_state_path", ""))
+    if isinstance(runtime_state, dict):
+        value = _deep_find_first_value(runtime_state, ["parsed_output"])
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+
+def _extract_output_text(task: Dict[str, Any]) -> str:
+    payload = _extract_display_payload(task)
+    if isinstance(payload, dict):
+        value = _find_first_value(payload, ["output_text", "stdout", "stderr"])
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    runtime_state = _load_json_file(_extract_paths(task).get("runtime_state_path", ""))
+    if isinstance(runtime_state, dict):
+        runtime_payload = _extract_display_payload(runtime_state)
+        if isinstance(runtime_payload, dict):
+            value = _find_first_value(runtime_payload, ["output_text", "stdout", "stderr"])
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _format_parsed_output_lines(parsed_output: Any) -> List[str]:
+    if isinstance(parsed_output, dict):
+        lines: List[str] = []
+        preferred_keys = ["ok", "mode", "count", "results", "executed_count", "tick", "rounds_used"]
+        used = set()
+
+        for key in preferred_keys:
+            if key not in parsed_output:
+                continue
+            value = parsed_output.get(key)
+            used.add(key)
+            if key == "results" and isinstance(value, list):
+                lines.append(f"{key}: {len(value)}")
+            else:
+                lines.append(f"{key}: {value}")
+
+        scalar_count = 0
+        for key, value in parsed_output.items():
+            if key in used:
+                continue
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                lines.append(f"{key}: {value}")
+                scalar_count += 1
+            if scalar_count >= 6:
+                break
+
+        return lines
+
+    if isinstance(parsed_output, list):
+        return [f"items: {len(parsed_output)}"]
+
+    return []
 
 
 def _extract_goal(task: Dict[str, Any]) -> str:
@@ -804,6 +910,9 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     blocked_reason = _extract_blocked_reason(task)
     paths = _extract_paths(task)
     shared_artifacts = _extract_shared_artifact_paths(task)
+    parsed_output = _extract_parsed_output(task)
+    output_text = _extract_output_text(task)
+
     print(f"task_id: {task_id}")
     print(f"status: {status}")
     print(f"step: {step_progress}")
@@ -816,6 +925,16 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     if final_answer:
         print("final_answer:")
         print(textwrap.indent(final_answer, "  "))
+
+    parsed_lines = _format_parsed_output_lines(parsed_output)
+    if parsed_lines:
+        print("parsed_output:")
+        for line in parsed_lines:
+            print(f"  {line}")
+    elif output_text and output_text != final_answer:
+        print("output_text:")
+        print(textwrap.indent(output_text, "  "))
+
     if blocked_reason:
         print("blocked_reason:")
         print(textwrap.indent(blocked_reason, "  "))
@@ -842,8 +961,8 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     paths = _extract_paths(task)
     shared_artifacts = _extract_shared_artifact_paths(task)
     payload = _extract_display_payload(task)
-    parsed_output = _find_first_value(payload, ["parsed_output"])
-    output_text = _find_first_value(payload, ["output_text"])
+    parsed_output = _extract_parsed_output(task)
+    output_text = _extract_output_text(task)
     summary_text = _find_first_value(payload, ["summary_text"])
 
     print(f"task_id: {task_id}")
@@ -858,12 +977,14 @@ def _print_task_result(task: Dict[str, Any]) -> None:
         print("summary_text:")
         print(textwrap.indent(summary_text.strip(), "  "))
 
-    if isinstance(parsed_output, (dict, list)):
+    parsed_lines = _format_parsed_output_lines(parsed_output)
+    if parsed_lines:
         print("parsed_output:")
-        print(textwrap.indent(json.dumps(parsed_output, ensure_ascii=False, indent=2), "  "))
-    elif isinstance(output_text, str) and output_text.strip() and output_text.strip() != final_answer.strip():
+        for line in parsed_lines:
+            print(f"  {line}")
+    elif output_text and output_text != final_answer:
         print("output_text:")
-        print(textwrap.indent(output_text.strip(), "  "))
+        print(textwrap.indent(output_text, "  "))
 
     if blocked_reason:
         print("blocked_reason:")
