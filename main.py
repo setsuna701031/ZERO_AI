@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import List
 
+from core.capabilities.full_build_flow import run_full_build_demo, run_mini_build_demo
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 APP_PATH = REPO_ROOT / "app.py"
@@ -178,24 +180,6 @@ def require_success(result: subprocess.CompletedProcess, label: str) -> None:
         )
 
 
-def require_file_exists(path: Path, label: str) -> None:
-    if not path.exists():
-        raise RuntimeError(f"{label} missing: {path}")
-
-
-def require_text_contains(path: Path, required_tokens: List[str], label: str) -> str:
-    require_file_exists(path, label)
-    text = path.read_text(encoding="utf-8", errors="replace")
-    missing = [token for token in required_tokens if token not in text]
-    if missing:
-        raise RuntimeError(
-            f"{label} missing required content: {missing}\n"
-            f"PATH: {path}\n"
-            f"CONTENT:\n{text}"
-        )
-    return text
-
-
 def write_doc_demo_input() -> Path:
     ensure_required_paths()
     input_path = SHARED_DIR / "input.txt"
@@ -239,13 +223,6 @@ def write_requirement_demo_input() -> Path:
         encoding="utf-8",
     )
     return input_path
-
-
-def write_full_build_demo_inputs() -> tuple[Path, Path]:
-    requirement_path = write_requirement_demo_input()
-    numbers_input_path = SHARED_DIR / "numbers_input.txt"
-    numbers_input_path.write_text("10\n20\n30\n40\n", encoding="utf-8")
-    return requirement_path, numbers_input_path
 
 
 def create_task(command_name: str, *args: str) -> str:
@@ -391,220 +368,6 @@ def run_execution_demo() -> int:
     safe_print("[execution-demo] outputs")
     safe_print(f"  hello.py: {hello_path}")
     safe_print("[execution-demo] PASS")
-    return 0
-
-
-def run_python_file(path: Path) -> subprocess.CompletedProcess:
-    return run_process([sys.executable, str(path)], capture=True)
-
-
-def create_and_run_implementation_task() -> tuple[str, str, str, Path]:
-    script_path = SHARED_DIR / "number_stats.py"
-    task_id = create_task("implementation-proof")
-    submit_task(task_id)
-    wait_until_finished(task_id, max_ticks=10)
-
-    result_text = get_task_result_text(task_id)
-    show_text = get_task_show_text(task_id)
-
-    require_file_exists(script_path, "implementation script")
-    require_text_contains(
-        script_path,
-        ["from pathlib import Path", 'input_path = base / "numbers_input.txt"', 'output_path = base / "stats_result.txt"'],
-        "implementation script",
-    )
-
-    return task_id, result_text, show_text, script_path
-
-
-def run_mini_build_demo() -> int:
-    ensure_required_paths()
-
-    requirement_path = SHARED_DIR / "requirement.txt"
-    numbers_input_path = SHARED_DIR / "numbers_input.txt"
-    project_summary_path = SHARED_DIR / "project_summary.txt"
-    implementation_plan_path = SHARED_DIR / "implementation_plan.txt"
-    acceptance_checklist_path = SHARED_DIR / "acceptance_checklist.txt"
-    script_path = SHARED_DIR / "number_stats.py"
-    stats_result_path = SHARED_DIR / "stats_result.txt"
-
-    require_file_exists(requirement_path, "mini-build requirement")
-    require_file_exists(numbers_input_path, "mini-build numbers input")
-
-    if script_path.exists():
-        script_path.unlink()
-    if stats_result_path.exists():
-        stats_result_path.unlink()
-
-    safe_print(f"[mini-build-demo] requirement: {requirement_path}")
-    safe_print(f"[mini-build-demo] numbers input: {numbers_input_path}")
-
-    task_id = create_task("requirement-pack", "requirement.txt")
-    submit_task(task_id)
-    wait_until_finished(task_id, max_ticks=10)
-
-    result_text = get_task_result_text(task_id)
-    show_text = get_task_show_text(task_id)
-
-    safe_print("")
-    safe_print("[mini-build-demo] requirement-pack result")
-    safe_print("----------------------------------------")
-    safe_print(result_text.rstrip())
-    safe_print("")
-    safe_print("[mini-build-demo] requirement-pack show")
-    safe_print("----------------------------------------")
-    safe_print(show_text.rstrip())
-
-    require_text_contains(
-        project_summary_path,
-        ["project_summary.txt", "implementation_plan.txt", "acceptance_checklist.txt"],
-        "project summary",
-    )
-    require_text_contains(
-        implementation_plan_path,
-        ["Implementation Plan"],
-        "implementation plan",
-    )
-    require_text_contains(
-        acceptance_checklist_path,
-        ["Acceptance Criteria", "Verification", "Deliverable"],
-        "acceptance checklist",
-    )
-
-    impl_task_id, impl_result_text, impl_show_text, script_path = create_and_run_implementation_task()
-    safe_print("")
-    safe_print("[mini-build-demo] implementation-proof result")
-    safe_print("----------------------------------------")
-    safe_print(impl_result_text.rstrip())
-    safe_print("")
-    safe_print("[mini-build-demo] implementation-proof show")
-    safe_print("----------------------------------------")
-    safe_print(impl_show_text.rstrip())
-    safe_print("")
-    safe_print(f"[mini-build-demo] generated script: {script_path}")
-
-    run_result = run_python_file(script_path)
-    require_success(run_result, "run number_stats.py")
-
-    stats_text = require_text_contains(
-        stats_result_path,
-        ["sum:", "average:", "max:", "min:"],
-        "stats result",
-    )
-
-    safe_print("")
-    safe_print("[mini-build-demo] script stdout")
-    safe_print("----------------------------------------")
-    safe_print(stdout_text(run_result).rstrip())
-    safe_print("")
-    safe_print("[mini-build-demo] outputs")
-    safe_print(f"  project summary: {project_summary_path}")
-    safe_print(f"  implementation plan: {implementation_plan_path}")
-    safe_print(f"  acceptance checklist: {acceptance_checklist_path}")
-    safe_print(f"  python utility: {script_path}")
-    safe_print(f"  stats result: {stats_result_path}")
-    safe_print("")
-    safe_print("[mini-build-demo] verified stats_result.txt")
-    safe_print("----------------------------------------")
-    safe_print(stats_text.rstrip())
-    safe_print("[mini-build-demo] PASS")
-    return 0
-
-
-def run_full_build_demo() -> int:
-    ensure_required_paths()
-
-    requirement_path, numbers_input_path = write_full_build_demo_inputs()
-    project_summary_path = SHARED_DIR / "project_summary.txt"
-    implementation_plan_path = SHARED_DIR / "implementation_plan.txt"
-    acceptance_checklist_path = SHARED_DIR / "acceptance_checklist.txt"
-    script_path = SHARED_DIR / "number_stats.py"
-    stats_result_path = SHARED_DIR / "stats_result.txt"
-
-    if script_path.exists():
-        script_path.unlink()
-    if stats_result_path.exists():
-        stats_result_path.unlink()
-
-    safe_print(f"[full-build-demo] requirement: {requirement_path}")
-    safe_print(f"[full-build-demo] numbers input: {numbers_input_path}")
-
-    task_id = create_task("requirement-pack", "requirement.txt")
-    submit_task(task_id)
-    wait_until_finished(task_id, max_ticks=10)
-
-    result_text = get_task_result_text(task_id)
-    show_text = get_task_show_text(task_id)
-
-    project_summary_text = require_text_contains(
-        project_summary_path,
-        ["project_summary.txt", "implementation_plan.txt", "acceptance_checklist.txt"],
-        "project summary",
-    )
-    implementation_plan_text = require_text_contains(
-        implementation_plan_path,
-        ["Implementation Plan"],
-        "implementation plan",
-    )
-    acceptance_checklist_text = require_text_contains(
-        acceptance_checklist_path,
-        ["Acceptance Criteria", "Verification"],
-        "acceptance checklist",
-    )
-
-    impl_task_id, impl_result_text, impl_show_text, script_path = create_and_run_implementation_task()
-    safe_print("")
-    safe_print("[full-build-demo] implementation-proof result")
-    safe_print("----------------------------------------")
-    safe_print(impl_result_text.rstrip())
-    safe_print("")
-    safe_print("[full-build-demo] implementation-proof show")
-    safe_print("----------------------------------------")
-    safe_print(impl_show_text.rstrip())
-    safe_print("")
-    safe_print(f"[full-build-demo] generated script: {script_path}")
-
-    run_result = run_python_file(script_path)
-    require_success(run_result, "run number_stats.py")
-
-    stats_text = require_text_contains(
-        stats_result_path,
-        ["sum: 100", "average: 25", "max: 40", "min: 10"],
-        "stats result",
-    )
-
-    safe_print("")
-    safe_print("[full-build-demo] requirement-pack result")
-    safe_print("----------------------------------------")
-    safe_print(result_text.rstrip())
-    safe_print("")
-    safe_print("[full-build-demo] requirement-pack show")
-    safe_print("----------------------------------------")
-    safe_print(show_text.rstrip())
-    safe_print("")
-    safe_print("[full-build-demo] verified planning artifacts")
-    safe_print("----------------------------------------")
-    safe_print(f"project summary: {project_summary_path}")
-    safe_print(f"implementation plan: {implementation_plan_path}")
-    safe_print(f"acceptance checklist: {acceptance_checklist_path}")
-    safe_print("")
-    safe_print("[full-build-demo] script stdout")
-    safe_print("----------------------------------------")
-    safe_print(stdout_text(run_result).rstrip())
-    safe_print("")
-    safe_print("[full-build-demo] verified stats_result.txt")
-    safe_print("----------------------------------------")
-    safe_print(stats_text.rstrip())
-    safe_print("")
-    safe_print("[full-build-demo] outputs")
-    safe_print(f"  requirement: {requirement_path}")
-    safe_print(f"  numbers input: {numbers_input_path}")
-    safe_print(f"  project summary: {project_summary_path}")
-    safe_print(f"  implementation plan: {implementation_plan_path}")
-    safe_print(f"  acceptance checklist: {acceptance_checklist_path}")
-    safe_print(f"  python utility: {script_path}")
-    safe_print(f"  stats result: {stats_result_path}")
-    safe_print("[full-build-demo] PASS")
     return 0
 
 
