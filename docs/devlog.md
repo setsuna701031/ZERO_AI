@@ -2312,3 +2312,237 @@ v35 requirement-pack semantic pipeline: passed
 - requirement_demo_smoke now passes against real file outputs
 - mainline_smoke returns ALL PASS after integrating requirement-pack fix
 - requirement-pack path is no longer a description-only completion; it now lands real artifacts
+
+## 2026-04-22 - Document pipeline identity stabilization checkpoint
+
+This checkpoint focused on finishing the document-task identity layer instead of adding a new outward-facing capability.
+
+### What was completed
+
+The document flow family now has three distinct pipelines with stable task-level identity:
+
+* summary pipeline
+* action-items pipeline
+* requirement pipeline
+
+Confirmed pipeline identities:
+
+* `scenario`
+* `task_type`
+* `mode`
+* `pipeline_name`
+* `execution_name`
+
+Confirmed document pipeline set:
+
+* `doc_summary` -> `summary_pipeline`
+* `doc_action_items` -> `action_items_pipeline`
+* `doc_requirement` -> `requirement_pipeline`
+
+### What was repaired
+
+This pass fixed two important document-task consistency problems:
+
+1. Metadata persistence consistency
+
+* document pipeline identity is now persisted across:
+  * `task_snapshot.json`
+  * `runtime_state.json`
+  * `result.json`
+
+2. Split submit/run path consistency
+
+* requirement pipeline identity now survives the normal task lifecycle even when the operator runs:
+  * `task create`
+  * `task submit`
+  * `task run`
+
+This repaired the earlier mismatch where identity could appear during creation but disappear or drift after finished execution.
+
+### Validation confirmed
+
+Confirmed through real task runs and CLI inspection:
+
+* `task show` displays:
+  * `scenario`
+  * `task_type`
+  * `mode`
+  * `pipeline_name`
+  * `execution_name`
+
+* `task result` displays:
+  * `scenario`
+  * `task_type`
+  * `mode`
+  * `pipeline_name`
+  * `execution_name`
+
+Confirmed stable identity after finished execution for:
+
+* summary pipeline
+* action-items pipeline
+* requirement pipeline
+
+Confirmed requirement pipeline now remains:
+
+* `scenario: doc_requirement`
+* `task_type: document`
+* `mode: requirement`
+* `pipeline_name: requirement_pipeline`
+* `execution_name: requirement_execution`
+
+even after a separated:
+
+* `task submit <task_id>`
+* `task run <task_id>`
+
+flow.
+
+### Architectural conclusion
+
+This checkpoint matters because the project now has three stable document-pipeline samples, which is the minimum useful point for structure observation.
+
+Current conclusion:
+
+* the system now clearly has a `document pipeline family`
+* summary and action-items are single-output siblings
+* requirement is a multi-output sibling
+* future abstraction should not collapse them into one oversimplified template
+
+At this stage, the correct architectural reading is:
+
+* shared family exists
+* direct factory extraction should still be cautious
+* requirement proves there are at least two document-pipeline shapes:
+  * single-output
+  * multi-output
+
+### Result
+
+Stable checkpoint after this pass:
+
+* summary pipeline identity: stable
+* action-items pipeline identity: stable
+* requirement pipeline identity: stable
+* metadata persistence: stable
+* CLI-visible separation: stable
+* split submit/run path consistency: stable
+
+### Evidence kept
+
+Keep the latest terminal screenshots showing:
+
+* finished summary pipeline with visible identity fields
+* finished action-items pipeline with visible identity fields
+* finished requirement pipeline with visible identity fields
+* requirement pipeline surviving separated `submit` + `run`
+* `task show` and `task result` both exposing the same pipeline identity
+
+## 2026-04-22 - Document pipeline family first-pass cleanup checkpoint
+
+This checkpoint focused on performing a low-risk cleanup pass on the document pipeline family after the identity layer and regression protection had already been stabilized.
+
+### What was completed
+
+`app.py` document pipeline logic was consolidated into a clearer family-oriented helper layer without changing the outward command surface.
+
+Document family coverage remained:
+
+* summary pipeline
+* action-items pipeline
+* requirement pipeline
+
+The cleanup preserved the existing command/task entry points, including:
+
+* `task doc-summary <input> <output>`
+* `task doc-action-items <input> <output>`
+* `task doc-requirement <input>`
+* `task requirement-pack <input>`
+
+### Cleanup intent
+
+This was intentionally **not** a full factory extraction.
+
+The goal was narrower:
+
+* reduce repeated document-pipeline logic inside `app.py`
+* keep outward behavior stable
+* keep requirement as a multi-output member
+* avoid premature over-abstraction
+
+The cleanup pass primarily grouped and normalized:
+
+* document pipeline metadata construction
+* document pipeline task creation helpers
+* document pipeline run/finalization helpers
+* post-finish metadata persistence handling
+* summary/action-items/requirement naming alignment
+
+### Validation
+
+Confirmed before acceptance:
+
+* `python -m py_compile app.py`
+* `python tests/run_mainline_smoke.py`
+
+Confirmed passing after cleanup:
+
+* tool layer smoke: PASS
+* scheduler smoke: PASS
+* runtime smoke: PASS
+* document task smoke: PASS
+* document pipeline identity smoke: PASS
+* requirement demo smoke: PASS
+* execution demo smoke: PASS
+* semantic task smoke: PASS
+* mainline smoke: ALL PASS
+
+### Why This Matters
+
+This checkpoint is important because it moves the document pipeline family from “working but spread across the CLI layer” toward “working and structurally easier to maintain,” while staying inside the current protected mainline.
+
+The value of this pass was not adding a new user-facing capability.
+
+Its value was:
+
+* cleaner document-family responsibility grouping in `app.py`
+* lower local maintenance cost
+* safer future document-family changes
+* preserved stability under full mainline regression coverage
+
+### Architectural conclusion
+
+At this stage, the project now has:
+
+* three stable document pipeline samples
+* identity persistence protection
+* dedicated document pipeline identity smoke coverage
+* mainline smoke protection
+* a first-pass family cleanup in `app.py`
+
+The correct next-step constraint remains:
+
+* do not rush into a broad factory abstraction
+* keep future extraction incremental
+* continue respecting the distinction between:
+  * single-output document pipelines
+  * multi-output document pipelines
+
+### Result
+
+Stable checkpoint after this pass:
+
+* document family first-pass cleanup: completed
+* outward CLI/task behavior: preserved
+* summary pipeline: stable
+* action-items pipeline: stable
+* requirement pipeline: stable
+* mainline regression after cleanup: passing
+
+### Evidence kept
+
+Keep the latest terminal screenshots showing:
+
+* `python -m py_compile app.py` passing after cleanup
+* `python tests/run_mainline_smoke.py` returning ALL PASS after cleanup
+* the folded mainline run including document pipeline identity smoke

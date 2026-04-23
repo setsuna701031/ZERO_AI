@@ -38,6 +38,7 @@ def print_help() -> None:
     print("  /runtime")
     print("  /doc_summary")
     print("  /doc_action_items")
+    print("  /doc_requirement")
     print("  list")
     print("  show <task_id>")
     print("  result <task_id>")
@@ -67,12 +68,14 @@ def print_help() -> None:
     print("  task run [count]")
     print("  task doc-summary <input> <output>")
     print("  task doc-action-items <input> <output>")
+    print("  task doc-requirement <input>")
     print("  task requirement-pack <input>")
     print("  task execution-proof")
     print("  chat <message>")
     print("  ask <message>")
     print("  doc summary")
     print("  doc action_items")
+    print("  doc requirement")
     print("  health")
     print("  runtime")
     print("  exit / quit")
@@ -94,12 +97,14 @@ def print_help() -> None:
     print("  python app.py task purge finished")
     print("  python app.py task doc-summary input.txt summary.txt")
     print("  python app.py task doc-action-items input.txt action_items.txt")
+    print("  python app.py task doc-requirement requirement.txt")
     print("  python app.py task requirement-pack requirement.txt")
     print("  python app.py task execution-proof")
     print('  python app.py chat "你好"')
     print('  python app.py ask "幫我建立一個檔案"')
     print("  python app.py doc summary")
     print("  python app.py doc action_items")
+    print("  python app.py doc requirement")
     print("  python app.py health")
     print("  python app.py runtime")
     print("")
@@ -420,6 +425,32 @@ def _extract_output_text(task: Dict[str, Any]) -> str:
     return ""
 
 
+def _extract_pipeline_identity(task: Dict[str, Any]) -> Dict[str, str]:
+    keys = ["scenario", "task_type", "mode", "pipeline_name", "execution_name"]
+    identity: Dict[str, str] = {}
+
+    base_task = copy.deepcopy(task if isinstance(task, dict) else {})
+    paths = _extract_paths(base_task)
+
+    snapshot = _load_task_snapshot(base_task)
+    result_payload = _load_json_file(paths.get("result_path", ""))
+    runtime_state = _load_json_file(paths.get("runtime_state_path", ""))
+
+    prioritized_sources: List[Dict[str, Any]] = []
+    for source in (snapshot, result_payload, runtime_state, base_task):
+        if isinstance(source, dict):
+            prioritized_sources.append(source)
+
+    for key in keys:
+        for source in prioritized_sources:
+            value = source.get(key)
+            if isinstance(value, str) and value.strip():
+                identity[key] = value.strip()
+                break
+
+    return identity
+
+
 def _format_parsed_output_lines(parsed_output: Any) -> List[str]:
     if isinstance(parsed_output, dict):
         lines: List[str] = []
@@ -584,6 +615,86 @@ def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
         return None
     return None
 
+
+
+PIPELINE_METADATA_KEYS = (
+    "scenario",
+    "task_type",
+    "mode",
+    "pipeline_name",
+    "execution_name",
+    "input_file",
+    "output_file",
+    "outputs",
+    "goal",
+)
+
+
+def _write_json_file(path: str, data: Dict[str, Any]) -> bool:
+    file_path = _safe_str(path)
+    if not file_path:
+        return False
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+        return True
+    except Exception:
+        return False
+
+
+def _extract_pipeline_metadata_payload(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    if not isinstance(metadata, dict):
+        return payload
+    for key in PIPELINE_METADATA_KEYS:
+        value = metadata.get(key)
+        if value not in (None, "", [], {}):
+            payload[key] = copy.deepcopy(value)
+    return payload
+
+
+def _merge_pipeline_metadata_into_payload(payload: Optional[Dict[str, Any]], metadata: Dict[str, Any], task_id: str = "") -> Dict[str, Any]:
+    merged = copy.deepcopy(payload) if isinstance(payload, dict) else {}
+    metadata_payload = _extract_pipeline_metadata_payload(metadata)
+    for key, value in metadata_payload.items():
+        merged[key] = copy.deepcopy(value)
+    normalized_task_id = _safe_str(task_id) or _extract_task_id(merged)
+    if normalized_task_id:
+        merged["task_id"] = normalized_task_id
+    return merged
+
+
+def _persist_document_pipeline_metadata(system: Any, task_id: str, metadata: Dict[str, Any]) -> Dict[str, bool]:
+    normalized_task_id = _safe_str(task_id)
+    metadata_payload = _extract_pipeline_metadata_payload(metadata)
+    result = {"snapshot": False, "runtime_state": False, "result": False}
+    if not normalized_task_id or not metadata_payload:
+        return result
+
+    task = _get_task(system, normalized_task_id) or {"task_id": normalized_task_id}
+    merged_task = _merge_task_with_snapshot(task)
+    paths = _extract_paths(merged_task)
+
+    snapshot_path = _safe_str(paths.get("snapshot_path"))
+    if not snapshot_path:
+        task_dir = _safe_str(paths.get("task_dir"))
+        if task_dir:
+            snapshot_path = os.path.join(task_dir, "task_snapshot.json")
+    snapshot_payload = _merge_pipeline_metadata_into_payload(_load_json_file(snapshot_path), metadata_payload, normalized_task_id)
+    result["snapshot"] = _write_json_file(snapshot_path, snapshot_payload)
+
+    runtime_state_path = _safe_str(paths.get("runtime_state_path"))
+    if runtime_state_path and os.path.isfile(runtime_state_path):
+        runtime_state_payload = _merge_pipeline_metadata_into_payload(_load_json_file(runtime_state_path), metadata_payload, normalized_task_id)
+        result["runtime_state"] = _write_json_file(runtime_state_path, runtime_state_payload)
+
+    result_path = _safe_str(paths.get("result_path"))
+    if result_path and os.path.isfile(result_path):
+        result_payload = _merge_pipeline_metadata_into_payload(_load_json_file(result_path), metadata_payload, normalized_task_id)
+        result["result"] = _write_json_file(result_path, result_payload)
+
+    return result
 
 def _load_task_snapshot(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(task, dict):
@@ -912,10 +1023,15 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     shared_artifacts = _extract_shared_artifact_paths(task)
     parsed_output = _extract_parsed_output(task)
     output_text = _extract_output_text(task)
+    pipeline_identity = _extract_pipeline_identity(task)
 
     print(f"task_id: {task_id}")
     print(f"status: {status}")
     print(f"step: {step_progress}")
+    for key in ("scenario", "task_type", "mode", "pipeline_name", "execution_name"):
+        value = pipeline_identity.get(key, "")
+        if value:
+            print(f"{key}: {value}")
     if goal:
         print("goal:")
         print(textwrap.indent(goal, "  "))
@@ -964,9 +1080,14 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     parsed_output = _extract_parsed_output(task)
     output_text = _extract_output_text(task)
     summary_text = _find_first_value(payload, ["summary_text"])
+    pipeline_identity = _extract_pipeline_identity(task)
 
     print(f"task_id: {task_id}")
     print(f"status: {status}")
+    for key in ("scenario", "task_type", "mode", "pipeline_name", "execution_name"):
+        value = pipeline_identity.get(key, "")
+        if value:
+            print(f"{key}: {value}")
     print("final_answer:")
     if final_answer:
         print(textwrap.indent(final_answer, "  "))
@@ -1160,6 +1281,47 @@ def _is_task_id_token(value: Any) -> bool:
     return bool(re.fullmatch(r"task_\d+", text))
 
 
+
+
+def _infer_document_pipeline_metadata_from_task(task: Any) -> Dict[str, Any]:
+    if not isinstance(task, dict):
+        return {}
+
+    existing = {}
+    for key in PIPELINE_METADATA_KEYS:
+        value = task.get(key)
+        if value not in (None, '', [], {}):
+            existing[key] = copy.deepcopy(value)
+    if all(existing.get(k) for k in ('scenario', 'task_type', 'mode', 'pipeline_name', 'execution_name')):
+        return existing
+
+    goal = _safe_str(task.get('goal'))
+    if not goal:
+        return existing
+    lowered = goal.lower()
+
+    if ' and produce project_summary.txt' in lowered and 'implementation_plan.txt' in lowered and 'acceptance_checklist.txt' in lowered:
+        input_match = re.search(r'^read\s+(.+?)\s+and\s+produce\s+project_summary\.txt', goal, flags=re.IGNORECASE)
+        input_file = _safe_str(input_match.group(1)) if input_match else _safe_str(task.get('input_file'))
+        return _build_requirement_pipeline_metadata(input_file)
+
+    summary_match = re.search(r'^summarize\s+(.+?)\s+into\s+(.+)$', goal, flags=re.IGNORECASE)
+    if summary_match:
+        return _build_document_pipeline_metadata('summary', summary_match.group(1), summary_match.group(2))
+
+    action_match = re.search(r'^read\s+(.+?)\s+and\s+extract\s+action\s+items\s+into\s+(.+)$', goal, flags=re.IGNORECASE)
+    if action_match:
+        return _build_document_pipeline_metadata('action_items', action_match.group(1), action_match.group(2))
+
+    return existing
+
+
+def _repersist_pipeline_metadata_if_possible(system: Any, task_id: str, task: Any = None) -> Dict[str, bool]:
+    task_dict = task if isinstance(task, dict) else _get_task(system, task_id)
+    metadata = _infer_document_pipeline_metadata_from_task(task_dict)
+    if not metadata:
+        return {'snapshot': False, 'runtime_state': False, 'result': False}
+    return _persist_document_pipeline_metadata(system, task_id, metadata)
 def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str, Any]:
     normalized_task_id = _safe_str(task_id)
     if not normalized_task_id:
@@ -1201,6 +1363,7 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
             try:
                 direct_result = method(normalized_task_id)
                 refreshed = _get_task(system, normalized_task_id)
+                persistence = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, refreshed)
                 return {
                     "ok": True if not isinstance(direct_result, dict) else bool(direct_result.get("ok", True)),
                     "mode": "target_task",
@@ -1208,6 +1371,7 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
                     "driver": method_name,
                     "result": direct_result,
                     "task": refreshed,
+                    "metadata_persisted": persistence,
                 }
             except TypeError:
                 continue
@@ -1235,6 +1399,7 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
             if current_status in {"running", "processing"}:
                 started = True
             if current_status in TERMINAL_STATUSES:
+                persistence = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, current_task)
                 return {
                     "ok": True,
                     "mode": "target_task",
@@ -1245,6 +1410,7 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
                     "task": current_task,
                     "idle": False,
                     "started": started or current_status in TERMINAL_STATUSES,
+                    "metadata_persisted": persistence,
                 }
 
         if isinstance(tick_result, dict):
@@ -1258,6 +1424,7 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
     current_status = _extract_status(current_task).lower() if isinstance(current_task, dict) else "unknown"
     current_step = _format_step_progress(current_task) if isinstance(current_task, dict) else "-"
 
+    persistence = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, current_task)
     return {
         "ok": current_status in TERMINAL_STATUSES,
         "mode": "target_task",
@@ -1269,6 +1436,7 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
         "idle": idle,
         "started": started,
         "error": None if current_status in TERMINAL_STATUSES else "target task did not reach terminal status",
+        "metadata_persisted": persistence,
     }
 def _run_once(system: Any) -> Dict[str, Any]:
     scheduler = _get_scheduler(system)
@@ -1424,6 +1592,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         "tick": "/task_run 1",
         "run": "/task_run",
         "doc summary": "/doc_summary",
+        "doc requirement": "/doc_requirement",
     }
     if lowered in mapping:
         return mapping[lowered]
@@ -1446,6 +1615,9 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         ("task doc action-items ", "/task_doc_action_items "),
         ("task doc action_items ", "/task_doc_action_items "),
         ("task doc summary ", "/task_doc_summary "),
+        ("task doc-requirement ", "/task_doc_requirement "),
+        ("task doc_requirement ", "/task_doc_requirement "),
+        ("task doc requirement ", "/task_doc_requirement "),
         ("task requirement-pack ", "/task_requirement_pack "),
         ("task requirement_pack ", "/task_requirement_pack "),
         ("task requirement pack ", "/task_requirement_pack "),
@@ -1718,6 +1890,231 @@ def _build_doc_task_goal(mode: str, input_file: str, output_file: str) -> str:
     return ""
 
 
+def _canonical_doc_mode(mode: str) -> str:
+    mode_text = _safe_str(mode).lower()
+    if mode_text in {"action_items", "action-items", "actionitems"}:
+        return "action_items"
+    return "summary"
+
+
+
+DOCUMENT_SINGLE_OUTPUT_PIPELINE_CONFIGS: Dict[str, Dict[str, str]] = {
+    "summary": {
+        "scenario": "doc_summary",
+        "pipeline_name": "summary_pipeline",
+        "execution_name": "summary_execution",
+    },
+    "action_items": {
+        "scenario": "doc_action_items",
+        "pipeline_name": "action_items_pipeline",
+        "execution_name": "action_items_execution",
+    },
+}
+
+REQUIREMENT_PIPELINE_OUTPUT_FILENAMES: Tuple[str, ...] = (
+    "project_summary.txt",
+    "implementation_plan.txt",
+    "acceptance_checklist.txt",
+)
+
+
+def _build_requirement_output_paths() -> List[str]:
+    return [os.path.join(WORKSPACE_DIR, "shared", name) for name in REQUIREMENT_PIPELINE_OUTPUT_FILENAMES]
+
+
+def _build_document_family_metadata(
+    kind: str,
+    input_file: str,
+    output_file: str = "",
+) -> Dict[str, Any]:
+    normalized_kind = _safe_str(kind).lower()
+
+    if normalized_kind == "requirement":
+        normalized_input = _normalize_requirement_pack_input(input_file)
+        goal = _build_requirement_pack_goal(input_file)
+        return {
+            "scenario": "doc_requirement",
+            "task_type": "document",
+            "mode": "requirement",
+            "pipeline_name": "requirement_pipeline",
+            "execution_name": "requirement_execution",
+            "input_file": normalized_input,
+            "goal": goal,
+            "outputs": _build_requirement_output_paths(),
+        }
+
+    canonical_mode = _canonical_doc_mode(normalized_kind)
+    config = DOCUMENT_SINGLE_OUTPUT_PIPELINE_CONFIGS.get(
+        canonical_mode,
+        DOCUMENT_SINGLE_OUTPUT_PIPELINE_CONFIGS["summary"],
+    )
+    input_path = _safe_str(input_file)
+    output_path = _safe_str(output_file)
+    goal = _build_doc_task_goal(canonical_mode, input_path, output_path)
+
+    return {
+        "scenario": config["scenario"],
+        "task_type": "document",
+        "mode": canonical_mode,
+        "pipeline_name": config["pipeline_name"],
+        "execution_name": config["execution_name"],
+        "input_file": input_path,
+        "output_file": output_path,
+        "goal": goal,
+        "outputs": [output_path] if output_path else [],
+    }
+
+
+def _build_document_pipeline_metadata(mode: str, input_file: str, output_file: str) -> Dict[str, Any]:
+    return _build_document_family_metadata(mode, input_file, output_file)
+
+
+def _extract_created_task_id_from_result(result: Any) -> str:
+    if not isinstance(result, dict):
+        return ""
+
+    created_task = result.get("task") if isinstance(result.get("task"), dict) else {}
+    return _first_nonempty_str(
+        result.get("task_id"),
+        result.get("task_name"),
+        created_task.get("task_id") if isinstance(created_task, dict) else "",
+        created_task.get("task_name") if isinstance(created_task, dict) else "",
+    )
+
+
+def _decorate_pipeline_result(result: Any, metadata: Dict[str, Any], task_id: str = "") -> Any:
+    if not isinstance(result, dict):
+        return result
+
+    payload = copy.deepcopy(result)
+    for key in (
+        "scenario",
+        "task_type",
+        "mode",
+        "pipeline_name",
+        "execution_name",
+        "input_file",
+        "output_file",
+        "outputs",
+        "goal",
+    ):
+        value = metadata.get(key)
+        if value not in (None, "", [], {}):
+            payload[key] = value
+
+    normalized_task_id = _safe_str(task_id) or _extract_created_task_id_from_result(payload)
+    if normalized_task_id:
+        payload["task_id"] = normalized_task_id
+
+    return payload
+
+
+def _create_document_family_task(
+    system: Any,
+    cli_state: Dict[str, Any],
+    metadata: Dict[str, Any],
+    invalid_goal_error: str,
+) -> Dict[str, Any]:
+    goal = _safe_str(metadata.get("goal"))
+    if not goal:
+        return {"ok": False, "error": invalid_goal_error, **metadata}
+
+    result = _create_task(system, goal)
+    task_id = _extract_created_task_id_from_result(result)
+    persistence: Dict[str, bool] = {"snapshot": False, "runtime_state": False, "result": False}
+    if task_id:
+        cli_state["last_created_task_id"] = task_id
+        persistence = _persist_document_pipeline_metadata(system, task_id, metadata)
+
+    decorated = _decorate_pipeline_result(result, metadata, task_id=task_id)
+    if task_id:
+        decorated["metadata_persisted"] = persistence
+    return decorated
+
+
+def _create_document_pipeline_task(
+    system: Any,
+    cli_state: Dict[str, Any],
+    mode: str,
+    input_file: str,
+    output_file: str,
+) -> Dict[str, Any]:
+    metadata = _build_document_pipeline_metadata(mode, input_file, output_file)
+    return _create_document_family_task(
+        system,
+        cli_state,
+        metadata,
+        invalid_goal_error="invalid document pipeline goal",
+    )
+
+
+def _finalize_document_family_run(
+    system: Any,
+    create_result: Dict[str, Any],
+    metadata: Dict[str, Any],
+    missing_task_error: str,
+) -> Dict[str, Any]:
+    task_id = _safe_str(create_result.get("task_id"))
+
+    if not bool(create_result.get("ok", False)):
+        return create_result
+
+    if not task_id:
+        payload = copy.deepcopy(create_result)
+        payload["ok"] = False
+        payload["error"] = missing_task_error
+        return payload
+
+    submit_result = _submit_existing_task(system, task_id)
+    run_result = None
+    if isinstance(submit_result, dict) and submit_result.get("ok"):
+        run_result = _run_target_task(system, task_id, max_ticks=50)
+
+    persistence = _persist_document_pipeline_metadata(system, task_id, metadata)
+    task = _get_task(system, task_id)
+    final_answer = _extract_final_answer(task) if isinstance(task, dict) else ""
+    shared_artifacts = _extract_shared_artifact_paths(task) if isinstance(task, dict) else []
+
+    payload: Dict[str, Any] = {
+        "ok": bool(isinstance(run_result, dict) and run_result.get("ok", False)),
+        **metadata,
+        "task_id": task_id,
+        "create_result": create_result,
+        "submit_result": submit_result,
+        "run_result": run_result,
+    }
+    if isinstance(task, dict):
+        payload["task"] = task
+    if final_answer:
+        payload["final_answer"] = final_answer
+    if shared_artifacts:
+        payload["shared_artifacts"] = shared_artifacts
+    payload["metadata_persisted"] = persistence
+    return payload
+
+
+def _run_document_pipeline_now(
+    system: Any,
+    cli_state: Dict[str, Any],
+    mode: str,
+    input_file: str,
+    output_file: str,
+) -> Dict[str, Any]:
+    metadata = _build_document_pipeline_metadata(mode, input_file, output_file)
+    create_result = _create_document_family_task(
+        system,
+        cli_state,
+        metadata,
+        invalid_goal_error="invalid document pipeline goal",
+    )
+    return _finalize_document_family_run(
+        system,
+        create_result,
+        metadata,
+        missing_task_error="document pipeline task created but no task_id returned",
+    )
+
+
 def _normalize_requirement_pack_input(input_file: str) -> str:
     input_path = _safe_str(input_file)
     if not input_path:
@@ -1741,8 +2138,39 @@ def _build_requirement_pack_goal(input_file: str) -> str:
     )
 
 
+def _build_requirement_pipeline_metadata(input_file: str) -> Dict[str, Any]:
+    return _build_document_family_metadata("requirement", input_file)
+
+
+def _create_requirement_pipeline_task(system: Any, cli_state: Dict[str, Any], input_file: str) -> Dict[str, Any]:
+    metadata = _build_requirement_pipeline_metadata(input_file)
+    return _create_document_family_task(
+        system,
+        cli_state,
+        metadata,
+        invalid_goal_error="invalid requirement pipeline goal",
+    )
+
+
+def _run_requirement_pipeline_now(system: Any, cli_state: Dict[str, Any], input_file: str) -> Dict[str, Any]:
+    metadata = _build_requirement_pipeline_metadata(input_file)
+    create_result = _create_document_family_task(
+        system,
+        cli_state,
+        metadata,
+        invalid_goal_error="invalid requirement pipeline goal",
+    )
+    return _finalize_document_family_run(
+        system,
+        create_result,
+        metadata,
+        missing_task_error="requirement pipeline task created but no task_id returned",
+    )
+
+
 def _build_execution_proof_goal() -> str:
     return 'write shared/hello.py with print("ok")'
+
 
 
 def _build_execution_proof_plan() -> Dict[str, Any]:
@@ -1978,6 +2406,16 @@ def handle_direct_step_flow(system: Any, text: str) -> bool:
 
 
 def handle_natural_language(system: Any, text: str) -> None:
+    document_payload = _extract_document_task_payload(text)
+    if document_payload is not None:
+        mode = _safe_str(document_payload.get("mode")) or "summary"
+        input_file = _safe_str(document_payload.get("input_file")) or "input.txt"
+        output_file = _safe_str(document_payload.get("output_file"))
+        cli_state = {"last_created_task_id": ""}
+        result = _run_document_pipeline_now(system, cli_state, mode, input_file, output_file)
+        print_json(result)
+        return
+
     if _should_use_direct_step_flow(text):
         handled = handle_direct_step_flow(system, text)
         if handled:
@@ -2017,10 +2455,13 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         print_json(_build_runtime_info(system))
         return
     if text == "/doc_summary":
-        handle_natural_language(system, "summarize input.txt into summary.txt")
+        print_json(_run_document_pipeline_now(system, cli_state, "summary", "input.txt", "summary.txt"))
         return
     if text == "/doc_action_items":
-        handle_natural_language(system, "read input.txt and extract action items into action_items.txt")
+        print_json(_run_document_pipeline_now(system, cli_state, "action_items", "input.txt", "action_items.txt"))
+        return
+    if text == "/doc_requirement":
+        print_json(_run_requirement_pipeline_now(system, cli_state, "requirement.txt"))
         return
     if text == "/task_list":
         _print_task_table(_list_tasks(system))
@@ -2102,13 +2543,7 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         if not input_file or not output_file:
             print_json({"ok": False, "error": "usage: task doc-summary <input> <output>"})
             return
-        goal = _build_doc_task_goal("summary", input_file, output_file)
-        result = _create_task(system, goal)
-        if isinstance(result, dict):
-            created_task = result.get("task", {}) if isinstance(result.get("task"), dict) else {}
-            created_task_id = str(result.get("task_id") or result.get("task_name") or created_task.get("task_id") or created_task.get("task_name") or "").strip()
-            if created_task_id:
-                cli_state["last_created_task_id"] = created_task_id
+        result = _create_document_pipeline_task(system, cli_state, "summary", input_file, output_file)
         print_json(result)
         if cli_state.get("last_created_task_id"):
             print("[hint]")
@@ -2120,13 +2555,18 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         if not input_file or not output_file:
             print_json({"ok": False, "error": "usage: task doc-action-items <input> <output>"})
             return
-        goal = _build_doc_task_goal("action_items", input_file, output_file)
-        result = _create_task(system, goal)
-        if isinstance(result, dict):
-            created_task = result.get("task", {}) if isinstance(result.get("task"), dict) else {}
-            created_task_id = str(result.get("task_id") or result.get("task_name") or created_task.get("task_id") or created_task.get("task_name") or "").strip()
-            if created_task_id:
-                cli_state["last_created_task_id"] = created_task_id
+        result = _create_document_pipeline_task(system, cli_state, "action_items", input_file, output_file)
+        print_json(result)
+        if cli_state.get("last_created_task_id"):
+            print("[hint]")
+            print(f"下一步可執行：submit {cli_state['last_created_task_id']}")
+        return
+    if text.startswith("/task_doc_requirement "):
+        input_file = text.split(maxsplit=1)[1].strip()
+        if not input_file:
+            print_json({"ok": False, "error": "usage: task doc-requirement <input>"})
+            return
+        result = _create_requirement_pipeline_task(system, cli_state, input_file)
         print_json(result)
         if cli_state.get("last_created_task_id"):
             print("[hint]")
@@ -2139,31 +2579,7 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
             print_json({"ok": False, "error": "usage: task requirement-pack <input>"})
             return
 
-        goal = _build_requirement_pack_goal(input_file)
-        result = _create_task(system, goal)
-        if isinstance(result, dict):
-            created_task = result.get("task", {}) if isinstance(result.get("task"), dict) else {}
-            created_task_id = str(
-                result.get("task_id")
-                or result.get("task_name")
-                or created_task.get("task_id")
-                or created_task.get("task_name")
-                or ""
-            ).strip()
-            if created_task_id:
-                cli_state["last_created_task_id"] = created_task_id
-
-            if result.get("ok"):
-                result = copy.deepcopy(result)
-                result["scenario"] = "requirement_pack"
-                result["input_file"] = _normalize_requirement_pack_input(input_file)
-                result["outputs"] = [
-                    os.path.join(WORKSPACE_DIR, "shared", "project_summary.txt"),
-                    os.path.join(WORKSPACE_DIR, "shared", "implementation_plan.txt"),
-                    os.path.join(WORKSPACE_DIR, "shared", "acceptance_checklist.txt"),
-                ]
-                result["goal"] = goal
-
+        result = _create_requirement_pipeline_task(system, cli_state, input_file)
         print_json(result)
         if cli_state.get("last_created_task_id"):
             print("[hint]")
@@ -2343,6 +2759,8 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
             return "/doc_summary"
         if sub in {"action_items", "action-items", "actionitems"}:
             return "/doc_action_items"
+        if sub == "requirement":
+            return "/doc_requirement"
         return None
     if first == "task":
         if len(parts) == 1:
@@ -2359,12 +2777,17 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
         if sub == "doc-action_items" and len(parts) >= 4:
             return "/task_doc_action_items " + " ".join(parts[2:4])
 
-        if sub == "doc" and len(parts) >= 5:
+        if sub in {"doc-requirement", "doc_requirement"} and len(parts) >= 3:
+            return "/task_doc_requirement " + " ".join(parts[2:])
+
+        if sub == "doc" and len(parts) >= 4:
             doc_mode = parts[2].lower()
-            if doc_mode == "summary":
+            if doc_mode == "summary" and len(parts) >= 5:
                 return "/task_doc_summary " + " ".join(parts[3:5])
-            if doc_mode in {"action-items", "action_items", "actionitems"}:
+            if doc_mode in {"action-items", "action_items", "actionitems"} and len(parts) >= 5:
                 return "/task_doc_action_items " + " ".join(parts[3:5])
+            if doc_mode == "requirement":
+                return "/task_doc_requirement " + " ".join(parts[3:])
 
         if sub in {"requirement-pack", "requirement_pack"} and len(parts) >= 3:
             return "/task_requirement_pack " + " ".join(parts[2:])
