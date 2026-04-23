@@ -1,121 +1,116 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import List
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parent.parent
 TESTS_DIR = REPO_ROOT / "tests"
 
 
-@dataclass
-class SmokeEntry:
-    label: str
-    relative_path: str
-    required: bool = True
-
-
-CORE_SMOKES: List[SmokeEntry] = [
-    SmokeEntry("tool layer smoke", "run_tool_layer_smoke.py", required=False),
-    SmokeEntry("scheduler smoke", "run_scheduler_smoke.py", required=True),
-    SmokeEntry("runtime smoke", "run_runtime_smoke.py", required=False),
-    SmokeEntry("document task smoke", "run_document_task_smoke.py", required=True),
-    SmokeEntry("document pipeline identity smoke", "run_document_pipeline_identity_smoke.py", required=True),
-    SmokeEntry("requirement demo smoke", "run_requirement_demo_smoke.py", required=False),
-    SmokeEntry("execution demo smoke", "run_execution_demo_smoke.py", required=False),
-    SmokeEntry("semantic task smoke", "run_semantic_task_smoke.py", required=False),
+REQUIRED_SMOKES = [
+    ("tool layer smoke", "run_tool_layer_smoke.py"),
+    ("scheduler smoke", "run_scheduler_smoke.py"),
+    ("runtime smoke", "run_runtime_smoke.py"),
+    ("document task smoke", "run_document_task_smoke.py"),
+    ("document pipeline identity smoke", "run_document_pipeline_identity_smoke.py"),
+    ("requirement demo smoke", "run_requirement_demo_smoke.py"),
+    ("execution demo smoke", "run_execution_demo_smoke.py"),
+    ("semantic task smoke", "run_semantic_task_smoke.py"),
+    ("implementation-proof smoke", "run_implementation_proof_smoke.py"),
+    ("full-build-demo smoke", "run_full_build_demo_smoke.py"),
 ]
 
 
-def safe_print(text: str = "") -> None:
-    value = str(text or "")
-    try:
-        print(value)
-    except UnicodeEncodeError:
-        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
-        sanitized = value.encode(encoding, errors="replace").decode(encoding, errors="replace")
-        print(sanitized)
+OPTIONAL_SMOKES = [
+    ("agent loop smoke", "run_agent_loop_smoke.py"),
+    ("executor smoke", "run_executor_smoke.py"),
+]
 
 
-def run_script(path: Path) -> subprocess.CompletedProcess[str]:
+def run_process(script_path: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(path)],
+        [sys.executable, str(script_path)],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
-        encoding=getattr(sys.stdout, "encoding", None) or "utf-8",
+        encoding="utf-8",
         errors="replace",
     )
 
 
 def main() -> int:
-    safe_print("[mainline-smoke] starting")
-    safe_print(f"[repo] {REPO_ROOT}")
+    print("[mainline-smoke] starting")
+    print(f"[repo] {REPO_ROOT}")
 
-    missing_required: List[str] = []
-    failures: List[str] = []
-    passes: List[str] = []
-    skipped: List[str] = []
+    pass_count = 0
+    fail_count = 0
+    missing_required = 0
+    skip_optional = 0
 
-    for entry in CORE_SMOKES:
-        script_path = TESTS_DIR / entry.relative_path
+    for label, filename in REQUIRED_SMOKES:
+        script_path = TESTS_DIR / filename
+        print(f"[RUN] {label}: {filename}")
         if not script_path.exists():
-            if entry.required:
-                missing_required.append(entry.relative_path)
-                safe_print(f"[FAIL] missing required smoke: {entry.relative_path}")
-            else:
-                skipped.append(entry.relative_path)
-                safe_print(f"[SKIP] optional smoke not found: {entry.relative_path}")
+            print(f"[FAIL] {label}")
+            print("STDOUT:")
+            print("")
+            print("STDERR:")
+            print(f"required smoke missing: {script_path}")
+            fail_count += 1
+            missing_required += 1
             continue
 
-        safe_print(f"[RUN] {entry.label}: {entry.relative_path}")
-        result = run_script(script_path)
+        result = run_process(script_path)
         if result.returncode == 0:
-            passes.append(entry.relative_path)
-            safe_print(f"[PASS] {entry.label}")
+            print(f"[PASS] {label}")
+            pass_count += 1
             continue
 
-        failures.append(entry.relative_path)
-        safe_print(f"[FAIL] {entry.label}")
-        if result.stdout.strip():
-            safe_print("STDOUT:")
-            safe_print(result.stdout.rstrip())
-        if result.stderr.strip():
-            safe_print("STDERR:")
-            safe_print(result.stderr.rstrip())
+        print(f"[FAIL] {label}")
+        print("STDOUT:")
+        print(result.stdout.rstrip())
+        print("")
+        print("STDERR:")
+        print(result.stderr.rstrip())
+        fail_count += 1
 
-    safe_print("")
-    safe_print("[summary]")
-    safe_print(f"pass: {len(passes)}")
-    safe_print(f"fail: {len(failures)}")
-    safe_print(f"missing_required: {len(missing_required)}")
-    safe_print(f"skip_optional: {len(skipped)}")
+    for label, filename in OPTIONAL_SMOKES:
+        script_path = TESTS_DIR / filename
+        print(f"[RUN] {label}: {filename}")
+        if not script_path.exists():
+            print(f"[SKIP] {label} (missing optional smoke)")
+            skip_optional += 1
+            continue
 
-    if missing_required:
-        safe_print("missing required scripts:")
-        for item in missing_required:
-            safe_print(f"  - {item}")
+        result = run_process(script_path)
+        if result.returncode == 0:
+            print(f"[PASS] {label}")
+            pass_count += 1
+            continue
 
-    if failures:
-        safe_print("failed scripts:")
-        for item in failures:
-            safe_print(f"  - {item}")
+        print(f"[FAIL] {label}")
+        print("STDOUT:")
+        print(result.stdout.rstrip())
+        print("")
+        print("STDERR:")
+        print(result.stderr.rstrip())
+        fail_count += 1
 
-    if skipped:
-        safe_print("skipped optional scripts:")
-        for item in skipped:
-            safe_print(f"  - {item}")
+    print("")
+    print("[summary]")
+    print(f"pass: {pass_count}")
+    print(f"fail: {fail_count}")
+    print(f"missing_required: {missing_required}")
+    print(f"skip_optional: {skip_optional}")
 
-    if missing_required or failures:
-        safe_print("[mainline-smoke] FAIL")
-        return 1
+    if fail_count == 0 and missing_required == 0:
+        print("[mainline-smoke] ALL PASS")
+        return 0
 
-    safe_print("[mainline-smoke] ALL PASS")
-    return 0
+    print("[mainline-smoke] FAIL")
+    return 1
 
 
 if __name__ == "__main__":

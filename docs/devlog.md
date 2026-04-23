@@ -2806,3 +2806,114 @@ Keep these screenshots:
 * `full-build-demo` upgraded to system-task path: complete
 * full-build smoke: passing
 * mainline smoke after integration: passing
+
+## 2026-04-23 - Implementation-proof smoke folded into mainline
+
+This checkpoint focused on closing the protection gap around the new system-task-based implementation path.
+
+### What was completed
+
+Added:
+
+* `tests/run_implementation_proof_smoke.py`
+
+This smoke validates the new formal implementation path:
+
+* `python app.py task implementation-proof`
+* task creation succeeds
+* structured implementation plan is visible at create time
+* task submit succeeds
+* task run succeeds
+* `task show` reaches:
+  * `status: finished`
+  * `step: 2/2`
+* generated artifact exists:
+  * `workspace/shared/number_stats.py`
+
+It also validates stable script content markers such as:
+
+* `from pathlib import Path`
+* `numbers_input.txt`
+* `stats_result.txt`
+* `"\n".join(...)`
+
+### Mainline integration
+
+`tests/run_implementation_proof_smoke.py` was folded into:
+
+* `tests/run_mainline_smoke.py`
+
+This means the new implementation-task path is no longer protected only indirectly through `full-build-demo`.
+
+It now has its own direct regression coverage and is also part of the stable mainline smoke chain.
+
+### Full-build-demo validation rule sync
+
+While folding this in, `main.py` still had an older brittle checklist assertion inside `full-build-demo` that required the exact word:
+
+* `Deliverable`
+
+The current requirement output no longer guarantees that wording.
+
+`main.py` was updated so that `full-build-demo` now validates more stable checklist markers instead:
+
+* `Acceptance Criteria`
+* `Verification`
+
+This aligned the full-build-demo validation logic with the earlier smoke-hardening direction and removed the last stale brittle assertion in that path.
+
+### Validation confirmed
+
+Confirmed passing after integration:
+
+* `python main.py full-build-demo`
+* `python tests/run_implementation_proof_smoke.py`
+* `python tests/run_full_build_demo_smoke.py`
+* `python tests/run_mainline_smoke.py`
+
+Confirmed result:
+
+* implementation-proof smoke: PASS
+* full-build-demo smoke: PASS
+* mainline smoke: ALL PASS
+
+Current mainline summary after fold-in:
+
+* pass: 12
+* fail: 0
+* missing_required: 0
+* skip_optional: 0
+
+### Why this matters
+
+This checkpoint matters because the new implementation-task path is now protected both directly and indirectly:
+
+* directly by `implementation-proof smoke`
+* indirectly by `full-build-demo smoke`
+* globally by `mainline smoke`
+
+That makes the representative engineering chain more trustworthy:
+
+* requirement intake
+* planning artifact generation
+* implementation task generation
+* execution
+* verification
+
+The project is now less dependent on a single showcase path to expose regressions in implementation-task behavior.
+
+### Evidence kept
+
+Keep these screenshots:
+
+* `checkpoint_full_build_demo_pass.png`
+* `checkpoint_mainline_smoke_all_pass_after_full_build.png`
+
+### Stable checkpoint after this pass
+
+* `implementation-proof` task path: established
+* `implementation-proof` smoke: added
+* `implementation-proof` folded into mainline smoke: complete
+* `full-build-demo` brittle acceptance check: fixed
+* `full-build-demo`: passing
+* `mainline smoke`: ALL PASS

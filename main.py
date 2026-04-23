@@ -548,7 +548,7 @@ def run_full_build_demo() -> int:
     )
     acceptance_checklist_text = require_text_contains(
         acceptance_checklist_path,
-        ["Acceptance Criteria", "Verification", "Deliverable"],
+        ["Acceptance Criteria", "Verification"],
         "acceptance checklist",
     )
 
