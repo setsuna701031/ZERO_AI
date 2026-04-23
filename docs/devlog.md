@@ -2569,3 +2569,120 @@ Completed first-stage consolidation of document-related pipelines under stable e
 ### Next
 - Define a single demo-grade mainline scenario
 - Add end-to-end smoke for that scenario
+
+## 2026-04-23 - Full-build demo mainline checkpoint
+
+This checkpoint focused on turning the existing requirement/planning/execution pieces into a more complete representative workflow and then protecting it with smoke coverage.
+
+### What was completed
+
+`main.py` gained a new:
+
+* `full-build-demo`
+
+This flow now executes a fixed representative chain:
+
+1. prepare requirement input
+2. prepare numbers input
+3. run `requirement-pack`
+4. verify planning artifacts
+5. generate implementation artifact
+6. execute generated script
+7. verify result file contents
+
+Validated generated artifacts:
+
+* `workspace/shared/project_summary.txt`
+* `workspace/shared/implementation_plan.txt`
+* `workspace/shared/acceptance_checklist.txt`
+* `workspace/shared/number_stats.py`
+* `workspace/shared/stats_result.txt`
+
+### Validation added
+
+Added:
+
+* `tests/run_full_build_demo_smoke.py`
+
+This smoke validates:
+
+* `python main.py full-build-demo`
+* planning artifacts exist and are non-empty
+* generated script exists
+* `stats_result.txt` exists and is non-empty
+* verified numeric outputs:
+  * `sum: 100`
+  * `average: 25`
+  * `max: 40`
+  * `min: 10`
+
+### Smoke integration
+
+`run_full_build_demo_smoke.py` was folded into:
+
+* `tests/run_mainline_smoke.py`
+
+This means the representative requirement -> build -> execute -> verify chain is now part of protected mainline validation instead of being only a manual demo path.
+
+### Requirement smoke hardening
+
+During fold-in, the older requirement smoke was exposed as too brittle because it depended on exact wording such as `Deliverable` in `acceptance_checklist.txt`.
+
+`tests/run_requirement_demo_smoke.py` was updated to validate more stable workflow signals instead:
+
+* command success
+* non-empty artifact generation
+* stable section checks such as:
+  * `Acceptance`
+  * `Verification`
+
+instead of overfitting to one exact phrasing.
+
+### Validation confirmed
+
+Confirmed passing after integration:
+
+* `python tests/run_requirement_demo_smoke.py`
+* `python tests/run_full_build_demo_smoke.py`
+* `python tests/run_mainline_smoke.py`
+
+Confirmed result:
+
+* requirement demo smoke: PASS
+* full-build demo smoke: PASS
+* mainline smoke: ALL PASS
+
+### Why This Matters
+
+This checkpoint is important because the project now has a more representative engineering workflow protected by the stable mainline validation path.
+
+The value is not just that a demo command works.
+
+The value is that the system can now repeatedly prove a compact chain of:
+
+* requirement intake
+* planning artifact generation
+* implementation artifact generation
+* execution
+* result verification
+
+under smoke protection.
+
+### Result
+
+Stable checkpoint after this pass:
+
+* `full-build-demo` entry: established
+* representative requirement -> build -> execute -> verify flow: established
+* dedicated full-build smoke: added
+* requirement smoke: hardened
+* mainline smoke after fold-in: passing
+
+### Evidence kept
+
+Keep the latest terminal screenshots showing:
+
+* `python main.py full-build-demo` PASS
+* `python tests/run_full_build_demo_smoke.py` ALL PASS
+* `python tests/run_requirement_demo_smoke.py` ALL PASS
+* `python tests/run_mainline_smoke.py` ALL PASS after fold-in
