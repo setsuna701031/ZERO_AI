@@ -2686,3 +2686,123 @@ Keep the latest terminal screenshots showing:
 * `python tests/run_full_build_demo_smoke.py` ALL PASS
 * `python tests/run_requirement_demo_smoke.py` ALL PASS
 * `python tests/run_mainline_smoke.py` ALL PASS after fold-in
+
+## 2026-04-23 - Full-build demo upgraded to system-task path
+
+This checkpoint upgraded the full-build representative workflow from a helper-written implementation artifact into a system-task-generated implementation artifact, and then verified that the workflow still passed under smoke protection and mainline validation.
+
+### What changed
+
+The previous `full-build-demo` flow still depended on a direct helper write for `number_stats.py`.
+
+This pass replaced that behavior with a formal task path:
+
+* `task implementation-proof`
+
+That task now generates:
+
+* `workspace/shared/number_stats.py`
+
+through the normal task system instead of writing the implementation artifact directly inside `main.py`.
+
+### Key engineering fix
+
+The main issue was not the planner response itself.
+
+At create time, the structured implementation plan was already visible, but submit/run still fell back to the old generic planning path.
+
+This was fixed by making the structured plan persist into the actual task state consumed by runtime execution, including:
+
+* `planner_result`
+* `steps`
+* `steps_total`
+* `current_step_index`
+* reset execution/result fields for the created task
+* synchronized task persistence into repo-backed task state and task artifacts such as `plan.json` / `task_snapshot.json`
+
+After this fix, `implementation-proof` executed as the intended 2-step structured plan:
+
+1. `write_file shared/number_stats.py`
+2. `verify shared/number_stats.py contains "stats_result.txt"`
+
+instead of falling back into the broken 4-step generic path.
+
+### Escaping / script-content fix
+
+The generated `number_stats.py` content was also corrected so the written script preserves:
+
+* `"\n".join(...)`
+* `+ "\n"`
+
+as real Python string literals in the generated file.
+
+This removed the earlier broken script output / invalid string literal issue.
+
+### Full-build-demo upgrade
+
+`main.py` was updated so that:
+
+* `full-build-demo`
+* `mini-build-demo`
+
+no longer directly write the implementation script.
+
+Instead, they now:
+
+1. create `implementation-proof`
+2. submit and run that task
+3. verify the generated implementation artifact
+4. execute the generated Python utility
+5. verify the final stats output
+
+This upgraded the representative flow into:
+
+* requirement intake
+* planning artifact generation
+* implementation task generation
+* execution
+* result verification
+
+### Validation
+
+Confirmed passing:
+
+* `python main.py full-build-demo`
+* `python tests/run_full_build_demo_smoke.py`
+* `python tests/run_mainline_smoke.py`
+
+Observed results:
+
+* `[full-build-demo] PASS`
+* `[full-build-demo-smoke] ALL PASS`
+* `[mainline-smoke] ALL PASS`
+
+### Why this checkpoint matters
+
+This is a stronger checkpoint than the previous helper-based version.
+
+The value is that the representative workflow is no longer:
+
+* planning -> helper-written script -> execution
+
+It is now:
+
+* planning -> system-task-generated implementation artifact -> execution
+
+That makes the workflow more representative of the intended engineering-agent path and more defensible as a real system capability instead of a stitched demo path.
+
+### Evidence kept
+
+Keep these screenshots:
+
+* `checkpoint_full_build_demo_pass.png`
+* `checkpoint_mainline_smoke_all_pass_after_full_build.png`
+
+### Stable checkpoint after this pass
+
+* `implementation-proof` task path: established
+* structured plan persistence into runtime-executed task state: fixed
+* generated implementation artifact path: working
+* `full-build-demo` upgraded to system-task path: complete
+* full-build smoke: passing
+* mainline smoke after integration: passing

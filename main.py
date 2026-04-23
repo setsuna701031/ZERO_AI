@@ -394,56 +394,27 @@ def run_execution_demo() -> int:
     return 0
 
 
-def write_mini_build_script() -> Path:
-    ensure_required_paths()
-    script_path = SHARED_DIR / "number_stats.py"
-    script_path.write_text(
-        (
-            "from pathlib import Path\n"
-            "\n"
-            "base = Path(__file__).resolve().parent\n"
-            "input_path = base / 'numbers_input.txt'\n"
-            "output_path = base / 'stats_result.txt'\n"
-            "\n"
-            "numbers = []\n"
-            "for line in input_path.read_text(encoding='utf-8').splitlines():\n"
-            "    stripped = line.strip()\n"
-            "    if not stripped:\n"
-            "        continue\n"
-            "    numbers.append(float(stripped))\n"
-            "\n"
-            "if not numbers:\n"
-            "    raise SystemExit('No numbers found in numbers_input.txt')\n"
-            "\n"
-            "total = sum(numbers)\n"
-            "average = total / len(numbers)\n"
-            "maximum = max(numbers)\n"
-            "minimum = min(numbers)\n"
-            "\n"
-            "def fmt(value: float) -> str:\n"
-            "    if float(value).is_integer():\n"
-            "        return str(int(value))\n"
-            "    return f'{value:.2f}'\n"
-            "\n"
-            "output_path.write_text(\n"
-            "    '\\n'.join([\n"
-            "        f'sum: {fmt(total)}',\n"
-            "        f'average: {fmt(average)}',\n"
-            "        f'max: {fmt(maximum)}',\n"
-            "        f'min: {fmt(minimum)}',\n"
-            "    ]) + '\\n',\n"
-            "    encoding='utf-8',\n"
-            ")\n"
-            "\n"
-            "print(output_path.read_text(encoding='utf-8').rstrip())\n"
-        ),
-        encoding="utf-8",
-    )
-    return script_path
-
-
 def run_python_file(path: Path) -> subprocess.CompletedProcess:
     return run_process([sys.executable, str(path)], capture=True)
+
+
+def create_and_run_implementation_task() -> tuple[str, str, str, Path]:
+    script_path = SHARED_DIR / "number_stats.py"
+    task_id = create_task("implementation-proof")
+    submit_task(task_id)
+    wait_until_finished(task_id, max_ticks=10)
+
+    result_text = get_task_result_text(task_id)
+    show_text = get_task_show_text(task_id)
+
+    require_file_exists(script_path, "implementation script")
+    require_text_contains(
+        script_path,
+        ["from pathlib import Path", 'input_path = base / "numbers_input.txt"', 'output_path = base / "stats_result.txt"'],
+        "implementation script",
+    )
+
+    return task_id, result_text, show_text, script_path
 
 
 def run_mini_build_demo() -> int:
@@ -500,7 +471,15 @@ def run_mini_build_demo() -> int:
         "acceptance checklist",
     )
 
-    script_path = write_mini_build_script()
+    impl_task_id, impl_result_text, impl_show_text, script_path = create_and_run_implementation_task()
+    safe_print("")
+    safe_print("[mini-build-demo] implementation-proof result")
+    safe_print("----------------------------------------")
+    safe_print(impl_result_text.rstrip())
+    safe_print("")
+    safe_print("[mini-build-demo] implementation-proof show")
+    safe_print("----------------------------------------")
+    safe_print(impl_show_text.rstrip())
     safe_print("")
     safe_print(f"[mini-build-demo] generated script: {script_path}")
 
@@ -573,7 +552,15 @@ def run_full_build_demo() -> int:
         "acceptance checklist",
     )
 
-    script_path = write_mini_build_script()
+    impl_task_id, impl_result_text, impl_show_text, script_path = create_and_run_implementation_task()
+    safe_print("")
+    safe_print("[full-build-demo] implementation-proof result")
+    safe_print("----------------------------------------")
+    safe_print(impl_result_text.rstrip())
+    safe_print("")
+    safe_print("[full-build-demo] implementation-proof show")
+    safe_print("----------------------------------------")
+    safe_print(impl_show_text.rstrip())
     safe_print("")
     safe_print(f"[full-build-demo] generated script: {script_path}")
 
