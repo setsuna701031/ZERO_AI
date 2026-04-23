@@ -665,37 +665,6 @@ def _merge_pipeline_metadata_into_payload(payload: Optional[Dict[str, Any]], met
     return merged
 
 
-def _persist_document_pipeline_metadata(system: Any, task_id: str, metadata: Dict[str, Any]) -> Dict[str, bool]:
-    normalized_task_id = _safe_str(task_id)
-    metadata_payload = _extract_pipeline_metadata_payload(metadata)
-    result = {"snapshot": False, "runtime_state": False, "result": False}
-    if not normalized_task_id or not metadata_payload:
-        return result
-
-    task = _get_task(system, normalized_task_id) or {"task_id": normalized_task_id}
-    merged_task = _merge_task_with_snapshot(task)
-    paths = _extract_paths(merged_task)
-
-    snapshot_path = _safe_str(paths.get("snapshot_path"))
-    if not snapshot_path:
-        task_dir = _safe_str(paths.get("task_dir"))
-        if task_dir:
-            snapshot_path = os.path.join(task_dir, "task_snapshot.json")
-    snapshot_payload = _merge_pipeline_metadata_into_payload(_load_json_file(snapshot_path), metadata_payload, normalized_task_id)
-    result["snapshot"] = _write_json_file(snapshot_path, snapshot_payload)
-
-    runtime_state_path = _safe_str(paths.get("runtime_state_path"))
-    if runtime_state_path and os.path.isfile(runtime_state_path):
-        runtime_state_payload = _merge_pipeline_metadata_into_payload(_load_json_file(runtime_state_path), metadata_payload, normalized_task_id)
-        result["runtime_state"] = _write_json_file(runtime_state_path, runtime_state_payload)
-
-    result_path = _safe_str(paths.get("result_path"))
-    if result_path and os.path.isfile(result_path):
-        result_payload = _merge_pipeline_metadata_into_payload(_load_json_file(result_path), metadata_payload, normalized_task_id)
-        result["result"] = _write_json_file(result_path, result_payload)
-
-    return result
-
 def _load_task_snapshot(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(task, dict):
         return None
@@ -1283,45 +1252,6 @@ def _is_task_id_token(value: Any) -> bool:
 
 
 
-def _infer_document_pipeline_metadata_from_task(task: Any) -> Dict[str, Any]:
-    if not isinstance(task, dict):
-        return {}
-
-    existing = {}
-    for key in PIPELINE_METADATA_KEYS:
-        value = task.get(key)
-        if value not in (None, '', [], {}):
-            existing[key] = copy.deepcopy(value)
-    if all(existing.get(k) for k in ('scenario', 'task_type', 'mode', 'pipeline_name', 'execution_name')):
-        return existing
-
-    goal = _safe_str(task.get('goal'))
-    if not goal:
-        return existing
-    lowered = goal.lower()
-
-    if ' and produce project_summary.txt' in lowered and 'implementation_plan.txt' in lowered and 'acceptance_checklist.txt' in lowered:
-        input_match = re.search(r'^read\s+(.+?)\s+and\s+produce\s+project_summary\.txt', goal, flags=re.IGNORECASE)
-        input_file = _safe_str(input_match.group(1)) if input_match else _safe_str(task.get('input_file'))
-        return _build_requirement_pipeline_metadata(input_file)
-
-    summary_match = re.search(r'^summarize\s+(.+?)\s+into\s+(.+)$', goal, flags=re.IGNORECASE)
-    if summary_match:
-        return _build_document_pipeline_metadata('summary', summary_match.group(1), summary_match.group(2))
-
-    action_match = re.search(r'^read\s+(.+?)\s+and\s+extract\s+action\s+items\s+into\s+(.+)$', goal, flags=re.IGNORECASE)
-    if action_match:
-        return _build_document_pipeline_metadata('action_items', action_match.group(1), action_match.group(2))
-
-    return existing
-
-
-def _repersist_pipeline_metadata_if_possible(system: Any, task_id: str, task: Any = None) -> Dict[str, bool]:
-    task_dict = task if isinstance(task, dict) else _get_task(system, task_id)
-    metadata = _infer_document_pipeline_metadata_from_task(task_dict)
-    if not metadata:
-        return {'snapshot': False, 'runtime_state': False, 'result': False}
-    return _persist_document_pipeline_metadata(system, task_id, metadata)
 def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str, Any]:
     normalized_task_id = _safe_str(task_id)
     if not normalized_task_id:
@@ -1583,6 +1513,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         return None
     if stripped.startswith("/"):
         return stripped
+
     lowered = stripped.lower()
     mapping = {
         "help": "/help",
@@ -1591,13 +1522,15 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         "list": "/task_list",
         "tick": "/task_run 1",
         "run": "/task_run",
-        "doc summary": "/doc_summary",
-        "doc requirement": "/doc_requirement",
     }
+
     if lowered in mapping:
         return mapping[lowered]
-    if lowered in {"doc action_items", "doc action-items", "doc actionitems"}:
-        return "/doc_action_items"
+
+    normalized_document_shortcut = _normalize_document_shortcut_command(lowered)
+    if normalized_document_shortcut:
+        return normalized_document_shortcut
+
     prefixes = [
         ("create ", "/task_create "),
         ("new ", "/task_create "),
@@ -1609,18 +1542,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         ("retry ", "/task_retry "),
         ("rerun ", "/task_rerun "),
         ("purge ", "/task_purge "),
-        ("task doc-summary ", "/task_doc_summary "),
-        ("task doc-action-items ", "/task_doc_action_items "),
-        ("task doc-action_items ", "/task_doc_action_items "),
-        ("task doc action-items ", "/task_doc_action_items "),
-        ("task doc action_items ", "/task_doc_action_items "),
-        ("task doc summary ", "/task_doc_summary "),
-        ("task doc-requirement ", "/task_doc_requirement "),
-        ("task doc_requirement ", "/task_doc_requirement "),
-        ("task doc requirement ", "/task_doc_requirement "),
-        ("task requirement-pack ", "/task_requirement_pack "),
-        ("task requirement_pack ", "/task_requirement_pack "),
-        ("task requirement pack ", "/task_requirement_pack "),
+        *DOCUMENT_COMMAND_PREFIX_ALIASES,
         ("task execution-proof", "/task_execution_proof"),
         ("task execution_proof", "/task_execution_proof"),
         ("task execution proof", "/task_execution_proof"),
@@ -1628,6 +1550,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
     for prefix, target in prefixes:
         if lowered.startswith(prefix):
             return target + stripped[len(prefix):].strip()
+
     if lowered.startswith("chat ") or lowered.startswith("ask "):
         return stripped
     if lowered == "submit":
@@ -1636,6 +1559,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         return "/task_list"
     if lowered == "task run":
         return "/task_run"
+
     task_prefixes = [
         ("task run ", "/task_run "),
         ("task create ", "/task_create "),
@@ -1719,37 +1643,69 @@ def _build_health_info(system: Any) -> Dict[str, Any]:
     return merged
 
 
-def _extract_all_file_paths_from_text(text: str) -> List[str]:
-    if not text:
-        return []
+# -----------------------------------------------------------------------------
+# Document pipeline family helpers
+# -----------------------------------------------------------------------------
 
-    results: List[str] = []
-    pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b"
-    for match in re.finditer(pattern, text):
-        value = str(match.group(1)).strip()
-        if value and value not in results:
-            results.append(value)
-    return results
+DOCUMENT_SHORTCUT_COMMANDS: Dict[str, str] = {
+    "doc summary": "/doc_summary",
+    "doc requirement": "/doc_requirement",
+}
+
+DOCUMENT_ACTION_ITEMS_SHORTCUTS = {
+    "doc action_items",
+    "doc action-items",
+    "doc actionitems",
+}
+
+DOCUMENT_COMMAND_PREFIX_ALIASES: Tuple[Tuple[str, str], ...] = (
+    ("task doc-summary ", "/task_doc_summary "),
+    ("task doc-action-items ", "/task_doc_action_items "),
+    ("task doc-action_items ", "/task_doc_action_items "),
+    ("task doc action-items ", "/task_doc_action_items "),
+    ("task doc action_items ", "/task_doc_action_items "),
+    ("task doc summary ", "/task_doc_summary "),
+    ("task doc-requirement ", "/task_doc_requirement "),
+    ("task doc_requirement ", "/task_doc_requirement "),
+    ("task doc requirement ", "/task_doc_requirement "),
+    ("task requirement-pack ", "/task_requirement_pack "),
+    ("task requirement_pack ", "/task_requirement_pack "),
+    ("task requirement pack ", "/task_requirement_pack "),
+)
+
+DOCUMENT_SINGLE_OUTPUT_PIPELINE_CONFIGS: Dict[str, Dict[str, str]] = {
+    "summary": {
+        "scenario": "doc_summary",
+        "pipeline_name": "summary_pipeline",
+        "execution_name": "summary_execution",
+    },
+    "action_items": {
+        "scenario": "doc_action_items",
+        "pipeline_name": "action_items_pipeline",
+        "execution_name": "action_items_execution",
+    },
+}
+
+REQUIREMENT_PIPELINE_OUTPUT_FILENAMES: Tuple[str, ...] = (
+    "project_summary.txt",
+    "implementation_plan.txt",
+    "acceptance_checklist.txt",
+)
 
 
-def _extract_arrow_paths_from_text(text: str) -> Optional[Tuple[str, str]]:
-    stripped = _safe_str(text)
-    if not stripped:
-        return None
+def _normalize_document_shortcut_command(lowered: str) -> str:
+    if lowered in DOCUMENT_SHORTCUT_COMMANDS:
+        return DOCUMENT_SHORTCUT_COMMANDS[lowered]
+    if lowered in DOCUMENT_ACTION_ITEMS_SHORTCUTS:
+        return "/doc_action_items"
+    return ""
 
-    match = re.search(
-        r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
-        stripped,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return None
 
-    source_path = _safe_str(match.group(1))
-    output_path = _safe_str(match.group(2))
-    if not source_path or not output_path:
-        return None
-    return source_path, output_path
+def _normalize_document_command_prefix(stripped: str, lowered: str) -> str:
+    for prefix, target in DOCUMENT_COMMAND_PREFIX_ALIASES:
+        if lowered.startswith(prefix):
+            return target + stripped[len(prefix):].strip()
+    return ""
 
 
 def _extract_document_source_path_from_text(text: str, all_paths: List[str]) -> str:
@@ -1822,14 +1778,13 @@ def _extract_document_task_payload(text: str) -> Optional[Dict[str, str]]:
         "todo",
         "to-do",
         "行動項目",
-        "待辦事項",
+        "待辦",
     ]
     summary_keywords = [
         "summary",
         "summarize",
         "summarise",
         "摘要",
-        "總結",
     ]
 
     wants_action_items = any(keyword in lowered for keyword in action_keywords)
@@ -1897,29 +1852,31 @@ def _canonical_doc_mode(mode: str) -> str:
     return "summary"
 
 
-
-DOCUMENT_SINGLE_OUTPUT_PIPELINE_CONFIGS: Dict[str, Dict[str, str]] = {
-    "summary": {
-        "scenario": "doc_summary",
-        "pipeline_name": "summary_pipeline",
-        "execution_name": "summary_execution",
-    },
-    "action_items": {
-        "scenario": "doc_action_items",
-        "pipeline_name": "action_items_pipeline",
-        "execution_name": "action_items_execution",
-    },
-}
-
-REQUIREMENT_PIPELINE_OUTPUT_FILENAMES: Tuple[str, ...] = (
-    "project_summary.txt",
-    "implementation_plan.txt",
-    "acceptance_checklist.txt",
-)
-
-
 def _build_requirement_output_paths() -> List[str]:
     return [os.path.join(WORKSPACE_DIR, "shared", name) for name in REQUIREMENT_PIPELINE_OUTPUT_FILENAMES]
+
+
+def _normalize_requirement_pack_input(input_file: str) -> str:
+    input_path = _safe_str(input_file)
+    if not input_path:
+        return ""
+
+    normalized = input_path.replace("\\", "/").strip()
+    if "/" in normalized:
+        return input_path
+
+    return os.path.join(WORKSPACE_DIR, "shared", input_path)
+
+
+def _build_requirement_pack_goal(input_file: str) -> str:
+    input_path = _normalize_requirement_pack_input(input_file)
+    if not input_path:
+        return ""
+
+    return (
+        f"read {input_path} and produce project_summary.txt, "
+        f"implementation_plan.txt, and acceptance_checklist.txt"
+    )
 
 
 def _build_document_family_metadata(
@@ -1969,6 +1926,10 @@ def _build_document_pipeline_metadata(mode: str, input_file: str, output_file: s
     return _build_document_family_metadata(mode, input_file, output_file)
 
 
+def _build_requirement_pipeline_metadata(input_file: str) -> Dict[str, Any]:
+    return _build_document_family_metadata("requirement", input_file, "")
+
+
 def _extract_created_task_id_from_result(result: Any) -> str:
     if not isinstance(result, dict):
         return ""
@@ -1987,17 +1948,7 @@ def _decorate_pipeline_result(result: Any, metadata: Dict[str, Any], task_id: st
         return result
 
     payload = copy.deepcopy(result)
-    for key in (
-        "scenario",
-        "task_type",
-        "mode",
-        "pipeline_name",
-        "execution_name",
-        "input_file",
-        "output_file",
-        "outputs",
-        "goal",
-    ):
+    for key in PIPELINE_METADATA_KEYS:
         value = metadata.get(key)
         if value not in (None, "", [], {}):
             payload[key] = value
@@ -2007,6 +1958,91 @@ def _decorate_pipeline_result(result: Any, metadata: Dict[str, Any], task_id: st
         payload["task_id"] = normalized_task_id
 
     return payload
+
+
+def _persist_document_pipeline_metadata(system: Any, task_id: str, metadata: Dict[str, Any]) -> Dict[str, bool]:
+    normalized_task_id = _safe_str(task_id)
+    metadata_payload = _extract_pipeline_metadata_payload(metadata)
+    result = {"snapshot": False, "runtime_state": False, "result": False}
+    if not normalized_task_id or not metadata_payload:
+        return result
+
+    task = _get_task(system, normalized_task_id) or {"task_id": normalized_task_id}
+    merged_task = _merge_task_with_snapshot(task)
+    paths = _extract_paths(merged_task)
+
+    snapshot_path = _safe_str(paths.get("snapshot_path"))
+    if not snapshot_path:
+        task_dir = _safe_str(paths.get("task_dir"))
+        if task_dir:
+            snapshot_path = os.path.join(task_dir, "task_snapshot.json")
+    snapshot_payload = _merge_pipeline_metadata_into_payload(
+        _load_json_file(snapshot_path),
+        metadata_payload,
+        normalized_task_id,
+    )
+    result["snapshot"] = _write_json_file(snapshot_path, snapshot_payload)
+
+    runtime_state_path = _safe_str(paths.get("runtime_state_path"))
+    if runtime_state_path and os.path.isfile(runtime_state_path):
+        runtime_state_payload = _merge_pipeline_metadata_into_payload(
+            _load_json_file(runtime_state_path),
+            metadata_payload,
+            normalized_task_id,
+        )
+        result["runtime_state"] = _write_json_file(runtime_state_path, runtime_state_payload)
+
+    result_path = _safe_str(paths.get("result_path"))
+    if result_path and os.path.isfile(result_path):
+        result_payload = _merge_pipeline_metadata_into_payload(
+            _load_json_file(result_path),
+            metadata_payload,
+            normalized_task_id,
+        )
+        result["result"] = _write_json_file(result_path, result_payload)
+
+    return result
+
+
+def _infer_document_pipeline_metadata_from_task(task: Any) -> Dict[str, Any]:
+    if not isinstance(task, dict):
+        return {}
+
+    existing = {}
+    for key in PIPELINE_METADATA_KEYS:
+        value = task.get(key)
+        if value not in (None, "", [], {}):
+            existing[key] = copy.deepcopy(value)
+    if all(existing.get(k) for k in ("scenario", "task_type", "mode", "pipeline_name", "execution_name")):
+        return existing
+
+    goal = _safe_str(task.get("goal"))
+    if not goal:
+        return existing
+    lowered = goal.lower()
+
+    if " and produce project_summary.txt" in lowered and "implementation_plan.txt" in lowered and "acceptance_checklist.txt" in lowered:
+        input_match = re.search(r"^read\s+(.+?)\s+and\s+produce\s+project_summary\.txt", goal, flags=re.IGNORECASE)
+        input_file = _safe_str(input_match.group(1)) if input_match else _safe_str(task.get("input_file"))
+        return _build_requirement_pipeline_metadata(input_file)
+
+    summary_match = re.search(r"^summarize\s+(.+?)\s+into\s+(.+)$", goal, flags=re.IGNORECASE)
+    if summary_match:
+        return _build_document_pipeline_metadata("summary", summary_match.group(1), summary_match.group(2))
+
+    action_match = re.search(r"^read\s+(.+?)\s+and\s+extract\s+action\s+items\s+into\s+(.+)$", goal, flags=re.IGNORECASE)
+    if action_match:
+        return _build_document_pipeline_metadata("action_items", action_match.group(1), action_match.group(2))
+
+    return existing
+
+
+def _repersist_pipeline_metadata_if_possible(system: Any, task_id: str, task: Any = None) -> Dict[str, bool]:
+    task_dict = task if isinstance(task, dict) else _get_task(system, task_id)
+    metadata = _infer_document_pipeline_metadata_from_task(task_dict)
+    if not metadata:
+        return {"snapshot": False, "runtime_state": False, "result": False}
+    return _persist_document_pipeline_metadata(system, task_id, metadata)
 
 
 def _create_document_family_task(
@@ -2111,38 +2147,15 @@ def _run_document_pipeline_now(
         system,
         create_result,
         metadata,
-        missing_task_error="document pipeline task created but no task_id returned",
+        missing_task_error="document pipeline task_id missing after create",
     )
 
 
-def _normalize_requirement_pack_input(input_file: str) -> str:
-    input_path = _safe_str(input_file)
-    if not input_path:
-        return ""
-
-    normalized = input_path.replace("\\", "/").strip()
-    if "/" in normalized:
-        return input_path
-
-    return os.path.join(WORKSPACE_DIR, "shared", input_path)
-
-
-def _build_requirement_pack_goal(input_file: str) -> str:
-    input_path = _normalize_requirement_pack_input(input_file)
-    if not input_path:
-        return ""
-
-    return (
-        f"read {input_path} and produce project_summary.txt, "
-        f"implementation_plan.txt, and acceptance_checklist.txt"
-    )
-
-
-def _build_requirement_pipeline_metadata(input_file: str) -> Dict[str, Any]:
-    return _build_document_family_metadata("requirement", input_file)
-
-
-def _create_requirement_pipeline_task(system: Any, cli_state: Dict[str, Any], input_file: str) -> Dict[str, Any]:
+def _create_requirement_pipeline_task(
+    system: Any,
+    cli_state: Dict[str, Any],
+    input_file: str,
+) -> Dict[str, Any]:
     metadata = _build_requirement_pipeline_metadata(input_file)
     return _create_document_family_task(
         system,
@@ -2164,8 +2177,53 @@ def _run_requirement_pipeline_now(system: Any, cli_state: Dict[str, Any], input_
         system,
         create_result,
         metadata,
-        missing_task_error="requirement pipeline task created but no task_id returned",
+        missing_task_error="requirement pipeline task_id missing after create",
     )
+
+
+def _parse_doc_task_args(raw: str) -> Tuple[str, str]:
+    text = _safe_str(raw)
+    if not text:
+        return "", ""
+    parts = text.split()
+    if len(parts) < 2:
+        return "", ""
+    return parts[0].strip(), parts[1].strip()
+
+
+
+
+def _extract_all_file_paths_from_text(text: str) -> List[str]:
+    if not text:
+        return []
+
+    results: List[str] = []
+    pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b"
+    for match in re.finditer(pattern, text):
+        value = str(match.group(1)).strip()
+        if value and value not in results:
+            results.append(value)
+    return results
+
+
+def _extract_arrow_paths_from_text(text: str) -> Optional[Tuple[str, str]]:
+    stripped = _safe_str(text)
+    if not stripped:
+        return None
+
+    match = re.search(
+        r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    source_path = _safe_str(match.group(1))
+    output_path = _safe_str(match.group(2))
+    if not source_path or not output_path:
+        return None
+    return source_path, output_path
 
 
 def _build_execution_proof_goal() -> str:
@@ -2198,16 +2256,6 @@ def _build_execution_proof_plan() -> Dict[str, Any]:
             "reason": "structured execution proof entry matched",
         },
     }
-
-
-def _parse_doc_task_args(raw: str) -> Tuple[str, str]:
-    text = _safe_str(raw)
-    if not text:
-        return "", ""
-    parts = text.split()
-    if len(parts) < 2:
-        return "", ""
-    return parts[0].strip(), parts[1].strip()
 
 
 def _should_use_direct_step_flow(text: str) -> bool:

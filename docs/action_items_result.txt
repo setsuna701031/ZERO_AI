@@ -1,0 +1,17 @@
+﻿task_id: task_1776915535547
+status: finished
+final_answer:
+  Here are the action items:
+
+  ‧ Alice: Finish API draft by Friday
+  ‧ Bob: Test upload flow next week
+  ‧ Team: Review and finalize project document
+  ‧ Create short summary for stakeholder meeting
+paths:
+  result_path: E:\zero_ai\workspace\tasks\task_1776915535547\result.json
+  task_dir: E:\zero_ai\workspace\tasks\task_1776915535547
+  plan_path: E:\zero_ai\workspace\tasks\task_1776915535547\plan.json
+  runtime_state_path: E:\zero_ai\workspace\tasks\task_1776915535547\runtime_state.json
+  execution_log_path: E:\zero_ai\workspace\tasks\task_1776915535547\execution_log.json
+  trace_path: E:\zero_ai\workspace\tasks\task_1776915535547\trace.json
+  snapshot_path: E:\zero_ai\workspace\tasks\task_1776915535547\task_snapshot.json

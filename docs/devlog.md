@@ -2546,3 +2546,26 @@ Keep the latest terminal screenshots showing:
 * `python -m py_compile app.py` passing after cleanup
 * `python tests/run_mainline_smoke.py` returning ALL PASS after cleanup
 * the folded mainline run including document pipeline identity smoke
+
+## [Checkpoint] Document Pipeline First Cut
+
+### Summary
+Completed first-stage consolidation of document-related pipelines under stable execution flow.
+
+### Completed
+- summary pipeline (input → summary.txt)
+- action_items pipeline
+- requirement pipeline
+- document pipeline identity persistence
+- CLI visible separation
+- document pipeline smoke test
+- fold-in mainline smoke
+- app.py document family first integration
+
+### Notes
+- This is a structural consolidation under stable functionality (no feature expansion)
+- Pipelines are now consistent enough for demo-grade flow integration
+
+### Next
+- Define a single demo-grade mainline scenario
+- Add end-to-end smoke for that scenario
