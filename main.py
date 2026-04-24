@@ -13,6 +13,7 @@ from core.capabilities.demo_flows import (
 )
 from core.capabilities.full_build_flow import run_full_build_demo, run_mini_build_demo
 from core.persona.chat_shell import run_persona_chat_shell
+from core.persona.persona_agent_orchestrator import run_persona_agent_demo
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -67,6 +68,7 @@ def print_help() -> None:
     safe_print("  python main.py full-build-demo")
     safe_print("  python main.py persona-chat")
     safe_print("  python main.py persona-runtime")
+    safe_print("  python main.py agent-demo")
     safe_print("  python main.py health")
     safe_print("  python main.py help")
     safe_print("")
@@ -81,6 +83,7 @@ def print_help() -> None:
     safe_print("  full-build-demo   Run requirement -> build -> execute -> verify flow")
     safe_print("  persona-chat      Run the ZERO persona text shell")
     safe_print("  persona-runtime   Launch the ZERO persona runtime window")
+    safe_print("  agent-demo        Run persona agent orchestration demo")
     safe_print("  health            Show health information")
     safe_print("  help              Show this help")
 
@@ -171,6 +174,9 @@ def main(argv: List[str]) -> int:
 
     if command == "persona-runtime":
         return run_persona_runtime_window()
+
+    if command == "agent-demo":
+        return run_persona_agent_demo()
 
     safe_print(f"Unknown command: {command}")
     safe_print("")
