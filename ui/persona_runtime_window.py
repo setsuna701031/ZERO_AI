@@ -258,10 +258,16 @@ class PersonaRuntimeWindow:
         ).grid(row=0, column=2, sticky="ew", padx=(0, 8))
         ttk.Button(
             input_frame,
+            text="Run Multi-Step Demo",
+            style="Quick.TButton",
+            command=lambda: self._run_quick_command("run multi-step-demo"),
+        ).grid(row=0, column=3, sticky="ew", padx=(0, 8))
+        ttk.Button(
+            input_frame,
             text="Run Execution Demo",
             style="Quick.TButton",
             command=lambda: self._run_quick_command("run execution-demo"),
-        ).grid(row=0, column=3, sticky="ew")
+        ).grid(row=0, column=4, sticky="ew")
 
     def _build_bottom_area(self, parent: tk.Frame) -> None:
         persona_card = tk.Frame(parent, bg=BG_CARD, highlightbackground=BORDER, highlightthickness=1)
@@ -308,6 +314,7 @@ class PersonaRuntimeWindow:
                 "- help\n"
                 "- who are you\n"
                 "- what can you do\n"
+                "- run multi-step-demo\n"
                 "- run execution-demo"
             ),
             bg=BG_CARD,

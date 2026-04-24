@@ -49,6 +49,7 @@ def _build_help_text(persona: PersonaProfile) -> str:
         "- who are you\n"
         "- what can you do\n"
         "- run doc-demo\n"
+        "- run multi-step-demo\n"
         "- run requirement-demo\n"
         "- run execution-demo\n"
         "- run mini-build-demo\n"
@@ -102,6 +103,7 @@ def _build_panel_text() -> str:
 def _output_hint_for_capability(label: str) -> str:
     hints = {
         "doc-demo": "workspace/shared/summary_demo.txt, workspace/shared/action_items_demo.txt",
+        "multi-step-demo": "workspace/shared/summary_demo.txt, workspace/shared/action_items_demo.txt",
         "requirement-demo": "workspace/shared/project_summary.txt, workspace/shared/implementation_plan.txt, workspace/shared/acceptance_checklist.txt",
         "execution-demo": "workspace/shared/hello.py",
         "mini-build-demo": "workspace/shared/number_stats.py, workspace/shared/stats_result.txt",
@@ -291,6 +293,9 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
 
     if lowered == "run doc-demo":
         return _run_capability_with_persona_prefix(persona, "doc-demo", run_doc_demo)
+
+    if lowered == "run multi-step-demo":
+        return _run_capability_with_persona_prefix(persona, "multi-step-demo", run_doc_demo)
 
     if lowered == "run requirement-demo":
         return _run_capability_with_persona_prefix(persona, "requirement-demo", run_requirement_demo)
