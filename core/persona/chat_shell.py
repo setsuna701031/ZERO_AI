@@ -16,6 +16,7 @@ from core.persona.loader import PersonaProfile, load_default_persona
 from core.persona.panel_renderer import render_persona_panel
 from core.persona.state_manager import get_persona_state_manager
 from core.persona.visual_profile import load_default_visual_profile
+from core.persona.persona_agent_orchestrator import run_persona_agent_demo
 
 
 @dataclass
@@ -50,6 +51,7 @@ def _build_help_text(persona: PersonaProfile) -> str:
         "- what can you do\n"
         "- run doc-demo\n"
         "- run multi-step-demo\n"
+        "- run agent-demo\n"
         "- run requirement-demo\n"
         "- run execution-demo\n"
         "- run mini-build-demo\n"
@@ -104,6 +106,7 @@ def _output_hint_for_capability(label: str) -> str:
     hints = {
         "doc-demo": "workspace/shared/summary_demo.txt, workspace/shared/action_items_demo.txt",
         "multi-step-demo": "workspace/shared/summary_demo.txt, workspace/shared/action_items_demo.txt",
+        "agent-demo": "workspace/shared/persona_agent_summary.txt, workspace/shared/persona_agent_action_items.txt",
         "requirement-demo": "workspace/shared/project_summary.txt, workspace/shared/implementation_plan.txt, workspace/shared/acceptance_checklist.txt",
         "execution-demo": "workspace/shared/hello.py",
         "mini-build-demo": "workspace/shared/number_stats.py, workspace/shared/stats_result.txt",
@@ -296,6 +299,9 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
 
     if lowered == "run multi-step-demo":
         return _run_capability_with_persona_prefix(persona, "multi-step-demo", run_doc_demo)
+
+    if lowered == "run agent-demo":
+        return _run_capability_with_persona_prefix(persona, "agent-demo", run_persona_agent_demo)
 
     if lowered == "run requirement-demo":
         return _run_capability_with_persona_prefix(persona, "requirement-demo", run_requirement_demo)
