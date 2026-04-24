@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 APP_PATH = REPO_ROOT / "app.py"
 MAINLINE_SMOKE_PATH = REPO_ROOT / "tests" / "run_mainline_smoke.py"
 SHARED_DIR = REPO_ROOT / "workspace" / "shared"
+PERSONA_RUNTIME_WINDOW_PATH = REPO_ROOT / "ui" / "persona_runtime_window.py"
 
 
 def safe_print(text: str = "") -> None:
@@ -65,6 +66,7 @@ def print_help() -> None:
     safe_print("  python main.py mini-build-demo")
     safe_print("  python main.py full-build-demo")
     safe_print("  python main.py persona-chat")
+    safe_print("  python main.py persona-runtime")
     safe_print("  python main.py health")
     safe_print("  python main.py help")
     safe_print("")
@@ -78,6 +80,7 @@ def print_help() -> None:
     safe_print("  mini-build-demo   Run engineering mini build demo flow")
     safe_print("  full-build-demo   Run requirement -> build -> execute -> verify flow")
     safe_print("  persona-chat      Run the ZERO persona text shell")
+    safe_print("  persona-runtime   Launch the ZERO persona runtime window")
     safe_print("  health            Show health information")
     safe_print("  help              Show this help")
 
@@ -105,8 +108,19 @@ def ensure_required_paths() -> None:
     SHARED_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def ensure_persona_runtime_paths() -> None:
+    if not PERSONA_RUNTIME_WINDOW_PATH.exists():
+        raise FileNotFoundError(f"persona runtime window not found: {PERSONA_RUNTIME_WINDOW_PATH}")
+
+
 def run_app_command(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
     return run_process([sys.executable, str(APP_PATH), *args], capture=capture)
+
+
+def run_persona_runtime_window() -> int:
+    ensure_persona_runtime_paths()
+    result = run_process([sys.executable, str(PERSONA_RUNTIME_WINDOW_PATH)], capture=False)
+    return result.returncode
 
 
 def main(argv: List[str]) -> int:
@@ -154,6 +168,9 @@ def main(argv: List[str]) -> int:
 
     if command == "persona-chat":
         return run_persona_chat_shell()
+
+    if command == "persona-runtime":
+        return run_persona_runtime_window()
 
     safe_print(f"Unknown command: {command}")
     safe_print("")
