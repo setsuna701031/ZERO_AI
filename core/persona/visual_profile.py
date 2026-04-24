@@ -21,11 +21,20 @@ class PersonaVisualProfile:
     visual_style: str
     render_mode: str
     state_expression_map: dict[str, str]
+    blink_frames: dict[str, str]
     notes: list[str]
     source_path: Path
 
     def resolve_image_for_state(self, state: PersonaState) -> Path:
         relative_name = self.state_expression_map.get(state.value) or self.base_image
+        if "/" in relative_name or "\\" in relative_name:
+            return REPO_ROOT / relative_name
+        return self.source_path.parent / relative_name
+
+    def resolve_blink_frame(self, frame_name: str) -> Path:
+        relative_name = self.blink_frames.get(frame_name)
+        if not relative_name:
+            raise KeyError(f"blink frame not found: {frame_name}")
         if "/" in relative_name or "\\" in relative_name:
             return REPO_ROOT / relative_name
         return self.source_path.parent / relative_name
@@ -39,6 +48,7 @@ class PersonaVisualProfile:
             "visual_style": self.visual_style,
             "render_mode": self.render_mode,
             "state_expression_map": self.state_expression_map,
+            "blink_frames": self.blink_frames,
             "notes": self.notes,
             "source_path": str(self.source_path),
         }
@@ -85,6 +95,7 @@ def load_visual_profile(profile_path: str | Path | None = None) -> PersonaVisual
         visual_style=_require_non_empty_string(payload, "visual_style"),
         render_mode=_require_non_empty_string(payload, "render_mode"),
         state_expression_map=_require_dict(payload, "state_expression_map"),
+        blink_frames=_require_dict(payload, "blink_frames"),
         notes=_require_string_list(payload, "notes"),
         source_path=path.resolve(),
     )
@@ -94,6 +105,13 @@ def load_visual_profile(profile_path: str | Path | None = None) -> PersonaVisual
         if not resolved.exists():
             raise FileNotFoundError(
                 f"missing image for state '{state.value}': {resolved}"
+            )
+
+    for blink_name in ("open", "half", "closed"):
+        resolved = profile.resolve_blink_frame(blink_name)
+        if not resolved.exists():
+            raise FileNotFoundError(
+                f"missing blink image for frame '{blink_name}': {resolved}"
             )
 
     return profile

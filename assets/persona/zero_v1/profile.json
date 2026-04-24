@@ -4,16 +4,21 @@
   "visual_id": "zero_v1",
   "base_image": "assets/persona/zero_v1/base.png",
   "visual_style": "futuristic android female assistant",
-  "render_mode": "static_base",
+  "render_mode": "static_blink",
   "state_expression_map": {
-    "IDLE": "base.png",
-    "THINKING": "base.png",
-    "EXECUTING": "base.png",
-    "SUCCESS": "base.png",
-    "ERROR": "base.png"
+    "IDLE": "idle_open.png",
+    "THINKING": "idle_open.png",
+    "EXECUTING": "idle_open.png",
+    "SUCCESS": "idle_open.png",
+    "ERROR": "idle_open.png"
+  },
+  "blink_frames": {
+    "open": "idle_open.png",
+    "half": "idle_half.png",
+    "closed": "idle_closed.png"
   },
   "notes": [
-    "Current stage uses one base image for all states.",
+    "Current stage uses a simple blink frame sequence.",
     "Future versions can replace state_expression_map with per-state images.",
     "Do not assume Live2D, voice, or animation is connected."
   ]

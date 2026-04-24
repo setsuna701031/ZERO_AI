@@ -70,6 +70,36 @@ Demonstrates:
 📂 Demo assets:  
 demos/07_requirement_demo/
 
+
+---
+
+## 🖥️ Persona Runtime Window
+
+ZERO also includes a local Persona Runtime window for showing runtime state through a visual UI.
+
+This window is not only a character display. It shows:
+
+- current runtime state
+- command/chat interaction
+- execution-demo result
+- task artifact paths
+- runtime summary and output hints
+
+### Visual Ready
+
+![Persona Runtime visual ready](docs/demo_assets/persona_runtime/persona_runtime_v1_visual_ready.png)
+
+### Execution Demo Success
+
+![Persona Runtime execution demo success](docs/demo_assets/persona_runtime/persona_runtime_v2_execution_demo_success.png)
+
+### What this proves
+
+- the UI is connected to runtime state
+- execution-demo can update the persona status to SUCCESS
+- output artifacts such as `workspace/shared/hello.py` are surfaced in the UI
+- task IDs and execution traces are visible for inspection
+
 ---
 
 ## ⚙️ Capabilities

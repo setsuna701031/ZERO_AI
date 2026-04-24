@@ -22,7 +22,7 @@ def main() -> int:
 
     require_true(profile.persona_id == "zero_virtual_persona_v1", "persona_id mismatch")
     require_true(profile.display_name == "ZERO", "display_name mismatch")
-    require_true(profile.render_mode == "static_base", "render_mode mismatch")
+    require_true(profile.render_mode == "static_blink", "render_mode mismatch")
 
     idle_image = profile.resolve_image_for_state(PersonaState.IDLE)
     exec_image = profile.resolve_image_for_state(PersonaState.EXECUTING)
@@ -32,12 +32,30 @@ def main() -> int:
     require_true(exec_image.exists(), "executing image missing")
     require_true(error_image.exists(), "error image missing")
 
+    blink_frames = getattr(profile, "blink_frames", {})
+    require_true(isinstance(blink_frames, dict), "blink_frames should be a dict")
+    require_true("open" in blink_frames, "blink_frames missing open")
+    require_true("half" in blink_frames, "blink_frames missing half")
+    require_true("closed" in blink_frames, "blink_frames missing closed")
+
+    open_image = profile.resolve_blink_frame("open")
+    half_image = profile.resolve_blink_frame("half")
+    closed_image = profile.resolve_blink_frame("closed")
+
+    require_true(open_image.exists(), "open blink image missing")
+    require_true(half_image.exists(), "half blink image missing")
+    require_true(closed_image.exists(), "closed blink image missing")
+
     print("[PASS] persona visual profile smoke")
     print(f"[visual] persona_id={profile.persona_id}")
     print(f"[visual] visual_id={profile.visual_id}")
+    print(f"[visual] render_mode={profile.render_mode}")
     print(f"[visual] idle_image={idle_image}")
     print(f"[visual] executing_image={exec_image}")
     print(f"[visual] error_image={error_image}")
+    print(f"[visual] blink_open={open_image}")
+    print(f"[visual] blink_half={half_image}")
+    print(f"[visual] blink_closed={closed_image}")
     return 0
 
 
