@@ -28,6 +28,7 @@ def main() -> int:
         reason="smoke_reset",
         source="run_persona_chat_shell_smoke",
         detail="reset before shell smoke",
+        last_result="smoke_reset",
     )
 
     prompt = build_persona_system_prompt(persona)
@@ -43,9 +44,12 @@ def main() -> int:
     require_true("current_state:" in status_result.response, "status missing current_state")
     require_true("state_image:" in status_result.response, "status missing state_image")
     require_true("visual_id:" in status_result.response, "status missing visual_id")
+    require_true("last_user_command:" in status_result.response, "status missing last_user_command")
+    require_true("last_result:" in status_result.response, "status missing last_result")
 
     panel_result = generate_rule_based_response(persona, "panel")
     require_true("[ZERO_PERSONA]" in panel_result.response, "panel missing header")
+    require_true("[ZERO_RUNTIME]" in panel_result.response, "panel missing runtime header")
     require_true("state=" in panel_result.response, "panel missing state")
     require_true("image=E:\\zero_ai\\assets\\persona\\zero_v1\\base.png" in panel_result.response, "panel missing image")
 

@@ -69,6 +69,10 @@ def _build_status_text(persona: PersonaProfile) -> str:
         f"- state_detail: {snapshot.detail or '-'}\n"
         f"- visual_id: {visual_profile.visual_id}\n"
         f"- state_image: {image_path}\n"
+        f"- last_user_command: {snapshot.last_user_command or '-'}\n"
+        f"- last_capability: {snapshot.last_capability or '-'}\n"
+        f"- last_result: {snapshot.last_result or '-'}\n"
+        f"- last_output_hint: {snapshot.last_output_hint or '-'}\n"
         f"- chat: {scope.get('can_chat')}\n"
         f"- plan: {scope.get('can_plan')}\n"
         f"- explain: {scope.get('can_explain')}\n"
@@ -86,16 +90,33 @@ def _build_panel_text() -> str:
     return render_persona_panel(persona, snapshot, visual_profile)
 
 
+def _output_hint_for_capability(label: str) -> str:
+    hints = {
+        "doc-demo": "workspace/shared/summary_demo.txt, workspace/shared/action_items_demo.txt",
+        "requirement-demo": "workspace/shared/project_summary.txt, workspace/shared/implementation_plan.txt, workspace/shared/acceptance_checklist.txt",
+        "execution-demo": "workspace/shared/hello.py",
+        "mini-build-demo": "workspace/shared/number_stats.py, workspace/shared/stats_result.txt",
+        "full-build-demo": "workspace/shared/project_summary.txt, workspace/shared/implementation_plan.txt, workspace/shared/acceptance_checklist.txt, workspace/shared/number_stats.py, workspace/shared/stats_result.txt",
+    }
+    return hints.get(label, "")
+
+
 def _run_capability_with_persona_prefix(
     persona: PersonaProfile,
     label: str,
     fn: Callable[[], int],
 ) -> PersonaTurnResult:
     state_manager = get_persona_state_manager()
+    output_hint = _output_hint_for_capability(label)
+
     state_manager.set_executing(
         reason=f"run_{label}",
         source="persona_chat_shell",
         detail=f"persona command triggered {label}",
+        last_user_command=f"run {label}",
+        last_capability=label,
+        last_result="executing",
+        last_output_hint=output_hint,
     )
 
     print(f"{persona.name}: Starting {label}...")
@@ -107,6 +128,10 @@ def _run_capability_with_persona_prefix(
             reason=f"{label}_exception",
             source="persona_chat_shell",
             detail=str(exc),
+            last_user_command=f"run {label}",
+            last_capability=label,
+            last_result="exception",
+            last_output_hint=output_hint,
         )
         return PersonaTurnResult(
             user_input=label,
@@ -119,6 +144,10 @@ def _run_capability_with_persona_prefix(
             reason=f"{label}_completed",
             source="persona_chat_shell",
             detail="capability execution returned code 0",
+            last_user_command=f"run {label}",
+            last_capability=label,
+            last_result="success",
+            last_output_hint=output_hint,
         )
         return PersonaTurnResult(
             user_input=label,
@@ -130,6 +159,10 @@ def _run_capability_with_persona_prefix(
         reason=f"{label}_failed",
         source="persona_chat_shell",
         detail=f"capability execution returned code {code}",
+        last_user_command=f"run {label}",
+        last_capability=label,
+        last_result=f"failed:{code}",
+        last_output_hint=output_hint,
     )
     return PersonaTurnResult(
         user_input=label,
@@ -149,6 +182,7 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
             reason="persona_exit",
             source="persona_chat_shell",
             detail="user requested shell exit",
+            last_user_command=text,
         )
         return PersonaTurnResult(
             user_input=text,
@@ -161,6 +195,7 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
             reason="empty_input",
             source="persona_chat_shell",
             detail="no user content received",
+            last_user_command=text,
         )
         return PersonaTurnResult(
             user_input=text,
@@ -173,6 +208,7 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
             reason="help_command",
             source="persona_chat_shell",
             detail="displayed command list",
+            last_user_command=text,
         )
         return PersonaTurnResult(
             user_input=text,
@@ -181,6 +217,7 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
         )
 
     if lowered == "status":
+        state_manager.update_runtime_summary(last_user_command=text)
         return PersonaTurnResult(
             user_input=text,
             response=_build_status_text(persona),
@@ -188,6 +225,7 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
         )
 
     if lowered == "panel":
+        state_manager.update_runtime_summary(last_user_command=text)
         return PersonaTurnResult(
             user_input=text,
             response=_build_panel_text(),
@@ -199,6 +237,8 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
             reason="identity_question",
             source="persona_chat_shell",
             detail="user asked persona identity",
+            last_user_command=text,
+            last_result="answered_identity",
         )
         return PersonaTurnResult(
             user_input=text,
@@ -211,6 +251,8 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
             reason="capability_question",
             source="persona_chat_shell",
             detail="user asked persona capability scope",
+            last_user_command=text,
+            last_result="answered_capability_scope",
         )
         return PersonaTurnResult(
             user_input=text,
@@ -240,6 +282,8 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
         reason="unsupported_freeform_input",
         source="persona_chat_shell",
         detail=text,
+        last_user_command=text,
+        last_result="unsupported_freeform_input",
     )
     return PersonaTurnResult(
         user_input=text,
@@ -259,6 +303,7 @@ def run_persona_chat_shell() -> int:
         reason="shell_startup",
         source="persona_chat_shell",
         detail="persona shell boot completed",
+        last_result="shell_ready",
     )
 
     print(build_persona_system_prompt(persona))
@@ -277,6 +322,7 @@ def run_persona_chat_shell() -> int:
                 reason="shell_interrupt",
                 source="persona_chat_shell",
                 detail="shell closed by eof or keyboard interrupt",
+                last_result="shell_interrupted",
             )
             print(f"{persona.name} offline.")
             return 0

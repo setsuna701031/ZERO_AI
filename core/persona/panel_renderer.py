@@ -21,6 +21,10 @@ class PersonaPanelData:
     voice_connected: bool
     avatar_control_connected: bool
     live2d_connected: bool
+    last_user_command: str
+    last_capability: str
+    last_result: str
+    last_output_hint: str
 
     def to_lines(self) -> list[str]:
         return [
@@ -37,6 +41,11 @@ class PersonaPanelData:
             f"voice={self.voice_connected}",
             f"avatar_control={self.avatar_control_connected}",
             f"live2d={self.live2d_connected}",
+            "[ZERO_RUNTIME]",
+            f"last_user_command={self.last_user_command or '-'}",
+            f"last_capability={self.last_capability or '-'}",
+            f"last_result={self.last_result or '-'}",
+            f"last_output_hint={self.last_output_hint or '-'}",
         ]
 
     def to_text(self) -> str:
@@ -49,7 +58,6 @@ def build_persona_panel_data(
     visual_profile: PersonaVisualProfile,
 ) -> PersonaPanelData:
     image_path = visual_profile.resolve_image_for_state(snapshot.state)
-
     capability_scope = persona.capability_scope
 
     return PersonaPanelData(
@@ -65,6 +73,10 @@ def build_persona_panel_data(
         voice_connected=bool(capability_scope.get("can_use_voice")),
         avatar_control_connected=bool(capability_scope.get("can_control_avatar")),
         live2d_connected=bool(capability_scope.get("can_use_live2d")),
+        last_user_command=snapshot.last_user_command,
+        last_capability=snapshot.last_capability,
+        last_result=snapshot.last_result,
+        last_output_hint=snapshot.last_output_hint,
     )
 
 

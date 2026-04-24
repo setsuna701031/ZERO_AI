@@ -28,6 +28,10 @@ def main() -> int:
         reason="panel_smoke",
         source="run_persona_panel_renderer_smoke",
         detail="render panel test",
+        last_user_command="panel",
+        last_capability="execution-demo",
+        last_result="success",
+        last_output_hint="workspace/shared/hello.py",
     )
 
     text = render_persona_panel(persona, snapshot, visual_profile)
@@ -39,6 +43,11 @@ def main() -> int:
     require_true("image=E:\\zero_ai\\assets\\persona\\zero_v1\\base.png" in text, "missing image path")
     require_true("capability_routing=True" in text, "missing capability_routing flag")
     require_true("live2d=False" in text, "missing live2d flag")
+    require_true("[ZERO_RUNTIME]" in text, "missing runtime header")
+    require_true("last_user_command=panel" in text, "missing last_user_command")
+    require_true("last_capability=execution-demo" in text, "missing last_capability")
+    require_true("last_result=success" in text, "missing last_result")
+    require_true("last_output_hint=workspace/shared/hello.py" in text, "missing last_output_hint")
 
     print("[PASS] persona panel renderer smoke")
     print(text)
