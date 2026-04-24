@@ -2917,3 +2917,95 @@ Keep these screenshots:
 * `full-build-demo` brittle acceptance check: fixed
 * `full-build-demo`: passing
 * `mainline smoke`: ALL PASS
+
+## 2026-04-24 - Persona Runtime showcase checkpoint
+
+This checkpoint focused on adding a local visual runtime shell for ZERO and connecting it to real runtime status and execution-demo output.
+
+### What was completed
+
+Added a new Persona Runtime window:
+
+* `ui/persona_runtime_window.py`
+
+Added persona visual support and assets:
+
+* `assets/persona/zero_v1/profile.json`
+* `assets/persona/zero_v1/circuit_bg.png`
+* `assets/persona/zero_v1/idle_open.png`
+* `assets/persona/zero_v1/idle_half.png`
+* `assets/persona/zero_v1/idle_closed.png`
+* `core/persona/visual_profile.py`
+
+Added validation coverage:
+
+* `tests/run_persona_visual_profile_smoke.py`
+
+Updated public-facing showcase documentation:
+
+* `README.md`
+* `docs/demo_assets/persona_runtime/persona_runtime_v1_visual_ready.png`
+* `docs/demo_assets/persona_runtime/persona_runtime_v2_execution_demo_success.png`
+
+### Issues fixed during integration
+
+The first UI runs appeared unchanged because the active Python environment did not have Pillow installed.
+
+After installing Pillow, the UI correctly enabled image composition, including:
+
+* circuit background rendering
+* transparent persona image composition
+* persona scaling inside the visual panel
+* runtime state badge display
+
+Blink animation was temporarily disabled because the open / half / closed eye frames do not yet share identical transparent canvas alignment. Keeping blink disabled prevents visual jumping until the image assets are normalized.
+
+### Validation confirmed
+
+Confirmed manually through the Persona Runtime window:
+
+* visual persona panel loads correctly
+* `Status` outputs a runtime snapshot
+* `Show Panel` opens the persona panel
+* `Run Execution Demo` runs successfully
+* runtime state updates to `SUCCESS`
+* output hint points to `workspace/shared/hello.py`
+* execution-demo artifacts and trace paths are displayed in the chat panel
+
+Confirmed repository update:
+
+* pushed to GitHub main at commit `351842e`
+
+### Why this matters
+
+This checkpoint adds a visible runtime shell to ZERO.
+
+The value is not only that the UI looks better. The window now shows that the local runtime can expose:
+
+* persona identity
+* live runtime state
+* command interaction
+* status snapshot output
+* execution-demo success
+* task artifact paths
+
+This makes ZERO easier to demonstrate externally because it provides a visual proof layer on top of the existing CLI/task system.
+
+### Stable checkpoint after this pass
+
+* Persona Runtime UI: added
+* persona visual profile: added
+* visual assets: added
+* Pillow image composition: working
+* Status snapshot: working
+* execution-demo through UI: working
+* README showcase section: added
+* persona runtime demo screenshots: added
+* GitHub main push: complete
+
+### Evidence kept
+
+Keep these screenshots:
+
+* `docs/demo_assets/persona_runtime/persona_runtime_v1_visual_ready.png`
+* `docs/demo_assets/persona_runtime/persona_runtime_v2_execution_demo_success.png`
