@@ -23,6 +23,7 @@ class PersonaStateSnapshot:
     last_capability: str = ""
     last_result: str = ""
     last_output_hint: str = ""
+    last_task_id: str = ""
 
     def to_display_text(self) -> str:
         parts: list[str] = [f"[ASSISTANT_STATE] {self.state.value}"]
@@ -40,6 +41,8 @@ class PersonaStateSnapshot:
             parts.append(f"last_result={self.last_result}")
         if self.last_output_hint:
             parts.append(f"last_output_hint={self.last_output_hint}")
+        if self.last_task_id:
+            parts.append(f"last_task_id={self.last_task_id}")
         return " | ".join(parts)
 
 
@@ -66,6 +69,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         current = self._current
         self._current = PersonaStateSnapshot(
@@ -77,6 +81,7 @@ class PersonaStateManager:
             last_capability=current.last_capability if last_capability is None else last_capability.strip(),
             last_result=current.last_result if last_result is None else last_result.strip(),
             last_output_hint=current.last_output_hint if last_output_hint is None else last_output_hint.strip(),
+            last_task_id=current.last_task_id if last_task_id is None else last_task_id.strip(),
         )
         return self._current
 
@@ -90,6 +95,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         return self.set_state(
             PersonaState.IDLE,
@@ -100,6 +106,7 @@ class PersonaStateManager:
             last_capability=last_capability,
             last_result=last_result,
             last_output_hint=last_output_hint,
+            last_task_id=last_task_id,
         )
 
     def set_thinking(
@@ -112,6 +119,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         return self.set_state(
             PersonaState.THINKING,
@@ -122,6 +130,7 @@ class PersonaStateManager:
             last_capability=last_capability,
             last_result=last_result,
             last_output_hint=last_output_hint,
+            last_task_id=last_task_id,
         )
 
     def set_executing(
@@ -134,6 +143,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         return self.set_state(
             PersonaState.EXECUTING,
@@ -144,6 +154,7 @@ class PersonaStateManager:
             last_capability=last_capability,
             last_result=last_result,
             last_output_hint=last_output_hint,
+            last_task_id=last_task_id,
         )
 
     def set_success(
@@ -156,6 +167,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         return self.set_state(
             PersonaState.SUCCESS,
@@ -166,6 +178,7 @@ class PersonaStateManager:
             last_capability=last_capability,
             last_result=last_result,
             last_output_hint=last_output_hint,
+            last_task_id=last_task_id,
         )
 
     def set_error(
@@ -178,6 +191,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         return self.set_state(
             PersonaState.ERROR,
@@ -188,6 +202,7 @@ class PersonaStateManager:
             last_capability=last_capability,
             last_result=last_result,
             last_output_hint=last_output_hint,
+            last_task_id=last_task_id,
         )
 
     def update_runtime_summary(
@@ -197,6 +212,7 @@ class PersonaStateManager:
         last_capability: str | None = None,
         last_result: str | None = None,
         last_output_hint: str | None = None,
+        last_task_id: str | None = None,
     ) -> PersonaStateSnapshot:
         self._current = replace(
             self._current,
@@ -204,6 +220,7 @@ class PersonaStateManager:
             last_capability=self._current.last_capability if last_capability is None else last_capability.strip(),
             last_result=self._current.last_result if last_result is None else last_result.strip(),
             last_output_hint=self._current.last_output_hint if last_output_hint is None else last_output_hint.strip(),
+            last_task_id=self._current.last_task_id if last_task_id is None else last_task_id.strip(),
         )
         return self._current
 

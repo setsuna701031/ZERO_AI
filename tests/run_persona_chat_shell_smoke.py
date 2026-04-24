@@ -46,12 +46,14 @@ def main() -> int:
     require_true("visual_id:" in status_result.response, "status missing visual_id")
     require_true("last_user_command:" in status_result.response, "status missing last_user_command")
     require_true("last_result:" in status_result.response, "status missing last_result")
+    require_true("last_task_id:" in status_result.response, "status missing last_task_id")
 
     panel_result = generate_rule_based_response(persona, "panel")
     require_true("[ZERO_PERSONA]" in panel_result.response, "panel missing header")
     require_true("[ZERO_RUNTIME]" in panel_result.response, "panel missing runtime header")
     require_true("state=" in panel_result.response, "panel missing state")
     require_true("image=E:\\zero_ai\\assets\\persona\\zero_v1\\base.png" in panel_result.response, "panel missing image")
+    require_true("last_task_id=" in panel_result.response, "panel missing last_task_id")
 
     who_result = generate_rule_based_response(persona, "who are you")
     require_true(persona.intro in who_result.response, "intro not returned for identity question")

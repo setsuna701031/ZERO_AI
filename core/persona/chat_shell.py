@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import re
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from typing import Callable
 
@@ -54,6 +57,11 @@ def _build_help_text(persona: PersonaProfile) -> str:
     )
 
 
+def _extract_task_id(text: str) -> str:
+    match = re.search(r"task_[0-9]+", text or "")
+    return match.group(0) if match else ""
+
+
 def _build_status_text(persona: PersonaProfile) -> str:
     scope = persona.capability_scope
     state_manager = get_persona_state_manager()
@@ -73,6 +81,7 @@ def _build_status_text(persona: PersonaProfile) -> str:
         f"- last_capability: {snapshot.last_capability or '-'}\n"
         f"- last_result: {snapshot.last_result or '-'}\n"
         f"- last_output_hint: {snapshot.last_output_hint or '-'}\n"
+        f"- last_task_id: {snapshot.last_task_id or '-'}\n"
         f"- chat: {scope.get('can_chat')}\n"
         f"- plan: {scope.get('can_plan')}\n"
         f"- explain: {scope.get('can_explain')}\n"
@@ -101,6 +110,16 @@ def _output_hint_for_capability(label: str) -> str:
     return hints.get(label, "")
 
 
+def _run_capability_capture_stdout(fn: Callable[[], int]) -> tuple[int, str]:
+    buffer = io.StringIO()
+    with redirect_stdout(buffer):
+        code = fn()
+    captured = buffer.getvalue()
+    if captured:
+        print(captured, end="" if captured.endswith("\n") else "\n")
+    return code, captured
+
+
 def _run_capability_with_persona_prefix(
     persona: PersonaProfile,
     label: str,
@@ -117,27 +136,32 @@ def _run_capability_with_persona_prefix(
         last_capability=label,
         last_result="executing",
         last_output_hint=output_hint,
+        last_task_id="",
     )
 
     print(f"{persona.name}: Starting {label}...")
 
     try:
-        code = fn()
+        code, captured_stdout = _run_capability_capture_stdout(fn)
     except Exception as exc:
+        exception_text = str(exc)
         state_manager.set_error(
             reason=f"{label}_exception",
             source="persona_chat_shell",
-            detail=str(exc),
+            detail=exception_text,
             last_user_command=f"run {label}",
             last_capability=label,
             last_result="exception",
             last_output_hint=output_hint,
+            last_task_id=_extract_task_id(exception_text),
         )
         return PersonaTurnResult(
             user_input=label,
             response=f"{persona.name}: {label} failed with exception: {exc}",
             should_exit=False,
         )
+
+    task_id = _extract_task_id(captured_stdout)
 
     if code == 0:
         state_manager.set_success(
@@ -148,6 +172,7 @@ def _run_capability_with_persona_prefix(
             last_capability=label,
             last_result="success",
             last_output_hint=output_hint,
+            last_task_id=task_id,
         )
         return PersonaTurnResult(
             user_input=label,
@@ -163,6 +188,7 @@ def _run_capability_with_persona_prefix(
         last_capability=label,
         last_result=f"failed:{code}",
         last_output_hint=output_hint,
+        last_task_id=task_id,
     )
     return PersonaTurnResult(
         user_input=label,

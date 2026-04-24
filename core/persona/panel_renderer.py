@@ -25,6 +25,7 @@ class PersonaPanelData:
     last_capability: str
     last_result: str
     last_output_hint: str
+    last_task_id: str
 
     def to_lines(self) -> list[str]:
         return [
@@ -46,6 +47,7 @@ class PersonaPanelData:
             f"last_capability={self.last_capability or '-'}",
             f"last_result={self.last_result or '-'}",
             f"last_output_hint={self.last_output_hint or '-'}",
+            f"last_task_id={self.last_task_id or '-'}",
         ]
 
     def to_text(self) -> str:
@@ -77,6 +79,7 @@ def build_persona_panel_data(
         last_capability=snapshot.last_capability,
         last_result=snapshot.last_result,
         last_output_hint=snapshot.last_output_hint,
+        last_task_id=snapshot.last_task_id,
     )
 
 
