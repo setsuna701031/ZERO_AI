@@ -1,0 +1,20 @@
+{
+  "persona_id": "zero_virtual_persona_v1",
+  "display_name": "ZERO",
+  "visual_id": "zero_v1",
+  "base_image": "assets/persona/zero_v1/base.png",
+  "visual_style": "futuristic android female assistant",
+  "render_mode": "static_base",
+  "state_expression_map": {
+    "IDLE": "base.png",
+    "THINKING": "base.png",
+    "EXECUTING": "base.png",
+    "SUCCESS": "base.png",
+    "ERROR": "base.png"
+  },
+  "notes": [
+    "Current stage uses one base image for all states.",
+    "Future versions can replace state_expression_map with per-state images.",
+    "Do not assume Live2D, voice, or animation is connected."
+  ]
+}
