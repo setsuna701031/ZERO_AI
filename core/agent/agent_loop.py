@@ -12,7 +12,9 @@ from core.agent.agent_component_invoker import (
     run_safety_guard,
     run_verifier,
 )
+from core.capabilities.capability_registry import has_capability, has_operation
 from core.agent.agent_route_policy import (
+    detect_document_flow_capability,
     looks_like_action_items_document_flow,
     looks_like_explicit_task_request,
     looks_like_summary_document_flow,
@@ -110,12 +112,24 @@ class AgentLoop:
             print("[AgentLoop] route =", route)
 
         if self._should_force_planner_document_flow(text):
+            capability_hint = self._detect_document_flow_capability(text)
+
             forced_route: Dict[str, Any] = {}
             if isinstance(route, dict):
                 forced_route.update(copy.deepcopy(route))
             forced_route["mode"] = "task"
             forced_route["task"] = True
             forced_route["forced_document_flow"] = True
+
+            if isinstance(capability_hint, dict) and capability_hint.get("matched"):
+                forced_route["capability"] = capability_hint.get("capability") or "document_flow"
+                forced_route["operation"] = capability_hint.get("operation") or ""
+                forced_route["capability_hint"] = copy.deepcopy(capability_hint)
+
+                registry_hint = self._build_capability_registry_hint(capability_hint)
+                if registry_hint:
+                    forced_route["capability_registry_hint"] = registry_hint
+
             route = forced_route
 
             if self.debug:
@@ -667,6 +681,35 @@ class AgentLoop:
 
     def _should_force_planner_document_flow(self, user_input: str) -> bool:
         return should_force_planner_document_flow(user_input)
+
+    def _detect_document_flow_capability(self, user_input: str) -> Dict[str, Any]:
+        return detect_document_flow_capability(user_input)
+
+    def _build_capability_registry_hint(self, capability_hint: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(capability_hint, dict):
+            return {}
+
+        capability_name = str(capability_hint.get("capability") or "").strip()
+        operation = str(capability_hint.get("operation") or "").strip()
+
+        operation_map = {
+            "summary": "run_summary",
+            "action_items": "run_action_items",
+            "summary_and_action_items": "run_summary_and_action_items",
+        }
+
+        registry_operation = operation_map.get(operation, "")
+
+        return {
+            "capability": capability_name,
+            "operation": operation,
+            "registry_operation": registry_operation,
+            "capability_registered": has_capability(capability_name),
+            "operation_registered": (
+                bool(registry_operation)
+                and has_operation(capability_name, registry_operation)
+            ),
+        }
 
     def _looks_like_summary_document_flow(self, text: str) -> bool:
         return looks_like_summary_document_flow(text)
