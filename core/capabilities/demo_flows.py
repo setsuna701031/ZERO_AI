@@ -277,6 +277,94 @@ def run_doc_demo() -> int:
     return 0
 
 
+def write_document_flow_showcase_input() -> Path:
+    ensure_required_paths()
+    input_path = SHARED_DIR / "document_flow_input.txt"
+    input_path.write_text(
+        (
+            "Engineering Review Notes\n\n"
+            "Alice will finish the API draft by Friday.\n"
+            "Bob will test the upload flow next week.\n"
+            "Carol will prepare the release note before the internal demo.\n"
+            "The team agreed that the next milestone should focus on document flow reliability.\n"
+            "The operator needs a concise summary and a separate action-items file.\n"
+        ),
+        encoding="utf-8",
+    )
+    return input_path
+
+
+def require_nonempty_text_file(path: Path, label: str) -> None:
+    if not path.exists():
+        raise RuntimeError(f"{label} missing: {path}")
+    if not path.is_file():
+        raise RuntimeError(f"{label} is not a file: {path}")
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        raise RuntimeError(f"{label} is empty: {path}")
+    forbidden_markers = [
+        "{{previous_result}}",
+        "{{file_content}}",
+    ]
+    for marker in forbidden_markers:
+        if marker in text:
+            raise RuntimeError(f"{label} contains unresolved marker {marker}: {path}")
+
+
+def run_document_flow_showcase() -> int:
+    input_path = write_document_flow_showcase_input()
+    safe_print(f"[document-flow-demo] input ready: {input_path}")
+
+    summary_output = SHARED_DIR / "document_flow_summary.txt"
+    action_output = SHARED_DIR / "document_flow_action_items.txt"
+
+    for path in (summary_output, action_output):
+        if path.exists():
+            path.unlink()
+
+    summary_task_id = create_task(
+        "doc-summary",
+        "document_flow_input.txt",
+        "document_flow_summary.txt",
+    )
+    submit_task(summary_task_id)
+    wait_until_finished(summary_task_id, max_ticks=10)
+
+    action_task_id = create_task(
+        "doc-action-items",
+        "document_flow_input.txt",
+        "document_flow_action_items.txt",
+    )
+    submit_task(action_task_id)
+    wait_until_finished(action_task_id, max_ticks=10)
+
+    summary_result = get_task_result_text(summary_task_id)
+    action_result = get_task_result_text(action_task_id)
+
+    require_nonempty_text_file(summary_output, "document flow summary output")
+    require_nonempty_text_file(action_output, "document flow action-items output")
+
+    safe_print("")
+    safe_print("[document-flow-demo] summary task result")
+    safe_print("----------------------------------------")
+    safe_print(summary_result.rstrip())
+    safe_print("")
+    safe_print("[document-flow-demo] action-items task result")
+    safe_print("----------------------------------------")
+    safe_print(action_result.rstrip())
+    safe_print("")
+    safe_print("[document-flow-demo] outputs")
+    safe_print(f"  input: {input_path}")
+    safe_print(f"  summary: {summary_output}")
+    safe_print(f"  action items: {action_output}")
+    safe_print("")
+    safe_print("[document-flow-demo] task lifecycle")
+    safe_print(f"  summary_task_id: {summary_task_id}")
+    safe_print(f"  action_items_task_id: {action_task_id}")
+    safe_print("[document-flow-demo] PASS")
+    return 0
+
+
 def run_requirement_demo() -> int:
     input_path = write_requirement_demo_input()
     safe_print(f"[requirement-demo] input ready: {input_path}")
