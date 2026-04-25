@@ -412,6 +412,11 @@ class TaskRuntime:
             "terminal_reason": str(task.get("terminal_reason") or ""),
             "loop_cycle_count": int(task.get("loop_cycle_count", 0) or 0),
             "loop_history": copy.deepcopy(task.get("loop_history", [])) if isinstance(task.get("loop_history"), list) else [],
+            "capability": str(task.get("capability") or ""),
+            "operation": str(task.get("operation") or ""),
+            "capability_hint": copy.deepcopy(task.get("capability_hint", {})) if isinstance(task.get("capability_hint"), dict) else {},
+            "capability_registry_hint": copy.deepcopy(task.get("capability_registry_hint", {})) if isinstance(task.get("capability_registry_hint"), dict) else {},
+            "capability_execution": copy.deepcopy(task.get("capability_execution", {})) if isinstance(task.get("capability_execution"), dict) else {},
         }
         return state
 
@@ -516,6 +521,29 @@ class TaskRuntime:
             default=[],
         )
 
+        normalized["capability"] = self._prefer_nonempty_str(
+            normalized.get("capability"),
+            task.get("capability"),
+        )
+        normalized["operation"] = self._prefer_nonempty_str(
+            normalized.get("operation"),
+            task.get("operation"),
+        )
+        normalized["capability_hint"] = self._prefer_nonempty_dict(
+            normalized.get("capability_hint"),
+            task.get("capability_hint"),
+            default={},
+        )
+        normalized["capability_registry_hint"] = self._prefer_nonempty_dict(
+            normalized.get("capability_registry_hint"),
+            task.get("capability_registry_hint"),
+            default={},
+        )
+        normalized["capability_execution"] = self._normalize_capability_execution(
+            normalized.get("capability_execution"),
+            task.get("capability_execution"),
+        )
+
         return normalized
 
     def _sync_steps_from_task(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
@@ -556,6 +584,26 @@ class TaskRuntime:
         if isinstance(task.get("loop_history"), list) and task.get("loop_history"):
             synced["loop_history"] = copy.deepcopy(task.get("loop_history"))
 
+        capability = str(task.get("capability") or "").strip()
+        if capability:
+            synced["capability"] = capability
+
+        operation = str(task.get("operation") or "").strip()
+        if operation:
+            synced["operation"] = operation
+
+        if isinstance(task.get("capability_hint"), dict) and task.get("capability_hint"):
+            synced["capability_hint"] = copy.deepcopy(task.get("capability_hint"))
+
+        if isinstance(task.get("capability_registry_hint"), dict) and task.get("capability_registry_hint"):
+            synced["capability_registry_hint"] = copy.deepcopy(task.get("capability_registry_hint"))
+
+        if isinstance(task.get("capability_execution"), dict) and task.get("capability_execution"):
+            synced["capability_execution"] = self._normalize_capability_execution(
+                synced.get("capability_execution"),
+                task.get("capability_execution"),
+            )
+
         return synced
 
     def _sync_task_from_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> None:
@@ -586,6 +634,16 @@ class TaskRuntime:
         task["terminal_reason"] = state.get("terminal_reason", "")
         task["loop_cycle_count"] = state.get("loop_cycle_count", 0)
         task["loop_history"] = copy.deepcopy(state.get("loop_history", []))
+
+        task["capability"] = state.get("capability", task.get("capability", ""))
+        task["operation"] = state.get("operation", task.get("operation", ""))
+        task["capability_hint"] = copy.deepcopy(state.get("capability_hint", task.get("capability_hint", {})))
+        task["capability_registry_hint"] = copy.deepcopy(
+            state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+        )
+        task["capability_execution"] = copy.deepcopy(
+            state.get("capability_execution", task.get("capability_execution", {}))
+        )
 
     # ============================================================
     # trace sanitation / extraction
@@ -767,6 +825,27 @@ class TaskRuntime:
         if isinstance(fallback, list) and fallback:
             return copy.deepcopy(fallback)
         return copy.deepcopy(default if isinstance(default, list) else [])
+
+    def _normalize_capability_execution(self, primary: Any, fallback: Any = None) -> Dict[str, Any]:
+        source: Dict[str, Any] = {}
+        if isinstance(primary, dict) and primary:
+            source = copy.deepcopy(primary)
+        elif isinstance(fallback, dict) and fallback:
+            source = copy.deepcopy(fallback)
+
+        if not isinstance(source, dict):
+            source = {}
+
+        enabled = bool(source.get("enabled", False))
+        status = str(source.get("status") or ("pending" if enabled else "metadata_only")).strip()
+        reason = str(source.get("reason") or "").strip()
+
+        normalized = copy.deepcopy(source)
+        normalized["enabled"] = enabled
+        normalized["status"] = status or ("pending" if enabled else "metadata_only")
+        normalized["reason"] = reason
+
+        return normalized
 
     def _safe_int(self, value: Any, default: int = 0) -> int:
         try:
