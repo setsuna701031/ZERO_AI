@@ -1266,6 +1266,7 @@ class AgentLoop:
 
         if isinstance(route, dict):
             created_task["route"] = copy.deepcopy(route)
+            self._apply_capability_metadata_to_task(created_task, route)
         if isinstance(context, dict):
             created_task["context_snapshot"] = copy.deepcopy(context)
 
@@ -1405,6 +1406,35 @@ class AgentLoop:
 
     def _should_enter_task_mode(self, route: Any, user_input: str) -> bool:
         return should_enter_task_mode(route, user_input)
+
+    def _apply_capability_metadata_to_task(self, task: Dict[str, Any], route: Any) -> Dict[str, Any]:
+        if not isinstance(task, dict) or not isinstance(route, dict):
+            return task
+
+        capability_hint = route.get("capability_hint")
+        if isinstance(capability_hint, dict):
+            task["capability_hint"] = copy.deepcopy(capability_hint)
+
+        capability_registry_hint = route.get("capability_registry_hint")
+        if isinstance(capability_registry_hint, dict):
+            task["capability_registry_hint"] = copy.deepcopy(capability_registry_hint)
+
+        capability = str(route.get("capability") or "").strip()
+        operation = str(route.get("operation") or "").strip()
+
+        if capability:
+            task["capability"] = capability
+        if operation:
+            task["operation"] = operation
+
+        if capability or operation or isinstance(capability_hint, dict) or isinstance(capability_registry_hint, dict):
+            task["capability_execution"] = {
+                "enabled": False,
+                "status": "metadata_only",
+                "reason": "capability metadata carried into task; execution remains disabled",
+            }
+
+        return task
 
     def _extract_steps_from_plan(self, plan: Any) -> list:
         if isinstance(plan, dict):
