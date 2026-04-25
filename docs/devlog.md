@@ -3221,3 +3221,128 @@ Keep these proof points:
 * `docs/demo_assets/persona_runtime/persona_runtime_v5_agent_demo_success.png`
 * latest terminal screenshot showing `python tests/run_persona_agent_demo_smoke.py` returning `ALL PASS`
 
+## 2026-04-24 - Document Flow Showcase mainline checkpoint
+
+This checkpoint focused on turning the existing document-flow capability into a fixed mainline showcase path and then folding that showcase into protected mainline validation.
+
+### What was completed
+
+Added a new formal main entry:
+
+* `python main.py document-flow-demo`
+
+Added a fixed document-flow showcase inside:
+
+* `core/capabilities/demo_flows.py`
+
+Updated the unified entry layer:
+
+* `main.py`
+
+Added dedicated regression protection:
+
+* `tests/run_document_flow_showcase_smoke.py`
+
+Folded the new smoke into the stable mainline validation path:
+
+* `tests/run_mainline_smoke.py`
+
+### What the document-flow-demo performs
+
+The new document-flow showcase performs a fixed, repeatable document-processing chain:
+
+1. prepare a fixed input file
+2. create an official `doc-summary` task
+3. submit and run the summary task through the task lifecycle
+4. create an official `doc-action-items` task
+5. submit and run the action-items task through the task lifecycle
+6. verify both shared output artifacts
+7. print task lifecycle IDs and report `PASS`
+
+Confirmed generated artifacts:
+
+* `workspace/shared/document_flow_input.txt`
+* `workspace/shared/document_flow_summary.txt`
+* `workspace/shared/document_flow_action_items.txt`
+
+### Validation confirmed
+
+Confirmed direct showcase execution:
+
+* `python main.py document-flow-demo`
+
+Confirmed result:
+
+* `[document-flow-demo] PASS`
+* summary task lifecycle ID printed
+* action-items task lifecycle ID printed
+* `document_flow_summary.txt` generated
+* `document_flow_action_items.txt` generated
+
+Confirmed dedicated smoke execution:
+
+* `python tests/run_document_flow_showcase_smoke.py`
+
+Smoke confirmed:
+
+* `[document-flow-demo] task lifecycle`
+* `[document-flow-demo] PASS`
+* `summary_task_id: task_...`
+* `action_items_task_id: task_...`
+* document-flow input artifact exists and is non-empty
+* document-flow summary artifact exists and is non-empty
+* document-flow action-items artifact exists and is non-empty
+
+Confirmed mainline smoke integration:
+
+* `python tests/run_mainline_smoke.py`
+* `python main.py smoke`
+
+Mainline smoke confirmed:
+
+* `document flow showcase smoke`: PASS
+* `pass: 13`
+* `fail: 0`
+* `missing_required: 0`
+* `skip_optional: 0`
+* `[mainline-smoke] ALL PASS`
+
+Confirmed repository update:
+
+* document-flow showcase demo pushed to GitHub main at commit `0a044f3`
+* document-flow showcase smoke folded into mainline at commit `1f9e35c`
+
+### Why this matters
+
+This checkpoint separates the document-flow showcase from the Persona Runtime / UI line.
+
+The Persona work proved that a visual runtime can surface execution and agent-demo state. This checkpoint returns the focus to the core document-processing capability and gives it a stable, repeatable, non-UI mainline entry.
+
+The important distinction is:
+
+* `doc-demo` remains a simple existing document demo path
+* `document-flow-demo` is now the fixed mainline showcase path
+* `run_document_flow_showcase_smoke.py` protects that showcase directly
+* `run_mainline_smoke.py` now protects it as part of the broader stable validation chain
+
+This makes document flow easier to demonstrate, easier to validate, and harder to regress accidentally.
+
+### Stable checkpoint after this pass
+
+* `document-flow-demo` entry: added
+* fixed document-flow input: added
+* summary task lifecycle through official task path: working
+* action-items task lifecycle through official task path: working
+* shared document-flow artifacts: verified
+* dedicated document-flow showcase smoke: passing
+* document-flow showcase smoke folded into mainline: complete
+* mainline smoke after fold-in: ALL PASS
+
+### Evidence kept
+
+Keep the latest terminal screenshots showing:
+
+* `python main.py document-flow-demo` returning `PASS`
+* `python tests/run_document_flow_showcase_smoke.py` returning `ALL PASS`
+* `python tests/run_mainline_smoke.py` / `python main.py smoke` showing `document flow showcase smoke` and `ALL PASS`
+
