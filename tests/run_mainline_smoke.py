@@ -14,6 +14,7 @@ REQUIRED_SMOKES = [
     ("scheduler smoke", "run_scheduler_smoke.py"),
     ("runtime smoke", "run_runtime_smoke.py"),
     ("document task smoke", "run_document_task_smoke.py"),
+    ("document flow showcase smoke", "run_document_flow_showcase_smoke.py"),
     ("document pipeline identity smoke", "run_document_pipeline_identity_smoke.py"),
     ("requirement demo smoke", "run_requirement_demo_smoke.py"),
     ("execution demo smoke", "run_execution_demo_smoke.py"),
