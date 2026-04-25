@@ -50,6 +50,32 @@ class CapabilityResolution:
         return payload
 
 
+@dataclass(frozen=True)
+class CapabilityExecutionResult:
+    ok: bool
+    capability: str
+    operation: str
+    registry_operation: str
+    input_path: str
+    summary_output_path: str
+    action_items_output_path: str
+    result: Any = None
+    error: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "capability": self.capability,
+            "operation": self.operation,
+            "registry_operation": self.registry_operation,
+            "input_path": self.input_path,
+            "summary_output_path": self.summary_output_path,
+            "action_items_output_path": self.action_items_output_path,
+            "error": self.error,
+            "result": self.result,
+        }
+
+
 def normalize_capability_route(route: Any) -> Dict[str, Any]:
     if not isinstance(route, dict):
         return {}
@@ -165,8 +191,160 @@ def describe_capability_resolution(route: Any) -> Dict[str, Any]:
     return resolve_capability_from_route(route).to_dict(include_callable=False)
 
 
-def main() -> int:
-    sample_route = {
+def _path_to_string(path: Optional[Path]) -> str:
+    if path is None:
+        return ""
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except Exception:
+        return str(path)
+
+
+def _coerce_required_path(value: Any, label: str) -> Path:
+    if value is None:
+        raise ValueError(f"{label} is required")
+
+    path_text = str(value or "").strip()
+    if not path_text:
+        raise ValueError(f"{label} is required")
+
+    path = Path(path_text)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+
+    return path
+
+
+def execute_resolved_capability(
+    *,
+    route: Any,
+    input_path: Any,
+    summary_output_path: Any,
+    action_items_output_path: Any,
+) -> CapabilityExecutionResult:
+    """
+    Controlled capability execution POC.
+
+    Safety boundary:
+    - only document_flow is allowed
+    - only summary_and_action_items / run_summary_and_action_items is allowed
+    - all file paths must be provided explicitly by the caller
+    - this function does not parse natural language and does not guess paths
+    """
+    input_path_obj: Optional[Path] = None
+    summary_output_path_obj: Optional[Path] = None
+    action_items_output_path_obj: Optional[Path] = None
+
+    try:
+        resolution = resolve_capability_from_route(route)
+
+        if not resolution.ok:
+            return CapabilityExecutionResult(
+                ok=False,
+                capability=resolution.capability,
+                operation=resolution.operation,
+                registry_operation=resolution.registry_operation,
+                input_path="",
+                summary_output_path="",
+                action_items_output_path="",
+                result=None,
+                error=f"capability resolution failed: {resolution.reason}",
+            )
+
+        if resolution.capability != "document_flow":
+            return CapabilityExecutionResult(
+                ok=False,
+                capability=resolution.capability,
+                operation=resolution.operation,
+                registry_operation=resolution.registry_operation,
+                input_path="",
+                summary_output_path="",
+                action_items_output_path="",
+                result=None,
+                error="only document_flow capability is allowed",
+            )
+
+        if resolution.registry_operation != "run_summary_and_action_items":
+            return CapabilityExecutionResult(
+                ok=False,
+                capability=resolution.capability,
+                operation=resolution.operation,
+                registry_operation=resolution.registry_operation,
+                input_path="",
+                summary_output_path="",
+                action_items_output_path="",
+                result=None,
+                error="only run_summary_and_action_items operation is allowed",
+            )
+
+        input_path_obj = _coerce_required_path(input_path, "input_path")
+        summary_output_path_obj = _coerce_required_path(summary_output_path, "summary_output_path")
+        action_items_output_path_obj = _coerce_required_path(action_items_output_path, "action_items_output_path")
+
+        if not input_path_obj.exists():
+            return CapabilityExecutionResult(
+                ok=False,
+                capability=resolution.capability,
+                operation=resolution.operation,
+                registry_operation=resolution.registry_operation,
+                input_path=_path_to_string(input_path_obj),
+                summary_output_path=_path_to_string(summary_output_path_obj),
+                action_items_output_path=_path_to_string(action_items_output_path_obj),
+                result=None,
+                error=f"input_path does not exist: {_path_to_string(input_path_obj)}",
+            )
+
+        if not callable(resolution.callable_ref):
+            return CapabilityExecutionResult(
+                ok=False,
+                capability=resolution.capability,
+                operation=resolution.operation,
+                registry_operation=resolution.registry_operation,
+                input_path=_path_to_string(input_path_obj),
+                summary_output_path=_path_to_string(summary_output_path_obj),
+                action_items_output_path=_path_to_string(action_items_output_path_obj),
+                result=None,
+                error="resolved callable is not callable",
+            )
+
+        raw_result = resolution.callable_ref(
+            input_path=input_path_obj,
+            summary_output_path=summary_output_path_obj,
+            action_items_output_path=action_items_output_path_obj,
+        )
+
+        result_ok = bool(getattr(raw_result, "ok", False))
+        if isinstance(raw_result, dict):
+            result_ok = bool(raw_result.get("ok", result_ok))
+
+        return CapabilityExecutionResult(
+            ok=result_ok,
+            capability=resolution.capability,
+            operation=resolution.operation,
+            registry_operation=resolution.registry_operation,
+            input_path=_path_to_string(input_path_obj),
+            summary_output_path=_path_to_string(summary_output_path_obj),
+            action_items_output_path=_path_to_string(action_items_output_path_obj),
+            result=raw_result,
+            error="" if result_ok else "capability returned non-ok result",
+        )
+
+    except Exception as exc:
+        return CapabilityExecutionResult(
+            ok=False,
+            capability="",
+            operation="",
+            registry_operation="",
+            input_path=_path_to_string(input_path_obj),
+            summary_output_path=_path_to_string(summary_output_path_obj),
+            action_items_output_path=_path_to_string(action_items_output_path_obj),
+            result=None,
+            error=str(exc),
+        )
+
+
+def make_sample_document_flow_route() -> Dict[str, Any]:
+    return {
         "capability": "document_flow",
         "operation": "summary_and_action_items",
         "capability_registry_hint": {
@@ -177,6 +355,10 @@ def main() -> int:
             "operation_registered": True,
         },
     }
+
+
+def main() -> int:
+    sample_route = make_sample_document_flow_route()
 
     resolution = resolve_capability_from_route(sample_route)
     print("[capability-invoker] sample resolution")
