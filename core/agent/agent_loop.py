@@ -1427,14 +1427,95 @@ class AgentLoop:
         if operation:
             task["operation"] = operation
 
-        if capability or operation or isinstance(capability_hint, dict) or isinstance(capability_registry_hint, dict):
+        if not (
+            capability
+            or operation
+            or isinstance(capability_hint, dict)
+            or isinstance(capability_registry_hint, dict)
+        ):
+            return task
+
+        input_path = self._route_first_string(
+            route,
+            "input_path",
+            "document_input_path",
+            "source_path",
+        )
+        summary_output_path = self._route_first_string(
+            route,
+            "summary_output_path",
+            "summary_path",
+        )
+        action_items_output_path = self._route_first_string(
+            route,
+            "action_items_output_path",
+            "action_items_path",
+        )
+
+        should_enable_document_flow = (
+            capability == "document_flow"
+            and operation == "summary_and_action_items"
+            and bool(input_path)
+            and bool(summary_output_path)
+            and bool(action_items_output_path)
+        )
+
+        if should_enable_document_flow:
             task["capability_execution"] = {
-                "enabled": False,
-                "status": "metadata_only",
-                "reason": "capability metadata carried into task; execution remains disabled",
+                "enabled": True,
+                "status": "pending",
+                "reason": "explicit document_flow capability paths provided",
+                "input_path": input_path,
+                "summary_output_path": summary_output_path,
+                "action_items_output_path": action_items_output_path,
             }
+            return task
+
+        missing_paths = []
+        if capability == "document_flow" and operation == "summary_and_action_items":
+            if not input_path:
+                missing_paths.append("input_path")
+            if not summary_output_path:
+                missing_paths.append("summary_output_path")
+            if not action_items_output_path:
+                missing_paths.append("action_items_output_path")
+
+        reason = "capability metadata carried into task; execution remains disabled"
+        if missing_paths:
+            reason = "explicit capability paths missing: " + ", ".join(missing_paths)
+
+        task["capability_execution"] = {
+            "enabled": False,
+            "status": "metadata_only",
+            "reason": reason,
+        }
 
         return task
+
+    def _route_first_string(self, route: Any, *keys: str) -> str:
+        if not isinstance(route, dict):
+            return ""
+
+        for key in keys:
+            value = route.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
+        capability_execution = route.get("capability_execution")
+        if isinstance(capability_execution, dict):
+            for key in keys:
+                value = capability_execution.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+
+        capability_hint = route.get("capability_hint")
+        if isinstance(capability_hint, dict):
+            for key in keys:
+                value = capability_hint.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+
+        return ""
 
     def _extract_steps_from_plan(self, plan: Any) -> list:
         if isinstance(plan, dict):
