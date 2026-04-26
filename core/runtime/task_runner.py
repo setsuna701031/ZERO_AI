@@ -7,6 +7,7 @@ import traceback
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from core.agent.capability_invoker import execute_resolved_capability
 from core.memory.step_reflection_engine import StepReflectionEngine
 from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
@@ -55,6 +56,14 @@ class TaskRunner:
             run_result = self.runtime.mark_running(task, current_tick=current_tick)
             state = copy.deepcopy(run_result.get("runtime_state", {}))
             self._ensure_execution_trace_defaults(task, state)
+
+            capability_result = self._maybe_run_enabled_capability(
+                task=task,
+                state=state,
+                current_tick=current_tick,
+            )
+            if capability_result is not None:
+                return self._finalize_public_result(capability_result)
 
             result = self._run_one_step(task, current_tick=current_tick)
             return self._finalize_public_result(result)
@@ -116,6 +125,216 @@ class TaskRunner:
         original_plan: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         return self.run_task_tick(task=task, current_tick=current_tick)
+
+    # ============================================================
+    # capability execution
+    # ============================================================
+
+    def _maybe_run_enabled_capability(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        current_tick: int,
+    ) -> Optional[Dict[str, Any]]:
+        capability_execution = self._get_capability_execution(task, state)
+        if not capability_execution.get("enabled"):
+            return None
+
+        route = self._get_capability_route(task, state)
+        input_path = capability_execution.get("input_path")
+        summary_output_path = capability_execution.get("summary_output_path")
+        action_items_output_path = capability_execution.get("action_items_output_path")
+
+        execution_result = execute_resolved_capability(
+            route=route,
+            input_path=input_path,
+            summary_output_path=summary_output_path,
+            action_items_output_path=action_items_output_path,
+        )
+
+        result_payload = self._make_json_safe(execution_result.to_dict())
+        capability_execution = copy.deepcopy(capability_execution)
+        capability_execution["enabled"] = False
+        capability_execution["status"] = "finished" if execution_result.ok else "failed"
+        capability_execution["last_result"] = copy.deepcopy(result_payload)
+        capability_execution["error"] = execution_result.error
+
+        task["capability_execution"] = copy.deepcopy(capability_execution)
+        state["capability_execution"] = copy.deepcopy(capability_execution)
+
+        final_answer = self._format_capability_final_answer(result_payload)
+
+        if execution_result.ok:
+            finish_result = self.runtime.mark_finished(
+                task=task,
+                current_tick=current_tick,
+                final_answer=final_answer,
+                final_result={
+                    "ok": True,
+                    "step_type": "capability",
+                    "capability": execution_result.capability,
+                    "operation": execution_result.operation,
+                    "registry_operation": execution_result.registry_operation,
+                    "result": copy.deepcopy(result_payload),
+                    "final_answer": final_answer,
+                    "execution_trace": [
+                        {
+                            "step_index": self._safe_int(state.get("current_step_index", 0), 0),
+                            "step_type": "capability",
+                            "ok": True,
+                            "message": "controlled capability execution completed",
+                            "final_answer": final_answer,
+                            "error_type": "",
+                            "classification": None,
+                            "attempts": 1,
+                            "max_attempts": 1,
+                            "retry_used": False,
+                        }
+                    ],
+                },
+            )
+            runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
+            runtime_state["capability_execution"] = copy.deepcopy(capability_execution)
+            task["capability_execution"] = copy.deepcopy(capability_execution)
+
+            try:
+                runtime_state = self.runtime.save_runtime_state(task, runtime_state)
+            except Exception:
+                pass
+
+            self._ensure_execution_trace_defaults(task, runtime_state)
+            return {
+                "ok": True,
+                "action": "capability_executed",
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": "finished",
+                "last_result": copy.deepcopy(result_payload),
+                "final_answer": finish_result.get("final_answer", final_answer),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
+
+        fail_result = self.runtime.mark_failed(
+            task=task,
+            current_tick=current_tick,
+            failure_type="tool_error",
+            failure_message=execution_result.error or "capability execution failed",
+        )
+        runtime_state = copy.deepcopy(fail_result.get("runtime_state", {}))
+        self._ensure_execution_trace_defaults(task, runtime_state)
+        return {
+            "ok": False,
+            "action": "capability_failed",
+            "task": copy.deepcopy(task),
+            "runtime_state": runtime_state,
+            "status": "failed",
+            "error": execution_result.error,
+            "last_result": copy.deepcopy(result_payload),
+            "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+        }
+
+    def _get_capability_execution(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+        value = state.get("capability_execution") if isinstance(state, dict) else None
+        if isinstance(value, dict) and value:
+            return copy.deepcopy(value)
+
+        value = task.get("capability_execution") if isinstance(task, dict) else None
+        if isinstance(value, dict) and value:
+            return copy.deepcopy(value)
+
+        return {"enabled": False, "status": "metadata_only", "reason": ""}
+
+    def _get_capability_route(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+        route = task.get("route") if isinstance(task, dict) else None
+        if isinstance(route, dict):
+            return copy.deepcopy(route)
+
+        route = state.get("route") if isinstance(state, dict) else None
+        if isinstance(route, dict):
+            return copy.deepcopy(route)
+
+        capability = str(
+            state.get("capability")
+            or task.get("capability")
+            or ""
+        ).strip()
+        operation = str(
+            state.get("operation")
+            or task.get("operation")
+            or ""
+        ).strip()
+
+        capability_hint = state.get("capability_hint") if isinstance(state.get("capability_hint"), dict) else task.get("capability_hint")
+        capability_registry_hint = (
+            state.get("capability_registry_hint")
+            if isinstance(state.get("capability_registry_hint"), dict)
+            else task.get("capability_registry_hint")
+        )
+
+        built_route: Dict[str, Any] = {}
+        if capability:
+            built_route["capability"] = capability
+        if operation:
+            built_route["operation"] = operation
+        if isinstance(capability_hint, dict):
+            built_route["capability_hint"] = copy.deepcopy(capability_hint)
+        if isinstance(capability_registry_hint, dict):
+            built_route["capability_registry_hint"] = copy.deepcopy(capability_registry_hint)
+
+        return built_route
+
+    def _make_json_safe(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {str(key): self._make_json_safe(item) for key, item in value.items()}
+
+        if isinstance(value, list):
+            return [self._make_json_safe(item) for item in value]
+
+        if isinstance(value, tuple):
+            return [self._make_json_safe(item) for item in value]
+
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+
+        to_dict = getattr(value, "to_dict", None)
+        if callable(to_dict):
+            try:
+                return self._make_json_safe(to_dict())
+            except Exception:
+                pass
+
+        if hasattr(value, "__dict__"):
+            try:
+                raw = {
+                    key: item
+                    for key, item in vars(value).items()
+                    if not str(key).startswith("_")
+                }
+                return self._make_json_safe(raw)
+            except Exception:
+                pass
+
+        return str(value)
+
+    def _format_capability_final_answer(self, result_payload: Dict[str, Any]) -> str:
+        capability = str(result_payload.get("capability") or "").strip()
+        operation = str(result_payload.get("operation") or "").strip()
+        summary_output_path = str(result_payload.get("summary_output_path") or "").strip()
+        action_items_output_path = str(result_payload.get("action_items_output_path") or "").strip()
+
+        lines = [
+            "Capability execution completed.",
+            f"capability: {capability}",
+            f"operation: {operation}",
+        ]
+
+        if summary_output_path:
+            lines.append(f"summary_output_path: {summary_output_path}")
+        if action_items_output_path:
+            lines.append(f"action_items_output_path: {action_items_output_path}")
+
+        return "\n".join(lines)
 
     # ============================================================
     # step execution
@@ -477,6 +696,15 @@ class TaskRunner:
         task["steps_total"] = state.get("steps_total", task.get("steps_total", 0))
         task["last_error"] = state.get("last_error", task.get("last_error"))
         task["final_answer"] = state.get("final_answer", task.get("final_answer", ""))
+        task["capability"] = state.get("capability", task.get("capability", ""))
+        task["operation"] = state.get("operation", task.get("operation", ""))
+        task["capability_hint"] = copy.deepcopy(state.get("capability_hint", task.get("capability_hint", {})))
+        task["capability_registry_hint"] = copy.deepcopy(
+            state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+        )
+        task["capability_execution"] = copy.deepcopy(
+            state.get("capability_execution", task.get("capability_execution", {}))
+        )
 
     def _safe_int(self, value: Any, default: int = 0) -> int:
         try:
@@ -583,6 +811,15 @@ class TaskRunner:
             task["last_step_result"] = copy.deepcopy(runtime_state.get("last_step_result"))
             task["last_error"] = runtime_state.get("last_error")
             task["final_answer"] = runtime_state.get("final_answer", task.get("final_answer", ""))
+            task["capability"] = runtime_state.get("capability", task.get("capability", ""))
+            task["operation"] = runtime_state.get("operation", task.get("operation", ""))
+            task["capability_hint"] = copy.deepcopy(runtime_state.get("capability_hint", task.get("capability_hint", {})))
+            task["capability_registry_hint"] = copy.deepcopy(
+                runtime_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+            )
+            task["capability_execution"] = copy.deepcopy(
+                runtime_state.get("capability_execution", task.get("capability_execution", {}))
+            )
 
         if isinstance(runtime_state, dict):
             result["execution_trace"] = copy.deepcopy(runtime_state.get("execution_trace", result.get("execution_trace", [])))
