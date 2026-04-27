@@ -13,6 +13,10 @@ from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runtime import TaskRuntime
 
+MAX_PUBLIC_LIST_ITEMS = 20
+MAX_PUBLIC_TRACE_ITEMS = 100
+MAX_PUBLIC_TEXT_CHARS = 12000
+
 
 class TaskRunner:
     DEFAULT_POLICY: Dict[str, Dict[str, Any]] = {
@@ -738,25 +742,29 @@ class TaskRunner:
         if not isinstance(task, dict) or not isinstance(state, dict):
             return
 
-        task["runtime_state"] = copy.deepcopy(state)
-        task["execution_trace"] = copy.deepcopy(state.get("execution_trace", task.get("execution_trace", [])))
-        task["execution_log"] = copy.deepcopy(state.get("execution_log", task.get("execution_log", [])))
-        task["results"] = copy.deepcopy(state.get("results", task.get("results", [])))
-        task["step_results"] = copy.deepcopy(state.get("step_results", task.get("step_results", [])))
-        task["last_step_result"] = copy.deepcopy(state.get("last_step_result", task.get("last_step_result")))
-        task["status"] = state.get("status", task.get("status"))
-        task["current_step_index"] = state.get("current_step_index", task.get("current_step_index", 0))
-        task["steps_total"] = state.get("steps_total", task.get("steps_total", 0))
-        task["last_error"] = state.get("last_error", task.get("last_error"))
-        task["final_answer"] = state.get("final_answer", task.get("final_answer", ""))
-        task["capability"] = state.get("capability", task.get("capability", ""))
-        task["operation"] = state.get("operation", task.get("operation", ""))
-        task["capability_hint"] = copy.deepcopy(state.get("capability_hint", task.get("capability_hint", {})))
+        safe_state = self._compact_runtime_state_for_public_payload(state)
+
+        # Do not embed the whole runtime_state into task.
+        # It can recursively inflate task snapshots and returned scheduler payloads.
+        task.pop("runtime_state", None)
+        task["execution_trace"] = copy.deepcopy(safe_state.get("execution_trace", task.get("execution_trace", [])))
+        task["execution_log"] = copy.deepcopy(safe_state.get("execution_log", task.get("execution_log", [])))
+        task["results"] = copy.deepcopy(safe_state.get("results", task.get("results", [])))
+        task["step_results"] = copy.deepcopy(safe_state.get("step_results", task.get("step_results", [])))
+        task["last_step_result"] = copy.deepcopy(safe_state.get("last_step_result", task.get("last_step_result")))
+        task["status"] = safe_state.get("status", task.get("status"))
+        task["current_step_index"] = safe_state.get("current_step_index", task.get("current_step_index", 0))
+        task["steps_total"] = safe_state.get("steps_total", task.get("steps_total", 0))
+        task["last_error"] = safe_state.get("last_error", task.get("last_error"))
+        task["final_answer"] = safe_state.get("final_answer", task.get("final_answer", ""))
+        task["capability"] = safe_state.get("capability", task.get("capability", ""))
+        task["operation"] = safe_state.get("operation", task.get("operation", ""))
+        task["capability_hint"] = copy.deepcopy(safe_state.get("capability_hint", task.get("capability_hint", {})))
         task["capability_registry_hint"] = copy.deepcopy(
-            state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+            safe_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
         )
         task["capability_execution"] = copy.deepcopy(
-            state.get("capability_execution", task.get("capability_execution", {}))
+            safe_state.get("capability_execution", task.get("capability_execution", {}))
         )
 
     def _safe_int(self, value: Any, default: int = 0) -> int:
@@ -877,6 +885,44 @@ class TaskRunner:
             return ""
         return str(error)
 
+    def _compact_runtime_state_for_public_payload(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+        safe = self._make_public_payload_safe(state)
+        if not isinstance(safe, dict):
+            return {}
+        for key in ("results", "step_results", "execution_log"):
+            value = safe.get(key)
+            safe[key] = value[-MAX_PUBLIC_LIST_ITEMS:] if isinstance(value, list) else []
+        trace = safe.get("execution_trace")
+        safe["execution_trace"] = trace[-MAX_PUBLIC_TRACE_ITEMS:] if isinstance(trace, list) else []
+        safe.pop("runtime_state", None)
+        return safe
+
+    def _make_public_payload_safe(self, value: Any, depth: int = 0) -> Any:
+        if depth > 8:
+            return "<truncated: max depth reached>"
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, str):
+            if len(value) <= MAX_PUBLIC_TEXT_CHARS:
+                return value
+            return value[:MAX_PUBLIC_TEXT_CHARS] + f"\n<truncated: {len(value) - MAX_PUBLIC_TEXT_CHARS} characters omitted>"
+        if isinstance(value, tuple):
+            value = list(value)
+        if isinstance(value, list):
+            return [self._make_public_payload_safe(item, depth + 1) for item in value[-MAX_PUBLIC_LIST_ITEMS:]]
+        if isinstance(value, dict):
+            safe: Dict[str, Any] = {}
+            for key, item in value.items():
+                key_text = str(key)
+                if key_text in {"runtime_state", "task", "raw_task", "raw_result", "runner_result"}:
+                    safe[key_text] = "<omitted: recursive/heavy payload>"
+                    continue
+                safe[key_text] = self._make_public_payload_safe(item, depth + 1)
+            return safe
+        return str(value)
+
     def _finalize_public_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(result, dict):
             return {
@@ -889,30 +935,35 @@ class TaskRunner:
         task = result.get("task")
         runtime_state = result.get("runtime_state")
 
-        if isinstance(runtime_state, dict) and isinstance(task, dict):
-            task["runtime_state"] = copy.deepcopy(runtime_state)
-            task["status"] = runtime_state.get("status", task.get("status"))
-            task["current_step_index"] = runtime_state.get("current_step_index", task.get("current_step_index", 0))
-            task["steps_total"] = runtime_state.get("steps_total", task.get("steps_total", 0))
-            task["results"] = copy.deepcopy(runtime_state.get("results", task.get("results", [])))
-            task["step_results"] = copy.deepcopy(runtime_state.get("step_results", task.get("step_results", [])))
-            task["execution_log"] = copy.deepcopy(runtime_state.get("execution_log", task.get("execution_log", [])))
-            task["execution_trace"] = copy.deepcopy(runtime_state.get("execution_trace", task.get("execution_trace", [])))
-            task["last_step_result"] = copy.deepcopy(runtime_state.get("last_step_result"))
-            task["last_error"] = runtime_state.get("last_error")
-            task["final_answer"] = runtime_state.get("final_answer", task.get("final_answer", ""))
-            task["capability"] = runtime_state.get("capability", task.get("capability", ""))
-            task["operation"] = runtime_state.get("operation", task.get("operation", ""))
-            task["capability_hint"] = copy.deepcopy(runtime_state.get("capability_hint", task.get("capability_hint", {})))
+        safe_runtime_state = None
+        if isinstance(runtime_state, dict):
+            safe_runtime_state = self._compact_runtime_state_for_public_payload(runtime_state)
+            result["runtime_state"] = safe_runtime_state
+
+        if isinstance(safe_runtime_state, dict) and isinstance(task, dict):
+            task.pop("runtime_state", None)
+            task["status"] = safe_runtime_state.get("status", task.get("status"))
+            task["current_step_index"] = safe_runtime_state.get("current_step_index", task.get("current_step_index", 0))
+            task["steps_total"] = safe_runtime_state.get("steps_total", task.get("steps_total", 0))
+            task["results"] = copy.deepcopy(safe_runtime_state.get("results", task.get("results", [])))
+            task["step_results"] = copy.deepcopy(safe_runtime_state.get("step_results", task.get("step_results", [])))
+            task["execution_log"] = copy.deepcopy(safe_runtime_state.get("execution_log", task.get("execution_log", [])))
+            task["execution_trace"] = copy.deepcopy(safe_runtime_state.get("execution_trace", task.get("execution_trace", [])))
+            task["last_step_result"] = copy.deepcopy(safe_runtime_state.get("last_step_result"))
+            task["last_error"] = safe_runtime_state.get("last_error")
+            task["final_answer"] = safe_runtime_state.get("final_answer", task.get("final_answer", ""))
+            task["capability"] = safe_runtime_state.get("capability", task.get("capability", ""))
+            task["operation"] = safe_runtime_state.get("operation", task.get("operation", ""))
+            task["capability_hint"] = copy.deepcopy(safe_runtime_state.get("capability_hint", task.get("capability_hint", {})))
             task["capability_registry_hint"] = copy.deepcopy(
-                runtime_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+                safe_runtime_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
             )
             task["capability_execution"] = copy.deepcopy(
-                runtime_state.get("capability_execution", task.get("capability_execution", {}))
+                safe_runtime_state.get("capability_execution", task.get("capability_execution", {}))
             )
 
-        if isinstance(runtime_state, dict):
-            result["execution_trace"] = copy.deepcopy(runtime_state.get("execution_trace", result.get("execution_trace", [])))
+        if isinstance(safe_runtime_state, dict):
+            result["execution_trace"] = copy.deepcopy(safe_runtime_state.get("execution_trace", result.get("execution_trace", [])))
         elif isinstance(task, dict):
             result["execution_trace"] = copy.deepcopy(task.get("execution_trace", result.get("execution_trace", [])))
         else:
