@@ -1,5 +1,146 @@
 \# ZERO Devlog
 
+\## 2026-04-27 - AgentLoop minimal observe-decide-act loop checkpoint
+
+This checkpoint focused on crossing the first controlled L4 loop boundary for ZERO without changing the default scheduler behavior.
+
+\### What was completed
+
+Added the first minimal observe-decide-act loop path for AgentLoop:
+
+\* observe task/runtime result
+\* decide next action
+\* act by running the next tick only when appropriate
+\* stop safely on terminal or protected states
+
+Added:
+
+\* `core/agent/loop_decision.py`
+\* `AgentLoop.run_task_until_terminal(...)`
+\* controlled CLI entry: `python app.py task loop <task_id> [max_cycles]`
+
+The new CLI path is explicit and does not replace:
+
+\* `task run`
+\* scheduler default behavior
+\* existing task lifecycle commands
+
+\### Decision behavior covered
+
+The loop decision layer now records and handles:
+
+\* `finish` -> stop
+\* `continue` -> run next tick
+\* `replan` -> stop at replan boundary; automatic replan is not enabled yet
+\* `fail` -> stop
+\* `blocked` -> stop
+\* `max_cycles_reached` -> stop safely as blocked
+
+Loop metadata is recorded into task state, including:
+
+\* `last_decision`
+\* `next_action`
+\* `last_observation`
+\* `loop_cycle_count`
+\* `loop_history`
+\* `terminal_reason`
+
+\### Validation added
+
+Added smoke coverage:
+
+\* `tests/run_agent_loop_observe_decide_smoke.py`
+\* `tests/run_agent_loop_until_terminal_smoke.py`
+\* `tests/run_app_task_loop_cli_smoke.py`
+
+Validation confirmed:
+
+\* `python -m py_compile app.py`
+\* `python -m py_compile core/agent/agent_loop.py`
+\* `python -m py_compile core/agent/loop_decision.py`
+\* `python tests/run_agent_loop_observe_decide_smoke.py`
+\* `python tests/run_agent_loop_until_terminal_smoke.py`
+\* `python tests/run_app_task_loop_cli_smoke.py`
+\* `python tests/run_mainline_smoke.py`
+
+Confirmed mainline result:
+
+\* pass: 13
+\* fail: 0
+\* `[mainline-smoke] ALL PASS`
+
+\### Real CLI loop proof
+
+Confirmed the controlled CLI entry can run a real created task through the loop path:
+
+\* created a small write-file task
+\* ran it with `python app.py task loop <task_id> 5`
+\* task reached `finished`
+\* loop decision reached `finish`
+\* task result and runtime state persisted
+\* shared artifact was written under `workspace/shared/`
+
+A separate malformed write+verify goal also safely stopped at the replan boundary, proving the loop path does not continue blindly after a failed observation.
+
+\### Git / release checkpoint
+
+This work was merged through PR #5:
+
+\* branch: `agent-loop-observe-decide-act`
+\* merge target: `main`
+\* merge method: squash merge
+\* main synced after merge
+\* local and remote feature branch cleaned up
+
+Old merged local branches also cleaned:
+
+\* `capability-execution-poc`
+\* `loop-fix-review`
+
+Remaining active branch kept for later:
+
+\* `display-i18n-status`
+
+\### Why this matters
+
+This checkpoint is important because ZERO now has a minimal controlled loop beyond one-shot execution.
+
+Before this pass, the system could run tasks and report results, but the AgentLoop did not yet have a protected outer loop path that explicitly observed, decided, acted, and repeated under a max-cycle guard.
+
+After this pass, ZERO has the first safe form of:
+
+\* observe
+\* decide
+\* act
+\* loop
+\* stop safely
+
+This is not full autonomous L4 yet. Automatic replanning is intentionally still disabled. However, the minimum loop skeleton is now present, tested, and available through an explicit CLI command.
+
+\### Stable checkpoint after this pass
+
+\* observe/decide metadata: working
+\* minimal until-terminal loop wrapper: working
+\* controlled CLI task loop entry: working
+\* missing-task CLI safety: working
+\* real task loop execution: working
+\* replan boundary stop: working
+\* mainline smoke: ALL PASS
+\* PR merged into main: complete
+
+\### Evidence kept
+
+Keep the latest terminal screenshots showing:
+
+\* observe/decide smoke ALL PASS
+\* until-terminal smoke ALL PASS
+\* task loop CLI smoke ALL PASS
+\* real task loop reaching finished
+\* malformed task stopping at replan
+\* mainline smoke ALL PASS
+\* PR #5 merged into main
+
+
 
 
 \## 2026-04 Mainline Stabilization Pass

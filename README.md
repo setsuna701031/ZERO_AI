@@ -110,6 +110,8 @@ This window is not only a character display. It shows:
 - Tool execution  
 - Output verification  
 - Task lifecycle control  
+- Controlled AgentLoop observe-decide-act loop  
+- Safe loop execution through `task loop <task_id> [max_cycles]`  
 - Artifact visibility  
 
 ---
@@ -164,6 +166,7 @@ python app.py health
 python app.py task list
 python app.py task show <task_id>
 python app.py task result <task_id>
+python app.py task loop <task_id> [max_cycles]
 ```
 
 ### Document tasks
@@ -172,6 +175,32 @@ python app.py task result <task_id>
 python app.py task doc-summary input.txt summary.txt
 python app.py task doc-action-items input.txt action_items.txt
 ```
+
+---
+
+## 🔁 Controlled AgentLoop Loop
+
+ZERO now includes a controlled minimal AgentLoop path:
+
+```bash
+python app.py task loop <task_id> [max_cycles]
+```
+
+This path is intentionally explicit. It does not replace the default scheduler or `task run` behavior.
+
+It supports a safe observe-decide-act cycle:
+
+- observe current task/runtime result
+- decide whether to finish, continue, replan, fail, or stop on guard/block conditions
+- run the next tick only when the decision is `continue`
+- stop safely on `finish`, `replan`, `fail`, `blocked`, or `max_cycles_reached`
+
+### What this proves
+
+- AgentLoop can now record observe/decide metadata
+- task loop execution can run until terminal state under a max-cycle guard
+- CLI access is controlled through an explicit command
+- default task execution remains unchanged
 
 ---
 
