@@ -89,6 +89,90 @@ def first_nonempty_str(*values: Any) -> str:
     return ""
 
 
+def bool_from_any(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "y", "ok", "pass", "passed"}:
+        return True
+    if text in {"0", "false", "no", "n", "fail", "failed"}:
+        return False
+    return default
+
+
+def observe_from_local_observation(
+    local_observation: Any,
+    runner_result: Any = None,
+    task: Optional[Dict[str, Any]] = None,
+) -> LoopObservation:
+    local = local_observation if isinstance(local_observation, dict) else {}
+    result = runner_result if isinstance(runner_result, dict) else {}
+    task_dict = task if isinstance(task, dict) else {}
+
+    runtime_state = result.get("runtime_state")
+    if not isinstance(runtime_state, dict):
+        runtime_state = task_dict.get("runtime_state") if isinstance(task_dict.get("runtime_state"), dict) else {}
+
+    status = normalize_status(
+        first_nonempty_str(
+            local.get("status"),
+            result.get("status"),
+            runtime_state.get("status"),
+            task_dict.get("status"),
+            "unknown",
+        )
+    )
+
+    action = normalize_status(first_nonempty_str(local.get("action"), result.get("action")))
+
+    error_value = first_nonempty_str(
+        local.get("error"),
+        result.get("error"),
+        runtime_state.get("last_error"),
+        runtime_state.get("failure_message"),
+        task_dict.get("last_error"),
+        task_dict.get("failure_message"),
+    )
+
+    final_answer = first_nonempty_str(
+        result.get("final_answer"),
+        runtime_state.get("final_answer"),
+        task_dict.get("final_answer"),
+    )
+
+    current_step_index = safe_int(
+        result.get(
+            "current_step_index",
+            runtime_state.get("current_step_index", task_dict.get("current_step_index", 0)),
+        ),
+        0,
+    )
+
+    steps_total = safe_int(
+        result.get("steps_total", runtime_state.get("steps_total", task_dict.get("steps_total", 0))),
+        0,
+    )
+
+    raw: Dict[str, Any] = dict(result)
+    raw["local_observation"] = dict(local)
+
+    return LoopObservation(
+        ok=bool_from_any(local.get("ok"), bool(result.get("ok", status not in FAILURE_STATUSES))),
+        status=status,
+        action=action,
+        error=error_value,
+        final_answer=final_answer,
+        current_step_index=current_step_index,
+        steps_total=steps_total,
+        raw=raw,
+    )
+
+
 def observe_runner_result(runner_result: Any, task: Optional[Dict[str, Any]] = None) -> LoopObservation:
     result = runner_result if isinstance(runner_result, dict) else {}
     task_dict = task if isinstance(task, dict) else {}
@@ -263,8 +347,17 @@ def observe_and_decide(
     allow_replan: bool = True,
     max_replans: int = 1,
     replan_count: int = 0,
+    local_observation: Any = None,
 ) -> Dict[str, Any]:
-    observation = observe_runner_result(runner_result, task)
+    if isinstance(local_observation, dict):
+        observation = observe_from_local_observation(
+            local_observation,
+            runner_result=runner_result,
+            task=task,
+        )
+    else:
+        observation = observe_runner_result(runner_result, task)
+
     decision = decide_next_action(
         observation,
         allow_replan=allow_replan,
