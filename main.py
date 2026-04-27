@@ -19,6 +19,7 @@ from core.persona.chat_shell import run_persona_chat_shell
 REPO_ROOT = Path(__file__).resolve().parent
 APP_PATH = REPO_ROOT / "app.py"
 MAINLINE_SMOKE_PATH = REPO_ROOT / "tests" / "run_mainline_smoke.py"
+MULTI_TASK_DEMO_PATH = REPO_ROOT / "demos" / "demo_multi_task_scenario.py"
 SHARED_DIR = REPO_ROOT / "workspace" / "shared"
 PERSONA_RUNTIME_WINDOW_PATH = REPO_ROOT / "ui" / "persona_runtime_window.py"
 
@@ -67,6 +68,7 @@ def print_help() -> None:
     safe_print("  python main.py execution-demo")
     safe_print("  python main.py mini-build-demo")
     safe_print("  python main.py full-build-demo")
+    safe_print("  python main.py multi-task-demo")
     safe_print("  python main.py persona-chat")
     safe_print("  python main.py persona-runtime")
     safe_print("  python main.py health")
@@ -82,6 +84,7 @@ def print_help() -> None:
     safe_print("  execution-demo    Run execution-proof demo flow")
     safe_print("  mini-build-demo   Run engineering mini build demo flow")
     safe_print("  full-build-demo   Run requirement -> build -> execute -> verify flow")
+    safe_print("  multi-task-demo  Run multi-task queue demo flow")
     safe_print("  persona-chat      Run the ZERO persona text shell")
     safe_print("  persona-runtime   Launch the ZERO persona runtime window")
     safe_print("  health            Show health information")
@@ -123,6 +126,13 @@ def run_app_command(*args: str, capture: bool = False) -> subprocess.CompletedPr
 def run_persona_runtime_window() -> int:
     ensure_persona_runtime_paths()
     result = run_process([sys.executable, str(PERSONA_RUNTIME_WINDOW_PATH)], capture=False)
+    return result.returncode
+
+
+def run_multi_task_demo() -> int:
+    if not MULTI_TASK_DEMO_PATH.exists():
+        raise FileNotFoundError(f"multi-task demo not found: {MULTI_TASK_DEMO_PATH}")
+    result = run_process([sys.executable, str(MULTI_TASK_DEMO_PATH)], capture=False)
     return result.returncode
 
 
@@ -171,6 +181,9 @@ def main(argv: List[str]) -> int:
 
     if command == "full-build-demo":
         return run_full_build_demo()
+
+    if command == "multi-task-demo":
+        return run_multi_task_demo()
 
     if command == "persona-chat":
         return run_persona_chat_shell()
