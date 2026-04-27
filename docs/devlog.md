@@ -1,5 +1,131 @@
 \# ZERO Devlog
 
+## 2026-04-27 - Runtime-safe multi-task execution baseline checkpoint
+
+This checkpoint focused on stabilizing ZERO's task execution baseline after Handler / Local Observer work, multi-task queue checks, and runtime artifact safety issues surfaced during real CLI runs.
+
+### What was completed
+
+Stabilized the Handler / Local Observer execution path:
+
+* normalized step handler result envelopes
+* made tool / command results easier to inspect
+* preserved structured stderr / error information
+* added reliable trace landing for `step_start`, `step_result`, and `task_finished`
+* normalized task-local trace ticks so each task records a clean `1 -> 2 -> 3` sequence while preserving `scheduler_tick` separately
+
+Stabilized queue readiness policy:
+
+* `created` tasks no longer run automatically
+* tasks must be submitted / queued before execution
+* terminal tasks are excluded from queue rebuild
+* blocked / waiting tasks depend on dependency readiness
+* planning / replanning / paused tasks no longer interfere with normal queued tasks
+* failed or replanning tasks do not block normal queued tasks from finishing
+
+Added runtime artifact safety guards:
+
+* blocked self-invoking ZERO task commands such as `python app.py task run ...`
+* compacted runtime persistence paths to avoid recursive task/runtime_state growth
+* capped command stdout / stderr stored in result payloads
+* reduced risk of `runtime_state.json`, `result.json`, and `execution_log.json` growing uncontrollably
+
+### Problems found and resolved
+
+During validation, an old runtime artifact was found to have grown to nearly 1 GB:
+
+* `workspace/tasks/task_1776761962199/runtime_state.json`
+
+This caused `task list` and `task run` to slow down or stall while scanning and deep-copying old task runtime data.
+
+The oversized runtime artifact was moved out of the active task scan path into `workspace/artifact_backups/`, and later safety guards were added so new tasks do not repeat this pattern.
+
+A toxic old task was also found:
+
+* it attempted to execute `python app.py task run ...` from inside a task command step
+* this could cause recursive task execution and runaway trace output
+
+The toxic task was removed, and command/task guards now reject this class of self-invoking task command.
+
+### Validation confirmed
+
+Validated on `main` after merge:
+
+* `python -m py_compile core/runtime/task_runtime.py core/runtime/task_runner.py core/tasks/execution_guard.py core/tasks/scheduler_core/command_step_helpers.py core/tasks/scheduler_core/queue_sync_helpers.py`
+* `python app.py task list`
+* created and ran `MAIN_SAFE_OK` task through the official task lifecycle
+
+Confirmed final mainline task result:
+
+* task reached `finished`
+* step progress reached `3/3`
+* final answer: `MAIN_SAFE_OK`
+
+Also confirmed runtime artifact safety with a normal task:
+
+* `ARTIFACT_SAFE_OK` task reached `finished`
+* new task `runtime_state.json`, `result.json`, `execution_log.json`, and `trace.json` remained small
+
+### Git checkpoints
+
+Merged into `main` through these branches:
+
+* `handler-local-observer`
+* `multi-task-queue-policy`
+* `runtime-artifact-safety`
+
+Important commits:
+
+* `09132ae` - Stabilize handler results and local observer trace
+* `516939a` - Normalize task-local trace ticks
+* `face037` - Tighten multi-task queue readiness policy
+* `62f7b96` - Add runtime artifact safety guards
+
+### Why this matters
+
+This checkpoint is important because ZERO's task execution baseline is now safer and more observable.
+
+Before this pass, the system could execute tasks, but several risks remained:
+
+* handler outputs were less normalized
+* trace tick ordering could be confusing under multi-task runs
+* created tasks could be accidentally picked up by queue rebuild behavior
+* old retrying / replanning tasks could interfere with queue tests
+* large runtime artifacts could slow or stall the system
+* command tasks could accidentally self-invoke ZERO task execution
+
+After this pass, ZERO has a more stable foundation for multi-task demos and future AgentLoop expansion.
+
+### Stable checkpoint after this pass
+
+* Handler result normalization: working
+* Local Observer trace landing: working
+* task-local trace ticks: working
+* real doc-summary demo: working
+* two-task queue progression: working
+* failure task does not block normal task: working
+* created task does not auto-run: working
+* submitted task runs normally: working
+* self-invoking task command guard: working
+* runtime artifact compacting: working
+* main regression task: passing
+
+### Evidence kept
+
+Keep terminal screenshots showing:
+
+* handler/local observer trace task finishing
+* doc-summary real task demo finishing
+* multi-task `MULTI_A` / `MULTI_B` finishing independently
+* queue failure test not blocking `QUEUE_OK`
+* trace ticks normalized to `1 -> 2 -> 3`
+* oversized runtime artifact discovery and cleanup
+* toxic `python app.py task run ...` task being identified
+* self-invoking task command rejected
+* `ARTIFACT_SAFE_OK` task finished with small runtime files
+* main regression `MAIN_SAFE_OK` finished
+
+
 \## 2026-04-27 - AgentLoop minimal observe-decide-act loop checkpoint
 
 This checkpoint focused on crossing the first controlled L4 loop boundary for ZERO without changing the default scheduler behavior.

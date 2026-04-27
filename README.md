@@ -9,6 +9,39 @@ It is a system that builds and runs solutions.
 
 ---
 
+## ✅ Current Engineering Checkpoint
+
+ZERO's current mainline has a runtime-safe multi-task execution baseline.
+
+Validated mainline capabilities now include:
+
+- normalized handler results
+- observable local traces with `step_start`, `step_result`, and `task_finished`
+- task-local trace ticks for cleaner inspection
+- queue readiness rules that prevent `created` tasks from running before submit
+- multi-task queue progression without failed/replanning tasks blocking normal tasks
+- runtime artifact safety guards to prevent oversized `runtime_state.json` / `result.json` growth
+- command safety guard against self-invoking task commands such as `python app.py task run ...`
+
+Latest regression proof:
+
+```bash
+python app.py task create "write MAIN_SAFE_OK to main_safe_ok.txt, then verify main_safe_ok.txt contains MAIN_SAFE_OK"
+python app.py task submit <task_id>
+python app.py task run 1
+python app.py task run 1
+python app.py task run 1
+python app.py task show <task_id>
+```
+
+Confirmed result:
+
+- task reached `finished`
+- step progress reached `3/3`
+- final answer: `MAIN_SAFE_OK`
+
+---
+
 ## 🔧 Core Showcase
 
 ### 🚀 Mini Build Agent (Primary Demo)
