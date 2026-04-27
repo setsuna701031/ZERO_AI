@@ -5,6 +5,15 @@ import subprocess
 import sys
 from typing import Any, Dict, Optional
 
+MAX_COMMAND_OUTPUT_CHARS = 12000
+
+
+def _truncate_output(value: str, limit: int = MAX_COMMAND_OUTPUT_CHARS) -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + f"\n<truncated: {len(text) - limit} characters omitted>"
+
 
 def execute_command_like_step(
     scheduler,
@@ -32,14 +41,16 @@ def execute_command_like_step(
             "type": "command",
             "command": command,
             "returncode": int(completed.returncode),
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "stdout": _truncate_output(completed.stdout),
+            "stderr": _truncate_output(completed.stderr),
+            "stdout_truncated": len(completed.stdout or "") > MAX_COMMAND_OUTPUT_CHARS,
+            "stderr_truncated": len(completed.stderr or "") > MAX_COMMAND_OUTPUT_CHARS,
             "cwd": task_dir,
         }
 
         if completed.returncode != 0:
             raise RuntimeError(
-                f"command failed: {command} | returncode={completed.returncode} | stderr={completed.stderr.strip()}"
+                f"command failed: {command} | returncode={completed.returncode} | stderr={_truncate_output(completed.stderr.strip(), 2000)}"
             )
 
         return result
@@ -82,14 +93,16 @@ def execute_command_like_step(
             "scope": step_scope,
             "python_executable": sys.executable,
             "returncode": int(completed.returncode),
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "stdout": _truncate_output(completed.stdout),
+            "stderr": _truncate_output(completed.stderr),
+            "stdout_truncated": len(completed.stdout or "") > MAX_COMMAND_OUTPUT_CHARS,
+            "stderr_truncated": len(completed.stderr or "") > MAX_COMMAND_OUTPUT_CHARS,
             "cwd": task_dir,
         }
 
         if completed.returncode != 0:
             raise RuntimeError(
-                f"python run failed: {raw_path} | returncode={completed.returncode} | stderr={completed.stderr.strip()}"
+                f"python run failed: {raw_path} | returncode={completed.returncode} | stderr={_truncate_output(completed.stderr.strip(), 2000)}"
             )
 
         return result

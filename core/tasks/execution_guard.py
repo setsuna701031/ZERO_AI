@@ -136,11 +136,20 @@ class ExecutionGuard:
         }
 
     def _check_command(self, command: str, task_dir: str) -> Dict[str, Any]:
-        if self.allow_commands:
-            return {"ok": True}
-
         normalized = str(command or "").strip()
         lowered = normalized.lower()
+
+        # Never allow ZERO to recursively call its own task runner from inside a task.
+        # This guard stays active even when allow_commands=True.
+        if self._is_self_invoking_zero_command(normalized):
+            return {
+                "ok": False,
+                "error": "command blocked: self-invoking ZERO task command",
+                "guard_mode": "blocked_self_invoking_zero_task",
+            }
+
+        if self.allow_commands:
+            return {"ok": True}
 
         # 收束期白名單：
         # 1. python -c "print(...)"
@@ -173,6 +182,35 @@ class ExecutionGuard:
             "ok": False,
             "error": "command execution blocked by guard",
         }
+
+    def _is_self_invoking_zero_command(self, command: str) -> bool:
+        try:
+            parts = shlex.split(command, posix=False)
+        except Exception:
+            parts = command.split()
+
+        cleaned = [str(part).strip().strip('"').strip("'") for part in parts if str(part).strip()]
+        if len(cleaned) < 4:
+            return False
+
+        exe = os.path.basename(cleaned[0]).lower()
+        if exe not in {"python", "python.exe", "py", "py.exe"}:
+            return False
+
+        script = os.path.basename(cleaned[1]).lower()
+        if script != "app.py":
+            return False
+
+        lowered_args = [item.lower() for item in cleaned[2:]]
+        if "task" not in lowered_args:
+            return False
+
+        task_index = lowered_args.index("task")
+        if task_index + 1 >= len(lowered_args):
+            return False
+
+        task_action = lowered_args[task_index + 1]
+        return task_action in {"run", "loop", "submit", "rerun", "retry"}
 
     def _is_safe_inline_python(self, lowered_command: str) -> bool:
         patterns = [

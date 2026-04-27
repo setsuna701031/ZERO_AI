@@ -44,6 +44,14 @@ FAILURE_TYPES = {
 }
 
 
+# Runtime artifact safety limits.
+# Keep runtime_state.json useful for debugging, but prevent recursive / giant payload growth.
+MAX_STORED_TEXT_CHARS = 12000
+MAX_STORED_LIST_ITEMS = 50
+MAX_STORED_TRACE_ITEMS = 200
+DROP_RECURSIVE_KEYS = {"runtime_state", "task", "raw_task", "raw_result", "runner_result"}
+
+
 class TaskRuntime:
     def __init__(
         self,
@@ -90,6 +98,7 @@ class TaskRuntime:
 
     def save_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         normalized = self._normalize_runtime_state(task, state if isinstance(state, dict) else {})
+        normalized = self._compact_runtime_state_for_storage(normalized)
         runtime_state_file = self._get_runtime_state_file(task)
         self._ensure_parent_dir(runtime_state_file)
         self._write_json(runtime_state_file, normalized)
@@ -606,43 +615,108 @@ class TaskRuntime:
 
         return synced
 
+    def _compact_runtime_state_for_storage(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(state, dict):
+            return {}
+
+        compact = self._make_storage_safe(state)
+        if not isinstance(compact, dict):
+            return {}
+
+        for key in ("results", "step_results", "execution_log"):
+            value = compact.get(key)
+            compact[key] = self._compact_list_for_storage(value, limit=MAX_STORED_LIST_ITEMS)
+
+        trace_value = compact.get("execution_trace")
+        compact["execution_trace"] = self._compact_list_for_storage(trace_value, limit=MAX_STORED_TRACE_ITEMS)
+
+        loop_history = compact.get("loop_history")
+        compact["loop_history"] = self._compact_list_for_storage(loop_history, limit=MAX_STORED_LIST_ITEMS)
+
+        compact.pop("runtime_state", None)
+        return compact
+
+    def _compact_list_for_storage(self, value: Any, limit: int) -> List[Any]:
+        if not isinstance(value, list):
+            return []
+        items = value[-max(1, int(limit)):]
+        return [self._make_storage_safe(item) for item in items]
+
+    def _make_storage_safe(self, value: Any, depth: int = 0) -> Any:
+        if depth > 8:
+            return "<truncated: max depth reached>"
+
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+
+        if isinstance(value, str):
+            if len(value) <= MAX_STORED_TEXT_CHARS:
+                return value
+            return (
+                value[:MAX_STORED_TEXT_CHARS]
+                + f"\n<truncated: {len(value) - MAX_STORED_TEXT_CHARS} characters omitted>"
+            )
+
+        if isinstance(value, tuple):
+            value = list(value)
+
+        if isinstance(value, list):
+            return [self._make_storage_safe(item, depth + 1) for item in value[-MAX_STORED_LIST_ITEMS:]]
+
+        if isinstance(value, dict):
+            safe: Dict[str, Any] = {}
+            for key, item in value.items():
+                key_text = str(key)
+                if key_text in DROP_RECURSIVE_KEYS:
+                    safe[key_text] = "<omitted: recursive/heavy payload>"
+                    continue
+                safe[key_text] = self._make_storage_safe(item, depth + 1)
+            return safe
+
+        return str(value)
+
     def _sync_task_from_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> None:
         if not isinstance(task, dict):
             return
 
-        task["status"] = state.get("status", task.get("status"))
-        task["current_step_index"] = state.get("current_step_index", task.get("current_step_index", 0))
-        task["steps_total"] = state.get("steps_total", task.get("steps_total", 0))
-        task["steps"] = copy.deepcopy(state.get("steps", task.get("steps", [])))
-        task["results"] = copy.deepcopy(state.get("results", task.get("results", [])))
-        task["step_results"] = copy.deepcopy(state.get("step_results", task.get("step_results", [])))
-        task["execution_log"] = copy.deepcopy(state.get("execution_log", task.get("execution_log", [])))
-        task["execution_trace"] = copy.deepcopy(state.get("execution_trace", task.get("execution_trace", [])))
-        task["last_step_result"] = copy.deepcopy(state.get("last_step_result"))
-        task["last_error"] = state.get("last_error")
-        task["final_answer"] = state.get("final_answer", task.get("final_answer", ""))
-        task["final_result"] = copy.deepcopy(state.get("final_result"))
-        task["failure_type"] = state.get("failure_type")
-        task["failure_message"] = state.get("failure_message")
-        task["failure_decision"] = copy.deepcopy(state.get("failure_decision"))
-        task["runtime_state"] = copy.deepcopy(state)
+        safe_state = self._compact_runtime_state_for_storage(state if isinstance(state, dict) else {})
 
-        task["last_observation"] = copy.deepcopy(state.get("last_observation", {}))
-        task["last_decision"] = state.get("last_decision", "")
-        task["last_decision_reason"] = state.get("last_decision_reason", "")
-        task["next_action"] = state.get("next_action", "")
-        task["terminal_reason"] = state.get("terminal_reason", "")
-        task["loop_cycle_count"] = state.get("loop_cycle_count", 0)
-        task["loop_history"] = copy.deepcopy(state.get("loop_history", []))
+        task["status"] = safe_state.get("status", task.get("status"))
+        task["current_step_index"] = safe_state.get("current_step_index", task.get("current_step_index", 0))
+        task["steps_total"] = safe_state.get("steps_total", task.get("steps_total", 0))
+        task["steps"] = copy.deepcopy(safe_state.get("steps", task.get("steps", [])))
+        task["results"] = copy.deepcopy(safe_state.get("results", task.get("results", [])))
+        task["step_results"] = copy.deepcopy(safe_state.get("step_results", task.get("step_results", [])))
+        task["execution_log"] = copy.deepcopy(safe_state.get("execution_log", task.get("execution_log", [])))
+        task["execution_trace"] = copy.deepcopy(safe_state.get("execution_trace", task.get("execution_trace", [])))
+        task["last_step_result"] = copy.deepcopy(safe_state.get("last_step_result"))
+        task["last_error"] = safe_state.get("last_error")
+        task["final_answer"] = safe_state.get("final_answer", task.get("final_answer", ""))
+        task["final_result"] = copy.deepcopy(safe_state.get("final_result"))
+        task["failure_type"] = safe_state.get("failure_type")
+        task["failure_message"] = safe_state.get("failure_message")
+        task["failure_decision"] = copy.deepcopy(safe_state.get("failure_decision"))
 
-        task["capability"] = state.get("capability", task.get("capability", ""))
-        task["operation"] = state.get("operation", task.get("operation", ""))
-        task["capability_hint"] = copy.deepcopy(state.get("capability_hint", task.get("capability_hint", {})))
+        # Do not embed the whole runtime_state back into task.
+        # That creates recursive task -> runtime_state -> task-like payload growth.
+        task.pop("runtime_state", None)
+
+        task["last_observation"] = copy.deepcopy(safe_state.get("last_observation", {}))
+        task["last_decision"] = safe_state.get("last_decision", "")
+        task["last_decision_reason"] = safe_state.get("last_decision_reason", "")
+        task["next_action"] = safe_state.get("next_action", "")
+        task["terminal_reason"] = safe_state.get("terminal_reason", "")
+        task["loop_cycle_count"] = safe_state.get("loop_cycle_count", 0)
+        task["loop_history"] = copy.deepcopy(safe_state.get("loop_history", []))
+
+        task["capability"] = safe_state.get("capability", task.get("capability", ""))
+        task["operation"] = safe_state.get("operation", task.get("operation", ""))
+        task["capability_hint"] = copy.deepcopy(safe_state.get("capability_hint", task.get("capability_hint", {})))
         task["capability_registry_hint"] = copy.deepcopy(
-            state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+            safe_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
         )
         task["capability_execution"] = copy.deepcopy(
-            state.get("capability_execution", task.get("capability_execution", {}))
+            safe_state.get("capability_execution", task.get("capability_execution", {}))
         )
 
     # ============================================================
@@ -670,13 +744,15 @@ class TaskRuntime:
 
     def _sanitize_step_result_for_storage(self, step_result: Any) -> Any:
         if not isinstance(step_result, dict):
-            return copy.deepcopy(step_result)
+            return self._make_storage_safe(step_result)
 
-        sanitized = copy.deepcopy(step_result)
+        sanitized = self._make_storage_safe(step_result)
+        if not isinstance(sanitized, dict):
+            return sanitized
 
         outer_trace = self._extract_execution_trace_from_step_result(sanitized)
         if outer_trace:
-            sanitized["execution_trace"] = copy.deepcopy(outer_trace)
+            sanitized["execution_trace"] = self._compact_list_for_storage(outer_trace, limit=MAX_STORED_TRACE_ITEMS)
 
         result_payload = sanitized.get("result")
         if isinstance(result_payload, dict):
@@ -689,7 +765,9 @@ class TaskRuntime:
         return sanitized
 
     def _sanitize_step_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
-        sanitized = copy.deepcopy(record)
+        sanitized = self._make_storage_safe(record)
+        if not isinstance(sanitized, dict):
+            return {}
         result_payload = sanitized.get("result")
         if isinstance(result_payload, dict):
             sanitized["result"] = self._sanitize_step_result_for_storage(result_payload)
