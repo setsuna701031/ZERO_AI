@@ -24,6 +24,7 @@ from core.agent.agent_route_policy import (
 from core.agent.document_flow_trace_writer import maybe_write_document_flow_trace
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
+from core.agent.loop_decision import observe_and_decide
 
 
 class AgentLoop:
@@ -240,9 +241,19 @@ class AgentLoop:
         self._sync_task_from_runner_result(effective_task, runner_result)
         self._ensure_loop_state_defaults(effective_task)
 
+        loop_decision = self._observe_and_record_loop_decision(
+            effective_task=effective_task,
+            runner_result=runner_result,
+        )
+
         runtime_state = runner_result.get("runtime_state")
         if isinstance(runtime_state, dict):
             self._overlay_loop_state(effective_task, runtime_state)
+
+        self._apply_loop_decision_to_task(
+            effective_task=effective_task,
+            loop_decision=loop_decision,
+        )
 
         execution = self._build_task_loop_execution(
             runner_result=runner_result,
@@ -265,6 +276,8 @@ class AgentLoop:
             "error": runner_result.get("error"),
             "task": copy.deepcopy(effective_task),
             "runtime_state": copy.deepcopy(runner_result.get("runtime_state")) if isinstance(runner_result.get("runtime_state"), dict) else None,
+            "loop_decision": copy.deepcopy(effective_task.get("last_decision", "")),
+            "next_action": copy.deepcopy(effective_task.get("next_action", "")),
             "execution": normalized_execution,
             "last_result": copy.deepcopy(runner_result.get("last_result")) if isinstance(runner_result.get("last_result"), dict) else None,
         }
@@ -282,6 +295,144 @@ class AgentLoop:
             user_input=user_input,
             original_plan=original_plan,
         )
+
+    def run_task_until_terminal(
+        self,
+        task: Dict[str, Any],
+        *,
+        current_tick: int = 0,
+        user_input: str = "",
+        original_plan: Optional[Dict[str, Any]] = None,
+        max_cycles: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Minimal observe -> decide -> act loop wrapper.
+
+        Safety boundary:
+        - does not replace run_task_loop()
+        - does not auto-replan yet
+        - does not call planner/replanner
+        - only repeats when next_action == "run_next_tick"
+        - stops on finish/replan/wait/fail/blocked/max_cycles
+        """
+        try:
+            effective_task = self._normalize_task_input(task)
+        except Exception as e:
+            return {
+                "ok": False,
+                "mode": "task_until_terminal",
+                "action": "invalid_task_input",
+                "status": "failed",
+                "final_answer": "",
+                "error": f"invalid task input: {e}",
+                "task": copy.deepcopy(task) if isinstance(task, dict) else {"raw_task": task},
+                "cycles": [],
+                "cycle_count": 0,
+            }
+
+        safe_max_cycles = max(1, self._safe_int(max_cycles, 5))
+        tick = self._safe_int(current_tick, 0)
+        cycles: List[Dict[str, Any]] = []
+        last_result: Dict[str, Any] = {}
+
+        for cycle_index in range(1, safe_max_cycles + 1):
+            loop_result = self.run_task_loop(
+                task=effective_task,
+                current_tick=tick,
+                user_input=user_input,
+                original_plan=original_plan,
+            )
+
+            if not isinstance(loop_result, dict):
+                return {
+                    "ok": False,
+                    "mode": "task_until_terminal",
+                    "action": "invalid_loop_result",
+                    "status": "failed",
+                    "final_answer": "",
+                    "error": "run_task_loop returned non-dict result",
+                    "task": copy.deepcopy(effective_task),
+                    "cycles": cycles,
+                    "cycle_count": len(cycles),
+                    "raw_result": copy.deepcopy(loop_result),
+                }
+
+            last_result = loop_result
+
+            returned_task = loop_result.get("task")
+            if isinstance(returned_task, dict):
+                effective_task = copy.deepcopy(returned_task)
+
+            next_action = str(
+                loop_result.get("next_action")
+                or effective_task.get("next_action")
+                or ""
+            ).strip()
+
+            loop_decision = str(
+                loop_result.get("loop_decision")
+                or effective_task.get("last_decision")
+                or ""
+            ).strip()
+
+            status = str(
+                loop_result.get("status")
+                or effective_task.get("status")
+                or ""
+            ).strip()
+
+            cycles.append(
+                {
+                    "cycle": cycle_index,
+                    "tick": tick,
+                    "ok": bool(loop_result.get("ok", True)),
+                    "status": status,
+                    "action": str(loop_result.get("action") or ""),
+                    "loop_decision": loop_decision,
+                    "next_action": next_action,
+                    "error": loop_result.get("error"),
+                }
+            )
+
+            if next_action == "run_next_tick":
+                tick += 1
+                continue
+
+            return {
+                "ok": bool(loop_result.get("ok", True)),
+                "mode": "task_until_terminal",
+                "action": "loop_stopped",
+                "stop_reason": next_action or loop_decision or status or "unknown",
+                "status": status or str(effective_task.get("status") or ""),
+                "final_answer": str(loop_result.get("final_answer") or effective_task.get("final_answer") or ""),
+                "error": loop_result.get("error"),
+                "task": copy.deepcopy(effective_task),
+                "cycles": cycles,
+                "cycle_count": len(cycles),
+                "last_result": copy.deepcopy(loop_result),
+                "loop_decision": loop_decision,
+                "next_action": next_action,
+            }
+
+        effective_task["status"] = "blocked"
+        effective_task["terminal_reason"] = "max_cycles_reached"
+        effective_task["next_action"] = "finish"
+
+        return {
+            "ok": False,
+            "mode": "task_until_terminal",
+            "action": "max_cycles_reached",
+            "stop_reason": "max_cycles_reached",
+            "status": "blocked",
+            "final_answer": str(effective_task.get("final_answer") or ""),
+            "error": "max_cycles_reached",
+            "task": copy.deepcopy(effective_task),
+            "cycles": cycles,
+            "cycle_count": len(cycles),
+            "last_result": copy.deepcopy(last_result),
+            "loop_decision": str(effective_task.get("last_decision") or ""),
+            "next_action": "finish",
+        }
 
     def _build_task_loop_execution(
         self,
@@ -392,6 +543,108 @@ class AgentLoop:
             if key in runner_result:
                 task[key] = copy.deepcopy(runner_result.get(key))
 
+
+    def _observe_and_record_loop_decision(
+        self,
+        *,
+        effective_task: Dict[str, Any],
+        runner_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        if not isinstance(effective_task, dict) or not isinstance(runner_result, dict):
+            return {}
+
+        max_replans = self._safe_int(effective_task.get("max_replans"), 1)
+        replan_count = self._safe_int(effective_task.get("replan_count"), 0)
+
+        try:
+            decision = observe_and_decide(
+                runner_result,
+                effective_task,
+                allow_replan=True,
+                max_replans=max_replans,
+                replan_count=replan_count,
+            )
+        except Exception as e:
+            decision = {
+                "decision": "fail",
+                "next_action": "finish",
+                "terminal": True,
+                "should_continue": False,
+                "should_replan": False,
+                "should_fail": True,
+                "reason": f"observe_and_decide failed: {e}",
+                "observation": {},
+            }
+
+        if not isinstance(decision, dict):
+            decision = {
+                "decision": "fail",
+                "next_action": "finish",
+                "terminal": True,
+                "should_continue": False,
+                "should_replan": False,
+                "should_fail": True,
+                "reason": "observe_and_decide returned non-dict result",
+                "observation": {},
+            }
+
+        self._apply_loop_decision_to_task(
+            effective_task=effective_task,
+            loop_decision=decision,
+        )
+        return decision
+
+    def _apply_loop_decision_to_task(
+        self,
+        *,
+        effective_task: Dict[str, Any],
+        loop_decision: Dict[str, Any],
+    ) -> None:
+        if not isinstance(effective_task, dict) or not isinstance(loop_decision, dict):
+            return
+
+        self._ensure_loop_state_defaults(effective_task)
+
+        observation = loop_decision.get("observation")
+        if not isinstance(observation, dict):
+            observation = {}
+
+        decision = str(loop_decision.get("decision") or "").strip()
+        next_action = str(loop_decision.get("next_action") or "").strip()
+        reason = str(loop_decision.get("reason") or "").strip()
+
+        effective_task["last_observation"] = copy.deepcopy(observation)
+        effective_task["last_decision"] = decision
+        effective_task["last_decision_reason"] = reason
+        effective_task["next_action"] = next_action
+
+        if bool(loop_decision.get("terminal")):
+            effective_task["terminal_reason"] = reason
+        elif not effective_task.get("terminal_reason"):
+            effective_task["terminal_reason"] = ""
+
+        current_cycle = self._safe_int(effective_task.get("loop_cycle_count"), 0)
+        effective_task["loop_cycle_count"] = current_cycle + 1
+
+        history = effective_task.get("loop_history")
+        if not isinstance(history, list):
+            history = []
+
+        history.append(
+            {
+                "cycle": effective_task["loop_cycle_count"],
+                "decision": decision,
+                "next_action": next_action,
+                "reason": reason,
+                "terminal": bool(loop_decision.get("terminal")),
+                "should_continue": bool(loop_decision.get("should_continue")),
+                "should_replan": bool(loop_decision.get("should_replan")),
+                "should_fail": bool(loop_decision.get("should_fail")),
+                "observation": copy.deepcopy(observation),
+            }
+        )
+
+        effective_task["loop_history"] = history[-25:]
 
     def _ensure_loop_state_defaults(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:
         task_dict.setdefault("loop_cycle_count", 0)
