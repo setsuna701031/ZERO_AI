@@ -237,6 +237,37 @@ It supports a safe observe-decide-act cycle:
 
 ---
 
+---
+
+## 🔁 Multi-task Demo
+
+ZERO now includes a repeatable multi-task demo scenario:
+
+```bash
+python tests/run_multi_task_demo_smoke.py
+```
+
+This demo creates three tasks:
+
+- one normal task that writes and verifies `MULTI_DEMO_A`
+- one normal task that writes and verifies `MULTI_DEMO_B`
+- one intentionally failing verification task
+
+The expected result is that the two normal tasks finish successfully while the intentional failure moves into a safe repair state without blocking the queue.
+
+![Multi-task demo smoke all pass](docs/images/checkpoints/checkpoint_multi_task_demo_smoke_all_pass.png)
+
+### What this proves
+
+- multiple tasks can be queued and advanced together
+- normal tasks can finish even when another task fails or replans
+- each task has observable trace evidence
+- the demo is repeatable through smoke validation
+
+Engineering proof for the queue policy is also kept here:
+
+![Queue policy failure does not block](docs/images/checkpoints/checkpoint_queue_policy_failure_does_not_block.png)
+
 ## 🏗️ System Structure
 
 - main.py → unified entrypoint  

@@ -1,3 +1,86 @@
+## 2026-04-27 - Runtime-safe multi-task demo checkpoint
+
+This checkpoint focused on turning the stabilized task execution pipeline into a repeatable multi-task demonstration.
+
+### What was completed
+
+Added a new demo script:
+
+* `demos/demo_multi_task_scenario.py`
+
+Added a repeatable smoke test:
+
+* `tests/run_multi_task_demo_smoke.py`
+
+Added proof screenshots:
+
+* `docs/images/checkpoints/checkpoint_multi_task_demo_smoke_all_pass.png`
+* `docs/images/checkpoints/checkpoint_queue_policy_failure_does_not_block.png`
+
+### Demo behavior
+
+The demo creates three tasks:
+
+1. `A-normal`
+   * writes `MULTI_DEMO_A`
+   * verifies `MULTI_DEMO_A`
+   * reaches `finished`
+
+2. `B-normal`
+   * writes `MULTI_DEMO_B`
+   * verifies `MULTI_DEMO_B`
+   * reaches `finished`
+
+3. `C-intentional-failure`
+   * verifies a missing file
+   * safely moves into `replanning`
+   * does not block the two normal tasks
+
+The demo also writes:
+
+* `workspace/shared/demo_multi_task_summary.txt`
+
+### Validation confirmed
+
+Confirmed on main:
+
+* `python -m py_compile demos/demo_multi_task_scenario.py tests/run_multi_task_demo_smoke.py`
+* `python tests/run_multi_task_demo_smoke.py`
+
+Observed result:
+
+* `[multi-task-demo] PASS`
+* `[multi-task-demo-smoke] ALL PASS`
+
+Confirmed task outcomes:
+
+* `A-normal`: `finished`, final answer `MULTI_DEMO_A`
+* `B-normal`: `finished`, final answer `MULTI_DEMO_B`
+* `C-intentional-failure`: `replanning`, failure handled safely
+
+### Why this matters
+
+This checkpoint proves that ZERO can run a small multi-task queue scenario where a failing task does not drag down unrelated normal tasks.
+
+This is stronger than a single-task proof because it demonstrates:
+
+* queue coordination
+* safe failure isolation
+* trace-backed execution
+* repeatable smoke validation
+* demo-grade evidence suitable for README / public proof assets
+
+### Result
+
+Stable checkpoint after this pass:
+
+* multi-task demo script: added
+* multi-task smoke: added
+* queue failure isolation: demonstrated
+* trace evidence: available
+* proof screenshots: committed
+* main branch: clean and synced
+
 \# ZERO Devlog
 
 ## 2026-04-27 - Runtime-safe multi-task execution baseline checkpoint
