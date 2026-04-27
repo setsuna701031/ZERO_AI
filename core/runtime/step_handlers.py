@@ -292,47 +292,73 @@ class ToolStepHandler(BaseStepHandler):
         if context is not None:
             tool_input["context"] = copy.deepcopy(context)
 
-        try:
-            result = self.executor.tool_registry.execute_tool(tool_name, tool_input)
-        except Exception as e:
-            return self._error(
-                error_type="tool_execute_exception",
-                message=f"tool execute failed: {e}",
-                step=step,
-                details={"tool_name": tool_name},
-            )
-
-        normalized_result = self._normalize_external_result(
-            result,
+        first_result = self._execute_tool_once(
+            tool_name=tool_name,
+            tool_input=tool_input,
             step=step,
-            source=f"tool:{tool_name}",
+            attempt=1,
         )
 
+        if not first_result.get("ok"):
+            return first_result
+
+        normalized_result = first_result["normalized_result"]
+
+        # Empty successful output is unstable for AgentLoop observation.
+        # Retry once here, inside the handler layer, so upper layers receive one final
+        # normalized observation instead of having to guess whether to retry.
+        if normalized_result.get("empty_output_retry_candidate"):
+            retry_result = self._execute_tool_once(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                step=step,
+                attempt=2,
+            )
+
+            if not retry_result.get("ok"):
+                failed_retry = retry_result
+                failed_retry.setdefault("retry_attempted", True)
+                failed_retry.setdefault("retry_count", 1)
+                return failed_retry
+
+            retry_normalized = retry_result["normalized_result"]
+            retry_normalized["retry_attempted"] = True
+            retry_normalized["retry_count"] = 1
+            retry_normalized["first_attempt_empty_output"] = True
+
+            if not retry_normalized.get("empty_output_retry_candidate"):
+                normalized_result = retry_normalized
+            else:
+                return self._error(
+                    error_type="tool_empty_output",
+                    message="tool returned empty output after retry",
+                    step=step,
+                    result=retry_normalized,
+                    retryable=False,
+                    details={
+                        "tool_name": tool_name,
+                        "empty_output_retry_candidate": True,
+                        "retry_attempted": True,
+                        "retry_count": 1,
+                    },
+                    extra={
+                        "tool_name": tool_name,
+                        "normalized_tool_result": True,
+                        "retry_attempted": True,
+                        "retry_count": 1,
+                    },
+                )
+
         inner_ok = self.executor._extract_inner_ok(normalized_result)
-        if inner_ok and not normalized_result.get("empty_output_retry_candidate"):
+        if inner_ok:
             return self._success(
                 result=normalized_result,
                 step=step,
                 extra={
                     "tool_name": tool_name,
                     "normalized_tool_result": True,
-                },
-            )
-
-        if inner_ok and normalized_result.get("empty_output_retry_candidate"):
-            return self._error(
-                error_type="tool_empty_output",
-                message="tool returned empty output",
-                step=step,
-                result=normalized_result,
-                retryable=True,
-                details={
-                    "tool_name": tool_name,
-                    "empty_output_retry_candidate": True,
-                },
-                extra={
-                    "tool_name": tool_name,
-                    "normalized_tool_result": True,
+                    "retry_attempted": bool(normalized_result.get("retry_attempted", False)),
+                    "retry_count": int(normalized_result.get("retry_count", 0) or 0),
                 },
             )
 
@@ -353,13 +379,55 @@ class ToolStepHandler(BaseStepHandler):
                 "returncode": normalized_result.get("returncode"),
                 "stderr_present": normalized_result.get("stderr_present"),
                 "stdout_present": normalized_result.get("stdout_present"),
+                "retry_attempted": bool(normalized_result.get("retry_attempted", False)),
+                "retry_count": int(normalized_result.get("retry_count", 0) or 0),
             },
             extra={
                 "tool_name": tool_name,
                 "normalized_tool_result": True,
+                "retry_attempted": bool(normalized_result.get("retry_attempted", False)),
+                "retry_count": int(normalized_result.get("retry_count", 0) or 0),
             },
         )
 
+    def _execute_tool_once(
+        self,
+        *,
+        tool_name: str,
+        tool_input: Dict[str, Any],
+        step: Dict[str, Any],
+        attempt: int,
+    ) -> Dict[str, Any]:
+        try:
+            result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
+        except Exception as e:
+            return self._error(
+                error_type="tool_execute_exception",
+                message=f"tool execute failed: {e}",
+                step=step,
+                retryable=attempt == 1,
+                details={
+                    "tool_name": tool_name,
+                    "attempt": attempt,
+                },
+                extra={
+                    "tool_name": tool_name,
+                    "normalized_tool_result": True,
+                    "attempt": attempt,
+                },
+            )
+
+        normalized_result = self._normalize_external_result(
+            result,
+            step=step,
+            source=f"tool:{tool_name}",
+        )
+        normalized_result["attempt"] = attempt
+
+        return {
+            "ok": True,
+            "normalized_result": normalized_result,
+        }
 
 class CommandStepHandler(BaseStepHandler):
     def handle(
