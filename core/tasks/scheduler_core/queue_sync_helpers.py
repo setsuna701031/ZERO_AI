@@ -3,6 +3,44 @@ from __future__ import annotations
 from typing import Any, Dict, List, Set, Tuple
 
 
+# Queue sync policy for the core/tasks scheduler layer.
+#
+# Important rules:
+# - created tasks are metadata only; they must not run until submit turns them queued.
+# - terminal tasks must be removed from queue/worker state.
+# - running tasks are owned by the worker pool and must not be re-enqueued.
+# - retrying/retry/queued/ready are executable when dependencies are satisfied.
+# - blocked/waiting tasks become queued only after dependencies are satisfied.
+# - replanning/planning/paused tasks must not block other queued work.
+
+READY_STATUS_ALIASES = {
+    "queued",
+    "ready",
+    "retry",
+    "retrying",
+}
+
+BLOCKED_STATUS_ALIASES = {
+    "blocked",
+    "waiting",
+}
+
+NON_RUNNABLE_STATUS_ALIASES = {
+    "created",
+    "planning",
+    "replanning",
+    "running",
+    "paused",
+}
+
+DONE_STATUS_ALIASES = {
+    "finished",
+    "done",
+    "success",
+    "completed",
+}
+
+
 def rebuild_ready_queue(
     scheduler: Any,
     terminal_statuses: Set[str],
@@ -22,9 +60,11 @@ def rebuild_ready_queue(
         if not task_id:
             continue
 
-        status = str(task.get("status") or "").strip().lower()
+        status = _normalize_status(task.get("status"))
+
         if status in terminal_statuses:
-            scheduler.worker_pool.release_by_task(task_id)
+            _release_worker_if_needed(scheduler, task_id)
+            _remove_from_queue_if_present(scheduler, task_id)
             continue
 
         if scheduler._enqueue_repo_task_if_ready(task):
@@ -48,29 +88,49 @@ def enqueue_repo_task_if_ready(
         return False
 
     if scheduler.worker_pool.get_running_task(task_id) is not None:
+        _remove_from_queue_if_present(scheduler, task_id)
         return False
 
-    status = str(task.get("status") or "").strip().lower()
-    if status in terminal_statuses:
+    status = _normalize_status(task.get("status"))
+    terminal_set = {_normalize_status(item) for item in terminal_statuses}
+
+    if status in terminal_set:
+        _release_worker_if_needed(scheduler, task_id)
+        _remove_from_queue_if_present(scheduler, task_id)
         return False
 
-    if scheduler._queue_contains_task(task_id) and not overwrite:
+    if status in NON_RUNNABLE_STATUS_ALIASES:
+        _remove_from_queue_if_present(scheduler, task_id)
         return False
 
     deps_ready, blocked_reason = scheduler._task_dependencies_satisfied(task)
     if not deps_ready:
+        _remove_from_queue_if_present(scheduler, task_id)
         scheduler._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
         return False
 
-    if status == status_blocked or str(task.get("blocked_reason") or "").strip():
+    blocked_set = set(BLOCKED_STATUS_ALIASES)
+    if status_blocked:
+        blocked_set.add(_normalize_status(status_blocked))
+
+    if status in blocked_set or str(task.get("blocked_reason") or "").strip():
         scheduler._sync_unblocked_state(task_id=task_id)
+        refreshed_task = scheduler._get_task_from_repo(task_id)
+        if isinstance(refreshed_task, dict):
+            task = scheduler._hydrate_task_from_workspace(refreshed_task)
+        status = _normalize_status(task.get("status"))
 
-    refreshed_task = scheduler._get_task_from_repo(task_id)
-    if isinstance(refreshed_task, dict):
-        task = refreshed_task
+    effective_ready_statuses = {
+        _normalize_status(item)
+        for item in (set(ready_statuses or set()) | READY_STATUS_ALIASES)
+    }
+    effective_ready_statuses.discard("created")
 
-    status = str(task.get("status") or "").strip().lower()
-    if status not in ready_statuses:
+    if status not in effective_ready_statuses:
+        _remove_from_queue_if_present(scheduler, task_id)
+        return False
+
+    if scheduler._queue_contains_task(task_id) and not overwrite:
         return False
 
     scheduled_task = scheduler._repo_task_to_scheduled_task(task)
@@ -108,8 +168,8 @@ def task_dependencies_satisfied(
         if not isinstance(dep_task, dict):
             return False, f"dependency not found: {dep_id}"
 
-        dep_status = str(dep_task.get("status") or "").strip().lower()
-        if dep_status not in {"finished", "done", "success", "completed"}:
+        dep_status = _normalize_status(dep_task.get("status"))
+        if dep_status not in DONE_STATUS_ALIASES:
             return False, f"waiting dependency: {dep_id}"
 
     return True, ""
@@ -133,12 +193,13 @@ def unblock_tasks_if_dependencies_done(
         if not task_id:
             continue
 
-        status = str(task.get("status") or "").strip().lower()
-        if status != status_blocked:
+        status = _normalize_status(task.get("status"))
+        if status != _normalize_status(status_blocked):
             continue
 
         deps_ready, blocked_reason = scheduler._task_dependencies_satisfied(task)
         if not deps_ready:
+            _remove_from_queue_if_present(scheduler, task_id)
             scheduler._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
             continue
 
@@ -159,3 +220,27 @@ def unblock_tasks_if_dependencies_done(
             extra={"action": "unblocked_by_dependencies"},
         )
         scheduler._save_trace_for_task(task=task, trace=trace)
+
+
+def _normalize_status(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _remove_from_queue_if_present(scheduler: Any, task_id: str) -> None:
+    try:
+        queue = getattr(scheduler, "scheduler_queue", None)
+        remove_fn = getattr(queue, "remove", None)
+        if callable(remove_fn):
+            remove_fn(task_id)
+    except Exception:
+        pass
+
+
+def _release_worker_if_needed(scheduler: Any, task_id: str) -> None:
+    try:
+        worker_pool = getattr(scheduler, "worker_pool", None)
+        release_fn = getattr(worker_pool, "release_by_task", None)
+        if callable(release_fn):
+            release_fn(task_id)
+    except Exception:
+        pass

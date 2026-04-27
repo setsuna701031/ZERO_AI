@@ -369,6 +369,25 @@ class TaskRunner:
             }
 
         step = steps[idx]
+        trace_tick = self._trace_tick_for_step(
+            state=state,
+            step_index=idx,
+            current_tick=current_tick,
+        )
+
+        self._append_trace_json_event(
+            task,
+            "step_start",
+            {
+                "task_id": task.get("task_id") or task.get("id"),
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": idx,
+                "steps_total": len(steps),
+                "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
+                "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+            },
+        )
 
         result = self.step_executor.execute_step(
             task=task,
@@ -389,6 +408,14 @@ class TaskRunner:
             }
 
         result = self._ensure_step_execution_trace(step=step, step_result=result, step_index=idx)
+
+        self._append_step_result_trace_json(
+            task=task,
+            step=step,
+            step_result=result,
+            step_index=idx,
+            current_tick=trace_tick,
+        )
 
         if not result.get("ok"):
             state = self._persist_step_result_to_runtime_state(
@@ -477,6 +504,19 @@ class TaskRunner:
             fail_result["failure_decision"] = failure_decision
             runtime_state = copy.deepcopy(fail_result.get("runtime_state", {}))
             self._ensure_execution_trace_defaults(task, runtime_state)
+            self._append_trace_json_event(
+                task,
+                "task_failed",
+                {
+                    "task_id": task.get("task_id") or task.get("id"),
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
+                    "step_index": idx,
+                    "failure_type": failure_type,
+                    "error": result.get("error"),
+                    "status": "failed",
+                },
+            )
 
             return {
                 "ok": False,
@@ -509,6 +549,19 @@ class TaskRunner:
             )
             runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
             self._ensure_execution_trace_defaults(task, runtime_state)
+            self._append_trace_json_event(
+                task,
+                "task_finished",
+                {
+                    "task_id": task.get("task_id") or task.get("id"),
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
+                    "step_index": idx,
+                    "steps_total": len(steps),
+                    "status": "finished",
+                    "final_answer": finish_result.get("final_answer", ""),
+                },
+            )
             return {
                 "ok": True,
                 "action": "task_finished",
@@ -712,6 +765,43 @@ class TaskRunner:
         except Exception:
             return int(default)
 
+    def _trace_tick_for_step(
+        self,
+        *,
+        state: Optional[Dict[str, Any]],
+        step_index: int,
+        current_tick: int,
+    ) -> int:
+        """Return a stable task-local tick for trace.json events.
+
+        Scheduler/current_tick can be reused or reset across queue runs, especially
+        when `task run 2` advances multiple tasks.  For trace.json, the useful
+        display value is the task-local step order, so each task shows a clean
+        monotonic sequence: step 0 -> tick 1, step 1 -> tick 2, etc.
+        The original scheduler tick is still stored separately as scheduler_tick
+        on trace.json events that TaskRunner writes.
+        """
+        try:
+            idx = int(step_index)
+            if idx >= 0:
+                return idx + 1
+        except Exception:
+            pass
+
+        if isinstance(state, dict):
+            try:
+                idx = int(state.get("current_step_index", 0) or 0)
+                if idx >= 0:
+                    return idx + 1
+            except Exception:
+                pass
+
+        try:
+            tick = int(current_tick)
+            return tick if tick > 0 else 1
+        except Exception:
+            return 1
+
     # ============================================================
     # helpers
     # ============================================================
@@ -839,6 +929,139 @@ class TaskRunner:
             result["final_answer"] = self._extract_final_answer_from_step_result(last_result)
 
         return result
+
+    def _append_step_result_trace_json(
+        self,
+        *,
+        task: Dict[str, Any],
+        step: Optional[Dict[str, Any]],
+        step_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+    ) -> None:
+        safe_step = copy.deepcopy(step) if isinstance(step, dict) else {}
+        safe_result = copy.deepcopy(step_result) if isinstance(step_result, dict) else {}
+        trace_items = self._extract_trace_from_step_result(safe_result)
+
+        if not trace_items:
+            trace_items = [
+                {
+                    "step_index": step_index,
+                    "step_type": str(safe_step.get("type") or safe_result.get("step_type") or "").strip().lower(),
+                    "ok": bool(safe_result.get("ok", False)),
+                    "message": str(safe_result.get("message") or ""),
+                    "final_answer": str(safe_result.get("final_answer") or ""),
+                    "error_type": self._extract_error_type(safe_result),
+                    "attempts": 1,
+                    "max_attempts": 1,
+                    "retry_used": False,
+                }
+            ]
+
+        for item in trace_items:
+            if not isinstance(item, dict):
+                continue
+
+            data = copy.deepcopy(item)
+            data.setdefault("task_id", task.get("task_id") or task.get("id"))
+            data.setdefault("tick", current_tick)
+            data.setdefault("step_index", step_index)
+            data.setdefault("step_type", str(safe_step.get("type") or "").strip().lower())
+            data.setdefault("step_id", str(safe_step.get("id") or "").strip())
+
+            if "ok" not in data:
+                data["ok"] = bool(safe_result.get("ok", False))
+
+            if "error" not in data and safe_result.get("error"):
+                data["error"] = copy.deepcopy(safe_result.get("error"))
+
+            self._append_trace_json_event(task, "step_result", data)
+
+    def _append_trace_json_event(self, task: Dict[str, Any], event_type: str, data: Any) -> None:
+        try:
+            task_dir = self._resolve_task_dir_for_trace(task)
+            if not task_dir:
+                return
+
+            os.makedirs(task_dir, exist_ok=True)
+            trace_path = os.path.join(task_dir, "trace.json")
+
+            trace_payload = self._read_trace_json(trace_path)
+            events = trace_payload.setdefault("events", [])
+            if not isinstance(events, list):
+                events = []
+                trace_payload["events"] = events
+
+            events.append(
+                {
+                    "ts": datetime.now().timestamp(),
+                    "event_type": str(event_type or "event"),
+                    "data": self._make_json_safe(data),
+                }
+            )
+            trace_payload["trace_version"] = int(trace_payload.get("trace_version") or 1)
+            trace_payload["event_count"] = len(events)
+
+            with open(trace_path, "w", encoding="utf-8") as f:
+                json.dump(trace_payload, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _read_trace_json(self, trace_path: str) -> Dict[str, Any]:
+        try:
+            if os.path.exists(trace_path):
+                with open(trace_path, "r", encoding="utf-8") as f:
+                    payload = json.load(f)
+                if isinstance(payload, dict):
+                    if not isinstance(payload.get("events"), list):
+                        payload["events"] = []
+                    return payload
+        except Exception:
+            pass
+
+        return {
+            "trace_version": 1,
+            "event_count": 0,
+            "events": [],
+        }
+
+    def _resolve_task_dir_for_trace(self, task: Dict[str, Any]) -> str:
+        if not isinstance(task, dict):
+            return ""
+
+        value = task.get("task_dir")
+        if isinstance(value, str) and value.strip():
+            return os.path.abspath(value.strip())
+
+        runtime_state = task.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            value = runtime_state.get("task_dir")
+            if isinstance(value, str) and value.strip():
+                return os.path.abspath(value.strip())
+
+        for key in ("trace_path", "runtime_state_path", "result_path", "plan_path"):
+            value = task.get(key)
+            if isinstance(value, str) and value.strip():
+                return os.path.abspath(os.path.dirname(value.strip()))
+
+        task_id = str(task.get("task_id") or task.get("id") or "").strip()
+        if task_id:
+            return os.path.abspath(os.path.join("workspace", "tasks", task_id))
+
+        return ""
+
+    def _extract_error_type(self, result: Dict[str, Any]) -> str:
+        if not isinstance(result, dict):
+            return ""
+
+        error_payload = result.get("error")
+        if isinstance(error_payload, dict):
+            return str(error_payload.get("type") or "").strip()
+
+        if error_payload:
+            return "error"
+
+        return ""
 
     def _trace(self, task: Dict[str, Any], label: str, payload: Any) -> None:
         try:

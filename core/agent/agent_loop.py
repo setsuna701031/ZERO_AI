@@ -25,6 +25,7 @@ from core.agent.document_flow_trace_writer import maybe_write_document_flow_trac
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 from core.agent.loop_decision import observe_and_decide
+from core.agent.local_observer import observe_runner_result as observe_local_runner_result
 
 
 class AgentLoop:
@@ -557,12 +558,14 @@ class AgentLoop:
         replan_count = self._safe_int(effective_task.get("replan_count"), 0)
 
         try:
+            local_observation = observe_local_runner_result(runner_result)
             decision = observe_and_decide(
                 runner_result,
                 effective_task,
                 allow_replan=True,
                 max_replans=max_replans,
                 replan_count=replan_count,
+                local_observation=local_observation,
             )
         except Exception as e:
             decision = {
