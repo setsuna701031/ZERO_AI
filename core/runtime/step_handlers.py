@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import subprocess
 import sys
@@ -64,6 +65,201 @@ class BaseStepHandler:
         return payload
 
 
+    def _normalize_external_result(
+        self,
+        result: Any,
+        *,
+        step: Optional[Dict[str, Any]] = None,
+        source: str = "external",
+    ) -> Dict[str, Any]:
+        """
+        Normalize tool/command-like external results into a predictable envelope.
+
+        This does not execute retries and does not call planners.
+        It only makes malformed or ambiguous tool output easier for upper layers to observe.
+        """
+        if isinstance(result, dict):
+            normalized = copy.deepcopy(result)
+        elif isinstance(result, str):
+            parsed = self._try_parse_json_object(result)
+            if isinstance(parsed, dict):
+                normalized = parsed
+                normalized.setdefault("_normalized_from", "json_string")
+            else:
+                normalized = {
+                    "ok": bool(result.strip()),
+                    "stdout": result,
+                    "stderr": "",
+                    "returncode": 0 if result.strip() else None,
+                    "_normalized_from": "string",
+                }
+        elif result is None:
+            normalized = {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+                "_normalized_from": "none",
+            }
+        else:
+            normalized = {
+                "ok": False,
+                "raw_result": copy.deepcopy(result),
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+                "_normalized_from": type(result).__name__,
+            }
+
+        stdout = self._coerce_text(
+            normalized.get("stdout")
+            or normalized.get("output_text")
+            or normalized.get("output")
+            or normalized.get("text")
+            or ""
+        )
+        stderr = self._coerce_text(
+            normalized.get("stderr")
+            or normalized.get("error_output")
+            or normalized.get("err")
+            or ""
+        )
+
+        returncode = self._safe_int_or_none(
+            normalized.get("returncode", normalized.get("return_code", normalized.get("exit_code")))
+        )
+
+        if "ok" in normalized:
+            ok = self._coerce_bool(normalized.get("ok"), default=True)
+        elif returncode is not None:
+            ok = returncode == 0
+        elif stderr.strip() and not stdout.strip():
+            ok = False
+        else:
+            ok = True
+
+        error_payload = normalized.get("error")
+        error_message = ""
+        error_type = self._coerce_text(normalized.get("error_type") or "")
+
+        if isinstance(error_payload, dict):
+            error_message = self._coerce_text(error_payload.get("message") or "")
+            if not error_type:
+                error_type = self._coerce_text(error_payload.get("type") or "")
+        elif error_payload is not None:
+            error_message = self._coerce_text(error_payload)
+
+        if not error_type:
+            if returncode is not None and returncode != 0:
+                error_type = "external_returncode_failed"
+            elif stderr.strip() and not stdout.strip():
+                error_type = "external_stderr"
+
+        normalized["ok"] = ok
+        normalized["stdout"] = stdout
+        normalized["stderr"] = stderr
+        normalized["returncode"] = returncode
+        normalized["stdout_present"] = bool(stdout.strip())
+        normalized["stderr_present"] = bool(stderr.strip())
+        normalized["empty_output"] = (
+            not bool(stdout.strip())
+            and not bool(stderr.strip())
+            and not bool(normalized.get("result"))
+        )
+        normalized["source"] = source
+
+        if error_type:
+            normalized["error_type"] = error_type
+
+        if error_message:
+            normalized["error_message"] = error_message
+
+        normalized["empty_output_retry_candidate"] = bool(
+            normalized["empty_output"] and normalized.get("ok") is True
+        )
+
+        if stderr.strip() and not ok and not isinstance(normalized.get("error"), dict):
+            normalized["error"] = {
+                "type": error_type or "external_stderr",
+                "message": error_message or stderr.strip(),
+                "retryable": bool(normalized.get("empty_output_retry_candidate", False)),
+                "details": {
+                    "source": source,
+                    "returncode": returncode,
+                    "stderr": stderr,
+                },
+            }
+
+        if isinstance(step, dict):
+            normalized.setdefault("step_type", step.get("type"))
+            normalized.setdefault("step_id", step.get("id"))
+
+        return normalized
+
+    def _try_parse_json_object(self, text: str) -> Optional[Dict[str, Any]]:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+
+        candidates = [raw]
+        first = raw.find("{")
+        last = raw.rfind("}")
+        if first >= 0 and last > first:
+            candidates.append(raw[first : last + 1])
+
+        for candidate in candidates:
+            try:
+                parsed = json.loads(candidate)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+
+        return None
+
+    def _coerce_text(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        try:
+            return str(value)
+        except Exception:
+            return ""
+
+    def _coerce_bool(self, value: Any, *, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = self._coerce_text(value).strip().lower()
+        if text in {"1", "true", "yes", "y", "ok", "pass", "passed", "success"}:
+            return True
+        if text in {"0", "false", "no", "n", "fail", "failed", "error"}:
+            return False
+        return default
+
+    def _safe_int_or_none(self, value: Any) -> Optional[int]:
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            try:
+                return int(value)
+            except Exception:
+                return None
+        text = self._coerce_text(value).strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except Exception:
+            return None
+
+
 class ToolStepHandler(BaseStepHandler):
     def handle(
         self,
@@ -106,21 +302,62 @@ class ToolStepHandler(BaseStepHandler):
                 details={"tool_name": tool_name},
             )
 
-        inner_ok = self.executor._extract_inner_ok(result)
-        if inner_ok:
+        normalized_result = self._normalize_external_result(
+            result,
+            step=step,
+            source=f"tool:{tool_name}",
+        )
+
+        inner_ok = self.executor._extract_inner_ok(normalized_result)
+        if inner_ok and not normalized_result.get("empty_output_retry_candidate"):
             return self._success(
-                result=result,
+                result=normalized_result,
                 step=step,
-                extra={"tool_name": tool_name},
+                extra={
+                    "tool_name": tool_name,
+                    "normalized_tool_result": True,
+                },
             )
 
+        if inner_ok and normalized_result.get("empty_output_retry_candidate"):
+            return self._error(
+                error_type="tool_empty_output",
+                message="tool returned empty output",
+                step=step,
+                result=normalized_result,
+                retryable=True,
+                details={
+                    "tool_name": tool_name,
+                    "empty_output_retry_candidate": True,
+                },
+                extra={
+                    "tool_name": tool_name,
+                    "normalized_tool_result": True,
+                },
+            )
+
+        error_type = str(normalized_result.get("error_type") or "tool_step_failed")
+        message = str(
+            normalized_result.get("error_message")
+            or normalized_result.get("stderr")
+            or "tool returned failure"
+        )
+
         return self._error(
-            error_type="tool_step_failed",
-            message="tool returned failure",
+            error_type=error_type,
+            message=message,
             step=step,
-            result=result,
-            details={"tool_name": tool_name},
-            extra={"tool_name": tool_name},
+            result=normalized_result,
+            details={
+                "tool_name": tool_name,
+                "returncode": normalized_result.get("returncode"),
+                "stderr_present": normalized_result.get("stderr_present"),
+                "stdout_present": normalized_result.get("stdout_present"),
+            },
+            extra={
+                "tool_name": tool_name,
+                "normalized_tool_result": True,
+            },
         )
 
 
