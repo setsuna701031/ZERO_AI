@@ -66,6 +66,7 @@ def print_help() -> None:
     print("  task create <goal>")
     print("  task submit [task_id]")
     print("  task run [count]")
+    print("  task loop <task_id> [max_cycles]")
     print("  task doc-summary <input> <output>")
     print("  task doc-action-items <input> <output>")
     print("  task doc-requirement <input>")
@@ -88,6 +89,7 @@ def print_help() -> None:
     print("  python app.py task list")
     print("  python app.py task show <task_id>")
     print("  python app.py task result <task_id>")
+    print("  python app.py task loop <task_id>")
     print("  python app.py task open <task_id>")
     print("  python app.py task open <task_id> result")
     print("  python app.py task open <task_id> log")
@@ -1169,7 +1171,7 @@ def _is_command_like_goal(goal: Any) -> bool:
         r'python\s+[A-Za-z0-9_./\-]+\.py',
         r'py\s+[A-Za-z0-9_./\-]+\.py',
         r'(?:cmd|powershell|pwsh|bash|sh)',
-        r'task\s+(?:run|show|result|list|open|delete|retry|rerun|purge|submit|create)',
+        r'\btask\s+(?:run|loop|show|result|list|open|delete|retry|rerun|purge|submit|create)\b',
     ]
     return any(re.search(pattern, text, flags=re.IGNORECASE) for pattern in command_patterns)
 
@@ -1274,6 +1276,147 @@ def _retry_task(system: Any, task_id: str) -> Dict[str, Any]:
 
 def _rerun_task(system: Any, task_id: str) -> Dict[str, Any]:
     return _spawn_task_from_existing(system, task_id, action_name="task_rerun")
+
+
+def _persist_loop_task_update(system: Any, task: Any) -> Dict[str, bool]:
+    result = {"repo": False, "snapshot": False, "runtime_state": False}
+    if not isinstance(task, dict):
+        return result
+
+    task_id = _extract_task_id(task)
+    if not task_id:
+        return result
+
+    scheduler = _get_scheduler(system)
+    safe_task = copy.deepcopy(task)
+
+    persist_fn = getattr(scheduler, "_persist_task_payload", None)
+    if callable(persist_fn):
+        try:
+            persist_fn(task_id, copy.deepcopy(safe_task))
+            result["repo"] = True
+        except Exception:
+            result["repo"] = False
+
+    if not result["repo"]:
+        repo = getattr(scheduler, "task_repo", None)
+        if repo is not None:
+            for method_name in ("replace_task", "upsert_task", "create_task", "add_task"):
+                method = getattr(repo, method_name, None)
+                if not callable(method):
+                    continue
+                try:
+                    if method_name == "replace_task":
+                        method(task_id, copy.deepcopy(safe_task))
+                    else:
+                        method(copy.deepcopy(safe_task))
+                    result["repo"] = True
+                    break
+                except Exception:
+                    continue
+
+    paths = _extract_paths(safe_task)
+
+    snapshot_path = _safe_str(paths.get("snapshot_path"))
+    if not snapshot_path and _safe_str(paths.get("task_dir")):
+        snapshot_path = os.path.join(_safe_str(paths.get("task_dir")), "task_snapshot.json")
+    if snapshot_path:
+        result["snapshot"] = _write_json_file(snapshot_path, safe_task)
+
+    runtime_state = safe_task.get("runtime_state")
+    runtime_state_path = _safe_str(paths.get("runtime_state_path"))
+    if isinstance(runtime_state, dict) and runtime_state_path:
+        result["runtime_state"] = _write_json_file(runtime_state_path, runtime_state)
+
+    return result
+
+
+def _parse_task_loop_args(raw: str) -> Tuple[str, int]:
+    text = _safe_str(raw)
+    if not text:
+        return "", 5
+
+    parts = text.split()
+    task_id = parts[0].strip() if parts else ""
+    max_cycles = 5
+
+    if len(parts) >= 2:
+        try:
+            max_cycles = max(1, int(parts[1]))
+        except Exception:
+            max_cycles = 5
+
+    return task_id, max_cycles
+
+
+def _run_task_loop_until_terminal(system: Any, task_id: str, max_cycles: int = 5) -> Dict[str, Any]:
+    normalized_task_id = _safe_str(task_id)
+    if not normalized_task_id:
+        return {"ok": False, "error": "task_id is required", "mode": "task_loop_until_terminal"}
+
+    task = _get_task(system, normalized_task_id)
+    if not isinstance(task, dict):
+        return {
+            "ok": False,
+            "error": "task not found",
+            "task_id": normalized_task_id,
+            "mode": "task_loop_until_terminal",
+        }
+
+    agent = _get_agent_loop(system)
+    run_until_terminal = getattr(agent, "run_task_until_terminal", None) if agent is not None else None
+    if not callable(run_until_terminal):
+        return {
+            "ok": False,
+            "error": "AgentLoop.run_task_until_terminal is not available",
+            "task_id": normalized_task_id,
+            "mode": "task_loop_until_terminal",
+        }
+
+    merged_task = _merge_task_with_snapshot(task)
+    original_plan = merged_task.get("planner_result")
+    if not isinstance(original_plan, dict):
+        original_plan = merged_task.get("plan") if isinstance(merged_task.get("plan"), dict) else None
+
+    try:
+        result = run_until_terminal(
+            task=merged_task,
+            current_tick=0,
+            user_input=_extract_goal(merged_task),
+            original_plan=original_plan,
+            max_cycles=max(1, int(max_cycles)),
+        )
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"run_task_until_terminal failed: {e}",
+            "traceback": traceback.format_exc(),
+            "task_id": normalized_task_id,
+            "mode": "task_loop_until_terminal",
+        }
+
+    if not isinstance(result, dict):
+        return {
+            "ok": False,
+            "error": "run_task_until_terminal returned non-dict result",
+            "raw_result": result,
+            "task_id": normalized_task_id,
+            "mode": "task_loop_until_terminal",
+        }
+
+    returned_task = result.get("task")
+    persistence = _persist_loop_task_update(system, returned_task) if isinstance(returned_task, dict) else {
+        "repo": False,
+        "snapshot": False,
+        "runtime_state": False,
+    }
+
+    payload = copy.deepcopy(result)
+    payload["mode"] = "task_loop_until_terminal"
+    payload["task_id"] = normalized_task_id
+    payload["metadata_persisted"] = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, returned_task)
+    payload["loop_task_persisted"] = persistence
+    return payload
 
 
 
@@ -1641,8 +1784,11 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         return "/task_list"
     if lowered == "task run":
         return "/task_run"
+    if lowered == "task loop":
+        return "/task_loop"
     task_prefixes = [
         ("task run ", "/task_run "),
+        ("task loop ", "/task_loop "),
         ("task create ", "/task_create "),
         ("task new ", "/task_create "),
         ("task submit ", "/task_submit "),
@@ -2650,6 +2796,14 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
             return
         _print_task_result(task)
         return
+    if text.startswith("/task_loop"):
+        raw_args = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) >= 2 else ""
+        task_id, max_cycles = _parse_task_loop_args(raw_args)
+        if not task_id:
+            print_json({"ok": False, "error": "task_id is required", "mode": "task_loop_until_terminal"})
+            return
+        print_json(_run_task_loop_until_terminal(system, task_id, max_cycles=max_cycles))
+        return
     if text.startswith("/task_open "):
         raw_args = text.split(maxsplit=1)[1].strip()
         task_id, selector = _parse_task_open_args(raw_args)
@@ -3070,6 +3224,8 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
             return "/task_submit " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_submit"
         if sub == "run":
             return "/task_run " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_run"
+        if sub == "loop":
+            return "/task_loop " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_loop"
         return None
     if first == "chat":
         return "chat " + " ".join(parts[1:]) if len(parts) >= 2 else None
