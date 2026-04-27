@@ -369,13 +369,19 @@ class TaskRunner:
             }
 
         step = steps[idx]
+        trace_tick = self._trace_tick_for_step(
+            state=state,
+            step_index=idx,
+            current_tick=current_tick,
+        )
 
         self._append_trace_json_event(
             task,
             "step_start",
             {
                 "task_id": task.get("task_id") or task.get("id"),
-                "tick": current_tick,
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
                 "step_index": idx,
                 "steps_total": len(steps),
                 "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
@@ -408,7 +414,7 @@ class TaskRunner:
             step=step,
             step_result=result,
             step_index=idx,
-            current_tick=current_tick,
+            current_tick=trace_tick,
         )
 
         if not result.get("ok"):
@@ -503,7 +509,8 @@ class TaskRunner:
                 "task_failed",
                 {
                     "task_id": task.get("task_id") or task.get("id"),
-                    "tick": current_tick,
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
                     "step_index": idx,
                     "failure_type": failure_type,
                     "error": result.get("error"),
@@ -547,7 +554,8 @@ class TaskRunner:
                 "task_finished",
                 {
                     "task_id": task.get("task_id") or task.get("id"),
-                    "tick": current_tick,
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
                     "step_index": idx,
                     "steps_total": len(steps),
                     "status": "finished",
@@ -756,6 +764,43 @@ class TaskRunner:
             return int(value)
         except Exception:
             return int(default)
+
+    def _trace_tick_for_step(
+        self,
+        *,
+        state: Optional[Dict[str, Any]],
+        step_index: int,
+        current_tick: int,
+    ) -> int:
+        """Return a stable task-local tick for trace.json events.
+
+        Scheduler/current_tick can be reused or reset across queue runs, especially
+        when `task run 2` advances multiple tasks.  For trace.json, the useful
+        display value is the task-local step order, so each task shows a clean
+        monotonic sequence: step 0 -> tick 1, step 1 -> tick 2, etc.
+        The original scheduler tick is still stored separately as scheduler_tick
+        on trace.json events that TaskRunner writes.
+        """
+        try:
+            idx = int(step_index)
+            if idx >= 0:
+                return idx + 1
+        except Exception:
+            pass
+
+        if isinstance(state, dict):
+            try:
+                idx = int(state.get("current_step_index", 0) or 0)
+                if idx >= 0:
+                    return idx + 1
+            except Exception:
+                pass
+
+        try:
+            tick = int(current_tick)
+            return tick if tick > 0 else 1
+        except Exception:
+            return 1
 
     # ============================================================
     # helpers
