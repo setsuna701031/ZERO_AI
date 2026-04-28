@@ -375,6 +375,23 @@
             min-height: 626px;
             display: flex;
             flex-direction: column;
+            transition: border-color 160ms ease, box-shadow 160ms ease;
+        }
+
+        .persona-card.persona-state-thinking {
+            border-color: rgba(255, 217, 120, 0.65);
+            box-shadow:
+                0 0 0 1px rgba(255, 217, 120, 0.14),
+                0 0 34px rgba(255, 217, 120, 0.15),
+                0 22px 50px rgba(0, 0, 0, 0.28);
+        }
+
+        .persona-card.persona-state-error {
+            border-color: rgba(255, 154, 165, 0.7);
+            box-shadow:
+                0 0 0 1px rgba(255, 154, 165, 0.12),
+                0 0 34px rgba(255, 154, 165, 0.15),
+                0 22px 50px rgba(0, 0, 0, 0.28);
         }
 
         .persona-header {
@@ -400,6 +417,33 @@
             font-weight: 900;
             font-size: 12px;
             letter-spacing: 0.4px;
+            min-width: 68px;
+            text-align: center;
+            transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+        }
+
+        .persona-state.state-idle {
+            color: var(--blue-2);
+            background: rgba(47, 134, 255, 0.14);
+            border-color: rgba(47, 134, 255, 0.22);
+        }
+
+        .persona-state.state-thinking {
+            color: var(--yellow);
+            background: rgba(255, 193, 7, 0.12);
+            border-color: rgba(255, 193, 7, 0.35);
+        }
+
+        .persona-state.state-running {
+            color: #8ee6a4;
+            background: rgba(84, 209, 143, 0.12);
+            border-color: rgba(84, 209, 143, 0.35);
+        }
+
+        .persona-state.state-error {
+            color: var(--red);
+            background: rgba(220, 53, 69, 0.16);
+            border-color: rgba(220, 53, 69, 0.35);
         }
 
         .persona-visual {
@@ -433,6 +477,40 @@
             box-shadow: inset 0 0 38px rgba(0, 0, 0, 0.62);
             pointer-events: none;
             z-index: 3;
+        }
+
+        .persona-scanline {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: -40%;
+            height: 34%;
+            z-index: 4;
+            background: linear-gradient(
+                180deg,
+                transparent 0%,
+                rgba(101, 184, 255, 0.02) 20%,
+                rgba(101, 184, 255, 0.14) 50%,
+                rgba(101, 184, 255, 0.02) 80%,
+                transparent 100%
+            );
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .persona-card.persona-state-thinking .persona-scanline,
+        .persona-card.persona-state-running .persona-scanline {
+            opacity: 1;
+            animation: scanlineMove 1.8s linear infinite;
+        }
+
+        @keyframes scanlineMove {
+            from {
+                transform: translateY(0);
+            }
+            to {
+                transform: translateY(420%);
+            }
         }
 
         #personaImage {
@@ -579,7 +657,7 @@
                     <input
                         id="userInput"
                         type="text"
-                        placeholder="請直接輸入文字，例如：你好 / status / summary / tasks"
+                        placeholder="請直接輸入文字，例如：status / tasks / files / drop hello"
                         autocomplete="off"
                     />
                     <button id="sendBtn">送出</button>
@@ -633,19 +711,20 @@
                     </details>
 
                     <div class="hint">
-                        可先測：<code>status</code>、<code>summary</code>、<code>tasks</code>、<code>files</code>。
+                        可先測：<code>status</code>、<code>tasks</code>、<code>files</code>、<code>inbox</code>、<code>drop hello</code>。
                     </div>
                 </div>
             </main>
 
             <aside class="right-column">
-                <section class="persona-card">
+                <section id="personaCard" class="persona-card persona-state-idle">
                     <div class="persona-header">
                         <div class="persona-title">Persona Visual</div>
-                        <div id="personaStateBadge" class="persona-state">IDLE</div>
+                        <div id="personaStateBadge" class="persona-state state-idle">IDLE</div>
                     </div>
 
                     <div class="persona-visual">
+                        <div class="persona-scanline"></div>
                         <img
                             id="personaImage"
                             src="/assets/persona/zero_v1/idle_open.png"
@@ -687,6 +766,7 @@
         const errorBox = document.getElementById("errorBox");
         const resultBox = document.getElementById("resultBox");
         const rawJsonBox = document.getElementById("rawJsonBox");
+        const personaCard = document.getElementById("personaCard");
         const personaImage = document.getElementById("personaImage");
         const personaStateBadge = document.getElementById("personaStateBadge");
         const blinkStateValue = document.getElementById("blinkStateValue");
@@ -710,25 +790,39 @@
         }
 
         function setPersonaState(stateText) {
-            const text = stateText || "IDLE";
-            const lower = text.toLowerCase();
+            const rawText = stateText || "idle";
+            const lower = rawText.toLowerCase();
 
-            if (lower.includes("running")) {
-                personaStateBadge.textContent = "RUNNING";
-                return;
+            let normalized = "idle";
+            let label = "IDLE";
+
+            if (lower.includes("thinking") || lower.includes("請求中") || lower.includes("waiting")) {
+                normalized = "thinking";
+                label = "THINKING";
+            } else if (lower.includes("running") || lower.includes("executing") || lower.includes("queued")) {
+                normalized = "running";
+                label = "RUNNING";
+            } else if (lower.includes("error") || lower.includes("failed") || lower.includes("失敗")) {
+                normalized = "error";
+                label = "ERROR";
             }
 
-            if (lower.includes("error") || lower.includes("failed")) {
-                personaStateBadge.textContent = "ERROR";
-                return;
-            }
+            personaCard.classList.remove(
+                "persona-state-idle",
+                "persona-state-thinking",
+                "persona-state-running",
+                "persona-state-error"
+            );
+            personaCard.classList.add(`persona-state-${normalized}`);
 
-            if (lower.includes("thinking")) {
-                personaStateBadge.textContent = "THINKING";
-                return;
-            }
-
-            personaStateBadge.textContent = "IDLE";
+            personaStateBadge.classList.remove(
+                "state-idle",
+                "state-thinking",
+                "state-running",
+                "state-error"
+            );
+            personaStateBadge.classList.add(`state-${normalized}`);
+            personaStateBadge.textContent = label;
         }
 
         function setLoadingState(isLoading) {
@@ -736,7 +830,7 @@
             sendBtn.textContent = isLoading ? "送出中..." : "送出";
 
             if (isLoading) {
-                personaStateBadge.textContent = "THINKING";
+                setPersonaState("thinking");
             }
         }
 
@@ -843,12 +937,12 @@
             resultBox.textContent = responseText;
             rawJsonBox.textContent = JSON.stringify(data, null, 2);
 
-            if (data?.ui?.system_status) {
-                setPersonaState(data.ui.system_status);
-            } else if (success) {
-                setPersonaState("idle");
-            } else {
+            if (!success) {
                 setPersonaState("error");
+            } else if (data?.ui?.system_status) {
+                setPersonaState(data.ui.system_status);
+            } else {
+                setPersonaState("idle");
             }
 
             if (warningText) {
@@ -944,6 +1038,7 @@
 
         preloadPersonaFrames();
         setPersonaFrame("open");
+        setPersonaState("idle");
         blinkStateValue.textContent = "disabled";
     </script>
 </body>
