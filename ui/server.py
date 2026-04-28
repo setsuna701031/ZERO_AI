@@ -27,8 +27,10 @@ from core.display.ui_bridge import (
     drop_text_file,
     get_latest_summary,
     get_system_status,
+    get_task_detail,
     get_tasks,
     list_shared_files,
+    read_shared_file,
 )
 
 
@@ -86,17 +88,21 @@ def _format_tasks_for_display(tasks: list[dict[str, Any]]) -> str:
         status = _safe_text(task.get("status"), "-")
         step = _safe_text(task.get("step"), "-")
         goal = _safe_text(task.get("goal"), "-")
+        final_answer = _safe_text(task.get("final_answer"), "")
 
-        lines.append(
-            "\n".join(
-                [
-                    f"{index}. {task_id}",
-                    f"   status: {status}",
-                    f"   step  : {step}",
-                    f"   goal  : {goal}",
-                ]
-            )
-        )
+        block = [
+            f"{index}. {task_id}",
+            f"   status: {status}",
+            f"   step  : {step}",
+            f"   goal  : {goal}",
+        ]
+
+        if final_answer:
+            block.append(f"   result: {final_answer}")
+
+        block.append(f"   inspect: task {task_id}")
+
+        lines.append("\n".join(block))
 
     return "\n\n".join(lines)
 
@@ -105,11 +111,115 @@ def _format_shared_files_for_display(files: list[str]) -> str:
     if not files:
         return "目前 workspace/shared 沒有可列出的檔案。"
 
-    return "\n".join(f"- {name}" for name in files)
+    return "\n".join(f"- {name}\n  view: view {name}" for name in files)
+
+
+def _format_task_detail_for_display(detail: Dict[str, Any]) -> str:
+    if not detail.get("found"):
+        return f"[TASK DETAIL]\nTask not found.\n\n{detail.get('error', '')}"
+
+    summary = detail.get("summary") or {}
+    steps = detail.get("steps") or []
+    files = detail.get("available_files") or []
+
+    lines: list[str] = [
+        "[TASK DETAIL]",
+        f"Task ID      : {summary.get('task_id') or detail.get('task_id') or '-'}",
+        f"Status       : {summary.get('status') or '-'}",
+        f"Step         : {summary.get('step') or '-'}",
+        f"Goal         : {summary.get('goal') or '-'}",
+        f"Final Answer : {summary.get('final_answer') or '-'}",
+    ]
+
+    if summary.get("scenario") or summary.get("mode") or summary.get("pipeline_name"):
+        lines.extend(
+            [
+                "",
+                "[PIPELINE]",
+                f"Scenario     : {summary.get('scenario') or '-'}",
+                f"Mode         : {summary.get('mode') or '-'}",
+                f"Pipeline     : {summary.get('pipeline_name') or '-'}",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "[FILES]",
+            "\n".join(f"- {name}" for name in files) if files else "-",
+            "",
+            "[PLAN STEPS]",
+        ]
+    )
+
+    if steps:
+        for index, step in enumerate(steps, start=1):
+            if isinstance(step, dict):
+                name = step.get("name") or step.get("type") or step.get("action") or "step"
+                target = step.get("path") or step.get("target") or step.get("output") or ""
+                lines.append(f"{index}. {name} {target}".rstrip())
+            else:
+                lines.append(f"{index}. {step}")
+    else:
+        lines.append("-")
+
+    return "\n".join(lines)
+
+
+def _format_shared_file_for_display(file_info: Dict[str, Any]) -> str:
+    if not file_info.get("found"):
+        return f"[SHARED FILE]\nFile not found.\n\n{file_info.get('error', '')}"
+
+    return (
+        "[SHARED FILE]\n"
+        f"Name: {file_info.get('filename')}\n"
+        f"Path: {file_info.get('path')}\n\n"
+        "[CONTENT]\n"
+        f"{file_info.get('content') or ''}"
+    )
+
+
+def _payload(
+    *,
+    success: bool,
+    mode: str,
+    summary: str,
+    response: str,
+    meta_model: str = "local-ui-bridge",
+    used_fallback: bool = False,
+    llm_used: bool = False,
+    warning: Optional[str] = None,
+    error: Optional[str] = None,
+    ui: Optional[Dict[str, Any]] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    data: Dict[str, Any] = {
+        "success": success,
+        "mode": mode,
+        "summary": summary,
+        "response": response,
+        "content": response,
+        "warning": warning,
+        "error": error,
+        "meta": {
+            "model": meta_model,
+            "used_fallback": used_fallback,
+            "llm_used": llm_used,
+        },
+    }
+
+    if ui is not None:
+        data["ui"] = ui
+
+    if extra:
+        data.update(extra)
+
+    return data
 
 
 def _build_chat_payload(message: str) -> Dict[str, Any]:
-    normalized = message.strip().lower()
+    text = message.strip()
+    normalized = text.lower()
 
     status_payload = _build_status_payload()
     status_data = status_payload["response"]
@@ -129,89 +239,97 @@ def _build_chat_payload(message: str) -> Dict[str, Any]:
             f"{_format_shared_files_for_display(shared_files)}"
         )
 
-        return {
-            "success": True,
-            "mode": "ui_bridge_status",
-            "summary": f"系統目前狀態：{system_status}",
-            "response": response_text,
-            "content": response_text,
-            "meta": {
-                "model": "local-ui-bridge",
-                "used_fallback": False,
-                "llm_used": False,
-            },
-            "ui": status_data,
-        }
+        return _payload(
+            success=True,
+            mode="ui_bridge_status",
+            summary=f"系統目前狀態：{system_status}",
+            response=response_text,
+            ui=status_data,
+        )
 
     if normalized in {"summary", "/summary", "最新摘要", "摘要"}:
         response_text = latest_summary or "目前沒有找到最新 summary。"
 
-        return {
-            "success": True,
-            "mode": "ui_bridge_summary",
-            "summary": "已讀取 workspace/shared 內最新的 *_summary.txt。",
-            "response": response_text,
-            "content": response_text,
-            "meta": {
-                "model": "local-ui-bridge",
-                "used_fallback": False,
-                "llm_used": False,
-            },
-            "ui": status_data,
-        }
+        return _payload(
+            success=True,
+            mode="ui_bridge_summary",
+            summary="已讀取 workspace/shared 內最新的 *_summary.txt。",
+            response=response_text,
+            ui=status_data,
+        )
 
     if normalized in {"tasks", "/tasks", "任務", "任務狀態"}:
         response_text = _format_tasks_for_display(tasks)
 
-        return {
-            "success": True,
-            "mode": "ui_bridge_tasks",
-            "summary": f"已讀取最近 {len(tasks)} 筆任務狀態。",
-            "response": response_text,
-            "content": response_text,
-            "meta": {
-                "model": "local-ui-bridge",
-                "used_fallback": False,
-                "llm_used": False,
-            },
-            "ui": status_data,
-        }
+        return _payload(
+            success=True,
+            mode="ui_bridge_tasks",
+            summary=f"已讀取最近 {len(tasks)} 筆任務狀態。可輸入 task <task_id> 查看單一任務。",
+            response=response_text,
+            ui=status_data,
+        )
 
     if normalized in {"files", "/files", "shared", "輸出檔案"}:
         response_text = _format_shared_files_for_display(shared_files)
 
-        return {
-            "success": True,
-            "mode": "ui_bridge_shared_files",
-            "summary": f"已列出 workspace/shared 最近 {len(shared_files)} 個檔案。",
-            "response": response_text,
-            "content": response_text,
-            "meta": {
-                "model": "local-ui-bridge",
-                "used_fallback": False,
-                "llm_used": False,
-            },
-            "ui": status_data,
-        }
+        return _payload(
+            success=True,
+            mode="ui_bridge_shared_files",
+            summary=f"已列出 workspace/shared 最近 {len(shared_files)} 個檔案。可輸入 view <filename> 查看內容。",
+            response=response_text,
+            ui=status_data,
+        )
+
+    if normalized.startswith("task "):
+        task_id = text[5:].strip()
+        detail = get_task_detail(task_id)
+        response_text = _format_task_detail_for_display(detail)
+
+        return _payload(
+            success=bool(detail.get("found")),
+            mode="ui_bridge_task_detail",
+            summary=(
+                f"已讀取任務：{detail.get('task_id')}"
+                if detail.get("found")
+                else f"找不到任務：{task_id}"
+            ),
+            response=response_text,
+            ui=status_data,
+            error=None if detail.get("found") else detail.get("error"),
+            extra={"task_detail": detail},
+        )
+
+    if normalized.startswith("view "):
+        filename = text[5:].strip()
+        file_info = read_shared_file(filename)
+        response_text = _format_shared_file_for_display(file_info)
+
+        return _payload(
+            success=bool(file_info.get("found")),
+            mode="ui_bridge_shared_file_view",
+            summary=(
+                f"已讀取 shared 檔案：{file_info.get('filename')}"
+                if file_info.get("found")
+                else f"找不到 shared 檔案：{filename}"
+            ),
+            response=response_text,
+            ui=status_data,
+            error=None if file_info.get("found") else file_info.get("error"),
+            extra={"shared_file": file_info},
+        )
 
     if normalized.startswith("drop "):
-        content = message.strip()[5:].strip()
+        content = text[5:].strip()
 
         if not content:
-            return {
-                "success": False,
-                "mode": "ui_bridge_drop",
-                "summary": "drop 指令沒有內容。",
-                "error": "請輸入 drop 後面的文字內容。",
-                "warning": None,
-                "response": "格式：drop 你要丟進 inbox 的文字",
-                "meta": {
-                    "model": "local-ui-bridge",
-                    "used_fallback": False,
-                    "llm_used": False,
-                },
-                "ui": status_data,
-            }
+            return _payload(
+                success=False,
+                mode="ui_bridge_drop",
+                summary="drop 指令沒有內容。",
+                error="請輸入 drop 後面的文字內容。",
+                response="格式：drop 你要丟進 inbox 的文字",
+                ui=status_data,
+            )
 
         path = drop_text_file(content)
 
@@ -222,19 +340,13 @@ def _build_chat_payload(message: str) -> Dict[str, Any]:
             "不等於已經觸發完整 agent loop。"
         )
 
-        return {
-            "success": True,
-            "mode": "ui_bridge_drop",
-            "summary": "已將文字放入 workspace/inbox。",
-            "response": response_text,
-            "content": response_text,
-            "meta": {
-                "model": "local-ui-bridge",
-                "used_fallback": False,
-                "llm_used": False,
-            },
-            "ui": _build_status_payload()["response"],
-        }
+        return _payload(
+            success=True,
+            mode="ui_bridge_drop",
+            summary="已將文字放入 workspace/inbox。",
+            response=response_text,
+            ui=_build_status_payload()["response"],
+        )
 
     help_text = (
         "ZERO Web UI 已接到本地 ui_bridge。\n\n"
@@ -242,26 +354,22 @@ def _build_chat_payload(message: str) -> Dict[str, Any]:
         "- status / 狀態：顯示系統狀態、任務、shared 檔案\n"
         "- summary / 摘要：顯示最新 *_summary.txt\n"
         "- tasks / 任務：顯示最近任務狀態\n"
+        "- task <task_id>：查看單一任務狀態與計畫摘要\n"
         "- files / 輸出檔案：列出 workspace/shared 檔案\n"
+        "- view <filename>：讀取 workspace/shared 裡的指定檔案\n"
         "- drop 文字內容：把文字寫入 workspace/inbox\n\n"
-        "目前這個 server.py 是最小 Web UI 後端，"
-        "主要目標是先讓 index.html 可以接到主系統狀態。"
+        "目前這個 server.py 仍是 display/read-first，不直接開放完整 agent 遠端控制。"
     )
 
-    return {
-        "success": True,
-        "mode": "ui_bridge_help",
-        "summary": "Web UI 後端已運作，但這句不是完整 agent loop 執行。",
-        "warning": "目前 /api/chat 先接 ui_bridge，不直接改 agent_loop 或 scheduler。",
-        "response": help_text,
-        "content": help_text,
-        "meta": {
-            "model": "local-ui-bridge",
-            "used_fallback": True,
-            "llm_used": False,
-        },
-        "ui": status_data,
-    }
+    return _payload(
+        success=True,
+        mode="ui_bridge_help",
+        summary="Web UI 後端已運作，但這句不是完整 agent loop 執行。",
+        warning="目前 /api/chat 先接 ui_bridge，不直接改 agent_loop 或 scheduler。",
+        response=help_text,
+        used_fallback=True,
+        ui=status_data,
+    )
 
 
 @app.route("/", methods=["GET"])
