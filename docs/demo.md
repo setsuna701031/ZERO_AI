@@ -11,7 +11,8 @@ At the current stage, the strongest demo chain is:
 1. Requirement Demo
 2. Mini Build Demo
 3. Document Flow Demo
-4. Runtime / mainline smoke validation
+4. L5 Autonomous Loop Demo
+5. Runtime / mainline smoke validation
 
 These parts together show that ZERO is not just a chat wrapper. It can plan, execute, write artifacts, and preserve a stable runnable path.
 
@@ -325,6 +326,71 @@ The showcase is stronger because the system is not only producing artifacts — 
 
 ---
 
+---
+
+## Demo 5: L5 Autonomous Loop (World Trigger)
+
+### Goal
+
+Show that ZERO can run a background autonomous loop while the main CLI remains usable.
+
+This demo proves that ZERO can react to an external world-state event without manual CLI task input.
+
+### Flow
+
+1. An external process writes a trigger into `workspace/world_state.json`.
+2. ZERO detects the trigger through the background world loop.
+3. ZERO automatically executes the configured action.
+4. ZERO writes the result to `workspace/shared/auto.txt`.
+5. ZERO clears the trigger to prevent repeated execution.
+
+### Trigger Example
+
+Run this from another Python shell while `python app.py` is running:
+
+```python
+from core.world.world_state import world_state
+world_state.update("demo_trigger", {"test": True})
+```
+
+### Expected Output
+
+The background loop should print lines similar to:
+
+```text
+[L5] action result = {'ok': True, ...}
+[L5] demo_trigger cleared
+```
+
+The output file should be updated:
+
+- `workspace/shared/auto.txt`
+
+### Screenshot
+
+![L5 Autonomous Loop](demo_assets/l5_autonomous_world_loop_trigger.png)
+
+### What This Demo Proves
+
+This demo proves that ZERO now has a minimal autonomous loop:
+
+- observe external state
+- detect a trigger
+- execute an action
+- write a real artifact
+- clear the trigger
+- keep the main CLI alive
+
+This is the first proof point that ZERO can move beyond one-shot task execution toward a persistent agent runtime.
+
+### Why This Demo Matters
+
+This is not just another tool demo.
+
+It shows that ZERO can keep running, watch external state, and act when the world changes.
+
+That makes the system closer to an autonomous engineering assistant instead of a command-only task runner.
+
 ## Demo Assets To Keep
 
 Important assets worth preserving:
@@ -341,12 +407,15 @@ Important assets worth preserving:
 - runtime smoke PASS screenshot
 - mainline ALL PASS screenshot
 - task summary / artifact proof screenshots
+- L5 autonomous world loop trigger screenshot
+- generated `auto.txt` from the L5 world trigger demo
 
 Recommended storage direction:
 
 - `demos/07_requirement_demo/`
 - `demos/08_mini_build_demo/`
 - `docs/images/checkpoints/`
+- `docs/demo_assets/`
 
 ---
 
@@ -375,6 +444,7 @@ Current main demo status:
 - Requirement demo: available
 - Mini-build demo: available
 - Document flow demo: available
+- L5 autonomous loop demo: available
 - Runtime smoke: validated
 - Mainline smoke: validated
 
