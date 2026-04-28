@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -13,7 +14,14 @@ TASKS_DIR = ROOT / "tasks"
 INBOX_DIR = ROOT / "inbox"
 
 
-def _safe_read_text(path: Path, max_chars: int = 20000) -> str:
+def _safe_read_json(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _safe_read_text(path: Path, max_chars: int = 12000) -> str:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except Exception as exc:
@@ -24,19 +32,38 @@ def _safe_read_text(path: Path, max_chars: int = 20000) -> str:
     return text
 
 
-def _safe_read_json(path: Path) -> Optional[Dict[str, Any]]:
+def _safe_shared_path(filename: str) -> Optional[Path]:
+    name = (filename or "").strip().replace("\\", "/")
+    if not name or "/" in name or name in {".", ".."}:
+        return None
+
+    path = SHARED_DIR / name
     try:
-        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        resolved = path.resolve()
+        shared_resolved = SHARED_DIR.resolve()
+        if shared_resolved not in resolved.parents and resolved != shared_resolved:
+            return None
     except Exception:
         return None
 
-    if isinstance(data, dict):
-        return data
-    return {"value": data}
+    return path
 
 
-def _safe_name(name: str) -> str:
-    return Path(str(name)).name.strip()
+def _safe_inbox_path(filename: str) -> Optional[Path]:
+    name = (filename or "").strip().replace("\\", "/")
+    if not name or "/" in name or name in {".", ".."}:
+        return None
+
+    path = INBOX_DIR / name
+    try:
+        resolved = path.resolve()
+        inbox_resolved = INBOX_DIR.resolve()
+        if inbox_resolved not in resolved.parents and resolved != inbox_resolved:
+            return None
+    except Exception:
+        return None
+
+    return path
 
 
 def get_latest_summary() -> Optional[str]:
@@ -51,61 +78,99 @@ def get_latest_summary() -> Optional[str]:
         return None
 
     latest = max(files, key=lambda f: f.stat().st_mtime)
+    return _safe_read_text(latest)
 
-    try:
-        return latest.read_text(encoding="utf-8", errors="replace")
-    except Exception as exc:
-        return f"[error reading summary] {exc}"
+
+def list_shared_files(limit: int = 20) -> List[str]:
+    """
+    Return recent file names under workspace/shared.
+    """
+    if not SHARED_DIR.exists():
+        return []
+
+    files = [f for f in SHARED_DIR.iterdir() if f.is_file()]
+    files = sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
+
+    return [f.name for f in files[:limit]]
+
+
+def read_shared_file(filename: str, max_chars: int = 12000) -> Optional[Dict[str, Any]]:
+    """
+    Read a single file from workspace/shared by file name only.
+    Path traversal and nested paths are intentionally rejected.
+    """
+    path = _safe_shared_path(filename)
+    if path is None:
+        return None
+
+    if not path.exists() or not path.is_file():
+        return None
+
+    return {
+        "name": path.name,
+        "path": str(path),
+        "size": path.stat().st_size,
+        "modified": path.stat().st_mtime,
+        "content": _safe_read_text(path, max_chars=max_chars),
+    }
 
 
 def get_tasks(limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Return latest task runtime info from workspace/tasks.
+    Return latest task info from workspace/tasks.
     """
     if not TASKS_DIR.exists():
         return []
 
-    tasks: List[Dict[str, Any]] = []
-
     task_dirs = [p for p in TASKS_DIR.iterdir() if p.is_dir()]
     task_dirs = sorted(task_dirs, key=lambda p: p.stat().st_mtime, reverse=True)
+
+    tasks: List[Dict[str, Any]] = []
 
     for task_dir in task_dirs:
         runtime_file = task_dir / "runtime_state.json"
         result_file = task_dir / "result.json"
+
+        runtime_data = _safe_read_json(runtime_file) if runtime_file.exists() else None
+        result_data = _safe_read_json(result_file) if result_file.exists() else None
+
+        if not runtime_data and not result_data:
+            continue
 
         status = None
         step = None
         goal = None
         final_answer = None
 
-        if runtime_file.exists():
-            data = _safe_read_json(runtime_file)
-            if data:
-                status = data.get("status")
-                step = data.get("step")
-                goal = data.get("goal")
-                final_answer = data.get("final_answer") or data.get("last_result")
-
-        if result_file.exists() and not final_answer:
-            result_data = _safe_read_json(result_file)
-            if result_data:
-                final_answer = (
-                    result_data.get("final_answer")
-                    or result_data.get("message")
-                    or result_data.get("result")
-                )
-
-        if runtime_file.exists() or result_file.exists():
-            tasks.append(
-                {
-                    "task_id": task_dir.name,
-                    "status": status,
-                    "step": step,
-                    "goal": goal,
-                    "final_answer": final_answer,
-                }
+        if runtime_data:
+            status = runtime_data.get("status")
+            step = runtime_data.get("step")
+            goal = runtime_data.get("goal")
+            final_answer = (
+                runtime_data.get("final_answer")
+                or runtime_data.get("last_result")
+                or runtime_data.get("result")
             )
+
+        if result_data:
+            status = result_data.get("status", status)
+            goal = result_data.get("goal", goal)
+            final_answer = (
+                result_data.get("final_answer")
+                or result_data.get("answer")
+                or result_data.get("message")
+                or final_answer
+            )
+
+        tasks.append(
+            {
+                "task_id": task_dir.name,
+                "status": status,
+                "step": step,
+                "goal": goal,
+                "final_answer": final_answer,
+            }
+        )
 
         if len(tasks) >= limit:
             break
@@ -113,98 +178,76 @@ def get_tasks(limit: int = 10) -> List[Dict[str, Any]]:
     return tasks
 
 
-def get_task_detail(task_id: str, max_chars: int = 20000) -> Dict[str, Any]:
+def get_task_detail(task_id: str) -> Optional[Dict[str, Any]]:
     """
-    Return inspectable detail for a single task directory.
-
-    This is display/read-only. It does not execute or mutate the task.
+    Read one task directory from workspace/tasks.
     """
-    safe_task_id = _safe_name(task_id)
-    if not safe_task_id:
-        return {
-            "found": False,
-            "task_id": task_id,
-            "error": "empty task id",
-        }
+    safe_task_id = (task_id or "").strip()
+    if not safe_task_id or "/" in safe_task_id or "\\" in safe_task_id or safe_task_id in {".", ".."}:
+        return None
 
     task_dir = TASKS_DIR / safe_task_id
     if not task_dir.exists() or not task_dir.is_dir():
-        return {
-            "found": False,
-            "task_id": safe_task_id,
-            "error": f"task directory not found: {task_dir}",
-        }
+        return None
 
-    files = {
-        "runtime_state": task_dir / "runtime_state.json",
-        "result": task_dir / "result.json",
-        "plan": task_dir / "plan.json",
-        "execution_log": task_dir / "execution_log.json",
-        "trace": task_dir / "trace.json",
-        "task_snapshot": task_dir / "task_snapshot.json",
-    }
+    runtime_file = task_dir / "runtime_state.json"
+    result_file = task_dir / "result.json"
+    plan_file = task_dir / "plan.json"
+    trace_file = task_dir / "trace.json"
+    execution_log_file = task_dir / "execution_log.json"
 
-    parsed: Dict[str, Any] = {}
-    raw_text: Dict[str, str] = {}
-    available_files: List[str] = []
+    runtime_data = _safe_read_json(runtime_file) if runtime_file.exists() else {}
+    result_data = _safe_read_json(result_file) if result_file.exists() else {}
+    plan_data = _safe_read_json(plan_file) if plan_file.exists() else {}
 
-    for key, path in files.items():
-        if not path.exists():
-            continue
+    files = []
+    for item in sorted(task_dir.iterdir(), key=lambda p: p.name):
+        if item.is_file():
+            files.append(
+                {
+                    "name": item.name,
+                    "path": str(item),
+                    "size": item.stat().st_size,
+                }
+            )
 
-        available_files.append(path.name)
-        data = _safe_read_json(path)
-        if data is not None:
-            parsed[key] = data
-        else:
-            raw_text[key] = _safe_read_text(path, max_chars=max_chars)
-
-    runtime = parsed.get("runtime_state", {})
-    result = parsed.get("result", {})
-    plan = parsed.get("plan", {})
-
-    if not isinstance(runtime, dict):
-        runtime = {}
-    if not isinstance(result, dict):
-        result = {}
-    if not isinstance(plan, dict):
-        plan = {}
-
-    summary = {
-        "task_id": safe_task_id,
-        "status": runtime.get("status") or result.get("status"),
-        "step": runtime.get("step"),
-        "goal": runtime.get("goal") or result.get("goal"),
-        "final_answer": (
-            result.get("final_answer")
-            or result.get("message")
-            or runtime.get("final_answer")
-            or runtime.get("last_result")
-        ),
-        "pipeline_name": runtime.get("pipeline_name") or result.get("pipeline_name"),
-        "mode": runtime.get("mode") or result.get("mode"),
-        "scenario": runtime.get("scenario") or result.get("scenario"),
-    }
-
-    steps = plan.get("steps")
-    if not isinstance(steps, list):
-        steps = []
+    status = runtime_data.get("status") or result_data.get("status")
+    step = runtime_data.get("step")
+    goal = runtime_data.get("goal") or result_data.get("goal")
+    final_answer = (
+        result_data.get("final_answer")
+        or result_data.get("answer")
+        or result_data.get("message")
+        or runtime_data.get("final_answer")
+        or runtime_data.get("last_result")
+    )
 
     return {
-        "found": True,
         "task_id": safe_task_id,
-        "task_dir": str(task_dir),
-        "available_files": available_files,
-        "summary": summary,
-        "steps": steps,
-        "parsed": parsed,
-        "raw_text": raw_text,
+        "path": str(task_dir),
+        "status": status,
+        "step": step,
+        "goal": goal,
+        "final_answer": final_answer,
+        "scenario": runtime_data.get("scenario") or result_data.get("scenario"),
+        "mode": runtime_data.get("mode") or result_data.get("mode"),
+        "pipeline_name": runtime_data.get("pipeline_name") or result_data.get("pipeline_name"),
+        "execution_name": runtime_data.get("execution_name") or result_data.get("execution_name"),
+        "files": files,
+        "has_runtime_state": runtime_file.exists(),
+        "has_result": result_file.exists(),
+        "has_plan": plan_file.exists(),
+        "has_trace": trace_file.exists(),
+        "has_execution_log": execution_log_file.exists(),
+        "runtime_state": runtime_data,
+        "result": result_data,
+        "plan": plan_data,
     }
 
 
 def get_system_status() -> str:
     """
-    Rough system status based on latest task.
+    Rough display-layer system status based on the most recent task.
     """
     tasks = get_tasks(limit=1)
 
@@ -212,70 +255,72 @@ def get_system_status() -> str:
         return "idle"
 
     latest = tasks[0]
-    status = latest.get("status")
+    status = str(latest.get("status") or "").lower()
 
-    if status in {"running", "executing", "planning", "queued"}:
+    if status in {"running", "executing", "queued"}:
         return "running"
+
+    if status in {"failed", "error"}:
+        return "error"
 
     return "idle"
 
 
 def drop_text_file(content: str, filename: Optional[str] = None) -> str:
     """
-    Simulate UI drop file -> workspace/inbox.
+    Simulate UI drop text -> workspace/inbox.
+
+    This is intentionally input-only. It does not run scheduler, agent_loop, or any task executor.
     """
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
 
     if not filename:
-        import time
-
         filename = f"ui_drop_{int(time.time())}.txt"
 
-    safe_filename = _safe_name(filename)
-    if not safe_filename:
-        raise ValueError("invalid filename")
+    safe_path = _safe_inbox_path(filename)
+    if safe_path is None:
+        raise ValueError("Invalid inbox filename. Use a simple file name only.")
 
-    path = INBOX_DIR / safe_filename
-    path.write_text(content, encoding="utf-8")
-
-    return str(path)
+    safe_path.write_text(content, encoding="utf-8")
+    return str(safe_path)
 
 
-def list_shared_files(limit: int = 20) -> List[str]:
-    if not SHARED_DIR.exists():
+def list_inbox_files(limit: int = 20) -> List[Dict[str, Any]]:
+    """
+    Return recent files in workspace/inbox.
+    """
+    if not INBOX_DIR.exists():
         return []
 
-    files = [p for p in SHARED_DIR.iterdir() if p.is_file()]
+    files = [f for f in INBOX_DIR.iterdir() if f.is_file()]
     files = sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)
 
-    return [f.name for f in files[:limit]]
-
-
-def read_shared_file(filename: str, max_chars: int = 20000) -> Dict[str, Any]:
-    """
-    Read one file from workspace/shared by file name.
-
-    This is intentionally restricted to workspace/shared and strips path parts.
-    """
-    safe_filename = _safe_name(filename)
-    if not safe_filename:
-        return {
-            "found": False,
-            "filename": filename,
-            "error": "empty filename",
+    return [
+        {
+            "name": f.name,
+            "path": str(f),
+            "size": f.stat().st_size,
+            "modified": f.stat().st_mtime,
         }
+        for f in files[:limit]
+    ]
 
-    path = SHARED_DIR / safe_filename
+
+def read_inbox_file(filename: str, max_chars: int = 12000) -> Optional[Dict[str, Any]]:
+    """
+    Read one workspace/inbox file by file name only.
+    """
+    path = _safe_inbox_path(filename)
+    if path is None:
+        return None
+
     if not path.exists() or not path.is_file():
-        return {
-            "found": False,
-            "filename": safe_filename,
-            "error": f"shared file not found: {path}",
-        }
+        return None
 
     return {
-        "found": True,
-        "filename": safe_filename,
+        "name": path.name,
         "path": str(path),
+        "size": path.stat().st_size,
+        "modified": path.stat().st_mtime,
         "content": _safe_read_text(path, max_chars=max_chars),
     }
