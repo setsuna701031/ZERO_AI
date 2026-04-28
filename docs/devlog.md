@@ -1,3 +1,180 @@
+# ZERO Devlog
+
+## 2026-04-28 - Web UI Persona Bridge display checkpoint
+
+This checkpoint focused on connecting ZERO's local Web UI to the real workspace display state without turning the UI into an unrestricted remote-control layer.
+
+### What was completed
+
+Added a local Web UI backend:
+
+* `ui/server.py`
+
+Added a display-layer bridge:
+
+* `core/display/ui_bridge.py`
+
+Updated the Web UI:
+
+* `ui/index.html`
+
+Updated startup flow:
+
+* `start_zero.bat`
+
+Updated demo documentation:
+
+* `docs/demo.md`
+
+Added Web UI proof asset:
+
+* `docs/demo_assets/persona_runtime/web_ui_persona_bridge_status_success_20260428.png`
+
+### UI bridge behavior
+
+The Web UI now uses this path:
+
+```text
+ui/index.html
+  -> /api/chat
+  -> ui/server.py
+  -> core/display/ui_bridge.py
+  -> workspace/shared + workspace/tasks
+```
+
+The UI can display:
+
+* `status`
+* `summary`
+* `tasks`
+* `files`
+
+Confirmed working through browser tests:
+
+* `status` shows current system status and recent task records
+* `summary` shows the latest `*_summary.txt` content
+* `tasks` shows recent task runtime state
+* `files` lists recent `workspace/shared` files
+
+### Persona Visual integration
+
+The Web UI now includes a right-side Persona Visual panel using the existing assets under:
+
+* `assets/persona/zero_v1/`
+
+Current active image:
+
+* `idle_open.png`
+
+Background image:
+
+* `circuit_bg.png`
+
+Blink is currently disabled.
+
+Reason:
+
+* `idle_open.png`
+* `idle_half.png`
+* `idle_closed.png`
+
+are not yet aligned to identical transparent canvas boundaries, crop position, character scale, and anchor position. Directly switching them in the browser causes the character to visually jump forward/backward. For the current demo, the stable open-eye frame is used.
+
+### Layout stabilization
+
+The Web UI layout was stabilized so that result content no longer pushes the main content panel downward.
+
+Completed layout fixes:
+
+* summary panel uses fixed height
+* main content panel uses fixed height
+* summary and main content scroll internally
+* Persona Visual remains visible beside the main status panel
+* UI remains stable across `status`, `summary`, `tasks`, and `files` commands
+
+### Validation confirmed
+
+Confirmed locally through browser UI:
+
+* `status`: PASS
+* `summary`: PASS
+* `tasks`: PASS
+* `files`: PASS
+
+Confirmed Git state after completion:
+
+* `main` up to date with `origin/main`
+* working tree clean
+
+### Git checkpoints
+
+Committed and pushed:
+
+* `baad703` - Add web UI persona bridge status view
+* `00fb86d` - Document web UI persona bridge demo
+
+### Why this matters
+
+This checkpoint moves ZERO from a terminal-only demonstration path toward a presentable local UI display layer.
+
+The important boundary is that this is currently a display/status bridge, not a full remote-control agent interface. That keeps the architecture safer while still making ZERO easier to demonstrate externally.
+
+Current scope:
+
+```text
+Web UI -> status / workspace display bridge
+```
+
+Not yet enabled:
+
+```text
+Web UI -> unrestricted agent execution controller
+```
+
+This preserves the architectural separation between UI display, backend bridge, and core task execution.
+
+### Stable checkpoint after this pass
+
+* Web UI server: working
+* `/api/chat` route: working
+* display-layer `ui_bridge.py`: working
+* `status` command: working
+* `summary` command: working
+* `tasks` command: working
+* `files` command: working
+* Persona Visual panel: working
+* blink disabled for visual stability
+* `docs/demo.md` updated
+* proof screenshot preserved
+* GitHub main updated
+* working tree clean
+
+### Evidence kept
+
+Keep the latest Web UI screenshots showing:
+
+* `status` success with task records visible
+* `summary` success with latest summary content
+* `tasks` success with task runtime records
+* `files` success with shared file list
+* Persona Visual displayed beside the runtime status panel
+
+Recommended primary asset:
+
+* `docs/demo_assets/persona_runtime/web_ui_persona_bridge_status_success_20260428.png`
+
+### Next step
+
+The next reasonable stage is a safe task-submission entry for the Web UI.
+
+Recommended boundary:
+
+* first submit into `workspace/inbox` or a controlled task-submit flow
+* keep status display separate from execution control
+* avoid directly wiring arbitrary Web UI input into unrestricted agent execution
+
+---
+
 ## 2026-04-27 - Runtime-safe multi-task demo checkpoint
 
 This checkpoint focused on turning the stabilized task execution pipeline into a repeatable multi-task demonstration.
