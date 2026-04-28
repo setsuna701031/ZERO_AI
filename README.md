@@ -1,50 +1,98 @@
 # ZERO AI
 
-A local-first AI engineering agent that turns requirements into executable results.
+ZERO is a local-first autonomous engineering system.
 
-**Requirement → Planning → Code → Execution → Verification**
+It does not just respond.  
+It observes, decides, executes, writes files, and preserves evidence.
 
-ZERO is not a chatbot.  
-It is a system that builds and runs solutions.
+**Requirement → Planning → Execution → Verification → Autonomous Loop**
+
+ZERO is not a chatbot wrapper.  
+It is a controllable local agent platform for engineering workflows.
 
 ---
 
-## ✅ Current Engineering Checkpoint
+## Current Highlight: L5 Autonomous Execution
 
-ZERO's current mainline has a runtime-safe multi-task execution baseline.
+ZERO now includes a minimal autonomous world loop:
 
-Validated mainline capabilities now include:
-
-- normalized handler results
-- observable local traces with `step_start`, `step_result`, and `task_finished`
-- task-local trace ticks for cleaner inspection
-- queue readiness rules that prevent `created` tasks from running before submit
-- multi-task queue progression without failed/replanning tasks blocking normal tasks
-- runtime artifact safety guards to prevent oversized `runtime_state.json` / `result.json` growth
-- command safety guard against self-invoking task commands such as `python app.py task run ...`
-
-Latest regression proof:
-
-```bash
-python app.py task create "write MAIN_SAFE_OK to main_safe_ok.txt, then verify main_safe_ok.txt contains MAIN_SAFE_OK"
-python app.py task submit <task_id>
-python app.py task run 1
-python app.py task run 1
-python app.py task run 1
-python app.py task show <task_id>
+```text
+external event → world_state → background observe loop → action → real file output
 ```
 
-Confirmed result:
+This means ZERO can react to external state without manual CLI input.
 
-- task reached `finished`
-- step progress reached `3/3`
-- final answer: `MAIN_SAFE_OK`
+### Evidence Pack
+
+The current L5 evidence pack is stored under:
+
+```text
+docs/demo_assets/
+```
+
+Recommended assets:
+
+```text
+l5_control_api_world_trigger_result.png
+l5_auto_output_file_updated.png
+l5_control_api_task_execution_trace.png
+l5_auto_output_sample.txt
+```
+
+### What this proves
+
+- external events can be injected through the platform control API
+- ZERO detects world_state changes in a background loop
+- ZERO performs an action automatically
+- a real output file is written to disk
+- the trigger is cleared after execution
+- execution can be inspected through task/runtime artifacts
+
+### Main Screenshot
+
+![L5 Control API world trigger result](docs/demo_assets/l5_control_api_world_trigger_result.png)
+
+### Output File Proof
+
+![L5 auto output file updated](docs/demo_assets/l5_auto_output_file_updated.png)
+
+Sample output:
+
+```text
+L5 auto triggered
+timestamp=2026-04-28T03:52:03Z
+```
 
 ---
 
-## 🔧 Core Showcase
+## Platform Control API
 
-### 🚀 Mini Build Agent (Primary Demo)
+ZERO now exposes a small platform-facing API:
+
+```python
+from core.control.control_api import Zero
+
+z = Zero()
+
+z.get_status()
+z.inject_world("demo_trigger", {"test": True})
+z.submit("Create a task that writes hello to workspace/shared/api.txt")
+```
+
+This API is the first step toward making ZERO usable as a platform instead of only a CLI tool.
+
+### Current API capabilities
+
+- boot the ZERO system
+- inspect runtime/task status
+- inject world_state events
+- submit semantic tasks
+- access task state
+- bridge external scripts/tools into ZERO
+
+---
+
+## Core Showcase: Mini Build Agent
 
 ```bash
 python main.py mini-build-demo
@@ -52,36 +100,39 @@ python main.py mini-build-demo
 
 This demo shows a complete engineering loop:
 
-- read a requirement document  
-- generate planning outputs  
-- generate Python code  
-- execute the generated script  
-- write result artifacts  
-- verify the final output  
+- read a requirement document
+- generate planning outputs
+- generate Python code
+- execute the generated script
+- write result artifacts
+- verify the final output
 
-### 📦 Output Artifacts
+### Output Artifacts
 
-- workspace/shared/project_summary.txt  
-- workspace/shared/implementation_plan.txt  
-- workspace/shared/acceptance_checklist.txt  
-- workspace/shared/number_stats.py  
-- workspace/shared/stats_result.txt  
+```text
+workspace/shared/project_summary.txt
+workspace/shared/implementation_plan.txt
+workspace/shared/acceptance_checklist.txt
+workspace/shared/number_stats.py
+workspace/shared/stats_result.txt
+```
 
-### ✅ What this proves
+### What this proves
 
-- not just text generation  
-- real file outputs  
-- code generation + execution  
-- result verification  
+- not just text generation
+- real file outputs
+- code generation and execution
+- result verification
 
-📂 Demo assets:  
+Demo assets:
+
+```text
 demos/08_mini_build_demo/
+```
 
 ---
 
-## 📦 Additional Demo
-
-### Requirement Demo
+## Requirement Demo
 
 ```bash
 python main.py requirement-demo
@@ -89,26 +140,30 @@ python main.py requirement-demo
 
 Demonstrates:
 
-- requirement input  
-- planning output  
-- multi-artifact generation  
-- result inspection  
+- requirement input
+- planning output
+- multi-artifact generation
+- result inspection
 
 ### Output Artifacts
 
-- workspace/shared/project_summary.txt  
-- workspace/shared/implementation_plan.txt  
-- workspace/shared/acceptance_checklist.txt  
+```text
+workspace/shared/project_summary.txt
+workspace/shared/implementation_plan.txt
+workspace/shared/acceptance_checklist.txt
+```
 
-📂 Demo assets:  
+Demo assets:
+
+```text
 demos/07_requirement_demo/
-
+```
 
 ---
 
-## 🖥️ Persona Runtime Window
+## Persona Runtime Window
 
-ZERO also includes a local Persona Runtime window for showing runtime state through a visual UI.
+ZERO includes a local Persona Runtime window for showing runtime state through a visual UI.
 
 This window is not only a character display. It shows:
 
@@ -135,53 +190,62 @@ This window is not only a character display. It shows:
 
 ---
 
-## ⚙️ Capabilities
+## Capabilities
 
-- Requirement understanding  
-- Planning system (planning pack)  
-- Code generation  
-- Tool execution  
-- Output verification  
-- Task lifecycle control  
-- Controlled AgentLoop observe-decide-act loop  
-- Safe loop execution through `task loop <task_id> [max_cycles]`  
-- Artifact visibility  
+- local-first runtime
+- requirement understanding
+- planning system
+- code generation
+- tool execution
+- output verification
+- task lifecycle control
+- background world_state observe loop
+- platform control API
+- controlled AgentLoop observe-decide-act path
+- artifact visibility
+- runtime trace inspection
 
 ---
 
-## 🧠 What makes this different
+## What Makes ZERO Different
 
-This is not an LLM wrapper.
+ZERO is not an LLM wrapper.
 
 ZERO:
 
-- executes tasks, not just responds  
-- produces real artifacts (code, files)  
-- exposes runtime state  
-- verifies outputs through execution  
+- executes tasks, not just responds
+- produces real artifacts
+- exposes runtime state
+- verifies outputs through execution
+- can react to external world_state events
+- is structured as a local platform core, not a single-purpose demo
 
-It demonstrates a **complete engineering agent loop**.
+It demonstrates a complete engineering agent loop with a path toward autonomous platform behavior.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Show help
+
 ```bash
 python main.py help
 ```
 
 ### Check runtime
+
 ```bash
 python main.py runtime
 ```
 
 ### Run validation
+
 ```bash
 python main.py smoke
 ```
 
 ### Run demos
+
 ```bash
 python main.py doc-demo
 python main.py requirement-demo
@@ -191,7 +255,7 @@ python main.py mini-build-demo
 
 ---
 
-## 🧱 Core CLI
+## Core CLI
 
 ```bash
 python app.py runtime
@@ -211,9 +275,9 @@ python app.py task doc-action-items input.txt action_items.txt
 
 ---
 
-## 🔁 Controlled AgentLoop Loop
+## Controlled AgentLoop Loop
 
-ZERO now includes a controlled minimal AgentLoop path:
+ZERO includes a controlled minimal AgentLoop path:
 
 ```bash
 python app.py task loop <task_id> [max_cycles]
@@ -230,18 +294,16 @@ It supports a safe observe-decide-act cycle:
 
 ### What this proves
 
-- AgentLoop can now record observe/decide metadata
+- AgentLoop records observe/decide metadata
 - task loop execution can run until terminal state under a max-cycle guard
 - CLI access is controlled through an explicit command
 - default task execution remains unchanged
 
 ---
 
----
+## Multi-task Demo
 
-## 🔁 Multi-task Demo
-
-ZERO now includes a repeatable multi-task demo scenario:
+ZERO includes a repeatable multi-task demo scenario:
 
 ```bash
 python tests/run_multi_task_demo_smoke.py
@@ -268,37 +330,97 @@ Engineering proof for the queue policy is also kept here:
 
 ![Queue policy failure does not block](docs/images/checkpoints/checkpoint_queue_policy_failure_does_not_block.png)
 
-## 🏗️ System Structure
+---
 
-- main.py → unified entrypoint  
-- app.py → core CLI  
-- core/planning/ → planner  
-- core/runtime/ → execution layer  
-- core/tasks/ → scheduler + lifecycle  
-- tests/ → validation  
-- demos/ → showcase assets  
-- docs/ → devlog + checkpoints  
+## System Structure
+
+```text
+main.py                 unified entrypoint
+app.py                  core CLI + background world loop
+core/control/           platform control API
+core/world/             world_state layer
+core/planning/          planner
+core/runtime/           execution layer
+core/tasks/             scheduler + lifecycle
+tests/                  validation
+demos/                  showcase assets
+docs/                   devlog + checkpoints
+docs/demo_assets/       demo evidence assets
+```
 
 ---
 
-## 📊 Current Position
+## Current Engineering Checkpoint
+
+ZERO's current mainline has a runtime-safe multi-task execution baseline.
+
+Validated mainline capabilities include:
+
+- normalized handler results
+- observable local traces with `step_start`, `step_result`, and `task_finished`
+- task-local trace ticks for cleaner inspection
+- queue readiness rules that prevent `created` tasks from running before submit
+- multi-task queue progression without failed/replanning tasks blocking normal tasks
+- runtime artifact safety guards to prevent oversized `runtime_state.json` / `result.json` growth
+- command safety guard against self-invoking task commands such as `python app.py task run ...`
+- L5 background world_state loop through `app.py`
+- platform-facing `control_api.py`
+
+Latest regression proof:
+
+```bash
+python app.py task create "write MAIN_SAFE_OK to main_safe_ok.txt, then verify main_safe_ok.txt contains MAIN_SAFE_OK"
+python app.py task submit <task_id>
+python app.py task run 1
+python app.py task run 1
+python app.py task run 1
+python app.py task show <task_id>
+```
+
+Confirmed result:
+
+- task reached `finished`
+- step progress reached `3/3`
+- final answer: `MAIN_SAFE_OK`
+
+---
+
+## Current Position
 
 ZERO is:
 
-- local-first  
-- execution-oriented  
-- artifact-producing  
-- inspectable  
-- reproducible  
+- local-first
+- execution-oriented
+- artifact-producing
+- inspectable
+- reproducible
+- platform-oriented
+- ready for controlled external event integration
 
 Not optimized yet for:
 
-- polished UI  
-- one-click install  
-- mass users  
+- polished UI
+- one-click install
+- mass users
 
 ---
 
-## 📌 One-line Summary
+## Recommended Next Step
 
-ZERO is a local-first engineering agent that can turn requirements into executable, verifiable results through a controllable task system.
+The next high-value platform step is a file watcher event source:
+
+```text
+drop file into watched folder
+→ emit world_state event
+→ ZERO detects event
+→ task runs automatically
+→ result file is written
+```
+
+This will make the platform value easier to understand than manual world_state injection.
+
+---
+
+## One-line Summary
+
+ZERO is a local-first autonomous engineering platform that can turn requirements and external events into executable, verifiable results.

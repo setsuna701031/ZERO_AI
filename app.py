@@ -9,6 +9,8 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import threading
+import time
 import traceback
 from contextlib import redirect_stdout
 from typing import Any, Dict, List, Optional, Tuple
@@ -3093,6 +3095,151 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
     print("未知指令，輸入 /help 查看說明。")
 
 
+
+# ============================================================
+# L5 background world loop (minimal, safe, non-blocking)
+# ============================================================
+
+L5_ENABLED_DEFAULT = os.environ.get("ZERO_L5_ENABLED", "1").strip().lower() not in {"0", "false", "no", "off"}
+L5_TICK_SECONDS = float(os.environ.get("ZERO_L5_TICK_SECONDS", "3") or "3")
+L5_OUTPUT_PATH = os.environ.get("ZERO_L5_OUTPUT_PATH", os.path.join(WORKSPACE_DIR, "shared", "auto.txt"))
+L5_OUTPUT_CONTENT = os.environ.get("ZERO_L5_OUTPUT_CONTENT", "L5 auto triggered")
+
+
+def _l5_normalize_workspace_path(path: str) -> str:
+    raw = _safe_str(path).replace("/", os.sep).replace("\\", os.sep)
+    if not raw:
+        return ""
+    if os.path.isabs(raw):
+        return os.path.normpath(raw)
+    return os.path.normpath(raw)
+
+
+def _l5_is_safe_shared_path(path: str) -> bool:
+    normalized = _l5_normalize_workspace_path(path)
+    if not normalized:
+        return False
+
+    abs_target = os.path.abspath(normalized)
+    abs_shared = os.path.abspath(os.path.join(WORKSPACE_DIR, "shared"))
+
+    try:
+        common = os.path.commonpath([abs_target, abs_shared])
+    except Exception:
+        return False
+
+    return common == abs_shared
+
+
+def _l5_write_file_action(path: str, content: str) -> Dict[str, Any]:
+    safe_path = _l5_normalize_workspace_path(path)
+    if not safe_path:
+        return {"ok": False, "error": "path is empty"}
+
+    if not _l5_is_safe_shared_path(safe_path):
+        return {"ok": False, "error": f"blocked unsafe path: {safe_path}"}
+
+    folder = os.path.dirname(safe_path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+
+    stamped_content = f"{content}\ntimestamp={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+
+    with open(safe_path, "w", encoding="utf-8") as f:
+        f.write(stamped_content)
+
+    return {"ok": True, "path": safe_path, "content": stamped_content}
+
+
+def _l5_get_task_from_world(world: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    data = world.get("data")
+    if not isinstance(data, dict):
+        return None
+
+    trigger = data.get("demo_trigger")
+    if isinstance(trigger, dict) and trigger.get("test") is True:
+        return {
+            "type": "write_file",
+            "args": {
+                "path": _safe_str(trigger.get("path")) or L5_OUTPUT_PATH,
+                "content": _safe_str(trigger.get("content")) or L5_OUTPUT_CONTENT,
+            },
+        }
+
+    return None
+
+
+def _l5_clear_demo_trigger() -> None:
+    try:
+        from core.world.world_state import world_state
+        world_state.update("demo_trigger", {"test": False})
+    except Exception:
+        pass
+
+
+def _run_l5_background_loop(system: Any, stop_event: threading.Event, cli_state: Dict[str, Any]) -> None:
+    del system
+    del cli_state
+
+    try:
+        from core.agent.observe import observe_world
+    except Exception as e:
+        print(f"[L5] observe layer unavailable: {e}")
+        return
+
+    print("[L5] background world loop started")
+
+    while not stop_event.is_set():
+        try:
+            world = observe_world()
+            task = _l5_get_task_from_world(world) if isinstance(world, dict) else None
+
+            if isinstance(task, dict):
+                args = task.get("args")
+                if not isinstance(args, dict):
+                    args = {}
+
+                path = _safe_str(args.get("path")) or L5_OUTPUT_PATH
+                content = _safe_str(args.get("content")) or L5_OUTPUT_CONTENT
+
+                result = _l5_write_file_action(path, content)
+                print(f"[L5] action result: {result}")
+                _l5_clear_demo_trigger()
+                print("[L5] demo_trigger cleared")
+
+        except Exception as e:
+            print(f"[L5] loop error: {e}")
+
+        stop_event.wait(max(0.5, L5_TICK_SECONDS))
+
+    print("[L5] background world loop stopped")
+
+
+def _start_l5_background_loop(system: Any, cli_state: Dict[str, Any]) -> Optional[Tuple[threading.Thread, threading.Event]]:
+    if not L5_ENABLED_DEFAULT:
+        print("[L5] background world loop disabled by ZERO_L5_ENABLED")
+        return None
+
+    stop_event = threading.Event()
+    thread = threading.Thread(
+        target=_run_l5_background_loop,
+        args=(system, stop_event, cli_state),
+        name="zero-l5-world-loop",
+        daemon=True,
+    )
+    thread.start()
+    return thread, stop_event
+
+
+def _stop_l5_background_loop(handle: Optional[Tuple[threading.Thread, threading.Event]]) -> None:
+    if handle is None:
+        return
+    thread, stop_event = handle
+    stop_event.set()
+    try:
+        thread.join(timeout=2.0)
+    except Exception:
+        pass
 def _parse_cli_options(argv: List[str]) -> Tuple[List[str], Dict[str, Optional[str]]]:
     remaining: List[str] = []
     options: Dict[str, Optional[str]] = {"model": None, "plugin": None}
@@ -3282,25 +3429,28 @@ def run_cli_command_mode(argv: List[str]) -> int:
 def run_interactive_mode() -> int:
     cli_state: Dict[str, Any] = {"last_created_task_id": ""}
     system = _boot_system_for_interactive()
+    l5_handle = _start_l5_background_loop(system, cli_state)
     print("ZERO Task OS")
     print("輸入 /help 查看指令。")
-    while True:
-        try:
-            text = input("ZERO> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\n已離開。")
-            return 0
-        if not text:
-            continue
-        if text in ("/exit", "/quit", "exit", "quit"):
-            print("已離開。")
-            return 0
-        normalized = _normalize_cli_command(text)
-        if text.startswith("/") or normalized is not None:
-            handle_command(system, text, cli_state)
-            continue
-        handle_natural_language(system, text)
-
+    try:
+        while True:
+            try:
+                text = input("ZERO> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\n已離開。")
+                return 0
+            if not text:
+                continue
+            if text in ("/exit", "/quit", "exit", "quit"):
+                print("已離開。")
+                return 0
+            normalized = _normalize_cli_command(text)
+            if text.startswith("/") or normalized is not None:
+                handle_command(system, text, cli_state)
+                continue
+            handle_natural_language(system, text)
+    finally:
+        _stop_l5_background_loop(l5_handle)
 
 def main() -> int:
     argv = sys.argv[1:]
