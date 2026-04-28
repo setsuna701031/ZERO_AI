@@ -7,6 +7,21 @@
     <style>
         :root {
             color-scheme: dark;
+            --bg-main: #05070b;
+            --bg-page: #07101d;
+            --bg-card: #0f1624;
+            --bg-card-2: #0a1018;
+            --bg-input: #101722;
+            --border: #25344a;
+            --border-soft: #1b2738;
+            --blue: #2f86ff;
+            --blue-2: #65b8ff;
+            --green: #54d18f;
+            --yellow: #ffd978;
+            --red: #ff9aa5;
+            --text: #f3f6fb;
+            --muted: #9da8b6;
+            --muted-2: #6f8096;
         }
 
         * {
@@ -15,69 +30,162 @@
 
         body {
             margin: 0;
-            background: #05070b;
-            color: #f3f6fb;
-            font-family: Consolas, "Courier New", monospace;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at 12% 0%, rgba(47, 134, 255, 0.16), transparent 28%),
+                radial-gradient(circle at 100% 10%, rgba(84, 209, 143, 0.08), transparent 25%),
+                linear-gradient(180deg, #05070b 0%, #07101d 100%);
+            color: var(--text);
+            font-family: Consolas, "Courier New", "Noto Sans TC", monospace;
         }
 
         .page {
-            max-width: 1100px;
+            width: min(1480px, calc(100vw - 40px));
             margin: 0 auto;
-            padding: 32px 24px 48px;
+            padding: 24px 0 36px;
         }
 
-        h1 {
-            margin: 0 0 18px;
-            font-size: 28px;
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 22px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .logo-mark {
+            width: 76px;
+            height: 76px;
+            border-radius: 50%;
+            border: 2px solid rgba(47, 134, 255, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 24px rgba(47, 134, 255, 0.2);
+            position: relative;
+        }
+
+        .logo-mark::before,
+        .logo-mark::after {
+            content: "";
+            position: absolute;
+            inset: 6px;
+            border-radius: 50%;
+            border: 1px dashed rgba(101, 184, 255, 0.28);
+        }
+
+        .logo-text {
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: 1px;
+            z-index: 1;
+        }
+
+        .brand-title {
+            line-height: 1.35;
+        }
+
+        .brand-title strong {
+            display: block;
+            font-size: 24px;
+            letter-spacing: 0.6px;
+        }
+
+        .brand-title span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 2px;
+        }
+
+        .top-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .online-pill {
+            border: 1px solid rgba(84, 209, 143, 0.28);
+            background: rgba(84, 209, 143, 0.08);
+            color: #a5f2c1;
+            padding: 9px 14px;
+            border-radius: 999px;
+            font-size: 13px;
             font-weight: 700;
-            letter-spacing: 0.5px;
         }
 
-        .subtitle {
-            margin: 0 0 18px;
-            color: #c5d0dd;
-            font-size: 15px;
-            line-height: 1.7;
+        .online-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--green);
+            margin-right: 8px;
+            box-shadow: 0 0 10px rgba(84, 209, 143, 0.8);
+        }
+
+        .shell {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 340px;
+            gap: 22px;
+            align-items: stretch;
+        }
+
+        .left-column,
+        .right-column {
+            min-width: 0;
         }
 
         .input-row {
-            display: flex;
-            gap: 10px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 90px;
+            gap: 8px;
             align-items: stretch;
-            margin-bottom: 18px;
+            margin-bottom: 14px;
         }
 
         #userInput {
-            flex: 1;
-            min-height: 48px;
-            padding: 0 18px;
-            border: 1px solid #8d99ae;
-            border-radius: 10px;
-            background: #14181f;
-            color: #f3f6fb;
-            font-size: 16px;
+            min-height: 44px;
+            height: 44px;
+            padding: 0 16px;
+            border: 1px solid #708199;
+            border-radius: 12px;
+            background: rgba(16, 23, 34, 0.88);
+            color: var(--text);
+            font-size: 14px;
             outline: none;
+            box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.22);
         }
 
         #userInput:focus {
-            border-color: #c8d1dc;
-            box-shadow: 0 0 0 2px rgba(200, 209, 220, 0.15);
+            border-color: var(--blue-2);
+            box-shadow:
+                0 0 0 2px rgba(101, 184, 255, 0.15),
+                inset 0 0 18px rgba(0, 0, 0, 0.22);
         }
 
         button {
-            min-width: 92px;
+            min-width: 90px;
+            height: 44px;
             border: none;
-            border-radius: 10px;
-            background: #2f6fe4;
+            border-radius: 12px;
+            background: linear-gradient(180deg, #3b8dff, #2369d6);
             color: white;
-            font-size: 16px;
-            font-weight: 700;
+            font-size: 15px;
+            font-weight: 800;
             cursor: pointer;
-            padding: 0 18px;
+            padding: 0 16px;
+            box-shadow: 0 12px 28px rgba(47, 134, 255, 0.25);
         }
 
         button:hover {
-            background: #3b7bf0;
+            background: linear-gradient(180deg, #4e98ff, #2d73df);
         }
 
         button:disabled {
@@ -86,43 +194,48 @@
         }
 
         .panel {
-            border: 1px solid #232a35;
-            border-radius: 12px;
-            background: #0f1319;
-            padding: 16px;
-            margin-top: 14px;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            background:
+                linear-gradient(180deg, rgba(15, 22, 36, 0.94), rgba(8, 13, 20, 0.94));
+            padding: 14px;
+            box-shadow:
+                0 0 0 1px rgba(47, 134, 255, 0.05),
+                0 18px 50px rgba(0, 0, 0, 0.2);
         }
 
         .panel-title {
-            color: #8fc0ff;
+            color: var(--blue-2);
             font-size: 15px;
             margin-bottom: 12px;
+            font-weight: 800;
         }
 
         .meta-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
+            gap: 8px;
             margin-bottom: 12px;
         }
 
         .meta-card {
-            border: 1px solid #232a35;
-            border-radius: 10px;
-            background: #0b1016;
-            padding: 10px 12px;
+            border: 1px solid var(--border-soft);
+            border-radius: 12px;
+            background: rgba(10, 16, 24, 0.92);
+            padding: 10px 11px;
+            min-height: 62px;
         }
 
         .meta-label {
             color: #8ea0b5;
-            font-size: 12px;
+            font-size: 11px;
             margin-bottom: 6px;
         }
 
         .meta-value {
-            color: #f3f6fb;
-            font-size: 14px;
-            line-height: 1.5;
+            color: var(--text);
+            font-size: 13px;
+            line-height: 1.4;
             word-break: break-word;
         }
 
@@ -132,8 +245,8 @@
             min-height: 28px;
             padding: 0 10px;
             border-radius: 999px;
-            font-size: 13px;
-            font-weight: 700;
+            font-size: 12px;
+            font-weight: 800;
             letter-spacing: 0.3px;
         }
 
@@ -146,31 +259,35 @@
         .status-warning {
             background: rgba(255, 193, 7, 0.14);
             border: 1px solid rgba(255, 193, 7, 0.35);
-            color: #ffd978;
+            color: var(--yellow);
         }
 
         .status-fail {
             background: rgba(220, 53, 69, 0.16);
             border: 1px solid rgba(220, 53, 69, 0.35);
-            color: #ff9aa5;
+            color: var(--red);
         }
 
         .summary-box,
         .warning-box,
         .error-box,
         .result-box {
-            border-radius: 10px;
-            border: 1px solid #202734;
-            padding: 14px;
+            border-radius: 13px;
+            border: 1px solid var(--border-soft);
+            padding: 12px 14px;
             white-space: pre-wrap;
             word-break: break-word;
             line-height: 1.7;
-            margin-top: 12px;
+            margin-top: 10px;
         }
 
         .summary-box {
-            background: #0a1016;
+            background: rgba(8, 15, 23, 0.92);
             color: #dce7f3;
+            height: 110px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .warning-box {
@@ -186,50 +303,205 @@
         }
 
         .result-box {
-            background: #0a0d12;
+            background: rgba(6, 10, 16, 0.94);
             color: #f4f7fb;
-            min-height: 220px;
-            max-height: 520px;
-            overflow: auto;
+            height: 430px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .section-title {
-            color: #8fc0ff;
+            color: var(--blue-2);
             font-size: 13px;
             margin-bottom: 8px;
+            font-weight: 800;
+            flex: 0 0 auto;
+        }
+
+        #summaryBox,
+        #resultBox {
+            flex: 1 1 auto;
+            overflow: auto;
+            min-height: 0;
         }
 
         .muted {
-            color: #9da8b6;
+            color: var(--muted);
         }
 
         details {
-            margin-top: 14px;
+            margin-top: 12px;
         }
 
         summary {
             cursor: pointer;
-            color: #8fc0ff;
+            color: var(--blue-2);
             user-select: none;
+            font-size: 13px;
         }
 
         pre {
-            margin: 12px 0 0;
-            padding: 14px;
+            margin: 10px 0 0;
+            padding: 12px;
             border-radius: 10px;
             background: #0a0d12;
             border: 1px solid #202734;
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-word;
-            line-height: 1.6;
+            line-height: 1.55;
             color: #d9e3ef;
+            max-height: 240px;
         }
 
         .hint {
             margin-top: 10px;
             color: #93a0b0;
-            font-size: 13px;
+            font-size: 12px;
+        }
+
+        .persona-card {
+            border: 1px solid rgba(47, 134, 255, 0.55);
+            border-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(13, 25, 43, 0.94), rgba(7, 11, 18, 0.96));
+            padding: 12px;
+            box-shadow:
+                0 0 0 1px rgba(101, 184, 255, 0.14),
+                0 0 32px rgba(47, 134, 255, 0.16),
+                0 22px 50px rgba(0, 0, 0, 0.28);
+            height: 100%;
+            min-height: 626px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .persona-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 0 2px;
+        }
+
+        .persona-title {
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 900;
+        }
+
+        .persona-state {
+            color: var(--blue-2);
+            background: rgba(47, 134, 255, 0.14);
+            border: 1px solid rgba(47, 134, 255, 0.22);
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-weight: 900;
+            font-size: 12px;
+            letter-spacing: 0.4px;
+        }
+
+        .persona-visual {
+            position: relative;
+            flex: 1;
+            min-height: 540px;
+            border: 1px solid rgba(101, 184, 255, 0.2);
+            border-radius: 12px;
+            overflow: hidden;
+            background:
+                linear-gradient(180deg, rgba(5, 9, 15, 0.14), rgba(5, 9, 15, 0.2)),
+                url("/assets/persona/zero_v1/circuit_bg.png") center center / cover no-repeat;
+        }
+
+        .persona-visual::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at 50% 35%, rgba(101, 184, 255, 0.12), transparent 38%),
+                linear-gradient(180deg, rgba(5, 9, 15, 0.08), rgba(5, 9, 15, 0.62));
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .persona-visual::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 12px;
+            box-shadow: inset 0 0 38px rgba(0, 0, 0, 0.62);
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        #personaImage {
+            position: absolute;
+            z-index: 2;
+            left: 50%;
+            bottom: -12px;
+            transform: translateX(-50%);
+            width: min(97%, 388px);
+            max-height: 98%;
+            object-fit: contain;
+            object-position: bottom center;
+            filter:
+                drop-shadow(0 22px 18px rgba(0, 0, 0, 0.48))
+                drop-shadow(0 0 16px rgba(47, 134, 255, 0.12));
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .persona-footer {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .persona-mini-card {
+            border: 1px solid var(--border-soft);
+            background: rgba(8, 15, 23, 0.88);
+            border-radius: 11px;
+            padding: 9px 11px;
+        }
+
+        .persona-mini-label {
+            color: var(--muted-2);
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .persona-mini-value {
+            color: var(--text);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .footer-line {
+            margin-top: 18px;
+            color: var(--muted-2);
+            font-size: 11px;
+            text-align: center;
+            letter-spacing: 0.2px;
+        }
+
+        @media (max-width: 1180px) {
+            .shell {
+                grid-template-columns: 1fr;
+            }
+
+            .persona-card {
+                min-height: 580px;
+            }
+
+            .persona-visual {
+                min-height: 480px;
+            }
+
+            #personaImage {
+                width: min(74%, 388px);
+            }
         }
 
         @media (max-width: 900px) {
@@ -239,92 +511,165 @@
         }
 
         @media (max-width: 720px) {
-            .input-row {
+            .page {
+                width: min(100vw - 20px, 1480px);
+                padding-top: 14px;
+            }
+
+            .topbar {
+                align-items: flex-start;
                 flex-direction: column;
             }
 
+            .input-row {
+                grid-template-columns: 1fr;
+            }
+
             button {
-                min-height: 46px;
+                width: 100%;
             }
 
             .meta-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .summary-box {
+                height: 92px;
+            }
+
+            .result-box {
+                height: 320px;
+            }
+
+            .persona-card {
+                min-height: 520px;
+            }
+
+            .persona-visual {
+                min-height: 420px;
+            }
+
+            #personaImage {
+                width: min(95%, 360px);
             }
         }
     </style>
 </head>
 <body>
     <div class="page">
-        <h1>ZERO Local Agent</h1>
-        <p class="subtitle">
-            在下面輸入純文字指令，例如：<br>
-            <span class="muted">你好</span>、
-            <span class="muted">dir</span>、
-            <span class="muted">echo hello</span>、
-            <span class="muted">where python</span><br>
-            <strong>不要自己輸入 JSON。</strong>
-        </p>
+        <div class="topbar">
+            <div class="brand">
+                <div class="logo-mark">
+                    <div class="logo-text">ZERO</div>
+                </div>
+                <div class="brand-title">
+                    <strong>ZERO Local Agent</strong>
+                    <span>智能助手 v1.0.0 / Local Web UI Bridge</span>
+                </div>
+            </div>
 
-        <div class="input-row">
-            <input
-                id="userInput"
-                type="text"
-                placeholder="請直接輸入文字，例如：你好"
-                autocomplete="off"
-            />
-            <button id="sendBtn">送出</button>
+            <div class="top-status">
+                <div class="online-pill"><span class="online-dot"></span>系統在線</div>
+            </div>
         </div>
 
-        <div class="panel">
-            <div class="panel-title">回應結果</div>
-
-            <div class="meta-grid">
-                <div class="meta-card">
-                    <div class="meta-label">狀態</div>
-                    <div id="statusBadge" class="status-badge status-success">尚未送出</div>
+        <div class="shell">
+            <main class="left-column">
+                <div class="input-row">
+                    <input
+                        id="userInput"
+                        type="text"
+                        placeholder="請直接輸入文字，例如：你好 / status / summary / tasks"
+                        autocomplete="off"
+                    />
+                    <button id="sendBtn">送出</button>
                 </div>
-                <div class="meta-card">
-                    <div class="meta-label">模式</div>
-                    <div id="modeValue" class="meta-value muted">未知</div>
+
+                <div class="panel">
+                    <div class="panel-title">回應結果</div>
+
+                    <div class="meta-grid">
+                        <div class="meta-card">
+                            <div class="meta-label">狀態</div>
+                            <div id="statusBadge" class="status-badge status-success">尚未送出</div>
+                        </div>
+                        <div class="meta-card">
+                            <div class="meta-label">模式</div>
+                            <div id="modeValue" class="meta-value muted">未知</div>
+                        </div>
+                        <div class="meta-card">
+                            <div class="meta-label">模型</div>
+                            <div id="modelValue" class="meta-value muted">未知</div>
+                        </div>
+                        <div class="meta-card">
+                            <div class="meta-label">LLM 狀態</div>
+                            <div id="llmStateValue" class="meta-value muted">未知</div>
+                        </div>
+                    </div>
+
+                    <div class="summary-box">
+                        <div class="section-title">摘要</div>
+                        <div id="summaryBox" class="muted">尚未送出請求。</div>
+                    </div>
+
+                    <div id="warningWrapper" class="warning-box" style="display: none;">
+                        <div class="section-title">警告</div>
+                        <div id="warningBox"></div>
+                    </div>
+
+                    <div id="errorWrapper" class="error-box" style="display: none;">
+                        <div class="section-title">錯誤</div>
+                        <div id="errorBox"></div>
+                    </div>
+
+                    <div class="result-box">
+                        <div class="section-title">主內容</div>
+                        <div id="resultBox">請先輸入內容。</div>
+                    </div>
+
+                    <details>
+                        <summary>查看原始 JSON</summary>
+                        <pre id="rawJsonBox">{}</pre>
+                    </details>
+
+                    <div class="hint">
+                        可先測：<code>status</code>、<code>summary</code>、<code>tasks</code>、<code>files</code>。
+                    </div>
                 </div>
-                <div class="meta-card">
-                    <div class="meta-label">模型</div>
-                    <div id="modelValue" class="meta-value muted">未知</div>
-                </div>
-                <div class="meta-card">
-                    <div class="meta-label">LLM 狀態</div>
-                    <div id="llmStateValue" class="meta-value muted">未知</div>
-                </div>
-            </div>
+            </main>
 
-            <div class="summary-box">
-                <div class="section-title">摘要</div>
-                <div id="summaryBox" class="muted">尚未送出請求。</div>
-            </div>
+            <aside class="right-column">
+                <section class="persona-card">
+                    <div class="persona-header">
+                        <div class="persona-title">Persona Visual</div>
+                        <div id="personaStateBadge" class="persona-state">IDLE</div>
+                    </div>
 
-            <div id="warningWrapper" class="warning-box" style="display: none;">
-                <div class="section-title">警告</div>
-                <div id="warningBox"></div>
-            </div>
+                    <div class="persona-visual">
+                        <img
+                            id="personaImage"
+                            src="/assets/persona/zero_v1/idle_open.png"
+                            alt="ZERO Persona"
+                            draggable="false"
+                        />
+                    </div>
 
-            <div id="errorWrapper" class="error-box" style="display: none;">
-                <div class="section-title">錯誤</div>
-                <div id="errorBox"></div>
-            </div>
+                    <div class="persona-footer">
+                        <div class="persona-mini-card">
+                            <div class="persona-mini-label">Visual Profile</div>
+                            <div class="persona-mini-value">zero_v1</div>
+                        </div>
+                        <div class="persona-mini-card">
+                            <div class="persona-mini-label">Blink</div>
+                            <div id="blinkStateValue" class="persona-mini-value">disabled</div>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </div>
 
-            <div class="result-box">
-                <div class="section-title">主內容</div>
-                <div id="resultBox">請先輸入內容。</div>
-            </div>
-
-            <details>
-                <summary>查看原始 JSON</summary>
-                <pre id="rawJsonBox">{}</pre>
-            </details>
-
-            <div class="hint">
-                這個輸入框是給人直接打字，不是拿來手動輸入 <code>{"message":"..."}</code>。
-            </div>
+        <div class="footer-line">
+            ZERO 智能助手 © 2025 All rights reserved.
         </div>
     </div>
 
@@ -342,10 +687,57 @@
         const errorBox = document.getElementById("errorBox");
         const resultBox = document.getElementById("resultBox");
         const rawJsonBox = document.getElementById("rawJsonBox");
+        const personaImage = document.getElementById("personaImage");
+        const personaStateBadge = document.getElementById("personaStateBadge");
+        const blinkStateValue = document.getElementById("blinkStateValue");
+
+        const PERSONA_FRAMES = {
+            open: "/assets/persona/zero_v1/idle_open.png",
+            half: "/assets/persona/zero_v1/idle_half.png",
+            closed: "/assets/persona/zero_v1/idle_closed.png"
+        };
+
+        function preloadPersonaFrames() {
+            Object.values(PERSONA_FRAMES).forEach((src) => {
+                const img = new Image();
+                img.src = src;
+            });
+        }
+
+        function setPersonaFrame(frameName) {
+            const src = PERSONA_FRAMES[frameName] || PERSONA_FRAMES.open;
+            personaImage.src = src;
+        }
+
+        function setPersonaState(stateText) {
+            const text = stateText || "IDLE";
+            const lower = text.toLowerCase();
+
+            if (lower.includes("running")) {
+                personaStateBadge.textContent = "RUNNING";
+                return;
+            }
+
+            if (lower.includes("error") || lower.includes("failed")) {
+                personaStateBadge.textContent = "ERROR";
+                return;
+            }
+
+            if (lower.includes("thinking")) {
+                personaStateBadge.textContent = "THINKING";
+                return;
+            }
+
+            personaStateBadge.textContent = "IDLE";
+        }
 
         function setLoadingState(isLoading) {
             sendBtn.disabled = isLoading;
             sendBtn.textContent = isLoading ? "送出中..." : "送出";
+
+            if (isLoading) {
+                personaStateBadge.textContent = "THINKING";
+            }
         }
 
         function setStatusBadge(type, text) {
@@ -380,6 +772,10 @@
                 if (typeof item === "string" && item.trim()) {
                     return item.trim();
                 }
+            }
+
+            if (data?.response && typeof data.response === "object") {
+                return JSON.stringify(data.response, null, 2);
             }
 
             return "（沒有可顯示的回應文字）";
@@ -447,6 +843,14 @@
             resultBox.textContent = responseText;
             rawJsonBox.textContent = JSON.stringify(data, null, 2);
 
+            if (data?.ui?.system_status) {
+                setPersonaState(data.ui.system_status);
+            } else if (success) {
+                setPersonaState("idle");
+            } else {
+                setPersonaState("error");
+            }
+
             if (warningText) {
                 warningWrapper.style.display = "block";
                 warningBox.textContent = warningText;
@@ -479,6 +883,7 @@
                 errorBox.textContent = "";
                 resultBox.textContent = "請先輸入內容。";
                 rawJsonBox.textContent = "{}";
+                setPersonaState("idle");
                 return;
             }
 
@@ -536,6 +941,10 @@
                 sendMessage();
             }
         });
+
+        preloadPersonaFrames();
+        setPersonaFrame("open");
+        blinkStateValue.textContent = "disabled";
     </script>
 </body>
 </html>
