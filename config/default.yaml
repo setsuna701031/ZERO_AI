@@ -1,0 +1,10 @@
+watch:
+  inbox: workspace/inbox
+  shared: workspace/shared
+  poll_seconds: 2
+
+runner:
+  max_cycles: 5
+
+system:
+  mode: local
