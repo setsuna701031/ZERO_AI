@@ -89,8 +89,21 @@ def main() -> int:
 
     scheduler = Scheduler(workspace_dir="workspace", allow_commands=True)
     scheduler.replanner = FakeReplanner(repaired_steps, replan_count=1)
+    suggested_task = make_failed_task(original_steps)
+    suggested = scheduler._try_replan_task(suggested_task)
+    checks = [
+        (suggested.get("replanned"), False, "automatic path does not apply replan"),
+        (suggested.get("would_replan"), True, "automatic path records replan suggestion"),
+        (suggested.get("decision"), "suggested", "automatic path decision is suggested"),
+        (suggested_task.get("status"), "failed", "automatic path leaves failed task failed"),
+    ]
+    for actual, expected, label in checks:
+        check = assert_equal(actual, expected, label)
+        if check != 0:
+            return check
+
     accepted_task = make_failed_task(original_steps)
-    accepted = scheduler._try_replan_task(accepted_task)
+    accepted = scheduler.apply_replan_task(accepted_task)
 
     checks = [
         (accepted.get("replanned"), True, "new plan is accepted"),
@@ -115,7 +128,7 @@ def main() -> int:
     repeated_task["steps"] = copy.deepcopy(repaired_steps)
     repeated_task["last_step_result"]["step"] = copy.deepcopy(repaired_steps[0])
     repeated_task["results"][0]["step"] = copy.deepcopy(repaired_steps[0])
-    repeated = scheduler._try_replan_task(repeated_task)
+    repeated = scheduler.apply_replan_task(repeated_task)
 
     checks = [
         (repeated.get("replanned"), False, "previously failed plan is rejected"),

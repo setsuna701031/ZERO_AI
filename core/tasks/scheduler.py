@@ -1053,7 +1053,7 @@ class Scheduler(RuntimeTaskScheduler):
             "remaining": max(0, max_replans - replan_count),
         }
 
-    def _try_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    def _try_replan_task(self, task: Dict[str, Any], *, apply: bool = False) -> Dict[str, Any]:
         if not isinstance(task, dict):
             return {
                 "ok": False,
@@ -1238,6 +1238,40 @@ class Scheduler(RuntimeTaskScheduler):
                 "replan_trace": copy.deepcopy(task.get("replan_trace", [])),
             }
 
+        if not apply:
+            self._append_replan_trace(
+                task,
+                {
+                    "event": "replan_suggest",
+                    "outcome": "suggested",
+                    "plan_fingerprint": new_fingerprint,
+                    "previous_plan_fingerprint": old_fingerprint,
+                    "failed_step_type": failed_step_type,
+                    "replan_count": budget["replan_count"],
+                    "max_replans": budget["max_replans"],
+                    "remaining_replans": budget["remaining"],
+                    "steps_total": len(new_steps),
+                },
+            )
+            return {
+                "ok": True,
+                "replanned": False,
+                "would_replan": True,
+                "decision": "suggested",
+                "summary": str(replan_result.get("summary") or "replan candidate generated; manual approval required"),
+                "repairable": True,
+                "failed_step_type": failed_step_type,
+                "steps_total": len(new_steps),
+                "replan_count": budget["replan_count"],
+                "max_replans": budget["max_replans"],
+                "remaining_replans": budget["remaining"],
+                "plan_fingerprint": new_fingerprint,
+                "candidate_plan": copy.deepcopy(plan),
+                "preview_steps": copy.deepcopy(new_steps),
+                "replan_trace": copy.deepcopy(task.get("replan_trace", [])),
+                "raw_replan_result": copy.deepcopy(replan_result),
+            }
+
         task["steps"] = copy.deepcopy(new_steps)
         task["steps_total"] = len(new_steps)
         task["current_step_index"] = 0
@@ -1246,6 +1280,22 @@ class Scheduler(RuntimeTaskScheduler):
         task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or "")
         task["planner_result"] = copy.deepcopy(plan)
         task["status"] = "queued"
+        task["history"] = self._append_history(task.get("history"), "replanned")
+        task["history"] = self._append_history(task.get("history"), "queued")
+
+        runtime_state = task.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            runtime_state["status"] = "queued"
+            runtime_state["steps"] = copy.deepcopy(new_steps)
+            runtime_state["steps_total"] = len(new_steps)
+            runtime_state["current_step_index"] = 0
+            runtime_state["replanned"] = True
+            runtime_state["replan_reason"] = task["replan_reason"]
+            runtime_state["replan_count"] = task["replan_count"]
+            runtime_state["max_replans"] = int(task.get("max_replans", self.default_max_replans) or self.default_max_replans)
+            runtime_state["planner_result"] = copy.deepcopy(plan)
+            runtime_state["blocked_reason"] = ""
+            task["runtime_state"] = runtime_state
 
         accepted_budget = self._replan_budget_payload(task)
         self._append_replan_trace(
@@ -1277,6 +1327,24 @@ class Scheduler(RuntimeTaskScheduler):
             "plan_fingerprint": new_fingerprint,
             "replan_trace": copy.deepcopy(task.get("replan_trace", [])),
             "raw_replan_result": copy.deepcopy(replan_result),
+        }
+
+    def apply_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        result = self._try_replan_task(task, apply=True)
+        if isinstance(result, dict):
+            result["mode"] = "replan_apply"
+            result["approved"] = bool(result.get("replanned"))
+            result["submitted"] = bool(result.get("replanned"))
+            result["queued"] = str(task.get("status") or "").strip().lower() == "queued"
+            result["ran"] = False
+        return result if isinstance(result, dict) else {
+            "ok": False,
+            "mode": "replan_apply",
+            "approved": False,
+            "submitted": False,
+            "queued": False,
+            "ran": False,
+            "error": "invalid apply result",
         }
 
     def preview_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -1323,8 +1391,8 @@ class Scheduler(RuntimeTaskScheduler):
             "ran": False,
             "task_id": str(preview_task.get("task_id") or preview_task.get("task_name") or ""),
             "status": str(task.get("status") or ""),
-            "can_replan": bool(result.get("replanned")),
-            "would_replan": bool(result.get("replanned")),
+            "can_replan": bool(result.get("would_replan") or result.get("replanned")),
+            "would_replan": bool(result.get("would_replan") or result.get("replanned")),
             "decision": str(result.get("decision") or ""),
             "summary": str(result.get("summary") or ""),
             "repairable": result.get("repairable", None),

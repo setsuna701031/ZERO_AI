@@ -132,6 +132,20 @@ def main() -> int:
         if check != 0:
             return check
 
+    approved = _handle_replan_control(system, "apply task_manual_replan_preview --approve")
+    checks = [
+        (approved.get("mode"), "replan_apply", "approved apply mode"),
+        (approved.get("approved"), True, "approved apply is approved"),
+        (approved.get("submitted"), True, "approved apply submits to queue"),
+        (approved.get("queued"), True, "approved apply queues task"),
+        (approved.get("ran"), False, "approved apply does not run"),
+        (approved.get("dry_run"), False, "approved apply is not dry-run"),
+    ]
+    for actual, expected, label in checks:
+        check = assert_equal(actual, expected, label)
+        if check != 0:
+            return check
+
     print("[replan-control-preview-smoke] ALL PASS")
     return 0
 

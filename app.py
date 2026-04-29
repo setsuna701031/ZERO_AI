@@ -64,6 +64,7 @@ def print_help() -> None:
     print("  task rerun <task_id>")
     print("  task replan preview <task_id>")
     print("  task replan apply <task_id> --dry-run")
+    print("  task replan apply <task_id> --approve")
     print("  task purge finished")
     print("  task purge failed")
     print("  task purge all")
@@ -105,6 +106,7 @@ def print_help() -> None:
     print("  python app.py task rerun <task_id>")
     print("  python app.py task replan preview <task_id>")
     print("  python app.py task replan apply <task_id> --dry-run")
+    print("  python app.py task replan apply <task_id> --approve")
     print("  python app.py task purge finished")
     print("  python app.py task doc-summary input.txt summary.txt")
     print("  python app.py task doc-action-items input.txt action_items.txt")
@@ -1616,15 +1618,17 @@ def _run_task_loop_until_terminal(system: Any, task_id: str, max_cycles: int = 5
     return payload
 
 
-def _parse_replan_control_args(raw: str) -> Tuple[str, str, bool]:
+def _parse_replan_control_args(raw: str) -> Tuple[str, str, bool, bool]:
     parts = str(raw or "").strip().split()
     if len(parts) < 2:
-        return "", "", False
+        return "", "", False, False
 
     action = parts[0].strip().lower()
     task_id = parts[1].strip()
-    dry_run = "--dry-run" in {part.strip().lower() for part in parts[2:]}
-    return action, task_id, dry_run
+    flags = {part.strip().lower() for part in parts[2:]}
+    dry_run = "--dry-run" in flags
+    approve = "--approve" in flags
+    return action, task_id, dry_run, approve
 
 
 def _preview_replan_task(system: Any, task_id: str, *, mode: str = "replan_preview") -> Dict[str, Any]:
@@ -1665,8 +1669,56 @@ def _preview_replan_task(system: Any, task_id: str, *, mode: str = "replan_previ
     return payload
 
 
+def _apply_replan_task(system: Any, task_id: str) -> Dict[str, Any]:
+    normalized_task_id = _safe_str(task_id)
+    if not normalized_task_id:
+        return {"ok": False, "error": "task_id is required", "mode": "replan_apply"}
+
+    task = _get_task(system, normalized_task_id)
+    if not isinstance(task, dict):
+        return {"ok": False, "error": "task not found", "task_id": normalized_task_id, "mode": "replan_apply"}
+
+    scheduler = _get_scheduler(system)
+    apply_fn = getattr(scheduler, "apply_replan_task", None)
+    if not callable(apply_fn):
+        return {"ok": False, "error": "apply_replan_task not available", "task_id": normalized_task_id, "mode": "replan_apply"}
+
+    merged_task = _merge_task_with_snapshot(task)
+    try:
+        result = apply_fn(merged_task)
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"replan apply failed: {e}",
+            "traceback": traceback.format_exc(),
+            "task_id": normalized_task_id,
+            "mode": "replan_apply",
+        }
+
+    if not isinstance(result, dict):
+        return {"ok": False, "error": "replan apply returned non-dict result", "task_id": normalized_task_id, "mode": "replan_apply"}
+
+    persistence = _persist_loop_task_update(system, merged_task) if bool(result.get("replanned")) else {
+        "repo": False,
+        "snapshot": False,
+        "runtime_state": False,
+    }
+
+    payload = copy.deepcopy(result)
+    payload["mode"] = "replan_apply"
+    payload["task_id"] = normalized_task_id
+    payload["approved"] = bool(result.get("replanned"))
+    payload["submitted"] = bool(result.get("replanned"))
+    payload["queued"] = _extract_status(merged_task).lower() == "queued"
+    payload["ran"] = False
+    payload["dry_run"] = False
+    payload["task"] = copy.deepcopy(merged_task) if bool(result.get("replanned")) else None
+    payload["persistence"] = persistence
+    return payload
+
+
 def _handle_replan_control(system: Any, raw: str) -> Dict[str, Any]:
-    action, task_id, dry_run = _parse_replan_control_args(raw)
+    action, task_id, dry_run, approve = _parse_replan_control_args(raw)
     if action not in {"preview", "apply"}:
         return {
             "ok": False,
@@ -1677,10 +1729,13 @@ def _handle_replan_control(system: Any, raw: str) -> Dict[str, Any]:
     if action == "preview":
         return _preview_replan_task(system, task_id, mode="replan_preview")
 
-    if not dry_run:
+    if dry_run:
+        return _preview_replan_task(system, task_id, mode="replan_apply_dry_run")
+
+    if not approve:
         return {
             "ok": False,
-            "error": "manual replan apply currently requires --dry-run",
+            "error": "manual replan apply requires --approve or --dry-run",
             "mode": "replan_apply",
             "task_id": task_id,
             "submitted": False,
@@ -1688,7 +1743,7 @@ def _handle_replan_control(system: Any, raw: str) -> Dict[str, Any]:
             "dry_run": False,
         }
 
-    return _preview_replan_task(system, task_id, mode="replan_apply_dry_run")
+    return _apply_replan_task(system, task_id)
 
 
 
