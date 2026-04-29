@@ -1338,6 +1338,117 @@ def _rerun_task(system: Any, task_id: str) -> Dict[str, Any]:
     return _spawn_task_from_existing(system, task_id, action_name="task_rerun")
 
 
+
+def _append_status_history(history: Any, status: str) -> List[str]:
+    if isinstance(history, list):
+        normalized = [str(item) for item in history if str(item or "").strip()]
+    else:
+        normalized = []
+
+    status_text = _safe_str(status)
+    if status_text and (not normalized or normalized[-1] != status_text):
+        normalized.append(status_text)
+    return normalized
+
+
+def _loop_task_has_terminal_failure_signal(task: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(task, dict):
+        return False, ""
+
+    status = _extract_status(task).lower()
+    if status in {"finished", "completed", "done", "success"}:
+        return False, ""
+
+    error_text = _first_nonempty_str(
+        task.get("last_error"),
+        task.get("failure_message"),
+        task.get("error"),
+        task.get("final_answer"),
+        task.get("state_detail"),
+    )
+
+    if not error_text:
+        last_step_result = task.get("last_step_result")
+        if isinstance(last_step_result, dict):
+            error = last_step_result.get("error")
+            if isinstance(error, dict):
+                error_text = _first_nonempty_str(error.get("message"), error.get("type"))
+            if not error_text:
+                error_text = _first_nonempty_str(
+                    last_step_result.get("message"),
+                    last_step_result.get("final_answer"),
+                )
+
+    lowered = error_text.lower()
+    fatal_markers = (
+        "file not found",
+        "no such file",
+        "path not found",
+        "permission denied",
+        "access is denied",
+        "unsupported step type",
+        "guard blocked",
+        "guard violation",
+    )
+    if any(marker in lowered for marker in fatal_markers):
+        return True, error_text
+
+    return False, ""
+
+
+def _normalize_loop_returned_task_for_persist(task: Any) -> Any:
+    if not isinstance(task, dict):
+        return task
+
+    normalized = copy.deepcopy(task)
+    should_fail, failure_message = _loop_task_has_terminal_failure_signal(normalized)
+    if not should_fail:
+        return normalized
+
+    normalized["status"] = "failed"
+    normalized["last_error"] = failure_message
+    normalized["failure_message"] = failure_message
+    normalized["final_answer"] = _first_nonempty_str(normalized.get("final_answer"), failure_message)
+    normalized["blocked_reason"] = ""
+    normalized["history"] = _append_status_history(normalized.get("history"), "failed")
+
+    steps = normalized.get("steps")
+    if isinstance(steps, list):
+        normalized["steps_total"] = len(steps)
+
+    try:
+        current_step_index = int(normalized.get("current_step_index", 0) or 0)
+    except Exception:
+        current_step_index = 0
+
+    if current_step_index < 0:
+        current_step_index = 0
+
+    if isinstance(steps, list) and steps:
+        current_step_index = min(current_step_index, len(steps) - 1)
+        current_step = steps[current_step_index]
+        normalized["current_step"] = copy.deepcopy(current_step) if isinstance(current_step, dict) else current_step
+
+    normalized["current_step_index"] = current_step_index
+
+    runtime_state = normalized.get("runtime_state")
+    if isinstance(runtime_state, dict):
+        runtime_state["status"] = "failed"
+        runtime_state["last_error"] = failure_message
+        runtime_state["failure_message"] = failure_message
+        runtime_state["final_answer"] = _first_nonempty_str(
+            runtime_state.get("final_answer"),
+            normalized.get("final_answer"),
+            failure_message,
+        )
+        runtime_state["blocked_reason"] = ""
+        runtime_state["history"] = _append_status_history(runtime_state.get("history"), "failed")
+        if isinstance(steps, list):
+            runtime_state["steps_total"] = len(steps)
+        runtime_state["current_step_index"] = current_step_index
+
+    return normalized
+
 def _persist_loop_task_update(system: Any, task: Any) -> Dict[str, bool]:
     result = {"repo": False, "snapshot": False, "runtime_state": False}
     if not isinstance(task, dict):
@@ -1465,16 +1576,22 @@ def _run_task_loop_until_terminal(system: Any, task_id: str, max_cycles: int = 5
         }
 
     returned_task = result.get("task")
-    persistence = _persist_loop_task_update(system, returned_task) if isinstance(returned_task, dict) else {
+    normalized_returned_task = _normalize_loop_returned_task_for_persist(returned_task)
+    persistence = _persist_loop_task_update(system, normalized_returned_task) if isinstance(normalized_returned_task, dict) else {
         "repo": False,
         "snapshot": False,
         "runtime_state": False,
     }
 
     payload = copy.deepcopy(result)
+    if isinstance(normalized_returned_task, dict):
+        payload["task"] = copy.deepcopy(normalized_returned_task)
+        payload["status"] = _extract_status(normalized_returned_task)
+        payload["final_answer"] = _extract_final_answer(normalized_returned_task)
+        payload["last_error"] = _extract_last_error(normalized_returned_task)
     payload["mode"] = "task_loop_until_terminal"
     payload["task_id"] = normalized_task_id
-    payload["metadata_persisted"] = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, returned_task)
+    payload["metadata_persisted"] = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, normalized_returned_task)
     payload["loop_task_persisted"] = persistence
     return payload
 
