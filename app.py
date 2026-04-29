@@ -70,6 +70,7 @@ def print_help() -> None:
     print("  task run [count]")
     print("  task loop <task_id> [max_cycles]")
     print("  task queue")
+    print("  task normalize-stale [--dry-run]")
     print("  task doc-summary <input> <output>")
     print("  task doc-action-items <input> <output>")
     print("  task doc-requirement <input>")
@@ -1390,6 +1391,10 @@ def _loop_task_has_terminal_failure_signal(task: Dict[str, Any]) -> Tuple[bool, 
         "unsupported step type",
         "guard blocked",
         "guard violation",
+        "path resolve failed",
+        "absolute path not allowed",
+        "verify target not found",
+        "target not found",
     )
     if any(marker in lowered for marker in fatal_markers):
         return True, error_text
@@ -1409,7 +1414,16 @@ def _normalize_loop_returned_task_for_persist(task: Any) -> Any:
     normalized["status"] = "failed"
     normalized["last_error"] = failure_message
     normalized["failure_message"] = failure_message
-    normalized["final_answer"] = _first_nonempty_str(normalized.get("final_answer"), failure_message)
+    existing_final_answer = _safe_str(normalized.get("final_answer"))
+    success_placeholders = (
+        "已讀取檔案",
+        "file read",
+        "read file",
+    )
+    if not existing_final_answer or any(existing_final_answer.lower().startswith(item.lower()) for item in success_placeholders):
+        normalized["final_answer"] = failure_message
+    else:
+        normalized["final_answer"] = existing_final_answer
     normalized["blocked_reason"] = ""
     normalized["history"] = _append_status_history(normalized.get("history"), "failed")
 
@@ -2932,6 +2946,53 @@ def handle_natural_language(system: Any, text: str) -> None:
         print_json({"ok": False, "error": f"natural language handling failed: {e}", "traceback": traceback.format_exc(), "input": text})
 
 
+def _normalize_stale_tasks(system: Any, dry_run: bool = False) -> Dict[str, Any]:
+    tasks = _list_tasks(system)
+    normalized_items: List[Dict[str, Any]] = []
+
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+
+        task_id = _extract_task_id(task)
+        if not task_id:
+            continue
+
+        status = _extract_status(task).lower()
+        if status in TERMINAL_STATUSES:
+            continue
+
+        should_fail, failure_message = _loop_task_has_terminal_failure_signal(task)
+        if not should_fail:
+            continue
+
+        normalized_task = _normalize_loop_returned_task_for_persist(task)
+        if not isinstance(normalized_task, dict):
+            continue
+
+        item: Dict[str, Any] = {
+            "task_id": task_id,
+            "before_status": status,
+            "after_status": _extract_status(normalized_task),
+            "last_error": _extract_last_error(normalized_task),
+            "final_answer": _extract_final_answer(normalized_task),
+            "dry_run": bool(dry_run),
+        }
+
+        if not dry_run:
+            item["persistence"] = _persist_loop_task_update(system, normalized_task)
+
+        normalized_items.append(item)
+
+    return {
+        "ok": True,
+        "mode": "task_normalize_stale",
+        "dry_run": bool(dry_run),
+        "count": len(normalized_items),
+        "items": normalized_items,
+    }
+
+
 def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
     normalized = _normalize_cli_command(text)
     if normalized:
@@ -2955,6 +3016,11 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
     if text == "/doc_requirement":
         print_json(_run_requirement_pipeline_now(system, cli_state, "requirement.txt"))
         return
+    if text == "/task_normalize_stale" or text.startswith("/task_normalize_stale "):
+        dry_run = "--dry-run" in text.split()
+        print_json(_normalize_stale_tasks(system, dry_run=dry_run))
+        return
+
     if text == "/task_queue":
         scheduler = _get_scheduler(system)
         snapshot_fn = getattr(scheduler, "get_queue_snapshot", None)
@@ -3550,6 +3616,8 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
             return "/task_list"
         if sub == "queue":
             return "/task_queue"
+        if sub in {"normalize-stale", "normalize_stale", "repair-stale", "repair_stale"}:
+            return "/task_normalize_stale " + " ".join(parts[2:]) if len(parts) >= 3 else "/task_normalize_stale"
         if sub == "show" and len(parts) >= 3:
             return "/task_show " + " ".join(parts[2:])
         if sub == "result" and len(parts) >= 3:
