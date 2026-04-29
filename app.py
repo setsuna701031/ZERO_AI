@@ -976,17 +976,75 @@ def _parse_task_open_args(raw: str) -> Tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
+def _extract_failed_step_index(task: Dict[str, Any], total: int) -> int:
+    if not isinstance(task, dict):
+        return 0
+
+    candidates: List[Any] = []
+
+    last_step_result = task.get("last_step_result")
+    if isinstance(last_step_result, dict):
+        candidates.append(last_step_result.get("step_index"))
+        nested = last_step_result.get("result")
+        if isinstance(nested, dict):
+            candidates.append(nested.get("step_index"))
+
+    for list_key in ("execution_log", "step_results", "results"):
+        items = task.get(list_key)
+        if isinstance(items, list) and items:
+            for item in reversed(items):
+                if not isinstance(item, dict):
+                    continue
+                candidates.append(item.get("step_index"))
+                nested = item.get("result")
+                if isinstance(nested, dict):
+                    candidates.append(nested.get("step_index"))
+
+    for value in candidates:
+        if isinstance(value, int):
+            idx = value
+        else:
+            try:
+                idx = int(value)
+            except Exception:
+                continue
+        if idx < 0:
+            continue
+        if total > 0:
+            return min(idx, total - 1)
+        return idx
+
+    current_idx = _extract_current_step_index(task)
+    if total > 0 and current_idx >= total:
+        return max(0, total - 1)
+    return max(0, current_idx)
+
+
 def _format_step_progress(task: Dict[str, Any]) -> str:
     current_idx = _extract_current_step_index(task)
     total = _extract_steps_total(task)
     if total <= 0:
         return "-"
-    display_current = current_idx
+
     status = _extract_status(task).lower()
-    if status in TERMINAL_STATUSES and current_idx < total:
-        display_current = total
-    elif display_current < 0:
+
+    if status in {"failed", "error"}:
+        failed_idx = _extract_failed_step_index(task, total)
+        return f"failed at {failed_idx + 1}/{total}"
+
+    if status == "blocked":
+        display_current = max(0, min(current_idx, total))
+        return f"blocked {display_current}/{total}"
+
+    finished_statuses = {"finished", "completed", "done", "success"}
+    if status in finished_statuses:
+        return f"{total}/{total}"
+
+    display_current = current_idx
+    if display_current < 0:
         display_current = 0
+    if display_current > total:
+        display_current = total
     return f"{display_current}/{total}"
 
 
