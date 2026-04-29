@@ -44,13 +44,19 @@ def main() -> int:
     expected_cli = (
         "Task failed. Replan available.\n"
         "Use:\n"
-        "task replan preview task_display_replan_suggestion"
+        "task replan preview task_display_replan_suggestion\n"
+        "task replan apply task_display_replan_suggestion --dry-run\n"
+        "task replan apply task_display_replan_suggestion --approve"
     )
 
     checks = [
         (suggestion.get("title"), "Replan available", "display title"),
         (suggestion.get("message"), "Task failed. Replan available.", "display message"),
         (suggestion.get("command"), "task replan preview task_display_replan_suggestion", "display command"),
+        (suggestion.get("preview_command"), "task replan preview task_display_replan_suggestion", "preview command"),
+        (suggestion.get("dry_run_command"), "task replan apply task_display_replan_suggestion --dry-run", "dry-run command"),
+        (suggestion.get("apply_command"), "task replan apply task_display_replan_suggestion --approve", "apply command"),
+        (len(suggestion.get("actions", [])), 3, "structured actions"),
         (format_replan_suggestion_cli(suggestion), expected_cli, "CLI display text"),
     ]
     for actual, expected, label in checks:
@@ -63,6 +69,8 @@ def main() -> int:
     checks = [
         (public_record.get("replan_suggestion", {}).get("title"), "Replan available", "public title"),
         (public_record.get("replan_suggestion", {}).get("command"), "task replan preview task_display_replan_suggestion", "public command"),
+        (public_record.get("replan_suggestion", {}).get("dry_run_command"), "task replan apply task_display_replan_suggestion --dry-run", "public dry-run command"),
+        (public_record.get("replan_suggestion", {}).get("apply_command"), "task replan apply task_display_replan_suggestion --approve", "public apply command"),
         (public_record.get("cli_suggestion"), expected_cli, "public CLI display text"),
     ]
     for actual, expected, label in checks:

@@ -48,6 +48,10 @@ def main() -> int:
         (suggestion.get("submitted"), False, "submitted"),
         (suggestion.get("queued"), False, "queued"),
         (suggestion.get("ran"), False, "ran"),
+        (suggestion.get("preview_command"), "task replan preview task_auto_replan_suggestion", "preview command"),
+        (suggestion.get("dry_run_command"), "task replan apply task_auto_replan_suggestion --dry-run", "dry-run command"),
+        (suggestion.get("apply_command"), "task replan apply task_auto_replan_suggestion --approve", "apply command"),
+        (len(suggestion.get("actions", [])), 3, "structured actions"),
     ]
     for actual, expected, label in checks:
         check = assert_equal(actual, expected, label)

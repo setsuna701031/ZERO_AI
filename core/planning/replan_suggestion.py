@@ -47,8 +47,34 @@ def build_replan_suggestion(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if repairable is False:
         return None
 
-    command = f"task replan preview {task_id}"
+    preview_command = f"task replan preview {task_id}"
+    dry_run_command = f"task replan apply {task_id} --dry-run"
+    apply_command = f"task replan apply {task_id} --approve"
     reason = _safe_text(task.get("last_error") or task.get("failure_message") or task.get("replan_summary"))
+    primary_action = {
+        "id": "preview_replan",
+        "kind": "command",
+        "label": "Preview replan",
+        "command": preview_command,
+        "destructive": False,
+        "requires_approval": False,
+    }
+    apply_action = {
+        "id": "dry_run_replan",
+        "kind": "command",
+        "label": "Dry-run replan",
+        "command": dry_run_command,
+        "destructive": False,
+        "requires_approval": False,
+    }
+    approve_action = {
+        "id": "apply_replan",
+        "kind": "command",
+        "label": "Apply replan",
+        "command": apply_command,
+        "destructive": False,
+        "requires_approval": True,
+    }
 
     return {
         "id": f"replan:{task_id}",
@@ -61,11 +87,13 @@ def build_replan_suggestion(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "submitted": False,
         "queued": False,
         "ran": False,
-        "command": command,
-        "primary_action": {
-            "label": "Preview replan",
-            "command": command,
-        },
+        "command": preview_command,
+        "preview_command": preview_command,
+        "dry_run_command": dry_run_command,
+        "apply_command": apply_command,
+        "primary_action": primary_action,
+        "secondary_actions": [apply_action, approve_action],
+        "actions": [primary_action, apply_action, approve_action],
         "task_id": task_id,
         "reason": reason,
         "replan_count": replan_count,
@@ -84,8 +112,21 @@ def format_replan_suggestion_cli(suggestion: Optional[Dict[str, Any]]) -> str:
         return ""
 
     message = _safe_text(suggestion.get("message")) or "Task failed. Replan available."
-    command = _safe_text(suggestion.get("command"))
-    if not command:
+    commands: List[str] = []
+    actions = suggestion.get("actions")
+    if isinstance(actions, list):
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            command = _safe_text(action.get("command"))
+            if command and command not in commands:
+                commands.append(command)
+
+    fallback_command = _safe_text(suggestion.get("command"))
+    if fallback_command and fallback_command not in commands:
+        commands.insert(0, fallback_command)
+
+    if not commands:
         return message
 
-    return f"{message}\nUse:\n{command}"
+    return f"{message}\nUse:\n" + "\n".join(commands)
