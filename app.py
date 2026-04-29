@@ -62,6 +62,8 @@ def print_help() -> None:
     print("  task delete <task_id>")
     print("  task retry <task_id>")
     print("  task rerun <task_id>")
+    print("  task replan preview <task_id>")
+    print("  task replan apply <task_id> --dry-run")
     print("  task purge finished")
     print("  task purge failed")
     print("  task purge all")
@@ -101,6 +103,8 @@ def print_help() -> None:
     print("  python app.py task delete <task_id>")
     print("  python app.py task retry <task_id>")
     print("  python app.py task rerun <task_id>")
+    print("  python app.py task replan preview <task_id>")
+    print("  python app.py task replan apply <task_id> --dry-run")
     print("  python app.py task purge finished")
     print("  python app.py task doc-summary input.txt summary.txt")
     print("  python app.py task doc-action-items input.txt action_items.txt")
@@ -1612,6 +1616,81 @@ def _run_task_loop_until_terminal(system: Any, task_id: str, max_cycles: int = 5
     return payload
 
 
+def _parse_replan_control_args(raw: str) -> Tuple[str, str, bool]:
+    parts = str(raw or "").strip().split()
+    if len(parts) < 2:
+        return "", "", False
+
+    action = parts[0].strip().lower()
+    task_id = parts[1].strip()
+    dry_run = "--dry-run" in {part.strip().lower() for part in parts[2:]}
+    return action, task_id, dry_run
+
+
+def _preview_replan_task(system: Any, task_id: str, *, mode: str = "replan_preview") -> Dict[str, Any]:
+    normalized_task_id = _safe_str(task_id)
+    if not normalized_task_id:
+        return {"ok": False, "error": "task_id is required", "mode": mode}
+
+    task = _get_task(system, normalized_task_id)
+    if not isinstance(task, dict):
+        return {"ok": False, "error": "task not found", "task_id": normalized_task_id, "mode": mode}
+
+    scheduler = _get_scheduler(system)
+    preview_fn = getattr(scheduler, "preview_replan_task", None)
+    if not callable(preview_fn):
+        return {"ok": False, "error": "preview_replan_task not available", "task_id": normalized_task_id, "mode": mode}
+
+    merged_task = _merge_task_with_snapshot(task)
+    try:
+        preview = preview_fn(merged_task)
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"replan preview failed: {e}",
+            "traceback": traceback.format_exc(),
+            "task_id": normalized_task_id,
+            "mode": mode,
+        }
+
+    if not isinstance(preview, dict):
+        return {"ok": False, "error": "replan preview returned non-dict result", "task_id": normalized_task_id, "mode": mode}
+
+    payload = copy.deepcopy(preview)
+    payload["mode"] = mode
+    payload["task_id"] = normalized_task_id
+    payload["submitted"] = False
+    payload["ran"] = False
+    payload["dry_run"] = True
+    return payload
+
+
+def _handle_replan_control(system: Any, raw: str) -> Dict[str, Any]:
+    action, task_id, dry_run = _parse_replan_control_args(raw)
+    if action not in {"preview", "apply"}:
+        return {
+            "ok": False,
+            "error": "usage: task replan preview <task_id> | task replan apply <task_id> --dry-run",
+            "mode": "replan_control",
+        }
+
+    if action == "preview":
+        return _preview_replan_task(system, task_id, mode="replan_preview")
+
+    if not dry_run:
+        return {
+            "ok": False,
+            "error": "manual replan apply currently requires --dry-run",
+            "mode": "replan_apply",
+            "task_id": task_id,
+            "submitted": False,
+            "ran": False,
+            "dry_run": False,
+        }
+
+    return _preview_replan_task(system, task_id, mode="replan_apply_dry_run")
+
+
 
 
 def _is_task_id_token(value: Any) -> bool:
@@ -1953,6 +2032,8 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         ("task doc action-items ", "/task_doc_action_items "),
         ("task doc action_items ", "/task_doc_action_items "),
         ("task doc summary ", "/task_doc_summary "),
+        ("task replan preview ", "/task_replan preview "),
+        ("task replan apply ", "/task_replan apply "),
         ("task doc-requirement ", "/task_doc_requirement "),
         ("task doc_requirement ", "/task_doc_requirement "),
         ("task doc requirement ", "/task_doc_requirement "),
@@ -1991,6 +2072,7 @@ def _normalize_cli_command(text: str) -> Optional[str]:
         ("task delete ", "/task_delete "),
         ("task retry ", "/task_retry "),
         ("task rerun ", "/task_rerun "),
+        ("task replan ", "/task_replan "),
         ("task purge ", "/task_purge "),
     ]
     for prefix, target in task_prefixes:
@@ -3118,6 +3200,10 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
             print("python app.py task list")
             print(f"python app.py task result {result['new_task_id']}")
         return
+    if text.startswith("/task_replan "):
+        raw_args = text.split(maxsplit=1)[1].strip()
+        print_json(_handle_replan_control(system, raw_args))
+        return
     if text.startswith("/task_purge "):
         mode = text.split(maxsplit=1)[1].strip().lower()
         if mode not in {"finished", "failed", "all"}:
@@ -3631,6 +3717,8 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
             return "/task_retry " + " ".join(parts[2:])
         if sub == "rerun" and len(parts) >= 3:
             return "/task_rerun " + " ".join(parts[2:])
+        if sub == "replan" and len(parts) >= 4:
+            return "/task_replan " + " ".join(parts[2:])
         if sub == "purge" and len(parts) >= 3:
             return "/task_purge " + " ".join(parts[2:])
         if sub == "create" and len(parts) >= 3:
