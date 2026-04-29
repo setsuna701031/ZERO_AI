@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.planning.replanner import Replanner
 from core.planning.planner import Planner
+from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
@@ -2986,6 +2987,7 @@ class Scheduler(RuntimeTaskScheduler):
             "execution_log_file_logical_path": self._to_logical_path(str(normalized.get("execution_log_file") or "")),
             "updated_at": int(normalized.get("updated_at", 0) or 0),
             "replan_count": int(normalized.get("replan_count", 0) or 0),
+            "max_replans": int(normalized.get("max_replans", self.default_max_replans) or self.default_max_replans),
             "replanned": bool(normalized.get("replanned", False)),
             "replan_reason": str(normalized.get("replan_reason") or ""),
             "replan_decision": str(normalized.get("replan_decision") or ""),
@@ -2999,6 +3001,11 @@ class Scheduler(RuntimeTaskScheduler):
             "open_targets": open_targets,
             "artifacts": artifacts,
         }
+        suggestion = build_replan_suggestion(normalized)
+        suggestions = [suggestion] if suggestion else []
+        record["replan_suggestion"] = suggestion
+        record["suggestions"] = suggestions
+        record["cli_suggestion"] = format_replan_suggestion_cli(suggestion)
         return record
 
     def _refresh_task_public_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -3071,6 +3078,10 @@ class Scheduler(RuntimeTaskScheduler):
         task["open_targets"] = artifact_entries
         task["artifacts"] = copy.deepcopy(artifact_entries)
         task["updated_at"] = updated_at
+        suggestion = build_replan_suggestion(task)
+        task["replan_suggestion"] = suggestion
+        task["suggestions"] = build_replan_suggestions(task)
+        task["cli_suggestion"] = format_replan_suggestion_cli(suggestion)
 
         task = self._infer_completion_fields(task)
         task = self._clear_stale_replan_fields(task)

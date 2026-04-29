@@ -93,19 +93,21 @@ def _format_tasks_for_display(tasks: list[dict[str, Any]]) -> str:
         step = _safe_text(task.get("step"), "-")
         goal = _safe_text(task.get("goal"), "-")
         final_answer = _safe_text(task.get("final_answer"), "-")
+        cli_suggestion = _safe_text(task.get("cli_suggestion"), "")
 
-        lines.append(
-            "\n".join(
-                [
-                    f"{index}. {task_id}",
-                    f"   status : {status}",
-                    f"   step   : {step}",
-                    f"   goal   : {goal}",
-                    f"   result : {final_answer}",
-                    f"   inspect: task {task_id}",
-                ]
-            )
-        )
+        item_lines = [
+            f"{index}. {task_id}",
+            f"   status : {status}",
+            f"   step   : {step}",
+            f"   goal   : {goal}",
+            f"   result : {final_answer}",
+            f"   inspect: task {task_id}",
+        ]
+        if cli_suggestion:
+            item_lines.append("   suggestion:")
+            item_lines.extend(f"   {line}" for line in cli_suggestion.splitlines())
+
+        lines.append("\n".join(item_lines))
 
     return "\n\n".join(lines)
 
@@ -122,6 +124,9 @@ def _format_task_detail_for_display(detail: dict[str, Any]) -> str:
     if not file_lines:
         file_lines.append("- no task-local files found")
 
+    cli_suggestion = _safe_text(detail.get("cli_suggestion"), "")
+    suggestion_block = f"\n[SUGGESTION]\n{cli_suggestion}\n" if cli_suggestion else ""
+
     return (
         "[TASK DETAIL]\n"
         f"Task ID      : {detail.get('task_id') or '-'}\n"
@@ -129,6 +134,7 @@ def _format_task_detail_for_display(detail: dict[str, Any]) -> str:
         f"Step         : {detail.get('step') or '-'}\n"
         f"Goal         : {detail.get('goal') or '-'}\n"
         f"Final Answer : {detail.get('final_answer') or '-'}\n"
+        f"{suggestion_block}"
         "\n"
         "[PIPELINE]\n"
         f"Scenario     : {detail.get('scenario') or '-'}\n"

@@ -15,6 +15,7 @@ import traceback
 from contextlib import redirect_stdout
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from services.system_boot import boot_system
 
 
@@ -1451,6 +1452,10 @@ def _normalize_loop_returned_task_for_persist(task: Any) -> Any:
         normalized["current_step"] = copy.deepcopy(current_step) if isinstance(current_step, dict) else current_step
 
     normalized["current_step_index"] = current_step_index
+    suggestion = build_replan_suggestion(normalized)
+    normalized["replan_suggestion"] = suggestion
+    normalized["suggestions"] = build_replan_suggestions(normalized)
+    normalized["cli_suggestion"] = format_replan_suggestion_cli(suggestion)
 
     runtime_state = normalized.get("runtime_state")
     if isinstance(runtime_state, dict):
@@ -1467,6 +1472,9 @@ def _normalize_loop_returned_task_for_persist(task: Any) -> Any:
         if isinstance(steps, list):
             runtime_state["steps_total"] = len(steps)
         runtime_state["current_step_index"] = current_step_index
+        runtime_state["replan_suggestion"] = suggestion
+        runtime_state["suggestions"] = build_replan_suggestions(normalized)
+        runtime_state["cli_suggestion"] = format_replan_suggestion_cli(suggestion)
 
     return normalized
 

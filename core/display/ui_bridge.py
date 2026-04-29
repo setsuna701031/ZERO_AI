@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core.planning.replan_suggestion import build_replan_suggestion, format_replan_suggestion_cli
+
 
 ROOT = Path("workspace")
 SHARED_DIR = ROOT / "shared"
@@ -162,6 +164,14 @@ def get_tasks(limit: int = 10) -> List[Dict[str, Any]]:
                 or final_answer
             )
 
+        suggestion_source: Dict[str, Any] = {}
+        if runtime_data:
+            suggestion_source.update(runtime_data)
+        if result_data:
+            suggestion_source.update(result_data)
+        suggestion_source.setdefault("task_id", task_dir.name)
+        suggestion = build_replan_suggestion(suggestion_source)
+
         tasks.append(
             {
                 "task_id": task_dir.name,
@@ -169,6 +179,9 @@ def get_tasks(limit: int = 10) -> List[Dict[str, Any]]:
                 "step": step,
                 "goal": goal,
                 "final_answer": final_answer,
+                "replan_suggestion": suggestion,
+                "suggestions": [suggestion] if suggestion else [],
+                "cli_suggestion": format_replan_suggestion_cli(suggestion),
             }
         )
 
@@ -221,6 +234,11 @@ def get_task_detail(task_id: str) -> Optional[Dict[str, Any]]:
         or runtime_data.get("final_answer")
         or runtime_data.get("last_result")
     )
+    suggestion_source: Dict[str, Any] = {}
+    suggestion_source.update(runtime_data)
+    suggestion_source.update(result_data)
+    suggestion_source.setdefault("task_id", safe_task_id)
+    suggestion = build_replan_suggestion(suggestion_source)
 
     return {
         "task_id": safe_task_id,
@@ -239,6 +257,9 @@ def get_task_detail(task_id: str) -> Optional[Dict[str, Any]]:
         "has_plan": plan_file.exists(),
         "has_trace": trace_file.exists(),
         "has_execution_log": execution_log_file.exists(),
+        "replan_suggestion": suggestion,
+        "suggestions": [suggestion] if suggestion else [],
+        "cli_suggestion": format_replan_suggestion_cli(suggestion),
         "runtime_state": runtime_data,
         "result": result_data,
         "plan": plan_data,
