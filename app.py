@@ -69,6 +69,7 @@ def print_help() -> None:
     print("  task submit [task_id]")
     print("  task run [count]")
     print("  task loop <task_id> [max_cycles]")
+    print("  task queue")
     print("  task doc-summary <input> <output>")
     print("  task doc-action-items <input> <output>")
     print("  task doc-requirement <input>")
@@ -2954,6 +2955,27 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
     if text == "/doc_requirement":
         print_json(_run_requirement_pipeline_now(system, cli_state, "requirement.txt"))
         return
+    if text == "/task_queue":
+        scheduler = _get_scheduler(system)
+        snapshot_fn = getattr(scheduler, "get_queue_snapshot", None)
+        rows_fn = getattr(scheduler, "get_queue_rows", None)
+        if callable(snapshot_fn):
+            try:
+                print_json(snapshot_fn())
+                return
+            except Exception as e:
+                print_json({"ok": False, "error": f"queue snapshot failed: {e}"})
+                return
+        if callable(rows_fn):
+            try:
+                print_json(rows_fn())
+                return
+            except Exception as e:
+                print_json({"ok": False, "error": f"queue rows failed: {e}"})
+                return
+        print_json({"ok": False, "error": "queue snapshot not available"})
+        return
+
     if text == "/task_list":
         _print_task_table(_list_tasks(system))
         return
@@ -3526,6 +3548,8 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
 
         if sub == "list":
             return "/task_list"
+        if sub == "queue":
+            return "/task_queue"
         if sub == "show" and len(parts) >= 3:
             return "/task_show " + " ".join(parts[2:])
         if sub == "result" and len(parts) >= 3:
@@ -3555,6 +3579,7 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
         return "ask " + " ".join(parts[1:]) if len(parts) >= 2 else None
     mapping = {
         "list": "/task_list",
+        "queue": "/task_queue",
     }
     if first in mapping:
         return mapping[first]
