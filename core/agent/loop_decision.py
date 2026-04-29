@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from core.agent.loop_decision_guard import guard_loop_decision, infer_decision_mode
+
 
 TERMINAL_STATUSES = {
     "finished",
@@ -364,7 +366,8 @@ def observe_and_decide(
         max_replans=max_replans,
         replan_count=replan_count,
     )
-    return decision.to_dict()
+    mode = infer_decision_mode(task, runner_result, local_observation)
+    return guard_loop_decision(decision.to_dict(), mode=mode)
 
 
 def main() -> int:

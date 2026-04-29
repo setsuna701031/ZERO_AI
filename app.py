@@ -1560,6 +1560,7 @@ def _run_task_loop_until_terminal(system: Any, task_id: str, max_cycles: int = 5
         }
 
     merged_task = _merge_task_with_snapshot(task)
+    merged_task["decision_guard_mode"] = "task_loop"
     original_plan = merged_task.get("planner_result")
     if not isinstance(original_plan, dict):
         original_plan = merged_task.get("plan") if isinstance(merged_task.get("plan"), dict) else None
