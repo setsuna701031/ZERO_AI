@@ -56,6 +56,11 @@ def build_replan_suggestion(task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "trigger": "task_failed",
         "title": "Replan available",
         "message": "Task failed. Replan available.",
+        "would_replan": True,
+        "replanned": False,
+        "submitted": False,
+        "queued": False,
+        "ran": False,
         "command": command,
         "primary_action": {
             "label": "Preview replan",
