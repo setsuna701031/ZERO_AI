@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
@@ -1014,6 +1015,44 @@ class Scheduler(RuntimeTaskScheduler):
     def _is_meaningful_replan(self, old_steps: Any, new_steps: Any) -> bool:
         return self._canonicalize_steps_for_compare(old_steps) != self._canonicalize_steps_for_compare(new_steps)
 
+    def _fingerprint_steps(self, steps: Any) -> str:
+        canonical = self._canonicalize_steps_for_compare(steps)
+        payload = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _get_replan_trace(self, task: Dict[str, Any]) -> List[Dict[str, Any]]:
+        trace = task.get("replan_trace")
+        if isinstance(trace, list):
+            return [copy.deepcopy(item) for item in trace if isinstance(item, dict)]
+        return []
+
+    def _append_replan_trace(self, task: Dict[str, Any], event: Dict[str, Any]) -> None:
+        trace = self._get_replan_trace(task)
+        payload = copy.deepcopy(event)
+        payload.setdefault("tick", getattr(self, "current_tick", 0))
+        payload.setdefault("at", time.time())
+        trace.append(payload)
+        task["replan_trace"] = trace[-25:]
+
+    def _failed_replan_fingerprints(self, task: Dict[str, Any]) -> set[str]:
+        failed: set[str] = set()
+        for item in self._get_replan_trace(task):
+            if str(item.get("outcome") or "").strip().lower() not in {"failed", "rejected", "skipped"}:
+                continue
+            fingerprint = str(item.get("plan_fingerprint") or "").strip()
+            if fingerprint:
+                failed.add(fingerprint)
+        return failed
+
+    def _replan_budget_payload(self, task: Dict[str, Any]) -> Dict[str, int]:
+        replan_count = int(task.get("replan_count", 0) or 0)
+        max_replans = int(task.get("max_replans", self.default_max_replans) or self.default_max_replans)
+        return {
+            "replan_count": replan_count,
+            "max_replans": max_replans,
+            "remaining": max(0, max_replans - replan_count),
+        }
+
     def _try_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(task, dict):
             return {
@@ -1024,8 +1063,41 @@ class Scheduler(RuntimeTaskScheduler):
             }
 
         failed_step_type = self._get_failed_step_type(task)
+        budget = self._replan_budget_payload(task)
+        old_steps = copy.deepcopy(task.get("steps", [])) if isinstance(task.get("steps"), list) else []
+        old_fingerprint = self._fingerprint_steps(old_steps)
+        failed_fingerprints = self._failed_replan_fingerprints(task)
+        failed_fingerprints.add(old_fingerprint)
+
+        self._append_replan_trace(
+            task,
+            {
+                "event": "replan_evaluate",
+                "outcome": "failed",
+                "plan_fingerprint": old_fingerprint,
+                "failed_step_type": failed_step_type,
+                "replan_count": budget["replan_count"],
+                "max_replans": budget["max_replans"],
+                "remaining_replans": budget["remaining"],
+                "error": str(task.get("last_error") or task.get("failure_message") or ""),
+            },
+        )
+
         repairable, repairable_reason = self._is_repairable_failure(task)
         if not repairable:
+            self._append_replan_trace(
+                task,
+                {
+                    "event": "replan_skip",
+                    "outcome": "skipped",
+                    "reason": repairable_reason or "failure not repairable",
+                    "plan_fingerprint": old_fingerprint,
+                    "failed_step_type": failed_step_type,
+                    "replan_count": budget["replan_count"],
+                    "max_replans": budget["max_replans"],
+                    "remaining_replans": budget["remaining"],
+                },
+            )
             return {
                 "ok": True,
                 "replanned": False,
@@ -1033,8 +1105,10 @@ class Scheduler(RuntimeTaskScheduler):
                 "summary": repairable_reason or "failure not repairable",
                 "repairable": False,
                 "failed_step_type": failed_step_type,
-                "replan_count": int(task.get("replan_count", 0) or 0),
-                "max_replans": int(task.get("max_replans", self.default_max_replans) or self.default_max_replans),
+                "replan_count": budget["replan_count"],
+                "max_replans": budget["max_replans"],
+                "remaining_replans": budget["remaining"],
+                "replan_trace": copy.deepcopy(task.get("replan_trace", [])),
             }
 
         replanner = getattr(self, "replanner", None)
@@ -1047,8 +1121,6 @@ class Scheduler(RuntimeTaskScheduler):
                 "repairable": True,
                 "failed_step_type": failed_step_type,
             }
-
-        old_steps = copy.deepcopy(task.get("steps", [])) if isinstance(task.get("steps"), list) else []
 
         try:
             replan_result = replanner.create_replan_for_task(
@@ -1088,7 +1160,21 @@ class Scheduler(RuntimeTaskScheduler):
 
         plan = replan_result.get("plan", {})
         new_steps = plan.get("steps", []) if isinstance(plan, dict) else []
+        new_fingerprint = self._fingerprint_steps(new_steps)
         if not isinstance(new_steps, list) or not new_steps:
+            self._append_replan_trace(
+                task,
+                {
+                    "event": "replan_reject",
+                    "outcome": "rejected",
+                    "reason": "replanner returned empty steps",
+                    "plan_fingerprint": new_fingerprint,
+                    "failed_step_type": failed_step_type,
+                    "replan_count": budget["replan_count"],
+                    "max_replans": budget["max_replans"],
+                    "remaining_replans": budget["remaining"],
+                },
+            )
             return {
                 "ok": False,
                 "replanned": False,
@@ -1100,6 +1186,19 @@ class Scheduler(RuntimeTaskScheduler):
             }
 
         if not self._is_meaningful_replan(old_steps, new_steps):
+            self._append_replan_trace(
+                task,
+                {
+                    "event": "replan_reject",
+                    "outcome": "rejected",
+                    "reason": "replanner returned equivalent steps",
+                    "plan_fingerprint": new_fingerprint,
+                    "failed_step_type": failed_step_type,
+                    "replan_count": budget["replan_count"],
+                    "max_replans": budget["max_replans"],
+                    "remaining_replans": budget["remaining"],
+                },
+            )
             return {
                 "ok": True,
                 "replanned": False,
@@ -1108,6 +1207,35 @@ class Scheduler(RuntimeTaskScheduler):
                 "repairable": True,
                 "failed_step_type": failed_step_type,
                 "raw_replan_result": copy.deepcopy(replan_result),
+            }
+
+        if new_fingerprint in failed_fingerprints:
+            self._append_replan_trace(
+                task,
+                {
+                    "event": "replan_reject",
+                    "outcome": "rejected",
+                    "reason": "replanner returned a previously failed plan",
+                    "plan_fingerprint": new_fingerprint,
+                    "failed_step_type": failed_step_type,
+                    "replan_count": budget["replan_count"],
+                    "max_replans": budget["max_replans"],
+                    "remaining_replans": budget["remaining"],
+                },
+            )
+            return {
+                "ok": True,
+                "replanned": False,
+                "decision": "skipped",
+                "summary": "replanner returned a previously failed plan",
+                "repairable": True,
+                "failed_step_type": failed_step_type,
+                "plan_fingerprint": new_fingerprint,
+                "replan_count": budget["replan_count"],
+                "max_replans": budget["max_replans"],
+                "remaining_replans": budget["remaining"],
+                "raw_replan_result": copy.deepcopy(replan_result),
+                "replan_trace": copy.deepcopy(task.get("replan_trace", [])),
             }
 
         task["steps"] = copy.deepcopy(new_steps)
@@ -1119,6 +1247,22 @@ class Scheduler(RuntimeTaskScheduler):
         task["planner_result"] = copy.deepcopy(plan)
         task["status"] = "queued"
 
+        accepted_budget = self._replan_budget_payload(task)
+        self._append_replan_trace(
+            task,
+            {
+                "event": "replan_accept",
+                "outcome": "accepted",
+                "plan_fingerprint": new_fingerprint,
+                "previous_plan_fingerprint": old_fingerprint,
+                "failed_step_type": failed_step_type,
+                "replan_count": accepted_budget["replan_count"],
+                "max_replans": accepted_budget["max_replans"],
+                "remaining_replans": accepted_budget["remaining"],
+                "steps_total": len(new_steps),
+            },
+        )
+
         return {
             "ok": True,
             "replanned": True,
@@ -1128,6 +1272,10 @@ class Scheduler(RuntimeTaskScheduler):
             "failed_step_type": failed_step_type,
             "steps_total": len(new_steps),
             "replan_count": task["replan_count"],
+            "max_replans": accepted_budget["max_replans"],
+            "remaining_replans": accepted_budget["remaining"],
+            "plan_fingerprint": new_fingerprint,
+            "replan_trace": copy.deepcopy(task.get("replan_trace", [])),
             "raw_replan_result": copy.deepcopy(replan_result),
         }
 
