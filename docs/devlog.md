@@ -1,5 +1,155 @@
 # ZERO Devlog
 
+## 2026-04-29 - L4 replan suggestion gate stable baseline
+
+This checkpoint closed the L4 recovery gate before opening true L5 automatic replanning.
+
+The goal was not to enable automatic replan yet. The goal was to make sure failed-task recovery can be proposed, inspected, simulated, and manually approved without letting the system repair, queue, or execute actions by itself.
+
+### What was completed
+
+Updated the replan suggestion path:
+
+* `core/planning/replan_suggestion.py`
+
+Updated smoke validation:
+
+* `tests/run_replan_suggestion_smoke.py`
+* `tests/run_auto_replan_suggestion_smoke.py`
+* `tests/run_replan_suggestion_actions_e2e_smoke.py`
+
+Confirmed existing preview/control validation remains intact:
+
+* `tests/run_replan_control_preview_smoke.py`
+
+### Validated L4 recovery flow
+
+The completed controlled flow is:
+
+```text
+fail -> suggestion -> preview -> dry-run -> manual approve -> queued
+```
+
+This is the stable L4 safety baseline.
+
+### Important safety boundary
+
+At this checkpoint, suggestion output is protective only.
+
+```text
+suggestion = propose only
+preview = inspect only
+dry-run = simulate only
+manual approve = required gate
+queued = only after approval
+```
+
+Automatic replanning remains disabled.
+
+The smoke validation confirmed the suggestion path does not silently cross into automatic execution:
+
+```text
+would_replan: true
+replanned: false
+submitted: false
+queued: false
+ran: false
+```
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+run_replan_suggestion_smoke.py -> ALL PASS
+run_auto_replan_suggestion_smoke.py -> L4 smoke PASS
+run_replan_suggestion_actions_e2e_smoke.py -> E2E PASS
+run_replan_control_preview_smoke.py -> ALL PASS
+```
+
+Confirmed end-to-end chain:
+
+```text
+fail -> suggestion -> preview -> dry-run -> manual approve -> queued
+```
+
+Confirmed the previous L4 preview/control path was not broken.
+
+### Git checkpoints
+
+Committed and pushed:
+
+* `3994c4f` - Stabilize L4 replan suggestion gate
+* `2f05da0` - Ignore test workspace runtime files
+
+### Runtime workspace cleanup
+
+During validation, `tests/workspace/` was created as local runtime/test output.
+
+It contains generated test runtime data such as:
+
+* cache
+* logs
+* memory
+* runtime
+* shared
+* tasks
+* `tasks.json`
+
+This folder is not source code and should not be committed.
+
+It was added to `.gitignore` so repeated smoke runs do not pollute Git status.
+
+### Why this matters
+
+This checkpoint marks ZERO's L4 as a stable, controlled baseline.
+
+The system can now show a failed-task recovery path that is structured and inspectable, but still gated by human approval before queuing work.
+
+That matters because it prevents the common failure mode where an agent jumps directly from failure into uncontrolled self-repair.
+
+This checkpoint proves:
+
+* failed tasks can produce structured repair suggestions
+* repair suggestions can be represented as actions schema
+* preview and dry-run can inspect the proposed repair
+* manual approval is required before queueing
+* suggestions do not automatically replan or execute
+* L3/L4 control smoke paths remain stable
+
+### Stable checkpoint after this pass
+
+* L4 mainline: stable
+* L4 replan suggestion gate: stable
+* actions schema: working
+* preview / dry-run / approve path: working
+* end-to-end smoke: passing
+* auto replan: still disabled
+* runtime test workspace ignored
+* GitHub main updated
+* working tree expected clean after smoke artifacts are ignored
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `run_replan_suggestion_smoke.py` passing
+* `run_auto_replan_suggestion_smoke.py` passing
+* `run_replan_suggestion_actions_e2e_smoke.py` passing
+* `run_replan_control_preview_smoke.py` passing
+* the end-to-end chain text:
+  `fail -> suggestion -> preview -> dry-run -> manual approve -> queued`
+* Git commits:
+  `3994c4f` and `2f05da0`
+
+### Next step
+
+Do not add more L4 concepts.
+
+The next stage is to open true L5 automatic replanning behind explicit policy control, while preserving the current L4 recovery gate as the safe baseline.
+
+---
+
 ## 2026-04-28 - Web UI Persona Bridge display checkpoint
 
 This checkpoint focused on connecting ZERO's local Web UI to the real workspace display state without turning the UI into an unrestricted remote-control layer.

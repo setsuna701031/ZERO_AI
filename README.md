@@ -12,6 +12,62 @@ It is a controllable local agent platform for engineering workflows.
 
 ---
 
+## Current Stable Baseline: L4 Replan Suggestion Gate
+
+ZERO's L4 mainline is now closed with a controlled recovery gate.
+
+Validated end-to-end flow:
+
+```text
+fail → suggestion → preview → dry-run → manual approve → queued
+```
+
+### What this proves
+
+- failed tasks can produce structured repair suggestions
+- suggestions are represented as an actions schema, not only free text
+- preview can inspect the proposed action before execution
+- dry-run can simulate the proposed action
+- manual approval is required before the action is queued
+- suggestion does not automatically replan or execute by itself
+- existing L3/L4 preview/control smoke paths remain intact
+
+### Safety boundary
+
+The current L4 recovery gate is intentionally protective:
+
+```text
+suggestion = propose only
+preview = inspect only
+dry-run = simulate only
+approve = explicit manual gate
+queued = only after approval
+```
+
+Automatic replanning is not enabled at this baseline.
+
+### Validation proof
+
+Confirmed smoke coverage:
+
+```text
+run_replan_suggestion_smoke.py -> ALL PASS
+run_auto_replan_suggestion_smoke.py -> L4 smoke PASS
+run_replan_suggestion_actions_e2e_smoke.py -> E2E PASS
+run_replan_control_preview_smoke.py -> ALL PASS
+```
+
+### Git checkpoint
+
+```text
+3994c4f  Stabilize L4 replan suggestion gate
+2f05da0  Ignore test workspace runtime files
+```
+
+This is the stable L4 baseline before opening true L5 automatic replanning.
+
+---
+
 ## Current Highlight: L5 Autonomous Execution
 
 ZERO now includes a minimal autonomous world loop:
@@ -202,6 +258,7 @@ This window is not only a character display. It shows:
 - background world_state observe loop
 - platform control API
 - controlled AgentLoop observe-decide-act path
+- controlled L4 replan suggestion gate
 - artifact visibility
 - runtime trace inspection
 
@@ -356,6 +413,11 @@ ZERO's current mainline has a runtime-safe multi-task execution baseline.
 
 Validated mainline capabilities include:
 
+- controlled L4 recovery gate: `fail → suggestion → preview → dry-run → manual approve → queued`
+- structured replan suggestion actions schema
+- preview / dry-run / approve path for suggested repair actions
+- manual approval boundary before queued execution
+- auto replan remains disabled at the L4 baseline
 - normalized handler results
 - observable local traces with `step_start`, `step_result`, and `task_finished`
 - task-local trace ticks for cleaner inspection
@@ -407,7 +469,18 @@ Not optimized yet for:
 
 ## Recommended Next Step
 
-The next high-value platform step is a file watcher event source:
+The next engineering step is to open true L5 automatic replanning only after the L4 safety baseline remains stable.
+
+Recommended boundary:
+
+```text
+manual L4 recovery gate remains the safety baseline
+→ introduce auto replan behind explicit policy control
+→ keep preview / dry-run / approval available as guardrails
+→ validate with repeatable smoke before enabling broader automation
+```
+
+A later platform-facing step is a file watcher event source:
 
 ```text
 drop file into watched folder
@@ -416,8 +489,6 @@ drop file into watched folder
 → task runs automatically
 → result file is written
 ```
-
-This will make the platform value easier to understand than manual world_state injection.
 
 ---
 
