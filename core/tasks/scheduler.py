@@ -978,6 +978,9 @@ class Scheduler(RuntimeTaskScheduler):
             "depends_on task not found",
             "self dependency",
             "task already terminal",
+            "file not found",
+            "no such file",
+            "path not found",
         ]
         for signal in hard_fail_signals:
             if signal in error_text:
@@ -2929,11 +2932,208 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         runner_result: Optional[Dict[str, Any]] = None,
     ) -> None:
-        return sync_runtime_back_to_repo(
+        sync_runtime_back_to_repo(
             scheduler=self,
             task=task,
             runner_result=runner_result,
         )
+        self._collapse_non_retryable_retrying_task(
+            task=task,
+            runner_result=runner_result,
+        )
+
+    def _collapse_non_retryable_retrying_task(
+        self,
+        task: Optional[Dict[str, Any]],
+        runner_result: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Collapse fatal/non-retryable retrying states into failed.
+
+        L4 failure-loop rule:
+        - A task with max_retries=0 must not remain in retrying.
+        - Fatal errors such as file-not-found must not be requeued/retried.
+        - The public result should show the real error, not a success-like message.
+        """
+        if not isinstance(task, dict):
+            return
+
+        task_id = self._extract_task_id(task)
+        if not task_id:
+            return
+
+        refreshed = self._get_task_from_repo(task_id)
+        if not isinstance(refreshed, dict):
+            refreshed = copy.deepcopy(task)
+
+        status = str(refreshed.get("status") or "").strip().lower()
+        if status not in {"retrying", "retry"}:
+            return
+
+        error_text = self._extract_failure_text_for_retry_collapse(
+            task=refreshed,
+            runner_result=runner_result,
+        )
+
+        try:
+            retry_count = int(refreshed.get("retry_count", 0) or 0)
+        except Exception:
+            retry_count = 0
+
+        try:
+            max_retries = int(refreshed.get("max_retries", 0) or 0)
+        except Exception:
+            max_retries = 0
+
+        fatal = self._is_fatal_failure_text(error_text)
+        retries_exhausted = max_retries <= 0 or retry_count >= max_retries
+
+        if not fatal and not retries_exhausted:
+            return
+
+        final_error = error_text or "task failed"
+        failed_task = copy.deepcopy(refreshed)
+        failed_task["status"] = STATUS_FAILED
+        failed_task["last_error"] = final_error
+        failed_task["failure_message"] = final_error
+        failed_task["final_answer"] = final_error
+        failed_task["blocked_reason"] = ""
+        failed_task["last_failure_tick"] = getattr(self, "current_tick", 0)
+        failed_task["next_retry_tick"] = 0
+        failed_task["history"] = self._append_history(failed_task.get("history"), STATUS_FAILED)
+        failed_task["scheduler_build"] = SCHEDULER_BUILD
+
+        self._persist_task_payload(task_id=task_id, task=failed_task)
+        self._write_runtime_state_file_safe(failed_task)
+
+        try:
+            self.scheduler_queue.cancel(task_id)
+        except Exception:
+            pass
+        try:
+            self.worker_pool.release_by_task(task_id)
+        except Exception:
+            pass
+
+    def _extract_failure_text_for_retry_collapse(
+        self,
+        task: Optional[Dict[str, Any]],
+        runner_result: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        candidates: List[Any] = []
+
+        if isinstance(runner_result, dict):
+            candidates.extend([
+                runner_result.get("last_error"),
+                runner_result.get("failure_message"),
+                runner_result.get("error"),
+                runner_result.get("message"),
+                runner_result.get("final_answer"),
+                runner_result.get("last_step_result"),
+                runner_result.get("result"),
+                runner_result.get("task"),
+            ])
+
+        if isinstance(task, dict):
+            candidates.extend([
+                task.get("last_error"),
+                task.get("failure_message"),
+                task.get("error"),
+                task.get("message"),
+                task.get("final_answer"),
+                task.get("last_step_result"),
+            ])
+
+            for key in ("step_results", "results", "execution_log"):
+                items = task.get(key)
+                if isinstance(items, list):
+                    candidates.extend(reversed(items[-5:]))
+
+        for candidate in candidates:
+            text = self._extract_error_text_deep(candidate)
+            if text:
+                return text
+
+        return ""
+
+    def _extract_error_text_deep(self, value: Any, depth: int = 0) -> str:
+        if depth > 8 or value in (None, "", [], {}):
+            return ""
+
+        if isinstance(value, str):
+            return value.strip()
+
+        if isinstance(value, dict):
+            error = value.get("error")
+            if isinstance(error, dict):
+                message = error.get("message")
+                if isinstance(message, str) and message.strip():
+                    return message.strip()
+            elif isinstance(error, str) and error.strip():
+                return error.strip()
+
+            for key in (
+                "last_error",
+                "failure_message",
+                "message",
+                "final_answer",
+                "stderr",
+                "output_text",
+                "summary_text",
+                "content",
+                "text",
+            ):
+                item = value.get(key)
+                if isinstance(item, str) and item.strip():
+                    return item.strip()
+
+            for key in ("result", "last_step_result", "task", "raw_result", "runner_result"):
+                text = self._extract_error_text_deep(value.get(key), depth + 1)
+                if text:
+                    return text
+
+        if isinstance(value, list):
+            for item in reversed(value):
+                text = self._extract_error_text_deep(item, depth + 1)
+                if text:
+                    return text
+
+        return ""
+
+    def _is_fatal_failure_text(self, text: str) -> bool:
+        lowered = str(text or "").strip().lower()
+        if not lowered:
+            return False
+
+        fatal_signals = (
+            "file not found",
+            "no such file",
+            "path not found",
+            "permission denied",
+            "access is denied",
+            "unsupported step type",
+            "invalid step type",
+            "guard blocked",
+            "guard violation",
+            "requires path",
+        )
+        return any(signal in lowered for signal in fatal_signals)
+
+    def _write_runtime_state_file_safe(self, task: Dict[str, Any]) -> None:
+        if not isinstance(task, dict):
+            return
+
+        runtime_state_file = str(task.get("runtime_state_file") or "").strip()
+        if not runtime_state_file:
+            return
+
+        try:
+            os.makedirs(os.path.dirname(runtime_state_file), exist_ok=True)
+            payload = copy.deepcopy(task)
+            payload.pop("public_snapshot", None)
+            with open(runtime_state_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def _extract_effective_status_and_answer(
         self,

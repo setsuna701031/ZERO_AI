@@ -964,6 +964,38 @@ class StepExecutor:
         step_type: str,
         ok: bool,
     ) -> str:
+        if not ok:
+            error = result.get("error")
+            if isinstance(error, dict):
+                msg = error.get("message")
+                if isinstance(msg, str) and msg.strip():
+                    return msg.strip()
+            if isinstance(error, str) and error.strip():
+                return error.strip()
+
+            nested_result = result.get("result")
+            if isinstance(nested_result, dict):
+                nested_error = nested_result.get("error")
+                if isinstance(nested_error, dict):
+                    msg = nested_error.get("message")
+                    if isinstance(msg, str) and msg.strip():
+                        return msg.strip()
+                if isinstance(nested_error, str) and nested_error.strip():
+                    return nested_error.strip()
+
+            for key in ("message", "summary_text", "output_text", "stderr", "stdout"):
+                value = result.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+            if isinstance(nested_result, dict):
+                for key in ("message", "summary_text", "output_text", "stderr", "stdout"):
+                    value = nested_result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+
+            return "step failed"
+
         for key in ("message", "summary_text", "content", "text", "response", "answer", "final_answer", "output_text"):
             value = result.get(key)
             if isinstance(value, str) and value.strip():
@@ -984,24 +1016,14 @@ class StepExecutor:
             path = str(result.get("path") or "").strip()
             return f"已讀取檔案：{path}" if path else "已讀取檔案"
 
-        if step_type in {"verify", "verify_file"} and ok:
+        if step_type in {"verify", "verify_file"}:
             return "verify ok"
 
-        if step_type == "command" and ok:
+        if step_type == "command":
             return "command executed successfully"
 
-        if step_type in {"llm", "llm_generate"} and ok:
+        if step_type in {"llm", "llm_generate"}:
             return "LLM 已完成回應"
-
-        if not ok:
-            error = result.get("error")
-            if isinstance(error, dict):
-                msg = error.get("message")
-                if isinstance(msg, str) and msg.strip():
-                    return msg.strip()
-            if isinstance(error, str) and error.strip():
-                return error.strip()
-            return "step failed"
 
         return "執行完成"
 
@@ -1011,6 +1033,9 @@ class StepExecutor:
         step_type: str,
         ok: bool,
     ) -> str:
+        if not ok:
+            return self._extract_message_from_inner_result(result=result, step_type=step_type, ok=ok)
+
         for key in ("final_answer", "summary_text", "answer", "response", "message", "content", "text", "output_text"):
             value = result.get(key)
             if isinstance(value, str) and value.strip():
