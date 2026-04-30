@@ -561,6 +561,65 @@ Current main demo status:
 * Runtime smoke: validated
 * Mainline smoke: validated
 
+---
+
+## Safe Engineering Output Demo
+
+ZERO now has a guarded engineering-output path for producing review artifacts without performing git or GitHub mutations.
+
+### Tool Capability Model
+
+* `read_only`
+* `generate_only`
+* `workspace_write`
+* `external_write` disabled
+
+### Core Rules
+
+Generated artifacts are not actions.
+
+Only approved executor steps can create side effects.
+
+### Current Safe Pipeline
+
+```text
+real git_diff/status
+-> analyze
+-> commit_message_generator
+-> github_outbox.write
+-> trace
+```
+
+### Allowed Outbox Files
+
+```text
+workspace/github_outbox/commit_message.txt
+workspace/github_outbox/pr_description.md
+workspace/github_outbox/devlog.md
+workspace/github_outbox/review_report.md
+```
+
+### Forbidden
+
+```text
+git commit
+git push
+create PR
+external_write
+```
+
+### Validation
+
+Current smoke coverage:
+
+```text
+run_readonly_tools_smoke.py
+run_commit_message_generator_smoke.py
+run_github_outbox_smoke.py
+run_github_outbox_pipeline_smoke.py
+run_tool_policy_smoke.py
+```
+
 Current recommendation:
 
 Do not expand the demo surface too aggressively yet.
