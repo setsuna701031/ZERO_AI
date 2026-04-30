@@ -418,6 +418,12 @@ class TaskRepository:
             "title": str(enriched.get("title", task.get("title", ""))),
             "goal": str(enriched.get("goal", task.get("goal", ""))),
             "status": status,
+            "task_type": str(enriched.get("task_type", task.get("task_type", ""))),
+            "source": str(enriched.get("source", task.get("source", ""))),
+            "requires_approval": bool(enriched.get("requires_approval", task.get("requires_approval", False))),
+            "l5_trigger": copy.deepcopy(enriched.get("l5_trigger", task.get("l5_trigger", {})))
+            if isinstance(enriched.get("l5_trigger", task.get("l5_trigger", {})), dict)
+            else {},
             "priority": int(enriched.get("priority", task.get("priority", 0))),
             "depends_on": copy.deepcopy(depends_on),
             "history": copy.deepcopy(history),

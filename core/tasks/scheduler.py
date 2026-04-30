@@ -1844,7 +1844,10 @@ class Scheduler(RuntimeTaskScheduler):
             "task_name": task_name,
             "title": clean_goal,
             "goal": clean_goal,
-            "task_type": str(document_payload.get("task_type") or ""),
+            "task_type": str(kwargs.get("task_type") or document_payload.get("task_type") or ""),
+            "source": str(kwargs.get("source") or ""),
+            "requires_approval": bool(kwargs.get("requires_approval", False)),
+            "l5_trigger": copy.deepcopy(kwargs.get("l5_trigger", {})) if isinstance(kwargs.get("l5_trigger", {}), dict) else {},
             "document_mode": str(document_payload.get("mode") or ""),
             "input_file": str(document_payload.get("input_file") or ""),
             "output_file": str(document_payload.get("output_file") or ""),
@@ -2766,6 +2769,10 @@ class Scheduler(RuntimeTaskScheduler):
             "open_targets": copy.deepcopy(normalized.get("open_targets", [])) if isinstance(normalized.get("open_targets"), list) else [],
             "artifacts": copy.deepcopy(normalized.get("artifacts", [])) if isinstance(normalized.get("artifacts"), list) else [],
             "updated_at": int(normalized.get("updated_at", 0) or 0),
+            "task_type": str(normalized.get("task_type") or ""),
+            "source": str(normalized.get("source") or ""),
+            "requires_approval": bool(normalized.get("requires_approval", False)),
+            "l5_trigger": copy.deepcopy(normalized.get("l5_trigger", {})) if isinstance(normalized.get("l5_trigger"), dict) else {},
         }
 
         normalized.update(defaults)
@@ -2986,6 +2993,10 @@ class Scheduler(RuntimeTaskScheduler):
             "execution_log_file": str(normalized.get("execution_log_file") or ""),
             "execution_log_file_logical_path": self._to_logical_path(str(normalized.get("execution_log_file") or "")),
             "updated_at": int(normalized.get("updated_at", 0) or 0),
+            "task_type": str(normalized.get("task_type") or ""),
+            "source": str(normalized.get("source") or ""),
+            "requires_approval": bool(normalized.get("requires_approval", False)),
+            "l5_trigger": copy.deepcopy(normalized.get("l5_trigger", {})) if isinstance(normalized.get("l5_trigger"), dict) else {},
             "replan_count": int(normalized.get("replan_count", 0) or 0),
             "max_replans": int(normalized.get("max_replans", self.default_max_replans) or self.default_max_replans),
             "replanned": bool(normalized.get("replanned", False)),

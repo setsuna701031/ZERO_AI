@@ -3519,49 +3519,66 @@ L5_OUTPUT_PATH = os.environ.get("ZERO_L5_OUTPUT_PATH", os.path.join(WORKSPACE_DI
 L5_OUTPUT_CONTENT = os.environ.get("ZERO_L5_OUTPUT_CONTENT", "L5 auto triggered")
 
 
-def _l5_normalize_workspace_path(path: str) -> str:
-    raw = _safe_str(path).replace("/", os.sep).replace("\\", os.sep)
-    if not raw:
-        return ""
-    if os.path.isabs(raw):
-        return os.path.normpath(raw)
-    return os.path.normpath(raw)
+def _l5_build_suggestion_goal(task: Dict[str, Any]) -> str:
+    args = task.get("args")
+    if not isinstance(args, dict):
+        args = {}
+
+    path = _safe_str(args.get("path")) or L5_OUTPUT_PATH
+    content = _safe_str(args.get("content")) or L5_OUTPUT_CONTENT
+    return f"L5 suggestion: write {content!r} to {path}"
 
 
-def _l5_is_safe_shared_path(path: str) -> bool:
-    normalized = _l5_normalize_workspace_path(path)
-    if not normalized:
-        return False
+def _l5_create_task_suggestion(system: Any, task: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(task, dict):
+        return {"ok": False, "error": "invalid L5 task suggestion", "mode": "l5_task_suggestion"}
 
-    abs_target = os.path.abspath(normalized)
-    abs_shared = os.path.abspath(os.path.join(WORKSPACE_DIR, "shared"))
+    scheduler = _get_scheduler(system)
+    create_fn = getattr(scheduler, "create_task", None)
+    if not callable(create_fn):
+        return {"ok": False, "error": "scheduler.create_task not available", "mode": "l5_task_suggestion"}
+
+    goal = _l5_build_suggestion_goal(task)
+    args = task.get("args") if isinstance(task.get("args"), dict) else {}
+    trigger_payload = {
+        "type": _safe_str(task.get("type")),
+        "args": copy.deepcopy(args),
+    }
 
     try:
-        common = os.path.commonpath([abs_target, abs_shared])
-    except Exception:
-        return False
+        create_result = create_fn(
+            goal=goal,
+            priority=0,
+            max_retries=0,
+            retry_delay=0,
+            timeout_ticks=0,
+            requires_approval=True,
+            source="l5_world_trigger",
+            task_type="suggestion",
+            l5_trigger=trigger_payload,
+        )
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"L5 task suggestion create failed: {e}",
+            "traceback": traceback.format_exc(),
+            "mode": "l5_task_suggestion",
+            "goal": goal,
+        }
 
-    return common == abs_shared
+    if not isinstance(create_result, dict):
+        create_result = {"ok": bool(create_result), "raw_result": create_result}
 
-
-def _l5_write_file_action(path: str, content: str) -> Dict[str, Any]:
-    safe_path = _l5_normalize_workspace_path(path)
-    if not safe_path:
-        return {"ok": False, "error": "path is empty"}
-
-    if not _l5_is_safe_shared_path(safe_path):
-        return {"ok": False, "error": f"blocked unsafe path: {safe_path}"}
-
-    folder = os.path.dirname(safe_path)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-
-    stamped_content = f"{content}\ntimestamp={time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
-
-    with open(safe_path, "w", encoding="utf-8") as f:
-        f.write(stamped_content)
-
-    return {"ok": True, "path": safe_path, "content": stamped_content}
+    return {
+        "ok": bool(create_result.get("ok", False)),
+        "mode": "l5_task_suggestion",
+        "goal": goal,
+        "create_result": create_result,
+        "task_id": _extract_task_id(create_result.get("task", create_result)),
+        "submitted": False,
+        "queued": False,
+        "ran": False,
+    }
 
 
 def _l5_get_task_from_world(world: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -3591,7 +3608,6 @@ def _l5_clear_demo_trigger() -> None:
 
 
 def _run_l5_background_loop(system: Any, stop_event: threading.Event, cli_state: Dict[str, Any]) -> None:
-    del system
     del cli_state
 
     try:
@@ -3612,11 +3628,8 @@ def _run_l5_background_loop(system: Any, stop_event: threading.Event, cli_state:
                 if not isinstance(args, dict):
                     args = {}
 
-                path = _safe_str(args.get("path")) or L5_OUTPUT_PATH
-                content = _safe_str(args.get("content")) or L5_OUTPUT_CONTENT
-
-                result = _l5_write_file_action(path, content)
-                print(f"[L5] action result: {result}")
+                result = _l5_create_task_suggestion(system, task)
+                print(f"[L5] suggestion result: {result}")
                 _l5_clear_demo_trigger()
                 print("[L5] demo_trigger cleared")
 
