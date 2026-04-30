@@ -26,6 +26,11 @@ try:
 except Exception:
     CommandTool = None  # type: ignore
 
+try:
+    from core.tools.git_pipeline import GitPipelineTool
+except Exception:
+    GitPipelineTool = None  # type: ignore
+
 
 class ToolRegistry:
     """
@@ -219,6 +224,14 @@ class ToolRegistry:
                 aliases=["command_tool", "shell"],
             )
 
+        git_pipeline_tool = self._safe_build_git_pipeline_tool()
+        if git_pipeline_tool is not None:
+            self.register(
+                "git_pipeline",
+                git_pipeline_tool,
+                aliases=["git_pipeline_tool", "github_outbox_pipeline"],
+            )
+
     # =========================================================
     # builders
     # =========================================================
@@ -313,6 +326,24 @@ class ToolRegistry:
             return CommandTool()
         except Exception:
             return None
+
+    def _safe_build_git_pipeline_tool(self) -> Optional[Any]:
+        if GitPipelineTool is None:
+            return None
+
+        for kwargs in (
+            {"workspace_root": self.workspace_dir},
+            {"workspace_root": "."},
+            {},
+        ):
+            try:
+                return GitPipelineTool(**kwargs)
+            except TypeError:
+                continue
+            except Exception:
+                return None
+
+        return None
 
     # =========================================================
     # invoke helpers

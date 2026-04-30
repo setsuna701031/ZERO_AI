@@ -333,6 +333,9 @@ class Planner:
             steps = self._build_requirement_pack_pipeline(source_path=parsed["source_path"])
             return steps, semantic_type, "semantic_requirement_pack_pipeline"
 
+        if semantic_type == "git_pipeline_task":
+            return self._build_git_pipeline_steps(context=context), semantic_type, "git_pipeline_path"
+
         return None, semantic_type, "generic_planner_path"
 
     def _infer_semantic_type(
@@ -358,6 +361,9 @@ class Planner:
 
         if any(token in lowered for token in ["requirement-pack", "requirement pack"]):
             return "requirement_pack"
+
+        if self._looks_like_git_pipeline_task(lowered):
+            return "git_pipeline_task"
 
         if "project_summary.txt" in lowered and "implementation_plan.txt" in lowered and "acceptance_checklist.txt" in lowered:
             return "requirement_pack"
@@ -393,7 +399,33 @@ class Planner:
             return "report"
         if lowered in {"requirement_pack", "requirement-pack", "requirement pack"}:
             return "requirement_pack"
+        if lowered in {"git_pipeline_task", "git-pipeline-task", "git pipeline task", "git_pipeline"}:
+            return "git_pipeline_task"
         return "generic_task"
+
+    def _looks_like_git_pipeline_task(self, lowered: str) -> bool:
+        text = str(lowered or "").strip().lower()
+        if not text:
+            return False
+
+        has_pr_token = bool(re.search(r"\bpr\b", text))
+        has_git_signal = any(token in text for token in ["git diff", "git status", "commit message", "github"])
+        has_pipeline_signal = (
+            has_pr_token
+            or any(token in text for token in ["pipeline", "outbox", "pull request", "commit message"])
+        )
+        has_generation_signal = any(token in text for token in ["generate", "create", "prepare", "analyze", "產生", "生成", "分析"])
+
+        if "git_pipeline_task" in text or "git_pipeline_path" in text:
+            return True
+
+        if "commit message" in text and (has_pr_token or "pull request" in text or "outbox" in text):
+            return True
+
+        if "git diff" in text and has_pipeline_signal:
+            return True
+
+        return has_git_signal and has_pipeline_signal and has_generation_signal
 
     def _match_semantic_document_task(
         self,
@@ -509,6 +541,22 @@ class Planner:
                 "scope": self._infer_path_scope(acceptance_checklist_path),
                 "content": "{{previous_result}}",
             },
+        ]
+
+    def _build_git_pipeline_steps(self, context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        context = context or {}
+        tool_input: Dict[str, Any] = {}
+        for key in ("repo_root", "workspace_root", "cwd", "workspace"):
+            value = context.get(key)
+            if value:
+                tool_input[key] = value
+
+        return [
+            {
+                "type": "tool",
+                "tool_name": "git_pipeline",
+                "tool_input": tool_input,
+            }
         ]
 
     def _build_semantic_summary_prompt(self, source_path: str) -> str:
@@ -1243,6 +1291,13 @@ class Planner:
 
         if step_type == "web_search":
             normalized["query"] = str(normalized.get("query") or "")
+
+        if step_type == "tool":
+            normalized["tool_name"] = str(normalized.get("tool_name") or normalized.get("tool") or "")
+            tool_input = normalized.get("tool_input")
+            if not isinstance(tool_input, dict):
+                tool_input = {}
+            normalized["tool_input"] = tool_input
 
         if step_type == "llm":
             normalized["prompt"] = str(normalized.get("prompt") or "")
