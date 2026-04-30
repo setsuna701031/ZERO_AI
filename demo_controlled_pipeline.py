@@ -62,9 +62,10 @@ def main() -> int:
     controlled = _run(
         [
             PYTHON,
-            str(REPO_ROOT / "controlled_execute.py"),
+            str(REPO_ROOT / "policy_execute.py"),
             "--approval",
             str(approval.get("record_path") or ""),
+            "--policy-preview",
         ]
     )
     print(_indent(controlled.stdout.strip()))
