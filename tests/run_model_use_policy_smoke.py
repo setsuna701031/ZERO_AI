@@ -9,10 +9,30 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
-from core.agent.model_use_policy import add_policy_hint, classify_model_use
+from core.agent.model_use_policy import (
+    add_policy_hint,
+    classify_model_use,
+    format_policy_hint_display,
+    policy_hint_trace_event,
+)
 
 
 PREFIX = "[model-use-policy-smoke]"
+BEHAVIOR_KEYS = (
+    "decision",
+    "route",
+    "mode",
+    "task",
+    "next_action",
+    "should_queue",
+    "should_run",
+    "should_approve",
+    "queued",
+    "approved",
+    "tool",
+    "model",
+    "planner",
+)
 
 
 def fail(message: str) -> int:
@@ -45,6 +65,10 @@ def assert_classification(request: object, expected: str, label: str) -> int:
 
     pass_step(label)
     return 0
+
+
+def behavior_signature(decision: dict) -> dict:
+    return {key: decision.get(key) for key in BEHAVIOR_KEYS}
 
 
 def main() -> int:
@@ -166,10 +190,122 @@ def main() -> int:
         return fail("add_policy_hint did not deep-copy nested decision data")
     pass_step("add_policy_hint returns a deep decision copy")
 
+    trace_event = policy_hint_trace_event(hinted)
+    expected_event = {
+        "event": "policy_hint_attached",
+        "classification": "requires_confirmation",
+        "reason": "risk_requires_confirmation",
+    }
+    if trace_event != expected_event:
+        return fail(f"policy_hint trace event mismatch: {trace_event}")
+    if any(key in trace_event for key in ("decision", "route", "mode", "task", "tool", "model")):
+        return fail("policy_hint trace event leaked control fields")
+    pass_step("policy_hint emits read-only trace metadata")
+
+    display = format_policy_hint_display(hinted)
+    if display != "[policy] requires_confirmation - risk_requires_confirmation":
+        return fail(f"policy_hint display mismatch: {display!r}")
+    pass_step("policy_hint emits UI/CLI display text only")
+
+    base_behavior_decision = {
+        "decision": "task",
+        "route": "planner",
+        "mode": "task",
+        "task": True,
+        "next_action": "queue",
+        "should_queue": True,
+        "should_run": False,
+        "should_approve": False,
+        "queued": False,
+        "approved": False,
+        "tool": "existing_tool_choice",
+        "model": "existing_model_choice",
+        "planner": "existing_planner_choice",
+    }
+    behavior_cases = [
+        ({"operation": "json_parse", "input": "{}"}, "rule_only"),
+        ("repair invalid JSON while preserving intent", "small_model_allowed"),
+        ("plan the implementation", "large_model_required"),
+        ("write file workspace/report.md", "requires_confirmation"),
+    ]
+    expected_signature = behavior_signature(base_behavior_decision)
+    for user_input, expected_classification in behavior_cases:
+        hinted_decision = add_policy_hint(base_behavior_decision, user_input)
+        if behavior_signature(hinted_decision) != expected_signature:
+            return fail(
+                "policy_hint changed behavior fields for "
+                f"{expected_classification}: {behavior_signature(hinted_decision)}"
+            )
+        actual_classification = hinted_decision.get("policy_hint", {}).get("classification")
+        if actual_classification != expected_classification:
+            return fail(
+                f"expected {expected_classification} hint, got {actual_classification}"
+            )
+    pass_step("all policy_hint classifications leave behavior fields unchanged")
+
+    same_task = {
+        "decision": "task",
+        "route": "planner",
+        "mode": "task",
+        "task": True,
+        "next_action": "queue",
+        "should_queue": True,
+        "should_run": False,
+        "should_approve": False,
+        "queued": False,
+        "approved": False,
+        "tool": "existing_tool_choice",
+        "model": "existing_model_choice",
+        "planner": "existing_planner_choice",
+    }
+    forced_hint_cases = [
+        {
+            **same_task,
+            "policy_hint": {
+                "classification": "rule_only",
+                "reason": "allowlisted_deterministic_operation",
+            },
+        },
+        {
+            **same_task,
+            "policy_hint": {
+                "classification": "small_model_allowed",
+                "reason": "light_interpretation_or_extraction_allows_small_model",
+            },
+        },
+        {
+            **same_task,
+            "policy_hint": {
+                "classification": "large_model_required",
+                "reason": "planning_or_reasoning_requires_large_model",
+            },
+        },
+        {
+            **same_task,
+            "policy_hint": {
+                "classification": "requires_confirmation",
+                "reason": "risk_requires_confirmation",
+            },
+        },
+    ]
+    forced_signature = behavior_signature(forced_hint_cases[0])
+    for forced_case in forced_hint_cases[1:]:
+        if behavior_signature(forced_case) != forced_signature:
+            return fail(
+                "different forced policy_hint classifications changed behavior signature"
+            )
+    pass_step("same task behavior signature ignores forced policy_hint differences")
+
     non_dict_decision = ("route", "direct_response")
     if add_policy_hint(non_dict_decision, "write file") != non_dict_decision:
         return fail("non-dict decision fallback changed original decision value")
     pass_step("policy_hint is optional for unsupported decision shapes")
+
+    if policy_hint_trace_event({"decision": "chat"}) != {}:
+        return fail("missing policy_hint should not emit trace metadata")
+    if format_policy_hint_display({"decision": "chat"}) != "":
+        return fail("missing policy_hint should not emit display text")
+    pass_step("missing policy_hint remains observationally optional")
 
     print(f"{PREFIX} ALL PASS")
     return 0

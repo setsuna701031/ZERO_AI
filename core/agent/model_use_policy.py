@@ -134,6 +134,39 @@ def add_policy_hint(decision: Any, user_input: Any) -> Any:
     return decision_copy
 
 
+def policy_hint_trace_event(decision: Any) -> Dict[str, str]:
+    """
+    Build a JSON-ready trace/log event for an attached policy_hint.
+
+    The returned event is observational metadata only.
+    """
+    hint = _extract_policy_hint(decision)
+    if not hint:
+        return {}
+
+    return {
+        "event": "policy_hint_attached",
+        "classification": str(hint.get("classification") or ""),
+        "reason": str(hint.get("reason") or ""),
+    }
+
+
+def format_policy_hint_display(decision: Any) -> str:
+    """
+    Format policy_hint for CLI/UI display without affecting control flow.
+    """
+    hint = _extract_policy_hint(decision)
+    if not hint:
+        return ""
+
+    classification = str(hint.get("classification") or "").strip()
+    reason = str(hint.get("reason") or "").strip()
+    if not classification or not reason:
+        return ""
+
+    return f"[policy] {classification} - {reason}"
+
+
 def _classify(request: Any) -> ModelUseDecision:
     operation = _extract_operation(request)
     text = _extract_text(request)
@@ -214,3 +247,19 @@ def _contains_any(text: str, needles: set[str]) -> bool:
     if not normalized:
         return False
     return any(needle in normalized for needle in needles)
+
+
+def _extract_policy_hint(decision: Any) -> Dict[str, Any]:
+    if not isinstance(decision, dict):
+        return {}
+
+    hint = decision.get("policy_hint")
+    if not isinstance(hint, dict):
+        return {}
+
+    classification = hint.get("classification")
+    reason = hint.get("reason")
+    if not classification or not reason:
+        return {}
+
+    return hint
