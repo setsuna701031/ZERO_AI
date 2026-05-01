@@ -1,72 +1,72 @@
-# ZERO AI
+# ZERO --- Event Engineering Automation
 
-**Turn real changes into safe, approved actions.**
-
-AI that doesn't just suggest --- it safely prepares real actions.
-
-ZERO is a **local-first AI execution system** that:
-
--   reads real inputs (git diff / status)
--   generates structured artifacts (commit + PR)
--   records full execution trace
--   requires human approval
--   produces a controlled execution plan
+ZERO turns a simple file event into structured engineering outputs
+automatically.\
+No GitHub API. No commit. Fully controlled.
 
 ------------------------------------------------------------------------
 
-# 🎬 Demo (MVP)
+## Demo
 
-Run:
-
-``` bash
-python zero_demo.py
+```{=html}
+<video src="https://github.com/setsuna701031/ZERO_AI/raw/main/demos/zero_event_engineering_demo.mp4" controls width="800">
 ```
-
-Demo video:
-
-![demo](demos/zero_demo_mvp.mp4)
-
-------------------------------------------------------------------------
-
-# ⚡ What it actually does
-
-``` text
-git diff
-  ↓
-analyze
-  ↓
-generate artifacts (commit + PR)
-  ↓
-replay (read-only trace)
-  ↓
-approval (human gate)
-  ↓
-execution plan (blocked by default)
+```{=html}
+</video>
 ```
 
 ------------------------------------------------------------------------
 
-# 🔐 Safety by Design
+## What it does
 
-ZERO **never mutates your repo by default**:
+Event → Task → Tool → Output → Audit → Session
 
-``` text
-❌ no commit
-❌ no push
-❌ no GitHub API call
-❌ no repo modification
-```
-
-Everything is:
-
-``` text
-generate → inspect → approve → simulate
-```
+Input: a single text file describing a problem\
+Output: structured engineering artifacts ready for Git workflow
 
 ------------------------------------------------------------------------
 
-# 🧠 One-line Summary
+## Example Output
 
-ZERO is a **controlled AI execution pipeline** that turns real inputs
-into\
-**approved, traceable, and safe actions**.
+    workspace/github_outbox/
+    ├── commit_message.txt
+    ├── pr_description.md
+    ├── devlog_entry.md
+    └── publish_plan.md
+
+    workspace/events_outbox/
+    └── event_results.jsonl
+
+    workspace/execution_sessions/
+    └── <session_id>.json
+
+    workspace/audit_logs/
+    └── tool_audit.jsonl
+
+------------------------------------------------------------------------
+
+## Key Features
+
+-   Controlled execution (no external side effects)
+-   Event-driven automation (File → Task → Tool)
+-   Tool routing system (ToolRouter)
+-   Standardized tool schema (ToolRequest / ToolResult)
+-   Full audit log (traceable execution)
+-   Execution session tracking (end-to-end visibility)
+
+------------------------------------------------------------------------
+
+## Run Demo
+
+    python demos/demo_event_to_github_flow.py
+
+------------------------------------------------------------------------
+
+## Result
+
+A real engineering workflow executed without human intervention.
+
+    [OK] 4 engineering artifacts generated
+    [OK] 1 execution session recorded
+    [OK] audit log updated
+    [OK] no external side effects (safe mode)
