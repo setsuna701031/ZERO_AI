@@ -13,7 +13,8 @@ from core.capabilities.demo_flows import (
     run_requirement_demo,
 )
 from core.capabilities.full_build_flow import run_full_build_demo, run_mini_build_demo
-from core.persona.chat_shell import run_persona_chat_shell
+from core.persona.chat_shell import generate_rule_based_response, run_persona_chat_shell
+from core.persona.loader import load_default_persona
 
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -67,6 +68,8 @@ def print_help() -> None:
     safe_print("  python main.py execution-demo")
     safe_print("  python main.py mini-build-demo")
     safe_print("  python main.py full-build-demo")
+    safe_print("  python main.py search-demo")
+    safe_print("  python main.py hybrid-demo")
     safe_print("  python main.py persona-chat")
     safe_print("  python main.py persona-runtime")
     safe_print("  python main.py health")
@@ -82,6 +85,8 @@ def print_help() -> None:
     safe_print("  execution-demo    Run execution-proof demo flow")
     safe_print("  mini-build-demo   Run engineering mini build demo flow")
     safe_print("  full-build-demo   Run requirement -> build -> execute -> verify flow")
+    safe_print("  search-demo       Run Persona web_search demo flow")
+    safe_print("  hybrid-demo       Run Persona web_search -> file_write -> github_commit demo flow")
     safe_print("  persona-chat      Run the ZERO persona text shell")
     safe_print("  persona-runtime   Launch the ZERO persona runtime window")
     safe_print("  health            Show health information")
@@ -124,6 +129,13 @@ def run_persona_runtime_window() -> int:
     ensure_persona_runtime_paths()
     result = run_process([sys.executable, str(PERSONA_RUNTIME_WINDOW_PATH)], capture=False)
     return result.returncode
+
+
+def run_persona_command(command: str) -> int:
+    persona = load_default_persona()
+    result = generate_rule_based_response(persona, command)
+    safe_print(result.response)
+    return 0
 
 
 def main(argv: List[str]) -> int:
@@ -171,6 +183,12 @@ def main(argv: List[str]) -> int:
 
     if command == "full-build-demo":
         return run_full_build_demo()
+
+    if command == "search-demo":
+        return run_persona_command("run search-demo")
+
+    if command == "hybrid-demo":
+        return run_persona_command("run hybrid-demo")
 
     if command == "persona-chat":
         return run_persona_chat_shell()

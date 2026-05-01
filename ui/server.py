@@ -211,6 +211,46 @@ def _build_chat_payload(message: str) -> Dict[str, Any]:
             "persona_runtime": display,
         }
 
+    if normalized in {"search-demo", "run search-demo", "web-search-demo", "run web-search-demo"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.submit_search_demo()
+        response_text = bridge.format_display_text()
+        refreshed_status = _build_status_payload()["response"]
+        return {
+            "success": display.get("runtime_status") == "done",
+            "mode": "persona_search_demo",
+            "summary": display.get("result_summary") or "",
+            "response": response_text,
+            "content": response_text,
+            "meta": {
+                "model": "local-persona-runtime-bridge",
+                "used_fallback": False,
+                "llm_used": False,
+            },
+            "ui": refreshed_status,
+            "persona_runtime": display,
+        }
+
+    if normalized in {"hybrid-demo", "run hybrid-demo", "search-hybrid-demo", "run search-hybrid-demo"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.submit_hybrid_demo()
+        response_text = bridge.format_display_text()
+        refreshed_status = _build_status_payload()["response"]
+        return {
+            "success": display.get("runtime_status") == "done",
+            "mode": "persona_hybrid_demo",
+            "summary": display.get("search_results_summary") or display.get("result_summary") or "",
+            "response": response_text,
+            "content": response_text,
+            "meta": {
+                "model": "local-persona-runtime-bridge",
+                "used_fallback": False,
+                "llm_used": False,
+            },
+            "ui": refreshed_status,
+            "persona_runtime": display,
+        }
+
     if normalized in {"runtime-replay", "replay runtime-demo", "replay demo", "persona runtime replay"}:
         bridge = get_persona_runtime_bridge()
         display = bridge.replay_last_task()

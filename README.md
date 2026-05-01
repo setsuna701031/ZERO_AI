@@ -8,7 +8,7 @@ ZERO does not just generate answers.
 
 It executes real steps, produces real outputs, and shows exactly how the result was created.
 
-ZERO breaks a request into steps, runs tools such as `file_read`, `file_write`, and `github_commit`, then records the full execution trace so the UI can show what actually happened.
+ZERO breaks a request into steps, runs tools such as `file_read`, `file_write`, `web_search`, and `github_commit`, then records the full execution trace so the UI can show what actually happened.
 
 The point is simple: make AI work observable.
 
@@ -23,17 +23,17 @@ Users can see:
 
 ## Demo
 
-Main demo video:
+Main demo video (Search → Execution → Commit):
 
-`demos/00_zero_ai_task_to_commit.mp4`
+`demos/00_zero_hybrid_search_to_commit.mp4`
 
-The demo shows ZERO taking a task from UI input to real local Git commit:
+This demo shows ZERO taking external information and turning it into real system output.
 
-1. plan the task
-2. read an input file
-3. write a summary file
+1. search external data
+2. generate a summary
+3. write the result to a file
 4. commit the result locally
-5. display the timeline and result in the Persona UI
+5. display the full execution trace in the UI
 
 ## What The Demo Shows
 
@@ -52,8 +52,8 @@ The focus is not the final file. The focus is that the process is visible.
 
 The Persona UI demo runs a fixed workflow:
 
-1. `file_read` reads `workspace/shared/input.txt`
-2. `file_write` creates `workspace/shared/summary.txt`
+1. `web_search` searches for external information
+2. `file_write` creates `workspace/shared/search_summary.txt`
 3. `github_commit` commits the summary into a local demo repo
 
 This demo does not push, open a pull request, or call the GitHub API. The GitHub tool currently uses local Git only.
@@ -62,9 +62,10 @@ This demo does not push, open a pull request, or call the GitHub API. The GitHub
 
 The UI displays the task as a timeline:
 
-1. `Step 1: planning`
-2. `Step 2: executing tool (...)`
-3. `Step 3: result`
+1. `Step 1: web_search`
+2. `Step 2: file_write`
+3. `Step 3: github_commit`
+4. `Result`
 
 Each tool call is shown in order with:
 
@@ -92,7 +93,7 @@ Replay is for answering one question:
 In the Persona UI, press `Demo`, or type:
 
 ```text
-run demo
+run hybrid-demo
 ```
 
 Show the latest runtime state:
@@ -107,9 +108,10 @@ Replay the previous task trace:
 runtime-replay
 ```
 
-Run the smoke test:
+Run the smoke tests:
 
 ```bash
+python tests/run_hybrid_demo_smoke.py
 python tests/run_persona_runtime_bridge_smoke.py
 ```
 
@@ -118,6 +120,7 @@ python tests/run_persona_runtime_bridge_smoke.py
 ZERO currently focuses on local, inspectable engineering workflows:
 
 - tool call execution
+- web search adapter
 - trace and execution logs
 - Persona UI task visualization
 - local Git commit demo
@@ -132,6 +135,7 @@ Not included:
 - push
 - pull requests
 - GitHub API calls
+- browser automation
 
 ## Why This Matters
 

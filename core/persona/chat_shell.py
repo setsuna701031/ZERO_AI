@@ -56,6 +56,8 @@ def _build_help_text(persona: PersonaProfile) -> str:
         "- run runtime-demo\n"
         "- runtime-status\n"
         "- runtime-replay\n"
+        "- run search-demo\n"
+        "- run hybrid-demo\n"
         "- run requirement-demo\n"
         "- run execution-demo\n"
         "- run mini-build-demo\n"
@@ -352,6 +354,36 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
             last_capability="runtime-demo",
             last_result=str(bridge.get_display_state().get("runtime_status") or ""),
             last_output_hint="workspace/shared/summary.txt",
+        )
+        return PersonaTurnResult(
+            user_input=text,
+            response=f"{persona.name}:\n{bridge.format_display_text()}",
+            should_exit=False,
+        )
+
+    if lowered in {"search-demo", "run search-demo", "web-search-demo", "run web-search-demo"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.submit_search_demo()
+        state_manager.update_runtime_summary(
+            last_user_command=text,
+            last_capability="search-demo",
+            last_result=str(display.get("runtime_status") or ""),
+            last_output_hint="web_search results",
+        )
+        return PersonaTurnResult(
+            user_input=text,
+            response=f"{persona.name}:\n{bridge.format_display_text()}",
+            should_exit=False,
+        )
+
+    if lowered in {"hybrid-demo", "run hybrid-demo", "search-hybrid-demo", "run search-hybrid-demo"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.submit_hybrid_demo()
+        state_manager.update_runtime_summary(
+            last_user_command=text,
+            last_capability="hybrid-demo",
+            last_result=str(display.get("runtime_status") or ""),
+            last_output_hint="workspace/shared/search_summary.txt, workspace/hybrid_demo_repo/search_summary.txt",
         )
         return PersonaTurnResult(
             user_input=text,

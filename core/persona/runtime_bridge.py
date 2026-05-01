@@ -100,6 +100,179 @@ class PersonaRuntimeBridge:
         display["replay_summary"] = "replaying last recorded runtime trace without re-running tools"
         return display
 
+    def submit_search_demo(self, query: str = "local AI agent trace replay") -> Dict[str, Any]:
+        goal = f"Search the web for: {query}"
+        planner = _PersonaSearchDemoPlanner(query=query)
+        planning_event = _timeline_event(
+            step=1,
+            phase="planning",
+            label="Step 1: planning",
+            status="success",
+            detail=goal,
+        )
+        loop = AgentLoop(
+            planner=planner,
+            tool_registry=self.tool_registry,
+            workspace_dir=str(self.workspace_dir),
+        )
+
+        try:
+            response = loop.run("persona web search demo")
+        except Exception as exc:
+            response = {
+                "ok": False,
+                "plan": planner.plan(),
+                "execution": {
+                    "ok": False,
+                    "execution_log": [],
+                    "execution_trace": [],
+                    "last_result": {
+                        "ok": False,
+                        "status": "failed",
+                        "error": str(exc),
+                    },
+                    "error": str(exc),
+                },
+                "error": str(exc),
+            }
+
+        record = PersonaRuntimeRecord(
+            goal=goal,
+            plan=copy.deepcopy(response.get("plan")) if isinstance(response.get("plan"), dict) else planner.plan(),
+            execution=copy.deepcopy(response.get("execution")) if isinstance(response.get("execution"), dict) else {},
+            response=copy.deepcopy(response) if isinstance(response, dict) else {"ok": False, "error": str(response)},
+            timeline=[],
+        )
+        record.timeline = _build_timeline(record, planning_event=planning_event)
+        self._last_record = record
+        return self.get_display_state()
+
+    def submit_hybrid_demo(self, query: str = "local AI agent trace replay") -> Dict[str, Any]:
+        query = str(query or "").strip() or "local AI agent trace replay"
+        goal = f"Search the web, write a summary, then commit it locally: {query}"
+        plan = {
+            "ok": True,
+            "flow": "hybrid_demo",
+            "intent": "tool_call",
+            "tool_calls": [
+                {
+                    "tool": "web_search",
+                    "args": {
+                        "query": query,
+                        "limit": 3,
+                    },
+                },
+                {
+                    "tool": "file_write",
+                    "args": {
+                        "path": "workspace/shared/search_summary.txt",
+                        "content": "",
+                    },
+                },
+                {
+                    "tool": "github_commit",
+                    "args": {
+                        "repo_path": str(self.workspace_dir / "workspace" / "hybrid_demo_repo"),
+                        "message": "demo: commit hybrid search summary",
+                        "files": [],
+                    },
+                },
+            ],
+        }
+        planning_event = _timeline_event(
+            step=1,
+            phase="planning",
+            label="Step 1: planning",
+            status="success",
+            detail=goal,
+        )
+
+        execution: Dict[str, Any] = {
+            "ok": True,
+            "results": [],
+            "execution_log": [],
+            "execution_trace": [],
+            "last_result": {},
+            "final_answer": "",
+            "error": None,
+        }
+
+        try:
+            search_call = copy.deepcopy(plan["tool_calls"][0])
+            search_result = self.tool_call_executor.execute(search_call, source="persona_hybrid_demo")
+            self._append_tool_execution(execution, search_call, search_result)
+            if not search_result.get("ok"):
+                raise RuntimeError(str(search_result.get("error") or "web_search failed"))
+
+            search_output = search_result.get("output") if isinstance(search_result.get("output"), dict) else {}
+            summary_text = _build_search_results_summary(search_output)
+            if not summary_text.strip():
+                raise RuntimeError("web_search returned no summary")
+
+            file_write_call = copy.deepcopy(plan["tool_calls"][1])
+            file_write_call["args"]["content"] = summary_text
+            plan["tool_calls"][1] = copy.deepcopy(file_write_call)
+            file_write_result = self.tool_call_executor.execute(file_write_call, source="persona_hybrid_demo")
+            self._append_tool_execution(execution, file_write_call, file_write_result)
+            if not file_write_result.get("ok"):
+                raise RuntimeError(str(file_write_result.get("error") or "file_write failed"))
+
+            demo_repo = self._ensure_hybrid_demo_repo()
+            committed_summary = (
+                f"{summary_text.rstrip()}\n\n"
+                f"Committed by persona hybrid demo at {datetime.now(timezone.utc).isoformat()}\n"
+            )
+            commit_call = copy.deepcopy(plan["tool_calls"][2])
+            commit_call["args"] = {
+                "repo_path": str(demo_repo),
+                "message": "demo: commit hybrid search summary",
+                "files": [
+                    {
+                        "path": "search_summary.txt",
+                        "content": committed_summary,
+                    }
+                ],
+            }
+            plan["tool_calls"][2] = copy.deepcopy(commit_call)
+            commit_result = self.tool_call_executor.execute(commit_call, source="persona_hybrid_demo")
+            self._append_tool_execution(execution, commit_call, commit_result)
+            if not commit_result.get("ok"):
+                raise RuntimeError(str(commit_result.get("error") or "github_commit failed"))
+
+            execution["final_answer"] = (
+                f"{summary_text.rstrip()}\n\n"
+                f"Commit: {_extract_tool_result_summary(commit_result)}"
+            )
+        except Exception as exc:
+            execution["ok"] = False
+            execution["error"] = str(exc)
+            if not execution.get("last_result"):
+                execution["last_result"] = {
+                    "ok": False,
+                    "status": "failed",
+                    "error": str(exc),
+                }
+            if not execution.get("final_answer"):
+                execution["final_answer"] = str(exc)
+
+        response = {
+            "ok": bool(execution.get("ok")),
+            "plan": copy.deepcopy(plan),
+            "execution": copy.deepcopy(execution),
+            "final_answer": str(execution.get("final_answer") or ""),
+            "error": execution.get("error"),
+        }
+        record = PersonaRuntimeRecord(
+            goal=goal,
+            plan=copy.deepcopy(plan),
+            execution=copy.deepcopy(execution),
+            response=copy.deepcopy(response),
+            timeline=[],
+        )
+        record.timeline = _build_timeline(record, planning_event=planning_event)
+        self._last_record = record
+        return self.get_display_state()
+
     def get_display_state(self) -> Dict[str, Any]:
         if self._last_record is None:
             return {
@@ -114,6 +287,8 @@ class PersonaRuntimeBridge:
                 "execution_log": [],
                 "last_result": {},
                 "timeline": [],
+                "search_results_summary": "",
+                "compact_demo_summary": "",
             }
 
         record = self._last_record
@@ -125,6 +300,8 @@ class PersonaRuntimeBridge:
         tool_calls = _extract_tool_calls(record.plan, execution, trace)
         blocked_reason = _extract_blocked_reason(status=status, execution=execution, last_result=last_result, trace=trace)
         result_summary = _extract_result_summary(execution=execution, last_result=last_result, trace=trace)
+        search_results_summary = _extract_search_results_summary(execution)
+        compact_demo_summary = _build_compact_demo_summary(record.plan, tool_calls, last_result)
 
         return {
             "ok": status not in {"failed", "blocked"},
@@ -139,6 +316,8 @@ class PersonaRuntimeBridge:
             "last_result": copy.deepcopy(last_result),
             "plan": copy.deepcopy(record.plan),
             "timeline": copy.deepcopy(record.timeline),
+            "search_results_summary": search_results_summary,
+            "compact_demo_summary": compact_demo_summary,
         }
 
     def format_display_text(self) -> str:
@@ -233,6 +412,56 @@ class PersonaRuntimeBridge:
             )
         return repo
 
+    def _ensure_hybrid_demo_repo(self) -> Path:
+        repo = self.workspace_dir / "workspace" / "hybrid_demo_repo"
+        repo.mkdir(parents=True, exist_ok=True)
+        if not (repo / ".git").exists():
+            subprocess.run(
+                ["git", "init"],
+                cwd=str(repo),
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                shell=False,
+            )
+        return repo
+
+    def _append_tool_execution(
+        self,
+        execution: Dict[str, Any],
+        tool_call: Dict[str, Any],
+        tool_result: Dict[str, Any],
+    ) -> None:
+        results = execution.get("results")
+        if not isinstance(results, list):
+            results = []
+            execution["results"] = results
+        results.append(
+            {
+                "step_index": len(results) + 1,
+                "step": {
+                    "type": "tool_call",
+                    "tool_call": copy.deepcopy(tool_call),
+                },
+                "result": copy.deepcopy(tool_result),
+            }
+        )
+
+        trace_event = tool_call_trace_event(tool_result)
+        for key in ("execution_log", "execution_trace"):
+            events = execution.get(key)
+            if not isinstance(events, list):
+                events = []
+                execution[key] = events
+            events.append(copy.deepcopy(trace_event))
+
+        execution["steps_executed"] = len(results)
+        execution["last_result"] = copy.deepcopy(tool_result)
+        execution["ok"] = bool(execution.get("ok", True) and tool_result.get("ok"))
+        if not tool_result.get("ok"):
+            execution["error"] = tool_result.get("error")
+
 
 def default_runtime_demo_goal() -> str:
     return "Read input.txt, produce summary.txt, then commit the summary with github_commit"
@@ -277,8 +506,13 @@ def format_persona_runtime_display(display: Dict[str, Any]) -> str:
     blocked_reason = str(display.get("blocked_reason") or "").strip()
     blocked_block = f"\n\n[BLOCKED]\n{blocked_reason}" if blocked_reason else ""
     replay_block = "\nReplay       : trace replay\n" if display.get("replay") else ""
+    search_summary = str(display.get("search_results_summary") or "").strip()
+    search_block = f"\n[SEARCH RESULTS SUMMARY]\n{search_summary}\n\n" if search_summary else ""
+    compact_summary = str(display.get("compact_demo_summary") or "").strip()
+    compact_block = f"[COMPACT DEMO SUMMARY]\n{compact_summary}\n\n" if compact_summary else ""
 
     return (
+        f"{compact_block}"
         "[PERSONA RUNTIME]\n"
         f"Status        : {display.get('runtime_status') or '-'}\n"
         f"Status Source : {display.get('status_source') or '-'}\n"
@@ -291,6 +525,7 @@ def format_persona_runtime_display(display: Dict[str, Any]) -> str:
         "[TOOL CALLS]\n"
         f"{tool_text}\n"
         "\n"
+        f"{search_block}"
         "[RESULT]\n"
         f"{display.get('result_summary') or '-'}"
         f"{blocked_block}"
@@ -317,6 +552,24 @@ class _PersonaRuntimeDemoPlanner:
                     },
                 },
             ],
+        }
+
+
+class _PersonaSearchDemoPlanner:
+    def __init__(self, *, query: str) -> None:
+        self.query = str(query or "").strip() or "local AI agent trace replay"
+
+    def plan(self, **_: Any) -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "intent": "tool_call",
+            "tool_call": {
+                "tool": "web_search",
+                "args": {
+                    "query": self.query,
+                    "limit": 3,
+                },
+            },
         }
 
 
@@ -363,6 +616,50 @@ def _derive_runtime_status(
 def _build_timeline(record: PersonaRuntimeRecord, *, planning_event: Dict[str, Any]) -> List[Dict[str, Any]]:
     execution = record.execution if isinstance(record.execution, dict) else {}
     trace = _extract_trace(execution)
+    if record.plan.get("flow") == "hybrid_demo":
+        timeline = [
+            _timeline_event(
+                step=0,
+                phase="planning",
+                label="Planning",
+                status=str(planning_event.get("status") or "success"),
+                detail=str(planning_event.get("detail") or ""),
+                timestamp=str(planning_event.get("timestamp") or ""),
+            )
+        ]
+        for index, event in enumerate(trace, start=1):
+            tool = str(event.get("tool") or "-")
+            timeline.append(
+                _timeline_event(
+                    step=index,
+                    phase="executing",
+                    label=f"Step {index}: {tool}",
+                    status=str(event.get("status") or "-"),
+                    detail=_format_trace_args(event),
+                    timestamp=str(event.get("timestamp") or ""),
+                    tool=tool,
+                )
+            )
+        status = _derive_runtime_status(
+            execution=execution,
+            trace=trace,
+            last_result=execution.get("last_result") if isinstance(execution.get("last_result"), dict) else {},
+        )
+        timeline.append(
+            _timeline_event(
+                step=len(trace) + 1,
+                phase="result",
+                label="Result",
+                status=status,
+                detail=_extract_result_summary(
+                    execution=execution,
+                    last_result=execution.get("last_result") if isinstance(execution.get("last_result"), dict) else {},
+                    trace=trace,
+                ),
+            )
+        )
+        return timeline
+
     timeline = [copy.deepcopy(planning_event)]
     for index, event in enumerate(trace, start=1):
         tool = str(event.get("tool") or "-")
@@ -430,7 +727,7 @@ def _summarize_args(args: Any) -> str:
     if not isinstance(args, dict):
         return "-"
     parts = []
-    for key in ("path", "repo_path", "message"):
+    for key in ("query", "limit", "path", "repo_path", "message"):
         value = args.get(key)
         if value not in (None, "", [], {}):
             parts.append(f"{key}={value}")
@@ -581,6 +878,95 @@ def _extract_result_summary(
         return str(error)
 
     return ""
+
+
+def _build_compact_demo_summary(
+    plan: Dict[str, Any],
+    tool_calls: List[Dict[str, Any]],
+    last_result: Dict[str, Any],
+) -> str:
+    if plan.get("flow") != "hybrid_demo":
+        return ""
+
+    by_tool = {
+        str(item.get("tool") or ""): str(item.get("status") or "-")
+        for item in tool_calls
+        if isinstance(item, dict)
+    }
+    rows = [
+        ("Step 1: web_search", by_tool.get("web_search", "-")),
+        ("Step 2: file_write", by_tool.get("file_write", "-")),
+        ("Step 3: github_commit", by_tool.get("github_commit", "-")),
+    ]
+
+    lines = [f"{label:<24} {status}" for label, status in rows]
+    output = last_result.get("output") if isinstance(last_result.get("output"), dict) else {}
+    commit_created = (
+        by_tool.get("github_commit") == "success"
+        and bool(output.get("commit_hash") or output.get("git_commit"))
+    )
+    result = "local git commit created" if commit_created else "local git commit not created"
+    lines.append(f"{'Result:':<24} {result}")
+    return "\n".join(lines)
+
+
+def _build_search_results_summary(search_output: Dict[str, Any]) -> str:
+    query = str(search_output.get("query") or "").strip()
+    provider = str(search_output.get("provider") or "").strip()
+    result_count = search_output.get("result_count")
+    results = search_output.get("results")
+    if not isinstance(results, list):
+        results = []
+
+    lines = [
+        "Search results summary",
+        f"Query: {query or '-'}",
+        f"Provider: {provider or '-'}",
+        f"Results found: {result_count if result_count not in (None, '') else len(results)}",
+        "Safety: results were summarized only; no external content was downloaded or executed.",
+        "",
+        "Top results:",
+    ]
+
+    for index, item in enumerate(results[:3], start=1):
+        if not isinstance(item, dict):
+            continue
+        title = _compact_line(item.get("title"), max_length=90)
+        url = _compact_line(item.get("url"), max_length=120)
+        snippet = _compact_line(item.get("snippet"), max_length=180)
+        lines.append(f"{index}. {title or url or '-'}")
+        if url:
+            lines.append(f"   URL: {url}")
+        if snippet:
+            lines.append(f"   Summary: {snippet}")
+
+    if not results:
+        lines.append("-")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _extract_search_results_summary(execution: Dict[str, Any]) -> str:
+    results = execution.get("results")
+    if not isinstance(results, list):
+        return ""
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        result = item.get("result") if isinstance(item.get("result"), dict) else {}
+        if result.get("tool") != "web_search":
+            continue
+        output = result.get("output") if isinstance(result.get("output"), dict) else {}
+        summary = _build_search_results_summary(output)
+        return summary.strip()
+    return ""
+
+
+def _compact_line(value: Any, *, max_length: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 3]}..."
 
 
 def _extract_blocked_reason(
