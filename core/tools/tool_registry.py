@@ -31,6 +31,11 @@ try:
 except Exception:
     GitPipelineTool = None  # type: ignore
 
+try:
+    from core.tools.github_outbox import GitHubOutboxTool
+except Exception:
+    GitHubOutboxTool = None  # type: ignore
+
 
 class ToolRegistry:
     """
@@ -232,6 +237,14 @@ class ToolRegistry:
                 aliases=["git_pipeline_tool", "github_outbox_pipeline"],
             )
 
+        github_outbox_tool = self._safe_build_github_outbox_tool()
+        if github_outbox_tool is not None:
+            self.register(
+                "github_outbox",
+                github_outbox_tool,
+                aliases=["github_outbox_tool", "outbox", "github_workflow_outbox"],
+            )
+
     # =========================================================
     # builders
     # =========================================================
@@ -338,6 +351,24 @@ class ToolRegistry:
         ):
             try:
                 return GitPipelineTool(**kwargs)
+            except TypeError:
+                continue
+            except Exception:
+                return None
+
+        return None
+
+    def _safe_build_github_outbox_tool(self) -> Optional[Any]:
+        if GitHubOutboxTool is None:
+            return None
+
+        for kwargs in (
+            {"workspace_root": "."},
+            {"workspace_root": self.workspace_dir},
+            {},
+        ):
+            try:
+                return GitHubOutboxTool(**kwargs)
             except TypeError:
                 continue
             except Exception:

@@ -14,20 +14,57 @@ OUTBOX_FILES = {
     "devlog_entry": "devlog_entry.md",
     "publish_plan": "publish_plan.md",
 }
+OUTBOX_ARTIFACTS = {
+    "commit_message": "workspace/github_outbox/commit_message.txt",
+    "pr_description": "workspace/github_outbox/pr_description.md",
+    "devlog": "workspace/github_outbox/devlog.md",
+    "devlog_entry": "workspace/github_outbox/devlog_entry.md",
+    "publish_plan": "workspace/github_outbox/publish_plan.md",
+    "review_report": "workspace/github_outbox/review_report.md",
+}
 
 
-def ensure_outbox() -> Path:
-    INBOX_DIR.mkdir(parents=True, exist_ok=True)
-    OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
-    (INBOX_DIR / ".gitkeep").touch()
-    (OUTBOX_DIR / ".gitkeep").touch()
-    return OUTBOX_DIR
+class GitHubOutboxTool:
+    def __init__(self, workspace_root: Any = ".") -> None:
+        self.workspace_root = Path(workspace_root).resolve(strict=False)
+
+    def execute(self, tool_input: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        payload = tool_input if isinstance(tool_input, dict) else {}
+        task = payload.get("task", payload.get("goal", payload.get("input", "GitHub outbox task")))
+        written = run(task, workspace_root=self.workspace_root)
+        return {
+            "ok": True,
+            "tool": "github_outbox",
+            "tool_class": "workspace_write",
+            "side_effect_level": "workspace_write",
+            "task": _task_text(task),
+            "artifacts": written,
+            "changed_files": list(written.values()),
+            "summary": "generated local GitHub outbox artifacts",
+            "git_commit": False,
+            "git_push": False,
+            "github_create_pr": False,
+        }
+
+    def run(self, tool_input: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        return self.execute(tool_input)
 
 
-def write_file(filename: str, content: str) -> Path:
-    outbox = ensure_outbox()
+def ensure_outbox(workspace_root: Any | None = None) -> Path:
+    root = _root(workspace_root)
+    inbox_dir = root / "workspace" / "github_inbox"
+    outbox_dir = root / "workspace" / "github_outbox"
+    inbox_dir.mkdir(parents=True, exist_ok=True)
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+    (inbox_dir / ".gitkeep").touch()
+    (outbox_dir / ".gitkeep").touch()
+    return outbox_dir
+
+
+def write_file(filename: str, content: str, workspace_root: Any | None = None) -> Path:
+    outbox = ensure_outbox(workspace_root)
     target = (outbox / filename).resolve(strict=False)
-    if OUTBOX_DIR.resolve(strict=False) not in [target.parent, *target.parents]:
+    if outbox.resolve(strict=False) not in [target.parent, *target.parents]:
         raise ValueError(f"refusing to write outside github_outbox: {filename}")
     target.write_text(str(content), encoding="utf-8")
     return target
@@ -77,8 +114,8 @@ def generate_publish_plan(task: Any) -> str:
     )
 
 
-def run(task: Any) -> Dict[str, str]:
-    ensure_outbox()
+def run(task: Any, workspace_root: Any | None = None) -> Dict[str, str]:
+    ensure_outbox(workspace_root)
     outputs = {
         OUTBOX_FILES["commit_message"]: generate_commit_message(task),
         OUTBOX_FILES["pr_description"]: generate_pr_description(task),
@@ -87,7 +124,7 @@ def run(task: Any) -> Dict[str, str]:
     }
     written: Dict[str, str] = {}
     for filename, content in outputs.items():
-        written[filename] = str(write_file(filename, content))
+        written[filename] = str(write_file(filename, content, workspace_root))
     return written
 
 
@@ -103,9 +140,10 @@ def write_github_outbox_artifact(
     filename = {
         "commit_message": OUTBOX_FILES["commit_message"],
         "pr_description": OUTBOX_FILES["pr_description"],
-        "devlog": OUTBOX_FILES["devlog_entry"],
+        "devlog": "devlog.md",
         "devlog_entry": OUTBOX_FILES["devlog_entry"],
         "publish_plan": OUTBOX_FILES["publish_plan"],
+        "review_report": "review_report.md",
     }.get(artifact_name)
 
     if not filename:
@@ -140,12 +178,27 @@ def write_github_outbox_artifact(
         "github_create_pr": False,
         "task_id": task_id,
         "trace_id": trace_id,
+        "trace": {
+            "tool_name": "github_outbox",
+            "tool_class": "workspace_write",
+            "side_effect_level": "workspace_write",
+            "output_path": str(target),
+            "policy_decision": {"ok": True},
+            "task_id": task_id,
+            "trace_id": trace_id,
+        },
     }
 
 
 def _task_text(task: Any) -> str:
     text = str(task).strip()
     return text or "unspecified task"
+
+
+def _root(workspace_root: Any | None) -> Path:
+    if workspace_root is None:
+        return REPO_ROOT
+    return Path(workspace_root).resolve(strict=False)
 
 
 def main() -> int:
