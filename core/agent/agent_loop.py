@@ -26,6 +26,8 @@ from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 from core.agent.loop_decision import observe_and_decide
 from core.agent.local_observer import observe_runner_result as observe_local_runner_result
+from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
+from core.tools.tool_registry import ToolRegistry
 
 
 class AgentLoop:
@@ -70,6 +72,9 @@ class AgentLoop:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
         self.llm_client = llm_client
+        self.tool_registry = kwargs.get("tool_registry") or getattr(self.step_executor, "tool_registry", None)
+        if self.tool_registry is None:
+            self.tool_registry = ToolRegistry(workspace_dir=kwargs.get("workspace_dir", "workspace"))
 
         self.task_manager = task_manager
         self.scheduler = scheduler or task_manager
@@ -87,6 +92,7 @@ class AgentLoop:
             verifier=self.verifier,
             debug=self.debug,
         )
+        self.tool_call_executor = ToolCallExecutor(self.tool_registry)
 
     # ============================================================
     # public entry
@@ -847,6 +853,12 @@ class AgentLoop:
         else:
             normalized["execution_trace"] = []
 
+        execution_log = normalized.get("execution_log")
+        if isinstance(execution_log, list):
+            normalized["execution_log"] = [copy.deepcopy(item) for item in execution_log if isinstance(item, dict)]
+        else:
+            normalized["execution_log"] = []
+
         normalized["final_answer"] = str(normalized.get("final_answer") or "")
         if "error" in normalized:
             normalized["error"] = normalized.get("error")
@@ -854,6 +866,89 @@ class AgentLoop:
             normalized["error"] = None
 
         return normalized
+
+    def _plan_has_tool_call(self, plan: Any) -> bool:
+        return bool(self._extract_tool_calls_from_plan(plan))
+
+    def _extract_tool_call_from_plan(self, plan: Any) -> Optional[Dict[str, Any]]:
+        calls = self._extract_tool_calls_from_plan(plan)
+        return calls[0] if calls else None
+
+    def _extract_tool_calls_from_plan(self, plan: Any) -> List[Dict[str, Any]]:
+        if not isinstance(plan, dict):
+            return []
+        if isinstance(plan.get("tool_calls"), list):
+            calls = []
+            for item in plan.get("tool_calls") or []:
+                if isinstance(item, dict):
+                    calls.append(copy.deepcopy(item))
+            return calls
+        if isinstance(plan.get("tool_call"), dict):
+            return [copy.deepcopy(plan["tool_call"])]
+        if plan.get("tool") is not None:
+            return [{
+                "tool": plan.get("tool"),
+                "args": copy.deepcopy(plan.get("args", {})),
+            }]
+        nested = plan.get("plan")
+        if isinstance(nested, dict):
+            return self._extract_tool_calls_from_plan(nested)
+        return []
+
+    def _execute_tool_call_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+        tool_calls = self._extract_tool_calls_from_plan(plan)
+        results: List[Dict[str, Any]] = []
+        execution_log: List[Dict[str, Any]] = []
+        previous_result: Any = None
+        last_result: Dict[str, Any] = {}
+
+        for index, tool_call in enumerate(tool_calls, start=1):
+            effective_call = copy.deepcopy(tool_call)
+            args = effective_call.get("args")
+            if isinstance(args, dict) and "{{previous_content}}" in str(args.get("content", "")):
+                output = previous_result.get("output") if isinstance(previous_result, dict) else {}
+                content = output.get("content") if isinstance(output, dict) else ""
+                args["content"] = str(args.get("content", "")).replace("{{previous_content}}", str(content or ""))
+
+            tool_result = self.tool_call_executor.execute(effective_call, source="agent_loop")
+            trace_event = tool_call_trace_event(tool_result)
+            step = {
+                "type": "tool_call",
+                "tool_call": copy.deepcopy(effective_call),
+            }
+            results.append(
+                {
+                    "step_index": index,
+                    "step": step,
+                    "result": copy.deepcopy(tool_result),
+                }
+            )
+            execution_log.append(trace_event)
+            last_result = tool_result
+            previous_result = tool_result
+
+            if not tool_result.get("ok"):
+                return {
+                    "ok": False,
+                    "steps_executed": index,
+                    "results": results,
+                    "execution_log": execution_log,
+                    "execution_trace": copy.deepcopy(execution_log),
+                    "last_result": copy.deepcopy(last_result),
+                    "final_answer": str(tool_result.get("status") or ""),
+                    "error": tool_result.get("error"),
+                }
+
+        return {
+            "ok": True,
+            "steps_executed": len(tool_calls),
+            "results": results,
+            "execution_log": execution_log,
+            "execution_trace": copy.deepcopy(execution_log),
+            "last_result": copy.deepcopy(last_result),
+            "final_answer": str(last_result.get("output", {}).get("summary") or last_result.get("status") or ""),
+            "error": None,
+        }
 
     def _normalize_execution_items(self, items: List[Any]) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []
@@ -1225,6 +1320,20 @@ class AgentLoop:
                 final_answer=user_input,
             )
 
+        if self._plan_has_tool_call(plan):
+            execution_result = self._execute_tool_call_plan(plan)
+            normalized_execution = self._normalize_execution_result(execution_result)
+            return self._make_agent_response(
+                ok=bool(normalized_execution.get("ok", False)) if isinstance(normalized_execution, dict) else False,
+                mode="single_shot",
+                context=context,
+                route=route,
+                plan=plan,
+                execution=normalized_execution,
+                final_answer=self._extract_final_answer(normalized_execution, plan, user_input),
+                error=normalized_execution.get("error") if isinstance(normalized_execution, dict) else None,
+            )
+
         steps = self._extract_steps_from_plan(plan)
 
         if self.debug:
@@ -1423,6 +1532,20 @@ class AgentLoop:
                     final_answer="",
                     error=plan.get("error", "planner call failed"),
                     extra={"traceback": raw_plan.get("traceback")},
+                )
+
+            if self._plan_has_tool_call(plan):
+                execution_result = self._execute_tool_call_plan(plan)
+                normalized_execution = self._normalize_execution_result(execution_result)
+                return self._make_agent_response(
+                    ok=bool(normalized_execution.get("ok", False)) if isinstance(normalized_execution, dict) else False,
+                    mode="task_tool_call",
+                    context=context,
+                    route=route,
+                    plan=plan,
+                    execution=normalized_execution,
+                    final_answer=self._extract_final_answer(normalized_execution, plan, user_input),
+                    error=normalized_execution.get("error") if isinstance(normalized_execution, dict) else None,
                 )
 
             if self._supports_scheduler_create_submit(task_entry):
