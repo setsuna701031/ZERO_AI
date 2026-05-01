@@ -8,39 +8,28 @@ from core.tools.github_inbox_reader import read_inbox
 from core.tools.github_outbox import write_github_outbox_artifact
 
 
-GITHUB_INBOX_PHRASES = (
-    "review",
-    "analyze",
-    "check pr",
-    "read issue",
-)
+class GitHubInboxTool:
+    def __init__(self, workspace_root: Any = ".") -> None:
+        self.workspace_root = Path(workspace_root).resolve(strict=False)
+
+    def execute(self, tool_input: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        return execute_github_inbox(tool_registry=None, tool_input=tool_input, workspace_root=self.workspace_root)
+
+    def run(self, tool_input: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        return self.execute(tool_input)
 
 
-def should_use_github_inbox(task: Any = None, tool_input: Any = None) -> bool:
-    task_data = task if isinstance(task, dict) else {}
-    task_type = str(task_data.get("type") or task_data.get("task_type") or "").strip().lower()
-    if task_type == "github_inbox":
-        return True
-
-    text = _combined_text(task, tool_input).lower()
-    return any(phrase in text for phrase in GITHUB_INBOX_PHRASES)
-
-
-def execute_github_inbox_if_needed(
+def execute_github_inbox(
     *,
-    tool_registry: Any,
-    tool_name: str = "",
+    tool_registry: Any = None,
     tool_input: Dict[str, Any] | None = None,
-) -> Dict[str, Any] | None:
+    workspace_root: Any | None = None,
+) -> Dict[str, Any]:
     payload = tool_input if isinstance(tool_input, dict) else {}
     task = payload.get("task")
 
-    explicit_tool = str(tool_name or "").strip().lower() == "github_inbox"
-    if not explicit_tool and not should_use_github_inbox(task=task, tool_input=payload):
-        return None
-
-    workspace_root = _workspace_root(payload)
-    reader_output = read_inbox(workspace_root=workspace_root)
+    root = workspace_root or _workspace_root(payload)
+    reader_output = read_inbox(workspace_root=root)
     analysis = analyze_inbox(reader_output)
     task_text = _task_text(task, payload)
 
@@ -50,27 +39,30 @@ def execute_github_inbox_if_needed(
         f"Summary: {analysis.get('summary')}\n"
         f"Review: {analysis.get('review')}"
     )
-    outbox_result = tool_registry.execute_tool(
-        "github_outbox",
-        {
-            "task": outbox_task,
-            "source": "github_inbox_adapter",
-        },
-    )
+    if tool_registry is not None:
+        outbox_result = tool_registry.execute_tool(
+            "github_outbox",
+            {
+                "task": outbox_task,
+                "source": "github_inbox_adapter",
+            },
+        )
+    else:
+        outbox_result = {"ok": True, "output": {"changed_files": []}}
 
     pr_content = _format_review(reader_output, analysis)
     devlog_content = _format_devlog(reader_output, analysis)
     pr_result = write_github_outbox_artifact(
         "pr_description",
         pr_content,
-        workspace_root=workspace_root,
+        workspace_root=root,
         task_id="github_inbox_adapter",
         trace_id="github_inbox_pr_description",
     )
     devlog_result = write_github_outbox_artifact(
         "devlog_entry",
         devlog_content,
-        workspace_root=workspace_root,
+        workspace_root=root,
         task_id="github_inbox_adapter",
         trace_id="github_inbox_devlog_entry",
     )
@@ -95,19 +87,6 @@ def execute_github_inbox_if_needed(
         "git_commit": False,
         "git_push": False,
         "github_create_pr": False,
-    }
-
-
-def build_github_inbox_step(task: Dict[str, Any]) -> Dict[str, Any] | None:
-    if not should_use_github_inbox(task=task):
-        return None
-    return {
-        "type": "tool",
-        "tool_name": "github_inbox",
-        "tool_input": {
-            "task": task,
-            "source": "github_inbox_adapter",
-        },
     }
 
 
@@ -139,18 +118,6 @@ def _format_devlog(reader_output: Dict[str, Any], analysis: Dict[str, Any]) -> s
         "- Mode: local read-only inbox; local outbox write only",
     ]
     return "\n".join(lines).strip() + "\n"
-
-
-def _combined_text(task: Any = None, tool_input: Any = None) -> str:
-    chunks = []
-    for value in (task, tool_input):
-        if isinstance(value, dict):
-            for key in ("title", "goal", "input", "user_input", "task", "description", "type", "task_type"):
-                if value.get(key) is not None:
-                    chunks.append(str(value.get(key)))
-        elif value is not None:
-            chunks.append(str(value))
-    return "\n".join(chunks)
 
 
 def _task_text(task: Any = None, tool_input: Any = None) -> str:

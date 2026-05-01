@@ -12,7 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter
 from core.tools.github_outbox import OUTBOX_FILES
-from core.tools.github_outbox_adapter import should_use_github_outbox
+from core.tools.tool_router import ToolRouter
 from core.tools.tool_registry import ToolRegistry
 
 
@@ -30,9 +30,12 @@ def pass_step(message: str) -> None:
 
 
 def main() -> int:
-    if should_use_github_outbox({"title": "summarize project notes"}):
+    registry = ToolRegistry(workspace_dir=str(REPO_ROOT))
+    router = ToolRouter(registry)
+
+    if router.route({"title": "summarize project notes"}):
         return fail("plain project task incorrectly matched PR keyword")
-    if not should_use_github_outbox({"type": "github_outbox", "title": "release notes"}):
+    if not router.route({"type": "github_outbox", "title": "release notes"}):
         return fail("github_outbox task type did not match")
     pass_step("keyword and task type routing rules are scoped")
 
@@ -42,7 +45,6 @@ def main() -> int:
         "title": task_text,
     }
 
-    registry = ToolRegistry(workspace_dir=str(REPO_ROOT))
     executor = StepExecutor(
         tool_registry=registry,
         workspace_root=str(REPO_ROOT / "workspace"),

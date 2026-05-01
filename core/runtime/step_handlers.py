@@ -7,8 +7,7 @@ import subprocess
 import sys
 from typing import Any, Dict, Optional
 
-from core.tools.github_inbox_adapter import execute_github_inbox_if_needed
-from core.tools.github_outbox_adapter import execute_github_outbox_if_needed
+from core.tools.tool_router import ToolRouter
 
 
 class BaseStepHandler:
@@ -402,17 +401,9 @@ class ToolStepHandler(BaseStepHandler):
         attempt: int,
     ) -> Dict[str, Any]:
         try:
-            result = execute_github_inbox_if_needed(
-                tool_registry=self.executor.tool_registry,
-                tool_name=tool_name,
-                tool_input=copy.deepcopy(tool_input),
-            )
-            if result is None:
-                result = execute_github_outbox_if_needed(
-                    tool_registry=self.executor.tool_registry,
-                    tool_name=tool_name,
-                    tool_input=copy.deepcopy(tool_input),
-                )
+            route_payload = copy.deepcopy(tool_input)
+            route_payload.setdefault("tool_name", tool_name)
+            result = ToolRouter(self.executor.tool_registry).dispatch(route_payload)
             if result is None:
                 result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
         except Exception as e:

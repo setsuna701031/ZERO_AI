@@ -36,6 +36,11 @@ try:
 except Exception:
     GitHubOutboxTool = None  # type: ignore
 
+try:
+    from core.tools.github_inbox_adapter import GitHubInboxTool
+except Exception:
+    GitHubInboxTool = None  # type: ignore
+
 
 class ToolRegistry:
     """
@@ -245,6 +250,14 @@ class ToolRegistry:
                 aliases=["github_outbox_tool", "outbox", "github_workflow_outbox"],
             )
 
+        github_inbox_tool = self._safe_build_github_inbox_tool()
+        if github_inbox_tool is not None:
+            self.register(
+                "github_inbox",
+                github_inbox_tool,
+                aliases=["github_inbox_tool", "inbox", "github_workflow_inbox"],
+            )
+
     # =========================================================
     # builders
     # =========================================================
@@ -369,6 +382,24 @@ class ToolRegistry:
         ):
             try:
                 return GitHubOutboxTool(**kwargs)
+            except TypeError:
+                continue
+            except Exception:
+                return None
+
+        return None
+
+    def _safe_build_github_inbox_tool(self) -> Optional[Any]:
+        if GitHubInboxTool is None:
+            return None
+
+        for kwargs in (
+            {"workspace_root": "."},
+            {"workspace_root": self.workspace_dir},
+            {},
+        ):
+            try:
+                return GitHubInboxTool(**kwargs)
             except TypeError:
                 continue
             except Exception:
