@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
+from core.tools.tool_audit_log import write_tool_audit_log
 from core.tools.tool_schema import ToolRequest, ToolResult
 
 
@@ -128,6 +130,27 @@ class ToolRegistry:
         }
 
     def execute_tool(self, name: str, tool_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = tool_input if isinstance(tool_input, dict) else {}
+        request = ToolRequest(
+            tool=str(name or ""),
+            input=payload,
+            source="legacy_execute_tool",
+            risk_level="low",
+        )
+        result = self.execute_tool_request(request)
+        return {
+            "ok": result.ok,
+            "tool": result.tool,
+            "input": payload,
+            "output": result.output,
+            "error": None if result.error is None else {
+                "type": "tool_error",
+                "message": result.error,
+                "retryable": False,
+            },
+        }
+
+    def _execute_tool_raw(self, name: str, tool_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         統一工具執行入口
 
@@ -194,7 +217,10 @@ class ToolRegistry:
             )
 
     def execute_tool_request(self, request: ToolRequest) -> ToolResult:
-        raw_result = self.execute_tool(request.tool, request.input)
+        if not request.request_id:
+            request.request_id = str(uuid4())
+
+        raw_result = self._execute_tool_raw(request.tool, request.input)
         output = raw_result.get("output") if isinstance(raw_result, dict) else {}
         if not isinstance(output, dict):
             output = {"result": output}
@@ -207,13 +233,25 @@ class ToolRegistry:
             else:
                 error_text = str(error_value)
 
-        return ToolResult(
+        result = ToolResult(
             ok=bool(raw_result.get("ok")) if isinstance(raw_result, dict) else False,
             tool=str(raw_result.get("tool") or request.tool) if isinstance(raw_result, dict) else request.tool,
             output=output,
             error=error_text,
             side_effect_level=str(output.get("side_effect_level") or "none"),
+            request_id=request.request_id,
         )
+
+        try:
+            write_tool_audit_log(
+                request=request,
+                result=result,
+                workspace_dir=self.workspace_dir,
+            )
+        except Exception:
+            pass
+
+        return result
 
     def invoke(self, name: str, tool_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.execute_tool(name, tool_input)
