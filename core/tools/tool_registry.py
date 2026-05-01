@@ -141,6 +141,7 @@ class ToolRegistry:
         return {
             "ok": result.ok,
             "tool": result.tool,
+            "request_id": result.request_id,
             "input": payload,
             "output": result.output,
             "error": None if result.error is None else {

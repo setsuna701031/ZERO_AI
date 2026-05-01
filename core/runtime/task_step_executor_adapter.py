@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Optional
 
+from core.runtime.execution_session import ExecutionSession
+from core.runtime.execution_session_store import ExecutionSessionStore
 from core.tools.tool_router import ToolRouter
 
 
@@ -48,10 +50,16 @@ class TaskStepExecutorAdapter:
 
         normalized_task = copy.deepcopy(task)
         normalized_task.setdefault("workspace", self._resolve_task_workspace(normalized_task))
+        session = ExecutionSession.start(normalized_task)
+        session_store = ExecutionSessionStore(self.workspace)
+        self._save_session(session_store, session)
 
         steps = self._task_to_steps(normalized_task)
 
         if not steps:
+            session.add_step("task_to_steps", "failed", {"error": "task produced no executable steps"})
+            session.finish("failed")
+            self._save_session(session_store, session)
             return {
                 "ok": False,
                 "error": "task produced no executable steps",
@@ -65,6 +73,7 @@ class TaskStepExecutorAdapter:
         for step_index, step in enumerate(steps):
             step_copy = copy.deepcopy(step)
             step_copy.setdefault("step_index", step_index)
+            session.add_step(self._step_name(step_copy), "started", {"step_index": step_index})
 
             result = self._execute_one_step(
                 step=step_copy,
@@ -83,11 +92,20 @@ class TaskStepExecutorAdapter:
 
             result.setdefault("step_index", step_index)
             result.setdefault("step", step_copy)
+            session.add_step(
+                self._step_name(step_copy),
+                "finished" if result.get("ok", False) else "failed",
+                self._step_detail(result),
+            )
+            self._add_session_tool_result(session, step_copy, result)
+            self._save_session(session_store, session)
 
             results.append(result)
             previous_result = result.get("result", result)
 
             if not result.get("ok", False):
+                session.finish("failed")
+                self._save_session(session_store, session)
                 return {
                     "ok": False,
                     "task_id": normalized_task.get("id"),
@@ -99,6 +117,8 @@ class TaskStepExecutorAdapter:
                 }
 
         final_message = self._build_final_message(normalized_task, results)
+        session.finish("finished")
+        self._save_session(session_store, session)
 
         return {
             "ok": True,
@@ -332,3 +352,44 @@ class TaskStepExecutorAdapter:
                 return f"task completed: {last_result['path']}"
 
         return str(task.get("title") or task.get("goal") or "task completed")
+
+    def _step_name(self, step: Dict[str, Any]) -> str:
+        if not isinstance(step, dict):
+            return "step"
+        step_type = str(step.get("type") or "step").strip() or "step"
+        tool_name = str(step.get("tool_name") or "").strip()
+        return f"{step_type}:{tool_name}" if tool_name else step_type
+
+    def _step_detail(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        payload = result if isinstance(result, dict) else {}
+        nested = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+        return {
+            "ok": bool(payload.get("ok", False)),
+            "tool_name": payload.get("tool_name") or nested.get("tool") or nested.get("tool_name"),
+            "request_id": payload.get("request_id") or nested.get("request_id"),
+            "message": payload.get("message") or nested.get("message") or nested.get("summary"),
+            "error": payload.get("error"),
+        }
+
+    def _add_session_tool_result(
+        self,
+        session: ExecutionSession,
+        step: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> None:
+        if not isinstance(step, dict) or str(step.get("type") or "").strip().lower() != "tool":
+            return
+        if not isinstance(result, dict):
+            return
+        tool_payload = result.get("result") if isinstance(result.get("result"), dict) else result
+        session.add_tool_result(tool_payload)
+
+    def _save_session(
+        self,
+        session_store: ExecutionSessionStore,
+        session: ExecutionSession,
+    ) -> None:
+        try:
+            session_store.save_session(session)
+        except Exception:
+            pass
