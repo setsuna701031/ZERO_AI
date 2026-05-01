@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Optional
 
+from core.tools.github_outbox_adapter import build_github_outbox_step
+
 
 class TaskStepExecutorAdapter:
     """
@@ -206,6 +208,14 @@ class TaskStepExecutorAdapter:
             return None
 
         # 如果 task 已經明確指定 path/content，就優先轉成 write tool step
+        github_outbox_step = build_github_outbox_step(task)
+        if github_outbox_step is not None:
+            tool_input = copy.deepcopy(github_outbox_step.get("tool_input") or {})
+            tool_input.setdefault("workspace", self._resolve_task_workspace(task))
+            tool_input.setdefault("cwd", task.get("cwd") or self._resolve_task_workspace(task))
+            github_outbox_step["tool_input"] = tool_input
+            return github_outbox_step
+
         path = task.get("path") or task.get("file_path")
         content = task.get("content") or task.get("text")
 

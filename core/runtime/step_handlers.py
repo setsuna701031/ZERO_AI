@@ -7,6 +7,8 @@ import subprocess
 import sys
 from typing import Any, Dict, Optional
 
+from core.tools.github_outbox_adapter import execute_github_outbox_if_needed
+
 
 class BaseStepHandler:
     def __init__(self, executor: Any) -> None:
@@ -399,7 +401,13 @@ class ToolStepHandler(BaseStepHandler):
         attempt: int,
     ) -> Dict[str, Any]:
         try:
-            result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
+            result = execute_github_outbox_if_needed(
+                tool_registry=self.executor.tool_registry,
+                tool_name=tool_name,
+                tool_input=copy.deepcopy(tool_input),
+            )
+            if result is None:
+                result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
         except Exception as e:
             return self._error(
                 error_type="tool_execute_exception",
