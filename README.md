@@ -1,8 +1,18 @@
 # ZERO --- Event Engineering Automation
 
-ZERO turns a simple file event into structured engineering outputs
-automatically.\
+ZERO turns problems into executable engineering workflows.
+
 No GitHub API. No commit. Fully controlled.
+
+------------------------------------------------------------------------
+
+## Why this matters
+
+Modern AI tools generate text.\
+ZERO executes engineering workflows.
+
+It turns problems into structured outputs with: - no uncontrolled side
+effects - full traceability - reproducible execution
 
 ------------------------------------------------------------------------
 
@@ -23,6 +33,15 @@ Event → Task → Tool → Output → Audit → Session
 
 Input: a single text file describing a problem\
 Output: structured engineering artifacts ready for Git workflow
+
+------------------------------------------------------------------------
+
+## Example Use Cases
+
+-   Auto-generate PR drafts from issue descriptions
+-   Analyze incoming tasks and produce structured plans
+-   Convert file-based events into engineering actions
+-   Safe, auditable AI-assisted development workflows
 
 ------------------------------------------------------------------------
 
