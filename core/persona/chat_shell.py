@@ -17,6 +17,7 @@ from core.persona.panel_renderer import render_persona_panel
 from core.persona.state_manager import get_persona_state_manager
 from core.persona.visual_profile import load_default_visual_profile
 from core.persona.persona_agent_orchestrator import run_persona_agent_demo
+from core.persona.runtime_bridge import format_persona_runtime_display, get_persona_runtime_bridge
 
 
 @dataclass
@@ -52,6 +53,9 @@ def _build_help_text(persona: PersonaProfile) -> str:
         "- run doc-demo\n"
         "- run multi-step-demo\n"
         "- run agent-demo\n"
+        "- run runtime-demo\n"
+        "- runtime-status\n"
+        "- runtime-replay\n"
         "- run requirement-demo\n"
         "- run execution-demo\n"
         "- run mini-build-demo\n"
@@ -302,6 +306,73 @@ def generate_rule_based_response(persona: PersonaProfile, user_input: str) -> Pe
 
     if lowered == "run agent-demo":
         return _run_capability_with_persona_prefix(persona, "agent-demo", run_persona_agent_demo)
+
+    if lowered in {"run runtime-demo", "runtime-demo", "run demo", "demo"}:
+        bridge = get_persona_runtime_bridge()
+        state_manager.set_executing(
+            reason="run_runtime_demo",
+            source="persona_runtime_bridge",
+            detail="persona UI command submitted ZERO runtime task",
+            last_user_command=text,
+            last_capability="runtime-demo",
+            last_result="executing",
+            last_output_hint="workspace/shared/summary.txt",
+            last_task_id="",
+        )
+        display = bridge.submit_ui_task(text)
+        response_text = bridge.format_display_text()
+        if display.get("runtime_status") == "done":
+            state_manager.set_success(
+                reason="runtime_demo_completed",
+                source="persona_runtime_bridge",
+                detail=str(display.get("result_summary") or ""),
+                last_user_command=text,
+                last_capability="runtime-demo",
+                last_result="done",
+                last_output_hint="workspace/shared/summary.txt",
+                last_task_id="",
+            )
+        else:
+            state_manager.set_error(
+                reason="runtime_demo_failed",
+                source="persona_runtime_bridge",
+                detail=str(display.get("blocked_reason") or display.get("result_summary") or ""),
+                last_user_command=text,
+                last_capability="runtime-demo",
+                last_result=str(display.get("runtime_status") or "failed"),
+                last_output_hint="workspace/shared/summary.txt",
+                last_task_id="",
+            )
+        return PersonaTurnResult(user_input=text, response=f"{persona.name}:\n{response_text}", should_exit=False)
+
+    if lowered in {"runtime-status", "persona runtime status"}:
+        bridge = get_persona_runtime_bridge()
+        state_manager.update_runtime_summary(
+            last_user_command=text,
+            last_capability="runtime-demo",
+            last_result=str(bridge.get_display_state().get("runtime_status") or ""),
+            last_output_hint="workspace/shared/summary.txt",
+        )
+        return PersonaTurnResult(
+            user_input=text,
+            response=f"{persona.name}:\n{bridge.format_display_text()}",
+            should_exit=False,
+        )
+
+    if lowered in {"runtime-replay", "replay runtime-demo", "replay demo", "persona runtime replay"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.replay_last_task()
+        state_manager.update_runtime_summary(
+            last_user_command=text,
+            last_capability="runtime-demo",
+            last_result=str(display.get("runtime_status") or ""),
+            last_output_hint="workspace/shared/summary.txt",
+        )
+        return PersonaTurnResult(
+            user_input=text,
+            response=f"{persona.name}:\n{format_persona_runtime_display(display)}",
+            should_exit=False,
+        )
 
     if lowered == "run requirement-demo":
         return _run_capability_with_persona_prefix(persona, "requirement-demo", run_requirement_demo)

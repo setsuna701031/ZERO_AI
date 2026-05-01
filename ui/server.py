@@ -34,6 +34,7 @@ from core.display.ui_bridge import (
     read_inbox_file,
     read_shared_file,
 )
+from core.persona.runtime_bridge import format_persona_runtime_display, get_persona_runtime_bridge
 
 
 APP_HOST = "127.0.0.1"
@@ -62,6 +63,7 @@ def _build_status_payload() -> Dict[str, Any]:
     system_status = get_system_status()
     shared_files = list_shared_files(limit=20)
     inbox_files = list_inbox_files(limit=20)
+    persona_runtime = get_persona_runtime_bridge().get_display_state()
 
     return {
         "success": True,
@@ -73,6 +75,7 @@ def _build_status_payload() -> Dict[str, Any]:
             "tasks": tasks,
             "shared_files": shared_files,
             "inbox_files": inbox_files,
+            "persona_runtime": persona_runtime,
         },
         "meta": {
             "model": "local-ui-bridge",
@@ -188,11 +191,70 @@ def _build_chat_payload(message: str) -> Dict[str, Any]:
     tasks = status_data["tasks"]
     shared_files = status_data["shared_files"]
     inbox_files = status_data["inbox_files"]
+    if normalized in {"run runtime-demo", "runtime-demo", "persona runtime demo", "run demo", "demo"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.submit_ui_task(raw_message)
+        response_text = bridge.format_display_text()
+        refreshed_status = _build_status_payload()["response"]
+        return {
+            "success": display.get("runtime_status") == "done",
+            "mode": "persona_runtime_bridge",
+            "summary": display.get("result_summary") or "",
+            "response": response_text,
+            "content": response_text,
+            "meta": {
+                "model": "local-persona-runtime-bridge",
+                "used_fallback": False,
+                "llm_used": False,
+            },
+            "ui": refreshed_status,
+            "persona_runtime": display,
+        }
+
+    if normalized in {"runtime-replay", "replay runtime-demo", "replay demo", "persona runtime replay"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.replay_last_task()
+        response_text = format_persona_runtime_display(display)
+        return {
+            "success": True,
+            "mode": "persona_runtime_bridge_replay",
+            "summary": display.get("replay_summary") or display.get("result_summary") or "",
+            "response": response_text,
+            "content": response_text,
+            "meta": {
+                "model": "local-persona-runtime-bridge",
+                "used_fallback": False,
+                "llm_used": False,
+            },
+            "ui": status_data,
+            "persona_runtime": display,
+        }
+
+    if normalized in {"runtime-status", "persona runtime status"}:
+        bridge = get_persona_runtime_bridge()
+        display = bridge.get_display_state()
+        response_text = bridge.format_display_text()
+        return {
+            "success": True,
+            "mode": "persona_runtime_bridge_status",
+            "summary": display.get("result_summary") or "",
+            "response": response_text,
+            "content": response_text,
+            "meta": {
+                "model": "local-persona-runtime-bridge",
+                "used_fallback": False,
+                "llm_used": False,
+            },
+            "ui": status_data,
+            "persona_runtime": display,
+        }
 
     if normalized in {"status", "/status", "狀態", "系統狀態"}:
         response_text = (
             "[ZERO UI STATUS]\n"
             f"System Status: {system_status}\n\n"
+            "[PERSONA RUNTIME]\n"
+            f"{get_persona_runtime_bridge().format_display_text()}\n\n"
             "[TASKS]\n"
             f"{_format_tasks_for_display(tasks)}\n\n"
             "[SHARED FILES]\n"

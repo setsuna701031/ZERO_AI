@@ -1,72 +1,142 @@
-# ZERO --- Event Engineering Automation
+# ZERO
 
-ZERO turns a simple file event into structured engineering outputs
-automatically.\
-No GitHub API. No commit. Fully controlled.
+ZERO is a local AI runtime that turns a task into an executable, traceable workflow.
 
-------------------------------------------------------------------------
+It is not just a chatbot, and it is not a loose script runner.
+
+ZERO does not just generate answers.
+
+It executes real steps, produces real outputs, and shows exactly how the result was created.
+
+ZERO breaks a request into steps, runs tools such as `file_read`, `file_write`, and `github_commit`, then records the full execution trace so the UI can show what actually happened.
+
+The point is simple: make AI work observable.
+
+Users can see:
+
+- what the system planned
+- which tools ran
+- what arguments were used
+- whether each step succeeded or was blocked
+- the final result
+- the trace that can be replayed later
 
 ## Demo
 
-```{=html}
-<video src="https://github.com/setsuna701031/ZERO_AI/raw/main/demos/zero_event_engineering_demo.mp4" controls width="800">
+Main demo video:
+
+`demos/00_zero_ai_task_to_commit.mp4`
+
+The demo shows ZERO taking a task from UI input to real local Git commit:
+
+1. plan the task
+2. read an input file
+3. write a summary file
+4. commit the result locally
+5. display the timeline and result in the Persona UI
+
+## What The Demo Shows
+
+The standard demo shows ZERO doing real work from start to finish:
+
+1. Receive a task
+2. Plan the workflow
+3. Execute tools
+4. Generate a result
+5. Commit the result locally
+6. Display the full timeline in the Persona UI
+
+The focus is not the final file. The focus is that the process is visible.
+
+## Standard Demo Flow
+
+The Persona UI demo runs a fixed workflow:
+
+1. `file_read` reads `workspace/shared/input.txt`
+2. `file_write` creates `workspace/shared/summary.txt`
+3. `github_commit` commits the summary into a local demo repo
+
+This demo does not push, open a pull request, or call the GitHub API. The GitHub tool currently uses local Git only.
+
+## Timeline View
+
+The UI displays the task as a timeline:
+
+1. `Step 1: planning`
+2. `Step 2: executing tool (...)`
+3. `Step 3: result`
+
+Each tool call is shown in order with:
+
+- tool name
+- simplified args summary
+- status, such as `success` or `blocked`
+- timestamp
+
+These states come from ZERO runtime data: `execution_trace` and `execution_log`. They are not fake UI states.
+
+## Trace And Replay
+
+ZERO records what happened during execution.
+
+The Persona runtime bridge turns that trace into a UI-friendly timeline and result summary.
+
+`runtime-replay` shows the previous task trace again without running the tools again. It does not rewrite files and does not create another commit.
+
+Replay is for answering one question:
+
+> What did the AI actually do?
+
+## Run The Demo
+
+In the Persona UI, press `Demo`, or type:
+
+```text
+run demo
 ```
-```{=html}
-</video>
+
+Show the latest runtime state:
+
+```text
+runtime-status
 ```
 
-------------------------------------------------------------------------
+Replay the previous task trace:
 
-## What it does
+```text
+runtime-replay
+```
 
-Event → Task → Tool → Output → Audit → Session
+Run the smoke test:
 
-Input: a single text file describing a problem\
-Output: structured engineering artifacts ready for Git workflow
+```bash
+python tests/run_persona_runtime_bridge_smoke.py
+```
 
-------------------------------------------------------------------------
+## Current Scope
 
-## Example Output
+ZERO currently focuses on local, inspectable engineering workflows:
 
-    workspace/github_outbox/
-    ├── commit_message.txt
-    ├── pr_description.md
-    ├── devlog_entry.md
-    └── publish_plan.md
+- tool call execution
+- trace and execution logs
+- Persona UI task visualization
+- local Git commit demo
+- replayable task history
 
-    workspace/events_outbox/
-    └── event_results.jsonl
+Not included:
 
-    workspace/execution_sessions/
-    └── <session_id>.json
+- voice
+- TTS
+- 3D avatar
+- Live2D
+- push
+- pull requests
+- GitHub API calls
 
-    workspace/audit_logs/
-    └── tool_audit.jsonl
+## Why This Matters
 
-------------------------------------------------------------------------
+Most AI tools hide the execution path.
 
-## Key Features
+ZERO exposes it.
 
--   Controlled execution (no external side effects)
--   Event-driven automation (File → Task → Tool)
--   Tool routing system (ToolRouter)
--   Standardized tool schema (ToolRequest / ToolResult)
--   Full audit log (traceable execution)
--   Execution session tracking (end-to-end visibility)
-
-------------------------------------------------------------------------
-
-## Run Demo
-
-    python demos/demo_event_to_github_flow.py
-
-------------------------------------------------------------------------
-
-## Result
-
-A real engineering workflow executed without human intervention.
-
-    [OK] 4 engineering artifacts generated
-    [OK] 1 execution session recorded
-    [OK] audit log updated
-    [OK] no external side effects (safe mode)
+That makes the system easier to debug, easier to trust, and easier to demonstrate.

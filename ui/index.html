@@ -144,7 +144,7 @@
 
         .input-row {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 90px;
+            grid-template-columns: minmax(0, 1fr) 90px 120px;
             gap: 8px;
             align-items: stretch;
             margin-bottom: 14px;
@@ -661,6 +661,7 @@
                         autocomplete="off"
                     />
                     <button id="sendBtn">送出</button>
+                    <button id="demoBtn" type="button">Demo</button>
                 </div>
 
                 <div class="panel">
@@ -755,6 +756,7 @@
     <script>
         const userInput = document.getElementById("userInput");
         const sendBtn = document.getElementById("sendBtn");
+        const demoBtn = document.getElementById("demoBtn");
         const statusBadge = document.getElementById("statusBadge");
         const modeValue = document.getElementById("modeValue");
         const modelValue = document.getElementById("modelValue");
@@ -827,6 +829,7 @@
 
         function setLoadingState(isLoading) {
             sendBtn.disabled = isLoading;
+            demoBtn.disabled = isLoading;
             sendBtn.textContent = isLoading ? "送出中..." : "送出";
 
             if (isLoading) {
@@ -1027,7 +1030,13 @@
             }
         }
 
+        function runDemoTask() {
+            userInput.value = "run demo";
+            sendMessage();
+        }
+
         sendBtn.addEventListener("click", sendMessage);
+        demoBtn.addEventListener("click", runDemoTask);
 
         userInput.addEventListener("keydown", function (event) {
             if (event.key === "Enter") {
