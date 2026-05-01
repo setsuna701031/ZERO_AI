@@ -210,12 +210,12 @@ class TaskStepExecutorAdapter:
         # 如果 task 已經明確指定 path/content，就優先轉成 write tool step
         route = ToolRouter(self.tool_registry).route(task)
         if route is not None:
-            tool_input = copy.deepcopy(route.get("input") or {})
+            tool_input = copy.deepcopy(route.input or {})
             tool_input.setdefault("workspace", self._resolve_task_workspace(task))
             tool_input.setdefault("cwd", task.get("cwd") or self._resolve_task_workspace(task))
             return {
                 "type": "tool",
-                "tool_name": route.get("tool"),
+                "tool_name": route.tool,
                 "tool_input": tool_input,
             }
 

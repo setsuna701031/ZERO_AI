@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from core.tools.tool_schema import ToolRequest, ToolResult
+
 
 try:
     from core.tools.web_search_tool import WebSearchTool
@@ -190,6 +192,28 @@ class ToolRegistry:
                 message=str(exc),
                 retryable=self._is_retryable_exception(exc),
             )
+
+    def execute_tool_request(self, request: ToolRequest) -> ToolResult:
+        raw_result = self.execute_tool(request.tool, request.input)
+        output = raw_result.get("output") if isinstance(raw_result, dict) else {}
+        if not isinstance(output, dict):
+            output = {"result": output}
+
+        error_value = raw_result.get("error") if isinstance(raw_result, dict) else "tool execution failed"
+        error_text = None
+        if error_value:
+            if isinstance(error_value, dict):
+                error_text = str(error_value.get("message") or error_value)
+            else:
+                error_text = str(error_value)
+
+        return ToolResult(
+            ok=bool(raw_result.get("ok")) if isinstance(raw_result, dict) else False,
+            tool=str(raw_result.get("tool") or request.tool) if isinstance(raw_result, dict) else request.tool,
+            output=output,
+            error=error_text,
+            side_effect_level=str(output.get("side_effect_level") or "none"),
+        )
 
     def invoke(self, name: str, tool_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.execute_tool(name, tool_input)

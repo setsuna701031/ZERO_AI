@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Optional
 
 from core.tools.tool_router import ToolRouter
@@ -404,6 +405,8 @@ class ToolStepHandler(BaseStepHandler):
             route_payload = copy.deepcopy(tool_input)
             route_payload.setdefault("tool_name", tool_name)
             result = ToolRouter(self.executor.tool_registry).dispatch(route_payload)
+            if is_dataclass(result):
+                result = asdict(result)
             if result is None:
                 result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
         except Exception as e:
