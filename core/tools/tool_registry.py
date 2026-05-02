@@ -177,7 +177,7 @@ class ToolRegistry:
             "input": payload,
             "output": result.output,
             "error": None if result.error is None else {
-                "type": "tool_error",
+                "type": "tool_not_found" if str(result.error).startswith("tool not found:") else "tool_error",
                 "message": result.error,
                 "retryable": False,
             },
