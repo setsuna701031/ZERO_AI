@@ -281,7 +281,11 @@ class PersonaRuntimeBridge:
             return _with_persona_presentation(
                 {
                 "ok": True,
+                "display_state_source": "runtime_bridge",
                 "runtime_status": "planning",
+                "controller_status": "idle",
+                "risk_level": "",
+                "confirmation_required": False,
                 "status_source": "runtime_bridge",
                 "task_goal": "",
                 "tool_calls": [],
@@ -309,11 +313,21 @@ class PersonaRuntimeBridge:
         search_results_summary = _extract_search_results_summary(execution)
         compact_demo_summary = _build_compact_demo_summary(record.plan, tool_calls, last_result)
         audit_records = build_l5_audit_records(execution, run_id=record.run_id)
+        controller_surface = _derive_controller_surface(
+            runtime_status=status,
+            audit_records=audit_records,
+            trace=trace,
+            last_result=last_result,
+        )
 
         return _with_persona_presentation(
             {
             "ok": status not in {"failed", "blocked"},
+            "display_state_source": "runtime_bridge",
             "runtime_status": status,
+            "controller_status": controller_surface["controller_status"],
+            "risk_level": controller_surface["risk_level"],
+            "confirmation_required": controller_surface["confirmation_required"],
             "status_source": _status_source(execution, trace, execution_log),
             "task_goal": record.goal,
             "tool_calls": tool_calls,
@@ -536,7 +550,11 @@ def format_persona_runtime_display(display: Dict[str, Any]) -> str:
         f"{compact_block}"
         "[PERSONA RUNTIME]\n"
         f"Status        : {display.get('runtime_status') or '-'}\n"
+        f"Controller    : {display.get('controller_status') or '-'}\n"
+        f"Risk          : {display.get('risk_level') or '-'}\n"
+        f"Confirmation  : {display.get('confirmation_required')}\n"
         f"Status Source : {display.get('status_source') or '-'}\n"
+        f"Display Source: {display.get('display_state_source') or '-'}\n"
         f"Task Goal     : {display.get('task_goal') or '-'}\n"
         f"{replay_block}"
         "\n"
@@ -969,12 +987,103 @@ def _build_search_results_summary(search_output: Dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _derive_controller_surface(
+    *,
+    runtime_status: str,
+    audit_records: List[Dict[str, Any]],
+    trace: List[Dict[str, Any]],
+    last_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    final_decisions = [
+        str(record.get("final_decision") or "").strip()
+        for record in audit_records
+        if isinstance(record, dict) and str(record.get("final_decision") or "").strip()
+    ]
+    statuses = [
+        str(record.get("result_status") or "").strip().lower()
+        for record in audit_records
+        if isinstance(record, dict) and str(record.get("result_status") or "").strip()
+    ]
+    risk_levels = [
+        str(record.get("risk_level") or "").strip()
+        for record in audit_records
+        if isinstance(record, dict) and str(record.get("risk_level") or "").strip()
+    ]
+    confirmation_required = any(
+        bool(record.get("confirmation_required"))
+        for record in audit_records
+        if isinstance(record, dict)
+    )
+
+    if not confirmation_required:
+        confirmation_required = any(
+            bool(event.get("confirmation_required"))
+            for event in trace
+            if isinstance(event, dict)
+        )
+
+    controller_status = _derive_controller_status(
+        runtime_status=runtime_status,
+        final_decisions=final_decisions,
+        result_statuses=statuses,
+        confirmation_required=confirmation_required,
+        last_result=last_result,
+    )
+
+    return {
+        "controller_status": controller_status,
+        "risk_level": _highest_risk_level(risk_levels),
+        "confirmation_required": confirmation_required,
+    }
+
+
+def _derive_controller_status(
+    *,
+    runtime_status: str,
+    final_decisions: List[str],
+    result_statuses: List[str],
+    confirmation_required: bool,
+    last_result: Dict[str, Any],
+) -> str:
+    normalized_decisions = {value.lower() for value in final_decisions}
+    normalized_results = {value.lower() for value in result_statuses}
+    last_status = str(last_result.get("status") or "").strip().lower()
+
+    if confirmation_required:
+        return "needs_confirmation"
+    if "blocked" in normalized_decisions or "blocked" in normalized_results or last_status == "blocked":
+        return "blocked"
+    if "answer_directly" in normalized_decisions or "stop" in normalized_decisions:
+        return "answer_directly"
+    if "allow_tool" in normalized_decisions or normalized_results:
+        return "allowed"
+    if runtime_status in {"done", "executing"}:
+        return "allowed"
+    if runtime_status == "failed":
+        return "failed"
+    return "idle"
+
+
+def _highest_risk_level(risk_levels: List[str]) -> str:
+    order = {"": 0, "none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+    best = ""
+    best_score = -1
+    for value in risk_levels:
+        normalized = value.strip().lower()
+        score = order.get(normalized, 1 if normalized else 0)
+        if score > best_score:
+            best = value
+            best_score = score
+    return best
+
+
 def _with_persona_presentation(
     display: Dict[str, Any],
     *,
     audit_records: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     enriched = copy.deepcopy(display)
+    enriched["display_state_source"] = "runtime_bridge"
     safe_audit = [copy.deepcopy(record) for record in audit_records if isinstance(record, dict)]
     presentation = _build_persona_presentation(enriched, safe_audit)
     enriched["audit_records"] = safe_audit
@@ -990,10 +1099,13 @@ def _with_persona_presentation(
     )
     enriched["persona_runtime_contract"] = {
         "role": "human_presentation_layer",
+        "display_state_source": "runtime_bridge",
+        "presentation_flow": ["runtime", "audit", "persona", "display", "tts"],
         "input_sources": ["controller final decision", "runtime result", "audit records"],
         "can": ["read_audit", "summarize", "render_text", "prepare_tts_input"],
         "cannot": ["call_tool", "choose_tool_policy", "execute", "change_controller_decision", "invent_missing_runtime_state"],
         "no_reverse_path": True,
+        "forbidden_reverse_paths": ["persona->controller", "persona->tool", "persona->runtime", "tts->runtime", "tts->controller"],
     }
     return enriched
 

@@ -52,11 +52,19 @@ def main() -> int:
     pass_step("runtime task generated summary artifact")
 
     status = bridge.get_display_state()
+    if status.get("display_state_source") != "runtime_bridge":
+        return fail(f"display state is not sourced from runtime_bridge: {status}")
     if status.get("task_goal") == "":
         return fail(f"task goal missing from display state: {status}")
+    if status.get("controller_status") not in {"allowed", "blocked", "needs_confirmation", "answer_directly", "failed"}:
+        return fail(f"controller status missing from display state: {status}")
+    if "risk_level" not in status:
+        return fail(f"risk level missing from display state: {status}")
+    if not isinstance(status.get("confirmation_required"), bool):
+        return fail(f"confirmation flag missing from display state: {status}")
     if status.get("status_source") not in {"execution_trace", "execution_log", "runtime_execution"}:
         return fail(f"status is not sourced from runtime trace/log: {status}")
-    pass_step("status is derived from runtime trace/log data")
+    pass_step("display state is derived from runtime bridge trace/log data")
 
     trace = status.get("trace")
     if not isinstance(trace, list) or not trace:
@@ -107,7 +115,7 @@ def main() -> int:
     pass_step("bridge can replay the last task trace")
 
     text = bridge.format_display_text()
-    for needle in ("[PERSONA RUNTIME]", "Status", "Task Goal", "[TASK FLOW]", "[TOOL CALLS]", "[RESULT]"):
+    for needle in ("[PERSONA RUNTIME]", "Status", "Controller", "Risk", "Confirmation", "Display Source", "Task Goal", "[TASK FLOW]", "[TOOL CALLS]", "[RESULT]"):
         if needle not in text:
             return fail(f"formatted display missing {needle}: {text}")
     pass_step("bridge formats a UI-readable text panel")
