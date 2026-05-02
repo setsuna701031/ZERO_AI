@@ -212,15 +212,22 @@ def _decision(
     budget: Dict[str, Any] | None = None,
     failure: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    input_payload = copy.deepcopy(decision_input)
+    if isinstance(budget, dict) and isinstance(budget.get("budget_remaining"), dict):
+        input_payload["budget_remaining"] = copy.deepcopy(budget.get("budget_remaining"))
+    why = _why_fields(final_decision, reason, policy, budget=budget, failure=failure)
     return {
         "ok": final_decision == ALLOW_TOOL,
         "final_decision": final_decision,
         "reason": reason,
+        "why_call_tool": why["why_call_tool"],
+        "why_not_call_tool": why["why_not_call_tool"],
+        "why_stop_or_replan": why["why_stop_or_replan"],
         "requested_tool": policy.get("tool"),
         "policy_recommendation": copy.deepcopy(policy),
         "budget_recommendation": copy.deepcopy(budget or {}),
         "failure_recommendation": copy.deepcopy(failure or {}),
-        "decision_input": copy.deepcopy(decision_input),
+        "decision_input": input_payload,
     }
 
 
@@ -262,6 +269,42 @@ def _proposal_summary(proposal: Any) -> Dict[str, Any]:
         "type": proposal.get("type") or "",
         "tool": proposal.get("tool") or "",
         "has_args": isinstance(proposal.get("args"), dict),
+    }
+
+
+def _why_fields(
+    final_decision: str,
+    reason: str,
+    policy: Dict[str, Any],
+    *,
+    budget: Dict[str, Any] | None = None,
+    failure: Dict[str, Any] | None = None,
+) -> Dict[str, str]:
+    policy_reason = str(policy.get("reason") or "")
+    budget_reason = str((budget or {}).get("reason") or "")
+    failure_reason = str((failure or {}).get("reason") or "")
+    if final_decision == ALLOW_TOOL:
+        return {
+            "why_call_tool": policy_reason or reason or "controller_allowed",
+            "why_not_call_tool": "",
+            "why_stop_or_replan": "",
+        }
+    if final_decision == ANSWER_DIRECTLY:
+        return {
+            "why_call_tool": "",
+            "why_not_call_tool": reason or policy_reason or "answer_directly",
+            "why_stop_or_replan": "",
+        }
+    if final_decision in {STOP, REPLAN}:
+        return {
+            "why_call_tool": "",
+            "why_not_call_tool": reason or budget_reason or failure_reason,
+            "why_stop_or_replan": reason or budget_reason or failure_reason,
+        }
+    return {
+        "why_call_tool": "",
+        "why_not_call_tool": reason or policy_reason,
+        "why_stop_or_replan": "",
     }
 
 

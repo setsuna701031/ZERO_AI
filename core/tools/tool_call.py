@@ -166,6 +166,7 @@ def normalize_tool_call(tool_call: Any) -> Dict[str, Any]:
 def tool_call_trace_event(tool_result: Dict[str, Any]) -> Dict[str, Any]:
     output = tool_result.get("output") if isinstance(tool_result.get("output"), dict) else {}
     trace = output.get("trace") if isinstance(output.get("trace"), dict) else {}
+    controller = output.get("controller") if isinstance(output.get("controller"), dict) else {}
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": "tool_call",
@@ -178,6 +179,10 @@ def tool_call_trace_event(tool_result: Dict[str, Any]) -> Dict[str, Any]:
         "error": tool_result.get("error"),
         "request_id": tool_result.get("request_id"),
         "final_decision": tool_result.get("final_decision"),
+        "decision_input": copy.deepcopy(controller.get("decision_input") if isinstance(controller.get("decision_input"), dict) else {}),
+        "why_call_tool": str(controller.get("why_call_tool") or ""),
+        "why_not_call_tool": str(controller.get("why_not_call_tool") or ""),
+        "why_stop_or_replan": str(controller.get("why_stop_or_replan") or ""),
     }
 
 

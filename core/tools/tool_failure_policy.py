@@ -17,6 +17,8 @@ RAW_STATUS_TO_DECISION_CLASS = {
     "denied": MUST_STOP,
     "guard_blocked": MUST_STOP,
     "blocked": MUST_STOP,
+    "empty_output": CAN_RETRY,
+    "tool_empty_output": CAN_RETRY,
     "failed": NEED_REPLAN,
     "retryable": CAN_RETRY,
     "non_retryable": CANNOT_RETRY,
