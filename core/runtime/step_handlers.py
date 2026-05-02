@@ -337,7 +337,11 @@ class ToolStepHandler(BaseStepHandler):
                     message="tool returned empty output after retry",
                     step=step,
                     result=retry_normalized,
-                    retryable=False,
+                    retryable=bool(
+                        retry_normalized.get("empty_output_retry_candidate")
+                        and retry_normalized.get("retry_attempted")
+                        and retry_normalized.get("first_attempt_empty_output")
+                    ),
                     details={
                         "tool_name": tool_name,
                         "empty_output_retry_candidate": True,

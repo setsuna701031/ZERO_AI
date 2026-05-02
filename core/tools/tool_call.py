@@ -5,8 +5,14 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from core.tools.tool_controller import (
+    ALLOW_TOOL,
+    ToolController,
+    annotate_tool_result,
+    controller_observation,
+)
 from core.tools.tool_decision import tool_decision_to_tool_call
-from core.tools.tool_decision_policy import ToolDecisionPolicy, policy_observation
+from core.tools.tool_decision_policy import ToolDecisionPolicy
 from core.tools.tool_executor import ToolExecutor
 from core.tools.tool_schema import ToolRequest, ToolResult
 
@@ -15,23 +21,39 @@ TERMINAL_STATUSES = {"success", "failed", "blocked", "invalid_tool"}
 
 
 class ToolCallExecutor:
-    def __init__(self, tool_registry: Any, decision_policy: ToolDecisionPolicy | None = None) -> None:
+    def __init__(
+        self,
+        tool_registry: Any,
+        decision_policy: ToolDecisionPolicy | None = None,
+        tool_controller: ToolController | None = None,
+    ) -> None:
         self.tool_registry = tool_registry
         self.decision_policy = decision_policy or ToolDecisionPolicy()
+        self.tool_controller = tool_controller or ToolController()
 
-    def execute_decision(self, decision: Any, *, source: str = "agent_loop") -> Dict[str, Any]:
+    def execute_decision(
+        self,
+        decision: Any,
+        *,
+        source: str = "agent_loop",
+        decision_input: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
         policy = self.decision_policy.evaluate(decision, tool_registry=self.tool_registry)
-        if policy.get("status") == "no_tool":
-            return policy_observation(policy)
-        if policy.get("ok") is not True:
-            return policy_observation(policy)
-        return self.execute(
+        controller_decision = self.tool_controller.decide(
+            proposal=decision,
+            policy_recommendation=policy,
+            decision_input=decision_input,
+        )
+        if controller_decision.get("final_decision") != ALLOW_TOOL:
+            return controller_observation(controller_decision)
+        tool_result = self.execute(
             {
                 "tool": policy.get("tool"),
                 "args": copy.deepcopy(policy.get("args", {})),
             },
             source=source,
         )
+        return annotate_tool_result(tool_result, controller_decision)
 
     def execute(self, tool_call: Any, *, source: str = "agent_loop") -> Dict[str, Any]:
         normalized = normalize_tool_call(tool_call)
@@ -155,6 +177,7 @@ def tool_call_trace_event(tool_result: Dict[str, Any]) -> Dict[str, Any]:
         "duration_ms": trace.get("duration_ms"),
         "error": tool_result.get("error"),
         "request_id": tool_result.get("request_id"),
+        "final_decision": tool_result.get("final_decision"),
     }
 
 

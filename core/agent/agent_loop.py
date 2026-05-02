@@ -937,25 +937,26 @@ class AgentLoop:
         execution_log: List[Dict[str, Any]] = []
         previous_observation: Dict[str, Any] | None = None
         previous_call: Dict[str, Any] | None = None
+        previous_failures: List[Dict[str, Any]] = []
         current_plan: Any = copy.deepcopy(initial_plan)
         last_result: Dict[str, Any] = {}
 
         for cycle_index in range(1, max(1, self.max_tool_cycles) + 1):
             current_call = self._normalized_l5_decision_call(current_plan)
-            if previous_call is not None and current_call == previous_call:
-                return {
-                    "ok": True,
-                    "steps_executed": len(results),
-                    "results": results,
-                    "execution_log": execution_log,
-                    "execution_trace": copy.deepcopy(execution_log),
-                    "last_result": copy.deepcopy(last_result),
-                    "final_answer": self._extract_tool_observation_summary(last_result),
-                    "error": None,
-                    "stopped_reason": "repeated_tool_call",
-                }
-
-            tool_result = self.tool_call_executor.execute_decision(current_plan, source="agent_loop")
+            decision_input = self._build_tool_decision_input(
+                goal=user_input,
+                current_call=current_call,
+                previous_call=previous_call,
+                previous_observation=previous_observation,
+                previous_failures=previous_failures,
+                results=results,
+                cycle_index=cycle_index,
+            )
+            tool_result = self.tool_call_executor.execute_decision(
+                current_plan,
+                source="agent_loop",
+                decision_input=decision_input,
+            )
             status = str(tool_result.get("status") or "")
 
             if status == "no_tool":
@@ -991,6 +992,13 @@ class AgentLoop:
             previous_call = current_call
 
             if tool_result.get("ok") is not True:
+                previous_failures.append(
+                    {
+                        "tool": tool_result.get("tool"),
+                        "status": status,
+                        "error": tool_result.get("error"),
+                    }
+                )
                 return {
                     "ok": False,
                     "steps_executed": cycle_index,
@@ -1091,6 +1099,47 @@ class AgentLoop:
             "error": "max_tool_cycles_reached",
             "request_id": None,
             "side_effect_level": "none",
+            "final_decision": "STOP",
+        }
+
+    def _build_tool_decision_input(
+        self,
+        *,
+        goal: str,
+        current_call: Dict[str, Any] | None,
+        previous_call: Dict[str, Any] | None,
+        previous_observation: Dict[str, Any] | None,
+        previous_failures: List[Dict[str, Any]],
+        results: List[Dict[str, Any]],
+        cycle_index: int,
+    ) -> Dict[str, Any]:
+        requested_tool = str((current_call or {}).get("tool") or "")
+        last_tool = str((previous_call or {}).get("tool") or "")
+        observation = previous_observation.get("observation") if isinstance(previous_observation, dict) else {}
+        observation_summary = ""
+        if isinstance(observation, dict):
+            observation_summary = str(observation.get("summary") or "")
+        same_tool_repeats = 0
+        if current_call is not None and previous_call is not None and current_call == previous_call:
+            same_tool_repeats = 1
+        retries_for_tool = sum(1 for item in previous_failures if item.get("tool") == requested_tool)
+        return {
+            "goal": str(goal or ""),
+            "requested_tool": requested_tool,
+            "last_tool": last_tool,
+            "observation_summary": observation_summary,
+            "previous_failures": copy.deepcopy(previous_failures),
+            "budget_remaining": {},
+            "tool_budget": {
+                "max_loop_steps": max(1, self.max_tool_cycles),
+                "max_tool_calls": max(1, self.max_tool_cycles),
+                "max_same_tool_repeats": 1,
+                "max_retries_per_tool": 1,
+            },
+            "loop_steps": max(0, cycle_index - 1),
+            "tool_calls": len(results),
+            "same_tool_repeats": same_tool_repeats,
+            "retries_for_tool": retries_for_tool,
         }
 
     def _execute_tool_call_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
