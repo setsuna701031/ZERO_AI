@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from core.agent.agent_loop import AgentLoop
+from core.persona.display_state_contract import ensure_display_state_contract
+from core.persona.policy_layer import evaluate_persona_runtime_policy, policy_decision_trace
+from core.persona.runtime_state import PersonaRuntimeState, create_persona_runtime_state
 from core.tools.tool_audit import build_l5_audit_records
 from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
 from core.tools.tool_registry import ToolRegistry
@@ -21,6 +24,7 @@ RUNTIME_STATUSES = {"planning", "executing", "blocked", "done", "failed"}
 class PersonaRuntimeRecord:
     goal: str
     run_id: str = field(default_factory=lambda: f"persona_run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}")
+    policy_decision: Dict[str, Any] = field(default_factory=dict)
     plan: Dict[str, Any] = field(default_factory=dict)
     execution: Dict[str, Any] = field(default_factory=dict)
     response: Dict[str, Any] = field(default_factory=dict)
@@ -47,9 +51,13 @@ class PersonaRuntimeBridge:
         self.tool_registry = tool_registry or ToolRegistry(workspace_dir=str(self.workspace_dir))
         self.tool_call_executor = ToolCallExecutor(self.tool_registry)
         self._last_record: PersonaRuntimeRecord | None = None
+        self.runtime_state: PersonaRuntimeState = create_persona_runtime_state()
 
     def submit_ui_task(self, user_input: str) -> Dict[str, Any]:
         goal = _ui_input_to_goal(user_input)
+        self.runtime_state.set_task_goal(goal)
+        policy_decision = evaluate_persona_runtime_policy(goal)
+        self.runtime_state.update_policy_decision(policy_decision)
         planner = _PersonaRuntimeDemoPlanner()
         planning_event = _timeline_event(
             step=1,
@@ -58,6 +66,43 @@ class PersonaRuntimeBridge:
             status="success",
             detail=goal,
         )
+        if not policy_decision.get("allowed", True):
+            blocked_reason = str(policy_decision.get("blocked_reason") or "policy blocked task")
+            response = {
+                "ok": False,
+                "plan": {
+                    "ok": False,
+                    "intent": "policy_blocked",
+                    "tool_calls": [],
+                    "error": blocked_reason,
+                },
+                "execution": {
+                    "ok": False,
+                    "execution_log": [],
+                    "execution_trace": [],
+                    "last_result": {
+                        "ok": False,
+                        "status": "blocked",
+                        "error": blocked_reason,
+                    },
+                    "final_answer": blocked_reason,
+                    "error": blocked_reason,
+                },
+                "final_answer": blocked_reason,
+                "error": blocked_reason,
+            }
+            record = PersonaRuntimeRecord(
+                goal=goal,
+                policy_decision=copy.deepcopy(policy_decision),
+                plan=copy.deepcopy(response["plan"]),
+                execution=copy.deepcopy(response["execution"]),
+                response=copy.deepcopy(response),
+                timeline=[],
+            )
+            record.timeline = _build_timeline(record, planning_event=planning_event)
+            self._last_record = record
+            return self.get_display_state()
+
         loop = AgentLoop(
             planner=planner,
             tool_registry=self.tool_registry,
@@ -88,6 +133,7 @@ class PersonaRuntimeBridge:
 
         record = PersonaRuntimeRecord(
             goal=goal,
+            policy_decision=copy.deepcopy(policy_decision),
             plan=copy.deepcopy(response.get("plan")) if isinstance(response.get("plan"), dict) else planner.plan(),
             execution=copy.deepcopy(response.get("execution")) if isinstance(response.get("execution"), dict) else {},
             response=copy.deepcopy(response) if isinstance(response, dict) else {"ok": False, "error": str(response)},
@@ -278,7 +324,7 @@ class PersonaRuntimeBridge:
 
     def get_display_state(self) -> Dict[str, Any]:
         if self._last_record is None:
-            return _with_persona_presentation(
+            display_state = _with_persona_presentation(
                 {
                 "ok": True,
                 "display_state_source": "runtime_bridge",
@@ -295,11 +341,14 @@ class PersonaRuntimeBridge:
                 "execution_log": [],
                 "last_result": {},
                 "timeline": [],
+                "persona_decision_trace": [],
                 "search_results_summary": "",
                 "compact_demo_summary": "",
                 },
                 audit_records=[],
             )
+            self.runtime_state.update_display_state(display_state)
+            return display_state
 
         record = self._last_record
         execution = record.execution if isinstance(record.execution, dict) else {}
@@ -313,14 +362,17 @@ class PersonaRuntimeBridge:
         search_results_summary = _extract_search_results_summary(execution)
         compact_demo_summary = _build_compact_demo_summary(record.plan, tool_calls, last_result)
         audit_records = build_l5_audit_records(execution, run_id=record.run_id)
+        persona_trace = policy_decision_trace(record.policy_decision)
         controller_surface = _derive_controller_surface(
             runtime_status=status,
             audit_records=audit_records,
             trace=trace,
             last_result=last_result,
+            policy_decision=record.policy_decision,
         )
+        blocked_reason = blocked_reason or str(record.policy_decision.get("blocked_reason") or "")
 
-        return _with_persona_presentation(
+        display_state = _with_persona_presentation(
             {
             "ok": status not in {"failed", "blocked"},
             "display_state_source": "runtime_bridge",
@@ -338,11 +390,14 @@ class PersonaRuntimeBridge:
             "last_result": copy.deepcopy(last_result),
             "plan": copy.deepcopy(record.plan),
             "timeline": copy.deepcopy(record.timeline),
+            "persona_decision_trace": persona_trace,
             "search_results_summary": search_results_summary,
             "compact_demo_summary": compact_demo_summary,
             },
             audit_records=audit_records,
         )
+        self.runtime_state.update_display_state(display_state)
+        return display_state
 
     def format_display_text(self) -> str:
         return format_persona_runtime_display(self.get_display_state())
@@ -993,7 +1048,9 @@ def _derive_controller_surface(
     audit_records: List[Dict[str, Any]],
     trace: List[Dict[str, Any]],
     last_result: Dict[str, Any],
+    policy_decision: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
+    policy = policy_decision if isinstance(policy_decision, dict) else {}
     final_decisions = [
         str(record.get("final_decision") or "").strip()
         for record in audit_records
@@ -1021,6 +1078,8 @@ def _derive_controller_surface(
             for event in trace
             if isinstance(event, dict)
         )
+    if policy.get("confirmation_required") is True:
+        confirmation_required = True
 
     controller_status = _derive_controller_status(
         runtime_status=runtime_status,
@@ -1028,11 +1087,12 @@ def _derive_controller_surface(
         result_statuses=statuses,
         confirmation_required=confirmation_required,
         last_result=last_result,
+        policy_decision=policy,
     )
 
     return {
         "controller_status": controller_status,
-        "risk_level": _highest_risk_level(risk_levels),
+        "risk_level": str(policy.get("risk_level") or "") or _highest_risk_level(risk_levels),
         "confirmation_required": confirmation_required,
     }
 
@@ -1044,7 +1104,11 @@ def _derive_controller_status(
     result_statuses: List[str],
     confirmation_required: bool,
     last_result: Dict[str, Any],
+    policy_decision: Dict[str, Any] | None = None,
 ) -> str:
+    policy = policy_decision if isinstance(policy_decision, dict) else {}
+    if policy and policy.get("allowed") is False:
+        return "blocked"
     normalized_decisions = {value.lower() for value in final_decisions}
     normalized_results = {value.lower() for value in result_statuses}
     last_status = str(last_result.get("status") or "").strip().lower()
@@ -1103,11 +1167,11 @@ def _with_persona_presentation(
         "presentation_flow": ["runtime", "audit", "persona", "display", "tts"],
         "input_sources": ["controller final decision", "runtime result", "audit records"],
         "can": ["read_audit", "summarize", "render_text", "prepare_tts_input"],
-        "cannot": ["call_tool", "choose_tool_policy", "execute", "change_controller_decision", "invent_missing_runtime_state"],
+        "cannot": ["call_tool", "choose_tool_policy", "execute", "retry", "confirm", "change_controller_decision", "invent_missing_runtime_state"],
         "no_reverse_path": True,
         "forbidden_reverse_paths": ["persona->controller", "persona->tool", "persona->runtime", "tts->runtime", "tts->controller"],
     }
-    return enriched
+    return ensure_display_state_contract(enriched)
 
 
 def _build_persona_presentation(

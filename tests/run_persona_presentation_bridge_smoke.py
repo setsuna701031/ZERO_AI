@@ -10,6 +10,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 
+from core.persona.display_state_contract import (
+    DISPLAY_STATE_REQUIRED_KEYS,
+    DISPLAY_STATE_SCHEMA_VERSION,
+    PERSONA_RUNTIME_CONTRACT_REQUIRED_KEYS,
+    PRESENTATION_LOG_REQUIRED_KEYS,
+    TTS_PIPELINE_REQUIRED_KEYS,
+    ensure_display_state_contract,
+)
 from core.persona.runtime_bridge import PersonaRuntimeBridge
 
 
@@ -35,9 +43,23 @@ def main() -> int:
     display = bridge.submit_ui_task("persona presentation bridge smoke")
     execution_before = copy.deepcopy(bridge._last_record.execution)
 
+    try:
+        ensure_display_state_contract(display)
+    except Exception as exc:
+        return fail(f"display_state contract validation failed: {exc}\n{display}")
+    if display.get("display_state_schema_version") != DISPLAY_STATE_SCHEMA_VERSION:
+        return fail(f"display_state schema version mismatch: {display}")
+    missing = [key for key in DISPLAY_STATE_REQUIRED_KEYS if key not in display]
+    if missing:
+        return fail(f"display_state required keys missing: {missing}")
+    pass_step("display_state matches stable contract keys")
+
     contract = display.get("persona_runtime_contract")
     if not isinstance(contract, dict) or contract.get("role") != "human_presentation_layer":
         return fail(f"persona contract missing or wrong: {contract}")
+    missing_contract = [key for key in PERSONA_RUNTIME_CONTRACT_REQUIRED_KEYS if key not in contract]
+    if missing_contract:
+        return fail(f"persona runtime contract keys missing: {missing_contract}")
     if display.get("display_state_source") != "runtime_bridge":
         return fail(f"display state must come from runtime_bridge only: {display}")
     if contract.get("display_state_source") != "runtime_bridge":
@@ -89,6 +111,9 @@ def main() -> int:
     tts_pipeline = display.get("tts_pipeline")
     if not isinstance(tts_pipeline, dict):
         return fail(f"tts pipeline missing: {display}")
+    missing_tts = [key for key in TTS_PIPELINE_REQUIRED_KEYS if key not in tts_pipeline]
+    if missing_tts:
+        return fail(f"tts pipeline keys missing: {missing_tts}")
     if tts_pipeline.get("input_source") != "persona_final_reply":
         return fail(f"tts input source is wrong: {tts_pipeline}")
     if tts_pipeline.get("controller_writeback") is not False or tts_pipeline.get("audit_writeback") is not False:
@@ -97,6 +122,12 @@ def main() -> int:
         return fail(f"tts pipeline must remain runtime-safe: {tts_pipeline}")
     if "MOSS-TTS-Nano" not in str(tts_pipeline.get("tts_model_path") or ""):
         return fail(f"MOSS TTS path missing: {tts_pipeline}")
+    presentation_log = display.get("presentation_log")
+    if not isinstance(presentation_log, dict):
+        return fail(f"presentation log missing: {display}")
+    missing_log = [key for key in PRESENTATION_LOG_REQUIRED_KEYS if key not in presentation_log]
+    if missing_log:
+        return fail(f"presentation log keys missing: {missing_log}")
     pass_step("TTS is attached after persona_final_reply only")
 
     if bridge._last_record.execution != execution_before:

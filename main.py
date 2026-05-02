@@ -70,6 +70,7 @@ def print_help() -> None:
     safe_print("  python main.py full-build-demo")
     safe_print("  python main.py search-demo")
     safe_print("  python main.py hybrid-demo")
+    safe_print("  python main.py l5-run [--json] [--tts] <task>")
     safe_print("  python main.py persona-chat")
     safe_print("  python main.py persona-runtime")
     safe_print("  python main.py health")
@@ -87,6 +88,7 @@ def print_help() -> None:
     safe_print("  full-build-demo   Run requirement -> build -> execute -> verify flow")
     safe_print("  search-demo       Run Persona web_search demo flow")
     safe_print("  hybrid-demo       Run Persona web_search -> file_write -> github_commit demo flow")
+    safe_print("  l5-run            Submit a task to L5 runtime bridge and print display_state output")
     safe_print("  persona-chat      Run the ZERO persona text shell")
     safe_print("  persona-runtime   Launch the ZERO persona runtime window")
     safe_print("  health            Show health information")
@@ -189,6 +191,11 @@ def main(argv: List[str]) -> int:
 
     if command == "hybrid-demo":
         return run_persona_command("run hybrid-demo")
+
+    if command in {"l5-run", "l5_run"}:
+        ensure_required_paths()
+        result = run_app_command("l5-run", *argv[2:], capture=False)
+        return result.returncode
 
     if command == "persona-chat":
         return run_persona_chat_shell()

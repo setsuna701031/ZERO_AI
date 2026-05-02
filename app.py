@@ -13,9 +13,12 @@ import threading
 import time
 import traceback
 from contextlib import redirect_stdout
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
+from core.persona.presentation_bridge import render_cli_view, render_json_view
+from core.persona.runtime_bridge import PersonaRuntimeBridge
 from services.system_boot import boot_system
 
 
@@ -32,6 +35,57 @@ TERMINAL_STATUSES = {
 
 def print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _repo_root_path() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def _parse_l5_run_args(argv: List[str]) -> Dict[str, Any]:
+    output_json = False
+    include_tts = False
+    task_parts: List[str] = []
+    for token in argv:
+        value = str(token or "").strip()
+        if not value:
+            continue
+        if value == "--json":
+            output_json = True
+            continue
+        if value == "--tts":
+            include_tts = True
+            continue
+        if value.startswith("--"):
+            raise ValueError(f"unsupported l5-run output flag: {value}")
+        task_parts.append(str(token))
+
+    task = " ".join(task_parts).strip()
+    if not task:
+        raise ValueError("l5-run task is required")
+
+    return {
+        "task": task,
+        "json": output_json,
+        "tts": include_tts,
+    }
+
+
+def run_l5_run_command(argv: List[str]) -> int:
+    try:
+        options = _parse_l5_run_args(argv)
+    except ValueError as exc:
+        print_json({"ok": False, "error": str(exc), "mode": "l5_run"})
+        return 1
+
+    bridge = PersonaRuntimeBridge(workspace_dir=_repo_root_path())
+    display_state = bridge.submit_ui_task(str(options["task"]))
+
+    if options["json"]:
+        print_json(render_json_view(display_state))
+    else:
+        print(render_cli_view(display_state, include_tts=bool(options["tts"])))
+
+    return 0 if display_state.get("ok") is not False else 1
 
 
 def print_help() -> None:
@@ -81,6 +135,7 @@ def print_help() -> None:
     print("  task requirement-pack <input>")
     print("  task execution-proof")
     print("  task implementation-proof")
+    print("  l5-run [--json] [--tts] <task>")
     print("  chat <message>")
     print("  ask <message>")
     print("  doc summary")
@@ -115,6 +170,9 @@ def print_help() -> None:
     print("  python app.py task requirement-pack requirement.txt")
     print("  python app.py task execution-proof")
     print("  python app.py task implementation-proof")
+    print('  python app.py l5-run "read workspace/shared/input.txt and write summary"')
+    print('  python app.py l5-run --json "read workspace/shared/input.txt and write summary"')
+    print('  python app.py l5-run --tts "read workspace/shared/input.txt and write summary"')
     print('  python app.py chat "你好"')
     print('  python app.py ask "幫我建立一個檔案"')
     print("  python app.py doc summary")
@@ -3835,6 +3893,9 @@ def _boot_system_for_interactive() -> Any:
 
 
 def run_cli_command_mode(argv: List[str]) -> int:
+    if argv and str(argv[0]).strip().lower() in {"l5-run", "l5_run"}:
+        return run_l5_run_command(argv[1:])
+
     cli_state: Dict[str, Any] = {"last_created_task_id": ""}
     try:
         remaining_argv, options = _parse_cli_options(argv)
