@@ -1,146 +1,193 @@
 # ZERO
 
-ZERO is a local AI runtime that turns a task into an executable, traceable workflow.
+ZERO is a local-first AI runtime system for executing real-world tasks.
 
-It is not just a chatbot, and it is not a loose script runner.
+It is **NOT a chatbot**.\
+It is **NOT an API wrapper**.
+
+ZERO turns a request into a structured execution pipeline:
+
+    prompt → plan → decision → tool execution → result → trace
+
+------------------------------------------------------------------------
+
+## 🎬 Demo (Start Here)
+
+Main demo:
+
+    demos/00_zero_task_to_github_draft_no_api_no_push.mp4
+
+Core flow:
+
+    web_search → file_write → github_draft_bundle
+
+ZERO actually:
+
+1.  Searches external information (mock / safe)
+2.  Generates structured output
+3.  Writes files to workspace
+4.  Produces GitHub-ready draft bundle
+5.  Records full execution trace
+6.  Displays timeline in UI
+
+------------------------------------------------------------------------
+
+## What ZERO Does
 
 ZERO does not just generate answers.
 
-It executes real steps, produces real outputs, and shows exactly how the result was created.
+It executes real steps, produces real outputs, and records exactly how
+the result was created.
 
-ZERO breaks a request into steps, runs tools such as `file_read`, `file_write`, `web_search`, and `github_commit`, then records the full execution trace so the UI can show what actually happened.
+Core capabilities:
 
-The point is simple: make AI work observable.
+-   Task lifecycle management
+-   Agent execution loop
+-   Decision-aware execution
+-   Tool orchestration
+-   Persistent execution trace
+-   Replayable runtime history
 
-Users can see:
+------------------------------------------------------------------------
 
-- what the system planned
-- which tools ran
-- what arguments were used
-- whether each step succeeded or was blocked
-- the final result
-- the trace that can be replayed later
+## GitHub Draft Workflow (Safe)
 
-## Demo
+ZERO uses a controlled output model:
 
-Main demo video (Search → Execution → Commit):
+    workspace/github_outbox/
 
-`demos/00_zero_hybrid_search_to_commit.mp4`
+Generated files:
 
-This demo shows ZERO taking external information and turning it into real system output.
+-   commit_message.txt
+-   pr_description.md
+-   devlog_entry.md
+-   publish_plan.md
 
-1. search external data
-2. generate a summary
-3. write the result to a file
-4. commit the result locally
-5. display the full execution trace in the UI
+Important:
 
-## What The Demo Shows
+-   No API calls
+-   No push
+-   No PR creation
+-   No external side effects
 
-The standard demo shows ZERO doing real work from start to finish:
+This is **controlled automation**, not autonomous GitHub control.
 
-1. Receive a task
-2. Plan the workflow
-3. Execute tools
-4. Generate a result
-5. Commit the result locally
-6. Display the full timeline in the Persona UI
+------------------------------------------------------------------------
 
-The focus is not the final file. The focus is that the process is visible.
+## Execution Trace (Core Concept)
 
-## Standard Demo Flow
+ZERO makes AI execution observable.
 
-The Persona UI demo runs a fixed workflow:
+Each task records:
 
-1. `web_search` searches for external information
-2. `file_write` creates `workspace/shared/search_summary.txt`
-3. `github_commit` commits the summary into a local demo repo
+-   planned steps
+-   decisions
+-   tool calls
+-   arguments
+-   execution status (success / denied / error / validation)
+-   timestamps
+-   outputs
 
-This demo does not push, open a pull request, or call the GitHub API. The GitHub tool currently uses local Git only.
+UI Timeline Example:
 
-## Timeline View
+    Step 1: web_search
+    Step 2: file_write
+    Step 3: github_draft_bundle
+    Result
 
-The UI displays the task as a timeline:
+------------------------------------------------------------------------
 
-1. `Step 1: web_search`
-2. `Step 2: file_write`
-3. `Step 3: github_commit`
-4. `Result`
+## Replay
 
-Each tool call is shown in order with:
+Replay previous execution:
 
-- tool name
-- simplified args summary
-- status, such as `success` or `blocked`
-- timestamp
+    runtime-replay
 
-These states come from ZERO runtime data: `execution_trace` and `execution_log`. They are not fake UI states.
+Replay does NOT:
 
-## Trace And Replay
+-   execute tools again
+-   modify files
+-   create new outputs
 
-ZERO records what happened during execution.
+It answers:
 
-The Persona runtime bridge turns that trace into a UI-friendly timeline and result summary.
+> What did the system actually do?
 
-`runtime-replay` shows the previous task trace again without running the tools again. It does not rewrite files and does not create another commit.
+------------------------------------------------------------------------
 
-Replay is for answering one question:
+## Run Demo
 
-> What did the AI actually do?
+    run hybrid-demo
 
-## Run The Demo
+Check state:
 
-In the Persona UI, press `Demo`, or type:
+    runtime-status
 
-```text
-run hybrid-demo
-```
+Replay:
 
-Show the latest runtime state:
+    runtime-replay
 
-```text
-runtime-status
-```
+Run tests:
 
-Replay the previous task trace:
+    python tests/run_l4_tool_layer_smoke.py
+    python tests/run_l4_tool_decision_smoke.py
+    python tests/run_l5_tool_decision_core_smoke.py
+    python tests/run_l5_external_draft_tools_smoke.py
 
-```text
-runtime-replay
-```
+------------------------------------------------------------------------
 
-Run the smoke tests:
+## Architecture (Simplified)
 
-```bash
-python tests/run_hybrid_demo_smoke.py
-python tests/run_persona_runtime_bridge_smoke.py
-```
+**Core Runtime** - Scheduler - Agent Loop - Task Runtime
 
-## Current Scope
+**Decision Layer** - tool_decision_policy - decision-aware execution
 
-ZERO currently focuses on local, inspectable engineering workflows:
+**Tool Layer** - file_read - file_write - web_search (draft) -
+github_draft_bundle
 
-- tool call execution
-- web search adapter
-- trace and execution logs
-- Persona UI task visualization
-- local Git commit demo
-- replayable task history
+**Display Layer** - Persona UI - Execution timeline - Trace replay
 
-Not included:
+------------------------------------------------------------------------
 
-- voice
-- TTS
-- 3D avatar
-- Live2D
-- push
-- pull requests
-- GitHub API calls
-- browser automation
+## Project Status
+
+L4 Tool Layer: ✔ Complete\
+L5 Decision Core: ✔ Complete\
+L5 Controlled Draft Workflow: ✔ Complete
+
+Current phase:\
+→ stabilization + reproducibility + demo packaging
+
+Next stage:\
+→ controlled automation (L5 expansion)
+
+------------------------------------------------------------------------
+
+## What ZERO Is NOT
+
+-   Not a chatbot
+-   Not a prompt wrapper
+-   Not a simple script runner
+-   Not uncontrolled autonomous AI
+
+------------------------------------------------------------------------
 
 ## Why This Matters
 
-Most AI tools hide the execution path.
+Most AI systems hide execution.
 
 ZERO exposes it.
 
-That makes the system easier to debug, easier to trust, and easier to demonstrate.
+This makes AI:
+
+-   debuggable
+-   verifiable
+-   reproducible
+-   controllable
+
+------------------------------------------------------------------------
+
+## Summary
+
+ZERO is an AI runtime system that turns intent into real execution, with
+full visibility and control.

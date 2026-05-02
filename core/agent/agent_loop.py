@@ -26,6 +26,7 @@ from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 from core.agent.loop_decision import observe_and_decide
 from core.agent.local_observer import observe_runner_result as observe_local_runner_result
+from core.tools.tool_decision import tool_decision_to_tool_call
 from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
 from core.tools.tool_registry import ToolRegistry
 
@@ -84,6 +85,7 @@ class AgentLoop:
         self.replanner = replanner
         self.debug = debug
         self.extra_kwargs = kwargs
+        self.max_tool_cycles = int(kwargs.get("max_tool_cycles", 3) or 3)
 
         self.task_runner = task_runner or TaskRunner(
             task_runtime=self.task_runtime,
@@ -877,11 +879,19 @@ class AgentLoop:
     def _extract_tool_calls_from_plan(self, plan: Any) -> List[Dict[str, Any]]:
         if not isinstance(plan, dict):
             return []
+        if "type" in plan or "action" in plan:
+            parsed = tool_decision_to_tool_call(plan)
+            if parsed.get("ok"):
+                return [{"tool": parsed.get("tool"), "args": copy.deepcopy(parsed.get("args", {}))}]
         if isinstance(plan.get("tool_calls"), list):
             calls = []
             for item in plan.get("tool_calls") or []:
                 if isinstance(item, dict):
-                    calls.append(copy.deepcopy(item))
+                    parsed = tool_decision_to_tool_call(item)
+                    if parsed.get("ok"):
+                        calls.append({"tool": parsed.get("tool"), "args": copy.deepcopy(parsed.get("args", {}))})
+                    else:
+                        calls.append(copy.deepcopy(item))
             return calls
         if isinstance(plan.get("tool_call"), dict):
             return [copy.deepcopy(plan["tool_call"])]
@@ -894,6 +904,194 @@ class AgentLoop:
         if isinstance(nested, dict):
             return self._extract_tool_calls_from_plan(nested)
         return []
+
+    def _execute_l5_or_legacy_tool_plan(
+        self,
+        *,
+        plan: Dict[str, Any],
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Dict[str, Any]:
+        if self._is_l5_tool_decision_plan(plan):
+            return self._execute_tool_decision_cycles(
+                initial_plan=plan,
+                context=context,
+                user_input=user_input,
+                route=route,
+            )
+        return self._execute_tool_call_plan(plan)
+
+    def _is_l5_tool_decision_plan(self, plan: Any) -> bool:
+        return isinstance(plan, dict) and ("type" in plan or "action" in plan)
+
+    def _execute_tool_decision_cycles(
+        self,
+        *,
+        initial_plan: Dict[str, Any],
+        context: Dict[str, Any],
+        user_input: str,
+        route: Any,
+    ) -> Dict[str, Any]:
+        results: List[Dict[str, Any]] = []
+        execution_log: List[Dict[str, Any]] = []
+        previous_observation: Dict[str, Any] | None = None
+        previous_call: Dict[str, Any] | None = None
+        current_plan: Any = copy.deepcopy(initial_plan)
+        last_result: Dict[str, Any] = {}
+
+        for cycle_index in range(1, max(1, self.max_tool_cycles) + 1):
+            current_call = self._normalized_l5_decision_call(current_plan)
+            if previous_call is not None and current_call == previous_call:
+                return {
+                    "ok": True,
+                    "steps_executed": len(results),
+                    "results": results,
+                    "execution_log": execution_log,
+                    "execution_trace": copy.deepcopy(execution_log),
+                    "last_result": copy.deepcopy(last_result),
+                    "final_answer": self._extract_tool_observation_summary(last_result),
+                    "error": None,
+                    "stopped_reason": "repeated_tool_call",
+                }
+
+            tool_result = self.tool_call_executor.execute_decision(current_plan, source="agent_loop")
+            status = str(tool_result.get("status") or "")
+
+            if status == "no_tool":
+                final_answer = self._extract_final_answer(None, current_plan, user_input)
+                if results and not final_answer:
+                    final_answer = self._extract_tool_observation_summary(last_result)
+                return {
+                    "ok": True,
+                    "steps_executed": len(results),
+                    "results": results,
+                    "execution_log": execution_log,
+                    "execution_trace": copy.deepcopy(execution_log),
+                    "last_result": copy.deepcopy(last_result) if last_result else copy.deepcopy(tool_result),
+                    "final_answer": final_answer,
+                    "error": None,
+                    "stopped_reason": "no_tool",
+                }
+
+            trace_event = tool_call_trace_event(tool_result)
+            trace_event["cycle_index"] = cycle_index
+            results.append(
+                {
+                    "step_index": cycle_index,
+                    "step": {
+                        "type": "tool_decision",
+                        "tool_call": copy.deepcopy(current_call or {}),
+                    },
+                    "result": copy.deepcopy(tool_result),
+                }
+            )
+            execution_log.append(trace_event)
+            last_result = tool_result
+            previous_call = current_call
+
+            if tool_result.get("ok") is not True:
+                return {
+                    "ok": False,
+                    "steps_executed": cycle_index,
+                    "results": results,
+                    "execution_log": execution_log,
+                    "execution_trace": copy.deepcopy(execution_log),
+                    "last_result": copy.deepcopy(last_result),
+                    "final_answer": str(status or "tool_error"),
+                    "error": tool_result.get("error"),
+                    "stopped_reason": status or "tool_error",
+                }
+
+            output = tool_result.get("output") if isinstance(tool_result.get("output"), dict) else {}
+            observation = output.get("observation") if isinstance(output.get("observation"), dict) else {}
+            previous_observation = {
+                "status": status,
+                "tool": tool_result.get("tool"),
+                "ok": bool(tool_result.get("ok")),
+                "observation": copy.deepcopy(observation),
+                "trace": copy.deepcopy(output.get("trace") if isinstance(output.get("trace"), dict) else {}),
+            }
+
+            next_context = copy.deepcopy(context)
+            next_context["previous_tool_observation"] = copy.deepcopy(previous_observation)
+            next_context["tool_observation"] = copy.deepcopy(previous_observation)
+            next_context["tool_decision_cycle"] = cycle_index
+            next_plan = self._call_planner(
+                context=next_context,
+                user_input=user_input,
+                route=route,
+            )
+            if not self._is_l5_tool_decision_plan(next_plan):
+                final_answer = self._extract_final_answer(None, next_plan, "")
+                return {
+                    "ok": True,
+                    "steps_executed": cycle_index,
+                    "results": results,
+                    "execution_log": execution_log,
+                    "execution_trace": copy.deepcopy(execution_log),
+                    "last_result": copy.deepcopy(last_result),
+                    "final_answer": final_answer or self._extract_tool_observation_summary(last_result),
+                    "error": None,
+                    "stopped_reason": "terminal_response",
+                }
+            current_plan = next_plan
+
+        max_result = self._max_tool_cycles_result(last_result)
+        results.append(
+            {
+                "step_index": len(results) + 1,
+                "step": {"type": "tool_decision_guard"},
+                "result": copy.deepcopy(max_result),
+            }
+        )
+        execution_log.append(tool_call_trace_event(max_result))
+        return {
+            "ok": False,
+            "steps_executed": len(results),
+            "results": results,
+            "execution_log": execution_log,
+            "execution_trace": copy.deepcopy(execution_log),
+            "last_result": max_result,
+            "final_answer": "max_tool_cycles_reached",
+            "error": "max_tool_cycles_reached",
+            "stopped_reason": "max_tool_cycles",
+        }
+
+    def _normalized_l5_decision_call(self, plan: Any) -> Dict[str, Any] | None:
+        parsed = tool_decision_to_tool_call(plan)
+        if parsed.get("ok") is not True:
+            return None
+        return {
+            "tool": parsed.get("tool"),
+            "args": copy.deepcopy(parsed.get("args", {})),
+        }
+
+    def _max_tool_cycles_result(self, last_result: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "ok": False,
+            "tool": str(last_result.get("tool") or ""),
+            "args": copy.deepcopy(last_result.get("args", {})),
+            "status": "blocked",
+            "output": {
+                "status": "blocked",
+                "observation": {
+                    "type": "tool_error",
+                    "summary": "max_tool_cycles_reached",
+                    "data": {"reason": "max_tool_cycles_reached"},
+                },
+                "trace": {
+                    "tool_call_id": None,
+                    "tool": str(last_result.get("tool") or ""),
+                    "args": {},
+                    "duration_ms": 0,
+                    "source": "agent_loop",
+                },
+            },
+            "error": "max_tool_cycles_reached",
+            "request_id": None,
+            "side_effect_level": "none",
+        }
 
     def _execute_tool_call_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
         tool_calls = self._extract_tool_calls_from_plan(plan)
@@ -946,9 +1144,20 @@ class AgentLoop:
             "execution_log": execution_log,
             "execution_trace": copy.deepcopy(execution_log),
             "last_result": copy.deepcopy(last_result),
-            "final_answer": str(last_result.get("output", {}).get("summary") or last_result.get("status") or ""),
+            "final_answer": self._extract_tool_observation_summary(last_result),
             "error": None,
         }
+
+    def _extract_tool_observation_summary(self, tool_result: Dict[str, Any]) -> str:
+        output = tool_result.get("output") if isinstance(tool_result.get("output"), dict) else {}
+        observation = output.get("observation") if isinstance(output.get("observation"), dict) else {}
+        summary = observation.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+        value = output.get("summary")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        return str(tool_result.get("status") or "")
 
     def _normalize_execution_items(self, items: List[Any]) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []
@@ -1321,7 +1530,12 @@ class AgentLoop:
             )
 
         if self._plan_has_tool_call(plan):
-            execution_result = self._execute_tool_call_plan(plan)
+            execution_result = self._execute_l5_or_legacy_tool_plan(
+                plan=plan,
+                context=context,
+                user_input=user_input,
+                route=route,
+            )
             normalized_execution = self._normalize_execution_result(execution_result)
             return self._make_agent_response(
                 ok=bool(normalized_execution.get("ok", False)) if isinstance(normalized_execution, dict) else False,
@@ -1535,7 +1749,12 @@ class AgentLoop:
                 )
 
             if self._plan_has_tool_call(plan):
-                execution_result = self._execute_tool_call_plan(plan)
+                execution_result = self._execute_l5_or_legacy_tool_plan(
+                    plan=plan,
+                    context=context,
+                    user_input=user_input,
+                    route=route,
+                )
                 normalized_execution = self._normalize_execution_result(execution_result)
                 return self._make_agent_response(
                     ok=bool(normalized_execution.get("ok", False)) if isinstance(normalized_execution, dict) else False,

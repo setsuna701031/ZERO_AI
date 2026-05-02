@@ -5,6 +5,9 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from core.tools.tool_decision import tool_decision_to_tool_call
+from core.tools.tool_decision_policy import ToolDecisionPolicy, policy_observation
+from core.tools.tool_executor import ToolExecutor
 from core.tools.tool_schema import ToolRequest, ToolResult
 
 
@@ -12,8 +15,23 @@ TERMINAL_STATUSES = {"success", "failed", "blocked", "invalid_tool"}
 
 
 class ToolCallExecutor:
-    def __init__(self, tool_registry: Any) -> None:
+    def __init__(self, tool_registry: Any, decision_policy: ToolDecisionPolicy | None = None) -> None:
         self.tool_registry = tool_registry
+        self.decision_policy = decision_policy or ToolDecisionPolicy()
+
+    def execute_decision(self, decision: Any, *, source: str = "agent_loop") -> Dict[str, Any]:
+        policy = self.decision_policy.evaluate(decision, tool_registry=self.tool_registry)
+        if policy.get("status") == "no_tool":
+            return policy_observation(policy)
+        if policy.get("ok") is not True:
+            return policy_observation(policy)
+        return self.execute(
+            {
+                "tool": policy.get("tool"),
+                "args": copy.deepcopy(policy.get("args", {})),
+            },
+            source=source,
+        )
 
     def execute(self, tool_call: Any, *, source: str = "agent_loop") -> Dict[str, Any]:
         normalized = normalize_tool_call(tool_call)
@@ -21,7 +39,7 @@ class ToolCallExecutor:
             return _standard_result(
                 tool=str(normalized.get("tool") or ""),
                 args=normalized.get("args") if isinstance(normalized.get("args"), dict) else {},
-                status="invalid_tool",
+                status="blocked",
                 ok=False,
                 error=str(normalized.get("error") or "invalid tool_call"),
             )
@@ -49,7 +67,11 @@ class ToolCallExecutor:
 
         try:
             request = ToolRequest(tool=tool_name, input=args, source=source, risk_level="low")
-            result = self.tool_registry.execute_tool_request(request)
+            get_tool_schema = getattr(self.tool_registry, "get_tool_schema", None)
+            if callable(get_tool_schema) and get_tool_schema(tool_name) is not None:
+                result = ToolExecutor(self.tool_registry).execute(request)
+            else:
+                result = self.tool_registry.execute_tool_request(request)
         except Exception as exc:
             return _standard_result(
                 tool=tool_name,
@@ -94,6 +116,15 @@ class ToolCallExecutor:
 
 
 def normalize_tool_call(tool_call: Any) -> Dict[str, Any]:
+    is_explicit_decision = isinstance(tool_call, str) or (
+        isinstance(tool_call, dict)
+        and ("type" in tool_call or "action" in tool_call)
+    )
+    if is_explicit_decision:
+        parsed = tool_decision_to_tool_call(tool_call)
+        if parsed.get("ok") or parsed.get("error"):
+            return parsed
+
     payload = copy.deepcopy(tool_call) if isinstance(tool_call, dict) else {}
     if "tool_call" in payload and isinstance(payload.get("tool_call"), dict):
         payload = copy.deepcopy(payload["tool_call"])
@@ -111,6 +142,8 @@ def normalize_tool_call(tool_call: Any) -> Dict[str, Any]:
 
 
 def tool_call_trace_event(tool_result: Dict[str, Any]) -> Dict[str, Any]:
+    output = tool_result.get("output") if isinstance(tool_result.get("output"), dict) else {}
+    trace = output.get("trace") if isinstance(output.get("trace"), dict) else {}
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": "tool_call",
@@ -119,6 +152,7 @@ def tool_call_trace_event(tool_result: Dict[str, Any]) -> Dict[str, Any]:
         "ok": bool(tool_result.get("ok")),
         "args_summary": summarize_payload(tool_result.get("args", {})),
         "result_summary": summarize_payload(tool_result.get("output", {})),
+        "duration_ms": trace.get("duration_ms"),
         "error": tool_result.get("error"),
         "request_id": tool_result.get("request_id"),
     }
@@ -156,12 +190,19 @@ def _standard_result(
     request_id: str | None = None,
     side_effect_level: str = "none",
 ) -> Dict[str, Any]:
+    normalized_output = copy.deepcopy(output or {})
+    if "observation" not in normalized_output:
+        normalized_output["observation"] = {
+            "type": "tool_error" if not ok else "tool_result",
+            "summary": str(error or status or ""),
+            "data": {},
+        }
     return {
         "ok": bool(ok),
         "tool": tool,
         "args": copy.deepcopy(args),
         "status": status,
-        "output": copy.deepcopy(output or {}),
+        "output": normalized_output,
         "error": None if not error else str(error),
         "request_id": request_id,
         "side_effect_level": side_effect_level,

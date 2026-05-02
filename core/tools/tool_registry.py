@@ -4,7 +4,9 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from core.tools.tool_audit_log import write_tool_audit_log
-from core.tools.tool_schema import ToolRequest, ToolResult
+from core.tools.external_draft_tools import GitHubDraftBundleTool, WebSearchDraftTool
+from core.tools.filesystem_tools import ListDirTool, ReadFileTool, WriteFileTool
+from core.tools.tool_schema import ToolParameter, ToolRequest, ToolResult, ToolSpec
 from core.tools.standard_file_tools import ReservedToolAdapter, WorkspaceFileTool
 
 
@@ -68,6 +70,7 @@ class ToolRegistry:
         self.workspace_dir = workspace_dir
         self.tools: Dict[str, Any] = {}
         self.aliases: Dict[str, str] = {}
+        self.schemas: Dict[str, ToolSpec] = {}
         self._register_default_tools()
 
     # =========================================================
@@ -86,6 +89,28 @@ class ToolRegistry:
             alias_key = self._normalize_name(alias)
             if alias_key:
                 self.aliases[alias_key] = key
+
+    def register_schema(self, spec: ToolSpec) -> None:
+        key = self._normalize_name(spec.name)
+        if not key:
+            raise ValueError("tool schema name cannot be empty")
+        self.schemas[key] = spec
+
+    def get_tool_schema(self, name: str) -> Optional[ToolSpec]:
+        canonical = self._resolve_canonical_name(name)
+        if not canonical:
+            return None
+        return self.schemas.get(canonical)
+
+    def list_tool_schemas(self) -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "count": len(self.schemas),
+            "schemas": [
+                self.schemas[name].to_dict()
+                for name in sorted(self.schemas.keys())
+            ],
+        }
 
     def has_tool(self, name: str) -> bool:
         return self._resolve_canonical_name(name) in self.tools
@@ -126,6 +151,7 @@ class ToolRegistry:
                     "name": canonical_name,
                     "aliases": aliases,
                     "tool_type": type(self.tools[canonical_name]).__name__,
+                    "schema": self.schemas[canonical_name].to_dict() if canonical_name in self.schemas else None,
                 }
             )
 
@@ -271,6 +297,9 @@ class ToolRegistry:
     # =========================================================
 
     def _register_default_tools(self) -> None:
+        self._register_l4_filesystem_tools()
+        self._register_external_draft_tools()
+
         for tool_name in ("file_read", "file_write", "file_exists", "list_files"):
             self.register(
                 tool_name,
@@ -343,6 +372,111 @@ class ToolRegistry:
                 github_commit_tool,
                 aliases=["github_commit_tool", "github_local_commit"],
             )
+
+    def _register_l4_filesystem_tools(self) -> None:
+        self.register(
+            "read_file",
+            ReadFileTool(workspace_root=self.workspace_dir),
+            aliases=["l4_read_file"],
+        )
+        self.register_schema(
+            ToolSpec(
+                name="read_file",
+                description="Read a UTF-8 text file inside the workspace and return a normalized observation.",
+                parameters=[
+                    ToolParameter(name="path", type="string", required=True, description="Workspace-relative file path."),
+                ],
+                tool_class="read_only",
+                side_effect_level="read_only",
+                risk_level="low",
+                scope="workspace",
+            )
+        )
+
+        self.register(
+            "write_file",
+            WriteFileTool(workspace_root=self.workspace_dir),
+            aliases=["l4_write_file"],
+        )
+        self.register_schema(
+            ToolSpec(
+                name="write_file",
+                description="Create a UTF-8 text file inside the workspace, or overwrite only when explicitly allowed.",
+                parameters=[
+                    ToolParameter(name="path", type="string", required=True, description="Workspace-relative file path."),
+                    ToolParameter(name="content", type="string", required=True, description="Text content to write."),
+                    ToolParameter(name="allow_overwrite", type="boolean", required=False, description="Explicit overwrite permission."),
+                ],
+                tool_class="workspace_write",
+                side_effect_level="workspace_write",
+                risk_level="medium",
+                scope="workspace",
+            )
+        )
+
+        self.register(
+            "list_dir",
+            ListDirTool(workspace_root=self.workspace_dir),
+            aliases=["l4_list_dir"],
+        )
+        self.register_schema(
+            ToolSpec(
+                name="list_dir",
+                description="List files and directories inside the workspace without exposing sensitive paths.",
+                parameters=[
+                    ToolParameter(name="path", type="string", required=True, description="Workspace-relative directory path."),
+                    ToolParameter(name="recursive", type="boolean", required=False, description="Whether to list recursively."),
+                ],
+                tool_class="read_only",
+                side_effect_level="read_only",
+                risk_level="low",
+                scope="workspace",
+            )
+        )
+
+    def _register_external_draft_tools(self) -> None:
+        self.register(
+            "web_search_draft",
+            WebSearchDraftTool(),
+            aliases=["draft_web_search"],
+        )
+        self.register_schema(
+            ToolSpec(
+                name="web_search_draft",
+                description="Prepare a draft web search observation without network access.",
+                parameters=[
+                    ToolParameter(name="query", type="string", required=True, description="Search query to prepare."),
+                    ToolParameter(name="max_results", type="integer", required=False, description="Draft result count."),
+                ],
+                tool_class="read_only",
+                side_effect_level="read_only",
+                risk_level="low",
+                scope="workspace",
+            )
+        )
+
+        self.register(
+            "github_draft_bundle",
+            GitHubDraftBundleTool(workspace_root=self.workspace_dir),
+            aliases=["github_outbox_draft", "draft_github_bundle"],
+        )
+        self.register_schema(
+            ToolSpec(
+                name="github_draft_bundle",
+                description="Generate local draft GitHub workflow files under workspace/github_outbox without API or git access.",
+                parameters=[
+                    ToolParameter(name="title", type="string", required=True, description="Draft title."),
+                    ToolParameter(name="summary", type="string", required=True, description="Draft summary."),
+                    ToolParameter(name="changes", type="list", required=True, description="List of change bullets."),
+                    ToolParameter(name="validation", type="list", required=False, description="List of validation bullets."),
+                    ToolParameter(name="output_path", type="string", required=False, description="Optional outbox path; only workspace/github_outbox is allowed."),
+                ],
+                tool_class="workspace_write",
+                side_effect_level="workspace_write",
+                risk_level="medium",
+                scope="workspace",
+            )
+        )
 
     # =========================================================
     # builders

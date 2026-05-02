@@ -34,7 +34,16 @@ ALLOWED_GITHUB_OUTBOX_PATHS = {
     "workspace/github_outbox/commit_message.txt",
     "workspace/github_outbox/pr_description.md",
     "workspace/github_outbox/devlog.md",
+    "workspace/github_outbox/devlog_entry.md",
+    "workspace/github_outbox/publish_plan.md",
     "workspace/github_outbox/review_report.md",
+}
+
+GITHUB_DRAFT_BUNDLE_FILES = {
+    "workspace/github_outbox/commit_message.txt",
+    "workspace/github_outbox/pr_description.md",
+    "workspace/github_outbox/devlog_entry.md",
+    "workspace/github_outbox/publish_plan.md",
 }
 
 EXECUTABLE_SENSITIVE_PATTERNS = (
@@ -164,6 +173,74 @@ def preflight_check(tool_call: Any) -> Dict[str, str]:
         "expected_side_effect_level": level.value,
         "reason": reason,
     }
+
+
+def evaluate_l4_tool_request(
+    *,
+    tool_name: str,
+    args: Dict[str, Any],
+    tool_class: str,
+    side_effect_level: str,
+    scope: str,
+) -> Dict[str, Any]:
+    normalized_tool = str(tool_name or "").strip().lower()
+    normalized_scope = str(scope or "").strip().lower()
+    normalized_class = str(tool_class or "").strip().lower()
+    normalized_side_effect = str(side_effect_level or "").strip().lower()
+    payload = args if isinstance(args, dict) else {}
+
+    if normalized_scope != "workspace":
+        return _decision(False, "l4_scope_not_allowed", normalized_class, normalized_side_effect)
+
+    if normalized_tool == "web_search_draft":
+        if normalized_class != "read_only" or normalized_side_effect != "read_only":
+            return _decision(False, "draft_search_requires_read_only_contract", normalized_class, normalized_side_effect)
+        return _decision(True, "draft_search_network_disabled", normalized_class, normalized_side_effect)
+
+    if normalized_tool == "github_draft_bundle":
+        if normalized_class != "workspace_write" or normalized_side_effect != "workspace_write":
+            return _decision(False, "github_draft_requires_workspace_write_contract", normalized_class, normalized_side_effect)
+        requested_path = str(
+            payload.get("output_path")
+            or payload.get("path")
+            or payload.get("output_dir")
+            or payload.get("target_path")
+            or ""
+        ).strip()
+        if requested_path and not _is_allowed_github_draft_path(requested_path):
+            return _decision(False, "github_draft_output_path_not_allowed", normalized_class, normalized_side_effect, output_path=requested_path)
+        return _decision(True, "github_draft_bundle_allowed", normalized_class, normalized_side_effect, output_path="workspace/github_outbox")
+
+    if normalized_tool not in {"read_file", "write_file", "list_dir"}:
+        return _decision(False, "l4_tool_not_allowlisted", normalized_class, normalized_side_effect)
+
+    path = str(payload.get("path") or "").strip()
+    if not path:
+        return _decision(False, "l4_path_required", normalized_class, normalized_side_effect)
+    normalized_path = path.replace("\\", "/").lstrip("/")
+    parts = [part for part in normalized_path.split("/") if part]
+    if any(part == ".." for part in parts):
+        return _decision(False, "l4_parent_traversal_blocked", normalized_class, normalized_side_effect, output_path=path)
+    if any(part in {".git", ".env", "__pycache__"} or part.startswith(".env") for part in parts):
+        return _decision(False, "l4_sensitive_path_blocked", normalized_class, normalized_side_effect, output_path=path)
+
+    if normalized_tool == "write_file":
+        if normalized_class != "workspace_write" or normalized_side_effect != "workspace_write":
+            return _decision(False, "l4_write_requires_workspace_write_contract", normalized_class, normalized_side_effect, output_path=path)
+        return _decision(True, "l4_workspace_write_allowed", normalized_class, normalized_side_effect, output_path=path)
+
+    if normalized_class != "read_only" or normalized_side_effect != "read_only":
+        return _decision(False, "l4_read_requires_read_only_contract", normalized_class, normalized_side_effect, output_path=path)
+    return _decision(True, "l4_read_allowed", normalized_class, normalized_side_effect, output_path=path)
+
+
+def _is_allowed_github_draft_path(path: str) -> bool:
+    normalized = str(path or "").strip().replace("\\", "/").strip("/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized in {"workspace/github_outbox", "github_outbox"}:
+        return True
+    return normalized in GITHUB_DRAFT_BUNDLE_FILES
 
 
 def resolve_allowed_outbox_path(output_path: str, *, workspace_root: Any = ".") -> Optional[Path]:

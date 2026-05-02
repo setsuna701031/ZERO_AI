@@ -1,5 +1,440 @@
 # ZERO Devlog
 
+## 2026-05-02 - L4 Tool Calling Layer sealed checkpoint
+
+This checkpoint closed the missing L4 Tool Calling Layer gap before moving into broader L5 tool expansion.
+
+The goal was not to add more tools. The goal was to install the safe contract layer between Agent Loop / planner decisions and real tools, so future tools can be added without polluting the scheduler or hard-coding tool logic into the main task runtime.
+
+### What was completed
+
+Added the L4 tool schema foundation:
+
+* `core/tools/tool_schema.py`
+  * `ToolSpec`
+  * `ToolParameter`
+  * `ToolObservation`
+
+Added the first controlled filesystem tool set:
+
+* `core/tools/filesystem_tools.py`
+  * `read_file`
+  * `write_file`
+  * `list_dir`
+
+Added the tool execution layer:
+
+* `core/tools/tool_executor.py`
+  * schema validation
+  * policy / scope guard enforcement
+  * standardized observation output
+  * trace output
+
+Added the tool policy layer:
+
+* `core/tools/tool_policy.py`
+  * scope validation
+  * blocked path / unsafe operation handling
+  * write protection boundary
+
+Updated the registry layer:
+
+* `core/tools/tool_registry.py`
+  * manages tool instances
+  * exposes tool schemas
+  * keeps tool definitions centralized
+
+Updated tool-call compatibility:
+
+* `core/tools/tool_call.py`
+  * uses the L4 executor when a tool has a schema-backed implementation
+
+Added repeatable validation:
+
+* `tests/run_l4_tool_layer_smoke.py`
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+[l4-tool-layer-smoke] ALL PASS
+[tool-schema-smoke] PASS
+[tool-policy-smoke] ALL PASS
+[hybrid-demo-smoke] ALL PASS
+[web-search-tool-call-smoke] ALL PASS
+[persona-runtime-bridge-smoke] ALL PASS
+[github-commit-tool-call-smoke] ALL PASS
+```
+
+Confirmed changed files:
+
+```text
+core/tools/filesystem_tools.py
+core/tools/tool_call.py
+core/tools/tool_executor.py
+core/tools/tool_policy.py
+core/tools/tool_registry.py
+core/tools/tool_schema.py
+tests/run_l4_tool_layer_smoke.py
+```
+
+### Architecture boundary preserved
+
+The important boundary was preserved:
+
+```text
+scheduler = task scheduling / orchestration
+tool layer = tool schema / policy / execution / observation
+```
+
+`scheduler.py` was not made aware of individual filesystem tools, and it did not import the L4 executor, schema, or filesystem tool implementations.
+
+This prevents the scheduler from becoming a tool-specific dumping ground.
+
+### L4 tool contract
+
+The L4 Tool Calling Layer now answers these questions:
+
+1. Which tools are available?
+2. What parameters does each tool accept?
+3. Is this tool call allowed under current policy / scope?
+4. What was the execution result?
+5. Can the result be returned as a standardized observation for the Agent Loop?
+
+The expected contract is:
+
+```json
+{
+  "ok": true,
+  "tool": "read_file",
+  "status": "success",
+  "observation": {
+    "type": "file_content",
+    "summary": "read 120 chars from workspace/demo.txt",
+    "content": "..."
+  },
+  "trace": {
+    "tool_call_id": "...",
+    "args": {
+      "path": "workspace/demo.txt"
+    },
+    "duration_ms": 12
+  }
+}
+```
+
+Agent Loop should receive standardized observation, not raw tool output.
+
+### What was intentionally not done
+
+This checkpoint intentionally did not add:
+
+* GitHub API write actions
+* Web Search expansion
+* browser automation
+* video generation
+* digital human / persona generation tools
+* unrestricted shell command tools
+* delete tools
+* broad overwrite tools
+* UI execution control
+
+Those belong to L5+ expansion after the L4 tool contract is stable.
+
+### Why this matters
+
+Before this pass, ZERO had tools and task execution paths, but tool behavior could still be interpreted as system-specific logic rather than a sealed Agent-to-tool contract.
+
+After this pass, ZERO has a dedicated tool layer that can be extended by plugin-style tools later while preserving core separation.
+
+This moves ZERO from:
+
+```text
+system uses some tools
+```
+
+toward:
+
+```text
+Agent/runtime can call controlled tools through a standard contract
+```
+
+### Stable checkpoint after this pass
+
+* L4 tool schema: working
+* L4 tool registry: working
+* L4 tool executor: working
+* L4 tool policy / scope guard: working
+* first filesystem tool set: working
+* standardized observation: working
+* trace output: working
+* scheduler/tool boundary: preserved
+* smoke validation: passing
+* tool layer ready for next decision bridge
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `run_l4_tool_layer_smoke.py` passing
+* schema smoke passing
+* policy smoke passing
+* changed file list with the seven tool-layer files
+* confirmation that scheduler stayed orchestration-only
+* observation/trace result shape
+
+### Next step
+
+The next L5-entry step is the thin LLM Tool Decision bridge.
+
+Do not add new tools yet.
+
+The next step should only connect structured LLM / planner tool-call output into the existing ToolExecutor and return the standardized observation back into the loop.
+
+---
+
+## 2026-05-02 - L4 mainline closure and L5 entry boundary
+
+This checkpoint records the corrected L4 status after the Tool Calling Layer was sealed.
+
+Earlier wording treated the L4 showcase baseline as fully sealed before the tool layer was actually complete. That was too broad. The corrected status is:
+
+```text
+L4 showcase baseline was stable earlier.
+L4 Tool Calling Layer was the remaining gap.
+After the L4 Tool Calling Layer pass, ZERO's L4 mainline can be treated as sealed.
+```
+
+### Current L4 sealed areas
+
+The following areas are now considered L4-sealed baseline areas:
+
+* task lifecycle
+* scheduler orchestration boundary
+* execution guard / policy baseline
+* runtime trace / observation baseline
+* document task flows
+* requirement / build demo flows
+* multi-task safe execution baseline
+* replan suggestion gate
+* Web UI display bridge baseline
+* Tool Calling Layer contract
+
+### L4 / L5 boundary
+
+The following items are **not** L4 debt anymore. They are L5+ expansion:
+
+* LLM autonomous tool selection
+* richer multi-tool planning
+* real Web Search adapter
+* GitHub inbox/outbox workflow
+* controlled GitHub API actions
+* browser automation
+* video generation
+* digital human / persona generation
+* remote-control UI
+* plugin marketplace / ecosystem behavior
+* self-improvement loops
+* multi-worker collaboration
+
+### Practical interpretation
+
+The L4 layer is now the safe core baseline.
+
+The next work should not be framed as “more L4 cleanup” unless a regression is found.
+
+From this checkpoint forward, new work should be classified as one of:
+
+```text
+L4 regression fix
+L5 tool / decision expansion
+L5 application demo
+L6+ autonomy / multi-worker work
+```
+
+This prevents the project from constantly reopening L4 and causing the feeling that nothing is ever finished.
+
+### Why this matters
+
+The project had a mismatch where some core pieces were already touching L5 while the tool contract still lagged behind.
+
+That mismatch is now corrected:
+
+```text
+core runtime: L4 sealed / L5-ready
+tool layer: L4 sealed
+next work: L5-entry decision bridge
+```
+
+### Stable checkpoint after this pass
+
+* L4 mainline status: sealed
+* remaining non-L4 items: reclassified as L5+
+* next work direction: LLM Tool Decision bridge
+* instruction for future work: do not reopen L4 unless a real regression appears
+
+---
+
+## 2026-05-02 - L5-entry Tool Decision bridge plan
+
+This is the next planned step after the L4 Tool Calling Layer seal.
+
+This checkpoint is a planning note, not a completed implementation record.
+
+### Goal
+
+Add the thinnest possible bridge from structured LLM / planner tool-call output to the existing L4 ToolExecutor.
+
+The goal is:
+
+```text
+LLM/planner output -> tool decision parser -> ToolExecutor -> standardized observation -> Agent Loop / trace
+```
+
+The goal is not to add more tools.
+
+### Scope
+
+Allowed additions:
+
+* `core/tools/tool_decision.py`
+* `tests/run_l4_tool_decision_smoke.py`
+
+Optional small compatibility updates only if necessary:
+
+* `core/tools/tool_call.py`
+* a thin adapter hook in `core/agent/agent_loop.py`
+* a thin adapter hook in `core/tasks/scheduler.py`
+
+### Strict limits
+
+Do not:
+
+* add new tools
+* add Web Search
+* add GitHub API
+* add browser automation
+* add video / digital human tools
+* add shell command tools
+* put tool schema or tool-specific logic into `scheduler.py`
+* make scheduler know about `read_file`, `write_file`, or `list_dir`
+* rewrite the existing L4 tool layer
+* rewrite `agent_loop.py`
+* bypass tool policy / scope guard
+
+### Initial tool decision format
+
+Support one small structured format first:
+
+```json
+{
+  "type": "tool_call",
+  "tool": "read_file",
+  "args": {
+    "path": "workspace/demo.txt"
+  }
+}
+```
+
+Optional wrapper support is acceptable if kept narrow:
+
+```json
+{
+  "action": {
+    "type": "tool_call",
+    "tool": "write_file",
+    "args": {
+      "path": "workspace/out.txt",
+      "content": "hello"
+    }
+  }
+}
+```
+
+Do not turn the parser into a catch-all natural-language command interpreter.
+
+### Acceptance criteria
+
+The decision bridge is accepted only if:
+
+1. legal tool-call JSON can be parsed
+2. non-tool-call content is not executed
+3. unknown tools return blocked/error observation
+4. invalid arguments return validation error observation
+5. `write_file` still follows scope / policy guard
+6. executor returns standardized observation, not raw output
+7. trace includes tool name, argument summary, status, and duration
+8. existing L4 tool layer smoke still passes
+9. scheduler remains orchestration-only and does not gain tool-specific branches
+
+### Expected completion definition
+
+The completion definition is:
+
+```text
+LLM does not directly operate on files.
+LLM emits structured tool_call.
+Tool Decision parses it.
+ToolExecutor executes it under policy.
+Agent Loop receives standardized observation.
+```
+
+### Why this matters
+
+This is the first L5-entry bridge from controlled tools into actual agent behavior.
+
+Once this is done, future tools such as web search, GitHub draft workflows, browser helpers, or media generation can be added as plugins instead of contaminating the scheduler or agent loop.
+
+---
+
+## 2026-05-02 - External AI/video/news intake triage note
+
+This note records how to classify outside AI/video/news information encountered during ZERO work.
+
+### Classification rule
+
+When outside AI tools or market news appear, classify them into one of three buckets:
+
+1. affects current mainline now
+2. useful later / waiting list
+3. market noise
+
+### Current classification
+
+Seedance / Higgsfield / AI video tools:
+
+```text
+bucket: useful later / waiting list
+reason: useful for demo or digital-human presentation later, but not part of L4 core
+```
+
+InfiniteTalk / local talking-head video tools:
+
+```text
+bucket: useful later / waiting list
+reason: possible local-first media tool later, but not stable enough for current core work
+```
+
+Big-tech AI infrastructure / military-oriented news clips:
+
+```text
+bucket: market context
+reason: confirms direction toward AI as system infrastructure, but should not change today's engineering scope
+```
+
+### Current rule
+
+Do not let external news or tool demos reopen L4 scope.
+
+Current engineering priority remains:
+
+```text
+L4 sealed -> L5-entry Tool Decision bridge -> then controlled tool expansion
+```
+
+---
+
 ## 2026-04-29 - L4 replan suggestion gate stable baseline
 
 This checkpoint closed the L4 recovery gate before opening true L5 automatic replanning.
