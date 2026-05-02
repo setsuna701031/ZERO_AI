@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from core.tools.tool_budget import evaluate_tool_budget
 from core.tools.tool_failure_policy import recommend_for_previous_failures
+from core.tools.tool_risk_policy import assess_tool_risk
 
 
 ALLOW_TOOL = "ALLOW_TOOL"
@@ -60,6 +61,12 @@ class ToolController:
             )
 
         budget = evaluate_tool_budget(payload)
+        risk = assess_tool_risk(
+            tool=policy_recommendation.get("tool") or payload.get("requested_tool"),
+            args=policy_recommendation.get("args"),
+            schema=policy_recommendation.get("schema"),
+            policy=policy_recommendation.get("policy"),
+        )
         if budget.get("ok") is not True:
             return _decision(
                 STOP,
@@ -67,6 +74,7 @@ class ToolController:
                 policy_recommendation,
                 payload,
                 budget=budget,
+                risk=risk,
             )
 
         failure = recommend_for_previous_failures(payload.get("previous_failures"))
@@ -78,6 +86,7 @@ class ToolController:
                 payload,
                 budget=budget,
                 failure=failure,
+                risk=risk,
             )
         if failure.get("recommendation") == "REPLAN":
             return _decision(
@@ -87,6 +96,7 @@ class ToolController:
                 payload,
                 budget=budget,
                 failure=failure,
+                risk=risk,
             )
 
         if not policy_ok:
@@ -105,10 +115,10 @@ class ToolController:
                 payload,
                 budget=budget,
                 failure=failure,
+                risk=risk,
             )
 
-        schema = policy_recommendation.get("schema") if isinstance(policy_recommendation.get("schema"), dict) else {}
-        if str(schema.get("risk_level") or "").strip().lower() == "high":
+        if risk.get("confirmation_required") is True:
             return _decision(
                 NEED_CONFIRMATION,
                 "high_risk_tool_requires_confirmation",
@@ -116,6 +126,7 @@ class ToolController:
                 payload,
                 budget=budget,
                 failure=failure,
+                risk=risk,
             )
 
         return _decision(
@@ -125,6 +136,7 @@ class ToolController:
             payload,
             budget=budget,
             failure=failure,
+            risk=risk,
         )
 
 
@@ -211,20 +223,26 @@ def _decision(
     *,
     budget: Dict[str, Any] | None = None,
     failure: Dict[str, Any] | None = None,
+    risk: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     input_payload = copy.deepcopy(decision_input)
     if isinstance(budget, dict) and isinstance(budget.get("budget_remaining"), dict):
         input_payload["budget_remaining"] = copy.deepcopy(budget.get("budget_remaining"))
-    why = _why_fields(final_decision, reason, policy, budget=budget, failure=failure)
+    risk_payload = copy.deepcopy(risk or {})
+    why = _why_fields(final_decision, reason, policy, budget=budget, failure=failure, risk=risk_payload)
     return {
         "ok": final_decision == ALLOW_TOOL,
         "final_decision": final_decision,
         "reason": reason,
+        "risk_level": str(risk_payload.get("risk_level") or ""),
+        "risk_reason": str(risk_payload.get("risk_reason") or ""),
+        "confirmation_required": bool(risk_payload.get("confirmation_required")),
         "why_call_tool": why["why_call_tool"],
         "why_not_call_tool": why["why_not_call_tool"],
         "why_stop_or_replan": why["why_stop_or_replan"],
         "requested_tool": policy.get("tool"),
         "policy_recommendation": copy.deepcopy(policy),
+        "risk_recommendation": risk_payload,
         "budget_recommendation": copy.deepcopy(budget or {}),
         "failure_recommendation": copy.deepcopy(failure or {}),
         "decision_input": input_payload,
@@ -279,10 +297,12 @@ def _why_fields(
     *,
     budget: Dict[str, Any] | None = None,
     failure: Dict[str, Any] | None = None,
+    risk: Dict[str, Any] | None = None,
 ) -> Dict[str, str]:
     policy_reason = str(policy.get("reason") or "")
     budget_reason = str((budget or {}).get("reason") or "")
     failure_reason = str((failure or {}).get("reason") or "")
+    risk_reason = str((risk or {}).get("risk_reason") or "")
     if final_decision == ALLOW_TOOL:
         return {
             "why_call_tool": policy_reason or reason or "controller_allowed",
@@ -303,7 +323,7 @@ def _why_fields(
         }
     return {
         "why_call_tool": "",
-        "why_not_call_tool": reason or policy_reason,
+        "why_not_call_tool": reason or risk_reason or policy_reason,
         "why_stop_or_replan": "",
     }
 

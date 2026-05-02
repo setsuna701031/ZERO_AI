@@ -12,9 +12,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from core.agent.agent_loop import AgentLoop
 from core.tools.tool_call import ToolCallExecutor
-from core.tools.tool_controller import ALLOW_TOOL, ANSWER_DIRECTLY, REPLAN, STOP
+from core.tools.tool_controller import ALLOW_TOOL, ANSWER_DIRECTLY, NEED_CONFIRMATION, REPLAN, STOP
 from core.tools.tool_failure_policy import CAN_RETRY, MUST_STOP, NEED_REPLAN, classify_tool_failure
 from core.tools.tool_registry import ToolRegistry
+from core.tools.tool_schema import ToolParameter, ToolResult, ToolSpec
 
 
 PREFIX = "[l5-tool-controller-core-smoke]"
@@ -50,6 +51,41 @@ class ReadWritePlanner:
                 "content": "controller chained write\n",
                 "allow_overwrite": True,
             },
+        }
+
+
+class DangerousDemoTool:
+    def __init__(self) -> None:
+        self.executed = False
+
+    def execute(self, args: Dict[str, Any]) -> ToolResult:
+        self.executed = True
+        return ToolResult(
+            ok=True,
+            tool="dangerous_delete",
+            output={"status": "success", "observation": {"type": "danger", "summary": "executed", "data": {}}},
+            side_effect_level="external_write",
+        )
+
+
+class DangerousAllowPolicy:
+    def evaluate(self, decision: Any, *, tool_registry: Any) -> Dict[str, Any]:
+        args = decision.get("args") if isinstance(decision, dict) and isinstance(decision.get("args"), dict) else {}
+        return {
+            "ok": True,
+            "status": "allowed",
+            "reason": "fake_policy_allows_for_controller_risk_test",
+            "tool": "dangerous_delete",
+            "args": dict(args),
+            "schema": {
+                "name": "dangerous_delete",
+                "tool_class": "external_write",
+                "side_effect_level": "external_write",
+                "risk_level": "high",
+                "scope": "workspace",
+            },
+            "policy": {"ok": True, "reason": "fake_policy_allowed"},
+            "parsed": {"ok": True, "is_tool_call": True, "type": "tool_call"},
         }
 
 
@@ -100,6 +136,46 @@ def main() -> int:
     if not (workspace / "output.txt").exists():
         return fail("read->write chain did not create output file")
     pass_step("read -> write chain is controlled and observable")
+
+    dangerous_tool = DangerousDemoTool()
+    registry.register("dangerous_delete", dangerous_tool)
+    registry.register_schema(
+        ToolSpec(
+            name="dangerous_delete",
+            description="Dangerous demo delete tool for controller smoke coverage.",
+            parameters=[
+                ToolParameter(name="path", type="string", required=True),
+            ],
+            tool_class="external_write",
+            side_effect_level="external_write",
+            risk_level="high",
+            scope="workspace",
+        )
+    )
+    dangerous_executor = ToolCallExecutor(
+        registry,
+        decision_policy=DangerousAllowPolicy(),
+        tool_controller=None,
+    )
+    dangerous = dangerous_executor.execute_decision(
+        {
+            "type": "tool_call",
+            "tool": "dangerous_delete",
+            "args": {"path": "workspace/shared/l5_tool_controller/target.txt"},
+        },
+        source="controller_smoke",
+    )
+    if dangerous.get("final_decision") != NEED_CONFIRMATION or dangerous.get("ok") is not False:
+        return fail(f"high risk tool did not require confirmation: {dangerous}")
+    if dangerous_tool.executed:
+        return fail("high risk tool executed despite NEED_CONFIRMATION")
+    controller = dangerous.get("output", {}).get("controller") if isinstance(dangerous.get("output"), dict) else {}
+    if controller.get("risk_level") != "HIGH" or controller.get("confirmation_required") is not True:
+        return fail(f"risk fields missing from high risk controller decision: {dangerous}")
+    trace_event = dangerous.get("output", {}).get("trace") if isinstance(dangerous.get("output"), dict) else {}
+    if trace_event.get("duration_ms") != 0:
+        return fail(f"blocked high risk tool should have zero execution trace duration: {dangerous}")
+    pass_step("high risk tool requires confirmation and is not executed")
 
     invalid = executor.execute_decision(
         {"type": "tool_call", "tool": "read_file", "args": {}},
