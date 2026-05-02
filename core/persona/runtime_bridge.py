@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from core.agent.agent_loop import AgentLoop
+from core.tools.tool_audit import build_l5_audit_records
 from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
 from core.tools.tool_registry import ToolRegistry
 
@@ -18,6 +20,7 @@ RUNTIME_STATUSES = {"planning", "executing", "blocked", "done", "failed"}
 @dataclass
 class PersonaRuntimeRecord:
     goal: str
+    run_id: str = field(default_factory=lambda: f"persona_run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}")
     plan: Dict[str, Any] = field(default_factory=dict)
     execution: Dict[str, Any] = field(default_factory=dict)
     response: Dict[str, Any] = field(default_factory=dict)
@@ -275,7 +278,8 @@ class PersonaRuntimeBridge:
 
     def get_display_state(self) -> Dict[str, Any]:
         if self._last_record is None:
-            return {
+            return _with_persona_presentation(
+                {
                 "ok": True,
                 "runtime_status": "planning",
                 "status_source": "runtime_bridge",
@@ -289,7 +293,9 @@ class PersonaRuntimeBridge:
                 "timeline": [],
                 "search_results_summary": "",
                 "compact_demo_summary": "",
-            }
+                },
+                audit_records=[],
+            )
 
         record = self._last_record
         execution = record.execution if isinstance(record.execution, dict) else {}
@@ -302,8 +308,10 @@ class PersonaRuntimeBridge:
         result_summary = _extract_result_summary(execution=execution, last_result=last_result, trace=trace)
         search_results_summary = _extract_search_results_summary(execution)
         compact_demo_summary = _build_compact_demo_summary(record.plan, tool_calls, last_result)
+        audit_records = build_l5_audit_records(execution, run_id=record.run_id)
 
-        return {
+        return _with_persona_presentation(
+            {
             "ok": status not in {"failed", "blocked"},
             "runtime_status": status,
             "status_source": _status_source(execution, trace, execution_log),
@@ -318,7 +326,9 @@ class PersonaRuntimeBridge:
             "timeline": copy.deepcopy(record.timeline),
             "search_results_summary": search_results_summary,
             "compact_demo_summary": compact_demo_summary,
-        }
+            },
+            audit_records=audit_records,
+        )
 
     def format_display_text(self) -> str:
         return format_persona_runtime_display(self.get_display_state())
@@ -510,6 +520,17 @@ def format_persona_runtime_display(display: Dict[str, Any]) -> str:
     search_block = f"\n[SEARCH RESULTS SUMMARY]\n{search_summary}\n\n" if search_summary else ""
     compact_summary = str(display.get("compact_demo_summary") or "").strip()
     compact_block = f"[COMPACT DEMO SUMMARY]\n{compact_summary}\n\n" if compact_summary else ""
+    persona_reply = str(display.get("persona_final_reply") or "").strip()
+    persona_block = f"\n\n[PERSONA REPLY]\n{persona_reply}" if persona_reply else ""
+    tts_pipeline = display.get("tts_pipeline") if isinstance(display.get("tts_pipeline"), dict) else {}
+    tts_block = ""
+    if tts_pipeline:
+        tts_block = (
+            "\n\n[TTS PIPELINE]\n"
+            f"Input Source : {tts_pipeline.get('input_source') or '-'}\n"
+            f"Voice Style  : {tts_pipeline.get('voice_style') or '-'}\n"
+            f"Runtime Safe : {tts_pipeline.get('runtime_safe')}"
+        )
 
     return (
         f"{compact_block}"
@@ -529,6 +550,8 @@ def format_persona_runtime_display(display: Dict[str, Any]) -> str:
         "[RESULT]\n"
         f"{display.get('result_summary') or '-'}"
         f"{blocked_block}"
+        f"{persona_block}"
+        f"{tts_block}"
     )
 
 
@@ -944,6 +967,161 @@ def _build_search_results_summary(search_output: Dict[str, Any]) -> str:
         lines.append("-")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _with_persona_presentation(
+    display: Dict[str, Any],
+    *,
+    audit_records: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    enriched = copy.deepcopy(display)
+    safe_audit = [copy.deepcopy(record) for record in audit_records if isinstance(record, dict)]
+    presentation = _build_persona_presentation(enriched, safe_audit)
+    enriched["audit_records"] = safe_audit
+    enriched["audit_record"] = copy.deepcopy(safe_audit)
+    enriched["persona_status_update"] = presentation["persona_status_update"]
+    enriched["persona_intent_explanation"] = presentation["persona_intent_explanation"]
+    enriched["persona_reasoning_summary"] = presentation["persona_reasoning_summary"]
+    enriched["persona_final_reply"] = presentation["persona_final_reply"]
+    enriched["tts_pipeline"] = _build_tts_pipeline(presentation["persona_final_reply"])
+    enriched["presentation_log"] = _build_presentation_log(
+        persona_final_reply=presentation["persona_final_reply"],
+        tts_pipeline=enriched["tts_pipeline"],
+    )
+    enriched["persona_runtime_contract"] = {
+        "role": "human_presentation_layer",
+        "input_sources": ["controller final decision", "runtime result", "audit records"],
+        "can": ["read_audit", "summarize", "render_text", "prepare_tts_input"],
+        "cannot": ["call_tool", "choose_tool_policy", "execute", "change_controller_decision", "invent_missing_runtime_state"],
+        "no_reverse_path": True,
+    }
+    return enriched
+
+
+def _build_persona_presentation(
+    display: Dict[str, Any],
+    audit_records: List[Dict[str, Any]],
+) -> Dict[str, str]:
+    status = str(display.get("runtime_status") or "planning").strip()
+    goal = str(display.get("task_goal") or "").strip()
+    result_summary = str(display.get("result_summary") or "").strip()
+    blocked_reason = str(display.get("blocked_reason") or "").strip()
+    tool_calls = display.get("tool_calls") if isinstance(display.get("tool_calls"), list) else []
+
+    persona_status_update = _persona_status_text(status=status, goal=goal)
+    persona_intent_explanation = _persona_intent_text(tool_calls=tool_calls, audit_records=audit_records)
+    persona_reasoning_summary = _persona_audit_summary(audit_records)
+    persona_final_reply = _persona_final_text(
+        status=status,
+        result_summary=result_summary,
+        blocked_reason=blocked_reason,
+    )
+
+    return {
+        "persona_status_update": persona_status_update,
+        "persona_intent_explanation": persona_intent_explanation,
+        "persona_reasoning_summary": persona_reasoning_summary,
+        "persona_final_reply": persona_final_reply,
+    }
+
+
+def _persona_status_text(*, status: str, goal: str) -> str:
+    if not goal:
+        return "No runtime task has been submitted yet."
+    return f"Runtime status is {status}: {goal}"
+
+
+def _persona_intent_text(
+    *,
+    tool_calls: List[Any],
+    audit_records: List[Dict[str, Any]],
+) -> str:
+    if not tool_calls:
+        return "No tool use has been recorded by the controller."
+
+    parts = []
+    for index, item in enumerate(tool_calls, start=1):
+        if not isinstance(item, dict):
+            continue
+        tool = str(item.get("tool") or "-")
+        status = str(item.get("status") or "-")
+        parts.append(f"{index}. controller selected {tool}; result status={status}")
+
+    confirmation_count = sum(1 for record in audit_records if record.get("confirmation_required"))
+    if confirmation_count:
+        parts.append(f"confirmation was required for {confirmation_count} audited step(s)")
+
+    return "\n".join(parts) if parts else "No controller-selected tool calls are available."
+
+
+def _persona_audit_summary(audit_records: List[Dict[str, Any]]) -> str:
+    if not audit_records:
+        return "No audit records are available yet."
+
+    lines = []
+    for record in audit_records:
+        step = record.get("step_index")
+        tool = str(record.get("requested_tool") or "-")
+        decision = str(record.get("final_decision") or "-")
+        risk = str(record.get("risk_level") or "-")
+        result = str(record.get("result_status") or "-")
+        lines.append(f"step {step}: tool={tool}, decision={decision}, risk={risk}, result={result}")
+    return "\n".join(lines)
+
+
+def _persona_final_text(
+    *,
+    status: str,
+    result_summary: str,
+    blocked_reason: str,
+) -> str:
+    if status == "done":
+        if result_summary:
+            return result_summary
+        return "Runtime finished successfully. No additional result text was provided."
+
+    if status == "blocked":
+        return blocked_reason or result_summary or "Runtime is blocked. No extra persona inference was added."
+
+    if status == "failed":
+        return result_summary or "Runtime failed. No extra persona inference was added."
+
+    return result_summary or "Runtime has not produced a final answer yet."
+
+
+def _build_tts_pipeline(persona_final_reply: str) -> Dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[2]
+    moss_tts_path = repo_root.parent / "ai_models" / "moss_tts" / "MOSS-TTS-Nano"
+    return {
+        "input_source": "persona_final_reply",
+        "text_normalization": True,
+        "voice_style": "default",
+        "speaker_profile": "default",
+        "tts_model": "MOSS-TTS-Nano",
+        "tts_model_path": str(moss_tts_path),
+        "audio_output": "",
+        "runtime_safe": True,
+        "controller_writeback": False,
+        "audit_writeback": False,
+        "ready": bool(persona_final_reply.strip()),
+    }
+
+
+def _build_presentation_log(
+    *,
+    persona_final_reply: str,
+    tts_pipeline: Dict[str, Any],
+) -> Dict[str, Any]:
+    text_hash = hashlib.sha256(persona_final_reply.encode("utf-8", errors="replace")).hexdigest()
+    return {
+        "reply_id": text_hash[:16],
+        "text_hash": text_hash,
+        "voice_id": str(tts_pipeline.get("speaker_profile") or "default"),
+        "tts_model": str(tts_pipeline.get("tts_model") or ""),
+        "audio_path": str(tts_pipeline.get("audio_output") or ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "source": "persona_presentation_layer",
+    }
 
 
 def _extract_search_results_summary(execution: Dict[str, Any]) -> str:

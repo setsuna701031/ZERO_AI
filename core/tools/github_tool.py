@@ -157,7 +157,7 @@ class GitHubCommitTool:
 
     def _git(self, repo_path: Path, args: List[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            ["git", *args],
+            ["git", "-c", f"safe.directory={repo_path}", *args],
             cwd=str(repo_path),
             text=True,
             encoding="utf-8",
