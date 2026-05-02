@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZERO Digital Human Shell</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080b10;
+      --panel: #111820;
+      --panel-2: #0d131a;
+      --line: #243241;
+      --text: #eef4f8;
+      --muted: #96a6b4;
+      --accent: #6fb7ff;
+      --good: #67d391;
+      --warn: #ffd166;
+      --bad: #ff7f8f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+    }
+    .app {
+      width: min(1280px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 20px 0;
+      display: grid;
+      grid-template-columns: minmax(300px, 390px) minmax(0, 1fr);
+      gap: 16px;
+      min-height: 100vh;
+    }
+    .avatar, .workspace {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      min-width: 0;
+    }
+    .avatar {
+      display: grid;
+      grid-template-rows: auto minmax(360px, 1fr) auto;
+      overflow: hidden;
+    }
+    .avatar-head, .section-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: 750;
+    }
+    .pill {
+      min-height: 28px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--accent);
+      background: #0a1118;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pill.good { color: var(--good); }
+    .pill.warn { color: var(--warn); }
+    .pill.bad { color: var(--bad); }
+    .avatar.state-thinking .portrait img,
+    .avatar.state-running .portrait img {
+      animation: personaFocus 1.6s ease-in-out infinite;
+    }
+    .avatar.state-blocked .portrait img {
+      filter: drop-shadow(0 22px 18px rgba(0,0,0,.52)) grayscale(.35);
+    }
+    @keyframes personaFocus {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    .portrait {
+      position: relative;
+      min-height: 420px;
+      background: url("/assets/persona/zero_v1/circuit_bg.png") center / cover no-repeat;
+      display: grid;
+      place-items: end center;
+      overflow: hidden;
+    }
+    .portrait::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(8, 11, 16, .08), rgba(8, 11, 16, .62));
+      pointer-events: none;
+    }
+    .portrait img {
+      position: relative;
+      z-index: 1;
+      width: min(92%, 360px);
+      max-height: 96%;
+      object-fit: contain;
+      filter: drop-shadow(0 22px 18px rgba(0,0,0,.52));
+    }
+    .status-list {
+      padding: 14px 16px;
+      display: grid;
+      gap: 10px;
+    }
+    .kv {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .value {
+      font-size: 14px;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+    .speaking {
+      color: var(--muted);
+      font-size: 13px;
+      min-height: 20px;
+    }
+    .speaking.active {
+      color: var(--warn);
+    }
+    .workspace {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+    .command {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+    }
+    input, button {
+      height: 42px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+    }
+    input {
+      padding: 0 12px;
+      min-width: 0;
+    }
+    button {
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+    .content {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      min-height: 0;
+      overflow: auto;
+    }
+    .band {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      min-width: 0;
+      overflow: hidden;
+    }
+    .band.wide {
+      grid-column: 1 / -1;
+    }
+    .band.stream {
+      grid-column: 1 / -1;
+    }
+    .band-title {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--accent);
+      font-weight: 750;
+      font-size: 13px;
+    }
+    .box {
+      padding: 12px;
+      min-height: 120px;
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    .trace-row {
+      display: grid;
+      grid-template-columns: 90px 1fr 90px;
+      gap: 10px;
+      padding: 9px 12px;
+      border-bottom: 1px solid rgba(36, 50, 65, .7);
+      font-size: 13px;
+    }
+    .trace-row:last-child { border-bottom: 0; }
+    .trace-source { color: var(--muted); }
+    .raw {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      color: #d7e2ec;
+    }
+    .stream-box {
+      max-height: 330px;
+      overflow: auto;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .run-block {
+      border: 1px solid rgba(36, 50, 65, .85);
+      border-radius: 8px;
+      background: #0a1016;
+      overflow: hidden;
+    }
+    .run-block-head {
+      padding: 9px 10px;
+      border-bottom: 1px solid rgba(36, 50, 65, .85);
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .run-message {
+      padding: 9px 10px;
+      display: grid;
+      gap: 4px;
+      border-bottom: 1px solid rgba(36, 50, 65, .45);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .run-message:last-child { border-bottom: 0; }
+    .run-role {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .run-text {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .content { grid-template-columns: 1fr; }
+      .command { grid-template-columns: 1fr; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside id="avatarShell" class="avatar state-idle">
+      <div class="avatar-head">
+        <div class="title">ZERO</div>
+        <div id="avatarState" class="pill">idle</div>
+      </div>
+      <div class="portrait">
+        <img id="avatarImage" src="/assets/persona/zero_v1/idle_open.png" alt="ZERO avatar" />
+      </div>
+      <div class="status-list">
+        <div class="kv">
+          <div class="label">persona status</div>
+          <div id="personaStatus" class="value">loading</div>
+        </div>
+        <div class="kv">
+          <div class="label">TTS placeholder</div>
+          <div id="ttsStatus" class="speaking">idle</div>
+        </div>
+        <div class="kv">
+          <div class="label">runtime</div>
+          <div id="runtimeStatus" class="value">loading</div>
+        </div>
+        <div class="kv">
+          <div class="label">risk</div>
+          <div id="riskStatus" class="value">loading</div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <div class="section-head">
+        <div class="title">Digital Human UI Shell</div>
+        <div id="controllerStatus" class="pill">controller</div>
+      </div>
+      <div class="command">
+        <input id="taskInput" value="run demo" aria-label="task input" />
+        <button id="sendButton" type="button">Run</button>
+        <button id="refreshButton" type="button">Refresh</button>
+      </div>
+      <div class="content">
+        <section class="band stream">
+          <div class="band-title">conversation stream</div>
+          <div id="streamBox" class="stream-box"></div>
+        </section>
+        <section class="band">
+          <div class="band-title">persona_final_reply</div>
+          <div id="replyBox" class="box"></div>
+        </section>
+        <section class="band">
+          <div class="band-title">status / risk / blocked_reason</div>
+          <div id="statusBox" class="box"></div>
+        </section>
+        <section class="band wide">
+          <div class="band-title">trace summary</div>
+          <div id="traceBox"></div>
+        </section>
+        <section class="band wide">
+          <div class="band-title">display_state</div>
+          <div id="rawBox" class="box raw"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const taskInput = document.getElementById("taskInput");
+    const sendButton = document.getElementById("sendButton");
+    const refreshButton = document.getElementById("refreshButton");
+    const avatarShell = document.getElementById("avatarShell");
+    const avatarState = document.getElementById("avatarState");
+    const avatarImage = document.getElementById("avatarImage");
+    const personaStatus = document.getElementById("personaStatus");
+    const ttsStatus = document.getElementById("ttsStatus");
+    const runtimeStatus = document.getElementById("runtimeStatus");
+    const riskStatus = document.getElementById("riskStatus");
+    const controllerStatus = document.getElementById("controllerStatus");
+    const replyBox = document.getElementById("replyBox");
+    const statusBox = document.getElementById("statusBox");
+    const traceBox = document.getElementById("traceBox");
+    const rawBox = document.getElementById("rawBox");
+    const streamBox = document.getElementById("streamBox");
+    const conversationHistory = [];
+    const RUN_BLOCK_SIZE = 15;
+
+    function setBusy(busy) {
+      sendButton.disabled = busy;
+      refreshButton.disabled = busy;
+      if (busy) {
+        setPersonaUiState("thinking");
+      }
+    }
+
+    function setPersonaUiState(state) {
+      const normalized = ["idle", "thinking", "running", "blocked"].includes(state) ? state : "idle";
+      avatarShell.classList.remove("state-idle", "state-thinking", "state-running", "state-blocked");
+      avatarShell.classList.add(`state-${normalized}`);
+      setPill(avatarState, normalized);
+    }
+
+    function setSpeaking(active) {
+      ttsStatus.textContent = active ? "speaking..." : "idle";
+      ttsStatus.classList.toggle("active", active);
+    }
+
+    function setPill(el, value) {
+      const text = String(value || "");
+      el.textContent = text || "-";
+      el.classList.remove("good", "warn", "bad");
+      const lower = text.toLowerCase();
+      if (lower.includes("done") || lower.includes("ready") || lower.includes("allowed")) el.classList.add("good");
+      if (lower.includes("blocked") || lower.includes("failed")) el.classList.add("bad");
+      if (lower.includes("risk") || lower.includes("executing") || lower.includes("running")) el.classList.add("warn");
+    }
+
+    function renderTrace(rows) {
+      traceBox.innerHTML = "";
+      if (!Array.isArray(rows) || rows.length === 0) {
+        traceBox.innerHTML = "<div class='box'>No trace events yet.</div>";
+        return;
+      }
+      rows.forEach((row) => {
+        const div = document.createElement("div");
+        div.className = "trace-row";
+        div.innerHTML = `
+          <div class="trace-source"></div>
+          <div></div>
+          <div></div>
+        `;
+        div.children[0].textContent = row.source || "-";
+        div.children[1].textContent = row.summary || row.label || row.detail || "-";
+        div.children[2].textContent = row.status || "-";
+        traceBox.appendChild(div);
+      });
+    }
+
+    function addConversation(role, text) {
+      conversationHistory.push({
+        role,
+        text: String(text || "").trim() || "-",
+        at: new Date().toLocaleTimeString()
+      });
+      renderConversation();
+    }
+
+    function renderConversation() {
+      streamBox.innerHTML = "";
+      if (conversationHistory.length === 0) {
+        streamBox.innerHTML = "<div class='box'>No conversation yet.</div>";
+        return;
+      }
+      for (let i = 0; i < conversationHistory.length; i += RUN_BLOCK_SIZE) {
+        const block = conversationHistory.slice(i, i + RUN_BLOCK_SIZE);
+        const section = document.createElement("section");
+        section.className = "run-block";
+        const head = document.createElement("div");
+        head.className = "run-block-head";
+        head.innerHTML = `<span>run block ${Math.floor(i / RUN_BLOCK_SIZE) + 1}</span><span>${block.length} entries</span>`;
+        section.appendChild(head);
+        block.forEach((item) => {
+          const message = document.createElement("div");
+          message.className = "run-message";
+          const role = document.createElement("div");
+          role.className = "run-role";
+          role.textContent = `${item.role} / ${item.at}`;
+          const text = document.createElement("div");
+          text.className = "run-text";
+          text.textContent = item.text;
+          message.appendChild(role);
+          message.appendChild(text);
+          section.appendChild(message);
+        });
+        streamBox.appendChild(section);
+      }
+      streamBox.scrollTop = streamBox.scrollHeight;
+    }
+
+    function renderShell(data) {
+      const shell = data || {};
+      const status = shell.status || {};
+      const avatar = shell.avatar || {};
+      const result = shell.result || {};
+      const display = shell.display_state || {};
+      setPill(avatarState, avatar.state || "idle");
+      setPill(controllerStatus, status.controller_status || "idle");
+      setPersonaUiState(avatar.state || "idle");
+      avatarImage.src = avatar.image_url || "/assets/persona/zero_v1/idle_open.png";
+      personaStatus.textContent = result.persona_final_reply || "No persona reply yet.";
+      ttsStatus.textContent = ((shell.tts || {}).placeholder ? "placeholder / " : "") + ((shell.tts || {}).state || "idle");
+      runtimeStatus.textContent = status.runtime_status || "-";
+      riskStatus.textContent = `${status.risk_level || "-"}${status.confirmation_required ? " / confirmation" : ""}`;
+      replyBox.textContent = result.persona_final_reply || result.result_summary || "No result yet.";
+      statusBox.textContent = [
+        `runtime_status: ${status.runtime_status || "-"}`,
+        `controller_status: ${status.controller_status || "-"}`,
+        `risk_level: ${status.risk_level || "-"}`,
+        `blocked_reason: ${status.blocked_reason || "-"}`,
+        `task_goal: ${(shell.task || {}).goal || "-"}`
+      ].join("\n");
+      renderTrace(shell.trace_summary);
+      rawBox.textContent = JSON.stringify(display, null, 2);
+    }
+
+    async function refreshShell() {
+      setBusy(true);
+      try {
+        const response = await fetch("/api/digital-human/status");
+        renderShell(await response.json());
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function runCommand() {
+      setBusy(true);
+      setSpeaking(true);
+      const command = taskInput.value;
+      addConversation("you", command);
+      try {
+        const response = await fetch("/api/digital-human/command", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({command: taskInput.value})
+        });
+        const data = await response.json();
+        renderShell(data);
+        addConversation("zero", ((data.result || {}).persona_final_reply || (data.result || {}).result_summary || "No result text."));
+      } finally {
+        setSpeaking(false);
+        setBusy(false);
+      }
+    }
+
+    sendButton.addEventListener("click", runCommand);
+    refreshButton.addEventListener("click", refreshShell);
+    taskInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") runCommand();
+    });
+    renderConversation();
+    refreshShell();
+  </script>
+</body>
+</html>

@@ -35,6 +35,7 @@ from core.display.ui_bridge import (
     read_shared_file,
 )
 from core.persona.runtime_bridge import format_persona_runtime_display, get_persona_runtime_bridge
+from ui.digital_human_shell import get_digital_human_shell_state, run_digital_human_shell_command
 
 
 APP_HOST = "127.0.0.1"
@@ -695,6 +696,11 @@ def index() -> Any:
     return send_from_directory(UI_DIR, "index.html")
 
 
+@app.route("/digital-human", methods=["GET"])
+def digital_human() -> Any:
+    return send_from_directory(UI_DIR, "digital_human.html")
+
+
 @app.route("/assets/persona/zero_v1/<path:filename>", methods=["GET"])
 def persona_asset(filename: str) -> Any:
     return send_from_directory(PERSONA_ASSETS_DIR, filename)
@@ -731,6 +737,44 @@ def api_status() -> Any:
                         "used_fallback": False,
                         "llm_used": False,
                     },
+                }
+            ),
+            500,
+        )
+
+
+@app.route("/api/digital-human/status", methods=["GET"])
+def api_digital_human_status() -> Any:
+    try:
+        return jsonify(get_digital_human_shell_state())
+    except Exception as exc:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "shell": "digital_human_ui_shell",
+                    "error": str(exc),
+                    "traceback": traceback.format_exc(),
+                }
+            ),
+            500,
+        )
+
+
+@app.route("/api/digital-human/command", methods=["POST"])
+def api_digital_human_command() -> Any:
+    try:
+        payload: Optional[Dict[str, Any]] = request.get_json(silent=True)
+        command = _safe_text(payload.get("command") if isinstance(payload, dict) else "").strip()
+        return jsonify(run_digital_human_shell_command(command))
+    except Exception as exc:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "shell": "digital_human_ui_shell",
+                    "error": str(exc),
+                    "traceback": traceback.format_exc(),
                 }
             ),
             500,

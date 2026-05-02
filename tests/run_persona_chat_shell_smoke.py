@@ -14,6 +14,7 @@ from core.persona.chat_shell import (
 )
 from core.persona.loader import load_default_persona
 from core.persona.state_manager import get_persona_state_manager
+from core.persona.visual_profile import load_default_visual_profile
 
 
 def require_true(condition: bool, message: str) -> None:
@@ -52,7 +53,9 @@ def main() -> int:
     require_true("[ZERO_PERSONA]" in panel_result.response, "panel missing header")
     require_true("[ZERO_RUNTIME]" in panel_result.response, "panel missing runtime header")
     require_true("state=" in panel_result.response, "panel missing state")
-    require_true("image=E:\\zero_ai\\assets\\persona\\zero_v1\\base.png" in panel_result.response, "panel missing image")
+    visual_profile = load_default_visual_profile()
+    expected_image = visual_profile.resolve_image_for_state(manager.get_state().state)
+    require_true(f"image={expected_image}" in panel_result.response, "panel missing image")
     require_true("last_task_id=" in panel_result.response, "panel missing last_task_id")
 
     who_result = generate_rule_based_response(persona, "who are you")
