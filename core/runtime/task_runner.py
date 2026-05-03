@@ -12,6 +12,7 @@ from core.memory.step_reflection_engine import StepReflectionEngine
 from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runtime import TaskRuntime
+from core.runtime.audit_log import AuditLogger
 
 MAX_PUBLIC_LIST_ITEMS = 20
 MAX_PUBLIC_TRACE_ITEMS = 100
@@ -49,6 +50,7 @@ class TaskRunner:
         self.verifier = verifier
         self.debug = debug
         self.reflection_engine = reflection_engine if reflection_engine else StepReflectionEngine()
+        self.audit = AuditLogger(workspace_root=getattr(self.runtime, "workspace_root", "workspace"))
 
     # ============================================================
     # main loop
@@ -441,6 +443,19 @@ class TaskRunner:
                 "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
             },
         )
+        self.audit.log_event(
+            task,
+            "step_start",
+            {
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": idx,
+                "steps_total": len(steps),
+                "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
+                "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+            },
+            source="task_runner",
+        )
 
         result = self.step_executor.execute_step(
             task=task,
@@ -468,6 +483,20 @@ class TaskRunner:
             step_result=result,
             step_index=idx,
             current_tick=trace_tick,
+        )
+        self.audit.log_event(
+            task,
+            "step_result",
+            {
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": idx,
+                "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
+                "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "ok": bool(result.get("ok", False)) if isinstance(result, dict) else False,
+                "error": copy.deepcopy(result.get("error")) if isinstance(result, dict) else "invalid_result",
+            },
+            source="task_runner",
         )
 
         if not result.get("ok"):
@@ -498,6 +527,17 @@ class TaskRunner:
                     "error": result.get("error"),
                     "step_index": idx,
                 },
+            )
+            self.audit.log_event(
+                task,
+                "failure_decision",
+                {
+                    "failure_type": failure_type,
+                    "decision": copy.deepcopy(failure_decision),
+                    "error": copy.deepcopy(result.get("error")),
+                    "step_index": idx,
+                },
+                source="task_runner",
             )
 
             if decision.retry:
@@ -614,6 +654,18 @@ class TaskRunner:
                     "status": "finished",
                     "final_answer": finish_result.get("final_answer", ""),
                 },
+            )
+            self.audit.log_event(
+                task,
+                "task_finished",
+                {
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
+                    "step_index": idx,
+                    "steps_total": len(steps),
+                    "final_answer": finish_result.get("final_answer", ""),
+                },
+                source="task_runner",
             )
             return {
                 "ok": True,

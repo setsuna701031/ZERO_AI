@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from core.runtime.runtime_state_machine import RuntimeStateMachine
 from core.runtime.failure_policy import FailurePolicy
+from core.runtime.audit_log import AuditLogger
 
 
 TERMINAL_STATUSES = {
@@ -65,6 +66,7 @@ class TaskRuntime:
         self.debug = debug
         self.trace_log_filename = trace_log_filename
         self.state_machine = RuntimeStateMachine(debug=debug)
+        self.audit = AuditLogger(workspace_root=self.workspace_root)
 
     # ============================================================
     # runtime state
@@ -384,6 +386,19 @@ class TaskRuntime:
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
+        self.audit.log_event(
+            task,
+            "blocker_added",
+            {
+                "current_tick": current_tick,
+                "status": state.get("status"),
+                "active_blocker_count": state.get("active_blocker_count", 0),
+                "waiting_reason": state.get("waiting_reason", ""),
+                "blockers": copy.deepcopy(state.get("blockers", [])),
+                "next_action": state.get("next_action", ""),
+            },
+            source="task_runtime",
+        )
 
         return {
             "ok": True,
@@ -497,6 +512,20 @@ class TaskRuntime:
             },
             runtime_state_file=self._get_runtime_state_file(task),
         )
+        self.audit.log_event(
+            task,
+            "blocker_resolved",
+            {
+                "current_tick": current_tick,
+                "blocker_id": target_id,
+                "removed": removed,
+                "resolution_status": str(resolution_status or "resolved"),
+                "active_blocker_count": state.get("active_blocker_count", 0),
+                "status": state.get("status"),
+                "next_action": state.get("next_action", ""),
+            },
+            source="task_runtime",
+        )
 
         return {
             "ok": removed,
@@ -558,6 +587,17 @@ class TaskRuntime:
                 "failure_message": failure_message,
             },
             runtime_state_file=self._get_runtime_state_file(task),
+        )
+        self.audit.log_event(
+            task,
+            "task_failed",
+            {
+                "current_tick": current_tick,
+                "failure_type": failure_type,
+                "failure_message": failure_message,
+                "decision": copy.deepcopy(state.get("failure_decision", {})),
+            },
+            source="task_runtime",
         )
 
         return {

@@ -17,6 +17,8 @@ from typing import Any, Dict
 from uuid import uuid4
 import json
 
+from core.runtime.audit_log import AuditLogger
+
 
 @dataclass
 class ReviewRecord:
@@ -227,6 +229,18 @@ def create_review(
         reason=reason,
     )
     _REVIEW_STORE[resolved_review_id] = record
+    AuditLogger().log_payload_event(
+        resolved_payload,
+        "review_created",
+        {
+            "review_id": resolved_review_id,
+            "file_path": resolved_payload.get("file_path"),
+            "status": record.status,
+            "has_diff": bool(str(diff or "")),
+            "reason": reason,
+        },
+        source="review",
+    )
     return record
 
 
@@ -309,6 +323,18 @@ def apply_review(review_id: str) -> dict[str, Any]:
     record.status = "applied"
 
     _clear_review_runtime_fields(record.payload, str(review_id), resolution_status="applied")
+    AuditLogger().log_payload_event(
+        record.payload,
+        "review_applied",
+        {
+            "review_id": str(review_id),
+            "file_path": str(file_path),
+            "target": str(target),
+            "sandbox_file": str(sandbox_file),
+            "status": record.status,
+        },
+        source="review",
+    )
 
     return {
         "status": "applied",
@@ -334,6 +360,16 @@ def reject_review(review_id: str, reason: str | None = None) -> dict[str, Any]:
         record.reason = reason
 
     _clear_review_runtime_fields(record.payload, str(review_id), resolution_status="rejected")
+    AuditLogger().log_payload_event(
+        record.payload,
+        "review_rejected",
+        {
+            "review_id": str(review_id),
+            "reason": record.reason,
+            "status": record.status,
+        },
+        source="review",
+    )
 
     return {
         "status": "rejected",
