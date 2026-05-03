@@ -676,25 +676,83 @@ class AgentLoop:
         effective_task: Dict[str, Any],
         loop_decision: Dict[str, Any],
     ) -> None:
-        """Mark a task as waiting when generic blockers are active.
+        """Apply generic blocker gate result to task loop state.
 
-        This is intentionally generic. Review is only one blocker type; AgentLoop
-        does not branch on review-specific fields.
+        P package: Auto Resume Loop.
+
+        Rules:
+        - If active blockers exist, the task waits for an external decision.
+        - If no active blockers remain and the task was previously waiting on
+          blockers/review, the task is resumed by moving it back to running and
+          setting next_action to run_next_tick.
+
+        Architectural boundary:
+        - AgentLoop does not know review/audit/approval semantics.
+        - It only understands generic blockers emitted by loop_decision/runtime.
         """
         blockers = self._active_blockers_from_loop_decision(
             effective_task=effective_task,
             loop_decision=loop_decision,
         )
-        if not blockers:
+
+        if blockers:
+            effective_task["blockers"] = [copy.deepcopy(item) for item in blockers]
+            effective_task["status"] = "blocked"
+            effective_task["blocked_reason"] = "active_blockers"
+            effective_task["agent_action"] = "await_external_decision"
+            effective_task["next_action"] = "wait_for_external_event"
+            if not str(effective_task.get("terminal_reason") or "").strip():
+                effective_task["terminal_reason"] = "waiting_for_external_blocker"
             return
 
-        effective_task["blockers"] = [copy.deepcopy(item) for item in blockers]
-        effective_task["status"] = "blocked"
-        effective_task["blocked_reason"] = "active_blockers"
-        effective_task["agent_action"] = "await_external_decision"
-        effective_task["next_action"] = "wait_for_external_event"
-        if not str(effective_task.get("terminal_reason") or "").strip():
-            effective_task["terminal_reason"] = "waiting_for_external_blocker"
+        previous_status = str(effective_task.get("status") or "").strip().lower()
+        previous_action = str(effective_task.get("next_action") or "").strip().lower()
+        previous_agent_action = str(effective_task.get("agent_action") or "").strip().lower()
+        previous_blocked_reason = str(effective_task.get("blocked_reason") or "").strip().lower()
+
+        was_waiting_for_blocker = (
+            previous_status in {"blocked", "waiting", "waiting_blocker", "waiting_review", "pending_review"}
+            or previous_action in {
+                "wait_for_external_event",
+                "wait_for_blocker",
+                "wait_for_review",
+                "await_review_decision",
+            }
+            or previous_agent_action in {"await_external_decision", "await_review_decision", "wait_for_review"}
+            or previous_blocked_reason == "active_blockers"
+        )
+
+        if not was_waiting_for_blocker:
+            return
+
+        effective_task["blockers"] = []
+        effective_task["blocked_reason"] = ""
+        effective_task["agent_action"] = "resume_execution"
+        effective_task["status"] = "running"
+        effective_task["next_action"] = "run_next_tick"
+        effective_task["terminal_reason"] = ""
+
+        history = effective_task.get("loop_history")
+        if not isinstance(history, list):
+            history = []
+
+        history.append(
+            {
+                "cycle": self._safe_int(effective_task.get("loop_cycle_count"), 0),
+                "decision": "resume",
+                "next_action": "run_next_tick",
+                "reason": "blockers_cleared_auto_resume",
+                "terminal": False,
+                "should_continue": True,
+                "should_replan": False,
+                "should_fail": False,
+                "observation": copy.deepcopy(loop_decision.get("observation"))
+                if isinstance(loop_decision.get("observation"), dict)
+                else {},
+                "active_blockers": [],
+            }
+        )
+        effective_task["loop_history"] = history[-25:]
 
     def _apply_loop_decision_to_task(
         self,
