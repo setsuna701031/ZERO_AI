@@ -268,6 +268,12 @@ class Scheduler(RuntimeTaskScheduler):
         # v31: one dispatch round per tick
         last_synced = self.rebuild_ready_queue()
 
+        # U package: scheduler-level runtime gate.
+        # The queue may contain a task whose persisted runtime_state is waiting
+        # for human review / blocker resolution.  Do not let the dispatcher
+        # bypass the blocker/review chain.
+        self._apply_runtime_dispatch_gate_to_ready_queue()
+
         dispatch_results = self.dispatcher.dispatch_until_full()
         if not dispatch_results:
             return self._build_tick_result(
@@ -292,6 +298,155 @@ class Scheduler(RuntimeTaskScheduler):
             last_synced=last_synced,
             all_executed_results=all_executed_results,
         )
+
+    def _apply_runtime_dispatch_gate_to_ready_queue(self) -> Dict[str, Any]:
+        """Remove tasks from the ready queue when runtime_state says wait.
+
+        This is the scheduler-side safety gate for the existing
+        policy -> blocker -> review -> resume chain.  TaskRunner and
+        AgentLoop already respect blockers at execution time, but the
+        scheduler must also avoid dispatching tasks that are explicitly
+        waiting for an external event.
+        """
+        gated: List[Dict[str, Any]] = []
+        allowed: List[str] = []
+
+        try:
+            queued_rows = self.dispatcher.list_queued()
+        except Exception:
+            queued_rows = []
+
+        if not isinstance(queued_rows, list):
+            queued_rows = []
+
+        for row in queued_rows:
+            if not isinstance(row, dict):
+                continue
+
+            task_id = str(row.get("task_id") or "").strip()
+            if not task_id:
+                continue
+
+            task = self._get_task_from_repo(task_id)
+            if not isinstance(task, dict):
+                self._cancel_ready_queue_task(task_id)
+                gated.append({
+                    "task_id": task_id,
+                    "reason": "repo_task_missing",
+                })
+                continue
+
+            task = self._hydrate_task_from_workspace(task)
+            decision = self._runtime_dispatch_gate_decision(task)
+            if decision.get("allow"):
+                allowed.append(task_id)
+                continue
+
+            self._cancel_ready_queue_task(task_id)
+            gated.append({
+                "task_id": task_id,
+                "reason": decision.get("reason", "runtime_gate_blocked"),
+                "status": decision.get("status", ""),
+                "next_action": decision.get("next_action", ""),
+                "active_blocker_count": decision.get("active_blocker_count", 0),
+            })
+
+        return {
+            "ok": True,
+            "allowed_task_ids": allowed,
+            "gated_task_ids": [item.get("task_id") for item in gated if isinstance(item, dict)],
+            "gated": gated,
+        }
+
+    def _runtime_dispatch_gate_decision(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return {"allow": False, "reason": "invalid_task"}
+
+        status = str(task.get("status") or "").strip().lower()
+        next_action = str(task.get("next_action") or "").strip().lower()
+        waiting_reason = str(task.get("waiting_reason") or task.get("blocked_reason") or "").strip()
+
+        active_blocker_count = self._safe_int_for_runtime_gate(task.get("active_blocker_count"), 0)
+        active_blockers = self._active_runtime_gate_blockers(task.get("blockers"))
+        if active_blockers and active_blocker_count <= 0:
+            active_blocker_count = len(active_blockers)
+
+        if status in TERMINAL_STATUSES:
+            return {
+                "allow": False,
+                "reason": "terminal_status",
+                "status": status,
+                "next_action": next_action,
+                "active_blocker_count": active_blocker_count,
+            }
+
+        if status in {"waiting", "waiting_review", "waiting_blocker", "blocked", "paused"}:
+            if next_action != "run_next_tick" or active_blocker_count > 0 or active_blockers:
+                return {
+                    "allow": False,
+                    "reason": waiting_reason or "waiting_for_external_event",
+                    "status": status,
+                    "next_action": next_action or "wait_for_external_event",
+                    "active_blocker_count": active_blocker_count,
+                }
+
+        if next_action == "wait_for_external_event":
+            return {
+                "allow": False,
+                "reason": waiting_reason or "next_action_wait_for_external_event",
+                "status": status,
+                "next_action": next_action,
+                "active_blocker_count": active_blocker_count,
+            }
+
+        if active_blocker_count > 0 or active_blockers:
+            return {
+                "allow": False,
+                "reason": waiting_reason or "active_blockers_present",
+                "status": status,
+                "next_action": next_action,
+                "active_blocker_count": active_blocker_count,
+            }
+
+        # Explicit resume signal is allowed.  Normal queued/ready/running tasks
+        # remain allowed so old workflows keep working.
+        return {
+            "allow": True,
+            "reason": "dispatch_allowed",
+            "status": status,
+            "next_action": next_action,
+            "active_blocker_count": 0,
+        }
+
+    def _cancel_ready_queue_task(self, task_id: str) -> None:
+        try:
+            self.scheduler_queue.cancel(task_id)
+        except Exception:
+            pass
+        try:
+            self.worker_pool.release_by_task(task_id)
+        except Exception:
+            pass
+
+    def _active_runtime_gate_blockers(self, blockers: Any) -> List[Dict[str, Any]]:
+        if not isinstance(blockers, list):
+            return []
+
+        resolved_statuses = {"resolved", "applied", "rejected", "cancelled", "canceled", "done", "cleared"}
+        active: List[Dict[str, Any]] = []
+        for item in blockers:
+            if not isinstance(item, dict):
+                continue
+            status = str(item.get("status") or "pending").strip().lower()
+            if status not in resolved_statuses:
+                active.append(copy.deepcopy(item))
+        return active
+
+    def _safe_int_for_runtime_gate(self, value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
 
     def _execute_dispatch_round(
         self,
