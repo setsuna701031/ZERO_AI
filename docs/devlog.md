@@ -1,5 +1,566 @@
 # ZERO Devlog
 
+## 2026-05-02 - L5 Persona Runtime and Presentation checkpoint
+
+This checkpoint records the L5 digital-human/persona runtime work completed after the L4 tool layer was sealed.
+
+The goal was not to add avatar, voice, or UI effects first. The goal was to seal a stable runtime path that a future digital-human interface can call without contaminating scheduler, worker, policy, or tool execution internals.
+
+### What was completed
+
+Added the thin L5 CLI transport path:
+
+* `app.py`
+  * added `l5-run`
+  * accepts task text
+  * supports JSON and passive TTS output modes
+  * calls the persona runtime bridge instead of becoming a controller
+* `main.py`
+  * forwards `l5-run` into `app.py`
+  * remains a launcher/transport layer
+
+Added display-state contract support:
+
+* `core/persona/display_state_contract.py`
+  * `DISPLAY_STATE_SCHEMA_VERSION`
+  * `DISPLAY_STATE_REQUIRED_KEYS`
+  * `TTS_PIPELINE_REQUIRED_KEYS`
+  * `PRESENTATION_LOG_REQUIRED_KEYS`
+  * `PERSONA_RUNTIME_CONTRACT_REQUIRED_KEYS`
+  * `ensure_display_state_contract(...)`
+
+Updated persona runtime bridge:
+
+* `core/persona/runtime_bridge.py`
+  * validates display-state contract
+  * keeps TTS passive
+  * keeps `persona_final_reply` as the source for human-facing output
+  * prevents UI/CLI from inventing missing runtime behavior
+
+Added policy layer and decision trace:
+
+* `core/persona/policy_layer.py`
+  * `evaluate_persona_runtime_policy(...)`
+  * `policy_decision_trace(...)`
+  * low risk -> allowed
+  * medium risk -> allowed with confirmation-required marker
+  * high risk -> blocked before runtime execution
+
+Added persona runtime session state:
+
+* `core/persona/runtime_state.py`
+  * `PersonaRuntimeState`
+  * `create_persona_runtime_state(...)`
+  * `update_policy_decision(...)`
+  * `update_display_state(...)`
+  * `snapshot(...)`
+
+Added presentation bridge:
+
+* `core/persona/presentation_bridge.py`
+  * `render_cli_view(display_state, include_tts=False)`
+  * `render_json_view(display_state)`
+  * `extract_tts_input(display_state)`
+
+### Contract boundaries
+
+The L5 persona path now follows:
+
+```text
+CLI transport
+-> PersonaRuntimeBridge
+-> policy layer
+-> runtime state
+-> display_state contract
+-> presentation bridge
+-> CLI / JSON / TTS output
+```
+
+Important boundaries preserved:
+
+```text
+runtime_state = internal state
+display_state = public API
+presentation_bridge = public API renderer
+```
+
+The presentation bridge only reads `display_state`.
+
+It does not read or mutate:
+
+* `runtime_state`
+* policy internals
+* scheduler state
+* worker state
+* tool result / raw output
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/run_l5_run_cli_smoke.py
+python tests/run_persona_runtime_bridge_smoke.py
+python tests/run_persona_policy_layer_smoke.py
+python tests/run_persona_runtime_state_smoke.py
+python tests/run_presentation_bridge_smoke.py
+python tests/run_persona_presentation_bridge_smoke.py
+python tests/run_hybrid_demo_smoke.py
+```
+
+### Why this matters
+
+This checkpoint turns the digital-human path from a UI idea into a stable runtime interface.
+
+The important result is that a future UI, TTS layer, or avatar layer can consume `display_state` and `persona_final_reply` without reaching backward into scheduler, policy, worker, or tool internals.
+
+Stable checkpoint after this pass:
+
+* L5 CLI transport: working
+* persona runtime bridge: working
+* display-state contract: working
+* policy decision trace: working
+* runtime session state: working
+* presentation bridge: working
+* TTS remains passive
+* core runtime boundaries preserved
+
+---
+
+## 2026-05-02 - L5.5 Worker Runtime and Task Execution System checkpoint
+
+This checkpoint records the engineering-mainline work that moved ZERO from a single persona runtime path into a composable task execution system.
+
+The goal was not to create multi-agent chat or autonomous workers. The goal was to build a deterministic worker/task foundation that can decompose, schedule, execute, collect, aggregate, trace, and replay work without giving workers planner authority.
+
+### Worker contract foundation
+
+Added:
+
+* `core/worker/worker_contracts.py`
+  * worker task contract
+  * worker result contract
+  * worker state snapshot
+  * parent task contract
+  * aggregation contract
+  * final result contract
+  * scheduler queue item contract
+  * scheduler state contract
+
+Worker task intentionally only accepts:
+
+```text
+task_id
+parent_task_id
+role
+objective
+input_context
+```
+
+Worker task explicitly rejects strategy and policy fields such as:
+
+```text
+constraints
+expected_output
+retry_policy
+policy
+strategy
+planner_decision
+```
+
+This preserves the rule:
+
+```text
+persona / planner = decision layer
+worker = constrained execution unit
+worker_runtime = orchestration layer
+```
+
+### Worker runtime foundation
+
+Added:
+
+* `core/worker/worker_runtime.py`
+  * `create_task(...)`
+  * `run_task(...)`
+  * `collect_result(...)`
+  * `merge_result(...)`
+  * `snapshot_state(...)`
+
+The worker runtime only delegates to the injected ZERO runtime runner.
+
+It does not:
+
+* execute tools directly
+* make policy decisions
+* retry by itself
+* become a planner
+
+### Manual task decomposition
+
+Added:
+
+* `core/worker/task_decomposition.py`
+
+The manual decomposition path supports:
+
+```text
+parent_task
+-> manual worker_specs
+-> worker_task
+-> worker_runtime
+-> merge
+-> snapshot
+```
+
+This pass intentionally did not add:
+
+* auto planner
+* AI task decomposition
+* worker-to-worker chat
+* parallel execution
+
+### Result aggregation
+
+Added:
+
+* `core/worker/result_aggregation.py`
+  * `AggregationRuntime.aggregate(...)`
+  * `AggregationRuntime.to_display_state(...)`
+
+Supported deterministic aggregation strategies:
+
+```text
+concat
+select
+synthesize
+```
+
+`synthesize` is deterministic and does not call AI.
+
+Aggregation converts multiple `worker_result` records into a single `final_result` and can project that final result into display state.
+
+### Scheduler foundation
+
+Added:
+
+* `core/worker/worker_scheduler.py`
+  * `enqueue(...)`
+  * `run_next(...)`
+  * `run_until_idle(...)`
+  * `snapshot_state(...)`
+
+The scheduler supports:
+
+```text
+pending
+running
+done
+failed
+```
+
+Behavior is deterministic:
+
+* one queued worker task runs at a time
+* execution order follows enqueue order
+* retry uses a fixed max-retry rule
+* failed retry exhaustion lands in `failed`
+* successful execution lands in `done`
+* worker runtime state is updated after execution
+
+The scheduler intentionally does not perform:
+
+* AI planning
+* automatic task decomposition
+* parallel execution
+* multi-agent behavior
+
+### Execution trace and replay
+
+Added:
+
+* `core/worker/execution_trace.py`
+  * `TraceEvent`
+  * `TraceRecorder`
+  * `TraceReplayRuntime`
+  * `create_trace_event(...)`
+  * `ensure_trace_event_contract(...)`
+  * `trace_digest(...)`
+
+Trace event schema covers:
+
+```text
+worker
+scheduler
+aggregation
+```
+
+Every event includes:
+
+```text
+schema_version
+event_id
+sequence
+ts
+component
+event_type
+payload
+```
+
+Replay can rebuild:
+
+```text
+scheduler_state
+worker_results
+final_result
+trace_digest
+```
+
+The trace layer is deterministic and does not use AI.
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/run_worker_runtime_contract_smoke.py
+python tests/run_task_decomposition_manual_smoke.py
+python tests/run_result_aggregation_strategy_smoke.py
+python tests/run_worker_scheduler_foundation_smoke.py
+python tests/run_execution_trace_replay_smoke.py
+python tests/run_persona_runtime_state_smoke.py
+python tests/run_persona_presentation_bridge_smoke.py
+python tests/run_l5_tool_controller_core_smoke.py
+python tests/run_l5_tool_decision_core_smoke.py
+```
+
+### Git checkpoint
+
+Committed and pushed:
+
+```text
+597f82f - Add L5 worker runtime and digital human shell
+```
+
+This commit included the worker runtime foundation, deterministic task execution system pieces, trace/replay layer, and digital-human UI shell files.
+
+### Why this matters
+
+This checkpoint moves ZERO from:
+
+```text
+single persona runtime
+```
+
+to:
+
+```text
+decomposable, schedulable, observable, replayable task execution system
+```
+
+The completed chain is:
+
+```text
+input
+-> parent_task
+-> manual decomposition
+-> worker_tasks
+-> scheduler queue
+-> worker_runtime
+-> worker_results
+-> aggregation
+-> final_result
+-> display_state / presentation
+-> execution_trace
+-> replay
+```
+
+Stable checkpoint after this pass:
+
+* worker contracts: working
+* worker runtime: working
+* manual decomposition: working
+* result aggregation: working
+* deterministic scheduler: working
+* trace/replay: working
+* existing L5 persona path preserved
+* no AI planner added
+* no parallel execution added
+* no worker strategy authority added
+
+---
+
+## 2026-05-02 - L6 Digital Human UI Shell and Interaction checkpoint
+
+This checkpoint records the product-layer work that wrapped the existing ZERO runtime output in a digital-human interface shell.
+
+The goal was not to make the runtime smarter. The goal was to make the completed runtime understandable, operable, and presentable through a digital-human-style UI while preserving the core boundary.
+
+### What was completed
+
+Added the digital-human UI shell:
+
+* `ui/digital_human.html`
+  * left avatar/persona status area
+  * right task input/result/status/trace/display-state area
+  * browser-accessible product shell
+
+Added display-state projection:
+
+* `ui/digital_human_shell.py`
+  * reads display_state
+  * projects display_state into UI shell state
+  * does not mutate display_state
+  * does not read runtime_state, policy, scheduler, worker, or raw tool output
+
+Added server entry:
+
+* `ui/digital_human_server.py`
+  * standalone server path
+  * does not require Flask
+  * exposes `/digital-human`
+  * exposes digital-human API routes for the shell
+
+Updated:
+
+* `ui/server.py`
+  * added digital-human route compatibility
+
+### Interaction shell additions
+
+Enhanced the shell with product-interaction behavior:
+
+* input area presented as a conversation flow
+* frontend keeps local history
+* every run becomes a run block
+* persona UI status states:
+  * `idle`
+  * `thinking`
+  * `running`
+  * `blocked`
+* trace output is summarized rather than dumped in full
+* persona is locked as the same ZERO identity
+* TTS placeholder:
+  * displays `speaking...`
+  * `voice_enabled: false`
+  * does not connect to any speech service
+
+### Boundaries preserved
+
+This pass intentionally did not:
+
+* modify core runtime
+* add a new planner
+* add a new worker
+* change display_state schema
+* connect real voice service
+* add Live2D / avatar engine
+* add multi-character or multi-role behavior
+
+The product layer remains:
+
+```text
+ZERO Runtime
+-> display_state
+-> presentation bridge
+-> digital_human_shell projection
+-> digital_human UI
+```
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/run_digital_human_ui_shell_smoke.py
+python tests/run_persona_presentation_bridge_smoke.py
+python tests/run_persona_runtime_state_smoke.py
+python tests/run_l5_tool_controller_core_smoke.py
+python tests/run_l5_tool_decision_core_smoke.py
+```
+
+The smoke validation confirmed:
+
+* shell projects display_state without changing schema
+* shell command returns persona reply and status surface
+* HTML exposes avatar, task input, result, status, and trace summary
+* server exposes digital-human shell routes
+* standalone server can serve shell without Flask
+* presentation bridge remains stable
+
+### Current launch path
+
+Current startup path:
+
+```powershell
+python ui\digital_human_server.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:7861/digital-human
+```
+
+If using the virtual environment directly, the equivalent launch command is:
+
+```powershell
+.\.venv\Scripts\python.exe ui\digital_human_server.py
+```
+
+### Current limitation
+
+The current digital-human UI shell is an interface and projection layer.
+
+It can display and structure persona output, but the next product step is to make the UI submit tasks directly into the ZERO runtime through a controlled API route.
+
+Recommended next pack:
+
+```text
+Digital Human Runtime Integration Pack
+```
+
+Expected boundary:
+
+```text
+UI task input
+-> POST /api/digital-human/run
+-> PersonaRuntimeBridge / l5-run path
+-> display_state
+-> UI projection
+```
+
+Still do not modify scheduler, worker, policy, or display_state schema for that step.
+
+### Why this matters
+
+This checkpoint turns the engineering runtime into something that can be shown and operated as a product surface.
+
+It moves ZERO from:
+
+```text
+runtime works in terminal
+```
+
+toward:
+
+```text
+runtime can be presented as a controllable digital-human interface
+```
+
+Stable checkpoint after this pass:
+
+* digital-human shell: working
+* display-state projection: working
+* interaction blocks: working
+* status animation classes: working
+* trace summary: working
+* TTS placeholder: working
+* standalone server route: working
+* core runtime untouched
+
+---
+
 ## 2026-05-02 - L4 Tool Calling Layer sealed checkpoint
 
 This checkpoint closed the missing L4 Tool Calling Layer gap before moving into broader L5 tool expansion.
