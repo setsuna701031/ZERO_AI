@@ -24,6 +24,8 @@ NON_TERMINAL_STATUSES = {
     "running",
     "waiting",
     "blocked",
+    "waiting_review",
+    "waiting_blocker",
     "retrying",
     "replanning",
     "paused",
@@ -329,6 +331,190 @@ class TaskRuntime:
             "final_answer": state.get("final_answer", ""),
         }
 
+
+    # ============================================================
+    # blocker / waiting states
+    # ============================================================
+
+    def mark_waiting_blocker(
+        self,
+        task: Dict[str, Any],
+        current_tick: int = 0,
+        blocker: Optional[Dict[str, Any]] = None,
+        status: str = "waiting_blocker",
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        state = self.load_runtime_state(task)
+        state = self._sync_steps_from_task(task, state)
+        state = self._sync_loop_fields_from_task(task, state)
+
+        if isinstance(blocker, dict):
+            state["blockers"] = self._upsert_blocker(state.get("blockers", []), blocker)
+
+        state["blockers"] = self._normalize_blockers(state.get("blockers", []))
+        active = self._active_blockers(state.get("blockers", []))
+        state["active_blocker_count"] = len(active)
+        state["status"] = status if status in NON_TERMINAL_STATUSES else "waiting_blocker"
+
+        review_blocker = next((item for item in active if item.get("type") == "review"), None)
+        state["requires_review"] = bool(review_blocker)
+        state["review_status"] = "pending_review" if review_blocker else ""
+        state["review_id"] = str(review_blocker.get("id") or "") if review_blocker else ""
+        state["review_payload"] = copy.deepcopy(review_blocker.get("payload") or {}) if review_blocker else {}
+        state["last_run_tick"] = current_tick
+        state["updated_at"] = self._now()
+        state["waiting_reason"] = str(reason or (active[0].get("reason") if active else "") or "")
+        state["next_action"] = "wait_for_external_event"
+        state["last_decision"] = "wait"
+        if state["waiting_reason"]:
+            state["last_decision_reason"] = state["waiting_reason"]
+
+        state = self.save_runtime_state(task, state)
+        self._sync_task_from_runtime_state(task, state)
+
+        self._trace(
+            "mark_waiting_blocker",
+            {
+                "task_id": state.get("task_id"),
+                "task_name": state.get("task_name"),
+                "current_tick": current_tick,
+                "status": state.get("status"),
+                "active_blocker_count": state.get("active_blocker_count", 0),
+                "waiting_reason": state.get("waiting_reason", ""),
+            },
+            runtime_state_file=self._get_runtime_state_file(task),
+        )
+
+        return {
+            "ok": True,
+            "status": state.get("status", "waiting_blocker"),
+            "task": copy.deepcopy(task),
+            "runtime_state": state,
+            # Compatibility fields for callers/tests that read the immediate result.
+            # The source of truth remains runtime_state + blockers.
+            "blockers": copy.deepcopy(state.get("blockers", [])),
+            "active_blocker_count": state.get("active_blocker_count", 0),
+            "requires_review": bool(state.get("requires_review", False)),
+            "review_status": state.get("review_status", ""),
+            "review_id": state.get("review_id", ""),
+            "review_payload": copy.deepcopy(state.get("review_payload", {})),
+            "next_action": state.get("next_action", ""),
+            "waiting_reason": state.get("waiting_reason", ""),
+        }
+
+    def mark_waiting_review(
+        self,
+        task: Dict[str, Any],
+        current_tick: int = 0,
+        review_id: str = "",
+        review_payload: Optional[Dict[str, Any]] = None,
+        reason: str = "pending review",
+    ) -> Dict[str, Any]:
+        blocker = {
+            "type": "review",
+            "status": "pending",
+            "id": str(review_id or ""),
+            "reason": reason or "pending review",
+            "payload": copy.deepcopy(review_payload) if isinstance(review_payload, dict) else {},
+        }
+        return self.mark_waiting_blocker(
+            task=task,
+            current_tick=current_tick,
+            blocker=blocker,
+            status="waiting_review",
+            reason=reason or "pending review",
+        )
+
+    def add_blocker(
+        self,
+        task: Dict[str, Any],
+        blocker: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        return self.mark_waiting_blocker(
+            task=task,
+            current_tick=current_tick,
+            blocker=blocker,
+            status="waiting_review" if str(blocker.get("type") or "") == "review" else "waiting_blocker",
+            reason=str(blocker.get("reason") or ""),
+        )
+
+    def remove_blocker(
+        self,
+        task: Dict[str, Any],
+        blocker_id: str,
+        current_tick: int = 0,
+        resolution_status: str = "resolved",
+    ) -> Dict[str, Any]:
+        state = self.load_runtime_state(task)
+        blockers = self._normalize_blockers(state.get("blockers", []))
+        target_id = str(blocker_id or "").strip()
+
+        updated: List[Dict[str, Any]] = []
+        removed = False
+        for item in blockers:
+            if target_id and str(item.get("id") or "") == target_id:
+                resolved = copy.deepcopy(item)
+                resolved["status"] = str(resolution_status or "resolved")
+                resolved["resolved_at"] = self._now()
+                updated.append(resolved)
+                removed = True
+            else:
+                updated.append(item)
+
+        state["blockers"] = self._normalize_blockers(updated)
+        active = self._active_blockers(state.get("blockers", []))
+        state["active_blocker_count"] = len(active)
+        state["updated_at"] = self._now()
+
+        review_blocker = next((item for item in active if item.get("type") == "review"), None)
+        state["requires_review"] = bool(review_blocker)
+        state["review_status"] = "pending_review" if review_blocker else ""
+        state["review_id"] = str(review_blocker.get("id") or "") if review_blocker else ""
+        state["review_payload"] = copy.deepcopy(review_blocker.get("payload") or {}) if review_blocker else {}
+
+        if active:
+            state["status"] = "waiting_review" if any(b.get("type") == "review" for b in active) else "waiting_blocker"
+            state["waiting_reason"] = str(active[0].get("reason") or "")
+            state["next_action"] = "wait_for_external_event"
+        else:
+            state["waiting_reason"] = ""
+            state["next_action"] = "run_next_tick"
+            if str(state.get("status") or "") in {"waiting_review", "waiting_blocker", "blocked", "waiting"}:
+                state["status"] = "running"
+
+        state = self.save_runtime_state(task, state)
+        self._sync_task_from_runtime_state(task, state)
+
+        self._trace(
+            "remove_blocker",
+            {
+                "task_id": state.get("task_id"),
+                "task_name": state.get("task_name"),
+                "blocker_id": target_id,
+                "removed": removed,
+                "active_blocker_count": state.get("active_blocker_count", 0),
+            },
+            runtime_state_file=self._get_runtime_state_file(task),
+        )
+
+        return {
+            "ok": removed,
+            "status": state.get("status", "running"),
+            "removed": removed,
+            "blocker_id": target_id,
+            "task": copy.deepcopy(task),
+            "runtime_state": state,
+        }
+
+    def has_active_blockers(self, task: Dict[str, Any]) -> bool:
+        state = self.load_runtime_state(task)
+        return bool(self._active_blockers(state.get("blockers", [])))
+
+    def list_active_blockers(self, task: Dict[str, Any]) -> List[Dict[str, Any]]:
+        state = self.load_runtime_state(task)
+        return self._active_blockers(state.get("blockers", []))
+
     # ============================================================
     # failure
     # ============================================================
@@ -426,7 +612,19 @@ class TaskRuntime:
             "capability_hint": copy.deepcopy(task.get("capability_hint", {})) if isinstance(task.get("capability_hint"), dict) else {},
             "capability_registry_hint": copy.deepcopy(task.get("capability_registry_hint", {})) if isinstance(task.get("capability_registry_hint"), dict) else {},
             "capability_execution": copy.deepcopy(task.get("capability_execution", {})) if isinstance(task.get("capability_execution"), dict) else {},
+            "blockers": self._normalize_blockers(task.get("blockers", [])),
+            "active_blocker_count": 0,
+            "waiting_reason": str(task.get("waiting_reason") or ""),
         }
+        active = self._active_blockers(state.get("blockers", []))
+        state["active_blocker_count"] = len(active)
+        review_blocker = next((item for item in active if item.get("type") == "review"), None)
+        state["requires_review"] = bool(review_blocker)
+        state["review_status"] = "pending_review" if review_blocker else str(task.get("review_status") or "")
+        state["review_id"] = str(review_blocker.get("id") or "") if review_blocker else str(task.get("review_id") or "")
+        state["review_payload"] = copy.deepcopy(review_blocker.get("payload") or {}) if review_blocker else copy.deepcopy(task.get("review_payload") or {}) if isinstance(task.get("review_payload"), dict) else {}
+        if not state["requires_review"] and bool(task.get("requires_review")) and state["review_id"]:
+            state["requires_review"] = True
         return state
 
     def _normalize_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
@@ -551,6 +749,16 @@ class TaskRuntime:
         normalized["capability_execution"] = self._normalize_capability_execution(
             normalized.get("capability_execution"),
             task.get("capability_execution"),
+        )
+
+        blockers = normalized.get("blockers")
+        if not isinstance(blockers, list) or not blockers:
+            blockers = task.get("blockers")
+        normalized["blockers"] = self._normalize_blockers(blockers)
+        normalized["active_blocker_count"] = len(self._active_blockers(normalized.get("blockers", [])))
+        normalized["waiting_reason"] = self._prefer_nonempty_str(
+            normalized.get("waiting_reason"),
+            task.get("waiting_reason"),
         )
 
         return normalized
@@ -718,6 +926,17 @@ class TaskRuntime:
         task["capability_execution"] = copy.deepcopy(
             safe_state.get("capability_execution", task.get("capability_execution", {}))
         )
+        task["blockers"] = copy.deepcopy(safe_state.get("blockers", task.get("blockers", [])))
+        task["active_blocker_count"] = safe_state.get("active_blocker_count", task.get("active_blocker_count", 0))
+        task["waiting_reason"] = safe_state.get("waiting_reason", task.get("waiting_reason", ""))
+
+        # Compatibility review fields mirrored from runtime_state.
+        # Source of truth is still blockers + runtime_state, but task-level fields
+        # are kept for existing scheduler / smoke tests / status display paths.
+        task["requires_review"] = bool(safe_state.get("requires_review", task.get("requires_review", False)))
+        task["review_status"] = safe_state.get("review_status", task.get("review_status", ""))
+        task["review_id"] = safe_state.get("review_id", task.get("review_id", ""))
+        task["review_payload"] = copy.deepcopy(safe_state.get("review_payload", task.get("review_payload", {})))
 
     # ============================================================
     # trace sanitation / extraction
@@ -861,6 +1080,73 @@ class TaskRuntime:
         if value in FAILURE_TYPES:
             return value
         return DEFAULT_FAILURE_TYPE
+
+
+    # ============================================================
+    # blocker helpers
+    # ============================================================
+
+    def _normalize_blockers(self, blockers: Any) -> List[Dict[str, Any]]:
+        if not isinstance(blockers, list):
+            return []
+
+        normalized: List[Dict[str, Any]] = []
+        for index, item in enumerate(blockers, start=1):
+            if not isinstance(item, dict):
+                continue
+
+            blocker_type = str(item.get("type") or "generic").strip().lower() or "generic"
+            status = str(item.get("status") or "pending").strip().lower() or "pending"
+            blocker_id = str(item.get("id") or item.get("blocker_id") or f"{blocker_type}_{index}").strip()
+
+            payload = item.get("payload")
+            if not isinstance(payload, dict):
+                payload = {}
+
+            normalized.append(
+                {
+                    "type": blocker_type,
+                    "status": status,
+                    "id": blocker_id,
+                    "reason": str(item.get("reason") or "").strip(),
+                    "payload": copy.deepcopy(payload),
+                    "created_at": str(item.get("created_at") or self._now()),
+                    "resolved_at": str(item.get("resolved_at") or ""),
+                }
+            )
+
+        return normalized
+
+    def _active_blockers(self, blockers: Any) -> List[Dict[str, Any]]:
+        normalized = self._normalize_blockers(blockers)
+        resolved_statuses = {"resolved", "applied", "rejected", "cancelled", "done", "cleared"}
+        return [item for item in normalized if str(item.get("status") or "") not in resolved_statuses]
+
+    def _upsert_blocker(self, blockers: Any, blocker: Dict[str, Any]) -> List[Dict[str, Any]]:
+        normalized = self._normalize_blockers(blockers)
+        incoming = self._normalize_blockers([blocker])
+        if not incoming:
+            return normalized
+
+        item = incoming[0]
+        item_id = str(item.get("id") or "").strip()
+        item_type = str(item.get("type") or "").strip()
+
+        replaced = False
+        result: List[Dict[str, Any]] = []
+        for existing in normalized:
+            same_id = bool(item_id and str(existing.get("id") or "") == item_id)
+            same_type_without_id = not item_id and item_type and str(existing.get("type") or "") == item_type
+            if same_id or same_type_without_id:
+                result.append(item)
+                replaced = True
+            else:
+                result.append(existing)
+
+        if not replaced:
+            result.append(item)
+
+        return result
 
     # ============================================================
     # generic helpers

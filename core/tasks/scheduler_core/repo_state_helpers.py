@@ -15,6 +15,14 @@ LOOP_STATE_KEYS = (
     "loop_history",
 )
 
+REVIEW_STATE_KEYS = (
+    "review_id",
+    "review_status",
+    "requires_review",
+    "agent_action",
+    "review_payload",
+)
+
 
 
 
@@ -241,6 +249,12 @@ def _sync_loop_fields_into_merged(merged: Dict[str, Any], source: Dict[str, Any]
             merged[key] = copy.deepcopy(source.get(key))
 
 
+def _sync_review_fields_into_merged(merged: Dict[str, Any], source: Dict[str, Any]) -> None:
+    for key in REVIEW_STATE_KEYS:
+        if key in source:
+            merged[key] = copy.deepcopy(source.get(key))
+
+
 
 
 def _select_effective_task_payload(task: Dict[str, Any], runner_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -270,6 +284,7 @@ def sync_runtime_back_to_repo(
     base_task = copy.deepcopy(repo_task if isinstance(repo_task, dict) else effective_task)
     base_task = scheduler._hydrate_task_from_workspace(base_task)
     _sync_loop_fields_into_merged(base_task, effective_task)
+    _sync_review_fields_into_merged(base_task, effective_task)
 
     runtime_state = None
     if scheduler.task_runtime is not None and hasattr(scheduler.task_runtime, "load_runtime_state"):
@@ -295,8 +310,10 @@ def sync_runtime_back_to_repo(
             if key in runtime_state:
                 merged[key] = copy.deepcopy(runtime_state.get(key))
         _sync_loop_fields_into_merged(merged, runtime_state)
+        _sync_review_fields_into_merged(merged, runtime_state)
 
     _sync_loop_fields_into_merged(merged, task)
+    _sync_review_fields_into_merged(merged, task)
 
     if isinstance(runner_result, dict):
         for key in (
@@ -308,10 +325,12 @@ def sync_runtime_back_to_repo(
             if key in runner_result:
                 merged[key] = copy.deepcopy(runner_result.get(key))
         _sync_loop_fields_into_merged(merged, runner_result)
+        _sync_review_fields_into_merged(merged, runner_result)
 
         runner_task = runner_result.get("task")
         if isinstance(runner_task, dict):
             _sync_loop_fields_into_merged(merged, runner_task)
+            _sync_review_fields_into_merged(merged, runner_task)
 
     if isinstance(runner_result, dict):
         replan_result = runner_result.get("replan_result")
@@ -379,6 +398,12 @@ def sync_runtime_back_to_repo(
     merged["loop_cycle_count"] = int(merged.get("loop_cycle_count", 0) or 0)
     if not isinstance(merged.get("loop_history"), list):
         merged["loop_history"] = []
+    merged.setdefault("review_id", "")
+    merged.setdefault("review_status", "")
+    merged.setdefault("requires_review", False)
+    merged.setdefault("agent_action", "")
+    if not isinstance(merged.get("review_payload"), dict):
+        merged["review_payload"] = {}
 
     inferred_replan_result = None
     if isinstance(runner_result, dict):

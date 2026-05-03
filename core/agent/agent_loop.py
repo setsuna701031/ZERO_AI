@@ -25,6 +25,7 @@ from core.agent.document_flow_trace_writer import maybe_write_document_flow_trac
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 from core.agent.loop_decision import observe_and_decide
+from core.runtime.blockers import active_blockers, normalize_blockers
 from core.agent.local_observer import observe_runner_result as observe_local_runner_result
 from core.tools.tool_decision import tool_decision_to_tool_call
 from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
@@ -287,6 +288,9 @@ class AgentLoop:
             "runtime_state": copy.deepcopy(runner_result.get("runtime_state")) if isinstance(runner_result.get("runtime_state"), dict) else None,
             "loop_decision": copy.deepcopy(effective_task.get("last_decision", "")),
             "next_action": copy.deepcopy(effective_task.get("next_action", "")),
+            "blockers": copy.deepcopy(effective_task.get("blockers", [])) if isinstance(effective_task.get("blockers"), list) else [],
+            "blocked_reason": copy.deepcopy(effective_task.get("blocked_reason", "")),
+            "agent_action": copy.deepcopy(effective_task.get("agent_action", "")),
             "execution": normalized_execution,
             "last_result": copy.deepcopy(runner_result.get("last_result")) if isinstance(runner_result.get("last_result"), dict) else None,
         }
@@ -400,6 +404,7 @@ class AgentLoop:
                     "loop_decision": loop_decision,
                     "next_action": next_action,
                     "error": loop_result.get("error"),
+                    "blockers": copy.deepcopy(effective_task.get("blockers", [])) if isinstance(effective_task.get("blockers"), list) else [],
                 }
             )
 
@@ -421,6 +426,7 @@ class AgentLoop:
                 "last_result": copy.deepcopy(loop_result),
                 "loop_decision": loop_decision,
                 "next_action": next_action,
+                "blockers": copy.deepcopy(effective_task.get("blockers", [])) if isinstance(effective_task.get("blockers"), list) else [],
             }
 
         effective_task["status"] = "blocked"
@@ -474,6 +480,7 @@ class AgentLoop:
             "last_result": copy.deepcopy(runner_result.get("last_result")) if isinstance(runner_result.get("last_result"), dict) else copy.deepcopy(effective_task.get("last_step_result")),
             "final_answer": str(runner_result.get("final_answer") or effective_task.get("final_answer") or ""),
             "error": runner_result.get("error"),
+            "blockers": copy.deepcopy(effective_task.get("blockers", [])) if isinstance(effective_task.get("blockers"), list) else [],
         }
         return execution
 
@@ -531,6 +538,12 @@ class AgentLoop:
                 "failure_type",
                 "failure_message",
                 "failure_decision",
+                "blockers",
+                "requires_review",
+                "review_status",
+                "review_id",
+                "review_payload",
+                "agent_action",
             ):
                 if key in runtime_state:
                     task[key] = copy.deepcopy(runtime_state.get(key))
@@ -548,6 +561,12 @@ class AgentLoop:
             "last_error",
             "final_answer",
             "final_result",
+            "blockers",
+            "requires_review",
+            "review_status",
+            "review_id",
+            "review_payload",
+            "agent_action",
         ):
             if key in runner_result:
                 task[key] = copy.deepcopy(runner_result.get(key))
@@ -605,6 +624,78 @@ class AgentLoop:
         )
         return decision
 
+    def _active_blockers_from_loop_decision(
+        self,
+        *,
+        effective_task: Dict[str, Any],
+        loop_decision: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """Extract active generic blockers from the loop decision observation.
+
+        Architectural boundary:
+        - AgentLoop does not know review/audit/approval semantics.
+        - It only understands generic blockers emitted by loop_decision/runtime.
+        """
+        if not isinstance(effective_task, dict):
+            effective_task = {}
+        if not isinstance(loop_decision, dict):
+            loop_decision = {}
+
+        observation = loop_decision.get("observation")
+        if not isinstance(observation, dict):
+            observation = {}
+
+        raw = observation.get("raw")
+        if not isinstance(raw, dict):
+            raw = {}
+
+        blocker_gate = raw.get("blocker_gate")
+        if isinstance(blocker_gate, dict):
+            active = blocker_gate.get("active_blockers")
+            if isinstance(active, list):
+                normalized_active = active_blockers(active)
+                if normalized_active:
+                    return [copy.deepcopy(item) for item in normalized_active]
+
+            blockers = blocker_gate.get("blockers")
+            normalized_from_gate = active_blockers(blockers)
+            if normalized_from_gate:
+                return [copy.deepcopy(item) for item in normalized_from_gate]
+
+        for source in (raw, observation, effective_task):
+            if isinstance(source, dict):
+                normalized = active_blockers(source.get("blockers"))
+                if normalized:
+                    return [copy.deepcopy(item) for item in normalized]
+
+        return []
+
+    def _apply_blocker_gate_to_task(
+        self,
+        *,
+        effective_task: Dict[str, Any],
+        loop_decision: Dict[str, Any],
+    ) -> None:
+        """Mark a task as waiting when generic blockers are active.
+
+        This is intentionally generic. Review is only one blocker type; AgentLoop
+        does not branch on review-specific fields.
+        """
+        blockers = self._active_blockers_from_loop_decision(
+            effective_task=effective_task,
+            loop_decision=loop_decision,
+        )
+        if not blockers:
+            return
+
+        effective_task["blockers"] = [copy.deepcopy(item) for item in blockers]
+        effective_task["status"] = "blocked"
+        effective_task["blocked_reason"] = "active_blockers"
+        effective_task["agent_action"] = "await_external_decision"
+        effective_task["next_action"] = "wait_for_external_event"
+        if not str(effective_task.get("terminal_reason") or "").strip():
+            effective_task["terminal_reason"] = "waiting_for_external_blocker"
+
     def _apply_loop_decision_to_task(
         self,
         *,
@@ -634,6 +725,13 @@ class AgentLoop:
         elif not effective_task.get("terminal_reason"):
             effective_task["terminal_reason"] = ""
 
+        self._apply_blocker_gate_to_task(
+            effective_task=effective_task,
+            loop_decision=loop_decision,
+        )
+        next_action = str(effective_task.get("next_action") or next_action or "").strip()
+        decision = str(effective_task.get("last_decision") or decision or "").strip()
+
         current_cycle = self._safe_int(effective_task.get("loop_cycle_count"), 0)
         effective_task["loop_cycle_count"] = current_cycle + 1
 
@@ -652,6 +750,7 @@ class AgentLoop:
                 "should_replan": bool(loop_decision.get("should_replan")),
                 "should_fail": bool(loop_decision.get("should_fail")),
                 "observation": copy.deepcopy(observation),
+                "active_blockers": copy.deepcopy(effective_task.get("blockers", [])) if isinstance(effective_task.get("blockers"), list) else [],
             }
         )
 
@@ -665,6 +764,8 @@ class AgentLoop:
         task_dict.setdefault("last_decision_reason", "")
         task_dict.setdefault("next_action", "")
         task_dict.setdefault("terminal_reason", "")
+        if not isinstance(task_dict.get("blockers"), list):
+            task_dict["blockers"] = []
         return task_dict
 
     def _overlay_loop_state(
@@ -683,6 +784,9 @@ class AgentLoop:
             "terminal_reason",
             "loop_cycle_count",
             "loop_history",
+            "blockers",
+            "blocked_reason",
+            "agent_action",
         ):
             if key in source:
                 target[key] = copy.deepcopy(source.get(key))
