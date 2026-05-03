@@ -531,6 +531,61 @@ class TaskRunner:
             source="policy_layer",
         )
 
+        if self._should_convert_policy_block_to_review(result):
+            review_id = self._build_policy_review_id(task=task, step_index=idx, current_tick=current_tick)
+            review_payload = {
+                "kind": "policy_blocked_action",
+                "step_index": idx,
+                "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
+                "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+                "guard_mode": str(result.get("guard_mode") or ""),
+                "policy_action": str(result.get("policy_action") or "deny"),
+                "policy_reason": str(result.get("policy_reason") or result.get("error") or "policy blocked action"),
+                "error": copy.deepcopy(result.get("error")),
+            }
+
+            wait_result = self.runtime.mark_waiting_review(
+                task=task,
+                current_tick=current_tick,
+                review_id=review_id,
+                review_payload=review_payload,
+                reason=str(review_payload.get("policy_reason") or "policy blocked action"),
+            )
+            runtime_state = copy.deepcopy(wait_result.get("runtime_state", {}))
+            self._ensure_execution_trace_defaults(task, runtime_state)
+
+            self.audit.log_event(
+                task,
+                "policy_blocked_to_review",
+                {
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
+                    "step_index": idx,
+                    "review_id": review_id,
+                    "guard_mode": review_payload.get("guard_mode", ""),
+                    "policy_action": review_payload.get("policy_action", "deny"),
+                    "policy_reason": review_payload.get("policy_reason", ""),
+                    "next_action": runtime_state.get("next_action", ""),
+                    "status": runtime_state.get("status", ""),
+                },
+                source="policy_layer",
+            )
+
+            return {
+                "ok": True,
+                "action": "blocked_for_review",
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": runtime_state.get("status", "waiting_review"),
+                "next_action": runtime_state.get("next_action", "wait_for_external_event"),
+                "requires_review": True,
+                "review_id": runtime_state.get("review_id", review_id),
+                "review_payload": copy.deepcopy(runtime_state.get("review_payload", review_payload)),
+                "blockers": copy.deepcopy(runtime_state.get("blockers", [])),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
+
         if not result.get("ok"):
             state = self._persist_step_result_to_runtime_state(
                 task=task,
@@ -979,6 +1034,44 @@ class TaskRunner:
                     return value.strip()
 
         return ""
+
+    def _should_convert_policy_block_to_review(self, result: Any) -> bool:
+        if not isinstance(result, dict):
+            return False
+        if bool(result.get("ok", False)):
+            return False
+
+        policy_action = str(result.get("policy_action") or "").strip().lower()
+        guard_mode = str(result.get("guard_mode") or "").strip().lower()
+        policy_reason = str(result.get("policy_reason") or "").strip().lower()
+        error_text = self._stringify_failure_message(result.get("error")).strip().lower()
+
+        if policy_action in {"ask", "review", "require_review"}:
+            return True
+        if policy_action == "deny":
+            return True
+        if guard_mode.startswith("policy_blocked"):
+            return True
+        if "policy blocked" in error_text or "policy_blocked" in error_text:
+            return True
+        if "blocked by guard" in error_text or "command execution blocked by guard" in error_text:
+            return True
+        if policy_reason and ("not allowed" in policy_reason or "blocked" in policy_reason):
+            return True
+
+        return False
+
+    def _build_policy_review_id(self, *, task: Dict[str, Any], step_index: int, current_tick: int) -> str:
+        raw_task_id = str(
+            task.get("task_id")
+            or task.get("task_name")
+            or task.get("id")
+            or "task"
+        ).strip()
+        safe_task_id = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in raw_task_id)
+        if not safe_task_id:
+            safe_task_id = "task"
+        return f"review-policy-{safe_task_id}-{int(current_tick or 0)}-{int(step_index or 0)}"
 
     def _determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:
         error_payload = result.get("error")
