@@ -5,18 +5,23 @@ import re
 import shlex
 from typing import Any, Dict, Optional
 
+from core.repo_sandbox.policy import RepoSandboxPolicy
+
 
 class ExecutionGuard:
     """
-    最小可用執行守門員（收束修正版）
+    ZERO Execution Guard - S pack policy-layer integration.
 
-    目標：
-    1. 所有 write_file / read_file / command 都先經過這裡
-    2. 限制檔案操作只能在 workspace_root 之下
-    3. command 預設關閉
-    4. 收束期只有限放行安全 python command
-    5. llm / llm_generate / verify / respond 視為非副作用 step，可直接放行
-    6. 允許 trusted python interpreter + trusted script path
+    Responsibilities:
+    1. Keep all read/write/run/command steps inside controlled workspace boundaries.
+    2. Keep command execution conservative by default.
+    3. Add a semantic policy layer without replacing the existing hard guard.
+    4. Return policy/guard metadata for audit and downstream blocker handling.
+
+    Boundary:
+    - This guard only classifies/blocks a step before execution.
+    - It does not create blockers by itself; policy->blocker integration belongs to
+      the next layer/package.
     """
 
     def __init__(
@@ -29,24 +34,34 @@ class ExecutionGuard:
         self.shared_dir = os.path.abspath(shared_dir)
         self.allow_commands = bool(allow_commands)
 
-        # 專案根目錄 = workspace 的上一層
+        # Project root = parent of workspace root.
         self.project_root = os.path.abspath(os.path.join(self.workspace_root, os.pardir))
 
-        # 收束期可信腳本白名單（位於 project root）
+        # Conservative trusted project scripts.  Keep this list intentionally small.
         self.trusted_project_scripts = {
             "main.py",
         }
+
+        # S pack: semantic policy layer.  The hard path/command guard below remains
+        # the source of enforcement for execution safety; policy adds repo/sandbox
+        # intent checks and structured decision metadata.
+        self.policy = RepoSandboxPolicy()
+
+    # ============================================================
+    # public
+    # ============================================================
 
     def check_step(
         self,
         step: Dict[str, Any],
         task_dir: str,
     ) -> Dict[str, Any]:
+        step = step if isinstance(step, dict) else {}
         step_type = str(step.get("type") or "").strip().lower()
         task_dir_abs = os.path.abspath(task_dir)
 
         # ---------------------------------------------------------
-        # 無副作用 / 純判定 / 純生成 step
+        # No-side-effect / pure reasoning / pure verification steps
         # ---------------------------------------------------------
         if step_type in {
             "noop",
@@ -57,7 +72,11 @@ class ExecutionGuard:
             "respond",
             "final_answer",
         }:
-            return {"ok": True}
+            return self._allow(
+                guard_mode="no_side_effect_step",
+                policy_action="allow",
+                policy_reason="step has no direct side effect",
+            )
 
         # ---------------------------------------------------------
         # write
@@ -65,19 +84,33 @@ class ExecutionGuard:
         if step_type in {"write_file", "ensure_file"}:
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
-                return {"ok": False, "error": f"{step_type} step missing path"}
+                return self._deny(f"{step_type} step missing path", guard_mode="missing_path")
+
+            policy_result = self._check_path_policy(raw_path, operation=step_type)
+            if not policy_result.get("ok"):
+                return self._deny(
+                    str(policy_result.get("error") or "policy blocked path"),
+                    guard_mode="policy_blocked_path",
+                    policy_action="deny",
+                    policy_reason=str(policy_result.get("policy_reason") or policy_result.get("error") or ""),
+                )
 
             full_path = self._resolve_path(raw_path=raw_path, task_dir=task_dir_abs)
             if not self._is_under_workspace(full_path):
-                return {
-                    "ok": False,
-                    "error": f"{step_type} blocked: path outside workspace: {full_path}",
-                }
+                return self._deny(
+                    f"{step_type} blocked: path outside workspace: {full_path}",
+                    guard_mode="path_outside_workspace",
+                    resolved_path=full_path,
+                    policy_action="deny",
+                    policy_reason="path outside workspace",
+                )
 
-            return {
-                "ok": True,
-                "resolved_path": full_path,
-            }
+            return self._allow(
+                guard_mode="workspace_write",
+                resolved_path=full_path,
+                policy_action="allow",
+                policy_reason=str(policy_result.get("policy_reason") or "path allowed by policy"),
+            )
 
         # ---------------------------------------------------------
         # read
@@ -85,19 +118,33 @@ class ExecutionGuard:
         if step_type == "read_file":
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
-                return {"ok": False, "error": "read_file step missing path"}
+                return self._deny("read_file step missing path", guard_mode="missing_path")
+
+            policy_result = self._check_path_policy(raw_path, operation="read_file")
+            if not policy_result.get("ok"):
+                return self._deny(
+                    str(policy_result.get("error") or "policy blocked path"),
+                    guard_mode="policy_blocked_path",
+                    policy_action="deny",
+                    policy_reason=str(policy_result.get("policy_reason") or policy_result.get("error") or ""),
+                )
 
             full_path = self._resolve_path(raw_path=raw_path, task_dir=task_dir_abs)
             if not self._is_under_workspace(full_path):
-                return {
-                    "ok": False,
-                    "error": f"read_file blocked: path outside workspace: {full_path}",
-                }
+                return self._deny(
+                    f"read_file blocked: path outside workspace: {full_path}",
+                    guard_mode="path_outside_workspace",
+                    resolved_path=full_path,
+                    policy_action="deny",
+                    policy_reason="path outside workspace",
+                )
 
-            return {
-                "ok": True,
-                "resolved_path": full_path,
-            }
+            return self._allow(
+                guard_mode="workspace_read",
+                resolved_path=full_path,
+                policy_action="allow",
+                policy_reason=str(policy_result.get("policy_reason") or "path allowed by policy"),
+            )
 
         # ---------------------------------------------------------
         # run_python
@@ -105,20 +152,24 @@ class ExecutionGuard:
         if step_type == "run_python":
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
-                return {"ok": False, "error": "run_python step missing path"}
+                return self._deny("run_python step missing path", guard_mode="missing_path")
 
             script_path = self._resolve_script_path(raw_path=raw_path, task_dir=task_dir_abs)
             if self._is_allowed_python_script(script_path):
-                return {
-                    "ok": True,
-                    "guard_mode": "safe_run_python",
-                    "resolved_script_path": script_path,
-                }
+                return self._allow(
+                    guard_mode="safe_run_python",
+                    resolved_script_path=script_path,
+                    policy_action="allow",
+                    policy_reason="python script is in allowed workspace/project path",
+                )
 
-            return {
-                "ok": False,
-                "error": f"python script blocked by guard: {script_path}",
-            }
+            return self._deny(
+                f"python script blocked by guard: {script_path}",
+                guard_mode="python_script_blocked",
+                resolved_script_path=script_path,
+                policy_action="deny",
+                policy_reason="python script outside allowed workspace/project path",
+            )
 
         # ---------------------------------------------------------
         # command
@@ -126,14 +177,20 @@ class ExecutionGuard:
         if step_type == "command":
             command = str(step.get("command") or "").strip()
             if not command:
-                return {"ok": False, "error": "command step missing command"}
+                return self._deny("command step missing command", guard_mode="missing_command")
 
             return self._check_command(command=command, task_dir=task_dir_abs)
 
-        return {
-            "ok": False,
-            "error": f"unsupported step type: {step_type}",
-        }
+        return self._deny(
+            f"unsupported step type: {step_type}",
+            guard_mode="unsupported_step",
+            policy_action="deny",
+            policy_reason="unsupported step type",
+        )
+
+    # ============================================================
+    # command guard
+    # ============================================================
 
     def _check_command(self, command: str, task_dir: str) -> Dict[str, Any]:
         normalized = str(command or "").strip()
@@ -142,22 +199,31 @@ class ExecutionGuard:
         # Never allow ZERO to recursively call its own task runner from inside a task.
         # This guard stays active even when allow_commands=True.
         if self._is_self_invoking_zero_command(normalized):
-            return {
-                "ok": False,
-                "error": "command blocked: self-invoking ZERO task command",
-                "guard_mode": "blocked_self_invoking_zero_task",
-            }
+            return self._deny(
+                "command blocked: self-invoking ZERO task command",
+                guard_mode="blocked_self_invoking_zero_task",
+                policy_action="deny",
+                policy_reason="self-invoking ZERO task command",
+            )
 
+        # Hard guard override for explicitly enabled command mode.  Still return
+        # policy metadata so audit can explain that this was an explicit bypass.
         if self.allow_commands:
-            return {"ok": True}
+            return self._allow(
+                guard_mode="commands_explicitly_allowed",
+                policy_action="allow",
+                policy_reason="allow_commands=True",
+            )
 
-        # 收束期白名單：
-        # 1. python -c "print(...)"
-        # 2. trusted python interpreter + trusted script path
-        # 3. 直接執行 .py 也允許，但腳本仍必須落在允許範圍
+        # Existing safe inline Python support.
         if self._is_safe_inline_python(lowered):
-            return {"ok": True, "guard_mode": "safe_python_inline"}
+            return self._allow(
+                guard_mode="safe_python_inline",
+                policy_action="allow",
+                policy_reason="safe inline python print command",
+            )
 
+        # Existing trusted Python script support.
         script_info = self._extract_python_script_info(normalized)
         if script_info is not None:
             script_path = self._resolve_script_path(
@@ -166,22 +232,37 @@ class ExecutionGuard:
             )
 
             if not self._is_allowed_python_script(script_path):
-                return {
-                    "ok": False,
-                    "error": f"python script blocked by guard: {script_path}",
-                }
+                return self._deny(
+                    f"python script blocked by guard: {script_path}",
+                    guard_mode="python_script_blocked",
+                    resolved_script_path=script_path,
+                    policy_action="deny",
+                    policy_reason="python script outside allowed workspace/project path",
+                )
 
-            return {
-                "ok": True,
-                "guard_mode": "safe_python_script",
-                "resolved_script_path": script_path,
-                "python_command": script_info["python_command"],
-            }
+            return self._allow(
+                guard_mode="safe_python_script",
+                resolved_script_path=script_path,
+                python_command=script_info["python_command"],
+                policy_action="allow",
+                policy_reason="trusted python script path",
+            )
 
-        return {
-            "ok": False,
-            "error": "command execution blocked by guard",
-        }
+        # S pack policy allowlist for test/demo/script commands.
+        decision = self.policy.check_command(normalized)
+        if decision.allowed:
+            return self._allow(
+                guard_mode="policy_allowed_command",
+                policy_action="allow",
+                policy_reason=decision.reason,
+            )
+
+        return self._deny(
+            f"command execution blocked by guard: {decision.reason}",
+            guard_mode="policy_blocked_command",
+            policy_action="deny",
+            policy_reason=decision.reason,
+        )
 
     def _is_self_invoking_zero_command(self, command: str) -> bool:
         try:
@@ -266,6 +347,30 @@ class ExecutionGuard:
 
         return None
 
+    # ============================================================
+    # path / script helpers
+    # ============================================================
+
+    def _check_path_policy(self, raw_path: str, operation: str) -> Dict[str, Any]:
+        text = str(raw_path or "").strip()
+        if not text:
+            return {"ok": False, "error": f"{operation} missing path", "policy_reason": "empty path"}
+
+        normalized = text.replace("\\", "/")
+
+        # Absolute paths are governed by the hard workspace boundary below.
+        # RepoSandboxPolicy is relative-path oriented, so do not feed absolute
+        # Windows paths into it.
+        if os.path.isabs(normalized):
+            return {"ok": True, "policy_reason": "absolute path deferred to workspace boundary guard"}
+
+        try:
+            self.policy.normalize_relative_path(normalized)
+        except Exception as exc:
+            return {"ok": False, "error": f"policy blocked {operation} path: {exc}", "policy_reason": str(exc)}
+
+        return {"ok": True, "policy_reason": "relative path allowed by repo sandbox policy"}
+
     def _resolve_script_path(self, raw_path: str, task_dir: str) -> str:
         clean = str(raw_path or "").strip().strip('"').strip("'")
         if not clean:
@@ -330,3 +435,20 @@ class ExecutionGuard:
             return common == self.project_root
         except Exception:
             return False
+
+    # ============================================================
+    # result helpers
+    # ============================================================
+
+    def _allow(self, **extra: Any) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"ok": True}
+        payload.update(extra)
+        return payload
+
+    def _deny(self, error: str, **extra: Any) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "ok": False,
+            "error": str(error or "blocked by execution guard"),
+        }
+        payload.update(extra)
+        return payload

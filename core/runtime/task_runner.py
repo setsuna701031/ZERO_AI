@@ -457,6 +457,20 @@ class TaskRunner:
             source="task_runner",
         )
 
+        self.audit.log_event(
+            task,
+            "policy_check",
+            {
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": idx,
+                "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
+                "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+            },
+            source="policy_layer",
+        )
+
         result = self.step_executor.execute_step(
             task=task,
             step=step,
@@ -497,6 +511,24 @@ class TaskRunner:
                 "error": copy.deepcopy(result.get("error")) if isinstance(result, dict) else "invalid_result",
             },
             source="task_runner",
+        )
+
+        self.audit.log_event(
+            task,
+            "policy_result",
+            {
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": idx,
+                "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
+                "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "ok": bool(result.get("ok", False)) if isinstance(result, dict) else False,
+                "error": copy.deepcopy(result.get("error")) if isinstance(result, dict) else "invalid_result",
+                "guard_mode": str(result.get("guard_mode") or "") if isinstance(result, dict) else "",
+                "policy_action": str(result.get("policy_action") or "") if isinstance(result, dict) else "",
+                "policy_reason": str(result.get("policy_reason") or "") if isinstance(result, dict) else "",
+            },
+            source="policy_layer",
         )
 
         if not result.get("ok"):
