@@ -114,6 +114,7 @@ READY_STATUSES = {
     "queued",
     "ready",
     "retry",
+    "running",
     STATUS_QUEUED,
 }
 
@@ -3183,6 +3184,22 @@ class Scheduler(RuntimeTaskScheduler):
                     "planner_result",
                     "history",
                     "execution_log",
+                    "execution_trace",
+                    "last_observation",
+                    "last_decision",
+                    "last_decision_reason",
+                    "next_action",
+                    "terminal_reason",
+                    "loop_cycle_count",
+                    "loop_history",
+                    "blockers",
+                    "active_blocker_count",
+                    "waiting_reason",
+                    "requires_review",
+                    "review_status",
+                    "review_id",
+                    "review_payload",
+                    "agent_action",
                     "result_file",
                     "execution_log_file",
                     "snapshot_file",
@@ -3199,6 +3216,26 @@ class Scheduler(RuntimeTaskScheduler):
                 ):
                     if key in runtime_data:
                         hydrated[key] = copy.deepcopy(runtime_data.get(key))
+
+        # Q package: runtime persistence resume normalization.
+        # If the persisted runtime says the task can continue, keep the task
+        # eligible for queue rebuild after a process restart. Waiting states
+        # remain waiting unless next_action explicitly requests run_next_tick.
+        persisted_status = str(hydrated.get("status") or "").strip().lower()
+        persisted_next_action = str(hydrated.get("next_action") or "").strip().lower()
+        if persisted_next_action == "run_next_tick" and persisted_status in {
+            "running",
+            "queued",
+            "ready",
+            "retry",
+            "waiting",
+            "waiting_blocker",
+            "waiting_review",
+            "blocked",
+        }:
+            hydrated["status"] = "running"
+            hydrated["blocked_reason"] = ""
+            hydrated["agent_action"] = str(hydrated.get("agent_action") or "resume_execution")
 
         if not isinstance(hydrated.get("results"), list):
             hydrated["results"] = []

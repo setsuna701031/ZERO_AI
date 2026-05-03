@@ -56,7 +56,56 @@ class TaskRunner:
 
     def run_task_tick(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
         try:
-            self.runtime.ensure_runtime_state(task)
+            # Q package: persistence/resume gate.
+            # Load the saved runtime state before mutating it so a restarted
+            # process can preserve terminal/waiting states and resume only when
+            # the previous loop explicitly requested run_next_tick.
+            state = self.runtime.load_runtime_state(task)
+            self._ensure_execution_trace_defaults(task, state)
+
+            status = str(state.get("status") or "").strip().lower()
+            next_action = str(state.get("next_action") or "").strip().lower()
+            active_blocker_count = self._safe_int(state.get("active_blocker_count"), 0)
+            blockers = state.get("blockers") if isinstance(state.get("blockers"), list) else []
+
+            if status in {"waiting", "waiting_blocker", "waiting_review", "blocked", "paused"}:
+                if next_action != "run_next_tick" or active_blocker_count > 0 or blockers:
+                    return self._finalize_public_result({
+                        "ok": True,
+                        "action": "blocked_waiting",
+                        "task": copy.deepcopy(task),
+                        "runtime_state": state,
+                        "status": status,
+                        "next_action": next_action or "wait_for_external_event",
+                        "blockers": copy.deepcopy(blockers),
+                    })
+
+            if status in {"finished", "done", "success", "completed"}:
+                return self._finalize_public_result({
+                    "ok": True,
+                    "action": "already_finished",
+                    "task": copy.deepcopy(task),
+                    "runtime_state": state,
+                    "status": "finished",
+                    "final_answer": str(state.get("final_answer") or ""),
+                    "execution_trace": copy.deepcopy(state.get("execution_trace", []))
+                    if isinstance(state.get("execution_trace"), list)
+                    else [],
+                })
+
+            if status in {"failed", "error", "cancelled", "canceled", "timeout"}:
+                return self._finalize_public_result({
+                    "ok": False,
+                    "action": "already_terminal",
+                    "task": copy.deepcopy(task),
+                    "runtime_state": state,
+                    "status": status,
+                    "error": str(state.get("last_error") or state.get("failure_message") or status),
+                    "execution_trace": copy.deepcopy(state.get("execution_trace", []))
+                    if isinstance(state.get("execution_trace"), list)
+                    else [],
+                })
+
             run_result = self.runtime.mark_running(task, current_tick=current_tick)
             state = copy.deepcopy(run_result.get("runtime_state", {}))
             self._ensure_execution_trace_defaults(task, state)
