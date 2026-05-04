@@ -1,20 +1,20 @@
 """Tool-facing wrapper for controlled repo sandbox edits.
 
-Code Chain v0.6.4
+Code Chain v0.7.1 / tool v0.6.5
 
 Purpose:
 - Accept mode="controlled_replace".
-- Apply safe single-file controlled edits in sandbox first.
-- Copy the edited sandbox result back to the explicit workspace file.
+- Edit through ControlledEditSession sandbox first.
+- Return controlled diff/report.
+- Apply the actual edited sandbox content back to the explicit workspace file.
 - Create .bak_v06 backup before overwriting the workspace file.
-- Avoid fragile sandbox path assumptions by resolving multiple known sandbox
-  layouts and by falling back to the diff/changed file path convention.
 
-Safety:
-- No automatic file discovery.
-- One explicit file_path per call.
-- No path traversal.
-- controlled_replace requires exactly one old_text match.
+Critical fix:
+- Do NOT copy from guessed sandbox filesystem paths.
+- The previous versions could report applied_to_workspace=true while copying
+  the unmodified sandbox original file.
+- This version reads the edited content through session.sandbox.read_text(),
+  then writes that exact content to the real workspace path.
 """
 
 from __future__ import annotations
@@ -110,15 +110,23 @@ class RepoEditToolResult:
     error: str | None = None
     applied_to_workspace: bool = False
     workspace_path: str = ""
-    sandbox_path: str = ""
     backup_path: str = ""
+    apply_source: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 class RepoEditTool:
-    """Controlled tool entry point for repo edits."""
+    """Controlled tool entry point for repo edits.
+
+    Safety boundary:
+    - no automatic file discovery;
+    - no arbitrary path writes;
+    - only one explicit file_path per call;
+    - controlled_replace requires exactly one old_text match;
+    - optional verification command must pass RepoSandboxPolicy.
+    """
 
     name = "repo_edit"
     description = "Controlled single-file repo edit with sandbox, diff, backup, and apply."
@@ -138,8 +146,8 @@ class RepoEditTool:
         request = payload if isinstance(payload, RepoEditRequest) else RepoEditRequest.from_dict(payload)
         applied_to_workspace = False
         workspace_path = ""
-        sandbox_path = ""
         backup_path = ""
+        apply_source = ""
 
         try:
             self._validate_request(request)
@@ -183,18 +191,14 @@ class RepoEditTool:
                 error = report_result.blocked_reason
 
             if status == "success":
-                apply_result = self._apply_sandbox_file_back_to_workspace(
-                    session=session,
-                    request=request,
-                    changed_files=list(report_result.changed_files or []),
-                )
+                apply_result = self._apply_session_content_back_to_workspace(session, request)
                 applied_to_workspace = bool(apply_result.get("applied"))
                 workspace_path = str(apply_result.get("workspace_path") or "")
-                sandbox_path = str(apply_result.get("sandbox_path") or "")
                 backup_path = str(apply_result.get("backup_path") or "")
+                apply_source = str(apply_result.get("apply_source") or "")
                 if not applied_to_workspace:
                     status = "failed"
-                    error = str(apply_result.get("error") or "failed to apply sandbox result back to workspace")
+                    error = str(apply_result.get("error") or "failed to apply edited content back to workspace")
 
             return RepoEditToolResult(
                 status=status,
@@ -210,8 +214,8 @@ class RepoEditTool:
                 error=error,
                 applied_to_workspace=applied_to_workspace,
                 workspace_path=workspace_path,
-                sandbox_path=sandbox_path,
                 backup_path=backup_path,
+                apply_source=apply_source,
             )
         except PolicyViolation as exc:
             return self._error_result("blocked", request, str(exc))
@@ -228,7 +232,7 @@ class RepoEditTool:
         if request.mode not in {"replace_file", "replace_text", "append_text", "controlled_replace"}:
             raise PolicyViolation(f"unsupported edit mode: {request.mode}")
 
-        normalized_path = request.file_path.replace("\\", "/").strip()
+        normalized_path = self._repo_relative(request.file_path)
         if normalized_path.startswith("/") or ".." in Path(normalized_path).parts:
             raise PolicyViolation("unsafe file_path")
 
@@ -282,142 +286,116 @@ class RepoEditTool:
     def _repo_relative(self, file_path: str) -> str:
         return file_path.replace("\\", "/").strip().lstrip("/")
 
-    def _sandbox_relative_candidates(self, file_path: str, changed_files: list[str]) -> list[str]:
-        base = self._repo_relative(file_path)
-        values = [base]
-        if base.startswith("workspace/"):
-            values.append(base[len("workspace/") :])
-
-        for changed in changed_files:
-            changed_norm = self._repo_relative(str(changed))
-            if changed_norm and changed_norm not in values:
-                values.append(changed_norm)
-            if changed_norm.startswith("workspace/"):
-                stripped = changed_norm[len("workspace/") :]
-                if stripped not in values:
-                    values.append(stripped)
-
-        return values
-
-    def _candidate_sandbox_roots(self, session: ControlledEditSession) -> list[Path]:
-        roots: list[Path] = []
-        for value in (
-            getattr(session, "sandbox_root", None),
-            getattr(getattr(session, "sandbox", None), "root", None),
-            getattr(getattr(session, "sandbox", None), "sandbox_root", None),
-            self.sandbox_root,
-            "workspace/repo_sandbox",
-        ):
-            if value is None:
-                continue
-            path = Path(value)
-            if not path.is_absolute():
-                path = self.repo_root / path
-            resolved = path.resolve()
-            if str(resolved) not in [str(p) for p in roots]:
-                roots.append(resolved)
-        return roots
-
-    def _find_sandbox_path(
-        self,
-        session: ControlledEditSession,
-        request: RepoEditRequest,
-        changed_files: list[str],
-    ) -> Path | None:
-        candidates: list[Path] = []
-
-        for candidate_path in [request.file_path] + changed_files:
-            try:
-                resolved = Path(session.sandbox.resolve_path(candidate_path)).resolve()
-                candidates.append(resolved)
-            except Exception:
-                pass
-
-        roots = self._candidate_sandbox_roots(session)
-        relatives = self._sandbox_relative_candidates(request.file_path, changed_files)
-        for root in roots:
-            for rel in relatives:
-                candidates.append((root / rel).resolve())
-
-        # Last-resort scan. This is still constrained to sandbox roots and exact filename.
-        target_name = Path(self._repo_relative(request.file_path)).name
-        for root in roots:
-            if root.exists():
-                try:
-                    for found in root.rglob(target_name):
-                        if found.is_file():
-                            candidates.append(found.resolve())
-                except Exception:
-                    pass
-
-        seen: set[str] = set()
-        for candidate in candidates:
-            key = str(candidate)
-            if key in seen:
-                continue
-            seen.add(key)
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-        return None
-
-    def _apply_sandbox_file_back_to_workspace(
-        self,
-        session: ControlledEditSession,
-        request: RepoEditRequest,
-        changed_files: list[str],
-    ) -> dict[str, Any]:
-        repo_relative = self._repo_relative(request.file_path)
+    def _resolve_workspace_path(self, file_path: str) -> Path:
+        repo_relative = self._repo_relative(file_path)
         if not repo_relative:
-            return {"applied": False, "error": "empty file_path"}
+            raise PolicyViolation("empty file_path")
 
         if ".." in Path(repo_relative).parts:
-            return {"applied": False, "error": "unsafe relative path"}
+            raise PolicyViolation("unsafe relative path")
 
         workspace_path = (self.repo_root / repo_relative).resolve()
-        repo_root = self.repo_root.resolve()
         try:
-            workspace_path.relative_to(repo_root)
-        except ValueError:
-            return {
-                "applied": False,
-                "error": "workspace path escapes repo root",
-                "workspace_path": str(workspace_path),
-            }
+            workspace_path.relative_to(self.repo_root)
+        except ValueError as exc:
+            raise PolicyViolation("workspace path escapes repo root") from exc
 
-        sandbox_path = self._find_sandbox_path(session, request, changed_files)
-        if sandbox_path is None:
+        return workspace_path
+
+    def _read_edited_session_content(
+        self,
+        session: ControlledEditSession,
+        request: RepoEditRequest,
+    ) -> tuple[str, str]:
+        """Read the exact edited content from the session sandbox abstraction.
+
+        This is the stable source of truth after session.replace_file_text().
+        Filesystem layout under workspace/repo_sandbox may vary by implementation,
+        so this method does not rely on copied-file paths.
+        """
+
+        try:
+            content = session.sandbox.read_text(request.file_path)
+            return content, "session.sandbox.read_text(request.file_path)"
+        except Exception as first_exc:
+            stripped = self._repo_relative(request.file_path)
+            if stripped.startswith("workspace/"):
+                stripped = stripped[len("workspace/") :]
+            try:
+                content = session.sandbox.read_text(stripped)
+                return content, "session.sandbox.read_text(stripped_workspace_path)"
+            except Exception as second_exc:
+                raise PolicyViolation(
+                    "unable to read edited sandbox content: "
+                    f"{type(first_exc).__name__}: {first_exc}; "
+                    f"{type(second_exc).__name__}: {second_exc}"
+                ) from second_exc
+
+    def _make_backup_path(self, workspace_path: Path) -> Path:
+        backup_candidate = workspace_path.with_name(workspace_path.name + ".bak_v06")
+        if not backup_candidate.exists():
+            return backup_candidate
+
+        index = 1
+        while True:
+            indexed = workspace_path.with_name(workspace_path.name + f".bak_v06_{index}")
+            if not indexed.exists():
+                return indexed
+            index += 1
+
+    def _apply_session_content_back_to_workspace(
+        self,
+        session: ControlledEditSession,
+        request: RepoEditRequest,
+    ) -> dict[str, Any]:
+        workspace_path = self._resolve_workspace_path(request.file_path)
+
+        try:
+            edited_content, apply_source = self._read_edited_session_content(session, request)
+        except PolicyViolation as exc:
             return {
                 "applied": False,
-                "error": "sandbox edited file not found",
+                "error": str(exc),
                 "workspace_path": str(workspace_path),
-                "sandbox_roots": [str(p) for p in self._candidate_sandbox_roots(session)],
-                "sandbox_relatives": self._sandbox_relative_candidates(request.file_path, changed_files),
             }
 
         workspace_path.parent.mkdir(parents=True, exist_ok=True)
 
         backup_path = ""
         if workspace_path.exists():
-            backup_candidate = workspace_path.with_name(workspace_path.name + ".bak_v06")
-            if backup_candidate.exists():
-                index = 1
-                while True:
-                    indexed = workspace_path.with_name(workspace_path.name + f".bak_v06_{index}")
-                    if not indexed.exists():
-                        backup_candidate = indexed
-                        break
-                    index += 1
+            backup_candidate = self._make_backup_path(workspace_path)
             shutil.copy2(workspace_path, backup_candidate)
             backup_path = str(backup_candidate)
 
-        shutil.copy2(sandbox_path, workspace_path)
+        workspace_path.write_text(edited_content, encoding="utf-8")
+
+        # Hard verification: the real file must equal what we read from the
+        # edited session content.
+        try:
+            written = workspace_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            return {
+                "applied": False,
+                "error": f"workspace write verification failed: {exc}",
+                "workspace_path": str(workspace_path),
+                "backup_path": backup_path,
+                "apply_source": apply_source,
+            }
+
+        if written != edited_content:
+            return {
+                "applied": False,
+                "error": "workspace write verification mismatch",
+                "workspace_path": str(workspace_path),
+                "backup_path": backup_path,
+                "apply_source": apply_source,
+            }
 
         return {
             "applied": True,
             "workspace_path": str(workspace_path),
-            "sandbox_path": str(sandbox_path),
             "backup_path": backup_path,
+            "apply_source": apply_source,
         }
 
     def _error_result(
@@ -440,8 +418,8 @@ class RepoEditTool:
             error=error,
             applied_to_workspace=False,
             workspace_path="",
-            sandbox_path="",
             backup_path="",
+            apply_source="",
         )
 
 
