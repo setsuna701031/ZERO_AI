@@ -31,6 +31,11 @@ from core.tools.tool_decision import tool_decision_to_tool_call
 from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
 from core.tools.tool_registry import ToolRegistry
 
+try:
+    from core.tools.repo_edit_agent_bridge import run_repo_edit_decision
+except Exception:  # pragma: no cover - optional bridge in minimal runtimes
+    run_repo_edit_decision = None
+
 
 class AgentLoop:
     """
@@ -115,6 +120,10 @@ class AgentLoop:
                 error="user_input is empty",
             )
 
+        forced_repo_edit = self._try_force_repo_edit_route(text)
+        if forced_repo_edit is not None:
+            return self._normalize_agent_response(forced_repo_edit)
+
         context = self._build_context(text)
         route = self._call_router(context, text)
 
@@ -180,6 +189,148 @@ class AgentLoop:
         )
 
 
+    def _try_force_repo_edit_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Force explicit code/repo edit requests into repo_edit_tool.
+
+        This is the Code Chain v0.6 routing boundary:
+        - do not wait for the planner to choose repo_edit_tool;
+        - do not let the LLM finish with only final_answer when the request is
+          an explicit file-edit intent;
+        - delegate actual edit safety/backup/verify to repo_edit_agent_bridge
+          and repo_edit_tool.
+        """
+        if run_repo_edit_decision is None:
+            return None
+
+        text = str(user_input or "").strip()
+        if not text:
+            return None
+
+        try:
+            forced = run_repo_edit_decision(text, repo_root=".")
+        except Exception as e:
+            forced = {
+                "handled": True,
+                "forced_route": True,
+                "tool_name": "repo_edit_tool",
+                "status": "failed",
+                "reason": f"forced repo edit routing failed: {e}",
+                "error": str(e),
+                "task_text": text,
+            }
+
+        if not isinstance(forced, dict) or not forced.get("handled"):
+            return None
+
+        ok = str(forced.get("status") or "").strip().lower() not in {"failed", "error"}
+        tool_result = forced.get("tool_result") if isinstance(forced.get("tool_result"), dict) else {}
+        if isinstance(tool_result, dict) and tool_result.get("ok") is False:
+            ok = False
+
+        final_answer = self._summarize_forced_repo_edit_result(forced)
+        execution = {
+            "ok": ok,
+            "steps_executed": 1,
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": {
+                        "type": "tool_call",
+                        "tool_call": {
+                            "tool": "repo_edit_tool",
+                            "args": copy.deepcopy(forced.get("payload") if isinstance(forced.get("payload"), dict) else {}),
+                        },
+                    },
+                    "result": copy.deepcopy(forced),
+                }
+            ],
+            "execution_log": [
+                {
+                    "type": "forced_repo_edit",
+                    "tool": "repo_edit_tool",
+                    "status": str(forced.get("status") or ""),
+                    "ok": ok,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "forced_repo_edit",
+                    "tool": "repo_edit_tool",
+                    "status": str(forced.get("status") or ""),
+                    "ok": ok,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "last_result": copy.deepcopy(forced),
+            "final_answer": final_answer,
+            "error": forced.get("error") or (None if ok else forced.get("reason")),
+        }
+
+        route = {
+            "mode": "forced_repo_edit",
+            "task": False,
+            "tool": "repo_edit_tool",
+            "forced_route": True,
+        }
+        plan = {
+            "ok": ok,
+            "planner_mode": "forced_repo_edit_v0_6",
+            "intent": "repo_edit",
+            "final_answer": final_answer,
+            "steps": [
+                {
+                    "type": "tool",
+                    "tool": "repo_edit_tool",
+                    "args": copy.deepcopy(forced.get("payload") if isinstance(forced.get("payload"), dict) else {}),
+                }
+            ],
+            "meta": {
+                "fallback_used": False,
+                "step_count": 1,
+                "forced_route": True,
+                "code_chain_version": "v0.6",
+            },
+            "forced_repo_edit": copy.deepcopy(forced),
+        }
+
+        return self._make_agent_response(
+            ok=ok,
+            mode="forced_repo_edit",
+            context={},
+            route=route,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=execution.get("error"),
+            extra={
+                "forced_repo_edit": copy.deepcopy(forced),
+                "tool_name": "repo_edit_tool",
+            },
+        )
+
+    def _summarize_forced_repo_edit_result(self, forced: Dict[str, Any]) -> str:
+        if not isinstance(forced, dict):
+            return "forced repo edit returned invalid result"
+
+        tool_result = forced.get("tool_result") if isinstance(forced.get("tool_result"), dict) else {}
+        for source in (tool_result, forced):
+            if not isinstance(source, dict):
+                continue
+            for key in ("final_answer", "summary", "message", "reason", "status"):
+                value = source.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        output = tool_result.get("output") if isinstance(tool_result.get("output"), dict) else {}
+        observation = output.get("observation") if isinstance(output.get("observation"), dict) else {}
+        summary = observation.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+
+        return "forced repo edit completed"
+
+
     def run_task_loop(
         self,
         task: Dict[str, Any],
@@ -202,6 +353,58 @@ class AgentLoop:
             }
 
         self._ensure_loop_state_defaults(effective_task)
+
+        forced_task_text = str(
+            user_input
+            or effective_task.get("goal")
+            or effective_task.get("title")
+            or effective_task.get("description")
+            or ""
+        ).strip()
+        forced_repo_edit = self._try_force_repo_edit_route(forced_task_text)
+        if forced_repo_edit is not None:
+            forced_execution = self._normalize_execution_result(forced_repo_edit.get("execution"))
+            forced_ok = bool(forced_repo_edit.get("ok", True))
+            forced_final_answer = str(forced_repo_edit.get("final_answer") or "")
+            forced_status = "finished" if forced_ok else "failed"
+
+            effective_task["status"] = forced_status
+            effective_task["final_answer"] = forced_final_answer
+            effective_task["next_action"] = "finish"
+            effective_task["terminal_reason"] = "forced_repo_edit_completed" if forced_ok else "forced_repo_edit_failed"
+            effective_task["agent_action"] = "forced_repo_edit"
+            effective_task["last_error"] = forced_repo_edit.get("error")
+
+            if isinstance(forced_execution, dict):
+                if isinstance(forced_execution.get("results"), list):
+                    effective_task["results"] = copy.deepcopy(forced_execution.get("results"))
+                    effective_task["step_results"] = copy.deepcopy(forced_execution.get("results"))
+                if isinstance(forced_execution.get("execution_log"), list):
+                    effective_task["execution_log"] = copy.deepcopy(forced_execution.get("execution_log"))
+                if isinstance(forced_execution.get("execution_trace"), list):
+                    effective_task["execution_trace"] = copy.deepcopy(forced_execution.get("execution_trace"))
+                if isinstance(forced_execution.get("last_result"), dict):
+                    effective_task["last_step_result"] = copy.deepcopy(forced_execution.get("last_result"))
+
+            return {
+                "ok": forced_ok,
+                "mode": "forced_repo_edit_task_loop",
+                "action": "forced_repo_edit",
+                "status": forced_status,
+                "final_answer": forced_final_answer,
+                "error": forced_repo_edit.get("error"),
+                "task": copy.deepcopy(effective_task),
+                "runtime_state": copy.deepcopy(effective_task),
+                "loop_decision": "finish",
+                "next_action": "finish",
+                "blockers": [],
+                "blocked_reason": "",
+                "agent_action": "forced_repo_edit",
+                "execution": forced_execution,
+                "last_result": copy.deepcopy(forced_execution.get("last_result")) if isinstance(forced_execution, dict) and isinstance(forced_execution.get("last_result"), dict) else None,
+                "forced_repo_edit": copy.deepcopy(forced_repo_edit),
+            }
+
         effective_task.setdefault("results", [])
         effective_task.setdefault("step_results", [])
         effective_task.setdefault("execution_log", [])
@@ -539,6 +742,8 @@ class AgentLoop:
                 "failure_message",
                 "failure_decision",
                 "blockers",
+                "active_blocker_count",
+                "waiting_reason",
                 "requires_review",
                 "review_status",
                 "review_id",
@@ -562,6 +767,8 @@ class AgentLoop:
             "final_answer",
             "final_result",
             "blockers",
+            "active_blocker_count",
+            "waiting_reason",
             "requires_review",
             "review_status",
             "review_id",
@@ -670,26 +877,118 @@ class AgentLoop:
 
         return []
 
+    def _review_gate_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Return normalized human-review gate state for the loop.
+
+        This stays deliberately generic: AgentLoop does not decide policy; it
+        only honors persisted review fields produced by policy/blocker/runtime.
+        """
+        if not isinstance(task, dict):
+            return {"requires_review": False, "status": "", "pending": False, "approved": False, "rejected": False}
+
+        raw_status = str(task.get("review_status") or "").strip().lower()
+        requires_review = bool(task.get("requires_review", False))
+        review_id = str(task.get("review_id") or "").strip()
+        review_payload = task.get("review_payload")
+        has_review_payload = isinstance(review_payload, dict) and bool(review_payload)
+
+        # If review metadata exists but status is missing, treat it as pending.
+        if not raw_status and (requires_review or review_id or has_review_payload):
+            raw_status = "pending"
+
+        pending_statuses = {"", "pending", "required", "requested", "waiting", "waiting_review", "review_required"}
+        approved_statuses = {"approved", "accepted", "allowed", "cleared", "resolved"}
+        rejected_statuses = {"rejected", "denied", "declined", "cancelled", "canceled"}
+
+        approved = raw_status in approved_statuses
+        rejected = raw_status in rejected_statuses
+        pending = bool(requires_review or review_id or has_review_payload) and not approved and not rejected
+        if raw_status in pending_statuses and (requires_review or review_id or has_review_payload):
+            pending = True
+
+        return {
+            "requires_review": bool(requires_review or review_id or has_review_payload),
+            "status": raw_status,
+            "pending": bool(pending),
+            "approved": bool(approved),
+            "rejected": bool(rejected),
+        }
+
+    def _append_loop_history_event(
+        self,
+        task: Dict[str, Any],
+        *,
+        decision: str,
+        next_action: str,
+        reason: str,
+        terminal: bool = False,
+        should_continue: bool = False,
+        should_replan: bool = False,
+        should_fail: bool = False,
+        observation: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not isinstance(task, dict):
+            return
+
+        history = task.get("loop_history")
+        if not isinstance(history, list):
+            history = []
+
+        history.append(
+            {
+                "cycle": self._safe_int(task.get("loop_cycle_count"), 0),
+                "decision": str(decision or ""),
+                "next_action": str(next_action or ""),
+                "reason": str(reason or ""),
+                "terminal": bool(terminal),
+                "should_continue": bool(should_continue),
+                "should_replan": bool(should_replan),
+                "should_fail": bool(should_fail),
+                "observation": copy.deepcopy(observation) if isinstance(observation, dict) else {},
+                "active_blockers": copy.deepcopy(task.get("blockers", [])) if isinstance(task.get("blockers"), list) else [],
+                "review_status": str(task.get("review_status") or ""),
+                "agent_action": str(task.get("agent_action") or ""),
+            }
+        )
+        task["loop_history"] = history[-25:]
+
     def _apply_blocker_gate_to_task(
         self,
         *,
         effective_task: Dict[str, Any],
         loop_decision: Dict[str, Any],
     ) -> None:
-        """Apply generic blocker gate result to task loop state.
+        """Apply blocker/review gate result to task loop state.
 
-        P package: Auto Resume Loop.
-
-        Rules:
-        - If active blockers exist, the task waits for an external decision.
-        - If no active blockers remain and the task was previously waiting on
-          blockers/review, the task is resumed by moving it back to running and
-          setting next_action to run_next_tick.
-
-        Architectural boundary:
-        - AgentLoop does not know review/audit/approval semantics.
-        - It only understands generic blockers emitted by loop_decision/runtime.
+        First-priority loop stabilization rule:
+        - active blockers or pending review must stop execution deterministically;
+        - approved/cleared review can resume only when no active blockers remain;
+        - rejected review fails closed and cannot silently continue.
         """
+        observation = loop_decision.get("observation") if isinstance(loop_decision, dict) else {}
+        if not isinstance(observation, dict):
+            observation = {}
+
+        review_gate = self._review_gate_state(effective_task)
+        if review_gate.get("rejected"):
+            effective_task["status"] = "failed"
+            effective_task["blocked_reason"] = "review_rejected"
+            effective_task["waiting_reason"] = "review_rejected"
+            effective_task["agent_action"] = "review_rejected_stop"
+            effective_task["next_action"] = "finish"
+            effective_task["terminal_reason"] = "review_rejected"
+            effective_task["active_blocker_count"] = 0
+            self._append_loop_history_event(
+                effective_task,
+                decision="fail",
+                next_action="finish",
+                reason="review_rejected",
+                terminal=True,
+                should_fail=True,
+                observation=observation,
+            )
+            return
+
         blockers = self._active_blockers_from_loop_decision(
             effective_task=effective_task,
             loop_decision=loop_decision,
@@ -697,21 +996,45 @@ class AgentLoop:
 
         if blockers:
             effective_task["blockers"] = [copy.deepcopy(item) for item in blockers]
+            effective_task["active_blocker_count"] = len(blockers)
             effective_task["status"] = "blocked"
             effective_task["blocked_reason"] = "active_blockers"
+            effective_task["waiting_reason"] = "active_blockers"
             effective_task["agent_action"] = "await_external_decision"
             effective_task["next_action"] = "wait_for_external_event"
             if not str(effective_task.get("terminal_reason") or "").strip():
                 effective_task["terminal_reason"] = "waiting_for_external_blocker"
             return
 
+        if review_gate.get("pending"):
+            effective_task["blockers"] = []
+            effective_task["active_blocker_count"] = 1
+            effective_task["status"] = "review_required"
+            effective_task["blocked_reason"] = "review_required"
+            effective_task["waiting_reason"] = "review_required"
+            effective_task["agent_action"] = "await_review_decision"
+            effective_task["next_action"] = "wait_for_external_event"
+            if not str(effective_task.get("terminal_reason") or "").strip():
+                effective_task["terminal_reason"] = "waiting_for_review"
+            self._append_loop_history_event(
+                effective_task,
+                decision="wait",
+                next_action="wait_for_external_event",
+                reason="review_required",
+                terminal=False,
+                should_continue=False,
+                observation=observation,
+            )
+            return
+
         previous_status = str(effective_task.get("status") or "").strip().lower()
         previous_action = str(effective_task.get("next_action") or "").strip().lower()
         previous_agent_action = str(effective_task.get("agent_action") or "").strip().lower()
         previous_blocked_reason = str(effective_task.get("blocked_reason") or "").strip().lower()
+        previous_waiting_reason = str(effective_task.get("waiting_reason") or "").strip().lower()
 
         was_waiting_for_blocker = (
-            previous_status in {"blocked", "waiting", "waiting_blocker", "waiting_review", "pending_review"}
+            previous_status in {"blocked", "waiting", "waiting_blocker", "waiting_review", "pending_review", "review_required"}
             or previous_action in {
                 "wait_for_external_event",
                 "wait_for_blocker",
@@ -719,40 +1042,32 @@ class AgentLoop:
                 "await_review_decision",
             }
             or previous_agent_action in {"await_external_decision", "await_review_decision", "wait_for_review"}
-            or previous_blocked_reason == "active_blockers"
+            or previous_blocked_reason in {"active_blockers", "review_required", "human_review_required"}
+            or previous_waiting_reason in {"active_blockers", "review_required", "human_review_required", "waiting_for_review"}
         )
 
         if not was_waiting_for_blocker:
+            effective_task["active_blocker_count"] = 0
             return
 
         effective_task["blockers"] = []
+        effective_task["active_blocker_count"] = 0
         effective_task["blocked_reason"] = ""
+        effective_task["waiting_reason"] = ""
         effective_task["agent_action"] = "resume_execution"
         effective_task["status"] = "running"
         effective_task["next_action"] = "run_next_tick"
         effective_task["terminal_reason"] = ""
 
-        history = effective_task.get("loop_history")
-        if not isinstance(history, list):
-            history = []
-
-        history.append(
-            {
-                "cycle": self._safe_int(effective_task.get("loop_cycle_count"), 0),
-                "decision": "resume",
-                "next_action": "run_next_tick",
-                "reason": "blockers_cleared_auto_resume",
-                "terminal": False,
-                "should_continue": True,
-                "should_replan": False,
-                "should_fail": False,
-                "observation": copy.deepcopy(loop_decision.get("observation"))
-                if isinstance(loop_decision.get("observation"), dict)
-                else {},
-                "active_blockers": [],
-            }
+        self._append_loop_history_event(
+            effective_task,
+            decision="resume",
+            next_action="run_next_tick",
+            reason="blockers_or_review_cleared_auto_resume",
+            terminal=False,
+            should_continue=True,
+            observation=observation,
         )
-        effective_task["loop_history"] = history[-25:]
 
     def _apply_loop_decision_to_task(
         self,
@@ -822,8 +1137,17 @@ class AgentLoop:
         task_dict.setdefault("last_decision_reason", "")
         task_dict.setdefault("next_action", "")
         task_dict.setdefault("terminal_reason", "")
+        task_dict.setdefault("blocked_reason", "")
+        task_dict.setdefault("waiting_reason", "")
+        task_dict.setdefault("agent_action", "")
+        task_dict.setdefault("requires_review", False)
+        task_dict.setdefault("review_status", "")
+        task_dict.setdefault("review_id", "")
+        if not isinstance(task_dict.get("review_payload"), dict):
+            task_dict["review_payload"] = {}
         if not isinstance(task_dict.get("blockers"), list):
             task_dict["blockers"] = []
+        task_dict["active_blocker_count"] = len(active_blockers(task_dict.get("blockers"))) if isinstance(task_dict.get("blockers"), list) else 0
         return task_dict
 
     def _overlay_loop_state(
@@ -843,7 +1167,13 @@ class AgentLoop:
             "loop_cycle_count",
             "loop_history",
             "blockers",
+            "active_blocker_count",
             "blocked_reason",
+            "waiting_reason",
+            "requires_review",
+            "review_status",
+            "review_id",
+            "review_payload",
             "agent_action",
         ):
             if key in source:

@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import py_compile
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from core.tasks.task_paths import TaskPathManager
@@ -109,6 +110,8 @@ class StepExecutor:
         self.register_handler("python_syntax_check", self._handle_verify_python_syntax_step)
         self.register_handler("verify_unified_diff", self._handle_verify_unified_diff_step)
         self.register_handler("verify_patch", self._handle_verify_unified_diff_step)
+        self.register_handler("apply_unified_diff", self._handle_apply_unified_diff_step)
+        self.register_handler("apply_patch", self._handle_apply_unified_diff_step)
         self.register_handler("respond", RespondStepHandler(self).handle)
         self.register_handler("final_answer", RespondStepHandler(self).handle)
 
@@ -1590,6 +1593,237 @@ class StepExecutor:
             "message": "unified diff shape accepted",
             "line_count": len(lines),
             "changed_line_count": sum(1 for line in nonempty if (line.startswith("+") and not line.startswith("+++")) or (line.startswith("-") and not line.startswith("---"))),
+        }
+
+    def _handle_apply_unified_diff_step(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        """Apply a single-file unified diff inside workspace/shared only.
+
+        Code Chain v0.4 safety boundary:
+        - Only .patch/.diff files from workspace/shared are accepted.
+        - Only workspace/shared target files are writable.
+        - A .bak_v04 backup is written before applying.
+        - This handler applies the patch directly; it does not run generated code.
+        """
+        _ = context
+        _ = previous_result
+
+        patch_path = str(step.get("patch_path") or step.get("path") or "").strip()
+        target_path = str(step.get("target_path") or step.get("target") or "").strip()
+
+        if not patch_path:
+            return self._apply_patch_error("validation_error", "apply_patch step missing patch_path", patch_path, target_path)
+        if not target_path:
+            return self._apply_patch_error("validation_error", "apply_patch step missing target_path", patch_path, target_path)
+
+        patch_norm = patch_path.replace("\\", "/")
+        target_norm = target_path.replace("\\", "/")
+
+        if not patch_norm.lower().endswith((".patch", ".diff")):
+            return self._apply_patch_error("validation_error", "apply_patch only supports .patch or .diff files", patch_path, target_path)
+
+        if not (patch_norm.startswith("workspace/shared/") or patch_norm.startswith("shared/")):
+            return self._apply_patch_error("policy_blocked", "apply_patch only allows workspace/shared patch files", patch_path, target_path)
+
+        if not (target_norm.startswith("workspace/shared/") or target_norm.startswith("shared/")):
+            return self._apply_patch_error("policy_blocked", "apply_patch only allows workspace/shared target files", patch_path, target_path)
+
+        try:
+            full_patch_path = self.resolve_read_path(
+                relative_path=patch_path,
+                task=task,
+                prefer_scopes=("shared", "sandbox"),
+                return_fallback_candidate_if_missing=True,
+            )
+            full_target_path = self.resolve_write_path(
+                relative_path=target_path,
+                task=task,
+                default_scope="shared",
+            )
+        except Exception as exc:
+            return self._apply_patch_error("path_resolve_failed", f"apply_patch path resolve failed: {exc}", patch_path, target_path)
+
+        if not os.path.exists(full_patch_path):
+            return self._apply_patch_error("file_not_found", f"patch file not found: {full_patch_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+        if not os.path.exists(full_target_path):
+            return self._apply_patch_error("file_not_found", f"target file not found: {full_target_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+
+        try:
+            with open(full_patch_path, "r", encoding="utf-8") as f:
+                patch_text = f.read()
+            with open(full_target_path, "r", encoding="utf-8") as f:
+                original_text = f.read()
+        except Exception as exc:
+            return self._apply_patch_error("read_failed", f"apply_patch read failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+
+        validation = self._validate_unified_diff_text(patch_text)
+        if not validation.get("ok"):
+            message = str(validation.get("message") or "invalid unified diff")
+            return self._apply_patch_error("invalid_unified_diff", message, patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details=validation)
+
+        try:
+            patched_text, apply_meta = self._apply_unified_diff_text(original_text, patch_text)
+        except Exception as exc:
+            return self._apply_patch_error("patch_apply_failed", f"patch apply failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+
+        if patched_text == original_text:
+            return self._apply_patch_error("patch_no_change", "patch produced no changes", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details=apply_meta)
+
+        backup_path = full_target_path + ".bak_v04"
+        try:
+            os.makedirs(os.path.dirname(full_target_path), exist_ok=True)
+            with open(backup_path, "w", encoding="utf-8") as f:
+                f.write(original_text)
+            with open(full_target_path, "w", encoding="utf-8") as f:
+                f.write(patched_text)
+        except Exception as exc:
+            return self._apply_patch_error("write_failed", f"apply_patch write failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"backup_path": backup_path})
+
+        return {
+            "ok": True,
+            "type": "apply_patch",
+            "patch_path": patch_path,
+            "target_path": target_path,
+            "full_patch_path": full_patch_path,
+            "full_target_path": full_target_path,
+            "backup_path": backup_path,
+            "message": f"patch applied: {target_path}",
+            "final_answer": f"patch applied: {target_path}",
+            "result": {
+                "patch_path": patch_path,
+                "target_path": target_path,
+                "full_patch_path": full_patch_path,
+                "full_target_path": full_target_path,
+                "backup_path": backup_path,
+                "applied": True,
+                "apply_meta": apply_meta,
+            },
+            "error": None,
+        }
+
+    def _apply_patch_error(
+        self,
+        error_type: str,
+        message: str,
+        patch_path: str = "",
+        target_path: str = "",
+        full_patch_path: str = "",
+        full_target_path: str = "",
+        details: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "ok": False,
+            "type": "apply_patch",
+            "patch_path": patch_path,
+            "target_path": target_path,
+            "full_patch_path": full_patch_path,
+            "full_target_path": full_target_path,
+            "message": message,
+            "final_answer": message,
+            "error": {
+                "type": error_type,
+                "message": message,
+                "retryable": False,
+                "details": details or {},
+            },
+            "result": {
+                "patch_path": patch_path,
+                "target_path": target_path,
+                "full_patch_path": full_patch_path,
+                "full_target_path": full_target_path,
+                "applied": False,
+            },
+        }
+
+    def _apply_unified_diff_text(self, original_text: str, patch_text: str) -> Tuple[str, Dict[str, Any]]:
+        original_lines = str(original_text or "").splitlines(keepends=True)
+        patch_lines = str(patch_text or "").replace("\r\n", "\n").replace("\r", "\n").splitlines(keepends=True)
+
+        result_lines: List[str] = []
+        original_index = 0
+        hunk_count = 0
+        added_count = 0
+        removed_count = 0
+        patch_index = 0
+
+        while patch_index < len(patch_lines):
+            line = patch_lines[patch_index]
+            if not line.startswith("@@ "):
+                patch_index += 1
+                continue
+
+            header = line.strip()
+            match = re.match(r"@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@", header)
+            if not match:
+                raise ValueError(f"invalid hunk header: {header}")
+
+            old_start = int(match.group(1))
+            hunk_original_index = max(0, old_start - 1)
+
+            if hunk_original_index < original_index:
+                raise ValueError("overlapping hunks are not supported")
+
+            result_lines.extend(original_lines[original_index:hunk_original_index])
+            original_index = hunk_original_index
+            patch_index += 1
+            hunk_count += 1
+
+            while patch_index < len(patch_lines):
+                hunk_line = patch_lines[patch_index]
+                if hunk_line.startswith("@@ "):
+                    break
+                if hunk_line.startswith("--- ") or hunk_line.startswith("+++ "):
+                    break
+
+                if hunk_line.startswith("\\ No newline at end of file"):
+                    patch_index += 1
+                    continue
+
+                if not hunk_line:
+                    patch_index += 1
+                    continue
+
+                marker = hunk_line[0]
+                payload = hunk_line[1:]
+
+                if marker == " ":
+                    if original_index >= len(original_lines):
+                        raise ValueError("context line exceeds target length")
+                    if original_lines[original_index].rstrip("\n") != payload.rstrip("\n"):
+                        raise ValueError(f"context mismatch near line {original_index + 1}")
+                    result_lines.append(original_lines[original_index])
+                    original_index += 1
+                elif marker == "-":
+                    if original_index >= len(original_lines):
+                        raise ValueError("remove line exceeds target length")
+                    if original_lines[original_index].rstrip("\n") != payload.rstrip("\n"):
+                        raise ValueError(f"remove mismatch near line {original_index + 1}")
+                    original_index += 1
+                    removed_count += 1
+                elif marker == "+":
+                    result_lines.append(payload)
+                    added_count += 1
+                else:
+                    # Unknown lines inside a hunk are unsafe because they may be explanations.
+                    if hunk_line.strip():
+                        raise ValueError(f"unsupported hunk line: {hunk_line.strip()}")
+
+                patch_index += 1
+
+        if hunk_count <= 0:
+            raise ValueError("patch contains no hunks")
+
+        result_lines.extend(original_lines[original_index:])
+        patched_text = "".join(result_lines)
+        return patched_text, {
+            "hunk_count": hunk_count,
+            "added_count": added_count,
+            "removed_count": removed_count,
         }
 
     def _handle_append_file_step(

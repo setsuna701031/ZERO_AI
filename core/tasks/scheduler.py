@@ -91,11 +91,17 @@ from core.tasks.scheduler_core.llm_step_helpers import (
     execute_llm_step,
 )
 
+try:
+    from core.tools.repo_edit_agent_bridge import run_repo_edit_decision
+except Exception:  # pragma: no cover - optional bridge in minimal runtimes
+    run_repo_edit_decision = None
+
 
 SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
+STATUS_REVIEW_REQUIRED = "review_required"
 
 TERMINAL_STATUSES = {
     "finished",
@@ -122,6 +128,7 @@ READY_STATUSES = {
 class Scheduler(RuntimeTaskScheduler):
     SCHEDULER_BUILD = SCHEDULER_BUILD
     STATUS_BLOCKED = STATUS_BLOCKED
+    STATUS_REVIEW_REQUIRED = STATUS_REVIEW_REQUIRED
     STATUS_FAILED = STATUS_FAILED
     STATUS_FINISHED = STATUS_FINISHED
     STATUS_QUEUED = STATUS_QUEUED
@@ -364,12 +371,31 @@ class Scheduler(RuntimeTaskScheduler):
 
         status = str(task.get("status") or "").strip().lower()
         next_action = str(task.get("next_action") or "").strip().lower()
+        review_status = str(task.get("review_status") or "").strip().lower()
         waiting_reason = str(task.get("waiting_reason") or task.get("blocked_reason") or "").strip()
+
+        requires_review = bool(task.get("requires_review", False))
+        review_id = str(task.get("review_id") or "").strip()
+        review_payload = task.get("review_payload")
+        has_review_payload = isinstance(review_payload, dict) and bool(review_payload)
 
         active_blocker_count = self._safe_int_for_runtime_gate(task.get("active_blocker_count"), 0)
         active_blockers = self._active_runtime_gate_blockers(task.get("blockers"))
         if active_blockers and active_blocker_count <= 0:
             active_blocker_count = len(active_blockers)
+
+        if not review_status and (requires_review or review_id or has_review_payload or status == STATUS_REVIEW_REQUIRED):
+            review_status = "pending"
+
+        approved_review_statuses = {"approved", "accepted", "allowed", "cleared", "resolved"}
+        rejected_review_statuses = {"rejected", "denied", "declined", "cancelled", "canceled"}
+        pending_review_statuses = {"", "pending", "required", "requested", "waiting", "waiting_review", "review_required"}
+
+        review_approved = review_status in approved_review_statuses
+        review_rejected = review_status in rejected_review_statuses
+        review_pending = bool(requires_review or review_id or has_review_payload or status == STATUS_REVIEW_REQUIRED) and not review_approved and not review_rejected
+        if review_status in pending_review_statuses and (requires_review or review_id or has_review_payload or status == STATUS_REVIEW_REQUIRED):
+            review_pending = True
 
         if status in TERMINAL_STATUSES:
             return {
@@ -380,7 +406,25 @@ class Scheduler(RuntimeTaskScheduler):
                 "active_blocker_count": active_blocker_count,
             }
 
-        if status in {"waiting", "waiting_review", "waiting_blocker", "blocked", "paused"}:
+        if review_rejected:
+            return {
+                "allow": False,
+                "reason": "review_rejected",
+                "status": status or STATUS_REVIEW_REQUIRED,
+                "next_action": next_action or "finish",
+                "active_blocker_count": active_blocker_count,
+            }
+
+        if review_pending:
+            return {
+                "allow": False,
+                "reason": waiting_reason or "review_required",
+                "status": STATUS_REVIEW_REQUIRED,
+                "next_action": "wait_for_external_event",
+                "active_blocker_count": max(1, active_blocker_count),
+            }
+
+        if status in {"waiting", "waiting_review", "waiting_blocker", "blocked", "paused", STATUS_REVIEW_REQUIRED}:
             if next_action != "run_next_tick" or active_blocker_count > 0 or active_blockers:
                 return {
                     "allow": False,
@@ -408,8 +452,6 @@ class Scheduler(RuntimeTaskScheduler):
                 "active_blocker_count": active_blocker_count,
             }
 
-        # Explicit resume signal is allowed.  Normal queued/ready/running tasks
-        # remain allowed so old workflows keep working.
         return {
             "allow": True,
             "reason": "dispatch_allowed",
@@ -1779,6 +1821,8 @@ class Scheduler(RuntimeTaskScheduler):
         state_detail = ""
         if status == STATUS_BLOCKED:
             state_detail = task["blocked_reason"]
+        elif status == STATUS_REVIEW_REQUIRED:
+            state_detail = task["blocked_reason"] or str(task.get("waiting_reason") or "review_required")
         elif status in {"failed", "error"}:
             state_detail = task["last_error"] or task["failure_message"]
         elif status in {"finished", "done", "success", "completed"}:
@@ -1936,6 +1980,123 @@ class Scheduler(RuntimeTaskScheduler):
     # 任務操作 API
     # ------------------------------------------------------------
 
+
+    def _try_force_repo_edit_at_create_task(self, goal: str) -> Optional[Dict[str, Any]]:
+        """Code Chain v0.6 scheduler-level forced routing.
+
+        This is intentionally placed at task creation/planning level because
+        some app.py paths create scheduler tasks directly and never enter
+        AgentLoop.run() / AgentLoop.run_task_loop().
+
+        Contract:
+        - If the goal is not an explicit repo edit task, return None.
+        - If handled, execute repo_edit_tool through repo_edit_agent_bridge.
+        - Never raises into create_task.
+        """
+        if run_repo_edit_decision is None:
+            return None
+
+        text = str(goal or "").strip()
+        if not text:
+            return None
+
+        try:
+            forced = run_repo_edit_decision(text, repo_root=".")
+        except Exception as e:
+            forced = {
+                "handled": True,
+                "forced_route": True,
+                "tool_name": "repo_edit_tool",
+                "status": "failed",
+                "reason": f"scheduler forced repo edit routing failed: {e}",
+                "error": str(e),
+                "task_text": text,
+            }
+
+        if not isinstance(forced, dict) or not bool(forced.get("handled")):
+            return None
+
+        tool_result = forced.get("tool_result") if isinstance(forced.get("tool_result"), dict) else {}
+        status_text = str(forced.get("status") or tool_result.get("status") or "").strip().lower()
+        error_text = str(forced.get("error") or tool_result.get("error") or "").strip()
+
+        ok = True
+        if error_text:
+            ok = False
+        if status_text in {"failed", "error", "blocked", "rejected"}:
+            ok = False
+        if isinstance(tool_result, dict) and tool_result.get("ok") is False:
+            ok = False
+
+        final_answer = self._summarize_forced_repo_edit_result(forced)
+        return {
+            "ok": ok,
+            "status": STATUS_FINISHED if ok else STATUS_FAILED,
+            "forced": copy.deepcopy(forced),
+            "final_answer": final_answer,
+            "error": error_text,
+            "planner_result": {
+                "ok": ok,
+                "planner_mode": "forced_repo_edit_v0_6_scheduler",
+                "intent": "repo_edit",
+                "final_answer": final_answer,
+                "steps": [],
+                "error": error_text or None,
+                "meta": {
+                    "forced_route": True,
+                    "code_chain_version": "v0.6",
+                    "tool_name": "repo_edit_tool",
+                    "step_count": 0,
+                },
+                "forced_repo_edit": copy.deepcopy(forced),
+            },
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": {
+                        "type": "tool_call",
+                        "tool": "repo_edit_tool",
+                        "args": copy.deepcopy(forced.get("payload") if isinstance(forced.get("payload"), dict) else {}),
+                    },
+                    "result": copy.deepcopy(forced),
+                }
+            ],
+            "execution_log": [
+                {
+                    "type": "forced_repo_edit",
+                    "tool": "repo_edit_tool",
+                    "status": str(forced.get("status") or ""),
+                    "ok": ok,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+        }
+
+    def _summarize_forced_repo_edit_result(self, forced: Dict[str, Any]) -> str:
+        if not isinstance(forced, dict):
+            return "forced repo edit returned invalid result"
+
+        tool_result = forced.get("tool_result") if isinstance(forced.get("tool_result"), dict) else {}
+        for source in (tool_result, forced):
+            if not isinstance(source, dict):
+                continue
+            for key in ("final_answer", "summary", "message", "reason", "status"):
+                value = source.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        payload = forced.get("payload") if isinstance(forced.get("payload"), dict) else {}
+        target = (
+            payload.get("target_path")
+            or payload.get("file_path")
+            or payload.get("path")
+            or ""
+        )
+        if target:
+            return f"forced repo edit completed: {target}"
+        return "forced repo edit completed"
+
+
     def _create_task_record(
         self,
         goal: str,
@@ -1962,7 +2123,26 @@ class Scheduler(RuntimeTaskScheduler):
         clean_goal = parsed["clean_goal"]
         document_payload = copy.deepcopy(parsed.get("document_payload") or {}) if isinstance(parsed, dict) else {}
 
-        planner_result = self._plan_goal(clean_goal, document_payload=document_payload)
+        forced_repo_edit = self._try_force_repo_edit_at_create_task(clean_goal)
+        if isinstance(forced_repo_edit, dict):
+            planner_result = copy.deepcopy(forced_repo_edit.get("planner_result") or {})
+            if not planner_result:
+                planner_result = {
+                    "ok": bool(forced_repo_edit.get("ok", False)),
+                    "planner_mode": "forced_repo_edit_v0_6_scheduler",
+                    "intent": "repo_edit",
+                    "final_answer": str(forced_repo_edit.get("final_answer") or ""),
+                    "steps": [],
+                    "error": forced_repo_edit.get("error"),
+                    "meta": {
+                        "forced_route": True,
+                        "code_chain_version": "v0.6",
+                        "tool_name": "repo_edit_tool",
+                        "step_count": 0,
+                    },
+                }
+        else:
+            planner_result = self._plan_goal(clean_goal, document_payload=document_payload)
 
         override_steps = parsed.get("steps")
         if isinstance(override_steps, list):
@@ -2008,16 +2188,16 @@ class Scheduler(RuntimeTaskScheduler):
             "input_file": str(document_payload.get("input_file") or ""),
             "output_file": str(document_payload.get("output_file") or ""),
             "document_payload": copy.deepcopy(document_payload),
-            "status": initial_status,
+            "status": str(forced_repo_edit.get("status") or initial_status) if isinstance(forced_repo_edit, dict) else initial_status,
             "priority": int(priority),
-            "current_step_index": 0,
+            "current_step_index": len(steps) if isinstance(forced_repo_edit, dict) and bool(forced_repo_edit.get("ok")) else 0,
             "steps": copy.deepcopy(steps),
             "steps_total": len(steps),
-            "results": [],
-            "step_results": [],
-            "last_step_result": None,
-            "execution_log": [],
-            "final_answer": "",
+            "results": copy.deepcopy(forced_repo_edit.get("results", [])) if isinstance(forced_repo_edit, dict) else [],
+            "step_results": copy.deepcopy(forced_repo_edit.get("results", [])) if isinstance(forced_repo_edit, dict) else [],
+            "last_step_result": copy.deepcopy(forced_repo_edit.get("forced")) if isinstance(forced_repo_edit, dict) else None,
+            "execution_log": copy.deepcopy(forced_repo_edit.get("execution_log", [])) if isinstance(forced_repo_edit, dict) else [],
+            "final_answer": str(forced_repo_edit.get("final_answer") or "") if isinstance(forced_repo_edit, dict) else "",
             "retry_count": 0,
             "max_retries": int(max_retries),
             "retry_delay": int(retry_delay),
@@ -2028,12 +2208,12 @@ class Scheduler(RuntimeTaskScheduler):
             "created_tick": getattr(self, "current_tick", 0),
             "last_run_tick": None,
             "last_failure_tick": None,
-            "finished_tick": None,
+            "finished_tick": getattr(self, "current_tick", 0) if isinstance(forced_repo_edit, dict) and bool(forced_repo_edit.get("ok")) else None,
             "depends_on": normalized_depends_on,
             "blocked_reason": blocked_reason,
-            "failure_type": None,
-            "failure_message": None,
-            "last_error": None,
+            "failure_type": None if not isinstance(forced_repo_edit, dict) or bool(forced_repo_edit.get("ok")) else "forced_repo_edit_failed",
+            "failure_message": None if not isinstance(forced_repo_edit, dict) or bool(forced_repo_edit.get("ok")) else str(forced_repo_edit.get("error") or forced_repo_edit.get("final_answer") or "forced repo edit failed"),
+            "last_error": None if not isinstance(forced_repo_edit, dict) or bool(forced_repo_edit.get("ok")) else str(forced_repo_edit.get("error") or forced_repo_edit.get("final_answer") or "forced repo edit failed"),
             "cancel_requested": False,
             "cancel_reason": "",
             "planner_result": copy.deepcopy(planner_result),
@@ -2041,7 +2221,7 @@ class Scheduler(RuntimeTaskScheduler):
             "replanned": False,
             "replan_reason": "",
             "max_replans": int(kwargs.get("max_replans", self.default_max_replans) or self.default_max_replans),
-            "history": [initial_status],
+            "history": [str(forced_repo_edit.get("status") or initial_status)] if isinstance(forced_repo_edit, dict) else [initial_status],
             "workspace_root": self.workspace_root,
             "workspace_dir": self.tasks_root,
             "shared_dir": self.shared_dir,
@@ -2908,7 +3088,22 @@ class Scheduler(RuntimeTaskScheduler):
             "last_error": str(normalized.get("last_error") or ""),
             "failure_message": str(normalized.get("failure_message") or ""),
             "blocked_reason": str(normalized.get("blocked_reason") or ""),
+            "waiting_reason": str(normalized.get("waiting_reason") or ""),
             "state_detail": str(normalized.get("state_detail") or ""),
+            "next_action": str(normalized.get("next_action") or ""),
+            "terminal_reason": str(normalized.get("terminal_reason") or ""),
+            "last_decision": str(normalized.get("last_decision") or ""),
+            "last_decision_reason": str(normalized.get("last_decision_reason") or ""),
+            "last_observation": copy.deepcopy(normalized.get("last_observation", {})) if isinstance(normalized.get("last_observation"), dict) else {},
+            "loop_cycle_count": int(normalized.get("loop_cycle_count", 0) or 0),
+            "loop_history": copy.deepcopy(normalized.get("loop_history", [])) if isinstance(normalized.get("loop_history"), list) else [],
+            "blockers": copy.deepcopy(normalized.get("blockers", [])) if isinstance(normalized.get("blockers"), list) else [],
+            "active_blocker_count": int(normalized.get("active_blocker_count", 0) or 0),
+            "requires_review": bool(normalized.get("requires_review", False)),
+            "review_status": str(normalized.get("review_status") or ""),
+            "review_id": str(normalized.get("review_id") or ""),
+            "review_payload": copy.deepcopy(normalized.get("review_payload", {})) if isinstance(normalized.get("review_payload"), dict) else {},
+            "agent_action": str(normalized.get("agent_action") or ""),
             "retry_count": int(normalized.get("retry_count", 0) or 0),
             "replan_count": int(normalized.get("replan_count", 0) or 0),
             "replan_decision": str(normalized.get("replan_decision") or ""),
@@ -3133,7 +3328,19 @@ class Scheduler(RuntimeTaskScheduler):
             "final_answer": str(normalized.get("final_answer") or ""),
             "last_error": str(normalized.get("last_error") or ""),
             "blocked_reason": str(normalized.get("blocked_reason") or ""),
+            "waiting_reason": str(normalized.get("waiting_reason") or ""),
             "state_detail": str(normalized.get("state_detail") or ""),
+            "next_action": str(normalized.get("next_action") or ""),
+            "terminal_reason": str(normalized.get("terminal_reason") or ""),
+            "last_decision": str(normalized.get("last_decision") or ""),
+            "last_decision_reason": str(normalized.get("last_decision_reason") or ""),
+            "loop_cycle_count": int(normalized.get("loop_cycle_count", 0) or 0),
+            "blockers": copy.deepcopy(normalized.get("blockers", [])) if isinstance(normalized.get("blockers"), list) else [],
+            "active_blocker_count": int(normalized.get("active_blocker_count", 0) or 0),
+            "requires_review": bool(normalized.get("requires_review", False)),
+            "review_status": str(normalized.get("review_status") or ""),
+            "review_id": str(normalized.get("review_id") or ""),
+            "agent_action": str(normalized.get("agent_action") or ""),
             "result_path": result_path,
             "result_logical_path": result_logical_path,
             "result_exists": bool(normalized.get("result_exists")),
@@ -3375,9 +3582,22 @@ class Scheduler(RuntimeTaskScheduler):
         # Q package: runtime persistence resume normalization.
         # If the persisted runtime says the task can continue, keep the task
         # eligible for queue rebuild after a process restart. Waiting states
-        # remain waiting unless next_action explicitly requests run_next_tick.
+        # remain waiting unless next_action explicitly requests run_next_tick
+        # and blocker/review gates are already cleared.
         persisted_status = str(hydrated.get("status") or "").strip().lower()
         persisted_next_action = str(hydrated.get("next_action") or "").strip().lower()
+        review_status = str(hydrated.get("review_status") or "").strip().lower()
+        requires_review = bool(hydrated.get("requires_review", False))
+        approved_review_statuses = {"approved", "accepted", "allowed", "cleared", "resolved"}
+        rejected_review_statuses = {"rejected", "denied", "declined", "cancelled", "canceled"}
+        active_runtime_blockers = self._active_runtime_gate_blockers(hydrated.get("blockers"))
+        active_blocker_count = self._safe_int_for_runtime_gate(hydrated.get("active_blocker_count"), 0)
+        review_pending = bool(requires_review or hydrated.get("review_id") or hydrated.get("review_payload") or persisted_status == STATUS_REVIEW_REQUIRED)
+        if review_status in approved_review_statuses:
+            review_pending = False
+        if review_status in rejected_review_statuses:
+            review_pending = True
+
         if persisted_next_action == "run_next_tick" and persisted_status in {
             "running",
             "queued",
@@ -3387,9 +3607,12 @@ class Scheduler(RuntimeTaskScheduler):
             "waiting_blocker",
             "waiting_review",
             "blocked",
-        }:
+            STATUS_REVIEW_REQUIRED,
+        } and not active_runtime_blockers and active_blocker_count <= 0 and not review_pending:
             hydrated["status"] = "running"
             hydrated["blocked_reason"] = ""
+            hydrated["waiting_reason"] = ""
+            hydrated["active_blocker_count"] = 0
             hydrated["agent_action"] = str(hydrated.get("agent_action") or "resume_execution")
 
         if not isinstance(hydrated.get("results"), list):

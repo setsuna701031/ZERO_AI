@@ -652,7 +652,7 @@ class Planner:
         return None
 
     def _build_code_chain_diff_v0_pipeline(self, source_path: str, output_path: str, instruction: str = "") -> List[Dict[str, Any]]:
-        return [
+        steps: List[Dict[str, Any]] = [
             {
                 "type": "read_file",
                 "path": source_path,
@@ -673,7 +673,24 @@ class Planner:
                 "path": output_path,
                 "scope": self._infer_path_scope(output_path),
             },
+            {
+                "type": "apply_unified_diff",
+                "patch_path": output_path,
+                "target_path": source_path,
+                "scope": self._infer_path_scope(source_path),
+            },
         ]
+
+        if self._should_add_python_syntax_verification(source_path):
+            steps.append(
+                {
+                    "type": "verify_python_syntax",
+                    "path": source_path,
+                    "scope": self._infer_path_scope(source_path),
+                }
+            )
+
+        return steps
 
     def _build_code_chain_diff_v0_prompt(self, source_path: str, instruction: str = "") -> str:
         edit_instruction = str(instruction or "Generate a minimal unified diff for the requested controlled code edit.").strip()
