@@ -807,6 +807,130 @@ class WriteFileStepHandler(BaseStepHandler):
         return None
 
 
+class AppendFileStepHandler(BaseStepHandler):
+    def handle(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        path = step.get("path")
+        content = step.get("content", None)
+        scope = str(step.get("scope", "sandbox")).strip().lower() or "sandbox"
+
+        if not path:
+            return self._error(
+                error_type="path_missing",
+                message="path missing",
+                step=step,
+            )
+
+        if content is None or bool(step.get("use_previous_text", False)):
+            extracted = self._extract_text_from_previous(previous_result)
+            if extracted is not None:
+                content = extracted
+
+        if content is None:
+            content = ""
+
+        content_text = str(content)
+        newline = step.get("newline", None)
+        append_text = content_text
+        if newline is True and append_text and not append_text.endswith("\n"):
+            append_text += "\n"
+
+        try:
+            full_path = self.executor.resolve_write_path(
+                relative_path=str(path),
+                task=task,
+                default_scope=scope,
+            )
+        except Exception as e:
+            return self._error(
+                error_type="path_resolve_failed",
+                message=f"path resolve failed: {e}",
+                step=step,
+                result={
+                    "path": str(path),
+                    "scope": scope,
+                },
+            )
+
+        try:
+            parent = os.path.dirname(full_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+
+            file_existed = os.path.exists(full_path)
+            with open(full_path, "a", encoding="utf-8") as f:
+                f.write(append_text)
+        except Exception as e:
+            return self._error(
+                error_type="append_file_failed",
+                message=f"append file failed: {e}",
+                step=step,
+                result={
+                    "path": full_path,
+                    "scope": scope,
+                },
+            )
+
+        result = {
+            "type": "append_file",
+            "path": str(path),
+            "full_path": full_path,
+            "scope": scope,
+            "bytes_appended": len(append_text.encode("utf-8")),
+            "content": content_text,
+            "file_existed": file_existed,
+            "used_previous_text": bool(step.get("use_previous_text", False)),
+        }
+        return self._success(
+            result=result,
+            step=step,
+            extra={
+                "content": content_text,
+                "path": full_path,
+                "message": content_text,
+                "final_answer": content_text,
+            },
+        )
+
+    def _extract_text_from_previous(self, previous_result: Any) -> Optional[str]:
+        return self._extract_text_deep(previous_result)
+
+    def _extract_text_deep(self, payload: Any, depth: int = 0) -> Optional[str]:
+        if depth > 10:
+            return None
+
+        if payload is None:
+            return None
+
+        if isinstance(payload, str):
+            return payload
+
+        if isinstance(payload, dict):
+            for key in ("text", "content", "message", "final_answer", "response", "stdout"):
+                value = payload.get(key)
+                if isinstance(value, str):
+                    return value
+
+            for nested_key in ("result", "raw", "data", "payload", "output", "previous_result"):
+                nested = payload.get(nested_key)
+                text = self._extract_text_deep(nested, depth + 1)
+                if isinstance(text, str):
+                    return text
+
+        if isinstance(payload, list):
+            for item in reversed(payload):
+                text = self._extract_text_deep(item, depth + 1)
+                if isinstance(text, str):
+                    return text
+
+        return None
+
+
 class EnsureFileStepHandler(BaseStepHandler):
     def handle(
         self,

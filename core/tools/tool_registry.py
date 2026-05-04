@@ -6,6 +6,7 @@ from uuid import uuid4
 from core.tools.tool_audit_log import write_tool_audit_log
 from core.tools.external_draft_tools import GitHubDraftBundleTool, WebSearchDraftTool
 from core.tools.filesystem_tools import ListDirTool, ReadFileTool, WriteFileTool
+from core.tools.append_file_tool import AppendFileTool
 from core.tools.tool_schema import ToolParameter, ToolRequest, ToolResult, ToolSpec
 from core.tools.standard_file_tools import ReservedToolAdapter, WorkspaceFileTool
 
@@ -411,6 +412,28 @@ class ToolRegistry:
                 side_effect_level="workspace_write",
                 risk_level="medium",
                 scope="workspace",
+            )
+        )
+
+        self.register(
+            "append_file",
+            AppendFileTool(workspace_root=self.workspace_dir),
+            aliases=["l4_append_file", "file_append"],
+        )
+        self.register_schema(
+            ToolSpec(
+                name="append_file",
+                description="Append UTF-8 text to a file under workspace/shared without overwriting existing content.",
+                parameters=[
+                    ToolParameter(name="path", type="string", required=True, description="Path under workspace/shared, such as shared/notes.txt."),
+                    ToolParameter(name="content", type="string", required=True, description="Text content to append."),
+                    ToolParameter(name="create_if_missing", type="boolean", required=False, description="Create the target file if it does not exist. Defaults to true."),
+                    ToolParameter(name="ensure_trailing_newline", type="boolean", required=False, description="Append a newline to content when missing."),
+                ],
+                tool_class="workspace_write",
+                side_effect_level="workspace_write",
+                risk_level="medium",
+                scope="workspace/shared",
             )
         )
 

@@ -81,7 +81,7 @@ class ExecutionGuard:
         # ---------------------------------------------------------
         # write
         # ---------------------------------------------------------
-        if step_type in {"write_file", "ensure_file"}:
+        if step_type in {"write_file", "ensure_file", "append_file"}:
             raw_path = str(step.get("path") or "").strip()
             if not raw_path:
                 return self._deny(f"{step_type} step missing path", guard_mode="missing_path")

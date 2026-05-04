@@ -44,6 +44,17 @@ def prepare_simple_step_guard(
             "scope": effective_scope,
         }
 
+    elif step_type == "append_file":
+        raw_path = str(prepared_step.get("path") or "").strip()
+        if not raw_path:
+            raise ValueError("append_file step missing path")
+        guard_step = {
+            "type": "append_file",
+            "path": raw_path,
+            "content": str(prepared_step.get("content") or ""),
+            "scope": effective_scope,
+        }
+
     return prepared_step, guard_step, effective_scope
 
 
@@ -140,6 +151,59 @@ def execute_simple_basic_step(
             "bytes": len(content.encode("utf-8")),
             "content": content,
             "used_previous_text": bool(step.get("use_previous_text", False)),
+        }
+
+    if step_type == "append_file":
+        raw_path = str(step.get("path") or "").strip()
+        if not raw_path:
+            raise ValueError("append_file step missing path")
+
+        content = step.get("content", "")
+        if content is None:
+            content = ""
+        content = str(content)
+
+        if bool(step.get("ensure_trailing_newline", False)) and content and not content.endswith("\n"):
+            content += "\n"
+
+        if str(step_scope or "").strip().lower() == "shared":
+            full_path = scheduler._resolve_step_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                shared_dir=scheduler.shared_dir,
+                scope="shared",
+            )
+        else:
+            full_path = scheduler._resolve_guard_target_path(
+                raw_path=raw_path,
+                task_dir=task_dir,
+                scope=step_scope,
+                resolved_path=str(guard_result.get("resolved_path") or ""),
+            )
+
+        if os.path.exists(full_path) and os.path.isdir(full_path):
+            raise IsADirectoryError(f"append_file target is a directory: {full_path}")
+
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        before_size = os.path.getsize(full_path) if os.path.exists(full_path) else 0
+
+        with open(full_path, "a", encoding="utf-8", newline="") as f:
+            f.write(content)
+
+        after_size = os.path.getsize(full_path) if os.path.exists(full_path) else before_size
+
+        return {
+            "type": "append_file",
+            "path": raw_path,
+            "full_path": full_path,
+            "scope": step_scope,
+            "bytes_before": before_size,
+            "bytes_after": after_size,
+            "bytes_appended": max(0, after_size - before_size),
+            "content": content,
+            "chars_appended": len(content),
+            "created": before_size == 0,
+            "ensure_trailing_newline": bool(step.get("ensure_trailing_newline", False)),
         }
 
     if step_type == "read_file":

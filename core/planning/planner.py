@@ -286,6 +286,17 @@ class Planner:
         context = context or {}
         semantic_type = self._infer_semantic_type(text=text, context=context, steps=None)
 
+        if semantic_type == "semantic_chain_v0":
+            parsed = self._match_semantic_chain_v0_task(text=text)
+            if parsed is None:
+                return None, semantic_type, "semantic_chain_v0_unmatched"
+
+            steps = self._build_semantic_chain_v0_pipeline(
+                source_path=parsed["source_path"],
+                output_path=parsed["output_path"],
+            )
+            return steps, semantic_type, "semantic_chain_v0_pipeline"
+
         if semantic_type == "summary":
             parsed = self._match_semantic_document_task(text=text, semantic_type="summary")
             if parsed is None:
@@ -359,6 +370,9 @@ class Planner:
 
         lowered = str(text or "").strip().lower()
 
+        if self._looks_like_semantic_chain_v0(lowered):
+            return "semantic_chain_v0"
+
         if any(token in lowered for token in ["requirement-pack", "requirement pack"]):
             return "requirement_pack"
 
@@ -391,6 +405,8 @@ class Planner:
 
     def _normalize_semantic_type(self, value: str) -> str:
         lowered = str(value or "").strip().lower()
+        if lowered in {"semantic_chain_v0", "semantic-chain-v0", "semantic chain v0", "summary_action_items", "summary-action-items"}:
+            return "semantic_chain_v0"
         if lowered in {"summary", "summarize"}:
             return "summary"
         if lowered in {"action_items", "action-items", "actionitems"}:
@@ -426,6 +442,97 @@ class Planner:
             return True
 
         return has_git_signal and has_pipeline_signal and has_generation_signal
+
+    def _looks_like_semantic_chain_v0(self, lowered: str) -> bool:
+        text = str(lowered or "").strip().lower()
+        if not text:
+            return False
+
+        has_summary_signal = any(
+            token in text
+            for token in [
+                "summarize",
+                "summary",
+                "make summary",
+                "create summary",
+                "摘要",
+                "總結",
+            ]
+        )
+        has_action_signal = any(
+            token in text
+            for token in [
+                "action items",
+                "action-items",
+                "action_items",
+                "extract actions",
+                "todo list",
+                "todos",
+                "待辦",
+                "行動項目",
+            ]
+        )
+        has_chain_signal = any(
+            token in text
+            for token in [
+                "semantic chain v0",
+                "semantic_chain_v0",
+                "summary and action",
+                "summary + action",
+                "summary then action",
+                "summarize then extract",
+            ]
+        )
+
+        return (has_summary_signal and has_action_signal) or has_chain_signal
+
+    def _match_semantic_chain_v0_task(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+        if not self._looks_like_semantic_chain_v0(lowered):
+            return None
+
+        output_path = self._detect_output_path_from_text(stripped, llm_mode="semantic_chain_v0")
+        if not output_path:
+            output_path = "workspace/shared/semantic_chain_v0.txt"
+
+        source_path = self._detect_source_path_from_text(stripped, output_path=output_path)
+        if not source_path:
+            read_match = re.search(r"\bread\s+([^\s,;]+)", stripped, flags=re.IGNORECASE)
+            if read_match:
+                source_path = self._normalize_requested_path(read_match.group(1))
+
+        if not source_path:
+            return None
+
+        return {
+            "source_path": source_path,
+            "output_path": output_path,
+        }
+
+    def _build_semantic_chain_v0_pipeline(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "summary",
+                "prompt": self._build_semantic_summary_prompt(source_path),
+            },
+            {
+                "type": "llm",
+                "mode": "action_items",
+                "prompt": self._build_semantic_chain_v0_action_items_prompt(source_path),
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": self._infer_path_scope(output_path),
+                "content": "{{previous_result}}",
+            },
+        ]
 
     def _match_semantic_document_task(
         self,
@@ -579,6 +686,24 @@ class Planner:
             f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
         )
 
+    def _build_semantic_chain_v0_action_items_prompt(self, source_path: str) -> str:
+        return (
+            "Create a Semantic Chain v0 output from the previous summary below.\n\n"
+            "Required output format:\n"
+            "Summary:\n"
+            "- Rewrite the provided summary in 1-3 concise bullets.\n\n"
+            "Action Items:\n"
+            "- Extract concrete action items only. If no concrete action items exist, write: - No concrete action items found.\n\n"
+            "Rules:\n"
+            "1. Use only the content below.\n"
+            "2. Do not claim that the file is unavailable.\n"
+            "3. Do not ask the user to provide the text again.\n"
+            "4. Keep the output plain text.\n\n"
+            f"Source path: {source_path}\n\n"
+            "Input summary from previous step:\n"
+            "{{previous_result}}"
+        )
+
     def _build_semantic_report_prompt(self, source_path: str) -> str:
         return (
             "Generate a concise structured report from the following document.\n\n"
@@ -704,6 +829,13 @@ class Planner:
     # ============================================================
 
     def _plan_multi_step_task(self, text: str) -> Optional[List[Dict[str, Any]]]:
+        chain_v0 = self._match_semantic_chain_v0_task(text)
+        if chain_v0 is not None:
+            return self._build_semantic_chain_v0_pipeline(
+                source_path=chain_v0["source_path"],
+                output_path=chain_v0["output_path"],
+            )
+
         parsed = self._match_read_transform_write(text)
         if parsed is None:
             return None
@@ -753,6 +885,10 @@ class Planner:
         }
 
     def _detect_transform_mode(self, lowered: str) -> Optional[str]:
+        if any(token in lowered for token in ["bullet points", "bullet-point", "bullets", "bullet list"]):
+            return "bullet_points"
+        if any(token in lowered for token in ["rewrite", "reword", "polish", "convert", "transform"]):
+            return "rewrite"
         if any(token in lowered for token in ["action items", "action-items", "todo list", "extract actions"]):
             return "action_items"
         if any(token in lowered for token in ["summarize", "summary", "make summary", "create summary"]):
@@ -781,6 +917,8 @@ class Planner:
 
         if llm_mode == "summary":
             return "workspace/shared/summary.txt"
+        if llm_mode == "semantic_chain_v0":
+            return "workspace/shared/semantic_chain_v0.txt"
         if llm_mode == "action_items":
             return "workspace/shared/action_items.txt"
         if llm_mode == "report":
@@ -824,12 +962,29 @@ class Planner:
 
     def _build_transform_prompt(self, llm_mode: str, source_path: str) -> str:
         if llm_mode == "summary":
-            return f"Summarize the content from {source_path} into concise plain text."
-        if llm_mode == "action_items":
-            return f"Extract action items from the content of {source_path} as concise plain text."
-        if llm_mode == "report":
-            return f"Generate a concise structured report from the content of {source_path}."
-        return f"Process the content from {source_path}."
+            instruction = "Summarize the following document into concise plain text."
+        elif llm_mode == "action_items":
+            instruction = "Extract action items from the following document as concise plain text."
+        elif llm_mode == "report":
+            instruction = "Generate a concise structured report from the following document."
+        elif llm_mode == "bullet_points":
+            instruction = "Rewrite the following document as concise bullet points while preserving the original meaning."
+        elif llm_mode == "rewrite":
+            instruction = "Rewrite the following document clearly while preserving the original meaning."
+        else:
+            instruction = "Process the following document."
+
+        return (
+            f"{instruction}\n\n"
+            "Rules:\n"
+            "1. Use the document content below as the only source.\n"
+            "2. Do not claim that the file is unavailable.\n"
+            "3. Do not ask the user to provide the text again.\n"
+            "4. Keep the output plain text.\n\n"
+            f"Source path: {source_path}\n\n"
+            "Document content:\n"
+            "{{file_content}}"
+        )
 
     # ============================================================
     # per-clause planning
@@ -979,6 +1134,19 @@ class Planner:
         lowered: str,
         last_path: Optional[str] = None,
     ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+        append_request = self._match_append_file_request(text)
+        if append_request is not None:
+            path = append_request["path"]
+            content = append_request["content"]
+            return [
+                {
+                    "type": "append_file",
+                    "path": path,
+                    "scope": self._infer_path_scope(path),
+                    "content": content,
+                }
+            ], path
+
         explicit_write = self._match_write_file_request(text)
         if explicit_write is not None:
             path = explicit_write["path"]
@@ -1124,6 +1292,32 @@ class Planner:
             path = self._normalize_requested_path(raw_path)
             if path:
                 return path
+
+        return None
+
+    def _match_append_file_request(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+
+        patterns = [
+            r"^(?:append)\s+(.+?)\s+to\s+(.+)$",
+            r"^(?:append)\s+(.+?)\s+into\s+(.+)$",
+            r"^(?:add)\s+(.+?)\s+to\s+(.+)$",
+            r"^(?:add)\s+line\s+(.+?)\s+to\s+(.+)$",
+        ]
+
+        for pattern in patterns:
+            match = re.match(pattern, stripped, flags=re.IGNORECASE)
+            if not match:
+                continue
+
+            content = self._strip_wrapping_quotes(str(match.group(1) or "").strip())
+            path = self._normalize_requested_path(str(match.group(2) or "").strip())
+
+            if path and content:
+                return {
+                    "path": path,
+                    "content": content,
+                }
 
         return None
 
@@ -1283,7 +1477,7 @@ class Planner:
         normalized["task_name"] = task_name
         normalized["id"] = step_id
 
-        if step_type in {"read_file", "write_file", "ensure_file", "run_python", "verify_file"}:
+        if step_type in {"read_file", "write_file", "append_file", "ensure_file", "run_python", "verify_file"}:
             normalized["path"] = str(normalized.get("path") or "")
 
         if step_type == "command":
@@ -1304,6 +1498,10 @@ class Planner:
             normalized["mode"] = str(normalized.get("mode") or "")
 
         if step_type == "write_file":
+            normalized["content"] = str(normalized.get("content") or "")
+            normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
+
+        if step_type == "append_file":
             normalized["content"] = str(normalized.get("content") or "")
             normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
 

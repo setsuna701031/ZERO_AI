@@ -97,6 +97,8 @@ class StepExecutor:
         self.register_handler("run_python", RunPythonStepHandler(self).handle)
         self.register_handler("write_file", WriteFileStepHandler(self).handle)
         self.register_handler("workspace_write", WriteFileStepHandler(self).handle)
+        self.register_handler("append_file", self._handle_append_file_step)
+        self.register_handler("workspace_append", self._handle_append_file_step)
         self.register_handler("read_file", ReadFileStepHandler(self).handle)
         self.register_handler("workspace_read", ReadFileStepHandler(self).handle)
         self.register_handler("ensure_file", EnsureFileStepHandler(self).handle)
@@ -558,7 +560,7 @@ class StepExecutor:
         if "step_count" in payload:
             payload["step_count"] = self._safe_int(payload.get("step_count"), payload.get("step_count"))
 
-        if step_type in {"read_file", "write_file", "ensure_file", "run_python", "verify", "verify_file"}:
+        if step_type in {"read_file", "write_file", "append_file", "workspace_append", "ensure_file", "run_python", "verify", "verify_file"}:
             payload["path"] = str(payload.get("path") or "")
 
         if step_type == "command":
@@ -573,7 +575,7 @@ class StepExecutor:
             if "mode" in payload and payload["mode"] is not None:
                 payload["mode"] = str(payload.get("mode") or "")
 
-        if step_type == "write_file":
+        if step_type in {"write_file", "append_file", "workspace_append"}:
             payload["content"] = str(payload.get("content") or "")
 
         if "scope" in payload and payload["scope"] is not None:
@@ -597,7 +599,7 @@ class StepExecutor:
         payload = copy.deepcopy(step or {})
         step_type = str(payload.get("type") or "").strip().lower()
 
-        if step_type != "write_file":
+        if step_type not in {"write_file", "append_file", "workspace_append"}:
             return payload
 
         raw_content = payload.get("content")
@@ -1012,6 +1014,10 @@ class StepExecutor:
             path = str(result.get("path") or "").strip()
             return f"已寫入檔案：{path}" if path else "已寫入檔案"
 
+        if step_type in {"append_file", "workspace_append"}:
+            path = str(result.get("path") or "").strip()
+            return f"已追加檔案：{path}" if path else "已追加檔案"
+
         if step_type == "read_file":
             path = str(result.get("path") or "").strip()
             return f"已讀取檔案：{path}" if path else "已讀取檔案"
@@ -1272,6 +1278,105 @@ class StepExecutor:
 
         return result
 
+    def _handle_append_file_step(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        """Append UTF-8 text to a workspace file without overwriting existing content.
+
+        Boundary:
+        - This is a StepExecutor runtime handler, not the planner and not the
+          generic tool registry.
+        - It only appends content to paths resolved by TaskPathManager.
+        - Parent directories are created when needed.
+        """
+        _ = context
+
+        raw_path = str(step.get("path") or "").strip()
+        if not raw_path:
+            return {
+                "ok": False,
+                "type": "append_file",
+                "path": raw_path,
+                "message": "append_file step missing path",
+                "final_answer": "append_file step missing path",
+                "error": {
+                    "type": "validation_error",
+                    "message": "append_file step missing path",
+                    "retryable": False,
+                },
+            }
+
+        if bool(step.get("use_previous_text", False)):
+            content = self._extract_previous_text(previous_result=previous_result, context=context)
+        else:
+            content = step.get("content", "")
+
+        if content is None:
+            content = ""
+        content = str(content)
+
+        scope = str(step.get("scope") or "").strip().lower()
+        default_scope = "shared" if scope == "shared" or raw_path.replace("\\", "/").startswith("workspace/shared/") or raw_path.replace("\\", "/").startswith("shared/") else "sandbox"
+
+        try:
+            full_path = self.resolve_write_path(
+                relative_path=raw_path,
+                task=task,
+                default_scope=default_scope,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "type": "append_file",
+                "path": raw_path,
+                "message": f"append_file path resolve failed: {exc}",
+                "final_answer": f"append_file path resolve failed: {exc}",
+                "error": {
+                    "type": "path_resolve_failed",
+                    "message": str(exc),
+                    "retryable": False,
+                },
+            }
+
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        file_existed = os.path.exists(full_path)
+
+        newline = step.get("newline", None)
+        append_text = content
+        if newline is True and append_text and not append_text.endswith("\n"):
+            append_text += "\n"
+
+        with open(full_path, "a", encoding="utf-8") as f:
+            f.write(append_text)
+
+        return {
+            "ok": True,
+            "type": "append_file",
+            "path": raw_path,
+            "full_path": full_path,
+            "scope": default_scope,
+            "bytes_appended": len(append_text.encode("utf-8")),
+            "content": content,
+            "message": content,
+            "final_answer": content,
+            "file_existed": file_existed,
+            "used_previous_text": bool(step.get("use_previous_text", False)),
+            "result": {
+                "path": raw_path,
+                "full_path": full_path,
+                "scope": default_scope,
+                "bytes_appended": len(append_text.encode("utf-8")),
+                "content": content,
+                "file_existed": file_existed,
+            },
+            "error": None,
+        }
+
+
     def _handle_llm_step(
         self,
         step: Dict[str, Any],
@@ -1288,6 +1393,8 @@ class StepExecutor:
             previous_text = str(step.get("file_content") or "")
 
         prompt = prompt_template.replace("{{file_content}}", previous_text)
+        prompt = prompt.replace("{{previous_result}}", previous_text)
+        prompt = prompt.replace("{{previous_result_text}}", previous_text)
         llm_text = self._call_llm(prompt)
 
         return {
@@ -1327,7 +1434,7 @@ class StepExecutor:
         return ""
 
     def _extract_text_deep(self, payload: Any, depth: int = 0) -> str:
-        if depth > 8:
+        if depth > 10:
             return ""
 
         if payload is None:
@@ -1337,16 +1444,56 @@ class StepExecutor:
             return payload
 
         if isinstance(payload, dict):
-            for key in ("text", "content", "message", "response", "final_answer", "stdout", "output_text", "summary_text"):
+            # Prefer actual file/LLM payload content over wrapper summaries.
+            # Runtime wrappers often store useful content under:
+            #   previous_result["result"]["content"]
+            #   previous_result["result"]["result"]["content"]
+            # while the outer "message" / "final_answer" may only be a status
+            # such as "已讀取檔案".  File Chain v3 depends on the real file
+            # content being injected into the LLM prompt.
+            for nested_key in ("result", "output", "data", "payload", "raw", "previous_result"):
+                nested = payload.get(nested_key)
+                if isinstance(nested, dict):
+                    for content_key in (
+                        "content",
+                        "text",
+                        "file_content",
+                        "output_text",
+                        "summary_text",
+                        "stdout",
+                        "message",
+                        "final_answer",
+                        "response",
+                        "answer",
+                    ):
+                        value = nested.get(content_key)
+                        if isinstance(value, str) and value:
+                            return value
+
+                    deeper = self._extract_text_deep(nested, depth + 1)
+                    if deeper:
+                        return deeper
+
+                elif isinstance(nested, list):
+                    deeper = self._extract_text_deep(nested, depth + 1)
+                    if deeper:
+                        return deeper
+
+            for key in (
+                "file_content",
+                "content",
+                "text",
+                "output_text",
+                "summary_text",
+                "stdout",
+                "message",
+                "response",
+                "final_answer",
+                "answer",
+            ):
                 value = payload.get(key)
                 if isinstance(value, str) and value:
                     return value
-
-            for nested_key in ("result", "raw", "data", "payload", "output"):
-                nested = payload.get(nested_key)
-                text = self._extract_text_deep(nested, depth + 1)
-                if text:
-                    return text
 
         if isinstance(payload, list):
             for item in reversed(payload):
