@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import py_compile
 from typing import Any, Callable, Dict, List, Optional
 
 from core.tasks.task_paths import TaskPathManager
@@ -104,6 +105,10 @@ class StepExecutor:
         self.register_handler("ensure_file", EnsureFileStepHandler(self).handle)
         self.register_handler("verify", VerifyStepHandler(self).handle)
         self.register_handler("verify_file", VerifyStepHandler(self).handle)
+        self.register_handler("verify_python_syntax", self._handle_verify_python_syntax_step)
+        self.register_handler("python_syntax_check", self._handle_verify_python_syntax_step)
+        self.register_handler("verify_unified_diff", self._handle_verify_unified_diff_step)
+        self.register_handler("verify_patch", self._handle_verify_unified_diff_step)
         self.register_handler("respond", RespondStepHandler(self).handle)
         self.register_handler("final_answer", RespondStepHandler(self).handle)
 
@@ -560,7 +565,7 @@ class StepExecutor:
         if "step_count" in payload:
             payload["step_count"] = self._safe_int(payload.get("step_count"), payload.get("step_count"))
 
-        if step_type in {"read_file", "write_file", "append_file", "workspace_append", "ensure_file", "run_python", "verify", "verify_file"}:
+        if step_type in {"read_file", "write_file", "append_file", "workspace_append", "ensure_file", "run_python", "verify", "verify_file", "verify_python_syntax", "python_syntax_check"}:
             payload["path"] = str(payload.get("path") or "")
 
         if step_type == "command":
@@ -1025,6 +1030,10 @@ class StepExecutor:
         if step_type in {"verify", "verify_file"}:
             return "verify ok"
 
+        if step_type in {"verify_python_syntax", "python_syntax_check"}:
+            path = str(result.get("path") or "").strip()
+            return f"python syntax ok: {path}" if path else "python syntax ok"
+
         if step_type == "command":
             return "command executed successfully"
 
@@ -1278,6 +1287,311 @@ class StepExecutor:
 
         return result
 
+    def _handle_verify_python_syntax_step(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        """Compile-check a generated Python file without executing it.
+
+        Code Chain v0.2 safety boundary:
+        - This step only validates syntax with py_compile.
+        - It does not run the generated program.
+        - It only allows workspace/shared or shared .py targets.
+        """
+        _ = context
+        _ = previous_result
+
+        raw_path = str(step.get("path") or "").strip()
+        if not raw_path:
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "message": "verify_python_syntax step missing path",
+                "final_answer": "verify_python_syntax step missing path",
+                "error": {
+                    "type": "validation_error",
+                    "message": "verify_python_syntax step missing path",
+                    "retryable": False,
+                },
+            }
+
+        normalized_path = raw_path.replace("\\", "/")
+        if not normalized_path.endswith(".py"):
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "message": "verify_python_syntax only supports .py files",
+                "final_answer": "verify_python_syntax only supports .py files",
+                "error": {
+                    "type": "validation_error",
+                    "message": "verify_python_syntax only supports .py files",
+                    "retryable": False,
+                },
+            }
+
+        if not (normalized_path.startswith("workspace/shared/") or normalized_path.startswith("shared/")):
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "message": "verify_python_syntax only allows workspace/shared Python files",
+                "final_answer": "verify_python_syntax only allows workspace/shared Python files",
+                "error": {
+                    "type": "policy_blocked",
+                    "message": "verify_python_syntax only allows workspace/shared Python files",
+                    "retryable": False,
+                },
+            }
+
+        try:
+            full_path = self.resolve_read_path(
+                relative_path=raw_path,
+                task=task,
+                prefer_scopes=("shared", "sandbox"),
+                return_fallback_candidate_if_missing=True,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "message": f"verify_python_syntax path resolve failed: {exc}",
+                "final_answer": f"verify_python_syntax path resolve failed: {exc}",
+                "error": {
+                    "type": "path_resolve_failed",
+                    "message": str(exc),
+                    "retryable": False,
+                },
+            }
+
+        if not os.path.exists(full_path):
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "full_path": full_path,
+                "message": f"python syntax target not found: {full_path}",
+                "final_answer": f"python syntax target not found: {full_path}",
+                "error": {
+                    "type": "file_not_found",
+                    "message": f"python syntax target not found: {full_path}",
+                    "retryable": False,
+                },
+            }
+
+        try:
+            py_compile.compile(full_path, doraise=True)
+        except py_compile.PyCompileError as exc:
+            message = str(exc)
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "full_path": full_path,
+                "message": f"python syntax failed: {message}",
+                "final_answer": f"python syntax failed: {message}",
+                "error": {
+                    "type": "python_syntax_error",
+                    "message": message,
+                    "retryable": False,
+                },
+                "result": {
+                    "path": raw_path,
+                    "full_path": full_path,
+                    "syntax_ok": False,
+                    "error": message,
+                },
+            }
+        except Exception as exc:
+            message = str(exc)
+            return {
+                "ok": False,
+                "type": "verify_python_syntax",
+                "path": raw_path,
+                "full_path": full_path,
+                "message": f"python syntax check failed: {message}",
+                "final_answer": f"python syntax check failed: {message}",
+                "error": {
+                    "type": "python_syntax_check_failed",
+                    "message": message,
+                    "retryable": False,
+                },
+                "result": {
+                    "path": raw_path,
+                    "full_path": full_path,
+                    "syntax_ok": False,
+                    "error": message,
+                },
+            }
+
+        return {
+            "ok": True,
+            "type": "verify_python_syntax",
+            "path": raw_path,
+            "full_path": full_path,
+            "message": f"python syntax ok: {raw_path}",
+            "final_answer": f"python syntax ok: {raw_path}",
+            "result": {
+                "path": raw_path,
+                "full_path": full_path,
+                "syntax_ok": True,
+            },
+            "error": None,
+        }
+
+
+    def _handle_verify_unified_diff_step(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        """Validate that a generated patch looks like a unified diff.
+
+        Code Chain v0.3 safety boundary:
+        - This step only validates patch shape.
+        - It does not apply the patch.
+        - It only allows workspace/shared .patch or .diff targets.
+        """
+        _ = context
+        _ = previous_result
+
+        raw_path = str(step.get("path") or "").strip()
+        if not raw_path:
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "message": "verify_unified_diff step missing path",
+                "final_answer": "verify_unified_diff step missing path",
+                "error": {"type": "validation_error", "message": "verify_unified_diff step missing path", "retryable": False},
+            }
+
+        normalized_path = raw_path.replace("\\", "/")
+        if not normalized_path.lower().endswith((".patch", ".diff")):
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "message": "verify_unified_diff only supports .patch or .diff files",
+                "final_answer": "verify_unified_diff only supports .patch or .diff files",
+                "error": {"type": "validation_error", "message": "verify_unified_diff only supports .patch or .diff files", "retryable": False},
+            }
+
+        if not (normalized_path.startswith("workspace/shared/") or normalized_path.startswith("shared/")):
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "message": "verify_unified_diff only allows workspace/shared patch files",
+                "final_answer": "verify_unified_diff only allows workspace/shared patch files",
+                "error": {"type": "policy_blocked", "message": "verify_unified_diff only allows workspace/shared patch files", "retryable": False},
+            }
+
+        try:
+            full_path = self.resolve_read_path(
+                relative_path=raw_path,
+                task=task,
+                prefer_scopes=("shared", "sandbox"),
+                return_fallback_candidate_if_missing=True,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "message": f"verify_unified_diff path resolve failed: {exc}",
+                "final_answer": f"verify_unified_diff path resolve failed: {exc}",
+                "error": {"type": "path_resolve_failed", "message": str(exc), "retryable": False},
+            }
+
+        if not os.path.exists(full_path):
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "full_path": full_path,
+                "message": f"unified diff target not found: {full_path}",
+                "final_answer": f"unified diff target not found: {full_path}",
+                "error": {"type": "file_not_found", "message": f"unified diff target not found: {full_path}", "retryable": False},
+            }
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as exc:
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "full_path": full_path,
+                "message": f"verify_unified_diff read failed: {exc}",
+                "final_answer": f"verify_unified_diff read failed: {exc}",
+                "error": {"type": "read_failed", "message": str(exc), "retryable": False},
+            }
+
+        validation = self._validate_unified_diff_text(content)
+        if not validation.get("ok"):
+            message = str(validation.get("message") or "invalid unified diff")
+            return {
+                "ok": False,
+                "type": "verify_unified_diff",
+                "path": raw_path,
+                "full_path": full_path,
+                "message": message,
+                "final_answer": message,
+                "error": {"type": "invalid_unified_diff", "message": message, "retryable": False, "details": validation},
+                "result": {"path": raw_path, "full_path": full_path, "diff_ok": False, "validation": validation},
+            }
+
+        return {
+            "ok": True,
+            "type": "verify_unified_diff",
+            "path": raw_path,
+            "full_path": full_path,
+            "message": f"unified diff ok: {raw_path}",
+            "final_answer": f"unified diff ok: {raw_path}",
+            "result": {"path": raw_path, "full_path": full_path, "diff_ok": True, "validation": validation},
+            "error": None,
+        }
+
+    def _validate_unified_diff_text(self, text: str) -> Dict[str, Any]:
+        content = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        lines = content.split("\n")
+        nonempty = [line for line in lines if line.strip()]
+
+        if not nonempty:
+            return {"ok": False, "message": "unified diff is empty"}
+
+        has_old_header = any(line.startswith("--- ") for line in nonempty)
+        has_new_header = any(line.startswith("+++ ") for line in nonempty)
+        has_hunk = any(line.startswith("@@ ") and line.rstrip().endswith("@@") for line in nonempty)
+        has_added_or_removed = any((line.startswith("+") and not line.startswith("+++")) or (line.startswith("-") and not line.startswith("---")) for line in nonempty)
+
+        if not has_old_header:
+            return {"ok": False, "message": "unified diff missing --- header"}
+        if not has_new_header:
+            return {"ok": False, "message": "unified diff missing +++ header"}
+        if not has_hunk:
+            return {"ok": False, "message": "unified diff missing @@ hunk"}
+        if not has_added_or_removed:
+            return {"ok": False, "message": "unified diff has no changed lines"}
+        if "```" in content:
+            return {"ok": False, "message": "unified diff contains Markdown fences"}
+
+        return {
+            "ok": True,
+            "message": "unified diff shape accepted",
+            "line_count": len(lines),
+            "changed_line_count": sum(1 for line in nonempty if (line.startswith("+") and not line.startswith("+++")) or (line.startswith("-") and not line.startswith("---"))),
+        }
+
     def _handle_append_file_step(
         self,
         step: Dict[str, Any],
@@ -1395,12 +1709,71 @@ class StepExecutor:
         prompt = prompt_template.replace("{{file_content}}", previous_text)
         prompt = prompt.replace("{{previous_result}}", previous_text)
         prompt = prompt.replace("{{previous_result_text}}", previous_text)
-        llm_text = self._call_llm(prompt)
+
+        mode = str(step.get("mode") or "").strip().lower()
+        raw_llm_text = self._call_llm(prompt)
+        llm_text = str(raw_llm_text or "")
+
+        if self._is_code_chain_diff_mode(mode):
+            cleaned_text = self._sanitize_unified_diff_output(llm_text)
+            validation = self._validate_unified_diff_text(cleaned_text)
+            if not validation.get("ok"):
+                message = str(validation.get("message") or "code chain diff output validation failed")
+                return {
+                    "ok": False,
+                    "type": "llm",
+                    "mode": mode,
+                    "prompt": prompt,
+                    "prompt_template": prompt_template,
+                    "input_text": previous_text,
+                    "text": cleaned_text,
+                    "content": cleaned_text,
+                    "message": message,
+                    "final_answer": message,
+                    "result": {"prompt": prompt, "text": cleaned_text, "raw_text": llm_text, "validation": validation},
+                    "error": {"type": "code_chain_diff_output_invalid", "message": message, "retryable": False, "details": validation},
+                }
+            llm_text = cleaned_text
+
+        if self._is_code_chain_mode(mode):
+            cleaned_text = self._sanitize_code_chain_output(llm_text)
+            validation = self._validate_code_chain_output(
+                text=cleaned_text,
+                original_text=llm_text,
+                source_text=previous_text,
+            )
+            if not validation.get("ok"):
+                message = str(validation.get("message") or "code chain output validation failed")
+                return {
+                    "ok": False,
+                    "type": "llm",
+                    "mode": mode,
+                    "prompt": prompt,
+                    "prompt_template": prompt_template,
+                    "input_text": previous_text,
+                    "text": cleaned_text,
+                    "content": cleaned_text,
+                    "message": message,
+                    "final_answer": message,
+                    "result": {
+                        "prompt": prompt,
+                        "text": cleaned_text,
+                        "raw_text": llm_text,
+                        "validation": validation,
+                    },
+                    "error": {
+                        "type": str(validation.get("error_type") or "code_chain_output_invalid"),
+                        "message": message,
+                        "retryable": False,
+                        "details": validation,
+                    },
+                }
+            llm_text = cleaned_text
 
         return {
             "ok": True,
             "type": "llm",
-            "mode": str(step.get("mode") or ""),
+            "mode": mode,
             "prompt": prompt,
             "prompt_template": prompt_template,
             "input_text": previous_text,
@@ -1502,6 +1875,207 @@ class StepExecutor:
                     return text
 
         return ""
+
+    def _is_code_chain_diff_mode(self, mode: str) -> bool:
+        normalized = str(mode or "").strip().lower()
+        return normalized in {"code_chain_diff_v0", "code_chain_v0_diff", "code_chain_patch_v0", "code_diff", "patch_diff"}
+
+    def _sanitize_unified_diff_output(self, text: str) -> str:
+        """Clean LLM diff output before writing a .patch/.diff file."""
+        value = str(text or "").strip()
+        if not value:
+            return ""
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            try:
+                decoded = json.loads(value)
+                if isinstance(decoded, str):
+                    value = decoded.strip()
+            except Exception:
+                pass
+
+        lines = value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if lines and lines[0].strip().startswith("```"):
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines and lines[-1].strip() == "```":
+            lines.pop()
+
+        cleaned = "\n".join(lines).strip("\n")
+
+        # If the model included prose before the diff, keep from the first --- header.
+        diff_start = cleaned.find("--- ")
+        if diff_start > 0:
+            cleaned = cleaned[diff_start:]
+
+        return cleaned.strip("\n")
+
+    def _is_code_chain_mode(self, mode: str) -> bool:
+        normalized = str(mode or "").strip().lower()
+        return normalized.startswith("code_chain") or normalized in {
+            "code_rewrite",
+            "code_edit",
+            "code_modify",
+            "code_comments",
+        }
+
+    def _sanitize_code_chain_output(self, text: str) -> str:
+        """Clean LLM code output before a downstream write_file step persists it.
+
+        Code Chain v0.1 keeps the capability small and safe:
+        - remove Markdown fences such as ```python ... ```
+        - remove common leading labels
+        - decode a fully JSON-quoted string when the model returns one
+        - keep the result as complete plain file content
+        """
+        value = str(text or "").strip()
+        if not value:
+            return ""
+
+        # Some models return the whole file as a JSON string literal.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            try:
+                decoded = json.loads(value)
+                if isinstance(decoded, str):
+                    value = decoded.strip()
+            except Exception:
+                pass
+
+        lines = value.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+        # Drop a leading Markdown code fence: ```python / ```py / ```
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if lines and lines[0].strip().startswith("```"):
+            lines.pop(0)
+
+        # Drop a trailing Markdown code fence.
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines and lines[-1].strip() == "```":
+            lines.pop()
+
+        cleaned = "\n".join(lines).strip("\n")
+
+        # Remove common prose prefixes if the model ignored the instruction.
+        prefixes = (
+            "here is the complete rewritten file:",
+            "here is the rewritten file:",
+            "here is the code:",
+            "updated code:",
+            "rewritten code:",
+        )
+        lowered = cleaned.lower().lstrip()
+        for prefix in prefixes:
+            if lowered.startswith(prefix):
+                cleaned = cleaned.lstrip()[len(prefix):].lstrip("\n: ")
+                break
+
+        # If there is still an embedded fenced block, keep the first fenced body.
+        stripped = cleaned.strip()
+        first_fence = stripped.find("```")
+        if first_fence >= 0:
+            after = stripped[first_fence + 3:]
+            newline_index = after.find("\n")
+            if newline_index >= 0:
+                body = after[newline_index + 1:]
+                end = body.find("```")
+                if end >= 0:
+                    stripped = body[:end].strip("\n")
+                    cleaned = stripped
+
+        return cleaned.strip("\n")
+
+    def _validate_code_chain_output(
+        self,
+        text: str,
+        original_text: str,
+        source_text: str,
+    ) -> Dict[str, Any]:
+        cleaned = str(text or "")
+        raw = str(original_text or "")
+        source = str(source_text or "")
+        lowered = cleaned.strip().lower()
+        raw_lowered = raw.strip().lower()
+
+        if not cleaned.strip():
+            return {
+                "ok": False,
+                "error_type": "code_chain_empty_output",
+                "message": "code chain produced empty output; refusing to write file",
+            }
+
+        refusal_markers = (
+            "i don't see any content",
+            "i do not see any content",
+            "i cannot read",
+            "i can't read",
+            "i don't have access",
+            "i do not have access",
+            "please provide",
+            "share the file",
+            "no content provided",
+            "file is unavailable",
+        )
+        if any(marker in lowered for marker in refusal_markers) or any(marker in raw_lowered for marker in refusal_markers):
+            return {
+                "ok": False,
+                "error_type": "code_chain_refusal_output",
+                "message": "code chain LLM output looks like a refusal instead of file content; refusing to write file",
+                "raw_prefix": raw[:240],
+            }
+
+        if "```" in cleaned:
+            return {
+                "ok": False,
+                "error_type": "code_chain_markdown_fence_remaining",
+                "message": "code chain output still contains Markdown fences after sanitization; refusing to write file",
+            }
+
+        # Very small sanity check: code rewrite output should still look like code.
+        code_signals = (
+            "def ",
+            "class ",
+            "import ",
+            "from ",
+            "return ",
+            "if __name__",
+            "function ",
+            "const ",
+            "let ",
+            "var ",
+            "public ",
+            "private ",
+            "package ",
+            "#include",
+        )
+        if not any(signal in cleaned for signal in code_signals):
+            return {
+                "ok": False,
+                "error_type": "code_chain_no_code_signal",
+                "message": "code chain output does not look like code; refusing to write file",
+                "output_prefix": cleaned[:240],
+            }
+
+        if source.strip() and len(cleaned.strip()) < max(8, int(len(source.strip()) * 0.2)):
+            return {
+                "ok": False,
+                "error_type": "code_chain_output_too_short",
+                "message": "code chain output is suspiciously short; refusing to write file",
+                "source_length": len(source.strip()),
+                "output_length": len(cleaned.strip()),
+            }
+
+        return {
+            "ok": True,
+            "message": "code chain output accepted",
+            "output_length": len(cleaned),
+            "raw_length": len(raw),
+        }
 
     def _call_llm(self, prompt: str) -> str:
         client = self.llm_client

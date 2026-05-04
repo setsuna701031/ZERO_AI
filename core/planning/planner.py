@@ -25,7 +25,7 @@ from core.runtime.trace_logger import ensure_trace_logger
 
 class Planner:
     """
-    Deterministic Planner v35
+    Deterministic Planner v35.3
 
     本版重點：
     1. 保留 document flow 偵測
@@ -50,7 +50,7 @@ class Planner:
     """
 
     _banner_printed = False
-    PLANNER_MODE = "deterministic_v35_requirement_pack_routing"
+    PLANNER_MODE = "deterministic_v35_3_code_chain_diff_routing"
 
     def __init__(
         self,
@@ -72,7 +72,7 @@ class Planner:
         self.trace_logger = ensure_trace_logger(trace_logger)
 
         if not Planner._banner_printed:
-            print("### USING PLANNER v35 (REQUIREMENT PACK + SEMANTIC ROUTING + FIXED PRECEDENCE + ACTION LAYER + DOCUMENT ENTRY) ###")
+            print("### USING PLANNER v35.3 (CODE CHAIN DIFF ROUTING + SEMANTIC ROUTING + ACTION LAYER) ###")
             Planner._banner_printed = True
 
     # ============================================================
@@ -286,6 +286,38 @@ class Planner:
         context = context or {}
         semantic_type = self._infer_semantic_type(text=text, context=context, steps=None)
 
+        if semantic_type == "code_chain_diff_v0":
+            parsed = self._match_code_chain_diff_v0_task(text=text)
+
+            # Code Chain v0.3 must not silently fall through to the generic
+            # planner when the user clearly asks for a diff / patch. The
+            # generic action layer may otherwise reinterpret the request as a
+            # normal write_file task and overwrite the source file.
+            if parsed is None:
+                parsed = self._fallback_match_code_chain_diff_v0_task(text=text)
+
+            if parsed is None:
+                return None, semantic_type, "code_chain_diff_v0_unmatched"
+
+            steps = self._build_code_chain_diff_v0_pipeline(
+                source_path=parsed["source_path"],
+                output_path=parsed["output_path"],
+                instruction=parsed.get("instruction", ""),
+            )
+            return steps, semantic_type, "code_chain_diff_v0_pipeline"
+
+        if semantic_type == "code_chain_v0":
+            parsed = self._match_code_chain_v0_task(text=text)
+            if parsed is None:
+                return None, semantic_type, "code_chain_v0_unmatched"
+
+            steps = self._build_code_chain_v0_pipeline(
+                source_path=parsed["source_path"],
+                output_path=parsed["output_path"],
+                instruction=parsed.get("instruction", ""),
+            )
+            return steps, semantic_type, "code_chain_v0_pipeline"
+
         if semantic_type == "semantic_chain_v0":
             parsed = self._match_semantic_chain_v0_task(text=text)
             if parsed is None:
@@ -370,6 +402,12 @@ class Planner:
 
         lowered = str(text or "").strip().lower()
 
+        if self._looks_like_code_chain_diff_v0(lowered):
+            return "code_chain_diff_v0"
+
+        if self._looks_like_code_chain_v0(lowered):
+            return "code_chain_v0"
+
         if self._looks_like_semantic_chain_v0(lowered):
             return "semantic_chain_v0"
 
@@ -405,6 +443,10 @@ class Planner:
 
     def _normalize_semantic_type(self, value: str) -> str:
         lowered = str(value or "").strip().lower()
+        if lowered in {"code_chain_diff_v0", "code-chain-diff-v0", "code chain diff v0", "code_chain_v0_diff", "code-chain-v0-diff", "diff_mode", "patch_mode", "code patch"}:
+            return "code_chain_diff_v0"
+        if lowered in {"code_chain_v0", "code-chain-v0", "code chain v0", "controlled_code_edit", "controlled-code-edit"}:
+            return "code_chain_v0"
         if lowered in {"semantic_chain_v0", "semantic-chain-v0", "semantic chain v0", "summary_action_items", "summary-action-items"}:
             return "semantic_chain_v0"
         if lowered in {"summary", "summarize"}:
@@ -442,6 +484,367 @@ class Planner:
             return True
 
         return has_git_signal and has_pipeline_signal and has_generation_signal
+
+    def _looks_like_code_chain_diff_v0(self, lowered: str) -> bool:
+        text = str(lowered or "").strip().lower()
+        if not text:
+            return False
+
+        has_diff_signal = any(
+            token in text
+            for token in [
+                "code chain v0.3",
+                "code_chain_v0_3",
+                "code chain diff",
+                "diff mode",
+                "patch mode",
+                "generate diff",
+                "create diff",
+                "make diff",
+                "unified diff",
+                "generate patch",
+                "create patch",
+                "make patch",
+                "產生 diff",
+                "產生 patch",
+            ]
+        )
+
+        # Strong signal: any explicit .patch/.diff target should be treated as
+        # a diff task before generic write handling gets a chance to consume it.
+        has_patch_or_diff_file = bool(re.search(r"[^\s,;]+\.(?:patch|diff)\b", text, flags=re.IGNORECASE))
+
+        has_code_file = bool(
+            re.search(
+                r"(?:workspace|shared|sandbox)[\\/][^\s,;]+\.(?:py|js|ts|tsx|jsx|html|css|json|yaml|yml|md|txt)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            or re.search(r"[^\s,;]+\.(?:py|js|ts|tsx|jsx|html|css)", text, flags=re.IGNORECASE)
+        )
+        has_read_signal = any(token in text for token in ["read ", "讀", "讀取"])
+        has_edit_signal = any(
+            token in text
+            for token in [
+                "add comments",
+                "add comment",
+                "add docstring",
+                "rewrite",
+                "modify",
+                "update",
+                "edit",
+                "refactor",
+                "fix",
+                "改寫",
+                "修改",
+                "修正",
+                "重構",
+            ]
+        )
+
+        return bool(
+            has_diff_signal
+            or (has_patch_or_diff_file and has_code_file)
+            or (has_code_file and has_read_signal and has_edit_signal and has_patch_or_diff_file)
+        )
+
+    def _match_code_chain_diff_v0_task(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+        if not self._looks_like_code_chain_diff_v0(lowered):
+            return None
+
+        output_path = self._detect_patch_output_path_from_text(stripped)
+        if not output_path:
+            output_path = self._detect_output_path_from_text(stripped, llm_mode="code_chain_diff_v0")
+
+        if not output_path:
+            return None
+
+        normalized_output = output_path.replace("\\", "/").lower()
+        if not normalized_output.endswith((".patch", ".diff")):
+            return None
+
+        source_path = self._detect_source_path_from_text(stripped, output_path=output_path)
+        if not source_path:
+            source_path = self._detect_source_code_path_from_text(stripped, output_path=output_path)
+
+        if not source_path:
+            read_match = re.search(r"\bread\s+([^\s,;]+)", stripped, flags=re.IGNORECASE)
+            if read_match:
+                source_path = self._normalize_requested_path(read_match.group(1))
+
+        if not source_path:
+            return None
+
+        return {
+            "source_path": source_path,
+            "output_path": output_path,
+            "instruction": self._extract_code_chain_instruction(stripped),
+        }
+
+    def _fallback_match_code_chain_diff_v0_task(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+        if not stripped:
+            return None
+
+        has_diff_intent = any(
+            token in lowered
+            for token in [
+                "diff",
+                "patch",
+                "unified diff",
+                "產生 diff",
+                "產生 patch",
+            ]
+        )
+        if not has_diff_intent:
+            return None
+
+        output_path = self._detect_patch_output_path_from_text(stripped)
+        if not output_path:
+            return None
+
+        source_path = self._detect_source_code_path_from_text(stripped, output_path=output_path)
+        if not source_path:
+            source_path = self._detect_source_path_from_text(stripped, output_path=output_path)
+
+        if not source_path:
+            return None
+
+        return {
+            "source_path": source_path,
+            "output_path": output_path,
+            "instruction": self._extract_code_chain_instruction(stripped),
+        }
+
+    def _detect_patch_output_path_from_text(self, text: str) -> Optional[str]:
+        stripped = str(text or "").strip()
+        candidates = re.findall(
+            r"(?:[A-Za-z]:[\\/][^\s,;]+|(?:workspace|shared|sandbox)[\\/][^\s,;]+|[^\s,;]+\.(?:patch|diff))",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        for candidate in candidates:
+            normalized = self._normalize_requested_path(candidate)
+            if normalized.replace("\\", "/").lower().endswith((".patch", ".diff")):
+                return normalized
+        return None
+
+    def _detect_source_code_path_from_text(self, text: str, output_path: str = "") -> Optional[str]:
+        stripped = str(text or "").strip()
+        normalized_output = self._normalize_requested_path(output_path).replace("\\", "/") if output_path else ""
+        candidates = re.findall(
+            r"(?:[A-Za-z]:[\\/][^\s,;]+|(?:workspace|shared|sandbox)[\\/][^\s,;]+|[^\s,;]+\.(?:py|js|ts|tsx|jsx|html|css|json|yaml|yml|md|txt))",
+            stripped,
+            flags=re.IGNORECASE,
+        )
+        for candidate in candidates:
+            normalized = self._normalize_requested_path(candidate)
+            normalized_slash = normalized.replace("\\", "/")
+            if normalized_slash == normalized_output:
+                continue
+            if normalized_slash.lower().endswith((".patch", ".diff")):
+                continue
+            if normalized:
+                return normalized
+        return None
+
+    def _build_code_chain_diff_v0_pipeline(self, source_path: str, output_path: str, instruction: str = "") -> List[Dict[str, Any]]:
+        return [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "code_chain_diff_v0",
+                "prompt": self._build_code_chain_diff_v0_prompt(source_path=source_path, instruction=instruction),
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": self._infer_path_scope(output_path),
+                "content": "{{previous_result}}",
+            },
+            {
+                "type": "verify_unified_diff",
+                "path": output_path,
+                "scope": self._infer_path_scope(output_path),
+            },
+        ]
+
+    def _build_code_chain_diff_v0_prompt(self, source_path: str, instruction: str = "") -> str:
+        edit_instruction = str(instruction or "Generate a minimal unified diff for the requested controlled code edit.").strip()
+        return (
+            "You are performing Code Chain v0.3: controlled single-file unified-diff generation.\n\n"
+            "Rules:\n"
+            "1. Use ONLY the source code below.\n"
+            "2. Return a valid unified diff only.\n"
+            "3. Do not return the full rewritten file.\n"
+            "4. Do not use Markdown fences.\n"
+            "5. Do not include explanations outside the diff.\n"
+            "6. The diff must contain --- and +++ file headers and at least one @@ hunk.\n"
+            "7. Preserve existing public behavior unless the request explicitly changes it.\n"
+            "8. Do not claim that the file is unavailable.\n"
+            "9. Do not ask the user for the file again.\n\n"
+            f"Source path: {source_path}\n"
+            f"Edit instruction: {edit_instruction}\n\n"
+            "Source code:\n"
+            "{{file_content}}"
+        )
+
+    def _looks_like_code_chain_v0(self, lowered: str) -> bool:
+        text = str(lowered or "").strip().lower()
+        if not text:
+            return False
+
+        has_chain_signal = any(
+            token in text
+            for token in [
+                "code chain v0",
+                "code_chain_v0",
+                "controlled code edit",
+                "controlled-code-edit",
+            ]
+        )
+        has_code_file = bool(
+            re.search(
+                r"(?:workspace|shared|sandbox)[\\/][^\s,;]+\.(?:py|js|ts|tsx|jsx|html|css|json|yaml|yml|md|txt)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            or re.search(r"[^\s,;]+\.(?:py|js|ts|tsx|jsx|html|css)", text, flags=re.IGNORECASE)
+        )
+        has_read_signal = any(token in text for token in ["read ", "讀", "讀取"])
+        has_edit_signal = any(
+            token in text
+            for token in [
+                "rewrite",
+                "modify",
+                "update",
+                "edit",
+                "refactor",
+                "fix",
+                "add comments",
+                "add docstring",
+                "改寫",
+                "修改",
+                "修正",
+                "重構",
+            ]
+        )
+        has_output_signal = bool(re.search(r"\bto\s+[^\s,;]+", text, flags=re.IGNORECASE)) or "輸出" in text
+
+        return has_chain_signal or (has_code_file and has_read_signal and has_edit_signal and has_output_signal)
+
+    def _match_code_chain_v0_task(self, text: str) -> Optional[Dict[str, str]]:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+        if not self._looks_like_code_chain_v0(lowered):
+            return None
+
+        output_path = self._detect_output_path_from_text(stripped, llm_mode="code_chain_v0")
+        if not output_path:
+            return None
+
+        source_path = self._detect_source_path_from_text(stripped, output_path=output_path)
+        if not source_path:
+            read_match = re.search(r"\bread\s+([^\s,;]+)", stripped, flags=re.IGNORECASE)
+            if read_match:
+                source_path = self._normalize_requested_path(read_match.group(1))
+
+        if not source_path:
+            return None
+
+        normalized_source = source_path.replace("\\", "/")
+        normalized_output = output_path.replace("\\", "/")
+
+        # v0 safety: never overwrite the source file. Write a controlled output copy.
+        if normalized_source == normalized_output:
+            return None
+
+        # v0 safety: write target must stay in workspace/shared or shared.
+        if not (normalized_output.startswith("workspace/shared/") or normalized_output.startswith("shared/")):
+            return None
+
+        return {
+            "source_path": source_path,
+            "output_path": output_path,
+            "instruction": self._extract_code_chain_instruction(stripped),
+        }
+
+    def _extract_code_chain_instruction(self, text: str) -> str:
+        stripped = str(text or "").strip()
+        lowered = stripped.lower()
+
+        if "add comments" in lowered or "add docstring" in lowered:
+            return "Add concise explanatory comments/docstrings where useful without changing behavior."
+        if "refactor" in lowered or "重構" in lowered:
+            return "Refactor for readability while preserving behavior."
+        if "fix" in lowered or "修正" in lowered:
+            return "Fix the code issue described by the request while preserving unrelated behavior."
+        if "rewrite" in lowered or "改寫" in lowered:
+            return "Rewrite the code cleanly while preserving behavior."
+        if "modify" in lowered or "edit" in lowered or "update" in lowered or "修改" in lowered:
+            return "Modify the code according to the request while preserving unrelated behavior."
+
+        return "Apply the requested controlled code edit while preserving behavior and public interfaces."
+
+    def _build_code_chain_v0_pipeline(self, source_path: str, output_path: str, instruction: str = "") -> List[Dict[str, Any]]:
+        steps: List[Dict[str, Any]] = [
+            {
+                "type": "read_file",
+                "path": source_path,
+            },
+            {
+                "type": "llm",
+                "mode": "code_chain_v0",
+                "prompt": self._build_code_chain_v0_prompt(source_path=source_path, instruction=instruction),
+            },
+            {
+                "type": "write_file",
+                "path": output_path,
+                "scope": self._infer_path_scope(output_path),
+                "content": "{{previous_result}}",
+            },
+        ]
+
+        if self._should_add_python_syntax_verification(output_path):
+            steps.append(
+                {
+                    "type": "verify_python_syntax",
+                    "path": output_path,
+                    "scope": self._infer_path_scope(output_path),
+                }
+            )
+
+        return steps
+
+    def _should_add_python_syntax_verification(self, output_path: str) -> bool:
+        normalized = str(output_path or "").replace("\\", "/").strip().lower()
+        if not normalized.endswith(".py"):
+            return False
+        return normalized.startswith("workspace/shared/") or normalized.startswith("shared/")
+
+    def _build_code_chain_v0_prompt(self, source_path: str, instruction: str = "") -> str:
+        edit_instruction = str(instruction or "Apply the requested controlled code edit while preserving behavior.").strip()
+        return (
+            "You are performing Code Chain v0: a controlled single-file code rewrite.\n\n"
+            "Rules:\n"
+            "1. Use ONLY the source code below.\n"
+            "2. Return the complete rewritten file content only.\n"
+            "3. Do not use Markdown fences.\n"
+            "4. Do not include explanations outside the code.\n"
+            "5. Preserve existing public behavior unless the request explicitly changes it.\n"
+            "6. Do not claim that the file is unavailable.\n"
+            "7. Do not ask the user for the file again.\n\n"
+            f"Source path: {source_path}\n"
+            f"Edit instruction: {edit_instruction}\n\n"
+            "Source code:\n"
+            "{{file_content}}"
+        )
 
     def _looks_like_semantic_chain_v0(self, lowered: str) -> bool:
         text = str(lowered or "").strip().lower()
@@ -900,6 +1303,11 @@ class Planner:
     def _detect_output_path_from_text(self, text: str, llm_mode: str) -> Optional[str]:
         stripped = str(text or "").strip()
 
+        if llm_mode == "code_chain_diff_v0":
+            patch_output = self._detect_patch_output_path_from_text(stripped)
+            if patch_output:
+                return patch_output
+
         patterns = [
             r"\bto\s+([^\s,;]+)",
             r"\binto\s+([^\s,;]+)",
@@ -927,7 +1335,7 @@ class Planner:
 
     def _detect_source_path_from_text(self, text: str, output_path: str) -> Optional[str]:
         raw_candidates = re.findall(
-            r"(?:[A-Za-z]:[\\/][^\s,;]+|(?:workspace|shared|sandbox)[\\/][^\s,;]+|[^\s,;]+\.(?:txt|md|json|log|csv))",
+            r"(?:[A-Za-z]:[\\/][^\s,;]+|(?:workspace|shared|sandbox)[\\/][^\s,;]+|[^\s,;]+\.(?:txt|md|json|log|csv|py|js|ts|tsx|jsx|html|css|yaml|yml))",
             text,
             flags=re.IGNORECASE,
         )
@@ -1402,7 +1810,7 @@ class Planner:
 
     def _looks_like_file_candidate(self, value: str) -> bool:
         lowered = str(value or "").strip().lower()
-        return lowered.endswith((".txt", ".md", ".json", ".log", ".csv"))
+        return lowered.endswith((".txt", ".md", ".json", ".log", ".csv", ".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".css", ".yaml", ".yml"))
 
     # ============================================================
     # result builder / contract normalization
@@ -1477,7 +1885,7 @@ class Planner:
         normalized["task_name"] = task_name
         normalized["id"] = step_id
 
-        if step_type in {"read_file", "write_file", "append_file", "ensure_file", "run_python", "verify_file"}:
+        if step_type in {"read_file", "write_file", "append_file", "ensure_file", "run_python", "verify_file", "verify_python_syntax", "verify_unified_diff"}:
             normalized["path"] = str(normalized.get("path") or "")
 
         if step_type == "command":
