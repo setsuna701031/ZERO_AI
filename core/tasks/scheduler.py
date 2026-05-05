@@ -104,7 +104,7 @@ except Exception:  # pragma: no cover - optional reader in minimal runtimes
     read_code_file = None
 
 
-SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION_V5_7_3_ATOMIC_MULTI_EDIT_ROLLBACK_COMPACT"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION_V5_8_1_SELF_EDIT_ROLLBACK_REPORTING"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
@@ -776,7 +776,15 @@ class Scheduler(RuntimeTaskScheduler):
                 "task_id": str(parent.get("task_id") or result.get("task_id") or ""),
                 "status": str(parent.get("status") or result.get("status") or ""),
                 "atomic": bool(payload.get("atomic", False)),
-                "rollback": bool(payload.get("rollback_applied", False)),
+                "rollback": bool(
+                    payload.get("rollback")
+                    or payload.get("rollback_applied")
+                    or payload.get("staged_changes_discarded")
+                    or (
+                        str(payload.get("action") or "").strip().lower() == "multi_code_edit_failed"
+                        and bool(payload.get("atomic", False))
+                    )
+                ),
                 "changed_files": payload.get("changed_files", []),
                 "edit_count": int(payload.get("edit_count", len(edits)) or 0),
                 "failed_reason": str(payload.get("failed_reason") or payload.get("error") or ""),

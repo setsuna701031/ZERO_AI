@@ -1,7 +1,7 @@
 """
 self_edit_loop.py
 
-ZERO Self-Edit Loop v5.6.4
+ZERO Self-Edit Loop v5.8.1
 
 Purpose:
 - Run conservative controlled self-edits for explicit replacement tasks:
@@ -13,6 +13,11 @@ Purpose:
     - verification command allowlist;
     - simple indentation repair after verify failure;
     - Python AST safety checks for .py files.
+
+v5.8.0:
+- Adds explicit --executor scheduler mode that routes self-edit tasks through Scheduler.run_one_step().
+- Preserves the legacy controlled-replace engine as the default path.
+- Keeps Scheduler-backed self-edit as an opt-in bridge to the v5.7.x atomic multi-edit / rollback flow.
 
 v5.6.4:
 - Fixes function index discovery with a more robust os.walk-based scanner.
@@ -55,7 +60,7 @@ DEFAULT_LLM_PLANNER_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_PLANNER_STEPS = 8
 DEFAULT_LLM_PLANNER_RETRIES = 1
 DEFAULT_MAX_WORKSPACE_FILES_FOR_PROMPT = 80
-CODE_CHAIN_VERSION = "self_edit_loop_v5_6_4"
+CODE_CHAIN_VERSION = "self_edit_loop_v5_8_1"
 
 
 BLOCKED_STATUSES = {"blocked", "failed", "error", "rejected", "denied", "rolled_back"}
@@ -2938,6 +2943,269 @@ def _run_single_step_self_edit_loop(
     )
 
 
+
+def _compact_scheduler_bridge_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Keep scheduler-backed self-edit output readable.
+
+    Scheduler.run_one_step() already returns compact results in v5.7.3, but this
+    adapter preserves that contract even when older Scheduler versions return a
+    nested runtime payload.
+    """
+    if not isinstance(result, dict):
+        return {"ok": False, "action": "invalid_scheduler_result", "raw_result": str(result)}
+
+    action = str(result.get("action") or "").strip()
+    if action in {"multi_code_edit", "multi_code_edit_failed"}:
+        return {
+            "ok": bool(result.get("ok", False)),
+            "action": action,
+            "task_id": str(result.get("task_id") or ""),
+            "status": str(result.get("status") or ""),
+            "atomic": bool(result.get("atomic", False)),
+            "rollback": bool(
+                result.get("rollback")
+                or result.get("rollback_applied")
+                or result.get("staged_changes_discarded")
+                or (
+                    action == "multi_code_edit_failed"
+                    and bool(result.get("atomic", False))
+                )
+            ),
+            "changed_files": list(result.get("changed_files") or []),
+            "edit_count": int(result.get("edit_count", 0) or 0),
+            "failed_reason": str(result.get("failed_reason") or result.get("error") or ""),
+            "step_count": result.get("step_count", 0),
+            "steps_total": result.get("steps_total", 0),
+        }
+
+    last_step_result = result.get("last_step_result")
+    if isinstance(last_step_result, dict):
+        nested = last_step_result.get("result")
+        if isinstance(nested, dict):
+            nested_action = str(nested.get("action") or "").strip()
+            if nested_action in {"multi_code_edit", "multi_code_edit_failed"}:
+                compact = _compact_scheduler_bridge_result(nested)
+                compact["task_id"] = str(result.get("task_id") or compact.get("task_id") or "")
+                compact["status"] = str(result.get("status") or compact.get("status") or "")
+                compact["step_count"] = result.get("step_count", compact.get("step_count", 0))
+                compact["steps_total"] = result.get("steps_total", compact.get("steps_total", 0))
+                return compact
+
+    return {
+        "ok": bool(result.get("ok", False)),
+        "action": action,
+        "task_id": str(result.get("task_id") or ""),
+        "status": str(result.get("status") or ""),
+        "final_answer": str(result.get("final_answer") or ""),
+        "error": str(result.get("error") or result.get("failed_reason") or ""),
+        "step_count": result.get("step_count", 0),
+        "steps_total": result.get("steps_total", 0),
+    }
+
+
+def _run_scheduler_backed_self_edit_loop(
+    task: str,
+    *,
+    repo_root: str | Path = DEFAULT_REPO_ROOT,
+    verify_commands: list[str] | None = None,
+    max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    allow_core: bool = False,
+    verify_timeout_seconds: int = DEFAULT_VERIFY_TIMEOUT_SECONDS,
+) -> SelfEditLoopResult:
+    """Run self-edit through Scheduler instead of the legacy replace engine.
+
+    v5.8.0 bridge rule:
+    - Preserve the existing self_edit_loop safety/legacy code path.
+    - Add an explicit scheduler-backed executor path.
+    - Let Scheduler own planning, atomic multi-edit, and rollback.
+    - Keep this bridge conservative: one scheduler attempt per invocation.
+    """
+    task = _normalize_text(task)
+    repo_root_path = Path(repo_root).resolve()
+    verify_commands = list(verify_commands or [])
+
+    if not task:
+        attempt = SelfEditAttempt(
+            attempt=1,
+            task=task,
+            edit_result={
+                "ok": False,
+                "status": "blocked",
+                "reason": "task is empty",
+                "executor": "scheduler",
+                "code_chain_version": CODE_CHAIN_VERSION,
+            },
+            verify_results=[],
+            correction={},
+            ok=False,
+            reason="task is empty",
+        )
+        return SelfEditLoopResult(
+            ok=False,
+            status="blocked",
+            task=task,
+            final_task=task,
+            attempts=[attempt],
+            max_attempts=max_attempts,
+            repo_root=str(repo_root_path),
+            final_reason="task is empty",
+        )
+
+    if not allow_core and _contains_core_path(task):
+        attempt = SelfEditAttempt(
+            attempt=1,
+            task=task,
+            edit_result={
+                "ok": False,
+                "status": "blocked",
+                "reason": "core/app/services/tests/ui edits are blocked in scheduler executor unless --allow-core is set",
+                "executor": "scheduler",
+                "code_chain_version": CODE_CHAIN_VERSION,
+            },
+            verify_results=[],
+            correction={},
+            ok=False,
+            reason="core edit blocked",
+        )
+        return SelfEditLoopResult(
+            ok=False,
+            status="blocked",
+            task=task,
+            final_task=task,
+            attempts=[attempt],
+            max_attempts=max_attempts,
+            repo_root=str(repo_root_path),
+            final_reason="core edit blocked; pass --allow-core only after confirming the task",
+        )
+
+    forbidden_words = (
+        "delete ",
+        "remove file",
+        "rm ",
+        "rmdir",
+        "del ",
+        "erase ",
+        "format ",
+        "rename ",
+        "move ",
+        "mv ",
+        "chmod ",
+        "chown ",
+        "curl ",
+        "wget ",
+        "powershell ",
+        "cmd.exe",
+        "bash ",
+    )
+    lowered_task = task.lower()
+    for word in forbidden_words:
+        if word in lowered_task:
+            attempt = SelfEditAttempt(
+                attempt=1,
+                task=task,
+                edit_result={
+                    "ok": False,
+                    "status": "blocked",
+                    "reason": f"forbidden operation in scheduler self-edit task: {word.strip()}",
+                    "executor": "scheduler",
+                    "code_chain_version": CODE_CHAIN_VERSION,
+                },
+                verify_results=[],
+                correction={},
+                ok=False,
+                reason=f"forbidden operation: {word.strip()}",
+            )
+            return SelfEditLoopResult(
+                ok=False,
+                status="blocked",
+                task=task,
+                final_task=task,
+                attempts=[attempt],
+                max_attempts=max_attempts,
+                repo_root=str(repo_root_path),
+                final_reason=attempt.reason,
+            )
+
+    started_cwd = Path.cwd()
+    scheduler_result: dict[str, Any]
+    try:
+        os.chdir(repo_root_path)
+        from core.tasks.scheduler import Scheduler
+
+        scheduler = Scheduler(allow_commands=True)
+        task_id = f"self_edit_scheduler_{int(time.time())}"
+        scheduler_task = {
+            "task_id": task_id,
+            "goal": task,
+            "status": "created",
+            "source": "self_edit_loop_v5_8_1_scheduler_executor",
+        }
+        scheduler_result = scheduler.run_one_step(scheduler_task)
+    except Exception as exc:
+        scheduler_result = {
+            "ok": False,
+            "action": "scheduler_exception",
+            "status": "failed",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    finally:
+        try:
+            os.chdir(started_cwd)
+        except Exception:
+            pass
+
+    compact_result = _compact_scheduler_bridge_result(scheduler_result)
+    scheduler_ok = bool(compact_result.get("ok", False))
+    verify_results: list[VerifyResult] = []
+    verify_ok = True
+
+    if scheduler_ok and verify_commands:
+        verify_results = _run_verify_commands(
+            verify_commands,
+            repo_root=repo_root_path,
+            verify_timeout_seconds=verify_timeout_seconds,
+        )
+        verify_ok = all(item.ok for item in verify_results)
+
+    ok = scheduler_ok and verify_ok
+    if ok:
+        reason = "scheduler self-edit succeeded"
+    elif scheduler_ok and not verify_ok:
+        reason = "scheduler self-edit succeeded but verification failed"
+    else:
+        reason = str(compact_result.get("failed_reason") or compact_result.get("error") or "scheduler self-edit failed")
+
+    edit_result = {
+        "ok": ok,
+        "status": "success" if ok else "failed",
+        "executor": "scheduler",
+        "scheduler_result": compact_result,
+        "raw_scheduler_result": scheduler_result,
+        "verify_ok": verify_ok,
+        "code_chain_version": CODE_CHAIN_VERSION,
+    }
+
+    attempt = SelfEditAttempt(
+        attempt=1,
+        task=task,
+        edit_result=edit_result,
+        verify_results=verify_results,
+        correction={},
+        ok=ok,
+        reason=reason,
+    )
+
+    return SelfEditLoopResult(
+        ok=ok,
+        status="success" if ok else "failed",
+        task=task,
+        final_task=task,
+        attempts=[attempt],
+        max_attempts=max_attempts,
+        repo_root=str(repo_root_path),
+        final_reason=reason,
+    )
+
 def run_self_edit_loop(
     task: str,
     *,
@@ -2952,6 +3220,7 @@ def run_self_edit_loop(
     ollama_model: str = "",
     ollama_url: str = "http://127.0.0.1:11434",
     llm_planner_retries: int = DEFAULT_LLM_PLANNER_RETRIES,
+    executor_mode: str = "legacy",
 ) -> SelfEditLoopResult:
     """
     v4 Agent Loop entrypoint.
@@ -2963,6 +3232,17 @@ def run_self_edit_loop(
     task = _normalize_text(task)
     repo_root_path = Path(repo_root).resolve()
     verify_commands = list(verify_commands or [])
+
+    executor_mode = str(executor_mode or "legacy").strip().lower()
+    if executor_mode in {"scheduler", "scheduler_bridge", "scheduler-backed"}:
+        return _run_scheduler_backed_self_edit_loop(
+            task,
+            repo_root=repo_root_path,
+            verify_commands=verify_commands,
+            max_attempts=max_attempts,
+            allow_core=allow_core,
+            verify_timeout_seconds=verify_timeout_seconds,
+        )
 
     planner_mode = str(planner_mode or "rule").strip().lower()
     if planner_mode not in {"rule", "llm"}:
@@ -3171,6 +3451,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-attempts", type=int, default=DEFAULT_MAX_ATTEMPTS)
     parser.add_argument("--verify-timeout", type=int, default=DEFAULT_VERIFY_TIMEOUT_SECONDS)
     parser.add_argument("--allow-core", action="store_true", help="Allow core/app/services/tests/ui paths")
+    parser.add_argument("--executor", choices=["legacy", "scheduler"], default="legacy", help="Execution backend; scheduler routes through Scheduler.run_one_step")
     parser.add_argument("--planner", choices=["rule", "llm"], default="rule", help="Planner mode; llm is guarded and optional")
     parser.add_argument("--llm-planner-command", default="", help="Command that reads planner prompt from stdin and returns JSON")
     parser.add_argument("--llm-planner-timeout", type=int, default=DEFAULT_LLM_PLANNER_TIMEOUT_SECONDS)
@@ -3204,6 +3485,7 @@ def main(argv: list[str] | None = None) -> int:
             ollama_model=args.ollama_model,
             ollama_url=args.ollama_url,
             llm_planner_retries=args.llm_planner_retries,
+            executor_mode=args.executor,
         )
     except SelfEditSafetyError as exc:
         payload = {
