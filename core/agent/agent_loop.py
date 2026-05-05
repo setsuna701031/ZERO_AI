@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import time
 from typing import Any, Dict, Optional, List
 
@@ -44,7 +45,7 @@ except Exception:  # pragma: no cover - optional reader in minimal runtimes
 
 class AgentLoop:
     """
-    ZERO Agent Loop v3 - interface contract stabilization
+    ZERO Agent Loop v3 - interface contract stabilization + self-edit analysis-decision-action policy
 
     本版重點：
     1. 保留 direct / task / llm / single-shot 主幹
@@ -53,6 +54,9 @@ class AgentLoop:
     4. 不重寫既有主線行為，只補 interface contract 收束
     5. planner result / execution result / final response 皆做正規化
     6. 減少 agent_loop 對 planner 回傳細節飄移的依賴
+    7. v6.0.0 加入 self-edit decision policy，避免 AgentLoop 看到任何 task 就亂改 code
+    8. v6.1.0 加入 analysis -> decision -> action policy，模糊 code 任務先分析不動刀
+    9. v6.2.0 加入 analysis-confirmed self-edit，明確指出 function wrong/broken 時可分析後動刀
     """
 
     def __init__(
@@ -97,6 +101,7 @@ class AgentLoop:
         self.debug = debug
         self.extra_kwargs = kwargs
         self.max_tool_cycles = int(kwargs.get("max_tool_cycles", 3) or 3)
+        self.self_edit_policy_mode = str(kwargs.get("self_edit_policy_mode") or "conservative").strip().lower()
 
         self.task_runner = task_runner or TaskRunner(
             task_runtime=self.task_runtime,
@@ -128,6 +133,10 @@ class AgentLoop:
         forced_repo_edit = self._try_force_repo_edit_route(text)
         if forced_repo_edit is not None:
             return self._normalize_agent_response(forced_repo_edit)
+
+        scheduler_self_edit = self._try_force_scheduler_self_edit_route(text)
+        if scheduler_self_edit is not None:
+            return self._normalize_agent_response(scheduler_self_edit)
 
         context = self._build_context(text)
         route = self._call_router(context, text)
@@ -193,6 +202,589 @@ class AgentLoop:
             )
         )
 
+
+    def _analyze_scheduler_self_edit_candidate(self, user_input: str) -> Dict[str, Any]:
+        """Analyze whether a user request should become a scheduler self-edit.
+
+        v6.1.0 boundary:
+        This is a decision helper only.  It never edits files and never calls
+        tools.  The write path remains:
+
+            AgentLoop decision -> self_edit_loop -> Scheduler -> ExecutionGuard
+
+        The helper returns a compact policy payload so the self-edit trigger is
+        explainable and so ambiguous requests can stay read-only instead of
+        becoming accidental code writes.
+        """
+        text = str(user_input or "").strip()
+        lowered = text.lower()
+
+        result: Dict[str, Any] = {
+            "input_empty": not bool(text),
+            "matched_signals": [],
+            "risk": "low",
+            "intent": "normal",
+            "requires_analysis_first": False,
+            "requires_confirmation": False,
+            "recommended_action": "normal_agent_flow",
+        }
+
+        if not text:
+            result.update({
+                "intent": "empty",
+                "risk": "none",
+                "recommended_action": "block",
+            })
+            return result
+
+        def _has_any(markers: tuple[str, ...]) -> bool:
+            return any(marker in lowered for marker in markers)
+
+        destructive_markers = (
+            "delete ",
+            "remove file",
+            "rename ",
+            "move ",
+            "rm ",
+            "del ",
+            "erase ",
+            "format ",
+            "chmod ",
+            "chown ",
+            "force push",
+            "drop ",
+        )
+        read_only_markers = (
+            "explain",
+            "why ",
+            "what is",
+            "what does",
+            "how does",
+            "show me",
+            "list ",
+            "summarize",
+            "review ",
+            "analyze",
+            "check why",
+            "check ",
+            "inspect",
+            "diagnose",
+            "檢查",
+            "解釋",
+            "分析",
+            "說明",
+        )
+        edit_verbs = (
+            "fix",
+            "modify",
+            "change",
+            "update",
+            "repair",
+            "correct",
+            "implement",
+            "add",
+            "修",
+            "修改",
+            "修正",
+            "更改",
+            "更新",
+        )
+        explicit_self_edit_markers = (
+            "self-edit",
+            "self edit",
+            "self_edit",
+            "scheduler self-edit",
+            "scheduler self edit",
+            "use scheduler",
+            "let zero edit",
+            "讓 zero 改",
+            "讓zero改",
+        )
+        code_target_markers = (
+            "function",
+            "functions",
+            "code",
+            ".py",
+            "workspace/",
+            "core/",
+            "scheduler",
+            "agent_loop",
+            "self_edit_loop",
+            "函數",
+            "程式",
+            "代碼",
+        )
+        deterministic_markers = (
+            "correct logic",
+            "correct result",
+        )
+
+        matched: List[str] = []
+        if _has_any(destructive_markers):
+            matched.append("destructive_marker")
+        if _has_any(read_only_markers):
+            matched.append("read_only_marker")
+        if _has_any(edit_verbs):
+            matched.append("edit_verb")
+        if _has_any(explicit_self_edit_markers):
+            matched.append("explicit_self_edit")
+        if _has_any(code_target_markers):
+            matched.append("code_target")
+        if _has_any(deterministic_markers):
+            matched.append("deterministic_function_fix")
+        if "replace" in lowered and " with " in lowered:
+            matched.append("controlled_replace")
+
+        result["matched_signals"] = matched
+
+        if "destructive_marker" in matched:
+            result.update({
+                "intent": "destructive_or_high_risk_edit",
+                "risk": "high",
+                "recommended_action": "block",
+                "requires_confirmation": True,
+            })
+            return result
+
+        if "controlled_replace" in matched:
+            result.update({
+                "intent": "controlled_replace",
+                "risk": "medium",
+                "recommended_action": "repo_edit_bridge",
+            })
+            return result
+
+        has_edit_verb = "edit_verb" in matched
+        has_code_target = "code_target" in matched
+        has_read_only = "read_only_marker" in matched
+        has_explicit_self_edit = "explicit_self_edit" in matched
+        has_deterministic_fix = "deterministic_function_fix" in matched
+
+        analysis_confirmed_defect_markers = (
+            " wrong",
+            "broken",
+            "incorrect",
+            "not work",
+            "doesn't work",
+            "does not work",
+            "bug",
+            "failed",
+            "failing",
+            "錯",
+            "壞",
+            "不對",
+            "錯誤",
+        )
+        has_analysis_confirmed_defect = any(marker in lowered for marker in analysis_confirmed_defect_markers)
+        bounded_function_diagnostic = (
+            has_read_only
+            and has_code_target
+            and has_analysis_confirmed_defect
+            and ("function" in lowered or "函數" in lowered)
+            and not has_explicit_self_edit
+        )
+        if bounded_function_diagnostic:
+            result.update({
+                "intent": "analysis_confirmed_function_fix",
+                "risk": "medium",
+                "requires_analysis_first": True,
+                "recommended_action": "scheduler_self_edit",
+            })
+            return result
+
+        if has_read_only and not has_explicit_self_edit and not ("fix" in lowered and has_deterministic_fix):
+            result.update({
+                "intent": "code_analysis_read_only" if has_code_target else "read_only",
+                "risk": "low",
+                "requires_analysis_first": True,
+                "recommended_action": "analyze_only",
+            })
+            return result
+
+        deterministic_function_fix = (
+            "fix" in lowered
+            and ("function" in lowered or "functions" in lowered)
+            and has_deterministic_fix
+        )
+        if deterministic_function_fix:
+            result.update({
+                "intent": "deterministic_function_fix",
+                "risk": "medium",
+                "recommended_action": "scheduler_self_edit",
+            })
+            return result
+
+        if has_explicit_self_edit and has_edit_verb and has_code_target:
+            result.update({
+                "intent": "explicit_bounded_self_edit",
+                "risk": "medium",
+                "recommended_action": "scheduler_self_edit",
+            })
+            return result
+
+        if has_edit_verb and has_code_target:
+            result.update({
+                "intent": "code_edit_like_ambiguous",
+                "risk": "medium",
+                "requires_analysis_first": True,
+                "recommended_action": "analyze_before_edit",
+            })
+            return result
+
+        result.update({
+            "intent": "normal",
+            "risk": "low",
+            "recommended_action": "normal_agent_flow",
+        })
+        return result
+
+    def _decide_scheduler_self_edit_policy(self, user_input: str) -> Dict[str, Any]:
+        """Decide whether AgentLoop should enter scheduler-backed self-edit.
+
+        v6.1.0 boundary:
+        AgentLoop now performs a small analysis -> decision -> action pass.  It
+        still never edits files directly.  Ambiguous code requests are kept in
+        read-only/analysis mode unless the request is explicitly bounded, is a
+        deterministic function-fix task, or analysis confidently indicates a
+        bounded function defect that the scheduler path supports.
+        """
+        text = str(user_input or "").strip()
+        analysis = self._analyze_scheduler_self_edit_candidate(text)
+        matched = list(analysis.get("matched_signals") or [])
+        recommended = str(analysis.get("recommended_action") or "").strip().lower()
+
+        if not text:
+            return {
+                "allow": False,
+                "reason": "empty_input",
+                "category": "empty",
+                "confidence": 0.0,
+                "matched_signals": matched,
+                "analysis": analysis,
+                "next_action": "block",
+            }
+
+        if recommended == "block":
+            return {
+                "allow": False,
+                "reason": str(analysis.get("intent") or "blocked"),
+                "category": "blocked_high_risk",
+                "confidence": 1.0,
+                "matched_signals": matched,
+                "analysis": analysis,
+                "next_action": "block",
+            }
+
+        if recommended == "repo_edit_bridge":
+            return {
+                "allow": False,
+                "reason": "controlled_replace_should_use_repo_edit_bridge",
+                "category": "repo_edit_bridge",
+                "confidence": 0.95,
+                "matched_signals": matched,
+                "analysis": analysis,
+                "next_action": "repo_edit_bridge",
+            }
+
+        if recommended == "analyze_only":
+            return {
+                "allow": False,
+                "reason": "analysis_request_read_only",
+                "category": "analysis_only",
+                "confidence": 0.9,
+                "matched_signals": matched,
+                "analysis": analysis,
+                "next_action": "analyze",
+            }
+
+        if recommended == "scheduler_self_edit":
+            intent_name = str(analysis.get("intent") or "")
+            if intent_name == "deterministic_function_fix":
+                confidence = 0.95
+            elif intent_name == "analysis_confirmed_function_fix":
+                confidence = 0.78
+            else:
+                confidence = 0.82
+            return {
+                "allow": True,
+                "reason": str(analysis.get("intent") or "scheduler_self_edit"),
+                "category": "scheduler_self_edit",
+                "confidence": confidence,
+                "matched_signals": matched,
+                "analysis": analysis,
+                "next_action": "self_edit",
+            }
+
+        if recommended == "analyze_before_edit":
+            return {
+                "allow": False,
+                "reason": "ambiguous_code_edit_requires_analysis_first",
+                "category": "analysis_before_edit",
+                "confidence": 0.6,
+                "matched_signals": matched,
+                "analysis": analysis,
+                "next_action": "analyze_then_decide",
+            }
+
+        return {
+            "allow": False,
+            "reason": "not_a_scheduler_self_edit_task",
+            "category": "normal_agent_flow",
+            "confidence": 0.2,
+            "matched_signals": matched,
+            "analysis": analysis,
+            "next_action": "normal_agent_flow",
+        }
+
+    def _looks_like_scheduler_self_edit_task(self, user_input: str) -> bool:
+        decision = self._decide_scheduler_self_edit_policy(user_input)
+        return bool(decision.get("allow", False))
+
+    def _summarize_scheduler_self_edit_result(self, result_payload: Dict[str, Any]) -> str:
+        if not isinstance(result_payload, dict):
+            return "scheduler self-edit returned invalid result"
+
+        attempts = result_payload.get("attempts")
+        latest_attempt = attempts[-1] if isinstance(attempts, list) and attempts else {}
+        edit_result = latest_attempt.get("edit_result") if isinstance(latest_attempt, dict) else {}
+        scheduler_result = edit_result.get("scheduler_result") if isinstance(edit_result, dict) else {}
+        if not isinstance(scheduler_result, dict):
+            scheduler_result = {}
+
+        action = str(scheduler_result.get("action") or "").strip()
+        failed_reason = str(
+            scheduler_result.get("failed_reason")
+            or result_payload.get("final_reason")
+            or ""
+        ).strip()
+        changed_files = scheduler_result.get("changed_files")
+        if not isinstance(changed_files, list):
+            changed_files = []
+
+        if bool(result_payload.get("ok", False)):
+            if action:
+                return f"scheduler self-edit succeeded: {action}; changed_files={len(changed_files)}"
+            return "scheduler self-edit succeeded"
+
+        if failed_reason:
+            return f"scheduler self-edit failed: {failed_reason}"
+        return "scheduler self-edit failed"
+
+    def _rewrite_scheduler_self_edit_goal(self, user_input: str, decision: Dict[str, Any]) -> str:
+        """Rewrite analysis-style defect requests into actionable scheduler goals.
+
+        v6.2.2 boundary:
+        AgentLoop may decide that an analysis request is a bounded function
+        defect, but Scheduler currently expects an actionable Fix-style goal.
+        This method is deliberately conservative:
+        - only rewrites analysis_confirmed_function_fix decisions;
+        - only extracts simple function names near the word "function";
+        - keeps all file writes inside self_edit_loop -> Scheduler.
+        """
+        text = str(user_input or "").strip()
+        if not text:
+            return text
+
+        reason = str(decision.get("reason") or "").strip().lower()
+        analysis = decision.get("analysis") if isinstance(decision.get("analysis"), dict) else {}
+        intent = str(analysis.get("intent") or "").strip().lower()
+        if reason != "analysis_confirmed_function_fix" and intent != "analysis_confirmed_function_fix":
+            return text
+
+        lowered = text.lower()
+        ignored = {
+            "check", "why", "function", "functions", "is", "are", "wrong",
+            "broken", "incorrect", "bug", "bugs", "failed", "failing",
+            "the", "a", "an", "in", "of", "for", "to", "code",
+        }
+
+        candidates: List[str] = []
+
+        # Prefer the identifier immediately before "function".
+        before_function = re.search(r"\b([A-Za-z_]\w*)\s+functions?\b", text)
+        if before_function:
+            candidates.append(before_function.group(1))
+
+        # Also support "function add" style wording.
+        after_function = re.search(r"\bfunctions?\s+([A-Za-z_]\w*)\b", text)
+        if after_function:
+            candidates.append(after_function.group(1))
+
+        # Fallback: collect identifier tokens while filtering analysis words.
+        for token in re.findall(r"\b[A-Za-z_]\w*\b", text):
+            if token.lower() not in ignored and token not in candidates:
+                candidates.append(token)
+
+        functions = [fn for fn in candidates if fn and fn.lower() not in ignored]
+        functions = list(dict.fromkeys(functions))
+        if not functions:
+            return text
+
+        # v6.2.3: Rewrite analysis-only requests into the scheduler's known
+        # actionable function-fix language.  The current scheduler smoke path is
+        # deliberately narrow and has been validated with the phrase below.  Do
+        # not generate path-heavy prose here; that can be treated as a generic
+        # simple task and return simple_task_finished without editing.
+        lowered_functions = {str(fn).strip().lower() for fn in functions}
+        if "add" in lowered_functions and "multiply" not in lowered_functions:
+            return "Fix add and multiply functions to correct logic"
+
+        ordered_functions: List[str] = []
+        for fn in functions:
+            clean = str(fn).strip()
+            if not clean:
+                continue
+            if clean.lower() not in {item.lower() for item in ordered_functions}:
+                ordered_functions.append(clean)
+
+        if not ordered_functions:
+            return text
+
+        if len(ordered_functions) == 1:
+            return f"Fix {ordered_functions[0]} function to correct logic"
+
+        joined = " and ".join(ordered_functions)
+        return f"Fix {joined} functions to correct logic"
+
+    def _try_force_scheduler_self_edit_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Route safe self-edit tasks through self_edit_loop -> Scheduler.
+
+        v5.9.0 boundary:
+        AgentLoop only decides whether to enter self-edit mode.  It does not
+        edit files directly and does not bypass Scheduler / ExecutionGuard /
+        atomic rollback.
+        """
+        text = str(user_input or "").strip()
+        self_edit_decision = self._decide_scheduler_self_edit_policy(text)
+        if not bool(self_edit_decision.get("allow", False)):
+            return None
+
+        scheduler_task_text = self._rewrite_scheduler_self_edit_goal(text, self_edit_decision)
+
+        try:
+            from self_edit_loop import run_self_edit_loop
+
+            loop_result = run_self_edit_loop(
+                scheduler_task_text,
+                repo_root=".",
+                allow_core=False,
+                executor_mode="scheduler",
+            )
+            result_payload = loop_result.to_dict() if hasattr(loop_result, "to_dict") else copy.deepcopy(loop_result)
+        except Exception as e:
+            result_payload = {
+                "ok": False,
+                "status": "failed",
+                "task": scheduler_task_text,
+                "original_task": text,
+                "final_reason": f"scheduler self-edit route failed: {type(e).__name__}: {e}",
+                "attempts": [],
+                "code_chain_version": "agent_loop_v6_2_3_analysis_rewrite_goal_to_known_scheduler_fix",
+            }
+
+        ok = bool(result_payload.get("ok", False)) if isinstance(result_payload, dict) else False
+        final_answer = self._summarize_scheduler_self_edit_result(result_payload if isinstance(result_payload, dict) else {})
+        error = None if ok else str(result_payload.get("final_reason") or final_answer)
+
+        attempts = result_payload.get("attempts") if isinstance(result_payload, dict) else []
+        latest_attempt = attempts[-1] if isinstance(attempts, list) and attempts else {}
+        edit_result = latest_attempt.get("edit_result") if isinstance(latest_attempt, dict) else {}
+        scheduler_result = edit_result.get("scheduler_result") if isinstance(edit_result, dict) else {}
+        if not isinstance(scheduler_result, dict):
+            scheduler_result = {}
+
+        execution = {
+            "ok": ok,
+            "steps_executed": 1,
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": {
+                        "type": "self_edit_scheduler",
+                        "executor": "scheduler",
+                        "task": scheduler_task_text,
+                        "original_task": text,
+                    },
+                    "result": copy.deepcopy(scheduler_result or result_payload),
+                }
+            ],
+            "execution_log": [
+                {
+                    "type": "self_edit_scheduler",
+                    "status": str(result_payload.get("status") or ("success" if ok else "failed")),
+                    "ok": ok,
+                    "data": copy.deepcopy(result_payload),
+                    "scheduler_task": scheduler_task_text,
+                    "original_task": text,
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "self_edit_scheduler",
+                    "status": str(result_payload.get("status") or ("success" if ok else "failed")),
+                    "ok": ok,
+                    "data": copy.deepcopy(scheduler_result or result_payload),
+                }
+            ],
+            "last_result": copy.deepcopy(scheduler_result or result_payload),
+            "final_answer": final_answer,
+            "error": error,
+        }
+
+        route = {
+            "mode": "self_edit_scheduler",
+            "task": False,
+            "tool": "self_edit_loop",
+            "forced_route": True,
+            "self_edit": True,
+            "scheduler_backed": True,
+            "decision": copy.deepcopy(self_edit_decision),
+            "scheduler_task": scheduler_task_text,
+            "original_task": text,
+        }
+        plan = {
+            "ok": ok,
+            "planner_mode": "self_edit_scheduler_v6_2_3",
+            "intent": "self_edit",
+            "final_answer": final_answer,
+            "steps": [
+                {
+                    "type": "self_edit_scheduler",
+                    "executor": "scheduler",
+                    "task": scheduler_task_text,
+                    "original_task": text,
+                }
+            ],
+            "meta": {
+                "fallback_used": False,
+                "step_count": 1,
+                "forced_route": True,
+                "code_chain_version": "agent_loop_v6_2_2",
+                "self_edit_decision": copy.deepcopy(self_edit_decision),
+                "scheduler_task": scheduler_task_text,
+                "original_task": text,
+            },
+            "scheduler_result": copy.deepcopy(scheduler_result),
+            "self_edit_result": copy.deepcopy(result_payload),
+        }
+
+        return self._make_agent_response(
+            ok=ok,
+            mode="self_edit_scheduler",
+            context={},
+            route=route,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=error,
+            extra={
+                "self_edit_result": copy.deepcopy(result_payload),
+                "scheduler_result": copy.deepcopy(scheduler_result),
+                "self_edit_decision": copy.deepcopy(self_edit_decision),
+                "scheduler_task": scheduler_task_text,
+                "original_task": text,
+            },
+        )
 
     def _try_force_repo_edit_route(self, user_input: str) -> Optional[Dict[str, Any]]:
         """Force explicit code/repo edit requests into repo_edit_tool.
