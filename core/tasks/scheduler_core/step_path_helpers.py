@@ -260,6 +260,44 @@ def resolve_guard_target_path(
     )
 
 
+
+
+def is_direct_workspace_edit_step(step: Dict[str, Any]) -> bool:
+    """Return True when a step explicitly requests direct workspace editing.
+
+    This does not bypass ExecutionGuard.  It only gives higher layers a
+    durable policy marker so they can preserve the original workspace/shared
+    target instead of producing a checked/review copy.
+    """
+    if not isinstance(step, dict):
+        return False
+    edit_mode = _safe_str(step.get("edit_mode")).lower()
+    target_policy = _safe_str(step.get("target_policy")).lower()
+    return edit_mode == "direct_workspace_edit" or target_policy == "preserve_original_workspace_file"
+
+
+def resolve_direct_workspace_edit_path(raw_path: str, task_dir: str, shared_dir: str) -> str:
+    """Resolve a direct workspace edit target without converting to *_checked.py.
+
+    This helper preserves the original workspace/shared target while still
+    restricting the mode to shared workspace paths.  Callers must still run
+    ExecutionGuard before writing.
+    """
+    path = _safe_str(raw_path)
+    normalized = _norm_slash(path).lstrip("./")
+    lowered = normalized.lower()
+
+    if not (lowered.startswith("workspace/shared/") or lowered == "shared" or lowered.startswith("shared/")):
+        raise PermissionError("direct_workspace_edit is only allowed for workspace/shared or shared paths")
+
+    return resolve_step_path(
+        raw_path=normalized,
+        task_dir=task_dir,
+        shared_dir=shared_dir,
+        scope="shared",
+    )
+
+
 def extract_text_from_result_payload(payload: Any) -> str:
     """
     Extract best-effort text from nested step result payloads.
