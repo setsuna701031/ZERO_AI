@@ -1,7 +1,7 @@
 """
 core/tools/repo_edit_agent_bridge.py
 
-Code Chain v0.7 forced routing bridge.
+Code Chain v0.8 forced routing bridge.
 
 Purpose:
 - Detect explicit repository/code edit tasks before the LLM can finish with only
@@ -10,30 +10,35 @@ Purpose:
 - Execute repo_edit_tool directly.
 - Return observable trace/result data for scheduler/agent_loop.
 
-v0.7 change:
-- Supports multi-file / multi-edit tasks when the request is written as
-  multiple explicit edit lines.
-- Each edit still goes through parse_code_edit_intent -> controlled_replace ->
-  repo_edit_tool.
-- Stops on first failed edit.
-- Does not support delete / rename / free-form patch / shell commands.
+v0.8 change:
+- Multi-file transaction mode.
+- Multi-edit tasks are executed sequentially.
+- If any edit fails, all previously applied edits in the same multi-edit task
+  are rolled back from their .bak_v06 backup files.
+- Transaction is conservative:
+  - only explicit workspace/... replace ... with ... lines;
+  - no delete / rename / shell command / free-form patch;
+  - rollback only touches files whose successful tool_result reported both
+    workspace_path and backup_path.
 
-Supported v0.7 multi-edit shape:
+Supported multi-edit shape:
     Modify workspace/shared/a.py: replace 'old' with 'new'
     Modify workspace/shared/b.py: replace 'old2' with 'new2'
 
-Single-edit behavior remains compatible with v0.6.
+Single-edit behavior remains compatible with v0.6/v0.7.
 """
 
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, Mapping
 
 
 TOOL_NAME = "repo_edit_tool"
-CODE_CHAIN_VERSION = "v0.7"
+CODE_CHAIN_VERSION = "v0.8"
 
 
 _EDIT_KEYWORDS = (
@@ -130,6 +135,11 @@ def _to_dict(value: Any) -> dict[str, Any]:
         "type",
         "instruction",
         "task_text",
+        "workspace_path",
+        "backup_path",
+        "applied_to_workspace",
+        "apply_source",
+        "error",
     ):
         if hasattr(value, name):
             result[name] = getattr(value, name)
@@ -164,6 +174,9 @@ def _tool_result_is_ok(result: Mapping[str, Any] | None) -> bool:
 
     status = str(result.get("status") or result.get("state") or "").strip().lower()
     if status in _BLOCKED_STATUSES:
+        return False
+
+    if result.get("applied_to_workspace") is False:
         return False
 
     return bool(
@@ -327,7 +340,6 @@ def build_forced_repo_edit_payload(task_text: str) -> dict[str, Any]:
             "reason": str(payload.get("reason") or f"payload status is {payload_status}"),
         }
 
-    # Force executable v0.7/v0.6 compatible shape.
     payload["status"] = "ready"
     payload["mode"] = "controlled_replace"
     payload["operation"] = "controlled_replace"
@@ -373,6 +385,89 @@ def _call_repo_edit_tool(payload: dict[str, Any], *, repo_root: str) -> dict[str
         }
 
     return _to_dict(tool_result)
+
+
+def _safe_restore_from_backup(tool_result: Mapping[str, Any]) -> dict[str, Any]:
+    workspace_path_raw = str(tool_result.get("workspace_path") or "").strip()
+    backup_path_raw = str(tool_result.get("backup_path") or "").strip()
+
+    if not workspace_path_raw:
+        return {
+            "ok": False,
+            "reason": "missing workspace_path",
+            "workspace_path": workspace_path_raw,
+            "backup_path": backup_path_raw,
+        }
+
+    if not backup_path_raw:
+        return {
+            "ok": False,
+            "reason": "missing backup_path",
+            "workspace_path": workspace_path_raw,
+            "backup_path": backup_path_raw,
+        }
+
+    workspace_path = Path(workspace_path_raw)
+    backup_path = Path(backup_path_raw)
+
+    if not backup_path.exists() or not backup_path.is_file():
+        return {
+            "ok": False,
+            "reason": "backup_path not found",
+            "workspace_path": str(workspace_path),
+            "backup_path": str(backup_path),
+        }
+
+    try:
+        workspace_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(backup_path, workspace_path)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "reason": f"restore failed: {type(exc).__name__}: {exc}",
+            "workspace_path": str(workspace_path),
+            "backup_path": str(backup_path),
+        }
+
+    return {
+        "ok": True,
+        "reason": "restored from backup",
+        "workspace_path": str(workspace_path),
+        "backup_path": str(backup_path),
+    }
+
+
+def _rollback_applied_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rollback_results: list[dict[str, Any]] = []
+
+    for item in reversed(results):
+        tool_result = item.get("tool_result")
+        if not isinstance(tool_result, Mapping):
+            rollback_results.append(
+                {
+                    "index": item.get("index"),
+                    "ok": False,
+                    "reason": "missing tool_result",
+                }
+            )
+            continue
+
+        if tool_result.get("applied_to_workspace") is not True:
+            rollback_results.append(
+                {
+                    "index": item.get("index"),
+                    "ok": True,
+                    "reason": "not applied; no rollback needed",
+                }
+            )
+            continue
+
+        restored = _safe_restore_from_backup(tool_result)
+        restored["index"] = item.get("index")
+        restored["file_path"] = tool_result.get("file_path")
+        rollback_results.append(restored)
+
+    return rollback_results
 
 
 def _run_single_repo_edit_decision(
@@ -443,11 +538,12 @@ def _run_multi_repo_edit_decision(
     for index, edit_text in enumerate(edit_tasks, start=1):
         payload_result = build_forced_repo_edit_payload(edit_text)
         if not payload_result.get("ok"):
+            rollback_results = _rollback_applied_results(results)
             return {
                 "handled": True,
                 "forced_route": True,
                 "tool_name": TOOL_NAME,
-                "status": "blocked",
+                "status": "rolled_back",
                 "reason": f"multi edit item {index} blocked: {payload_result.get('reason')}",
                 "task_text": task_text,
                 "edit_tasks": edit_tasks,
@@ -455,6 +551,12 @@ def _run_multi_repo_edit_decision(
                 "payloads": payloads,
                 "intents": intents,
                 "failed_index": index,
+                "rollback_results": rollback_results,
+                "transaction": {
+                    "enabled": True,
+                    "rolled_back": True,
+                    "rollback_count": len(rollback_results),
+                },
                 "code_chain_version": CODE_CHAIN_VERSION,
                 "multi_edit": True,
             }
@@ -464,29 +566,30 @@ def _run_multi_repo_edit_decision(
         payload.setdefault("instruction", edit_text)
         payload["multi_edit_index"] = index
         payload["multi_edit_total"] = len(edit_tasks)
+        payload["transaction_enabled"] = True
 
         result = _call_repo_edit_tool(payload, repo_root=repo_root)
 
         payloads.append(payload)
         intents.append(dict(payload_result.get("intent") or {}))
-        results.append(
-            {
-                "index": index,
-                "task_text": edit_text,
-                "payload": payload,
-                "intent": payload_result.get("intent", {}),
-                "tool_result": result,
-                "ok": _tool_result_is_ok(result),
-            }
-        )
+        item = {
+            "index": index,
+            "task_text": edit_text,
+            "payload": payload,
+            "intent": payload_result.get("intent", {}),
+            "tool_result": result,
+            "ok": _tool_result_is_ok(result),
+        }
+        results.append(item)
 
         if not _tool_result_is_ok(result):
+            rollback_results = _rollback_applied_results(results[:-1])
             status = str(result.get("status") or result.get("state") or "failed")
             return {
                 "handled": True,
                 "forced_route": True,
                 "tool_name": TOOL_NAME,
-                "status": status,
+                "status": "rolled_back" if rollback_results else status,
                 "reason": f"multi edit stopped at item {index}",
                 "task_text": task_text,
                 "edit_tasks": edit_tasks,
@@ -494,6 +597,13 @@ def _run_multi_repo_edit_decision(
                 "payloads": payloads,
                 "intents": intents,
                 "failed_index": index,
+                "rollback_results": rollback_results,
+                "transaction": {
+                    "enabled": True,
+                    "rolled_back": bool(rollback_results),
+                    "rollback_count": len(rollback_results),
+                    "failed_status": status,
+                },
                 "code_chain_version": CODE_CHAIN_VERSION,
                 "multi_edit": True,
             }
@@ -503,7 +613,7 @@ def _run_multi_repo_edit_decision(
         "forced_route": True,
         "tool_name": TOOL_NAME,
         "status": "ok",
-        "reason": f"multi edit applied {len(results)} item(s)",
+        "reason": f"multi edit transaction applied {len(results)} item(s)",
         "task_text": task_text,
         "edit_tasks": edit_tasks,
         "results": results,
@@ -513,8 +623,18 @@ def _run_multi_repo_edit_decision(
             "status": "success",
             "ok": True,
             "multi_edit": True,
+            "transaction": {
+                "enabled": True,
+                "rolled_back": False,
+                "rollback_count": 0,
+            },
             "count": len(results),
             "results": results,
+        },
+        "transaction": {
+            "enabled": True,
+            "rolled_back": False,
+            "rollback_count": 0,
         },
         "code_chain_version": CODE_CHAIN_VERSION,
         "multi_edit": True,
@@ -533,8 +653,8 @@ def run_repo_edit_decision(
     Behavior:
     - If task does not look like a repo edit and force=False, return skipped.
     - If the task is a conservative explicit multi-edit request, execute each
-      edit sequentially and stop on first failure.
-    - Otherwise execute the single-edit v0.6 path.
+      edit sequentially as one transaction and rollback prior edits on failure.
+    - Otherwise execute the single-edit path.
     - Always returns a dict; never raises into the agent loop/scheduler.
     """
     text = _normalize_task_text(task_text)

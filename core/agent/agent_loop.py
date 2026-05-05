@@ -36,6 +36,11 @@ try:
 except Exception:  # pragma: no cover - optional bridge in minimal runtimes
     run_repo_edit_decision = None
 
+try:
+    from code_reader import read_code_file
+except Exception:  # pragma: no cover - optional reader in minimal runtimes
+    read_code_file = None
+
 
 class AgentLoop:
     """
@@ -222,6 +227,10 @@ class AgentLoop:
         if not isinstance(forced, dict) or not forced.get("handled"):
             return None
 
+        code_context = self._read_repo_edit_code_context(forced)
+        if code_context:
+            forced["repo_edit_code_context"] = code_context
+
         ok = str(forced.get("status") or "").strip().lower() not in {"failed", "error"}
         tool_result = forced.get("tool_result") if isinstance(forced.get("tool_result"), dict) else {}
         if isinstance(tool_result, dict) and tool_result.get("ok") is False:
@@ -308,6 +317,156 @@ class AgentLoop:
                 "tool_name": "repo_edit_tool",
             },
         )
+
+
+    def _read_repo_edit_code_context(self, forced: Dict[str, Any]) -> Dict[str, Any]:
+        """Read current file context for forced repo-edit results.
+
+        This is READ -> THINK -> EDIT visibility support:
+        - repo_edit_tool still enforces controlled_replace safety;
+        - AgentLoop records current file content so old_text mismatch can be
+          diagnosed and later planner layers can generate correct old_text.
+        """
+        if read_code_file is None or not isinstance(forced, dict):
+            return {}
+
+        paths = self._extract_repo_edit_context_paths(forced)
+        if not paths:
+            return {}
+
+        files: List[Dict[str, Any]] = []
+        for path in paths[:8]:
+            if not isinstance(path, str) or not path.strip():
+                continue
+
+            allow_core = self._repo_edit_context_path_requires_core(path)
+            try:
+                result = read_code_file(
+                    path,
+                    repo_root=".",
+                    max_chars=16000,
+                    allow_core=allow_core,
+                )
+            except Exception as e:
+                files.append(
+                    {
+                        "ok": False,
+                        "path": path,
+                        "error": f"code_reader failed: {e}",
+                    }
+                )
+                continue
+
+            if hasattr(result, "to_dict"):
+                item = result.to_dict()
+            elif isinstance(result, dict):
+                item = copy.deepcopy(result)
+            else:
+                item = {
+                    "ok": False,
+                    "path": path,
+                    "error": "code_reader returned invalid result",
+                }
+
+            files.append(item)
+
+        ok_files = [item for item in files if isinstance(item, dict) and item.get("ok")]
+        return {
+            "ok": bool(ok_files),
+            "file_count": len(files),
+            "files": files,
+            "source": "agent_loop_forced_repo_edit",
+            "purpose": "read_context_before_or_after_controlled_edit",
+        }
+
+    def _repo_edit_context_path_requires_core(self, path: str) -> bool:
+        normalized = str(path or "").replace("\\", "/").strip().lstrip("./")
+        return (
+            normalized == "app.py"
+            or normalized.startswith("core/")
+            or normalized.startswith("services/")
+            or normalized.startswith("tests/")
+            or normalized.startswith("ui/")
+        )
+
+    def _extract_repo_edit_context_paths(self, forced: Dict[str, Any]) -> List[str]:
+        """Extract file paths from forced repo-edit result/payload/intent.
+
+        Handles:
+        - single edit payload/intent/tool_result
+        - v0.7/v0.8 multi_edit payloads/intents/results
+        """
+        paths: List[str] = []
+
+        def add_path(value: Any) -> None:
+            if not isinstance(value, str):
+                return
+            text = value.strip().replace("\\", "/")
+            if not text:
+                return
+            if text not in paths:
+                paths.append(text)
+
+        def scan_dict(obj: Any) -> None:
+            if not isinstance(obj, dict):
+                return
+
+            for key in ("file_path", "target_path", "path", "file", "workspace_path"):
+                value = obj.get(key)
+                if isinstance(value, str):
+                    if key == "workspace_path":
+                        # Convert absolute repo path back to repo-relative when possible.
+                        try:
+                            resolved = str(value).replace("\\", "/")
+                            marker = "/workspace/"
+                            if marker in resolved:
+                                add_path("workspace/" + resolved.split(marker, 1)[1])
+                            else:
+                                add_path(value)
+                        except Exception:
+                            add_path(value)
+                    else:
+                        add_path(value)
+
+            for key in ("payload", "intent", "tool_result"):
+                nested = obj.get(key)
+                if isinstance(nested, dict):
+                    scan_dict(nested)
+
+            for key in ("payloads", "intents", "results", "edit_tasks"):
+                nested_list = obj.get(key)
+                if isinstance(nested_list, list):
+                    for item in nested_list:
+                        if isinstance(item, dict):
+                            scan_dict(item)
+                        elif isinstance(item, str):
+                            self._extract_paths_from_text(item, paths)
+
+            task_text = obj.get("task_text")
+            if isinstance(task_text, str):
+                self._extract_paths_from_text(task_text, paths)
+
+        scan_dict(forced)
+        self._extract_paths_from_text(str(forced.get("task_text") or ""), paths)
+
+        return paths
+
+    def _extract_paths_from_text(self, text: str, paths: List[str]) -> None:
+        if not isinstance(text, str) or not text:
+            return
+
+        import re
+
+        pattern = re.compile(
+            r"(workspace[/\\][A-Za-z0-9_.\\- /\\\\]+?\\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
+            re.IGNORECASE,
+        )
+        for match in pattern.finditer(text):
+            value = match.group(1).strip().strip("'\"`.,;:")
+            value = value.replace("\\", "/")
+            if value and value not in paths:
+                paths.append(value)
+
 
     def _summarize_forced_repo_edit_result(self, forced: Dict[str, Any]) -> str:
         if not isinstance(forced, dict):
