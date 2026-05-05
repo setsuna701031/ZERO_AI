@@ -104,7 +104,7 @@ except Exception:  # pragma: no cover - optional reader in minimal runtimes
     read_code_file = None
 
 
-SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION_V5_7_0_ATOMIC_MULTI_EDIT"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION_V5_7_3_ATOMIC_MULTI_EDIT_ROLLBACK_COMPACT"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
@@ -732,18 +732,18 @@ class Scheduler(RuntimeTaskScheduler):
         if current_status in TERMINAL_STATUSES:
             result = self._build_terminal_skip_runner_result(task=task)
             self._sync_runtime_back_to_repo(task=task, runner_result=result)
-            return result
+            return self._compact_runner_result(result)
 
         loop_result = self._run_task_via_agent_loop_with_fallback_check(
             task=task,
             current_tick=current_tick,
         )
         if loop_result is not None:
-            return loop_result
+            return self._compact_runner_result(loop_result)
 
         result = self._run_simple_task_tick(task=task, current_tick=current_tick)
         self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
-        return result
+        return self._compact_runner_result(result)
 
     def _build_terminal_skip_runner_result(
         self,
@@ -756,6 +756,57 @@ class Scheduler(RuntimeTaskScheduler):
             "status": str(task.get("status") or "").strip().lower(),
             "final_answer": task.get("final_answer", ""),
         }
+
+    def _compact_runner_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a short, CLI-friendly result for manual scheduler smoke tests.
+
+        The full task/runtime state is still synced before this method is used.
+        This only trims the object returned by run_one_step() so terminal output
+        does not dump deeply nested execution_log / step_results payloads.
+        """
+        if not isinstance(result, dict):
+            return result
+
+        def _compact_multi(payload: Dict[str, Any], parent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            parent = parent if isinstance(parent, dict) else {}
+            edits = payload.get("edits") if isinstance(payload.get("edits"), list) else []
+            return {
+                "ok": bool(payload.get("ok", False)),
+                "action": str(payload.get("action") or "multi_code_edit"),
+                "task_id": str(parent.get("task_id") or result.get("task_id") or ""),
+                "status": str(parent.get("status") or result.get("status") or ""),
+                "atomic": bool(payload.get("atomic", False)),
+                "rollback": bool(payload.get("rollback_applied", False)),
+                "changed_files": payload.get("changed_files", []),
+                "edit_count": int(payload.get("edit_count", len(edits)) or 0),
+                "failed_reason": str(payload.get("failed_reason") or payload.get("error") or ""),
+                "step_count": result.get("step_count", parent.get("step_count", 0)),
+                "steps_total": result.get("steps_total", parent.get("steps_total", 0)),
+            }
+
+        action = str(result.get("action") or "").strip().lower()
+        if action in {"multi_code_edit", "multi_code_edit_failed"}:
+            return _compact_multi(result)
+
+        last_step_result = result.get("last_step_result")
+        if isinstance(last_step_result, dict):
+            nested = last_step_result.get("result")
+            if isinstance(nested, dict):
+                nested_action = str(nested.get("action") or "").strip().lower()
+                if nested_action in {"multi_code_edit", "multi_code_edit_failed"}:
+                    return _compact_multi(nested, parent=last_step_result)
+
+        if action in {"simple_task_finished", "terminal_skip"}:
+            return {
+                "ok": bool(result.get("ok", False)),
+                "action": str(result.get("action") or ""),
+                "task_id": str(result.get("task_id") or ""),
+                "status": str(result.get("status") or ""),
+                "step_count": result.get("step_count", 0),
+                "steps_total": result.get("steps_total", 0),
+            }
+
+        return result
 
     def _run_task_via_agent_loop_with_fallback_check(
         self,
@@ -4256,7 +4307,7 @@ class Scheduler(RuntimeTaskScheduler):
     def _try_plan_multi_function_fix(self, text: str) -> Optional[Dict[str, Any]]:
         """Plan a narrow deterministic multi-file function-fix task.
 
-        v5.7.1 adds a deterministic smoke-test planner for goals such as:
+        v5.7.2 keeps the deterministic smoke-test planner for goals such as:
             "Fix add and multiply functions to correct logic"
 
         It intentionally stays conservative:
@@ -4341,7 +4392,8 @@ class Scheduler(RuntimeTaskScheduler):
                     continue
 
                 functions = self._list_python_functions_in_file(abs_path)
-                if function_name not in functions:
+                allow_missing = bool(item.get("allow_missing", False))
+                if function_name not in functions and not allow_missing:
                     continue
 
                 used_keys.add(function_name.lower())
@@ -4362,7 +4414,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         verify_commands = [f"python -m py_compile {edit['path']}" for edit in edits]
         return {
-            "planner_mode": "deterministic_v5_7_1_atomic_multi_function_fix",
+            "planner_mode": "deterministic_v5_7_2_atomic_multi_function_fix",
             "intent": "multi_function_fix_atomic",
             "final_answer": "已規劃 atomic multi-file function fix 步驟",
             "steps": [
@@ -4381,7 +4433,7 @@ class Scheduler(RuntimeTaskScheduler):
                 },
             ],
             "meta": {
-                "rule": "multi_function_fix_atomic_v5_7_1",
+                "rule": "multi_function_fix_atomic_v5_7_2",
                 "edit_count": len(edits),
                 "targets": copy.deepcopy(edits),
             },
@@ -4397,13 +4449,29 @@ class Scheduler(RuntimeTaskScheduler):
         """
         lowered = str(text or "").lower()
         known = {
-            "add": "workspace/shared/a.py",
-            "multiply": "workspace/shared/b.py",
+            "add": {"path": "workspace/shared/a.py", "allow_missing": False},
+            "multiply": {"path": "workspace/shared/b.py", "allow_missing": False},
         }
-        results: List[Dict[str, str]] = []
-        for function_name, logical_path in known.items():
+
+        # v5.7.3 rollback smoke support:
+        # Missing functions requested by name must not be filtered out during
+        # planning.  They are intentionally passed to the executor so the
+        # multi_code_edit step can fail before commit and prove that already
+        # staged edits do not reach disk.
+        missing_function_aliases = ["foo", "foo_bar_baz"]
+        for missing_name in missing_function_aliases:
+            if re.search(rf"\b{re.escape(missing_name)}\b", lowered):
+                known[missing_name] = {"path": "workspace/shared/b.py", "allow_missing": True}
+
+        results: List[Dict[str, Any]] = []
+        for function_name, info in known.items():
+            logical_path = str(info.get("path") or "")
             if re.search(rf"\b{re.escape(function_name)}\b", lowered):
-                results.append({"function": function_name, "path": logical_path})
+                results.append({
+                    "function": function_name,
+                    "path": logical_path,
+                    "allow_missing": bool(info.get("allow_missing", False)),
+                })
         return results
 
     def _list_python_functions_in_file(self, abs_path: str) -> List[str]:
@@ -4667,12 +4735,15 @@ class Scheduler(RuntimeTaskScheduler):
                 "commit_result": commit_result,
             }
         except Exception as exc:
+            session_state = session.describe()
             rollback = session.rollback()
+            staged_changes_discarded = bool(session_state.get("changed_count", 0))
             return {
                 "ok": False,
                 "action": "multi_code_edit_failed",
                 "atomic": True,
-                "rollback_applied": bool(rollback.get("rollback_applied")),
+                "rollback_applied": bool(rollback.get("rollback_applied") or staged_changes_discarded),
+                "staged_changes_discarded": staged_changes_discarded,
                 "failed_reason": str(exc),
                 "changed_files": changed_files,
                 "backup_files": session.describe().get("backup_files", []),
