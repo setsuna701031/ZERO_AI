@@ -104,7 +104,7 @@ except Exception:  # pragma: no cover - optional reader in minimal runtimes
     read_code_file = None
 
 
-SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V7_TASK_PLANNER_SYNC_AND_HYDRATION_V5_8_1_SELF_EDIT_ROLLBACK_REPORTING"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V6_8_0"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
@@ -2204,6 +2204,155 @@ class Scheduler(RuntimeTaskScheduler):
                 paths.append(value)
 
 
+    def _try_code_chain_via_agent_loop_at_create_task(self, goal: str) -> Optional[Dict[str, Any]]:
+        """Run the bounded Code Chain lane at scheduler task creation time.
+
+        v6.8.0 boundary:
+        - Scheduler does not reimplement patch generation.
+        - It delegates the already verified v6.7.2 natural-language code chain
+          to AgentLoop, then records the result as a scheduler/runtime task.
+        - This keeps scheduler as orchestration/persistence, not a second code
+          editing brain.
+        """
+        text = str(goal or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        if "function" not in lowered or "workspace/" not in lowered:
+            return None
+        if not any(marker in lowered for marker in ("check", "fix", "repair", "correct", "wrong", "broken", "incorrect")):
+            return None
+
+        try:
+            from core.agent.agent_loop import AgentLoop
+
+            loop = AgentLoop(
+                scheduler=self,
+                task_manager=getattr(self, "task_manager", None),
+                task_runtime=getattr(self, "task_runtime", None),
+                llm_client=getattr(self, "llm_client", None),
+                debug=bool(getattr(self, "debug", False)),
+            )
+            run_fn = getattr(loop, "_try_handle_natural_language_multi_function_patch", None)
+            if callable(run_fn):
+                result = run_fn(text)
+            else:
+                result = None
+        except Exception as e:
+            result = {
+                "ok": False,
+                "mode": "forced_repo_edit",
+                "final_answer": f"scheduler code chain bridge failed: {type(e).__name__}: {e}",
+                "error": f"scheduler code chain bridge failed: {type(e).__name__}: {e}",
+                "execution": {
+                    "ok": False,
+                    "execution_log": [],
+                    "execution_trace": [],
+                    "results": [],
+                    "last_result": {},
+                },
+                "forced_repo_edit": {
+                    "handled": True,
+                    "forced_route": True,
+                    "status": "failed",
+                    "reason": "scheduler_code_chain_bridge_failed",
+                    "error": f"scheduler code chain bridge failed: {type(e).__name__}: {e}",
+                    "task_text": text,
+                    "code_chain_version": "scheduler_v6_8_0_agent_loop_bridge",
+                },
+            }
+
+        if not isinstance(result, dict):
+            return None
+
+        # Only consume actual Code Chain / forced repo edit responses. If the
+        # AgentLoop helper did not match, keep normal scheduler planning.
+        if not bool(result.get("ok", False)) and not result.get("forced_repo_edit") and not result.get("execution"):
+            return None
+
+        execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
+        forced = result.get("forced_repo_edit") if isinstance(result.get("forced_repo_edit"), dict) else {}
+        if not forced:
+            last_result = execution.get("last_result") if isinstance(execution.get("last_result"), dict) else {}
+            forced = copy.deepcopy(last_result) if isinstance(last_result, dict) else {}
+
+        final_answer = str(result.get("final_answer") or execution.get("final_answer") or forced.get("final_answer") or "").strip()
+        error_text = str(result.get("error") or execution.get("error") or forced.get("error") or "").strip()
+        ok = bool(result.get("ok", False)) and not error_text
+        status = STATUS_FINISHED if ok else STATUS_FAILED
+
+        execution_log = execution.get("execution_log") if isinstance(execution.get("execution_log"), list) else []
+        execution_trace = execution.get("execution_trace") if isinstance(execution.get("execution_trace"), list) else []
+        results = execution.get("results") if isinstance(execution.get("results"), list) else []
+
+        if not execution_log:
+            execution_log = [
+                {
+                    "type": "scheduler_code_chain_bridge",
+                    "status": status,
+                    "ok": ok,
+                    "data": copy.deepcopy(forced or result),
+                }
+            ]
+        if not execution_trace:
+            execution_trace = [
+                {
+                    "type": "scheduler_code_chain_bridge",
+                    "status": status,
+                    "ok": ok,
+                    "data": copy.deepcopy(forced or result),
+                }
+            ]
+        if not results:
+            results = [
+                {
+                    "step_index": 1,
+                    "step": {
+                        "type": "code_chain",
+                        "executor": "agent_loop_natural_language_patch",
+                        "task": text,
+                    },
+                    "result": copy.deepcopy(forced or result),
+                }
+            ]
+
+        meta = {}
+        plan = result.get("plan") if isinstance(result.get("plan"), dict) else {}
+        if isinstance(plan.get("meta"), dict):
+            meta.update(copy.deepcopy(plan.get("meta")))
+        meta.update(
+            {
+                "forced_route": True,
+                "scheduler_runtime_integration": True,
+                "code_chain_version": "scheduler_v6_8_0_agent_loop_bridge",
+                "tool_name": "repo_edit_tool",
+                "step_count": 0,
+            }
+        )
+
+        return {
+            "ok": ok,
+            "status": status,
+            "forced": copy.deepcopy(forced or result),
+            "final_answer": final_answer,
+            "error": error_text or None,
+            "results": copy.deepcopy(results),
+            "execution_log": copy.deepcopy(execution_log),
+            "execution_trace": copy.deepcopy(execution_trace),
+            "code_chain_result": copy.deepcopy(result),
+            "planner_result": {
+                "ok": ok,
+                "planner_mode": "scheduler_code_chain_v6_8_0",
+                "intent": "code_chain_self_edit",
+                "final_answer": final_answer,
+                "steps": [],
+                "error": error_text or None,
+                "meta": meta,
+                "code_chain_result": copy.deepcopy(result),
+            },
+        }
+
     def _try_force_repo_edit_at_create_task(self, goal: str) -> Optional[Dict[str, Any]]:
         """Code Chain v0.6 scheduler-level forced routing.
 
@@ -2216,11 +2365,15 @@ class Scheduler(RuntimeTaskScheduler):
         - If handled, execute repo_edit_tool through repo_edit_agent_bridge.
         - Never raises into create_task.
         """
-        if run_repo_edit_decision is None:
-            return None
-
         text = str(goal or "").strip()
         if not text:
+            return None
+
+        code_chain_result = self._try_code_chain_via_agent_loop_at_create_task(text)
+        if isinstance(code_chain_result, dict):
+            return code_chain_result
+
+        if run_repo_edit_decision is None:
             return None
 
         try:
@@ -2489,10 +2642,14 @@ class Scheduler(RuntimeTaskScheduler):
         self._trace_status(
             trace=trace,
             task=task,
-            status=initial_status,
+            status=str(task.get("status") or initial_status),
             tick=getattr(self, "current_tick", 0),
-            final_answer="",
-            extra={"action": "create_task"},
+            final_answer=str(task.get("final_answer") or ""),
+            extra={
+                "action": "create_task",
+                "scheduler_runtime_integration": bool(isinstance(forced_repo_edit, dict)),
+                "code_chain": bool(isinstance(forced_repo_edit, dict) and forced_repo_edit.get("code_chain_result")),
+            },
         )
         self._save_trace_for_task(task=task, trace=trace)
 
@@ -2528,9 +2685,14 @@ class Scheduler(RuntimeTaskScheduler):
                 "task": task,
             }
 
+        self._persist_code_chain_runtime_state_if_available(
+            task=task,
+            forced_repo_edit=forced_repo_edit if isinstance(forced_repo_edit, dict) else None,
+        )
+
         self._force_repo_task_state(
             task_id=task_name,
-            desired_status=initial_status,
+            desired_status=str(task.get("status") or initial_status),
             blocked_reason=blocked_reason,
             depends_on=normalized_depends_on,
             full_task=task,
@@ -2540,7 +2702,7 @@ class Scheduler(RuntimeTaskScheduler):
         if isinstance(refreshed, dict):
             task = refreshed
 
-        return {
+        response = {
             "ok": True,
             "scheduler_build": SCHEDULER_BUILD,
             "message": "task created",
@@ -2548,6 +2710,71 @@ class Scheduler(RuntimeTaskScheduler):
             "task": task,
             "planner_result": planner_result,
         }
+        if isinstance(forced_repo_edit, dict):
+            response["code_chain_result"] = copy.deepcopy(forced_repo_edit.get("code_chain_result") or forced_repo_edit)
+            response["status"] = str(task.get("status") or forced_repo_edit.get("status") or "")
+            response["final_answer"] = str(task.get("final_answer") or forced_repo_edit.get("final_answer") or "")
+        return response
+
+    def _persist_code_chain_runtime_state_if_available(
+        self,
+        *,
+        task: Dict[str, Any],
+        forced_repo_edit: Optional[Dict[str, Any]],
+    ) -> None:
+        """Persist Code Chain output into TaskRuntime when available.
+
+        v6.8.0 keeps runtime persistence best-effort.  The repository task is
+        still the source of truth if a minimal runtime is used.
+        """
+        if not isinstance(task, dict) or not isinstance(forced_repo_edit, dict):
+            return
+
+        runtime = getattr(self, "task_runtime", None)
+        if runtime is None:
+            return
+
+        try:
+            state = runtime.load_runtime_state(task)
+            if not isinstance(state, dict):
+                state = {}
+        except Exception:
+            state = {}
+
+        status = str(task.get("status") or forced_repo_edit.get("status") or "").strip() or STATUS_FAILED
+        final_answer = str(task.get("final_answer") or forced_repo_edit.get("final_answer") or "")
+        now = int(time.time())
+
+        state.update(
+            {
+                "task_id": str(task.get("task_id") or task.get("task_name") or ""),
+                "task_name": str(task.get("task_name") or task.get("task_id") or ""),
+                "goal": str(task.get("goal") or ""),
+                "status": status,
+                "current_step_index": int(task.get("current_step_index") or 0),
+                "steps_total": int(task.get("steps_total") or 0),
+                "final_answer": final_answer,
+                "last_error": task.get("last_error"),
+                "updated_at": now,
+                "code_chain_result": copy.deepcopy(forced_repo_edit.get("code_chain_result") or forced_repo_edit.get("forced") or forced_repo_edit),
+                "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log"), list) else [],
+                "execution_trace": copy.deepcopy(forced_repo_edit.get("execution_trace", [])) if isinstance(forced_repo_edit.get("execution_trace"), list) else copy.deepcopy(task.get("execution_trace", [])) if isinstance(task.get("execution_trace"), list) else [],
+                "results": copy.deepcopy(task.get("results", [])) if isinstance(task.get("results"), list) else [],
+                "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results"), list) else [],
+                "last_step_result": copy.deepcopy(task.get("last_step_result")) if isinstance(task.get("last_step_result"), dict) else None,
+            }
+        )
+        if status == STATUS_FINISHED:
+            state["finished_at_tick"] = getattr(self, "current_tick", 0)
+            state["finished_at"] = now
+        if status == STATUS_FAILED:
+            state["failure_type"] = task.get("failure_type") or "code_chain_failed"
+            state["failure_message"] = task.get("failure_message") or final_answer or forced_repo_edit.get("error")
+
+        try:
+            runtime.save_runtime_state(task, state)
+        except Exception:
+            return
 
     def create_task(
         self,
@@ -5686,3 +5913,231 @@ class Scheduler(RuntimeTaskScheduler):
     def _extract_file_path(self, text: str) -> Optional[str]:
         m = re.search(r"([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))", text, flags=re.IGNORECASE)
         return m.group(1).strip() if m else None
+
+
+# ============================================================
+# ZERO v7.0.2 - Repair Step Preservation shim
+# ============================================================
+# Purpose:
+# - Preserve planner-generated code_chain_repair steps inside Scheduler.
+# - Prevent autonomous repair tasks from falling back to generic command steps.
+# - Delegate actual repair execution to StepExecutor's code_chain_repair handler.
+
+_ZERO_V702_ORIGINAL_SCHEDULER_PLAN_GOAL = Scheduler._plan_goal
+_ZERO_V702_ORIGINAL_SCHEDULER_EXECUTE_SIMPLE_STEP = Scheduler._execute_simple_step
+
+
+def _zero_v702_normalize_rel_path(path_text: str) -> str:
+    value = str(path_text or "").strip().strip("'\"`").replace("\\", "/")
+    while "//" in value:
+        value = value.replace("//", "/")
+    return value.lstrip("./")
+
+
+def _zero_v702_extract_workspace_py_path(text: str) -> str:
+    match = re.search(r"(workspace[/\\][A-Za-z0-9_./\\ -]+?\.py)", str(text or ""), flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return _zero_v702_normalize_rel_path(match.group(1))
+
+
+def _zero_v702_looks_like_autonomous_repair(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    if "workspace/" not in lowered.replace("\\", "/") or ".py" not in lowered:
+        return False
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數", "函式"))
+    return has_analyze and has_repair and has_code_target
+
+
+def _zero_v702_build_code_chain_repair_plan(goal: str) -> Optional[Dict[str, Any]]:
+    if not _zero_v702_looks_like_autonomous_repair(goal):
+        return None
+    target_path = _zero_v702_extract_workspace_py_path(goal)
+    if not target_path:
+        return None
+    step = {
+        "type": "code_chain_repair",
+        "task_text": str(goal or "").strip(),
+        "target_path": target_path,
+        "planner_autonomous_repair": True,
+        "repair_scope": "single_file_math_functions_minimal",
+        "description": "Planner-driven autonomous code repair through Code Chain",
+        "preserve_step_type": True,
+    }
+    return {
+        "planner_mode": "scheduler_v7_0_2_repair_step_preservation",
+        "intent": "autonomous_code_repair",
+        "final_answer": "已規劃 Code Chain repair 步驟",
+        "steps": [step],
+        "meta": {
+            "planner_autonomous_repair": True,
+            "repair_step_preserved": True,
+            "target_path": target_path,
+        },
+    }
+
+
+def _zero_v702_scheduler_plan_goal(self, goal: str, document_payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    repair_plan = _zero_v702_build_code_chain_repair_plan(str(goal or ""))
+    if isinstance(repair_plan, dict):
+        return repair_plan
+    return _ZERO_V702_ORIGINAL_SCHEDULER_PLAN_GOAL(self, goal, document_payload=document_payload)
+
+
+def _zero_v702_scheduler_execute_simple_step(self, task: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    if step_type in {"code_chain_repair", "autonomous_code_repair"}:
+        try:
+            executor = getattr(self, "step_executor", None)
+            if executor is None:
+                try:
+                    from core.runtime.step_executor import StepExecutor
+                    executor = StepExecutor(workspace_root=getattr(self, "workspace_dir", "workspace"), debug=bool(getattr(self, "debug", False)))
+                except TypeError:
+                    from core.runtime.step_executor import StepExecutor
+                    executor = StepExecutor()
+            execute_step = getattr(executor, "execute_step", None)
+            if not callable(execute_step):
+                raise RuntimeError("step executor missing execute_step")
+            return execute_step(
+                step=copy.deepcopy(step),
+                task=copy.deepcopy(task) if isinstance(task, dict) else {},
+                context={"cwd": self.workspace_dir, "repair_step_preserved": True},
+                previous_result=None,
+                step_index=self._safe_int(task.get("current_step_index", 0), 0) if isinstance(task, dict) else 0,
+                step_count=len(task.get("steps", [])) if isinstance(task, dict) and isinstance(task.get("steps"), list) else 1,
+            )
+        except Exception as exc:
+            final = f"code_chain_repair failed before execution: {type(exc).__name__}: {exc}"
+            return {
+                "ok": False,
+                "message": final,
+                "final_answer": final,
+                "error": final,
+                "result": {
+                    "planner_autonomous_repair": True,
+                    "repair_step_preserved": True,
+                    "changed_files": [],
+                    "rollback": False,
+                },
+                "execution_trace": [
+                    {
+                        "step_type": "code_chain_repair",
+                        "ok": False,
+                        "message": final,
+                        "final_answer": final,
+                        "error_type": "code_chain_repair_dispatch_failed",
+                        "classification": "planner_autonomous_repair",
+                        "attempts": 1,
+                        "max_attempts": 1,
+                        "retry_used": False,
+                    }
+                ],
+            }
+    return _ZERO_V702_ORIGINAL_SCHEDULER_EXECUTE_SIMPLE_STEP(self, task=task, step=step)
+
+
+Scheduler._plan_goal = _zero_v702_scheduler_plan_goal
+Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_0_2_REPAIR_STEP_PRESERVATION"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+
+# ============================================================
+# ZERO v7.0.3 - Code Chain repair step registration
+# ============================================================
+# Purpose:
+# - Treat planner-generated code_chain_repair steps as first-class repair steps.
+# - Prevent replan metadata from marking code_chain_repair as "not repairable".
+# - Preserve the existing v7.0.2 execution shim and only widen registration.
+
+_ZERO_V703_REPAIR_STEP_TYPES = {"code_chain_repair", "autonomous_code_repair"}
+_ZERO_V703_BASE_REPAIRABLE_STEP_TYPES = {
+    "verify",
+    "read_file",
+    "run_python",
+    "command",
+    "write_file",
+    "llm",
+    "llm_generate",
+    "code_edit",
+    "function_fix",
+    "multi_code_edit",
+    "code_chain_repair",
+    "autonomous_code_repair",
+}
+
+_ZERO_V703_ORIGINAL_IS_REPAIRABLE_FAILURE = Scheduler._is_repairable_failure
+_ZERO_V703_ORIGINAL_NORMALIZE_REPLAN_METADATA = getattr(Scheduler, "_normalize_replan_metadata", None)
+
+
+def _zero_v703_scheduler_is_repairable_failure(self, task: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(task, dict):
+        return False, "invalid task payload"
+
+    failed_step_type = self._get_failed_step_type(task)
+    if failed_step_type in _ZERO_V703_REPAIR_STEP_TYPES:
+        status = str(task.get("status") or "").strip().lower()
+        if status not in {"failed", "error", "queued", "running", "retry"}:
+            return False, f"status not repairable: {status or 'unknown'}"
+        replan_count = int(task.get("replan_count", 0) or 0)
+        max_replans = int(task.get("max_replans", self.default_max_replans) or self.default_max_replans)
+        if replan_count >= max_replans:
+            return False, f"replan limit reached: {replan_count}/{max_replans}"
+        return True, "code_chain_repair registered as repairable"
+
+    return _ZERO_V703_ORIGINAL_IS_REPAIRABLE_FAILURE(self, task)
+
+
+def _zero_v703_scheduler_normalize_replan_metadata(self, task: Dict[str, Any], replan_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if callable(_ZERO_V703_ORIGINAL_NORMALIZE_REPLAN_METADATA):
+        try:
+            normalized = _ZERO_V703_ORIGINAL_NORMALIZE_REPLAN_METADATA(self, task, replan_result=replan_result)
+        except TypeError:
+            normalized = _ZERO_V703_ORIGINAL_NORMALIZE_REPLAN_METADATA(self, task)
+    else:
+        normalized = copy.deepcopy(task) if isinstance(task, dict) else {}
+        if isinstance(replan_result, dict):
+            normalized["replan_result"] = copy.deepcopy(replan_result)
+            if "replan_failed_step_type" not in normalized:
+                failed_step_type = str(replan_result.get("failed_step_type") or replan_result.get("step_type") or "").strip().lower()
+                if failed_step_type:
+                    normalized["replan_failed_step_type"] = failed_step_type
+            if "replan_summary" not in normalized:
+                summary = replan_result.get("summary") or replan_result.get("message") or replan_result.get("reason")
+                if isinstance(summary, str):
+                    normalized["replan_summary"] = summary
+    if not isinstance(normalized, dict):
+        return normalized
+
+    failed_step_type = str(normalized.get("replan_failed_step_type") or "").strip().lower()
+    if not failed_step_type:
+        failed_step_type = self._get_failed_step_type(normalized)
+        normalized["replan_failed_step_type"] = failed_step_type
+
+    if failed_step_type in _ZERO_V703_REPAIR_STEP_TYPES:
+        normalized["replan_repairable"] = True
+        summary = str(normalized.get("replan_summary") or "").strip()
+        if not summary or "not repairable" in summary.lower():
+            normalized["replan_summary"] = "code_chain_repair registered as repairable step"
+        if not str(normalized.get("replan_decision") or "").strip():
+            normalized["replan_decision"] = "accepted" if bool(normalized.get("replanned")) else "available"
+        return normalized
+
+    if normalized.get("replan_repairable") is None and failed_step_type:
+        normalized["replan_repairable"] = failed_step_type in _ZERO_V703_BASE_REPAIRABLE_STEP_TYPES
+        if normalized["replan_repairable"] and "not repairable" in str(normalized.get("replan_summary") or "").lower():
+            normalized["replan_summary"] = f"step type registered as repairable: {failed_step_type}"
+
+    return normalized
+
+
+Scheduler._is_repairable_failure = _zero_v703_scheduler_is_repairable_failure
+Scheduler._normalize_replan_metadata = _zero_v703_scheduler_normalize_replan_metadata
+Scheduler.REPAIRABLE_STEP_TYPES = set(getattr(Scheduler, "REPAIRABLE_STEP_TYPES", set())) | _ZERO_V703_BASE_REPAIRABLE_STEP_TYPES
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_0_3_REPAIR_STEP_REGISTRATION"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD

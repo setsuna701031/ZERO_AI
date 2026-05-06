@@ -2036,3 +2036,88 @@ class Planner:
                         return "requirement_pack"
 
         return first_type or "unknown"
+
+
+# ============================================================
+# ZERO v7.0.0 - Planner-driven Autonomous Repair Loop shim
+# ============================================================
+# This compatibility shim keeps the existing Planner class intact and adds one
+# narrow autonomous repair route:
+#   Analyze workspace/shared/code_chain_probe.py and repair broken math functions
+# It intentionally does not introduce broad autonomous edits.
+
+_ZERO_V7_ORIGINAL_PLAN_SEMANTIC_ROUTE = Planner._plan_semantic_route
+
+
+def _zero_v7_extract_workspace_py_path(text: str) -> str:
+    match = re.search(r"(workspace[/\\][A-Za-z0-9_./\\ -]+?\.py)", str(text or ""), flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).strip().replace("\\", "/")
+
+
+def _zero_v7_looks_like_autonomous_repair(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    if "workspace/" not in lowered or ".py" not in lowered:
+        return False
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數"))
+    return has_analyze and has_repair and has_code_target
+
+
+def _zero_v7_plan_semantic_route(self, text: str, context: Optional[Dict[str, Any]] = None):
+    if _zero_v7_looks_like_autonomous_repair(text):
+        target_path = _zero_v7_extract_workspace_py_path(text)
+        if target_path:
+            step = {
+                "type": "code_chain_repair",
+                "task_text": str(text or "").strip(),
+                "target_path": target_path,
+                "planner_autonomous_repair": True,
+                "repair_scope": "single_file_math_functions_minimal",
+                "description": "Planner-driven autonomous code repair through Code Chain",
+            }
+            return [step], "autonomous_code_repair_v0", "planner_autonomous_repair_code_chain"
+    return _ZERO_V7_ORIGINAL_PLAN_SEMANTIC_ROUTE(self, text=text, context=context)
+
+
+Planner._plan_semantic_route = _zero_v7_plan_semantic_route
+Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_0_0_autonomous_repair_loop"
+
+
+# ============================================================
+# ZERO v7.0.2 - Planner repair step preservation reinforcement
+# ============================================================
+# Purpose:
+# - Ensure autonomous repair intent returns a code_chain_repair step in both
+#   semantic routing and generic step planning paths.
+
+_ZERO_V702_ORIGINAL_PLANNER_PLAN_STEPS = Planner._plan_steps
+
+
+def _zero_v702_planner_plan_steps(self, text: str, route: Any = None):
+    if _zero_v7_looks_like_autonomous_repair(text):
+        target_path = _zero_v7_extract_workspace_py_path(text)
+        if target_path:
+            return [
+                {
+                    "type": "code_chain_repair",
+                    "task_text": str(text or "").strip(),
+                    "target_path": target_path,
+                    "planner_autonomous_repair": True,
+                    "repair_scope": "single_file_math_functions_minimal",
+                    "description": "Planner-driven autonomous code repair through Code Chain",
+                    "preserve_step_type": True,
+                }
+            ], False
+    return _ZERO_V702_ORIGINAL_PLANNER_PLAN_STEPS(self, text=text, route=route)
+
+
+Planner._plan_steps = _zero_v702_planner_plan_steps
+Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_0_2_repair_step_preservation"
+
+
+# ZERO v7.0.3 marker: autonomous repair planner emits registered code_chain_repair steps.

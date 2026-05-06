@@ -60,6 +60,49 @@ class ExecutionGuard:
         step_type = str(step.get("type") or "").strip().lower()
         task_dir_abs = os.path.abspath(task_dir)
 
+        # ZERO v7.0.3: Code Chain repair steps are controlled self-edit steps.
+        # They are allowed through the guard only for workspace Python targets;
+        # the actual edit handler still performs backup/diff/audit/verification.
+        if step_type in {"code_chain_repair", "autonomous_code_repair"}:
+            raw_path = str(
+                step.get("target_path")
+                or step.get("path")
+                or step.get("file_path")
+                or ""
+            ).strip().replace("\\", "/").lstrip("./")
+            if not raw_path:
+                return self._deny("code_chain_repair step missing target_path", guard_mode="missing_path")
+            if not raw_path.startswith("workspace/") or not raw_path.lower().endswith(".py"):
+                return self._deny(
+                    f"code_chain_repair blocked: unsafe target path: {raw_path}",
+                    guard_mode="code_chain_repair_path_blocked",
+                    policy_action="deny",
+                    policy_reason="code_chain_repair requires workspace/*.py target",
+                )
+            policy_result = self._check_path_policy(raw_path, operation="write_file")
+            if not policy_result.get("ok"):
+                return self._deny(
+                    str(policy_result.get("error") or "policy blocked path"),
+                    guard_mode="policy_blocked_code_chain_repair_path",
+                    policy_action="deny",
+                    policy_reason=str(policy_result.get("policy_reason") or policy_result.get("error") or ""),
+                )
+            full_path = self._resolve_path(raw_path=raw_path, task_dir=task_dir_abs)
+            if not self._is_under_workspace(full_path):
+                return self._deny(
+                    f"code_chain_repair blocked: path outside workspace: {full_path}",
+                    guard_mode="path_outside_workspace",
+                    resolved_path=full_path,
+                    policy_action="deny",
+                    policy_reason="path outside workspace",
+                )
+            return self._allow(
+                guard_mode="code_chain_repair_workspace_write",
+                resolved_path=full_path,
+                policy_action="allow",
+                policy_reason="controlled Code Chain repair step registered",
+            )
+
         # ---------------------------------------------------------
         # No-side-effect / pure reasoning / pure verification steps
         # ---------------------------------------------------------

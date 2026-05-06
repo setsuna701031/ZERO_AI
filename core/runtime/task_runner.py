@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import traceback
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -33,7 +34,7 @@ class TaskRunner:
     }
 
     READ_ONLY_STEP_TYPES = {"read_file", "list_files", "inspect", "analyze", "search", "verify"}
-    SIDE_EFFECT_STEP_TYPES = {"command", "write_file", "delete_file", "call_api", "shell", "run_python"}
+    SIDE_EFFECT_STEP_TYPES = {"command", "write_file", "delete_file", "call_api", "shell", "run_python", "code_chain_repair", "autonomous_code_repair"}
 
     def __init__(
         self,
@@ -1359,3 +1360,145 @@ class TaskRunner:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
             pass
+
+# ============================================================
+# ZERO v7.0.2 - TaskRunner repair step preservation shim
+# ============================================================
+# Purpose:
+# - If an older queued task accidentally preserved autonomous repair as a generic
+#   command step, convert it back to code_chain_repair at execution time.
+# - New tasks should already be fixed by Scheduler v7.0.2; this is a compatibility guard.
+
+_ZERO_V702_ORIGINAL_TASK_RUNNER_RUN_ONE_STEP = TaskRunner._run_one_step
+
+
+def _zero_v702_runner_normalize_rel_path(path_text: str) -> str:
+    value = str(path_text or "").strip().strip("'\"`").replace("\\", "/")
+    while "//" in value:
+        value = value.replace("//", "/")
+    return value.lstrip("./")
+
+
+def _zero_v702_runner_extract_workspace_py_path(text: str) -> str:
+    match = re.search(r"(workspace[/\\][A-Za-z0-9_./\\ -]+?\.py)", str(text or ""), flags=re.IGNORECASE)
+    if not match:
+        return ""
+    return _zero_v702_runner_normalize_rel_path(match.group(1))
+
+
+def _zero_v702_runner_looks_like_autonomous_repair(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    if "workspace/" not in lowered.replace("\\", "/") or ".py" not in lowered:
+        return False
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數", "函式"))
+    return has_analyze and has_repair and has_code_target
+
+
+def _zero_v702_runner_repair_task_steps_if_needed(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(task, dict):
+        return task
+    goal = str(task.get("goal") or task.get("task") or task.get("name") or "").strip()
+    if not _zero_v702_runner_looks_like_autonomous_repair(goal):
+        return task
+    target_path = _zero_v702_runner_extract_workspace_py_path(goal)
+    if not target_path:
+        return task
+
+    steps = task.get("steps")
+    if not isinstance(steps, list) or not steps:
+        task["steps"] = [
+            {
+                "type": "code_chain_repair",
+                "task_text": goal,
+                "target_path": target_path,
+                "planner_autonomous_repair": True,
+                "repair_scope": "single_file_math_functions_minimal",
+                "preserve_step_type": True,
+            }
+        ]
+        task["steps_total"] = 1
+        task["step_count"] = 1
+        task["current_step_index"] = 0
+        return task
+
+    current_index = 0
+    try:
+        current_index = int(task.get("current_step_index", 0) or 0)
+    except Exception:
+        current_index = 0
+    if 0 <= current_index < len(steps) and isinstance(steps[current_index], dict):
+        current = steps[current_index]
+        current_type = str(current.get("type") or "").strip().lower()
+        current_command = str(current.get("command") or "").strip().lower()
+        if current_type == "command" or (current_type not in {"code_chain_repair", "autonomous_code_repair"} and current_command):
+            steps[current_index] = {
+                "type": "code_chain_repair",
+                "task_text": goal,
+                "target_path": target_path,
+                "planner_autonomous_repair": True,
+                "repair_scope": "single_file_math_functions_minimal",
+                "preserve_step_type": True,
+                "converted_from": copy.deepcopy(current),
+            }
+            task["steps"] = steps
+    return task
+
+
+def _zero_v702_task_runner_run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+    task = _zero_v702_runner_repair_task_steps_if_needed(self, task)
+    try:
+        state = self.runtime.load_runtime_state(task)
+        state = _zero_v702_runner_repair_task_steps_if_needed(self, state)
+        if isinstance(state, dict) and isinstance(state.get("steps"), list):
+            task["steps"] = copy.deepcopy(state.get("steps"))
+            task["steps_total"] = len(task["steps"])
+            task["step_count"] = len(task["steps"])
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return _ZERO_V702_ORIGINAL_TASK_RUNNER_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+
+
+TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step
+
+
+# ============================================================
+# ZERO v7.0.3 - TaskRunner Code Chain repair registration
+# ============================================================
+# Purpose:
+# - Classify code_chain_repair failures as validation/tool failures rather than
+#   opaque internal errors.
+# - Mark code_chain_repair as a known side-effect step so runtime/replan layers
+#   do not treat it as an unsupported generic step.
+
+TaskRunner.SIDE_EFFECT_STEP_TYPES = set(getattr(TaskRunner, "SIDE_EFFECT_STEP_TYPES", set())) | {
+    "code_chain_repair",
+    "autonomous_code_repair",
+}
+TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES = {"code_chain_repair", "autonomous_code_repair"}
+
+_ZERO_V703_ORIGINAL_DETERMINE_FAILURE_TYPE = TaskRunner._determine_failure_type
+
+
+def _zero_v703_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    if step_type in TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES:
+        error_text = str((result or {}).get("error") or (result or {}).get("message") or "").lower()
+        if "unsafe" in error_text or "blocked" in error_text:
+            return "unsafe_action_blocked"
+        if "verification" in error_text or "verify" in error_text or "validation" in error_text:
+            return "validation_error"
+        if "file not found" in error_text or "missing" in error_text or "not found" in error_text:
+            return "tool_error"
+        return "validation_error"
+    return _ZERO_V703_ORIGINAL_DETERMINE_FAILURE_TYPE(self, step, result)
+
+
+TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type

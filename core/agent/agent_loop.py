@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import copy
+import difflib
+import json
 import re
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional, List
 
 from core.agent.agent_component_invoker import (
@@ -786,6 +790,1136 @@ class AgentLoop:
             },
         )
 
+    def _try_handle_natural_language_patch_missing_path(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Fail early when bounded NL repair targets a missing workspace file.
+
+        Code Chain v6.4.2 boundary:
+        - This guard only handles the minimal natural-language add-function
+          landing probe.
+        - It never writes files.
+        - It prevents missing files from falling through to repo_edit_tool as
+          a vague request that later reports missing old_text/new_text.
+        """
+        text = str(user_input or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        if "add" not in lowered or "function" not in lowered:
+            return None
+        if not any(marker in lowered for marker in ("check", "fix", "repair", "correct", "wrong", "broken", "incorrect")):
+            return None
+
+        paths: List[str] = []
+        self._extract_paths_from_text(text, paths)
+        if not paths:
+            return None
+
+        target_path = str(paths[0] or "").replace("\\", "/").strip()
+        if not target_path.startswith("workspace/"):
+            return None
+
+        try:
+            resolved = Path(target_path)
+            missing = not resolved.exists() or not resolved.is_file()
+        except Exception:
+            missing = True
+
+        if not missing:
+            return None
+
+        final_answer = f"natural language patch failed: file not found: {target_path}; changed_files=0"
+        forced = {
+            "handled": True,
+            "forced_route": True,
+            "tool_name": "repo_edit_tool",
+            "status": "failed",
+            "reason": "bounded_nl_patch_target_file_not_found",
+            "error": f"file not found: {target_path}",
+            "task_text": text,
+            "target_path": target_path,
+            "changed_files": [],
+            "code_chain_version": "agent_loop_v6_4_2_missing_path_guard",
+            "final_answer": final_answer,
+        }
+
+        execution = {
+            "ok": False,
+            "steps_executed": 0,
+            "results": [],
+            "execution_log": [
+                {
+                    "type": "natural_language_patch_missing_path_guard",
+                    "tool": "repo_edit_tool",
+                    "status": "failed",
+                    "ok": False,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "natural_language_patch_missing_path_guard",
+                    "tool": "repo_edit_tool",
+                    "status": "failed",
+                    "ok": False,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "last_result": copy.deepcopy(forced),
+            "final_answer": final_answer,
+            "error": f"file not found: {target_path}",
+        }
+        route = {
+            "mode": "forced_repo_edit",
+            "task": False,
+            "tool": "repo_edit_tool",
+            "forced_route": True,
+            "natural_language_patch_missing_path_guard": True,
+        }
+        plan = {
+            "ok": False,
+            "planner_mode": "forced_repo_edit_v6_4_2_missing_path_guard",
+            "intent": "repo_edit",
+            "final_answer": final_answer,
+            "steps": [],
+            "error": f"file not found: {target_path}",
+            "meta": {
+                "fallback_used": False,
+                "step_count": 0,
+                "forced_route": True,
+                "code_chain_version": "v6.4.2",
+            },
+            "forced_repo_edit": copy.deepcopy(forced),
+        }
+        return self._make_agent_response(
+            ok=False,
+            mode="forced_repo_edit",
+            context={},
+            route=route,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=f"file not found: {target_path}",
+            extra={
+                "forced_repo_edit": copy.deepcopy(forced),
+                "tool_name": "repo_edit_tool",
+                "patch_visibility": {},
+            },
+        )
+
+    def _try_build_natural_language_patch_prompt(self, user_input: str) -> Optional[str]:
+        """Build a minimal controlled replacement prompt from bounded NL repair text.
+
+        Code Chain v6.4.0 boundary:
+        - This is not a general AI patch generator.
+        - It only handles the current landing-verification case:
+              Check and fix add function in workspace/shared/code_chain_probe.py
+        - It never writes files directly.
+        - It converts a bounded diagnosis request into the already-verified
+          repo_edit_tool controlled_replace form, then lets repo_edit_tool keep
+          responsibility for backup / safety / apply.
+        """
+        text = str(user_input or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        if "add" not in lowered or "function" not in lowered:
+            return None
+        if not any(marker in lowered for marker in ("check", "fix", "repair", "correct", "wrong", "broken", "incorrect")):
+            return None
+
+        paths: List[str] = []
+        self._extract_paths_from_text(text, paths)
+        if not paths:
+            return None
+
+        target_path = str(paths[0] or "").replace("\\", "/").strip()
+        if not target_path.startswith("workspace/"):
+            return None
+
+        try:
+            resolved = Path(target_path)
+            if not resolved.exists() or not resolved.is_file():
+                return None
+            content = resolved.read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+        add_match = re.search(
+            r"(?ms)^def\s+add\s*\([^)]*\):\s*\n(?P<body>(?:^[ \t]+.*(?:\n|$))*)",
+            content,
+        )
+        if not add_match:
+            return None
+
+        add_block = add_match.group(0)
+        replacement_pairs = [
+            ("return a - b", "return a + b"),
+            ("return b - a", "return a + b"),
+            ("return a * b", "return a + b"),
+            ("return a / b", "return a + b"),
+        ]
+        for old_text, new_text in replacement_pairs:
+            if old_text in add_block:
+                return f'Replace "{old_text}" with "{new_text}" in {target_path}'
+
+        return None
+
+
+    def _try_handle_natural_language_patch_noop(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Return a clean no-op response for bounded NL repair when code is already correct.
+
+        Code Chain v6.4.1 boundary:
+        If the bounded add-function landing probe is already fixed, do not fall
+        through to repo_edit_tool with a missing old_text/new_text payload.
+        This prevents a correct file from being reported as a failed edit.
+        """
+        text = str(user_input or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        if "add" not in lowered or "function" not in lowered:
+            return None
+        if not any(marker in lowered for marker in ("check", "fix", "repair", "correct", "wrong", "broken", "incorrect")):
+            return None
+
+        paths: List[str] = []
+        self._extract_paths_from_text(text, paths)
+        if not paths:
+            return None
+
+        target_path = str(paths[0] or "").replace("\\", "/").strip()
+        if not target_path.startswith("workspace/"):
+            return None
+
+        try:
+            resolved = Path(target_path)
+            if not resolved.exists() or not resolved.is_file():
+                return None
+            content = resolved.read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+        add_match = re.search(
+            r"(?ms)^def\s+add\s*\([^)]*\):\s*\n(?P<body>(?:^[ \t]+.*(?:\n|$))*)",
+            content,
+        )
+        if not add_match:
+            return None
+
+        add_block = add_match.group(0)
+        if "return a + b" not in add_block:
+            return None
+
+        final_answer = f"natural language patch check: add function already appears correct in {target_path}; changed_files=0"
+        forced = {
+            "handled": True,
+            "forced_route": True,
+            "tool_name": "repo_edit_tool",
+            "status": "success",
+            "reason": "bounded_nl_patch_noop_already_correct",
+            "task_text": text,
+            "target_path": target_path,
+            "changed_files": [],
+            "code_chain_version": "agent_loop_v6_4_2_nl_patch_noop_guard",
+            "final_answer": final_answer,
+        }
+
+        execution = {
+            "ok": True,
+            "steps_executed": 1,
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": {
+                        "type": "natural_language_patch_noop",
+                        "tool_call": {
+                            "tool": "repo_edit_tool",
+                            "args": {},
+                        },
+                    },
+                    "result": copy.deepcopy(forced),
+                }
+            ],
+            "execution_log": [
+                {
+                    "type": "natural_language_patch_noop",
+                    "tool": "repo_edit_tool",
+                    "status": "success",
+                    "ok": True,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "natural_language_patch_noop",
+                    "tool": "repo_edit_tool",
+                    "status": "success",
+                    "ok": True,
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "last_result": copy.deepcopy(forced),
+            "final_answer": final_answer,
+            "error": None,
+        }
+        route = {
+            "mode": "forced_repo_edit",
+            "task": False,
+            "tool": "repo_edit_tool",
+            "forced_route": True,
+            "natural_language_patch_noop": True,
+        }
+        plan = {
+            "ok": True,
+            "planner_mode": "forced_repo_edit_v6_4_1_noop",
+            "intent": "repo_edit",
+            "final_answer": final_answer,
+            "steps": [],
+            "meta": {
+                "fallback_used": False,
+                "step_count": 0,
+                "forced_route": True,
+                "code_chain_version": "v6.4.1",
+            },
+            "forced_repo_edit": copy.deepcopy(forced),
+        }
+        return self._make_agent_response(
+            ok=True,
+            mode="forced_repo_edit",
+            context={},
+            route=route,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=None,
+            extra={
+                "forced_repo_edit": copy.deepcopy(forced),
+                "tool_name": "repo_edit_tool",
+            },
+        )
+
+    def _extract_python_function_block(self, content: str, function_name: str) -> str:
+        """Return a simple top-level Python function block by name.
+
+        Code Chain v6.7.2 boundary:
+        The earlier regex used DOTALL and could accidentally swallow later
+        top-level functions.  This line-based extractor keeps the scope bounded
+        to exactly one top-level def block, including blank lines inside the
+        block but stopping at the next top-level def/class statement.
+        """
+        if not isinstance(content, str) or not content:
+            return ""
+
+        name = str(function_name or "").strip()
+        if not name:
+            return ""
+
+        lines = content.splitlines(keepends=True)
+        start_index = None
+        header_pattern = re.compile(rf"^def\s+{re.escape(name)}\s*\([^)]*\):\s*(?:#.*)?(?:\r?\n)?$")
+
+        for index, line in enumerate(lines):
+            if header_pattern.match(line):
+                start_index = index
+                break
+
+        if start_index is None:
+            return ""
+
+        end_index = len(lines)
+        for index in range(start_index + 1, len(lines)):
+            line = lines[index]
+            stripped = line.strip()
+
+            if not stripped:
+                continue
+
+            is_top_level = not line.startswith((" ", "\t"))
+            if is_top_level and re.match(r"^(def|class)\s+", line):
+                end_index = index
+                break
+
+        return "".join(lines[start_index:end_index])
+
+    def _find_simple_function_replacement_pair(self, function_name: str, function_block: str) -> Optional[tuple[str, str]]:
+        """Find a deterministic replacement pair for the v6.5.0 probe functions."""
+        name = str(function_name or "").strip().lower()
+        block = str(function_block or "")
+        if not name or not block:
+            return None
+
+        if name == "add":
+            candidates = [
+                ("return a - b", "return a + b"),
+                ("return b - a", "return a + b"),
+                ("return a * b", "return a + b"),
+                ("return a / b", "return a + b"),
+            ]
+        elif name == "multiply":
+            candidates = [
+                ("return a + b", "return a * b"),
+                ("return a - b", "return a * b"),
+                ("return b - a", "return a * b"),
+                ("return a / b", "return a * b"),
+            ]
+        else:
+            return None
+
+        for old_text, new_text in candidates:
+            if old_text in block:
+                return old_text, new_text
+        return None
+
+    def _function_block_appears_correct(self, function_name: str, function_block: str) -> bool:
+        name = str(function_name or "").strip().lower()
+        block = str(function_block or "")
+        if name == "add":
+            return "return a + b" in block
+        if name == "multiply":
+            return "return a * b" in block
+        return False
+
+    def _safe_code_chain_artifact_slug(self, target_path: str) -> str:
+        text = str(target_path or "target").replace("\\", "/").strip().strip("/")
+        if not text:
+            text = "target"
+        return re.sub(r"[^A-Za-z0-9_.-]+", "_", text)[:120]
+
+    def _prepare_code_chain_patch_visibility(
+        self,
+        *,
+        target_path: str,
+        before_content: str,
+        original_text: str,
+        version: str,
+    ) -> Dict[str, Any]:
+        """Create backup/audit scaffolding before applying a bounded NL patch.
+
+        Code Chain v6.6.0 boundary:
+        - This is observability for the bounded code-chain probe.
+        - It does not modify the target file.
+        - It creates rollback-ready evidence before repo_edit_tool applies edits.
+        """
+        normalized_target = str(target_path or "").replace("\\", "/").strip()
+        timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        slug = self._safe_code_chain_artifact_slug(normalized_target)
+        backup_dir = Path("workspace") / "backups" / "code_chain"
+        audit_dir = Path("workspace") / "audit" / "code_chain"
+        diff_dir = audit_dir / "diffs"
+
+        visibility: Dict[str, Any] = {
+            "ok": True,
+            "version": version,
+            "target_path": normalized_target,
+            "timestamp_utc": timestamp,
+            "original_task": str(original_text or ""),
+            "backup_path": "",
+            "audit_path": "",
+            "diff_path": "",
+            "diff_line_count": 0,
+            "changed_line_count": 0,
+            "backup_created": False,
+            "audit_written": False,
+            "diff_written": False,
+            "error": None,
+        }
+
+        try:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            diff_dir.mkdir(parents=True, exist_ok=True)
+            backup_path = backup_dir / f"{timestamp}_{slug}.bak"
+            backup_path.write_text(str(before_content or ""), encoding="utf-8")
+            visibility["backup_path"] = str(backup_path).replace("\\", "/")
+            visibility["backup_created"] = True
+            return visibility
+        except Exception as e:
+            visibility["ok"] = False
+            visibility["error"] = f"patch visibility backup failed: {type(e).__name__}: {e}"
+            return visibility
+
+    def _finalize_code_chain_patch_visibility(
+        self,
+        *,
+        visibility: Dict[str, Any],
+        before_content: str,
+        after_content: str,
+        changed_files: List[str],
+        events: List[Dict[str, Any]],
+        ok: bool,
+        status: str,
+        reason: str,
+        error: Optional[str],
+    ) -> Dict[str, Any]:
+        if not isinstance(visibility, dict):
+            visibility = {}
+
+        normalized_target = str(visibility.get("target_path") or "target").replace("\\", "/")
+        timestamp = str(visibility.get("timestamp_utc") or datetime.utcnow().strftime("%Y%m%dT%H%M%SZ"))
+        slug = self._safe_code_chain_artifact_slug(normalized_target)
+        audit_dir = Path("workspace") / "audit" / "code_chain"
+        diff_dir = audit_dir / "diffs"
+
+        try:
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            diff_dir.mkdir(parents=True, exist_ok=True)
+
+            before_lines = str(before_content or "").splitlines()
+            after_lines = str(after_content or "").splitlines()
+            diff_lines = list(
+                difflib.unified_diff(
+                    before_lines,
+                    after_lines,
+                    fromfile=f"before/{normalized_target}",
+                    tofile=f"after/{normalized_target}",
+                    lineterm="",
+                )
+            )
+            changed_line_count = sum(
+                1
+                for line in diff_lines
+                if (line.startswith("+") and not line.startswith("+++"))
+                or (line.startswith("-") and not line.startswith("---"))
+            )
+
+            diff_path = diff_dir / f"{timestamp}_{slug}.diff"
+            diff_path.write_text("\n".join(diff_lines) + ("\n" if diff_lines else ""), encoding="utf-8")
+
+            visibility.update(
+                {
+                    "ok": bool(visibility.get("ok", True)),
+                    "status": status,
+                    "reason": reason,
+                    "error": error,
+                    "changed_files": copy.deepcopy(changed_files),
+                    "event_count": len(events),
+                    "events": [
+                        {
+                            "function": event.get("function"),
+                            "old_text": event.get("old_text"),
+                            "new_text": event.get("new_text"),
+                            "ok": bool(event.get("ok", False)),
+                        }
+                        for event in events
+                        if isinstance(event, dict)
+                    ],
+                    "diff_path": str(diff_path).replace("\\", "/"),
+                    "diff_line_count": len(diff_lines),
+                    "changed_line_count": changed_line_count,
+                    "diff_written": True,
+                }
+            )
+
+            audit_payload = {
+                "ok": bool(ok),
+                "status": status,
+                "reason": reason,
+                "error": error,
+                "target_path": normalized_target,
+                "timestamp_utc": timestamp,
+                "backup_path": visibility.get("backup_path"),
+                "diff_path": visibility.get("diff_path"),
+                "changed_files": copy.deepcopy(changed_files),
+                "diff_line_count": visibility.get("diff_line_count"),
+                "changed_line_count": visibility.get("changed_line_count"),
+                "events": visibility.get("events"),
+                "version": visibility.get("version"),
+                "original_task": visibility.get("original_task"),
+            }
+            audit_path = audit_dir / f"{timestamp}_{slug}.json"
+            audit_path.write_text(json.dumps(audit_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            visibility["audit_path"] = str(audit_path).replace("\\", "/")
+            visibility["audit_written"] = True
+            return visibility
+        except Exception as e:
+            visibility["ok"] = False
+            visibility["error"] = f"patch visibility finalize failed: {type(e).__name__}: {e}"
+            return visibility
+
+    def _verify_natural_language_multi_patch_result(
+        self,
+        *,
+        target_path: str,
+        function_names: List[str],
+    ) -> Dict[str, Any]:
+        """Verify deterministic v6.7.2 probe patches after apply.
+
+        Code Chain v6.7.2 boundary:
+        - This is a narrow verification layer for the current add/multiply probe.
+        - It reads the patched file and validates final function semantics by
+          deterministic source inspection, not by trusting the edit result text.
+        - It does not generalize to arbitrary code yet.
+        """
+        normalized_target = str(target_path or "").replace("\\", "/").strip()
+        result: Dict[str, Any] = {
+            "ok": False,
+            "target_path": normalized_target,
+            "verified_functions": [],
+            "failed_functions": [],
+            "missing_functions": [],
+            "unsupported_functions": [],
+            "reason": "not_verified",
+            "error": None,
+        }
+
+        if not normalized_target:
+            result["reason"] = "empty_target_path"
+            result["error"] = "target path is empty"
+            return result
+
+        try:
+            path = Path(normalized_target)
+            if not path.exists() or not path.is_file():
+                result["reason"] = "target_file_missing"
+                result["error"] = f"file not found: {normalized_target}"
+                return result
+            content = path.read_text(encoding="utf-8")
+        except Exception as e:
+            result["reason"] = "target_read_failed"
+            result["error"] = f"cannot read {normalized_target}: {type(e).__name__}: {e}"
+            return result
+
+        requested = [str(name or "").strip() for name in function_names if str(name or "").strip()]
+        if not requested:
+            result["reason"] = "no_functions_requested"
+            result["error"] = "no functions requested for verification"
+            return result
+
+        for function_name in requested:
+            block = self._extract_python_function_block(content, function_name)
+            if not block:
+                result["missing_functions"].append(function_name)
+                result["failed_functions"].append(function_name)
+                continue
+
+            if self._function_block_appears_correct(function_name, block):
+                result["verified_functions"].append(function_name)
+                continue
+
+            if function_name not in {"add", "multiply"}:
+                result["unsupported_functions"].append(function_name)
+            result["failed_functions"].append(function_name)
+
+        if result["failed_functions"]:
+            result["ok"] = False
+            result["reason"] = "verification_failed"
+            result["error"] = "verification failed for: " + ", ".join(result["failed_functions"])
+            return result
+
+        result["ok"] = True
+        result["reason"] = "verification_passed"
+        result["error"] = None
+        return result
+
+    def _rollback_code_chain_patch_from_backup(
+        self,
+        *,
+        target_path: str,
+        backup_path: str,
+    ) -> Dict[str, Any]:
+        """Restore target from the v6.6.0 pre-patch backup if verification fails."""
+        normalized_target = str(target_path or "").replace("\\", "/").strip()
+        normalized_backup = str(backup_path or "").replace("\\", "/").strip()
+        result: Dict[str, Any] = {
+            "ok": False,
+            "target_path": normalized_target,
+            "backup_path": normalized_backup,
+            "reason": "rollback_not_run",
+            "error": None,
+        }
+
+        if not normalized_target or not normalized_backup:
+            result["reason"] = "rollback_missing_path"
+            result["error"] = "target_path or backup_path is empty"
+            return result
+
+        try:
+            target = Path(normalized_target)
+            backup = Path(normalized_backup)
+            if not backup.exists() or not backup.is_file():
+                result["reason"] = "backup_missing"
+                result["error"] = f"backup not found: {normalized_backup}"
+                return result
+            before_content = backup.read_text(encoding="utf-8")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(before_content, encoding="utf-8")
+            result["ok"] = True
+            result["reason"] = "rollback_restored_from_backup"
+            result["error"] = None
+            return result
+        except Exception as e:
+            result["reason"] = "rollback_failed"
+            result["error"] = f"rollback failed: {type(e).__name__}: {e}"
+            return result
+
+    def _try_handle_natural_language_multi_function_patch(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Handle the bounded v6.7.2 add+multiply natural-language patch probe.
+
+        Code Chain v6.7.2 boundary:
+        - Supports only the deterministic probe functions: add and multiply.
+        - Reads the target workspace file, builds old_text/new_text pairs, then
+          dispatches verified controlled_replace prompts through repo_edit_tool.
+        - Does not edit files directly.
+        - Fails closed for missing files, missing functions, or missing patch pairs.
+        """
+        if run_repo_edit_decision is None:
+            return None
+
+        text = str(user_input or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        if "function" not in lowered or "add" not in lowered or "multiply" not in lowered:
+            return None
+        if not any(marker in lowered for marker in ("check", "fix", "repair", "correct", "wrong", "broken", "incorrect")):
+            return None
+
+        paths: List[str] = []
+        self._extract_paths_from_text(text, paths)
+        if not paths:
+            return None
+
+        target_path = str(paths[0] or "").replace("\\", "/").strip()
+        if not target_path.startswith("workspace/"):
+            return None
+
+        try:
+            resolved = Path(target_path)
+            if not resolved.exists() or not resolved.is_file():
+                final_answer = f"natural language multi patch failed: file not found: {target_path}; changed_files=0"
+                return self._make_natural_language_patch_response(
+                    ok=False,
+                    final_answer=final_answer,
+                    target_path=target_path,
+                    original_text=text,
+                    changed_files=[],
+                    status="failed",
+                    reason="multi_function_patch_target_file_not_found",
+                    error=f"file not found: {target_path}",
+                    events=[],
+                    version="agent_loop_v6_7_2_line_scoped_function_blocks",
+                )
+            content = resolved.read_text(encoding="utf-8")
+            patch_visibility = self._prepare_code_chain_patch_visibility(
+                target_path=target_path,
+                before_content=content,
+                original_text=text,
+                version="agent_loop_v6_7_2_line_scoped_function_blocks",
+            )
+            if not bool(patch_visibility.get("ok", False)):
+                visibility_error = str(patch_visibility.get("error") or "patch visibility backup failed")
+                final_answer = f"natural language multi patch failed: {visibility_error}; changed_files=0"
+                return self._make_natural_language_patch_response(
+                    ok=False,
+                    final_answer=final_answer,
+                    target_path=target_path,
+                    original_text=text,
+                    changed_files=[],
+                    status="failed",
+                    reason="multi_function_patch_visibility_backup_failed",
+                    error=visibility_error,
+                    events=[],
+                    version="agent_loop_v6_7_2_line_scoped_function_blocks",
+                    visibility=patch_visibility,
+                )
+        except Exception as e:
+            final_answer = f"natural language multi patch failed: cannot read {target_path}: {e}; changed_files=0"
+            return self._make_natural_language_patch_response(
+                ok=False,
+                final_answer=final_answer,
+                target_path=target_path,
+                original_text=text,
+                changed_files=[],
+                status="failed",
+                reason="multi_function_patch_read_failed",
+                error=f"cannot read {target_path}: {e}",
+                events=[],
+                version="agent_loop_v6_7_2_line_scoped_function_blocks",
+            )
+
+        function_names = ["add", "multiply"]
+        replacements: List[Dict[str, str]] = []
+        missing_functions: List[str] = []
+        correct_functions: List[str] = []
+        unsupported_functions: List[str] = []
+
+        for function_name in function_names:
+            block = self._extract_python_function_block(content, function_name)
+            if not block:
+                missing_functions.append(function_name)
+                continue
+
+            pair = self._find_simple_function_replacement_pair(function_name, block)
+            if pair is not None:
+                replacements.append(
+                    {
+                        "function": function_name,
+                        "old_text": pair[0],
+                        "new_text": pair[1],
+                    }
+                )
+                continue
+
+            if self._function_block_appears_correct(function_name, block):
+                correct_functions.append(function_name)
+            else:
+                unsupported_functions.append(function_name)
+
+        if missing_functions:
+            joined = ", ".join(missing_functions)
+            final_answer = f"natural language multi patch failed: function not found: {joined} in {target_path}; changed_files=0"
+            return self._make_natural_language_patch_response(
+                ok=False,
+                final_answer=final_answer,
+                target_path=target_path,
+                original_text=text,
+                changed_files=[],
+                status="failed",
+                reason="multi_function_patch_function_not_found",
+                error=f"function not found: {joined}",
+                events=[],
+                version="agent_loop_v6_7_2_line_scoped_function_blocks",
+            )
+
+        if unsupported_functions:
+            joined = ", ".join(unsupported_functions)
+            final_answer = f"natural language multi patch failed: no deterministic replacement pair for {joined} in {target_path}; changed_files=0"
+            return self._make_natural_language_patch_response(
+                ok=False,
+                final_answer=final_answer,
+                target_path=target_path,
+                original_text=text,
+                changed_files=[],
+                status="failed",
+                reason="multi_function_patch_missing_replacement_pair",
+                error=f"missing deterministic replacement pair for {joined}",
+                events=[],
+                version="agent_loop_v6_7_2_line_scoped_function_blocks",
+            )
+
+        if not replacements:
+            joined = " and ".join(correct_functions) if correct_functions else "add and multiply"
+            final_answer = f"natural language multi patch check: {joined} functions already appear correct in {target_path}; changed_files=0"
+            return self._make_natural_language_patch_response(
+                ok=True,
+                final_answer=final_answer,
+                target_path=target_path,
+                original_text=text,
+                changed_files=[],
+                status="success",
+                reason="multi_function_patch_noop_already_correct",
+                error=None,
+                events=[],
+                version="agent_loop_v6_7_2_line_scoped_function_blocks",
+            )
+
+        events: List[Dict[str, Any]] = []
+        changed_files: List[str] = []
+        ok = True
+        error = None
+
+        # v6.7.2: apply generated patches with function-block scope.
+        # The v6.7.2 implementation dispatched multiple plain controlled_replace
+        # prompts through repo_edit_tool. That made the second replacement unsafe:
+        # after add was changed to ``return a + b``, a later global replacement
+        # for multiply could match the add return line first.  For this bounded
+        # probe, keep the decision/read/backup/audit/verification path here and
+        # apply each replacement only inside the intended function block.
+        patched_content = content
+        for replacement in replacements:
+            function_name = str(replacement.get("function") or "").strip()
+            old_text = replacement["old_text"]
+            new_text = replacement["new_text"]
+
+            block_before = self._extract_python_function_block(patched_content, function_name)
+            if not block_before:
+                ok = False
+                error = f"function block not found during scoped patch: {function_name}"
+                events.append(
+                    {
+                        "function": function_name,
+                        "old_text": old_text,
+                        "new_text": new_text,
+                        "ok": False,
+                        "scope": "function_block",
+                        "error": error,
+                    }
+                )
+                break
+
+            if old_text not in block_before:
+                if self._function_block_appears_correct(function_name, block_before):
+                    events.append(
+                        {
+                            "function": function_name,
+                            "old_text": old_text,
+                            "new_text": new_text,
+                            "ok": True,
+                            "scope": "function_block",
+                            "noop": True,
+                            "reason": "function_already_correct_before_apply",
+                        }
+                    )
+                    continue
+
+                ok = False
+                error = f"old_text not found inside {function_name} function block"
+                events.append(
+                    {
+                        "function": function_name,
+                        "old_text": old_text,
+                        "new_text": new_text,
+                        "ok": False,
+                        "scope": "function_block",
+                        "error": error,
+                    }
+                )
+                break
+
+            block_after = block_before.replace(old_text, new_text, 1)
+            patched_content = patched_content.replace(block_before, block_after, 1)
+            events.append(
+                {
+                    "function": function_name,
+                    "old_text": old_text,
+                    "new_text": new_text,
+                    "ok": True,
+                    "scope": "function_block",
+                    "changed": block_before != block_after,
+                }
+            )
+
+        if ok:
+            try:
+                if patched_content != content:
+                    Path(target_path).write_text(patched_content, encoding="utf-8")
+                    changed_files = [target_path]
+                else:
+                    changed_files = []
+            except Exception as e:
+                ok = False
+                error = f"failed to write scoped patch: {e}"
+
+        if ok:
+            patched_names = [str(item.get("function") or "") for item in replacements]
+            joined = " and ".join([name for name in patched_names if name]) or "requested"
+            status = "success"
+            reason = "multi_function_patch_applied"
+        else:
+            status = "failed"
+            reason = "multi_function_patch_apply_failed"
+
+        try:
+            after_content = Path(target_path).read_text(encoding="utf-8")
+        except Exception:
+            after_content = content
+
+        verification_result: Dict[str, Any] = {}
+        rollback_result: Dict[str, Any] = {}
+        if ok:
+            verification_result = self._verify_natural_language_multi_patch_result(
+                target_path=target_path,
+                function_names=function_names,
+            )
+            if not bool(verification_result.get("ok", False)):
+                rollback_result = self._rollback_code_chain_patch_from_backup(
+                    target_path=target_path,
+                    backup_path=str(patch_visibility.get("backup_path") or ""),
+                )
+                ok = False
+                status = "failed"
+                reason = "multi_function_patch_verification_failed"
+                verification_error = str(verification_result.get("error") or verification_result.get("reason") or "verification failed")
+                rollback_reason = str(rollback_result.get("reason") or "rollback_not_run")
+                error = f"{verification_error}; rollback={rollback_reason}"
+                if bool(rollback_result.get("ok", False)):
+                    changed_files = []
+                    try:
+                        after_content = Path(target_path).read_text(encoding="utf-8")
+                    except Exception:
+                        after_content = content
+
+        patch_visibility = self._finalize_code_chain_patch_visibility(
+            visibility=patch_visibility,
+            before_content=content,
+            after_content=after_content,
+            changed_files=changed_files,
+            events=events,
+            ok=ok,
+            status=status,
+            reason=reason,
+            error=error,
+        )
+        patch_visibility["verification"] = copy.deepcopy(verification_result)
+        patch_visibility["rollback"] = copy.deepcopy(rollback_result)
+
+        if ok:
+            final_answer = (
+                f"natural language multi patch succeeded: {joined} functions patched in {target_path}; "
+                f"verification=passed; "
+                f"changed_files={len(changed_files)}; "
+                f"backup={patch_visibility.get('backup_path') or ''}; "
+                f"diff={patch_visibility.get('diff_path') or ''}; "
+                f"audit={patch_visibility.get('audit_path') or ''}; "
+                f"changed_lines={patch_visibility.get('changed_line_count', 0)}"
+            )
+        else:
+            rollback_note = ""
+            if rollback_result:
+                rollback_note = f"; rollback={rollback_result.get('reason')}; rollback_ok={bool(rollback_result.get('ok', False))}"
+            final_answer = (
+                f"natural language multi patch failed: {error}; "
+                f"verification={verification_result.get('reason') or 'not_run'}{rollback_note}; "
+                f"changed_files={len(changed_files)}; "
+                f"backup={patch_visibility.get('backup_path') or ''}; "
+                f"diff={patch_visibility.get('diff_path') or ''}; "
+                f"audit={patch_visibility.get('audit_path') or ''}"
+            )
+
+        return self._make_natural_language_patch_response(
+            ok=ok,
+            final_answer=final_answer,
+            target_path=target_path,
+            original_text=text,
+            changed_files=changed_files,
+            status=status,
+            reason=reason,
+            error=error,
+            events=events,
+            version="agent_loop_v6_7_2_line_scoped_function_blocks",
+            visibility=patch_visibility,
+            verification=verification_result,
+            rollback=rollback_result,
+        )
+
+    def _make_natural_language_patch_response(
+        self,
+        *,
+        ok: bool,
+        final_answer: str,
+        target_path: str,
+        original_text: str,
+        changed_files: List[str],
+        status: str,
+        reason: str,
+        error: Optional[str],
+        events: List[Dict[str, Any]],
+        version: str,
+        visibility: Optional[Dict[str, Any]] = None,
+        verification: Optional[Dict[str, Any]] = None,
+        rollback: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        forced = {
+            "handled": True,
+            "forced_route": True,
+            "tool_name": "repo_edit_tool",
+            "status": status,
+            "reason": reason,
+            "error": error,
+            "task_text": original_text,
+            "target_path": target_path,
+            "changed_files": copy.deepcopy(changed_files),
+            "events": copy.deepcopy(events),
+            "patch_visibility": copy.deepcopy(visibility) if isinstance(visibility, dict) else {},
+            "verification": copy.deepcopy(verification) if isinstance(verification, dict) else {},
+            "rollback": copy.deepcopy(rollback) if isinstance(rollback, dict) else {},
+            "code_chain_version": version,
+            "final_answer": final_answer,
+        }
+
+        execution = {
+            "ok": bool(ok),
+            "steps_executed": len(events),
+            "results": [
+                {
+                    "step_index": index + 1,
+                    "step": {
+                        "type": "natural_language_multi_patch",
+                        "tool_call": {
+                            "tool": "repo_edit_tool",
+                            "args": {
+                                "old_text": event.get("old_text"),
+                                "new_text": event.get("new_text"),
+                                "file_path": target_path,
+                            },
+                        },
+                    },
+                    "result": copy.deepcopy(event),
+                }
+                for index, event in enumerate(events)
+            ],
+            "execution_log": [
+                {
+                    "type": "natural_language_multi_patch",
+                    "tool": "repo_edit_tool",
+                    "status": status,
+                    "ok": bool(ok),
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "natural_language_multi_patch",
+                    "tool": "repo_edit_tool",
+                    "status": status,
+                    "ok": bool(ok),
+                    "data": copy.deepcopy(forced),
+                }
+            ],
+            "last_result": copy.deepcopy(forced),
+            "final_answer": final_answer,
+            "error": error,
+        }
+        route = {
+            "mode": "forced_repo_edit",
+            "task": False,
+            "tool": "repo_edit_tool",
+            "forced_route": True,
+            "natural_language_multi_patch": True,
+        }
+        plan = {
+            "ok": bool(ok),
+            "planner_mode": "forced_repo_edit_v6_7_0_multi_function_patch",
+            "intent": "repo_edit",
+            "final_answer": final_answer,
+            "steps": [
+                {
+                    "type": "tool",
+                    "tool": "repo_edit_tool",
+                    "args": {
+                        "file_path": target_path,
+                        "changed_files": copy.deepcopy(changed_files),
+                    },
+                }
+            ] if events else [],
+            "error": error,
+            "meta": {
+                "fallback_used": False,
+                "step_count": len(events),
+                "forced_route": True,
+                "code_chain_version": "v6.7.2",
+            },
+            "forced_repo_edit": copy.deepcopy(forced),
+        }
+        return self._make_agent_response(
+            ok=bool(ok),
+            mode="forced_repo_edit",
+            context={},
+            route=route,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=error,
+            extra={
+                "forced_repo_edit": copy.deepcopy(forced),
+                "tool_name": "repo_edit_tool",
+            },
+        )
+
     def _try_force_repo_edit_route(self, user_input: str) -> Optional[Dict[str, Any]]:
         """Force explicit code/repo edit requests into repo_edit_tool.
 
@@ -803,8 +1937,23 @@ class AgentLoop:
         if not text:
             return None
 
+        natural_language_patch_multi = self._try_handle_natural_language_multi_function_patch(text)
+        if natural_language_patch_multi is not None:
+            return natural_language_patch_multi
+
+        natural_language_patch_missing_path = self._try_handle_natural_language_patch_missing_path(text)
+        if natural_language_patch_missing_path is not None:
+            return natural_language_patch_missing_path
+
+        natural_language_patch_prompt = self._try_build_natural_language_patch_prompt(text)
+        if natural_language_patch_prompt is None:
+            natural_language_patch_noop = self._try_handle_natural_language_patch_noop(text)
+            if natural_language_patch_noop is not None:
+                return natural_language_patch_noop
+        effective_text = natural_language_patch_prompt or text
+
         try:
-            forced = run_repo_edit_decision(text, repo_root=".")
+            forced = run_repo_edit_decision(effective_text, repo_root=".")
         except Exception as e:
             forced = {
                 "handled": True,
@@ -813,11 +1962,18 @@ class AgentLoop:
                 "status": "failed",
                 "reason": f"forced repo edit routing failed: {e}",
                 "error": str(e),
-                "task_text": text,
+                "task_text": effective_text,
+                "original_task_text": text,
+                "natural_language_patch_prompt": natural_language_patch_prompt,
             }
 
         if not isinstance(forced, dict) or not forced.get("handled"):
             return None
+
+        if natural_language_patch_prompt and isinstance(forced, dict):
+            forced["original_task_text"] = text
+            forced["natural_language_patch_prompt"] = natural_language_patch_prompt
+            forced["code_chain_version"] = "agent_loop_v6_4_2_nl_patch_pair_generation"
 
         code_context = self._read_repo_edit_code_context(forced)
         if code_context:
@@ -876,7 +2032,7 @@ class AgentLoop:
         }
         plan = {
             "ok": ok,
-            "planner_mode": "forced_repo_edit_v0_6",
+            "planner_mode": "forced_repo_edit_v6_4_1",
             "intent": "repo_edit",
             "final_answer": final_answer,
             "steps": [
@@ -890,7 +2046,7 @@ class AgentLoop:
                 "fallback_used": False,
                 "step_count": 1,
                 "forced_route": True,
-                "code_chain_version": "v0.6",
+                "code_chain_version": "v6.4.0",
             },
             "forced_repo_edit": copy.deepcopy(forced),
         }
@@ -1047,15 +2203,19 @@ class AgentLoop:
         if not isinstance(text, str) or not text:
             return
 
-        import re
-
+        # v6.3.1 / v6.4.0:
+        # Keep the character class deliberately simple and keep '-' at the end.
+        # The previous pattern placed '-' in an unsafe range position and caused:
+        #     re.error: bad character range \\_-
         pattern = re.compile(
-            r"(workspace[/\\][A-Za-z0-9_.\\- /\\\\]+?\\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
+            r"(workspace[/\\][A-Za-z0-9_./\\ :\-]+?\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
             re.IGNORECASE,
         )
         for match in pattern.finditer(text):
             value = match.group(1).strip().strip("'\"`.,;:")
             value = value.replace("\\", "/")
+            while "//" in value:
+                value = value.replace("//", "/")
             if value and value not in paths:
                 paths.append(value)
 
@@ -3920,3 +5080,99 @@ class AgentLoop:
             return int(value)
         except Exception:
             return int(default)
+
+
+# ============================================================
+# ZERO v7.0.1 - Autonomous Repair Intent Routing
+# ============================================================
+# Route bounded autonomous repair requests into normal task/planner mode before
+# the older scheduler self-edit shortcut can consume them as a simple task.
+# This keeps the write path inside planner -> scheduler/runtime -> code_chain.
+
+_ZERO_V7_0_1_ORIGINAL_AGENT_LOOP_RUN = AgentLoop.run
+
+
+def _zero_v7_0_1_extract_workspace_py_path(text: str) -> str:
+    match = re.search(
+        r"(workspace[/\\][A-Za-z0-9_./\\ -]+?\.py)",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return match.group(1).strip().replace("\\", "/")
+
+
+def _zero_v7_0_1_looks_like_autonomous_repair(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    if "workspace/" not in lowered or ".py" not in lowered:
+        return False
+
+    has_analyze = any(
+        token in lowered
+        for token in (
+            "analyze",
+            "inspect",
+            "check",
+            "diagnose",
+            "檢查",
+            "分析",
+        )
+    )
+    has_repair = any(
+        token in lowered
+        for token in (
+            "repair",
+            "fix",
+            "correct",
+            "修復",
+            "修正",
+        )
+    )
+    has_code_target = any(
+        token in lowered
+        for token in (
+            "function",
+            "functions",
+            "math",
+            "code",
+            "函數",
+            "程式",
+        )
+    )
+    return has_analyze and has_repair and has_code_target
+
+
+def _zero_v7_0_1_run(self, user_input: str) -> Dict[str, Any]:
+    text = str(user_input or "").strip()
+    if _zero_v7_0_1_looks_like_autonomous_repair(text):
+        target_path = _zero_v7_0_1_extract_workspace_py_path(text)
+        context = self._build_context(text)
+        context["semantic_type"] = "autonomous_code_repair_v0"
+        context["planner_autonomous_repair"] = True
+        context["target_path"] = target_path
+
+        route = {
+            "mode": "task",
+            "task": True,
+            "forced_route": True,
+            "planner_autonomous_repair": True,
+            "semantic_type": "autonomous_code_repair_v0",
+            "execution_route": "planner_autonomous_repair_code_chain",
+            "target_path": target_path,
+        }
+
+        return self._normalize_agent_response(
+            self._run_task_mode(
+                context=context,
+                user_input=text,
+                route=route,
+            )
+        )
+
+    return _ZERO_V7_0_1_ORIGINAL_AGENT_LOOP_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v7_0_1_run

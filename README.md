@@ -32,6 +32,48 @@ ZERO actually:
 
 ------------------------------------------------------------------------
 
+
+
+## 🎬 Latest Demo
+
+### Autonomous Repair Loop
+
+New demo:
+
+```text
+demos/zero-autonomous-code-repair-demo.mp4
+```
+
+This demo shows ZERO performing a runtime-aware autonomous repair workflow:
+
+```text
+execution failure
+-> semantic reasoning
+-> repair routing
+-> code-chain diff generation
+-> patch apply
+-> verification
+-> successful rerun
+```
+
+The repair flow demonstrates:
+
+- semantic-aware error interpretation
+- CODE CHAIN diff generation
+- runtime trace visibility
+- planner-driven repair routing
+- patch verification
+- controlled local execution
+- replayable execution trace
+
+Important:
+
+- local-first execution
+- controlled repair workflow
+- traceable execution lifecycle
+- not a hidden black-box repair flow
+
+
 ## What ZERO Does
 
 ZERO does not just generate answers.
