@@ -104,7 +104,7 @@ except Exception:  # pragma: no cover - optional reader in minimal runtimes
     read_code_file = None
 
 
-SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V6_8_0"
+SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_1_REPAIR_TASK_FINGERPRINTING"
 
 STATUS_CREATED = "created"
 STATUS_BLOCKED = "blocked"
@@ -127,6 +127,7 @@ READY_STATUSES = {
     "queued",
     "ready",
     "retry",
+    "retrying",
     "running",
     STATUS_QUEUED,
 }
@@ -271,6 +272,15 @@ class Scheduler(RuntimeTaskScheduler):
             if current_tick is not None
             else int(getattr(self, "current_tick", 0)) + 1
         )
+
+        # v7.2.0: keep the scheduler queue readable and safe before each dispatch.
+        # This is intentionally hygiene-only: it expires stale repair/self-edit
+        # tasks, removes terminal/missing queue entries, and fails invalid repair
+        # tasks before they can consume worker slots.
+        try:
+            self.cleanup_task_queue_hygiene()
+        except Exception:
+            pass
 
         self._unblock_tasks_if_dependencies_done()
 
@@ -1234,7 +1244,7 @@ class Scheduler(RuntimeTaskScheduler):
             return False, f"replan limit reached: {replan_count}/{max_replans}"
 
         failed_step_type = self._get_failed_step_type(task)
-        allowed_types = {"verify", "read_file", "run_python", "command", "write_file", "llm", "llm_generate"}
+        allowed_types = {"verify", "read_file", "run_python", "command", "write_file", "llm", "llm_generate", "code_chain_analyze", "code_chain_repair", "code_chain_verify"}
         if failed_step_type not in allowed_types:
             return False, f"step type not repairable: {failed_step_type or 'unknown'}"
 
@@ -2050,6 +2060,469 @@ class Scheduler(RuntimeTaskScheduler):
             "task_count": len(repo_tasks),
         }
 
+
+    # ------------------------------------------------------------
+    # v7.2.0 queue hygiene / duplicate repair protection
+    # ------------------------------------------------------------
+
+    def cleanup_task_queue_hygiene(
+        self,
+        *,
+        max_queued_age_seconds: int = 3600,
+        expire_legacy_self_edit: bool = True,
+    ) -> Dict[str, Any]:
+        """Best-effort cleanup for stale queued tasks and invalid repair tasks.
+
+        Boundary:
+        - Does not delete task artifacts.
+        - Does not mutate finished successful tasks.
+        - Only marks stale/invalid queued repair/self-edit tasks failed so the
+          task list stays readable and the dispatcher cannot keep re-running
+          unsafe or obsolete items.
+        """
+        now = int(time.time())
+        expired: List[Dict[str, Any]] = []
+        cancelled_queue_entries: List[str] = []
+        duplicate_fingerprints: Dict[str, str] = {}
+        duplicate_failed: List[Dict[str, Any]] = []
+
+        tasks = self._list_repo_tasks()
+        if not isinstance(tasks, list):
+            tasks = []
+
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+
+            task_id = str(task.get("task_id") or task.get("task_name") or "").strip()
+            if not task_id:
+                continue
+
+            status = str(task.get("status") or "").strip().lower()
+            if status in TERMINAL_STATUSES:
+                continue
+
+            goal = str(task.get("goal") or task.get("title") or "").strip()
+            created_at = self._safe_int_for_runtime_gate(task.get("created_at"), 0)
+            age = max(0, now - created_at) if created_at > 0 else 0
+
+            repair_guard = self._validate_repair_task_scope(task)
+            if not repair_guard.get("ok"):
+                reason = str(repair_guard.get("error") or "invalid repair task")
+                self._fail_task_for_queue_hygiene(task, reason=reason)
+                expired.append({"task_id": task_id, "reason": reason})
+                continue
+
+            if expire_legacy_self_edit and self._is_legacy_self_edit_scheduler_task(task):
+                if age >= max_queued_age_seconds or status in {"queued", STATUS_QUEUED, "created", STATUS_CREATED}:
+                    reason = "expired stale queued self_edit_scheduler task"
+                    self._fail_task_for_queue_hygiene(task, reason=reason)
+                    expired.append({"task_id": task_id, "reason": reason, "age_seconds": age})
+                    continue
+
+            fingerprint = self._repair_task_fingerprint_from_task(task)
+            if fingerprint:
+                existing_task_id = duplicate_fingerprints.get(fingerprint)
+                if existing_task_id:
+                    reason = f"duplicate autonomous repair task suppressed; existing={existing_task_id}"
+                    self._fail_task_for_queue_hygiene(task, reason=reason)
+                    duplicate_failed.append({"task_id": task_id, "existing_task_id": existing_task_id, "fingerprint": fingerprint})
+                    continue
+                duplicate_fingerprints[fingerprint] = task_id
+
+        try:
+            queued_rows = self.dispatcher.list_queued()
+        except Exception:
+            queued_rows = []
+        if not isinstance(queued_rows, list):
+            queued_rows = []
+
+        for row in queued_rows:
+            if not isinstance(row, dict):
+                continue
+            task_id = str(row.get("task_id") or "").strip()
+            if not task_id:
+                continue
+            task = self._get_task_from_repo(task_id)
+            if not isinstance(task, dict):
+                self._cancel_ready_queue_task(task_id)
+                cancelled_queue_entries.append(task_id)
+                continue
+            status = str(task.get("status") or "").strip().lower()
+            if status in TERMINAL_STATUSES:
+                self._cancel_ready_queue_task(task_id)
+                cancelled_queue_entries.append(task_id)
+
+        return {
+            "ok": True,
+            "scheduler_build": SCHEDULER_BUILD,
+            "expired": expired,
+            "expired_count": len(expired),
+            "duplicate_failed": duplicate_failed,
+            "duplicate_failed_count": len(duplicate_failed),
+            "cancelled_queue_entries": cancelled_queue_entries,
+            "cancelled_queue_entry_count": len(cancelled_queue_entries),
+        }
+
+    def _fail_task_for_queue_hygiene(self, task: Dict[str, Any], *, reason: str) -> None:
+        if not isinstance(task, dict):
+            return
+        task_id = str(task.get("task_id") or task.get("task_name") or "").strip()
+        if not task_id:
+            return
+
+        task["status"] = STATUS_FAILED
+        task["last_error"] = str(reason or "queue hygiene failed task")
+        task["failure_type"] = "queue_hygiene"
+        task["failure_message"] = str(reason or "queue hygiene failed task")
+        task["final_answer"] = str(reason or task.get("final_answer") or "")
+        task["finished_tick"] = getattr(self, "current_tick", 0)
+        task["finished_at"] = int(time.time())
+        task["history"] = self._append_history(task.get("history"), STATUS_FAILED)
+        task["scheduler_build"] = SCHEDULER_BUILD
+
+        try:
+            self._persist_task_payload(task_id=task_id, task=task)
+        except Exception:
+            pass
+        try:
+            self._cancel_ready_queue_task(task_id)
+        except Exception:
+            pass
+
+        runtime = getattr(self, "task_runtime", None)
+        if runtime is not None:
+            try:
+                runtime.mark_failed(
+                    task=task,
+                    current_tick=getattr(self, "current_tick", 0),
+                    failure_type="queue_hygiene",
+                    failure_message=str(reason or "queue hygiene failed task"),
+                )
+            except Exception:
+                pass
+
+    def _is_legacy_self_edit_scheduler_task(self, task: Dict[str, Any]) -> bool:
+        if not isinstance(task, dict):
+            return False
+        task_id = str(task.get("task_id") or task.get("task_name") or "").strip().lower()
+        goal = str(task.get("goal") or task.get("title") or "").strip().lower()
+        if task_id.startswith("self_edit_scheduler_"):
+            return True
+        return "scheduler self-edit" in goal or "self_edit_scheduler" in goal
+
+    def _is_autonomous_repair_task(self, task: Dict[str, Any]) -> bool:
+        if not isinstance(task, dict):
+            return False
+        planner_result = task.get("planner_result") if isinstance(task.get("planner_result"), dict) else {}
+        if str(planner_result.get("intent") or "").strip().lower() == "code_chain_repair":
+            return True
+        steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+        for step in steps:
+            if isinstance(step, dict) and str(step.get("type") or "").strip().lower() == "code_chain_repair":
+                return True
+        goal = str(task.get("goal") or task.get("title") or "").strip().lower()
+        return "repair broken math functions" in goal and "workspace/" in goal
+
+    def _extract_repair_target_path_from_text(self, text: str) -> str:
+        value = str(text or "")
+        pattern = re.compile(
+            r"(workspace[/\\][A-Za-z0-9_./\\ -]+?\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
+            re.IGNORECASE,
+        )
+        match = pattern.search(value)
+        if not match:
+            return ""
+        return match.group(1).strip().strip("'\"`.,;:").replace("\\", "/")
+
+    def _extract_repair_target_path_from_task(self, task: Dict[str, Any]) -> str:
+        if not isinstance(task, dict):
+            return ""
+        for key in ("target_path", "path", "file_path"):
+            value = task.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip().replace("\\", "/")
+        steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            for key in ("target_path", "path", "file_path"):
+                value = step.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip().replace("\\", "/")
+        return self._extract_repair_target_path_from_text(str(task.get("goal") or task.get("title") or ""))
+
+    def _validate_repair_task_scope(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._is_autonomous_repair_task(task):
+            return {"ok": True, "reason": "not_repair_task"}
+
+        target_path = self._extract_repair_target_path_from_task(task)
+        if not target_path:
+            return {"ok": False, "error": "repair task missing target_path"}
+
+        normalized = target_path.replace("\\", "/").strip().lstrip("./")
+        lowered = normalized.lower()
+        protected = (
+            lowered == "app.py"
+            or lowered == "system_boot.py"
+            or lowered.startswith("core/")
+            or lowered.startswith("services/")
+            or lowered.startswith("ui/")
+            or lowered.startswith("tests/")
+        )
+        if protected:
+            return {"ok": False, "error": f"blocked by repair scope guard: {normalized}", "target_path": normalized}
+
+        if not lowered.startswith("workspace/shared/"):
+            return {"ok": False, "error": f"repair target outside allowed shared workspace: {normalized}", "target_path": normalized}
+
+        full_path = os.path.abspath(os.path.join(os.path.dirname(self.workspace_root), normalized))
+        if not os.path.exists(full_path):
+            return {"ok": False, "error": f"file not found: {normalized}", "target_path": normalized}
+
+        return {"ok": True, "target_path": normalized}
+
+    def _repair_task_fingerprint_from_goal(self, goal: str) -> str:
+        text = str(goal or "").strip()
+        lowered = text.lower()
+        if not lowered:
+            return ""
+
+        # Treat analyze+repair/fix/check code-chain repair wording as a repair
+        # intent.  This intentionally keys on semantic intent, not task ids.
+        has_repair_intent = any(token in lowered for token in (
+            "repair", "fix", "broken math function", "math functions", "code_chain_repair"
+        ))
+        if not has_repair_intent:
+            return ""
+
+        target_path = self._extract_repair_target_path_from_text(text)
+        if not target_path:
+            return ""
+
+        normalized_text = re.sub(r"\s+", " ", lowered)
+        if "broken math function" in normalized_text or "math functions" in normalized_text or "add and multiply" in normalized_text:
+            family = "broken_math_functions"
+        else:
+            family = "generic_repair"
+        return f"{target_path.lower()}::{family}"
+
+    def _repair_task_fingerprint_from_task(self, task: Dict[str, Any]) -> str:
+        if not self._is_autonomous_repair_task(task):
+            return ""
+        existing = str(task.get("repair_fingerprint") or "").strip()
+        if existing:
+            return existing
+        goal = str(task.get("goal") or task.get("title") or "")
+        return self._repair_task_fingerprint_from_goal(goal)
+
+    def _repair_task_age_seconds(self, task: Dict[str, Any]) -> int:
+        """Return best-effort repair task age in seconds.
+
+        v7.2.5 rule:
+        Old queued autonomous repair tasks must not block future valid repair
+        requests forever.  ZERO task ids often encode a millisecond timestamp
+        (task_1778...), while persisted task fields may use either seconds or
+        milliseconds depending on which layer wrote them.  This helper accepts
+        all of those forms and falls back to zero when age cannot be inferred.
+        """
+        if not isinstance(task, dict):
+            return 0
+
+        now = int(time.time())
+        candidates: List[int] = []
+
+        for key in ("created_at", "updated_at", "started_at", "queued_at"):
+            raw = task.get(key)
+            try:
+                value = int(raw)
+            except Exception:
+                continue
+            if value <= 0:
+                continue
+            if value > 10_000_000_000:
+                value = int(value / 1000)
+            candidates.append(value)
+
+        for key in ("task_id", "task_name"):
+            raw = str(task.get(key) or "")
+            match = re.search(r"(\d{10,})", raw)
+            if not match:
+                continue
+            try:
+                value = int(match.group(1))
+            except Exception:
+                continue
+            if value > 10_000_000_000:
+                value = int(value / 1000)
+            candidates.append(value)
+
+        valid = [value for value in candidates if 0 < value <= now]
+        if not valid:
+            return 0
+        return max(0, now - min(valid))
+
+    def _expire_duplicate_repair_task_if_stale(
+        self,
+        task: Dict[str, Any],
+        *,
+        fingerprint: str,
+        max_queued_age_seconds: int = 120,
+    ) -> bool:
+        """Fail an old queued duplicate repair task so it stops blocking.
+
+        Only queued/created/ready repair tasks are expired.  Running/waiting/
+        blocked tasks remain protected because they may represent real work or
+        an external decision gate.
+        """
+        if not isinstance(task, dict):
+            return False
+
+        status = str(task.get("status") or "").strip().lower()
+        if status not in {STATUS_CREATED, STATUS_QUEUED, "created", "queued", "ready", "retry"}:
+            return False
+
+        age = self._repair_task_age_seconds(task)
+        if age < int(max_queued_age_seconds):
+            return False
+
+        task_id = str(task.get("task_id") or task.get("task_name") or "").strip()
+        reason = (
+            "expired stale queued autonomous repair duplicate; "
+            f"fingerprint={fingerprint}; age_seconds={age}"
+        )
+        try:
+            self._fail_task_for_queue_hygiene(task, reason=reason)
+        except Exception:
+            pass
+        try:
+            if task_id:
+                self._cancel_ready_queue_task(task_id)
+        except Exception:
+            pass
+        self._remove_repair_fingerprint_from_index(fingerprint)
+        return True
+
+    def _find_active_duplicate_repair_task(self, fingerprint: str) -> Optional[Dict[str, Any]]:
+        """Return an active task with the same repair fingerprint.
+
+        v7.2.5 rule:
+        Queued duplicate repair tasks may expire.  A stale queued task should
+        not permanently suppress a fresh legitimate repair request.  Running,
+        waiting, and blocked tasks still suppress duplicates.
+        """
+        fingerprint = str(fingerprint or "").strip()
+        if not fingerprint:
+            return None
+
+        active_statuses = {
+            STATUS_CREATED, STATUS_QUEUED, "created", "queued", "ready",
+            "running", "retry", "manual_ticks", "waiting", "blocked",
+        }
+
+        tasks = self._list_repo_tasks()
+        if isinstance(tasks, list):
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                status = str(task.get("status") or "").strip().lower()
+                if status not in active_statuses:
+                    continue
+                task_fp = self._repair_task_fingerprint_from_task(task)
+                if task_fp != fingerprint:
+                    continue
+                if self._expire_duplicate_repair_task_if_stale(task, fingerprint=fingerprint):
+                    continue
+                return task
+
+        indexed = self._load_repair_fingerprint_index()
+        record = indexed.get(fingerprint) if isinstance(indexed, dict) else None
+        if not isinstance(record, dict):
+            return None
+
+        indexed_task_id = str(record.get("task_id") or record.get("task_name") or "").strip()
+        if not indexed_task_id:
+            return None
+
+        indexed_task = self._get_task_from_repo(indexed_task_id)
+        if isinstance(indexed_task, dict):
+            status = str(indexed_task.get("status") or "").strip().lower()
+            if status in active_statuses:
+                if self._expire_duplicate_repair_task_if_stale(indexed_task, fingerprint=fingerprint):
+                    return None
+                return indexed_task
+            if status in TERMINAL_STATUSES:
+                self._remove_repair_fingerprint_from_index(fingerprint)
+                return None
+
+        created_at = self._safe_int_for_runtime_gate(record.get("created_at"), 0)
+        age = max(0, int(time.time()) - created_at) if created_at > 0 else 0
+        if age <= 30:
+            return {
+                "task_id": indexed_task_id,
+                "task_name": indexed_task_id,
+                "status": str(record.get("status") or STATUS_QUEUED),
+                "goal": str(record.get("goal") or ""),
+                "repair_fingerprint": fingerprint,
+                "fingerprint_index_only": True,
+            }
+
+        self._remove_repair_fingerprint_from_index(fingerprint)
+        return None
+
+    def _repair_fingerprint_index_file(self) -> str:
+        return os.path.join(self.workspace_root, "repair_task_fingerprints.json")
+
+    def _load_repair_fingerprint_index(self) -> Dict[str, Any]:
+        path = self._repair_fingerprint_index_file()
+        try:
+            if not os.path.exists(path):
+                return {}
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_repair_fingerprint_index(self, data: Dict[str, Any]) -> None:
+        path = self._repair_fingerprint_index_file()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data if isinstance(data, dict) else {}, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _remove_repair_fingerprint_from_index(self, fingerprint: str) -> None:
+        fingerprint = str(fingerprint or "").strip()
+        if not fingerprint:
+            return
+        data = self._load_repair_fingerprint_index()
+        if fingerprint in data:
+            data.pop(fingerprint, None)
+            self._save_repair_fingerprint_index(data)
+
+    def _register_repair_fingerprint_for_task(self, fingerprint: str, task: Dict[str, Any]) -> None:
+        fingerprint = str(fingerprint or "").strip()
+        if not fingerprint or not isinstance(task, dict):
+            return
+
+        task_id = str(task.get("task_id") or task.get("task_name") or "").strip()
+        if not task_id:
+            return
+
+        data = self._load_repair_fingerprint_index()
+        data[fingerprint] = {
+            "task_id": task_id,
+            "task_name": str(task.get("task_name") or task_id),
+            "status": str(task.get("status") or ""),
+            "goal": str(task.get("goal") or task.get("title") or ""),
+            "target_path": self._extract_repair_target_path_from_task(task),
+            "created_at": int(time.time()),
+            "scheduler_build": SCHEDULER_BUILD,
+        }
+        self._save_repair_fingerprint_index(data)
+
     # ------------------------------------------------------------
     # 任務操作 API
     # ------------------------------------------------------------
@@ -2503,6 +2976,32 @@ class Scheduler(RuntimeTaskScheduler):
         clean_goal = parsed["clean_goal"]
         document_payload = copy.deepcopy(parsed.get("document_payload") or {}) if isinstance(parsed, dict) else {}
 
+        # v7.2.1: prevent the same autonomous repair request from being queued
+        # repeatedly while an equivalent repair task is already active.
+        # Run hygiene first so stale/terminal entries are removed before the
+        # fingerprint comparison, then compare semantic fingerprint rather than
+        # task text or task id.
+        repair_fingerprint = self._repair_task_fingerprint_from_goal(clean_goal)
+        if repair_fingerprint:
+            try:
+                self.cleanup_task_queue_hygiene()
+            except Exception:
+                pass
+            duplicate = self._find_active_duplicate_repair_task(repair_fingerprint)
+            if isinstance(duplicate, dict):
+                duplicate_id = str(duplicate.get("task_id") or duplicate.get("task_name") or "").strip()
+                return {
+                    "ok": True,
+                    "scheduler_build": SCHEDULER_BUILD,
+                    "message": "duplicate autonomous repair task suppressed",
+                    "duplicate_suppressed": True,
+                    "task_name": duplicate_id,
+                    "task": copy.deepcopy(duplicate),
+                    "repair_fingerprint": repair_fingerprint,
+                    "status": str(duplicate.get("status") or ""),
+                    "final_answer": f"duplicate autonomous repair task suppressed; existing={duplicate_id}",
+                }
+
         forced_repo_edit = self._try_force_repo_edit_at_create_task(clean_goal)
         if isinstance(forced_repo_edit, dict):
             planner_result = copy.deepcopy(forced_repo_edit.get("planner_result") or {})
@@ -2591,6 +3090,7 @@ class Scheduler(RuntimeTaskScheduler):
             "finished_tick": getattr(self, "current_tick", 0) if isinstance(forced_repo_edit, dict) and bool(forced_repo_edit.get("ok")) else None,
             "depends_on": normalized_depends_on,
             "blocked_reason": blocked_reason,
+            "repair_fingerprint": repair_fingerprint,
             "failure_type": None if not isinstance(forced_repo_edit, dict) or bool(forced_repo_edit.get("ok")) else "forced_repo_edit_failed",
             "failure_message": None if not isinstance(forced_repo_edit, dict) or bool(forced_repo_edit.get("ok")) else str(forced_repo_edit.get("error") or forced_repo_edit.get("final_answer") or "forced repo edit failed"),
             "last_error": None if not isinstance(forced_repo_edit, dict) or bool(forced_repo_edit.get("ok")) else str(forced_repo_edit.get("error") or forced_repo_edit.get("final_answer") or "forced repo edit failed"),
@@ -2702,6 +3202,9 @@ class Scheduler(RuntimeTaskScheduler):
         if isinstance(refreshed, dict):
             task = refreshed
 
+        if repair_fingerprint:
+            self._register_repair_fingerprint_for_task(repair_fingerprint, task)
+
         response = {
             "ok": True,
             "scheduler_build": SCHEDULER_BUILD,
@@ -2709,6 +3212,7 @@ class Scheduler(RuntimeTaskScheduler):
             "task_name": task_name,
             "task": task,
             "planner_result": planner_result,
+            "repair_fingerprint": repair_fingerprint,
         }
         if isinstance(forced_repo_edit, dict):
             response["code_chain_result"] = copy.deepcopy(forced_repo_edit.get("code_chain_result") or forced_repo_edit)
@@ -2776,6 +3280,61 @@ class Scheduler(RuntimeTaskScheduler):
         except Exception:
             return
 
+
+    def _pre_enqueue_repair_fingerprint_gate(self, *, goal: str, kwargs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Suppress duplicate autonomous repair tasks before creation.
+
+        v7.2.3 rule:
+        Compare semantic repair identity before calling _create_task_record().
+        This prevents double-enter/double-submit from creating two queued tasks.
+        """
+        kwargs = kwargs if isinstance(kwargs, dict) else {}
+        parsed = self._parse_goal_overrides(str(goal or "").strip())
+        clean_goal = str(parsed.get("clean_goal") or goal or "").strip() if isinstance(parsed, dict) else str(goal or "").strip()
+
+        fingerprint = self._repair_task_fingerprint_from_goal(clean_goal)
+        if not fingerprint:
+            return {"ok": True, "suppress": False, "repair_fingerprint": ""}
+
+        try:
+            self.cleanup_task_queue_hygiene(max_queued_age_seconds=120, expire_legacy_self_edit=True)
+        except Exception:
+            pass
+
+        duplicate = self._find_active_duplicate_repair_task(fingerprint)
+        if isinstance(duplicate, dict):
+            duplicate_id = str(duplicate.get("task_id") or duplicate.get("task_name") or "").strip()
+            return {
+                "ok": True,
+                "scheduler_build": SCHEDULER_BUILD,
+                "message": "duplicate autonomous repair task suppressed",
+                "duplicate_suppressed": True,
+                "suppress": True,
+                "task_name": duplicate_id,
+                "task_id": duplicate_id,
+                "task": copy.deepcopy(duplicate),
+                "repair_fingerprint": fingerprint,
+                "status": str(duplicate.get("status") or STATUS_QUEUED),
+                "final_answer": f"duplicate autonomous repair task suppressed; existing={duplicate_id}",
+            }
+
+        # Reserve the fingerprint immediately.  _register_repair_fingerprint_for_task()
+        # updates it with the real task id after successful creation.
+        data = self._load_repair_fingerprint_index()
+        data[fingerprint] = {
+            "task_id": "__pending_repair_enqueue__",
+            "task_name": "__pending_repair_enqueue__",
+            "status": STATUS_QUEUED,
+            "goal": clean_goal,
+            "target_path": self._extract_repair_target_path_from_text(clean_goal),
+            "created_at": int(time.time()),
+            "scheduler_build": SCHEDULER_BUILD,
+            "pre_enqueue_reserved": True,
+        }
+        self._save_repair_fingerprint_index(data)
+
+        return {"ok": True, "suppress": False, "repair_fingerprint": fingerprint}
+
     def create_task(
         self,
         goal: str,
@@ -2786,7 +3345,14 @@ class Scheduler(RuntimeTaskScheduler):
         depends_on: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        return self._create_task_record(
+        # v7.2.2: pre-enqueue fingerprint gate.  This runs before any task
+        # record/workspace is created, so duplicate autonomous repair requests
+        # cannot accumulate as queued tasks.
+        gate = self._pre_enqueue_repair_fingerprint_gate(goal=goal, kwargs=kwargs)
+        if isinstance(gate, dict) and gate.get("suppress"):
+            return gate
+
+        created = self._create_task_record(
             goal=goal,
             priority=priority,
             max_retries=max_retries,
@@ -2798,6 +3364,16 @@ class Scheduler(RuntimeTaskScheduler):
             **kwargs,
         )
 
+        if isinstance(created, dict) and created.get("ok") and isinstance(gate, dict):
+            fingerprint = str(gate.get("repair_fingerprint") or "").strip()
+            if fingerprint:
+                task = created.get("task") if isinstance(created.get("task"), dict) else {}
+                if isinstance(task, dict):
+                    task["repair_fingerprint"] = fingerprint
+                    self._register_repair_fingerprint_for_task(fingerprint, task)
+
+        return created
+
     def submit_task(
         self,
         goal: str,
@@ -2808,6 +3384,11 @@ class Scheduler(RuntimeTaskScheduler):
         depends_on: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        # v7.2.2: same pre-enqueue gate for submit_task().
+        gate = self._pre_enqueue_repair_fingerprint_gate(goal=goal, kwargs=kwargs)
+        if isinstance(gate, dict) and gate.get("suppress"):
+            return gate
+
         created = self._create_task_record(
             goal=goal,
             priority=priority,
@@ -2821,6 +3402,14 @@ class Scheduler(RuntimeTaskScheduler):
         )
         if not isinstance(created, dict) or not created.get("ok"):
             return created
+
+        if isinstance(gate, dict):
+            fingerprint = str(gate.get("repair_fingerprint") or "").strip()
+            if fingerprint:
+                task = created.get("task") if isinstance(created.get("task"), dict) else {}
+                if isinstance(task, dict):
+                    task["repair_fingerprint"] = fingerprint
+                    self._register_repair_fingerprint_for_task(fingerprint, task)
 
         task_id = str(created.get("task_name") or "").strip()
         submit_result = self.submit_existing_task(task_id)
@@ -3624,7 +4213,7 @@ class Scheduler(RuntimeTaskScheduler):
             summary = f"step type not repairable: {failed_step_type}"
 
         if repairable is None and failed_step_type:
-            repairable = failed_step_type in {"verify", "read_file", "run_python", "command", "write_file", "llm", "llm_generate"}
+            repairable = failed_step_type in {"verify", "read_file", "run_python", "command", "write_file", "llm", "llm_generate", "code_chain_analyze", "code_chain_repair", "code_chain_verify"}
 
         task["replan_decision"] = decision
         task["replan_summary"] = summary
@@ -6043,7 +6632,7 @@ def _zero_v702_scheduler_execute_simple_step(self, task: Dict[str, Any], step: D
 
 Scheduler._plan_goal = _zero_v702_scheduler_plan_goal
 Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step
-Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_0_2_REPAIR_STEP_PRESERVATION"
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_2_PRE_ENQUEUE_REPAIR_FINGERPRINT_GATE"
 SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 
 
@@ -6139,5 +6728,1121 @@ def _zero_v703_scheduler_normalize_replan_metadata(self, task: Dict[str, Any], r
 Scheduler._is_repairable_failure = _zero_v703_scheduler_is_repairable_failure
 Scheduler._normalize_replan_metadata = _zero_v703_scheduler_normalize_replan_metadata
 Scheduler.REPAIRABLE_STEP_TYPES = set(getattr(Scheduler, "REPAIRABLE_STEP_TYPES", set())) | _ZERO_V703_BASE_REPAIRABLE_STEP_TYPES
-Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_0_3_REPAIR_STEP_REGISTRATION"
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_0_QUEUE_HYGIENE"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+
+# ============================================================
+# ZERO v7.2.4 - Repair task expiration / cleanup policy
+# ============================================================
+# Purpose:
+# - Expire stale queued autonomous repair tasks.
+# - Expire stale legacy self_edit_scheduler tasks.
+# - Clean stale repair fingerprint reservations/index entries.
+# - Keep cleanup automatic at tick/snapshot boundaries without changing the
+#   Code Chain repair execution core.
+
+_ZERO_V724_ORIGINAL_CLEANUP_TASK_QUEUE_HYGIENE = Scheduler.cleanup_task_queue_hygiene
+_ZERO_V724_ORIGINAL_TICK = Scheduler.tick
+_ZERO_V724_ORIGINAL_GET_QUEUE_SNAPSHOT = Scheduler.get_queue_snapshot
+_ZERO_V724_ORIGINAL_GET_QUEUE_ROWS = Scheduler.get_queue_rows
+
+
+def _zero_v724_task_age_seconds(self, task: Dict[str, Any], now: Optional[int] = None) -> int:
+    now = int(now or time.time())
+    if not isinstance(task, dict):
+        return 0
+
+    for key in ("created_at", "created_tick", "updated_at"):
+        raw = task.get(key)
+        try:
+            if isinstance(raw, (int, float)):
+                value = int(raw)
+                if value > 1_000_000_000:
+                    return max(0, now - value)
+            if isinstance(raw, str) and raw.strip().isdigit():
+                value = int(raw.strip())
+                if value > 1_000_000_000:
+                    return max(0, now - value)
+        except Exception:
+            pass
+    return 0
+
+
+def _zero_v724_cleanup_fingerprint_index(self, *, pending_ttl_seconds: int = 300) -> Dict[str, Any]:
+    now = int(time.time())
+    data = self._load_repair_fingerprint_index()
+    if not isinstance(data, dict) or not data:
+        return {"removed": [], "removed_count": 0}
+
+    removed: List[Dict[str, Any]] = []
+    changed = False
+
+    for fingerprint, record in list(data.items()):
+        if not isinstance(record, dict):
+            data.pop(fingerprint, None)
+            removed.append({"fingerprint": fingerprint, "reason": "invalid_index_record"})
+            changed = True
+            continue
+
+        task_id = str(record.get("task_id") or record.get("task_name") or "").strip()
+        created_at = 0
+        try:
+            created_at = int(record.get("created_at") or 0)
+        except Exception:
+            created_at = 0
+        age = max(0, now - created_at) if created_at > 0 else 0
+
+        if task_id == "__pending_repair_enqueue__":
+            if age >= pending_ttl_seconds:
+                data.pop(fingerprint, None)
+                removed.append({"fingerprint": fingerprint, "task_id": task_id, "reason": "expired_pending_reservation", "age_seconds": age})
+                changed = True
+            continue
+
+        if not task_id:
+            data.pop(fingerprint, None)
+            removed.append({"fingerprint": fingerprint, "reason": "missing_index_task_id"})
+            changed = True
+            continue
+
+        task = self._get_task_from_repo(task_id)
+        if not isinstance(task, dict):
+            # Avoid pinning a fingerprint forever when the task record was
+            # deleted or never finished hydrating.
+            if age >= pending_ttl_seconds:
+                data.pop(fingerprint, None)
+                removed.append({"fingerprint": fingerprint, "task_id": task_id, "reason": "indexed_task_missing", "age_seconds": age})
+                changed = True
+            continue
+
+        status = str(task.get("status") or record.get("status") or "").strip().lower()
+        if status in TERMINAL_STATUSES:
+            data.pop(fingerprint, None)
+            removed.append({"fingerprint": fingerprint, "task_id": task_id, "reason": f"terminal_status:{status}"})
+            changed = True
+            continue
+
+        # Keep index status fresh for non-terminal tasks.
+        record["status"] = status or str(record.get("status") or "")
+        record["updated_at"] = now
+        data[fingerprint] = record
+
+    if changed:
+        self._save_repair_fingerprint_index(data)
+
+    return {"removed": removed, "removed_count": len(removed)}
+
+
+def _zero_v724_cleanup_task_queue_hygiene(
+    self,
+    *,
+    max_queued_age_seconds: int = 1800,
+    expire_legacy_self_edit: bool = True,
+    expire_repair_tasks: bool = True,
+    fingerprint_pending_ttl_seconds: int = 300,
+) -> Dict[str, Any]:
+    """v7.2.4 repair-task expiration and queue cleanup.
+
+    Conservative policy:
+    - Never deletes artifacts.
+    - Never marks successful terminal tasks failed.
+    - Only fails stale queued/created repair tasks, invalid repair tasks, and
+      stale legacy self_edit_scheduler tasks.
+    - Cleans stale fingerprint reservations so future valid repair tasks are not
+      blocked by old pending entries.
+    """
+    base = {}
+    try:
+        base = _ZERO_V724_ORIGINAL_CLEANUP_TASK_QUEUE_HYGIENE(
+            self,
+            max_queued_age_seconds=max_queued_age_seconds,
+            expire_legacy_self_edit=expire_legacy_self_edit,
+        )
+    except Exception as exc:
+        base = {"ok": False, "base_cleanup_error": f"{type(exc).__name__}: {exc}"}
+
+    now = int(time.time())
+    expired_repair: List[Dict[str, Any]] = []
+    invalid_repair: List[Dict[str, Any]] = []
+    duplicate_repair: List[Dict[str, Any]] = []
+    cancelled_queue_entries: List[str] = []
+    seen_repair_fingerprints: Dict[str, str] = {}
+
+    tasks = self._list_repo_tasks()
+    if not isinstance(tasks, list):
+        tasks = []
+
+    active_statuses = {STATUS_CREATED, STATUS_QUEUED, "created", "queued", "ready", "running", "retry", "manual_ticks", "waiting", "blocked"}
+    stale_statuses = {STATUS_CREATED, STATUS_QUEUED, "created", "queued", "ready", "retry"}
+
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        task_id = str(task.get("task_id") or task.get("task_name") or "").strip()
+        if not task_id:
+            continue
+        status = str(task.get("status") or "").strip().lower()
+        if status in TERMINAL_STATUSES:
+            continue
+
+        # Scope validation stays first: invalid repair tasks must fail closed
+        # even if they are not old.
+        repair_guard = self._validate_repair_task_scope(task)
+        if not repair_guard.get("ok"):
+            reason = str(repair_guard.get("error") or "invalid repair task")
+            self._fail_task_for_queue_hygiene(task, reason=reason)
+            invalid_repair.append({"task_id": task_id, "reason": reason})
+            continue
+
+        if expire_repair_tasks and self._is_autonomous_repair_task(task):
+            fingerprint = self._repair_task_fingerprint_from_task(task)
+            if fingerprint:
+                existing_task_id = seen_repair_fingerprints.get(fingerprint)
+                if existing_task_id and status in active_statuses:
+                    reason = f"duplicate autonomous repair task expired; existing={existing_task_id}"
+                    self._fail_task_for_queue_hygiene(task, reason=reason)
+                    duplicate_repair.append({"task_id": task_id, "existing_task_id": existing_task_id, "fingerprint": fingerprint})
+                    continue
+                seen_repair_fingerprints[fingerprint] = task_id
+
+            age = _zero_v724_task_age_seconds(self, task, now=now)
+            if status in stale_statuses and age >= max_queued_age_seconds:
+                reason = f"expired stale queued repair task after {age}s"
+                self._fail_task_for_queue_hygiene(task, reason=reason)
+                expired_repair.append({"task_id": task_id, "reason": reason, "age_seconds": age})
+                continue
+
+        if expire_legacy_self_edit and self._is_legacy_self_edit_scheduler_task(task):
+            age = _zero_v724_task_age_seconds(self, task, now=now)
+            if status in stale_statuses and (age >= max_queued_age_seconds or age == 0):
+                reason = f"expired stale queued self_edit_scheduler task after {age}s"
+                self._fail_task_for_queue_hygiene(task, reason=reason)
+                expired_repair.append({"task_id": task_id, "reason": reason, "age_seconds": age})
+                continue
+
+    try:
+        queued_rows = self.dispatcher.list_queued()
+    except Exception:
+        queued_rows = []
+    if not isinstance(queued_rows, list):
+        queued_rows = []
+
+    for row in queued_rows:
+        if not isinstance(row, dict):
+            continue
+        task_id = str(row.get("task_id") or "").strip()
+        if not task_id:
+            continue
+        task = self._get_task_from_repo(task_id)
+        if not isinstance(task, dict):
+            self._cancel_ready_queue_task(task_id)
+            cancelled_queue_entries.append(task_id)
+            continue
+        status = str(task.get("status") or "").strip().lower()
+        if status in TERMINAL_STATUSES:
+            self._cancel_ready_queue_task(task_id)
+            cancelled_queue_entries.append(task_id)
+
+    index_cleanup = _zero_v724_cleanup_fingerprint_index(
+        self,
+        pending_ttl_seconds=fingerprint_pending_ttl_seconds,
+    )
+
+    result = copy.deepcopy(base) if isinstance(base, dict) else {"base_cleanup": base}
+    result.update(
+        {
+            "ok": bool(result.get("ok", True)),
+            "scheduler_build": SCHEDULER_BUILD,
+            "policy": "v7.2.4_repair_task_expiration_cleanup",
+            "expired_repair": expired_repair,
+            "expired_repair_count": len(expired_repair),
+            "invalid_repair": invalid_repair,
+            "invalid_repair_count": len(invalid_repair),
+            "duplicate_repair": duplicate_repair,
+            "duplicate_repair_count": len(duplicate_repair),
+            "cancelled_queue_entries_v724": cancelled_queue_entries,
+            "cancelled_queue_entries_v724_count": len(cancelled_queue_entries),
+            "fingerprint_index_cleanup": index_cleanup,
+        }
+    )
+    return result
+
+
+def _zero_v724_tick(self, current_tick: Optional[int] = None) -> Dict[str, Any]:
+    try:
+        self.cleanup_task_queue_hygiene(max_queued_age_seconds=1800, expire_legacy_self_edit=True)
+    except Exception:
+        pass
+    return _ZERO_V724_ORIGINAL_TICK(self, current_tick=current_tick)
+
+
+def _zero_v724_get_queue_snapshot(self) -> Dict[str, Any]:
+    cleanup_result = None
+    try:
+        cleanup_result = self.cleanup_task_queue_hygiene(max_queued_age_seconds=1800, expire_legacy_self_edit=True)
+    except Exception as exc:
+        cleanup_result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    snapshot = _ZERO_V724_ORIGINAL_GET_QUEUE_SNAPSHOT(self)
+    if isinstance(snapshot, dict):
+        snapshot["queue_hygiene"] = cleanup_result
+    return snapshot
+
+
+def _zero_v724_get_queue_rows(self) -> Dict[str, Any]:
+    cleanup_result = None
+    try:
+        cleanup_result = self.cleanup_task_queue_hygiene(max_queued_age_seconds=1800, expire_legacy_self_edit=True)
+    except Exception as exc:
+        cleanup_result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    rows = _ZERO_V724_ORIGINAL_GET_QUEUE_ROWS(self)
+    if isinstance(rows, dict):
+        rows["queue_hygiene"] = cleanup_result
+    return rows
+
+
+Scheduler.cleanup_task_queue_hygiene = _zero_v724_cleanup_task_queue_hygiene
+Scheduler.tick = _zero_v724_tick
+Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot
+Scheduler.get_queue_rows = _zero_v724_get_queue_rows
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_4_REPAIR_TASK_EXPIRATION_CLEANUP"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+
+# ============================================================
+# v7.2.6 - Repair Enqueue Lock Lifecycle
+# ============================================================
+# The v7.2.5 pre-enqueue gate reserves a repair fingerprint as
+# __pending_repair_enqueue__ before the task is created.  If task creation is
+# interrupted or a previous process exits between reservation and registration,
+# the pending reservation can block all future repair requests.  This patch
+# makes the pending lock lifecycle explicit:
+#   - stale pending reservations are released before duplicate checks;
+#   - create_task retries once when the only duplicate is a stale pending lock;
+#   - failed create_task calls release their pending reservation.
+
+_ZERO_V726_ORIGINAL_CREATE_TASK = Scheduler.create_task
+_ZERO_V726_ORIGINAL_FIND_ACTIVE_DUPLICATE_REPAIR_TASK = Scheduler._find_active_duplicate_repair_task
+
+
+def _zero_v726_pending_lock_task_id() -> str:
+    return "__pending_repair_enqueue__"
+
+
+def _zero_v726_release_pending_repair_lock(self, fingerprint: str) -> bool:
+    fingerprint = str(fingerprint or "").strip()
+    if not fingerprint:
+        return False
+
+    data = self._load_repair_fingerprint_index()
+    if not isinstance(data, dict):
+        return False
+
+    record = data.get(fingerprint)
+    if not isinstance(record, dict):
+        return False
+
+    task_id = str(record.get("task_id") or record.get("task_name") or "").strip()
+    if task_id != _zero_v726_pending_lock_task_id():
+        return False
+
+    data.pop(fingerprint, None)
+    self._save_repair_fingerprint_index(data)
+    return True
+
+
+def _zero_v726_pending_lock_age_seconds(record) -> int:
+    if not isinstance(record, dict):
+        return 0
+    try:
+        created_at = int(record.get("created_at") or 0)
+    except Exception:
+        created_at = 0
+    if created_at <= 0:
+        return 0
+    return max(0, int(time.time()) - created_at)
+
+
+def _zero_v726_find_active_duplicate_repair_task(self, fingerprint: str):
+    duplicate = _ZERO_V726_ORIGINAL_FIND_ACTIVE_DUPLICATE_REPAIR_TASK(self, fingerprint)
+    if not isinstance(duplicate, dict):
+        return duplicate
+
+    duplicate_id = str(duplicate.get("task_id") or duplicate.get("task_name") or "").strip()
+    if duplicate_id != _zero_v726_pending_lock_task_id():
+        return duplicate
+
+    data = self._load_repair_fingerprint_index()
+    record = data.get(str(fingerprint or "").strip()) if isinstance(data, dict) else None
+    age = _zero_v726_pending_lock_age_seconds(record)
+
+    # If a pending reservation survived long enough to be observed by a later
+    # user command, it is no longer a useful concurrency lock.  Release it so a
+    # real task can be created.  The CLI path is single-process/single-threaded,
+    # so a one-second grace window is enough to avoid suppressing the same
+    # in-flight create_task call while still clearing stuck locks quickly.
+    if age >= 1:
+        _zero_v726_release_pending_repair_lock(self, fingerprint)
+        return None
+
+    return duplicate
+
+
+def _zero_v726_cleanup_fingerprint_index(self, *, pending_ttl_seconds: int = 1):
+    try:
+        return _zero_v724_cleanup_fingerprint_index(self, pending_ttl_seconds=pending_ttl_seconds)
+    except Exception as exc:
+        return {"removed": [], "removed_count": 0, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _zero_v726_cleanup_task_queue_hygiene(
+    self,
+    *,
+    max_queued_age_seconds: int = 1800,
+    expire_legacy_self_edit: bool = True,
+    expire_repair_tasks: bool = True,
+    fingerprint_pending_ttl_seconds: int = 1,
+):
+    return _zero_v724_cleanup_task_queue_hygiene(
+        self,
+        max_queued_age_seconds=max_queued_age_seconds,
+        expire_legacy_self_edit=expire_legacy_self_edit,
+        expire_repair_tasks=expire_repair_tasks,
+        fingerprint_pending_ttl_seconds=fingerprint_pending_ttl_seconds,
+    )
+
+
+def _zero_v726_create_task(
+    self,
+    goal: str,
+    priority: int = 0,
+    max_retries: int = 0,
+    retry_delay: int = 0,
+    timeout_ticks: int = 0,
+    depends_on=None,
+    **kwargs,
+):
+    parsed = self._parse_goal_overrides(str(goal or "").strip())
+    clean_goal = str(parsed.get("clean_goal") or goal or "").strip() if isinstance(parsed, dict) else str(goal or "").strip()
+    fingerprint = self._repair_task_fingerprint_from_goal(clean_goal)
+
+    if fingerprint:
+        try:
+            _zero_v726_cleanup_fingerprint_index(self, pending_ttl_seconds=1)
+        except Exception:
+            pass
+
+    try:
+        result = _ZERO_V726_ORIGINAL_CREATE_TASK(
+            self,
+            goal=goal,
+            priority=priority,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            timeout_ticks=timeout_ticks,
+            depends_on=depends_on,
+            **kwargs,
+        )
+    except Exception:
+        if fingerprint:
+            _zero_v726_release_pending_repair_lock(self, fingerprint)
+        raise
+
+    if isinstance(result, dict):
+        duplicate_id = str(result.get("task_id") or result.get("task_name") or "").strip()
+        is_pending_duplicate = bool(result.get("duplicate_suppressed") or result.get("suppress")) and duplicate_id == _zero_v726_pending_lock_task_id()
+
+        if fingerprint and is_pending_duplicate:
+            released = _zero_v726_release_pending_repair_lock(self, fingerprint)
+            if released:
+                result = _ZERO_V726_ORIGINAL_CREATE_TASK(
+                    self,
+                    goal=goal,
+                    priority=priority,
+                    max_retries=max_retries,
+                    retry_delay=retry_delay,
+                    timeout_ticks=timeout_ticks,
+                    depends_on=depends_on,
+                    **kwargs,
+                )
+
+        if fingerprint and (not isinstance(result, dict) or not result.get("ok")):
+            _zero_v726_release_pending_repair_lock(self, fingerprint)
+
+    elif fingerprint:
+        _zero_v726_release_pending_repair_lock(self, fingerprint)
+
+    return result
+
+
+def _zero_v726_tick(self, current_tick=None):
+    try:
+        self.cleanup_task_queue_hygiene(max_queued_age_seconds=1800, expire_legacy_self_edit=True, fingerprint_pending_ttl_seconds=1)
+    except Exception:
+        pass
+    return _ZERO_V724_ORIGINAL_TICK(self, current_tick=current_tick)
+
+
+Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task
+Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene
+Scheduler.create_task = _zero_v726_create_task
+Scheduler.tick = _zero_v726_tick
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_6_REPAIR_ENQUEUE_LOCK_LIFECYCLE"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+
+# ============================================================
+# ZERO v7.3.1 - Multi-Step Code Chain runtime registration
+# ============================================================
+# Purpose:
+# - Register planner-generated multi-step Code Chain phases as first-class
+#   repair workflow steps.
+# - Prevent runtime/replan metadata from marking code_chain_analyze or
+#   code_chain_verify as "not repairable".
+# - Keep v7.2.x queue/fingerprint/lock behavior unchanged.
+
+_ZERO_V731_CODE_CHAIN_WORKFLOW_STEP_TYPES = {
+    "code_chain_analyze",
+    "code_chain_repair",
+    "autonomous_code_repair",
+    "code_chain_verify",
+    "code_chain_repair_preflight_failed",
+}
+
+_ZERO_V731_BASE_REPAIRABLE_STEP_TYPES = set(globals().get("_ZERO_V703_BASE_REPAIRABLE_STEP_TYPES", set())) | _ZERO_V731_CODE_CHAIN_WORKFLOW_STEP_TYPES
+
+_ZERO_V731_ORIGINAL_IS_REPAIRABLE_FAILURE = Scheduler._is_repairable_failure
+_ZERO_V731_ORIGINAL_NORMALIZE_REPLAN_METADATA = getattr(Scheduler, "_normalize_replan_metadata", None)
+
+
+def _zero_v731_scheduler_is_repairable_failure(self, task: Dict[str, Any]) -> Tuple[bool, str]:
+    if not isinstance(task, dict):
+        return False, "invalid task payload"
+
+    failed_step_type = self._get_failed_step_type(task)
+    if failed_step_type in _ZERO_V731_CODE_CHAIN_WORKFLOW_STEP_TYPES:
+        status = str(task.get("status") or "").strip().lower()
+        if status not in {"failed", "error", "queued", "running", "retry"}:
+            return False, f"status not repairable: {status or 'unknown'}"
+        replan_count = int(task.get("replan_count", 0) or 0)
+        max_replans = int(task.get("max_replans", self.default_max_replans) or self.default_max_replans)
+        if replan_count >= max_replans:
+            return False, f"replan limit reached: {replan_count}/{max_replans}"
+        return True, f"{failed_step_type} registered as Code Chain workflow step"
+
+    return _ZERO_V731_ORIGINAL_IS_REPAIRABLE_FAILURE(self, task)
+
+
+def _zero_v731_scheduler_normalize_replan_metadata(self, task: Dict[str, Any], replan_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if callable(_ZERO_V731_ORIGINAL_NORMALIZE_REPLAN_METADATA):
+        try:
+            normalized = _ZERO_V731_ORIGINAL_NORMALIZE_REPLAN_METADATA(self, task, replan_result=replan_result)
+        except TypeError:
+            normalized = _ZERO_V731_ORIGINAL_NORMALIZE_REPLAN_METADATA(self, task)
+    else:
+        normalized = copy.deepcopy(task) if isinstance(task, dict) else {}
+        if isinstance(replan_result, dict):
+            normalized["replan_result"] = copy.deepcopy(replan_result)
+
+    if not isinstance(normalized, dict):
+        return normalized
+
+    failed_step_type = str(normalized.get("replan_failed_step_type") or "").strip().lower()
+    if not failed_step_type:
+        failed_step_type = self._get_failed_step_type(normalized)
+        if failed_step_type:
+            normalized["replan_failed_step_type"] = failed_step_type
+
+    if failed_step_type in _ZERO_V731_CODE_CHAIN_WORKFLOW_STEP_TYPES:
+        normalized["replan_repairable"] = True
+        summary = str(normalized.get("replan_summary") or "").strip()
+        if not summary or "not repairable" in summary.lower():
+            normalized["replan_summary"] = f"{failed_step_type} registered as Code Chain workflow step"
+        if not str(normalized.get("replan_decision") or "").strip():
+            normalized["replan_decision"] = "available"
+        return normalized
+
+    if normalized.get("replan_repairable") is None and failed_step_type:
+        normalized["replan_repairable"] = failed_step_type in _ZERO_V731_BASE_REPAIRABLE_STEP_TYPES
+        if normalized["replan_repairable"] and "not repairable" in str(normalized.get("replan_summary") or "").lower():
+            normalized["replan_summary"] = f"step type registered as repairable: {failed_step_type}"
+
+    return normalized
+
+
+Scheduler._is_repairable_failure = _zero_v731_scheduler_is_repairable_failure
+Scheduler._normalize_replan_metadata = _zero_v731_scheduler_normalize_replan_metadata
+Scheduler.REPAIRABLE_STEP_TYPES = set(getattr(Scheduler, "REPAIRABLE_STEP_TYPES", set())) | _ZERO_V731_BASE_REPAIRABLE_STEP_TYPES
+Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(Scheduler, "CODE_CHAIN_WORKFLOW_STEP_TYPES", set())) | _ZERO_V731_CODE_CHAIN_WORKFLOW_STEP_TYPES
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_2_REPAIRABLE_ALLOWLIST"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+# ============================================================
+# ZERO v7.3.3 - Code Chain Workflow Tick Advancement
+# ============================================================
+# v7.3.1/v7.3.2 registered code_chain_analyze / code_chain_repair /
+# code_chain_verify as valid step types, but the legacy scheduler simple runner
+# can still stop after a successful analyze step and mark the task as failed via
+# stale replan metadata.  For Code Chain workflow steps, route the tick through
+# TaskRunner so runtime.advance_step() is the source of truth and the task can
+# progress analyze -> repair -> verify.
+
+_ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES = {
+    "code_chain_analyze",
+    "code_chain_repair",
+    "autonomous_code_repair",
+    "code_chain_verify",
+}
+
+_ZERO_V733_ORIGINAL_RUN_SIMPLE_TASK_TICK = Scheduler._run_simple_task_tick
+
+
+def _zero_v733_current_step_type(task: Dict[str, Any]) -> str:
+    if not isinstance(task, dict):
+        return ""
+    try:
+        idx = int(task.get("current_step_index", 0) or 0)
+    except Exception:
+        idx = 0
+    steps = task.get("steps")
+    if not isinstance(steps, list) or not (0 <= idx < len(steps)):
+        return ""
+    step = steps[idx]
+    if not isinstance(step, dict):
+        return ""
+    return str(step.get("type") or "").strip().lower()
+
+
+def _zero_v733_resolve_task_runner(self):
+    runner = getattr(self, "task_runner", None)
+    if runner is not None:
+        return runner
+    try:
+        from core.runtime.task_runner import TaskRunner
+        runner = TaskRunner(
+            step_executor=getattr(self, "step_executor", None),
+            task_runtime=getattr(self, "task_runtime", None),
+            replanner=getattr(self, "replanner", None),
+            debug=bool(getattr(self, "debug", False)),
+        )
+        self.task_runner = runner
+        return runner
+    except Exception:
+        return None
+
+
+def _zero_v733_run_simple_task_tick(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
+    step_type = _zero_v733_current_step_type(task)
+    if step_type in _ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES:
+        runner = _zero_v733_resolve_task_runner(self)
+        if runner is None:
+            return {
+                "ok": False,
+                "action": "code_chain_workflow_runner_missing",
+                "status": "failed",
+                "error": "TaskRunner is required for Code Chain workflow step advancement",
+                "task": copy.deepcopy(task) if isinstance(task, dict) else task,
+            }
+
+        tick = current_tick
+        if tick is None:
+            try:
+                tick = int(getattr(self, "current_tick", 0) or 0)
+            except Exception:
+                tick = 0
+
+        result = runner.run_task_tick(task=task, current_tick=tick)
+        if not isinstance(result, dict):
+            result = {
+                "ok": bool(result),
+                "action": "code_chain_workflow_runner_result",
+                "status": "running" if result else "failed",
+                "raw_result": copy.deepcopy(result),
+                "task": copy.deepcopy(task) if isinstance(task, dict) else task,
+            }
+
+        try:
+            self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+        except Exception:
+            pass
+        return result
+
+    return _ZERO_V733_ORIGINAL_RUN_SIMPLE_TASK_TICK(self, task=task, current_tick=current_tick)
+
+
+Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick
+Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(Scheduler, "CODE_CHAIN_WORKFLOW_STEP_TYPES", set())) | _ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_3_WORKFLOW_TICK_ADVANCEMENT"
+SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+
+# ============================================================
+# ZERO v7.3.4 - Retrying -> Repair Bridge
+# ============================================================
+# Fix scope:
+# - TaskRuntime can record a failed step as status="retrying".
+# - Older scheduler builds did not treat "retrying" as a ready status and did
+#   not convert that state into executable repair steps.
+# - This bridge keeps the core ownership split intact:
+#     TaskRuntime records failure state.
+#     Scheduler consumes retrying state and lands repair steps into the task.
+#
+# This patch is intentionally conservative.  It only handles the current safe
+# sandbox Python compile-repair case, and it leaves broader Code Chain / repo
+# repair flows untouched.
+
+try:
+    READY_STATUSES.add("retrying")
+except Exception:
+    pass
+
+_ZERO_V734_ORIGINAL_RUN_ONE_STEP = Scheduler.run_one_step
+_ZERO_V734_ORIGINAL_SYNC_RUNNER_RESULT_AND_REQUEUE = Scheduler._sync_runner_result_and_requeue_if_ready
+
+
+def _zero_v734_safe_now() -> str:
+    try:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return ""
+
+
+def _zero_v734_extract_nested_dict(payload: Any, keys: List[str]) -> Dict[str, Any]:
+    current = payload
+    for key in keys:
+        if not isinstance(current, dict):
+            return {}
+        current = current.get(key)
+    return current if isinstance(current, dict) else {}
+
+
+def _zero_v734_extract_compile_target_from_step(step: Dict[str, Any]) -> str:
+    if not isinstance(step, dict):
+        return ""
+    for key in ("path", "target_path", "file_path"):
+        value = str(step.get(key) or "").strip()
+        if value.endswith(".py"):
+            return value
+
+    command = str(step.get("command") or step.get("cmd") or "").strip()
+    if not command:
+        return ""
+
+    # Accept common forms:
+    #   python -m py_compile broken_demo.py
+    #   py_compile broken_demo.py
+    match = re.search(r"py_compile\s+([^\s\"']+\.py)", command)
+    if match:
+        return match.group(1).strip().strip('"').strip("'")
+
+    match = re.search(r"([^\s\"']+\.py)", command)
+    if match:
+        return match.group(1).strip().strip('"').strip("'")
+
+    return ""
+
+
+def _zero_v734_resolve_retry_compile_file(task: Dict[str, Any], failed_step: Dict[str, Any]) -> Tuple[str, str, str]:
+    target = _zero_v734_extract_compile_target_from_step(failed_step)
+    if not target:
+        return "", "", ""
+
+    cwd = str(failed_step.get("command_cwd") or failed_step.get("cwd") or "").strip()
+    task_dir = str(task.get("task_dir") or "").strip()
+    sandbox_dir = str(task.get("sandbox_dir") or "").strip()
+
+    if not sandbox_dir and task_dir:
+        sandbox_dir = os.path.join(task_dir, "sandbox")
+
+    if not cwd:
+        cwd = sandbox_dir or task_dir or os.getcwd()
+
+    if os.path.isabs(target):
+        full_path = os.path.abspath(target)
+        rel_path = os.path.basename(target)
+    else:
+        full_path = os.path.abspath(os.path.join(cwd, target))
+        rel_path = target.replace("\\", "/").lstrip("./")
+
+    return full_path, rel_path, cwd
+
+
+def _zero_v734_synthesize_python_compile_fix(source: str) -> Tuple[bool, str, str]:
+    """Return (ok, fixed_source, reason) for a narrow safe syntax repair.
+
+    Current supported case:
+        def add(a,b):
+            return a +
+    becomes:
+        def add(a,b):
+            return a + b
+
+    The rule is deterministic and intentionally small.  It does not try to be a
+    general code generator.
+    """
+    if not isinstance(source, str) or not source.strip():
+        return False, source, "empty source"
+
+    lines = source.splitlines()
+    if not lines:
+        return False, source, "empty source lines"
+
+    fixed = list(lines)
+    changed = False
+
+    current_args: List[str] = []
+    for index, line in enumerate(lines):
+        def_match = re.match(r"^\s*def\s+[A-Za-z_]\w*\s*\(([^)]*)\)\s*:", line)
+        if def_match:
+            raw_args = def_match.group(1)
+            parsed_args: List[str] = []
+            for item in raw_args.split(","):
+                name = item.strip().split("=")[0].strip()
+                if ":" in name:
+                    name = name.split(":", 1)[0].strip()
+                if name and re.match(r"^[A-Za-z_]\w*$", name):
+                    parsed_args.append(name)
+            current_args = parsed_args
+            continue
+
+        return_match = re.match(r"^(\s*return\s+)([A-Za-z_]\w*)\s*\+\s*$", line)
+        if not return_match:
+            continue
+
+        left_name = return_match.group(2)
+        replacement_name = ""
+        for candidate in current_args:
+            if candidate != left_name:
+                replacement_name = candidate
+                break
+        if not replacement_name and len(current_args) >= 2:
+            replacement_name = current_args[1]
+        if not replacement_name:
+            replacement_name = "0"
+
+        fixed[index] = f"{return_match.group(1)}{left_name} + {replacement_name}"
+        changed = True
+
+    if not changed:
+        return False, source, "no supported incomplete return expression found"
+
+    fixed_source = "\n".join(fixed)
+    if source.endswith("\n"):
+        fixed_source += "\n"
+    return True, fixed_source, "fixed incomplete return expression"
+
+
+def _zero_v734_build_retry_repair_steps(
+    task: Dict[str, Any],
+    failed_step: Dict[str, Any],
+) -> Tuple[bool, List[Dict[str, Any]], Dict[str, Any]]:
+    full_path, rel_path, cwd = _zero_v734_resolve_retry_compile_file(task, failed_step)
+    if not full_path or not rel_path:
+        return False, [], {"reason": "compile target not found"}
+
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            source = f.read()
+    except Exception as exc:
+        return False, [], {
+            "reason": "failed to read compile target",
+            "path": full_path,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    ok, fixed_source, reason = _zero_v734_synthesize_python_compile_fix(source)
+    if not ok:
+        return False, [], {
+            "reason": reason,
+            "path": full_path,
+        }
+
+    repair_id_base = "auto_repair_compile_syntax"
+    repair_steps = [
+        {
+            "id": f"{repair_id_base}_write",
+            "type": "write_file",
+            "path": rel_path,
+            "content": fixed_source,
+            "scope": "sandbox",
+            "command_cwd": cwd,
+            "repair_generated": True,
+            "repair_source": "scheduler_retrying_repair_bridge_v1",
+            "repair_reason": reason,
+        },
+        {
+            "id": f"{repair_id_base}_verify",
+            "type": "run_python",
+            "command": f"python -m py_compile {rel_path}",
+            "command_cwd": cwd,
+            "repair_generated": True,
+            "repair_source": "scheduler_retrying_repair_bridge_v1",
+            "repair_reason": "verify repaired python file compiles",
+        },
+    ]
+    return True, repair_steps, {
+        "reason": reason,
+        "path": full_path,
+        "relative_path": rel_path,
+        "cwd": cwd,
+        "original_content": source,
+        "fixed_content": fixed_source,
+    }
+
+
+def _zero_v734_task_allows_auto_repair(task: Dict[str, Any]) -> bool:
+    if not isinstance(task, dict):
+        return False
+
+    explicit_keys = (
+        "auto_repair",
+        "auto-repair",
+        "planner_autonomous_repair",
+        "autonomous_repair",
+        "repair_enabled",
+    )
+    for key in explicit_keys:
+        if bool(task.get(key, False)):
+            return True
+
+    goal = str(task.get("goal") or task.get("title") or "").strip().lower()
+    if "auto repair" in goal or "autonomous repair" in goal:
+        return True
+
+    repair_context = task.get("repair_context")
+    if isinstance(repair_context, dict):
+        session = repair_context.get("repair_session")
+        if isinstance(session, dict) and bool(session.get("enabled")):
+            return True
+        strategy = repair_context.get("strategy")
+        if isinstance(strategy, dict) and strategy.get("current_strategy"):
+            return True
+
+    return False
+
+
+def _zero_v734_runtime_state_file_for_task(task: Dict[str, Any]) -> str:
+    if not isinstance(task, dict):
+        return ""
+    value = str(task.get("runtime_state_file") or "").strip()
+    if value:
+        return value
+    task_dir = str(task.get("task_dir") or "").strip()
+    if task_dir:
+        return os.path.join(task_dir, "runtime_state.json")
+    return ""
+
+
+def _zero_v734_read_runtime_state(task: Dict[str, Any]) -> Dict[str, Any]:
+    path = _zero_v734_runtime_state_file_for_task(task)
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _zero_v734_write_runtime_state(task: Dict[str, Any], state: Dict[str, Any]) -> None:
+    path = _zero_v734_runtime_state_file_for_task(task)
+    if not path or not isinstance(state, dict):
+        return
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _zero_v734_land_repair_steps(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
+    task = self._hydrate_task_from_workspace(copy.deepcopy(task)) if isinstance(task, dict) else {}
+    if not isinstance(task, dict) or not task:
+        return {"ok": False, "action": "retrying_repair_bridge_invalid_task", "status": "failed", "error": "invalid task"}
+
+    task_id = self._extract_task_id(task)
+    if not task_id:
+        return {"ok": False, "action": "retrying_repair_bridge_missing_task_id", "status": "failed", "error": "missing task id"}
+
+    runtime_state = _zero_v734_read_runtime_state(task)
+    if isinstance(runtime_state, dict) and runtime_state:
+        # Runtime state is fresher for current_step_index / last_step_result.
+        for key in (
+            "status",
+            "steps",
+            "current_step_index",
+            "steps_total",
+            "results",
+            "step_results",
+            "execution_log",
+            "execution_trace",
+            "last_step_result",
+            "last_error",
+            "repair_context",
+        ):
+            if key in runtime_state:
+                task[key] = copy.deepcopy(runtime_state.get(key))
+
+    status = str(task.get("status") or "").strip().lower()
+    if status not in {"retrying", "retry"}:
+        return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+
+    if not _zero_v734_task_allows_auto_repair(task):
+        return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+
+    repair_context = task.get("repair_context") if isinstance(task.get("repair_context"), dict) else {}
+    if repair_context.get("repair_steps_injected") or task.get("repair_steps_injected"):
+        # Already landed.  Make sure it can be dispatched.
+        task["status"] = "queued"
+        task["next_action"] = "run_next_tick"
+        self._persist_task_payload(task_id=task_id, task=task)
+        self._enqueue_repo_task_if_ready(task, overwrite=True)
+        return {
+            "ok": True,
+            "action": "repair_steps_already_injected",
+            "status": "queued",
+            "task_id": task_id,
+            "task": copy.deepcopy(task),
+        }
+
+    steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+    try:
+        idx = int(task.get("current_step_index", 0) or 0)
+    except Exception:
+        idx = 0
+    if idx < 0:
+        idx = 0
+    if idx >= len(steps):
+        idx = max(0, len(steps) - 1)
+
+    failed_step = steps[idx] if isinstance(steps, list) and 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
+    last_step = task.get("last_step_result")
+    if isinstance(last_step, dict) and isinstance(last_step.get("step"), dict):
+        failed_step = copy.deepcopy(last_step.get("step"))
+
+    ok, repair_steps, repair_meta = _zero_v734_build_retry_repair_steps(task, failed_step)
+    if not ok:
+        task["status"] = STATUS_FAILED
+        task["last_error"] = "retrying repair bridge failed: " + str(repair_meta.get("reason") or "unknown")
+        task["failure_message"] = task["last_error"]
+        self._persist_task_payload(task_id=task_id, task=task)
+        return {
+            "ok": False,
+            "action": "retrying_repair_bridge_failed",
+            "status": STATUS_FAILED,
+            "task_id": task_id,
+            "error": task["last_error"],
+            "repair_meta": repair_meta,
+            "task": copy.deepcopy(task),
+        }
+
+    # Replace the failed verify step with repair-write + repair-verify.
+    # Keep completed steps before idx.  Drop the original failed step to avoid
+    # repeating the same failing py_compile before the repair write lands.
+    new_steps = copy.deepcopy(steps[:idx]) + copy.deepcopy(repair_steps)
+    if idx + 1 < len(steps):
+        new_steps.extend(copy.deepcopy(steps[idx + 1:]))
+
+    now = _zero_v734_safe_now()
+    repair_context = copy.deepcopy(repair_context)
+    flow = repair_context.get("flow") if isinstance(repair_context.get("flow"), list) else []
+    flow.append({
+        "phase": "repair_steps_injected",
+        "ok": True,
+        "tick": current_tick,
+        "ts": now,
+        "strategy": "minimal_patch",
+        "step_index": idx,
+        "inserted_steps": [step.get("id") for step in repair_steps if isinstance(step, dict)],
+        "target_path": repair_meta.get("relative_path") or repair_meta.get("path") or "",
+    })
+    repair_context["flow"] = flow[-50:]
+    repair_context["repair_steps_injected"] = True
+    repair_context["last_phase"] = "repair_steps_injected"
+    repair_context["proposed_fix"] = {
+        "strategy": "minimal_patch",
+        "path": repair_meta.get("path", ""),
+        "relative_path": repair_meta.get("relative_path", ""),
+        "reason": repair_meta.get("reason", ""),
+    }
+
+    task["steps"] = new_steps
+    task["steps_total"] = len(new_steps)
+    task["current_step_index"] = idx
+    task["status"] = "queued"
+    task["next_action"] = "run_next_tick"
+    task["last_decision"] = "continue"
+    task["last_decision_reason"] = "repair_steps_injected"
+    task["repair_context"] = repair_context
+    task["repair_steps_injected"] = True
+    task["updated_at"] = now
+
+    if isinstance(runtime_state, dict):
+        runtime_state.update({
+            "steps": copy.deepcopy(new_steps),
+            "steps_total": len(new_steps),
+            "current_step_index": idx,
+            "status": "queued",
+            "next_action": "run_next_tick",
+            "last_decision": "continue",
+            "last_decision_reason": "repair_steps_injected",
+            "repair_context": copy.deepcopy(repair_context),
+            "updated_at": now,
+        })
+        _zero_v734_write_runtime_state(task, runtime_state)
+
+    self._persist_task_payload(task_id=task_id, task=task)
+    self._enqueue_repo_task_if_ready(task, overwrite=True)
+
+    return {
+        "ok": True,
+        "action": "repair_steps_injected",
+        "status": "queued",
+        "task_id": task_id,
+        "current_step_index": idx,
+        "steps_total": len(new_steps),
+        "inserted_steps": [step.get("id") for step in repair_steps if isinstance(step, dict)],
+        "repair_meta": {
+            "reason": repair_meta.get("reason", ""),
+            "relative_path": repair_meta.get("relative_path", ""),
+            "cwd": repair_meta.get("cwd", ""),
+        },
+        "task": copy.deepcopy(task),
+    }
+
+
+def _zero_v734_run_one_step(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
+    try:
+        hydrated = self._hydrate_task_from_workspace(copy.deepcopy(task)) if isinstance(task, dict) else task
+    except Exception:
+        hydrated = task
+
+    status = str(hydrated.get("status") or "").strip().lower() if isinstance(hydrated, dict) else ""
+    if status in {"retrying", "retry"}:
+        return self._compact_runner_result(_zero_v734_land_repair_steps(self, hydrated, current_tick=current_tick))
+
+    return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+
+
+def _zero_v734_sync_runner_result_and_requeue_if_ready(self, task: Dict[str, Any], runner_result: Dict[str, Any]) -> None:
+    _ZERO_V734_ORIGINAL_SYNC_RUNNER_RESULT_AND_REQUEUE(self, task=task, runner_result=runner_result)
+
+    try:
+        task_id = self._extract_task_id(task)
+        refreshed_task = self._get_task_from_repo(task_id)
+        if not isinstance(refreshed_task, dict):
+            return
+        refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
+        if refreshed_status in {"retrying", "retry"}:
+            self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+    except Exception:
+        pass
+
+
+Scheduler.run_one_step = _zero_v734_run_one_step
+Scheduler._sync_runner_result_and_requeue_if_ready = _zero_v734_sync_runner_result_and_requeue_if_ready
+Scheduler.RETRYING_REPAIR_BRIDGE_VERSION = "v7.3.4"
+Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_4_RETRYING_REPAIR_BRIDGE"
 SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD

@@ -1816,7 +1816,151 @@ def _handle_replan_control(system: Any, raw: str) -> Dict[str, Any]:
 
 def _is_task_id_token(value: Any) -> bool:
     text = _safe_str(value)
-    return bool(re.fullmatch(r"task_\d+", text))
+    if not text:
+        return False
+
+    lowered = text.lower()
+    if lowered.startswith("--"):
+        return False
+
+    reserved_words = {
+        "list",
+        "show",
+        "result",
+        "open",
+        "delete",
+        "retry",
+        "rerun",
+        "purge",
+        "create",
+        "submit",
+        "run",
+        "tick",
+        "loop",
+        "queue",
+        "replan",
+        "preview",
+        "apply",
+        "finished",
+        "failed",
+        "all",
+    }
+    if lowered in reserved_words:
+        return False
+
+    # Legacy generated IDs: task_123
+    if re.fullmatch(r"task_\d+", text):
+        return True
+
+    # Stable human-readable task IDs used by scripted / fixture tasks, for example:
+    # aer_auto_repair_injection_v2
+    # doc_summary_smoke_001
+    # code-chain-repair-demo
+    # Keep this conservative so ordinary sentence fragments are not mistaken for IDs.
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{2,127}", text):
+        return True
+
+    return False
+
+
+
+def _build_orphan_task_from_runtime_state(task_id: str, runtime_state: Dict[str, Any], task_dir: str) -> Dict[str, Any]:
+    normalized_task_id = _safe_str(task_id)
+    runtime = copy.deepcopy(runtime_state if isinstance(runtime_state, dict) else {})
+
+    steps = runtime.get("steps")
+    if not isinstance(steps, list):
+        steps = []
+
+    task: Dict[str, Any] = {
+        "task_id": normalized_task_id,
+        "task_name": _first_nonempty_str(runtime.get("task_name"), normalized_task_id),
+        "id": normalized_task_id,
+        "goal": _first_nonempty_str(runtime.get("goal"), runtime.get("title"), normalized_task_id),
+        "title": _first_nonempty_str(runtime.get("goal"), runtime.get("title"), normalized_task_id),
+        "status": _first_nonempty_str(runtime.get("status"), "queued"),
+        "task_dir": task_dir,
+        "runtime_state_file": os.path.join(task_dir, "runtime_state.json"),
+        "result_file": os.path.join(task_dir, "result.json"),
+        "execution_log_file": os.path.join(task_dir, "execution_log.json"),
+        "trace_file": os.path.join(task_dir, "trace.json"),
+        "plan_file": os.path.join(task_dir, "plan.json"),
+        "steps": copy.deepcopy(steps),
+        "steps_total": int(runtime.get("steps_total", len(steps)) or len(steps)),
+        "current_step_index": int(runtime.get("current_step_index", 0) or 0),
+        "results": copy.deepcopy(runtime.get("results", [])) if isinstance(runtime.get("results"), list) else [],
+        "step_results": copy.deepcopy(runtime.get("step_results", [])) if isinstance(runtime.get("step_results"), list) else [],
+        "execution_log": copy.deepcopy(runtime.get("execution_log", [])) if isinstance(runtime.get("execution_log"), list) else [],
+        "execution_trace": copy.deepcopy(runtime.get("execution_trace", [])) if isinstance(runtime.get("execution_trace"), list) else [],
+        "last_step_result": copy.deepcopy(runtime.get("last_step_result")),
+        "last_error": runtime.get("last_error"),
+        "last_output": _safe_str(runtime.get("last_output")),
+        "final_answer": _safe_str(runtime.get("final_answer")),
+        "final_result": copy.deepcopy(runtime.get("final_result")),
+        "last_observation": copy.deepcopy(runtime.get("last_observation", {})) if isinstance(runtime.get("last_observation"), dict) else {},
+        "last_decision": _safe_str(runtime.get("last_decision")),
+        "last_decision_reason": _safe_str(runtime.get("last_decision_reason")),
+        "next_action": _safe_str(runtime.get("next_action")),
+        "terminal_reason": _safe_str(runtime.get("terminal_reason")),
+        "loop_cycle_count": int(runtime.get("loop_cycle_count", 0) or 0),
+        "loop_history": copy.deepcopy(runtime.get("loop_history", [])) if isinstance(runtime.get("loop_history"), list) else [],
+        "repair_context": copy.deepcopy(runtime.get("repair_context", {})) if isinstance(runtime.get("repair_context"), dict) else {},
+        "blockers": copy.deepcopy(runtime.get("blockers", [])) if isinstance(runtime.get("blockers"), list) else [],
+        "active_blocker_count": int(runtime.get("active_blocker_count", 0) or 0),
+        "waiting_reason": _safe_str(runtime.get("waiting_reason")),
+        "requires_review": bool(runtime.get("requires_review", False)),
+        "review_status": _safe_str(runtime.get("review_status")),
+        "review_id": _safe_str(runtime.get("review_id")),
+        "review_payload": copy.deepcopy(runtime.get("review_payload", {})) if isinstance(runtime.get("review_payload"), dict) else {},
+        "orphan_registered_from_runtime_state": True,
+    }
+
+    return task
+
+
+def _register_orphan_workspace_task_from_runtime_state(system: Any, task_id: str) -> Optional[Dict[str, Any]]:
+    normalized_task_id = _safe_str(task_id)
+    if not normalized_task_id:
+        return None
+
+    task_dir = os.path.join(WORKSPACE_DIR, "tasks", normalized_task_id)
+    runtime_state_path = os.path.join(task_dir, "runtime_state.json")
+    runtime_state = _load_json_file(runtime_state_path)
+    if not isinstance(runtime_state, dict):
+        return None
+
+    task = _build_orphan_task_from_runtime_state(
+        task_id=normalized_task_id,
+        runtime_state=runtime_state,
+        task_dir=task_dir,
+    )
+
+    scheduler = _get_scheduler(system)
+
+    persist_fn = getattr(scheduler, "_persist_task_payload", None)
+    if callable(persist_fn):
+        try:
+            persist_fn(normalized_task_id, copy.deepcopy(task))
+            return _get_task(system, normalized_task_id) or task
+        except Exception:
+            pass
+
+    repo = getattr(scheduler, "task_repo", None)
+    if repo is not None:
+        for method_name in ("replace_task", "upsert_task", "create_task", "add_task", "save_task"):
+            method = getattr(repo, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                if method_name == "replace_task":
+                    method(normalized_task_id, copy.deepcopy(task))
+                else:
+                    method(copy.deepcopy(task))
+                return _get_task(system, normalized_task_id) or task
+            except Exception:
+                continue
+
+    return None
 
 
 
@@ -1866,6 +2010,8 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
         return {"ok": False, "error": "task_id is required", "mode": "target_task"}
 
     task = _get_task(system, normalized_task_id)
+    if not isinstance(task, dict):
+        task = _register_orphan_workspace_task_from_runtime_state(system, normalized_task_id)
     if not isinstance(task, dict):
         return {"ok": False, "error": "task not found", "task_id": normalized_task_id, "mode": "target_task"}
 
