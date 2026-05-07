@@ -320,6 +320,19 @@ class TaskPathManager:
 
         candidates: List[str] = []
 
+        # Repo-aware read routing:
+        # When a task declares target_repo_root/repo_root, normal relative read paths
+        # should first resolve inside that target repo, not inside the task sandbox.
+        #
+        # Security rules:
+        # - absolute raw_path is still rejected above
+        # - ".." escape is still rejected by _normalize_relative_path()
+        # - the final candidate must remain inside target_repo_root
+        target_repo_root = self._extract_target_repo_root(task)
+        if target_repo_root:
+            repo_candidate = self._join_under_external_base(target_repo_root, normalized)
+            candidates.append(repo_candidate)
+
         # 沒 task_id 時，主線讀取預設走 shared
         if not resolved_task_id:
             candidates.append(
@@ -483,6 +496,29 @@ class TaskPathManager:
 
         return "relative", normalized_path
 
+    def _extract_target_repo_root(self, task: Dict[str, Any] | None) -> str:
+        """
+        Return a normalized target repository root for repo-aware engineering tasks.
+
+        This intentionally does not allow arbitrary step-level absolute paths.
+        It only trusts task-level repo metadata that was already injected by the
+        planner / runner boundary.
+        """
+        if not isinstance(task, dict):
+            return ""
+
+        value = str(
+            task.get("target_repo_root")
+            or task.get("repo_root")
+            or task.get("target_root")
+            or ""
+        ).strip()
+
+        if not value:
+            return ""
+
+        return os.path.abspath(value)
+
     def _join_under_base(self, base: str, relative: str) -> str:
         cleaned = str(relative or "").strip()
 
@@ -490,6 +526,31 @@ class TaskPathManager:
             return os.path.abspath(base)
 
         return os.path.abspath(os.path.join(base, cleaned))
+
+    def _join_under_external_base(self, base: str, relative: str) -> str:
+        """
+        Join a relative path under an external allowed base, such as a target repo.
+
+        Unlike _ensure_inside_workspace(), this deliberately allows paths outside
+        ZERO's workspace, but only if the final path remains under the provided base.
+        """
+        cleaned = str(relative or "").strip()
+        root = os.path.abspath(base)
+
+        if cleaned in ("", "."):
+            candidate = root
+        else:
+            candidate = os.path.abspath(os.path.join(root, cleaned))
+
+        try:
+            common = os.path.commonpath([root, candidate])
+        except ValueError:
+            raise ValueError(f"path outside target repo: {candidate}")
+
+        if common != root:
+            raise ValueError(f"path outside target repo: {candidate}")
+
+        return candidate
 
     def _ensure_inside_workspace(self, path: str) -> str:
         full = os.path.abspath(path)

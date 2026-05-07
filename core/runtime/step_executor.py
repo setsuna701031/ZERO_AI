@@ -2696,3 +2696,1182 @@ def _zero_v703_step_executor_init(self, *args, **kwargs):
 
 StepExecutor.__init__ = _zero_v703_step_executor_init
 StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {"code_chain_repair", "autonomous_code_repair"}
+
+
+# ============================================================
+# ZERO v7.1.0 - Code Chain Repair Scope Guard
+# ============================================================
+# Reinforce the repair handler itself. AgentLoop should block bad repair targets
+# before task creation, but direct runtime/planner callers must also fail closed.
+
+_ZERO_V710_ORIGINAL_REGISTER_BUILTINS = StepExecutor._register_builtin_handlers
+try:
+    _ZERO_V710_ORIGINAL_CODE_CHAIN_REPAIR_HANDLER = _zero_v7_handle_code_chain_repair_step
+except NameError:  # pragma: no cover - defensive for partial builds
+    _ZERO_V710_ORIGINAL_CODE_CHAIN_REPAIR_HANDLER = None
+
+
+def _zero_v710_step_normalize_path_text(path_text: str) -> str:
+    value = str(path_text or "").strip().strip("'\"`").replace("\\", "/")
+    while "//" in value:
+        value = value.replace("//", "/")
+    return value.lstrip("./")
+
+
+def _zero_v710_step_extract_any_py_path(text: str) -> str:
+    match = re.search(
+        r"((?:workspace|core|services|tests|ui)[/\\][A-Za-z0-9_./\\ -]+?\.py|app\.py|system_boot\.py)",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return _zero_v710_step_normalize_path_text(match.group(1))
+
+
+def _zero_v710_step_repair_scope_decision(target_path: str) -> Dict[str, Any]:
+    normalized = _zero_v710_step_normalize_path_text(target_path)
+    if not normalized:
+        return {"ok": False, "error": "missing_target_path", "reason": "code_chain_repair step missing target_path", "target_path": ""}
+    lowered = normalized.lower()
+    protected = (
+        lowered == "app.py"
+        or lowered == "system_boot.py"
+        or lowered.startswith("core/")
+        or lowered.startswith("services/")
+        or lowered.startswith("tests/")
+        or lowered.startswith("ui/")
+    )
+    if protected:
+        return {"ok": False, "error": "repair_scope_blocked", "reason": f"blocked by repair scope guard: {normalized}", "target_path": normalized}
+    if not normalized.startswith("workspace/shared/") or not normalized.endswith(".py"):
+        return {"ok": False, "error": "repair_scope_blocked", "reason": f"autonomous repair requires workspace/shared/*.py target: {normalized}", "target_path": normalized}
+    try:
+        from pathlib import Path
+        repo_root = Path.cwd().resolve()
+        target = (repo_root / normalized).resolve()
+        target.relative_to(repo_root)
+    except Exception:
+        return {"ok": False, "error": "path_escapes_repo_root", "reason": f"repair target escapes repo root: {normalized}", "target_path": normalized}
+    if not target.exists():
+        return {"ok": False, "error": "file_not_found", "reason": f"file not found: {normalized}", "target_path": normalized}
+    return {"ok": True, "error": None, "reason": "repair scope preflight passed", "target_path": normalized}
+
+
+def _zero_v710_fail_step_result(reason: str, error: str, target_path: str = "") -> Dict[str, Any]:
+    final = f"planner autonomous repair preflight failed: {reason}; changed_files=0"
+    return {
+        "ok": False,
+        "message": final,
+        "final_answer": final,
+        "error": error or reason,
+        "result": {
+            "planner_autonomous_repair": True,
+            "repair_scope_guard": True,
+            "status": "failed",
+            "target_path": target_path,
+            "changed_files": [],
+            "rollback": False,
+            "error": error or reason,
+            "reason": reason,
+        },
+        "execution_trace": [
+            {
+                "step_type": "code_chain_repair",
+                "ok": False,
+                "message": final,
+                "final_answer": final,
+                "error_type": error or "repair_preflight_failed",
+                "classification": "repair_scope_guard",
+                "attempts": 1,
+                "max_attempts": 1,
+                "retry_used": False,
+            }
+        ],
+    }
+
+
+def _zero_v710_handle_code_chain_repair_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    task_text = str(
+        payload.get("task_text")
+        or payload.get("instruction")
+        or payload.get("goal")
+        or (task.get("goal") if isinstance(task, dict) else "")
+        or ""
+    ).strip()
+    target_path = _zero_v710_step_normalize_path_text(
+        payload.get("target_path")
+        or payload.get("path")
+        or payload.get("file_path")
+        or _zero_v710_step_extract_any_py_path(task_text)
+    )
+    decision = _zero_v710_step_repair_scope_decision(target_path)
+    if not bool(decision.get("ok")):
+        return _zero_v710_fail_step_result(
+            reason=str(decision.get("reason") or decision.get("error") or "repair preflight failed"),
+            error=str(decision.get("error") or "repair_preflight_failed"),
+            target_path=str(decision.get("target_path") or target_path),
+        )
+    if _ZERO_V710_ORIGINAL_CODE_CHAIN_REPAIR_HANDLER is None:
+        return _zero_v710_fail_step_result(
+            reason="code_chain_repair handler missing",
+            error="handler_missing",
+            target_path=target_path,
+        )
+    patched_step = dict(payload)
+    patched_step["target_path"] = str(decision.get("target_path") or target_path)
+    return _ZERO_V710_ORIGINAL_CODE_CHAIN_REPAIR_HANDLER(self, patched_step, task=task, context=context, previous_result=previous_result)
+
+
+def _zero_v710_handle_code_chain_repair_preflight_failed_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    reason = str(payload.get("reason") or payload.get("error") or "repair preflight failed")
+    error = str(payload.get("error") or "repair_preflight_failed")
+    target_path = _zero_v710_step_normalize_path_text(payload.get("target_path") or "")
+    return _zero_v710_fail_step_result(reason=reason, error=error, target_path=target_path)
+
+
+def _zero_v710_register_builtin_handlers(self):
+    _ZERO_V710_ORIGINAL_REGISTER_BUILTINS(self)
+    self.register_handler("code_chain_repair", _zero_v710_handle_code_chain_repair_step.__get__(self, StepExecutor))
+    self.register_handler("autonomous_code_repair", _zero_v710_handle_code_chain_repair_step.__get__(self, StepExecutor))
+    self.register_handler("code_chain_repair_preflight_failed", _zero_v710_handle_code_chain_repair_preflight_failed_step.__get__(self, StepExecutor))
+
+
+StepExecutor._register_builtin_handlers = _zero_v710_register_builtin_handlers
+StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {"code_chain_repair", "autonomous_code_repair", "code_chain_repair_preflight_failed"}
+
+
+# ============================================================
+# ZERO v7.3.0 - Autonomous Multi-Step Repair Chain handlers
+# ============================================================
+# Adds explicit analyze / verify steps around the existing code_chain_repair
+# handler.  The actual write remains inside the existing guarded repair lane.
+
+def _zero_v730_requested_math_functions(task_text: str):
+    lowered = str(task_text or "").strip().lower()
+    requested = []
+    if "add" in lowered or "math" in lowered or "function" in lowered:
+        requested.append("add")
+    if "multiply" in lowered or "math" in lowered or "function" in lowered:
+        requested.append("multiply")
+    return list(dict.fromkeys(requested)) or ["add", "multiply"]
+
+
+def _zero_v730_resolve_repair_target(step, task=None):
+    payload = step if isinstance(step, dict) else {}
+    task_payload = task if isinstance(task, dict) else {}
+    task_text = str(
+        payload.get("task_text")
+        or payload.get("instruction")
+        or payload.get("goal")
+        or task_payload.get("goal")
+        or ""
+    ).strip()
+    target_path = _zero_v7_normalize_rel_path(
+        payload.get("target_path")
+        or task_payload.get("target_path")
+        or _zero_v7_extract_workspace_py_path(task_text)
+    )
+    return task_text, target_path
+
+
+def _zero_v730_read_target_for_nonwrite_step(task_text: str, target_path: str):
+    from pathlib import Path
+
+    if not target_path:
+        return None, {
+            "ok": False,
+            "error": "missing_target_path",
+            "message": "planner autonomous repair failed: missing target path",
+        }
+    if not target_path.startswith("workspace/shared/") or not target_path.endswith(".py"):
+        return None, {
+            "ok": False,
+            "error": "unsafe_target_path",
+            "message": f"planner autonomous repair failed: unsafe target path: {target_path}",
+        }
+
+    project_root = Path.cwd().resolve()
+    file_path = (project_root / target_path).resolve()
+    try:
+        file_path.relative_to(project_root)
+    except Exception:
+        return None, {
+            "ok": False,
+            "error": "path_escapes_repo_root",
+            "message": f"planner autonomous repair failed: path escapes repo root: {target_path}",
+        }
+    if not file_path.exists():
+        return None, {
+            "ok": False,
+            "error": "file_not_found",
+            "message": f"planner autonomous repair failed: file not found: {target_path}",
+        }
+    try:
+        return file_path.read_text(encoding="utf-8"), None
+    except Exception as exc:
+        return None, {
+            "ok": False,
+            "error": "read_failed",
+            "message": f"planner autonomous repair failed: could not read {target_path}: {exc}",
+        }
+
+
+def _zero_v730_handle_code_chain_analyze_step(self, step, task=None, context=None, previous_result=None):
+    task_text, target_path = _zero_v730_resolve_repair_target(step, task=task)
+    content, error = _zero_v730_read_target_for_nonwrite_step(task_text, target_path)
+    if error:
+        message = str(error.get("message") or error.get("error") or "code chain analyze failed")
+        return {
+            "ok": False,
+            "message": message,
+            "final_answer": message,
+            "error": error.get("error"),
+            "result": {
+                "planner_autonomous_repair": True,
+                "step_type": "code_chain_analyze",
+                "target_path": target_path,
+                "changed_files": [],
+                "analysis_ok": False,
+            },
+        }
+
+    requested = _zero_v730_requested_math_functions(task_text)
+    verification = _zero_v7_verify_math_functions(content, requested)
+    failed_functions = list(verification.get("failed_functions") or [])
+    already_correct = bool(verification.get("ok"))
+    message = (
+        f"planner autonomous repair analyze: target={target_path}; "
+        f"requested={','.join(requested)}; "
+        f"failed_functions={','.join(failed_functions) if failed_functions else 'none'}; "
+        f"already_correct={already_correct}"
+    )
+    return {
+        "ok": True,
+        "message": message,
+        "final_answer": message,
+        "error": None,
+        "result": {
+            "planner_autonomous_repair": True,
+            "step_type": "code_chain_analyze",
+            "target_path": target_path,
+            "requested_functions": requested,
+            "failed_functions": failed_functions,
+            "already_correct": already_correct,
+            "verification": verification,
+            "changed_files": [],
+            "analysis_ok": True,
+        },
+        "execution_trace": [
+            {
+                "step_type": "code_chain_analyze",
+                "ok": True,
+                "message": message,
+                "final_answer": message,
+                "error_type": "",
+                "classification": "planner_autonomous_repair_analysis",
+                "attempts": 1,
+                "max_attempts": 1,
+                "retry_used": False,
+            }
+        ],
+    }
+
+
+def _zero_v730_handle_code_chain_verify_step(self, step, task=None, context=None, previous_result=None):
+    task_text, target_path = _zero_v730_resolve_repair_target(step, task=task)
+    content, error = _zero_v730_read_target_for_nonwrite_step(task_text, target_path)
+    if error:
+        message = str(error.get("message") or error.get("error") or "code chain verify failed")
+        return {
+            "ok": False,
+            "message": message,
+            "final_answer": message,
+            "error": error.get("error"),
+            "result": {
+                "planner_autonomous_repair": True,
+                "step_type": "code_chain_verify",
+                "target_path": target_path,
+                "changed_files": [],
+                "verification": {"ok": False, "status": "failed", "error": error.get("error")},
+            },
+        }
+
+    requested = _zero_v730_requested_math_functions(task_text)
+    verification = _zero_v7_verify_math_functions(content, requested)
+    ok = bool(verification.get("ok"))
+    failed_functions = list(verification.get("failed_functions") or [])
+    message = (
+        f"planner autonomous repair verify: verification={'passed' if ok else 'failed'}; "
+        f"target={target_path}; failed_functions={','.join(failed_functions) if failed_functions else 'none'}"
+    )
+    return {
+        "ok": ok,
+        "message": message,
+        "final_answer": message,
+        "error": None if ok else "verification_failed",
+        "result": {
+            "planner_autonomous_repair": True,
+            "step_type": "code_chain_verify",
+            "target_path": target_path,
+            "requested_functions": requested,
+            "verification": verification,
+            "changed_files": [],
+            "rollback": False,
+        },
+        "execution_trace": [
+            {
+                "step_type": "code_chain_verify",
+                "ok": ok,
+                "message": message,
+                "final_answer": message,
+                "error_type": "" if ok else "verification_failed",
+                "classification": "planner_autonomous_repair_verification",
+                "attempts": 1,
+                "max_attempts": 1,
+                "retry_used": False,
+            }
+        ],
+    }
+
+
+_ZERO_V730_ORIGINAL_REGISTER_BUILTIN_HANDLERS = StepExecutor._register_builtin_handlers
+
+
+def _zero_v730_register_builtin_handlers(self):
+    _ZERO_V730_ORIGINAL_REGISTER_BUILTIN_HANDLERS(self)
+    self.register_handler("code_chain_analyze", _zero_v730_handle_code_chain_analyze_step.__get__(self, StepExecutor))
+    self.register_handler("code_chain_verify", _zero_v730_handle_code_chain_verify_step.__get__(self, StepExecutor))
+    # Re-register repair to keep the write step on the already guarded lane.
+    if "code_chain_repair" not in self.handlers:
+        self.register_handler("code_chain_repair", _zero_v710_handle_code_chain_repair_step.__get__(self, StepExecutor))
+
+
+StepExecutor._register_builtin_handlers = _zero_v730_register_builtin_handlers
+StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {
+    "code_chain_analyze",
+    "code_chain_repair",
+    "autonomous_code_repair",
+    "code_chain_verify",
+    "code_chain_repair_preflight_failed",
+}
+
+
+# ZERO v7.3.1 marker: code_chain_analyze and code_chain_verify handlers are registered above.
+StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(StepExecutor, "CODE_CHAIN_REPAIR_STEP_TYPES", set())) | {
+    "code_chain_analyze",
+    "code_chain_repair",
+    "autonomous_code_repair",
+    "code_chain_verify",
+    "code_chain_repair_preflight_failed",
+}
+
+
+# ============================================================
+# ZERO v7.3.4 - Repair/Edit payload schema bridge
+# ============================================================
+# Repair steps in a multi-step chain must hand apply steps a real edit schema:
+# old_text + new_text for replacement tools, or complete content for write_file.
+# This bridge keeps the schema in the edit execution path and leaves scheduler
+# orchestration untouched.
+
+_ZERO_V734_ORIGINAL_STEP_EXECUTOR_INIT = StepExecutor.__init__
+_ZERO_V734_ORIGINAL_APPLY_UNIFIED_DIFF_STEP = StepExecutor._handle_apply_unified_diff_step
+_ZERO_V734_ORIGINAL_CODE_CHAIN_REPAIR_HANDLER = _zero_v710_handle_code_chain_repair_step
+
+
+def _zero_v734_step_executor_init(self, *args, **kwargs):
+    _ZERO_V734_ORIGINAL_STEP_EXECUTOR_INIT(self, *args, **kwargs)
+    try:
+        self.register_handler("code_chain_repair", _zero_v734_handle_code_chain_repair_step.__get__(self, StepExecutor))
+        self.register_handler("autonomous_code_repair", _zero_v734_handle_code_chain_repair_step.__get__(self, StepExecutor))
+        self.register_handler("apply_unified_diff", _zero_v734_handle_apply_step.__get__(self, StepExecutor))
+        self.register_handler("apply_patch", _zero_v734_handle_apply_step.__get__(self, StepExecutor))
+    except Exception:
+        pass
+
+
+def _zero_v734_read_target_file_for_edit(step, task=None):
+    from pathlib import Path
+
+    task_text = str(
+        (step.get("task_text") if isinstance(step, dict) else "")
+        or (task.get("goal") if isinstance(task, dict) else "")
+        or ""
+    )
+    target_path = _zero_v7_normalize_rel_path(
+        (step.get("target_path") if isinstance(step, dict) else "")
+        or (step.get("path") if isinstance(step, dict) else "")
+        or _zero_v7_extract_workspace_py_path(task_text)
+    )
+    if not target_path:
+        return {"ok": False, "error": "missing_target_path", "target_path": ""}
+    if not target_path.startswith("workspace/") or not target_path.endswith(".py"):
+        return {"ok": False, "error": "unsafe_target_path", "target_path": target_path}
+
+    project_root = Path.cwd()
+    file_path = (project_root / target_path).resolve()
+    try:
+        file_path.relative_to(project_root.resolve())
+    except Exception:
+        return {"ok": False, "error": "path_escapes_repo_root", "target_path": target_path}
+    if not file_path.exists():
+        return {"ok": False, "error": "file_not_found", "target_path": target_path, "full_path": str(file_path)}
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return {"ok": False, "error": f"read_failed: {exc}", "target_path": target_path, "full_path": str(file_path)}
+
+    return {"ok": True, "target_path": target_path, "full_path": str(file_path), "content": content}
+
+
+def _zero_v734_extract_function_contract(previous_result=None, step=None, task=None):
+    task_text = str(
+        (step.get("task_text") if isinstance(step, dict) else "")
+        or (task.get("goal") if isinstance(task, dict) else "")
+        or ""
+    )
+    requested = []
+    failed = []
+    sources = []
+    if isinstance(previous_result, dict):
+        sources.append(previous_result)
+        result = previous_result.get("result")
+        if isinstance(result, dict):
+            sources.append(result)
+            nested = result.get("result")
+            if isinstance(nested, dict):
+                sources.append(nested)
+            verification = result.get("verification")
+            if isinstance(verification, dict):
+                sources.append(verification)
+        verification = previous_result.get("verification")
+        if isinstance(verification, dict):
+            sources.append(verification)
+
+    if isinstance(task, dict):
+        repair_context = task.get("repair_context")
+        if isinstance(repair_context, dict):
+            sources.append(repair_context)
+            verify_result = repair_context.get("verify_result")
+            if isinstance(verify_result, dict):
+                sources.append(verify_result)
+                nested = verify_result.get("result")
+                if isinstance(nested, dict):
+                    sources.append(nested)
+
+    for source in sources:
+        for key in ("requested_functions", "failed_functions"):
+            values = source.get(key) if isinstance(source, dict) else None
+            if not isinstance(values, list):
+                continue
+            normalized = [str(item).strip().lower() for item in values if str(item).strip()]
+            if key == "requested_functions" and normalized:
+                requested.extend(normalized)
+            if key == "failed_functions" and normalized:
+                failed.extend(normalized)
+        verification = source.get("verification") if isinstance(source, dict) else None
+        if isinstance(verification, dict):
+            for key in ("requested_functions", "failed_functions"):
+                values = verification.get(key)
+                if not isinstance(values, list):
+                    continue
+                normalized = [str(item).strip().lower() for item in values if str(item).strip()]
+                if key == "requested_functions" and normalized:
+                    requested.extend(normalized)
+                if key == "failed_functions" and normalized:
+                    failed.extend(normalized)
+
+    if not requested:
+        requested = _zero_v730_requested_math_functions(task_text)
+    requested = list(dict.fromkeys(requested))
+    failed = list(dict.fromkeys(failed))
+    return {"requested_functions": requested, "failed_functions": failed}
+
+
+def _zero_v734_build_math_contract_edit_payload(original_text: str, requested_functions):
+    requested = [str(item).strip().lower() for item in requested_functions or [] if str(item).strip()]
+    supported = [item for item in requested if item in {"add", "multiply"}]
+    if not supported:
+        return None
+
+    blocks = []
+    if "add" in supported:
+        blocks.append("def add(a, b):\n    return a + b")
+    if "multiply" in supported:
+        blocks.append("def multiply(a, b):\n    return a * b")
+    new_text = "\n\n".join(blocks) + "\n"
+
+    verification = _zero_v7_verify_math_functions(new_text, supported)
+    if not verification.get("ok"):
+        return None
+    if new_text == str(original_text or ""):
+        return None
+
+    return {
+        "operation": "replace",
+        "old_text": original_text,
+        "new_text": new_text,
+        "content": new_text,
+        "schema": "replacement_pair_v1",
+        "requested_functions": supported,
+        "failed_functions": list(verification.get("failed_functions") or []),
+        "verification": verification,
+    }
+
+
+def _zero_v734_build_python_syntax_edit_payload(original_text: str, requested_functions=None):
+    contract_payload = _zero_v734_build_math_contract_edit_payload(original_text, requested_functions)
+    if isinstance(contract_payload, dict):
+        return contract_payload
+
+    lines = str(original_text or "").splitlines(keepends=True)
+    changed = False
+    fixed_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"^(async\s+def|def)\s+[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*$", stripped):
+            newline = "\n" if line.endswith("\n") else ""
+            body = line[:-1] if newline else line
+            fixed_lines.append(body.rstrip() + ":" + newline)
+            changed = True
+        else:
+            fixed_lines.append(line)
+
+    if not changed:
+        return None
+
+    new_text = "".join(fixed_lines)
+    try:
+        compile(new_text, "<code_chain_repair_candidate>", "exec")
+    except Exception:
+        return None
+
+    return {
+        "operation": "replace",
+        "old_text": original_text,
+        "new_text": new_text,
+        "content": new_text,
+        "schema": "replacement_pair_v1",
+    }
+
+
+def _zero_v736_current_strategy(task=None, step=None):
+    if isinstance(step, dict) and str(step.get("strategy") or "").strip():
+        return str(step.get("strategy")).strip()
+    if isinstance(task, dict):
+        repair_context = task.get("repair_context")
+        if isinstance(repair_context, dict):
+            strategy = repair_context.get("strategy")
+            if isinstance(strategy, dict) and str(strategy.get("current_strategy") or "").strip():
+                return str(strategy.get("current_strategy")).strip()
+    return "minimal_patch"
+
+
+def _zero_v800_requested_contract_is_supported(requested_functions=None):
+    requested = [str(item).strip().lower() for item in requested_functions or [] if str(item).strip()]
+    supported = [item for item in requested if item in {"add", "multiply"}]
+    return bool(supported) and len(supported) == len(list(dict.fromkeys(requested)))
+
+
+def _zero_v800_build_contract_driven_repair_payload(original_text: str, requested_functions=None):
+    """
+    ZERO v8.1 Contract-Driven Repair Completion.
+
+    If verification requested a supported function contract, repair must satisfy the
+    whole contract, not merely repair the first syntax defect.  This keeps the
+    repair payload aligned with the final verify step:
+
+        requested_functions == functions produced by final_edit_payload
+
+    The function remains intentionally narrow for now: it only generates the
+    minimal safe math contract currently verified by Code Chain.  Unknown or
+    unsupported contracts fall back to the older strategy path instead of making
+    uncontrolled guesses.
+    """
+    requested = [str(item).strip().lower() for item in requested_functions or [] if str(item).strip()]
+    requested = list(dict.fromkeys(requested))
+    if not requested:
+        return None
+    if not _zero_v800_requested_contract_is_supported(requested):
+        return None
+    return _zero_v734_build_math_contract_edit_payload(original_text, requested)
+
+
+def _zero_v736_build_strategy_edit_payload(original_text: str, requested_functions=None, strategy: str = "minimal_patch"):
+    strategy = str(strategy or "minimal_patch").strip()
+
+    # ZERO v8.1: verification contract takes precedence over tactical strategy.
+    # If verify says add+multiply are required, even minimal_patch must produce
+    # an edit payload that satisfies add+multiply.  Strategy retry is still used
+    # for non-contract failures, regression failures, unsupported contracts, or
+    # future broader edit modes.
+    contract_payload = _zero_v800_build_contract_driven_repair_payload(
+        original_text,
+        requested_functions=requested_functions,
+    )
+    if isinstance(contract_payload, dict):
+        contract_payload["contract_driven"] = True
+        contract_payload["contract_completion"] = {
+            "ok": True,
+            "requested_functions": list(contract_payload.get("requested_functions") or []),
+            "produced_functions": list(contract_payload.get("requested_functions") or []),
+            "mode": "supported_math_contract_v1",
+        }
+        return contract_payload
+
+    if strategy == "minimal_patch":
+        return _zero_v734_build_python_syntax_edit_payload(original_text, requested_functions=[])
+    if strategy in {"function_rewrite", "full_file_rewrite_safe"}:
+        return _zero_v734_build_math_contract_edit_payload(original_text, requested_functions)
+    return _zero_v734_build_python_syntax_edit_payload(original_text, requested_functions=requested_functions)
+
+
+def _zero_v734_validate_edit_payload(payload):
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "missing edit payload"}
+
+    file_edits = payload.get("file_edits")
+    if not isinstance(file_edits, list):
+        file_edits = payload.get("edits")
+    if isinstance(file_edits, list) and file_edits:
+        normalized = []
+        for item in file_edits:
+            if not isinstance(item, dict):
+                return {"ok": False, "error": "invalid file_edits item"}
+            item_validation = _zero_v734_validate_edit_payload({key: value for key, value in item.items() if key not in {"file_edits", "edits"}})
+            if not item_validation.get("ok"):
+                return {"ok": False, "error": str(item_validation.get("error") or "invalid file edit")}
+            target_path = str(item.get("target_path") or item.get("target") or item.get("path") or "").strip()
+            if not target_path:
+                return {"ok": False, "error": "file_edits item missing target_path"}
+            normalized.append({"target_path": target_path, "validation": item_validation, "edit": copy.deepcopy(item)})
+        return {"ok": True, "mode": "multi_file", "file_edits": normalized}
+
+    old_text = payload.get("old_text")
+    new_text = payload.get("new_text")
+    if isinstance(old_text, str) and isinstance(new_text, str) and old_text and new_text and old_text != new_text:
+        return {"ok": True, "mode": "replace", "old_text": old_text, "new_text": new_text}
+
+    content = payload.get("content")
+    if str(payload.get("operation") or "").strip().lower() == "write_file" and isinstance(content, str) and content:
+        return {"ok": True, "mode": "write_file", "content": content}
+
+    return {"ok": False, "error": "missing old_text/new_text replacement pair"}
+
+
+def _zero_v734_extract_edit_payload(value):
+    if not isinstance(value, dict):
+        return None
+
+    candidates = [
+        value.get("edit_payload"),
+        value.get("final_edit_payload"),
+        value.get("apply_payload"),
+    ]
+    result = value.get("result")
+    if isinstance(result, dict):
+        candidates.extend([result.get("edit_payload"), result.get("final_edit_payload"), result.get("apply_payload")])
+        nested = result.get("result")
+        if isinstance(nested, dict):
+            candidates.extend([nested.get("edit_payload"), nested.get("final_edit_payload"), nested.get("apply_payload")])
+
+    if isinstance(value.get("repair_context"), dict):
+        candidates.append(value["repair_context"].get("final_edit_payload"))
+
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            return candidate
+    return None
+
+
+def _zero_v734_handle_code_chain_repair_step(self, step, task=None, context=None, previous_result=None):
+    target = _zero_v734_read_target_file_for_edit(step if isinstance(step, dict) else {}, task=task)
+    if target.get("ok"):
+        original_text = str(target.get("content") or "")
+        contract = _zero_v734_extract_function_contract(previous_result=previous_result, step=step, task=task)
+        requested_functions = list(contract.get("requested_functions") or [])
+        failed_functions = list(contract.get("failed_functions") or [])
+        strategy = _zero_v736_current_strategy(task=task, step=step)
+        edit_payload = _zero_v736_build_strategy_edit_payload(original_text, requested_functions=requested_functions, strategy=strategy)
+        if isinstance(edit_payload, dict):
+            edit_payload["strategy"] = strategy
+            target_path = str(target.get("target_path") or "")
+            final = f"code chain repair generated edit payload: {target_path}"
+            return {
+                "ok": True,
+                "message": final,
+                "final_answer": final,
+                "target_path": target_path,
+                "original_file_content": original_text,
+                "proposed_fix": edit_payload.get("new_text"),
+                "requested_functions": requested_functions,
+                "failed_functions": failed_functions,
+                "strategy": strategy,
+                "contract_driven": bool(edit_payload.get("contract_driven", False)),
+                "contract_completion": copy.deepcopy(edit_payload.get("contract_completion", {})),
+                "edit_payload": copy.deepcopy(edit_payload),
+                "final_edit_payload": copy.deepcopy(edit_payload),
+                "result": {
+                    "planner_autonomous_repair": True,
+                    "status": "edit_payload_ready",
+                    "target_path": target_path,
+                    "original_file_content": original_text,
+                    "proposed_fix": edit_payload.get("new_text"),
+                    "requested_functions": requested_functions,
+                    "failed_functions": failed_functions,
+                    "strategy": strategy,
+                    "contract_driven": bool(edit_payload.get("contract_driven", False)),
+                    "contract_completion": copy.deepcopy(edit_payload.get("contract_completion", {})),
+                    "verification": copy.deepcopy(edit_payload.get("verification", {})),
+                    "edit_payload": copy.deepcopy(edit_payload),
+                    "final_edit_payload": copy.deepcopy(edit_payload),
+                    "changed_files": [target_path],
+                    "changed_lines": 1,
+                },
+                "execution_trace": [
+                    {
+                        "step_type": "code_chain_repair",
+                        "ok": True,
+                        "message": final,
+                        "classification": "repair_edit_payload_schema_v1",
+                        "attempts": 1,
+                        "max_attempts": 1,
+                    }
+                ],
+            }
+
+    return _ZERO_V734_ORIGINAL_CODE_CHAIN_REPAIR_HANDLER(self, step, task=task, context=context, previous_result=previous_result)
+
+
+def _zero_v734_resolve_apply_target_path(step, payload):
+    target_path = str(
+        (step.get("target_path") if isinstance(step, dict) else "")
+        or (step.get("target") if isinstance(step, dict) else "")
+        or (payload.get("target_path") if isinstance(payload, dict) else "")
+        or ""
+    ).strip()
+    return target_path
+
+
+def _zero_v735_repo_rel_path(path_text):
+    from pathlib import Path
+
+    raw = str(path_text or "").strip().replace("\\", "/")
+    if not raw:
+        return ""
+    try:
+        path = Path(raw)
+        if path.is_absolute():
+            return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except Exception:
+        pass
+    return raw.lstrip("./")
+
+
+def _zero_v735_is_repo_source_path(rel_path):
+    lowered = _zero_v735_repo_rel_path(rel_path).lower()
+    if lowered.startswith("workspace/shared/"):
+        return False
+    return lowered.startswith(("core/", "services/", "tests/", "runtime/", "tasks/", "planning/"))
+
+
+def _zero_v735_imported_module_names(rel_path):
+    rel = _zero_v735_repo_rel_path(rel_path)
+    if not rel.endswith(".py"):
+        return set()
+    without_ext = rel[:-3]
+    parts = [part for part in without_ext.split("/") if part and part != "__init__"]
+    names = set()
+    if parts:
+        names.add(parts[-1])
+        for index in range(len(parts)):
+            names.add(".".join(parts[index:]))
+    return names
+
+
+def _zero_v735_python_imports(text):
+    imports = set()
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        match = re.match(r"import\s+(.+)", stripped)
+        if match:
+            for item in match.group(1).split(","):
+                imports.add(item.strip().split(" as ")[0].strip())
+            continue
+        match = re.match(r"from\s+([A-Za-z0-9_\.]+)\s+import\s+", stripped)
+        if match:
+            module = match.group(1).strip()
+            imports.add(module)
+            imported_part = stripped.split(" import ", 1)[1] if " import " in stripped else ""
+            for item in imported_part.split(","):
+                imported_name = item.strip().split(" as ")[0].strip()
+                if imported_name and imported_name != "*":
+                    imports.add(imported_name)
+                    imports.add(f"{module}.{imported_name}")
+    return {item for item in imports if item}
+
+
+def _zero_v735_find_impacted_files(changed_files):
+    return sorted(_zero_v735_dependency_impact(changed_files).get("importers", []))
+
+
+def _zero_v735_dependency_impact(changed_files):
+    from pathlib import Path
+
+    modules = set()
+    for changed in changed_files:
+        modules.update(_zero_v735_imported_module_names(changed))
+    importers = set()
+    graph = {}
+    if not modules:
+        return {"modules": [], "importers": [], "dependency_graph": {}}
+    root = Path.cwd()
+    for base in ("workspace/shared", "tests", "core"):
+        folder = root / base
+        if not folder.exists():
+            continue
+        for path in folder.rglob("*.py"):
+            rel = path.relative_to(root).as_posix()
+            if rel in changed_files:
+                continue
+            try:
+                imports = _zero_v735_python_imports(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            matched = sorted(
+                module
+                for imp in imports
+                for module in modules
+                if imp == module or imp.endswith("." + module) or module.endswith("." + imp)
+            )
+            if matched:
+                importers.add(rel)
+                for module in matched:
+                    graph.setdefault(module, [])
+                    if rel not in graph[module]:
+                        graph[module].append(rel)
+    return {
+        "modules": sorted(modules),
+        "importers": sorted(importers),
+        "dependency_graph": {key: sorted(value) for key, value in sorted(graph.items())},
+    }
+
+
+def _zero_v735_build_verify_plan(changed_files, impacted_files):
+    py_files = [path for path in changed_files if str(path).endswith(".py")]
+    impacted_py_files = list(dict.fromkeys(path for path in impacted_files if str(path).endswith(".py")))
+    commands = []
+    if py_files:
+        commands.append("python -m py_compile " + " ".join(py_files))
+    if impacted_py_files:
+        commands.append("python -m py_compile " + " ".join(impacted_py_files))
+    related_tests = [path for path in impacted_files if str(path).startswith("tests/")]
+    return {
+        "commands": list(dict.fromkeys(commands)),
+        "related_tests": related_tests,
+        "impacted_files": impacted_py_files,
+    }
+
+
+def _zero_v735_analyze_repo_impact(*, target_path, edit_payload=None, step=None):
+    edit_payload = edit_payload if isinstance(edit_payload, dict) else {}
+    step = step if isinstance(step, dict) else {}
+    changed_files = edit_payload.get("changed_files")
+    if not isinstance(changed_files, list) or not changed_files:
+        changed_files = step.get("changed_files")
+    if not isinstance(changed_files, list) or not changed_files:
+        changed_files = [target_path] if target_path else []
+    file_edits = edit_payload.get("file_edits")
+    if not isinstance(file_edits, list):
+        file_edits = edit_payload.get("edits")
+    if isinstance(file_edits, list):
+        for item in file_edits:
+            if isinstance(item, dict):
+                item_target = str(item.get("target_path") or item.get("target") or item.get("path") or "").strip()
+                if item_target:
+                    changed_files.append(item_target)
+    changed_files = [_zero_v735_repo_rel_path(path) for path in changed_files if str(path).strip()]
+    changed_files = list(dict.fromkeys(changed_files))
+    dependency_impact = _zero_v735_dependency_impact(changed_files)
+    impacted_files = list(dict.fromkeys(dependency_impact.get("importers", [])))
+
+    source_changes = [path for path in changed_files if _zero_v735_is_repo_source_path(path)]
+    core_changes = [
+        path for path in changed_files
+        if _zero_v735_repo_rel_path(path).lower().startswith(("core/", "runtime/", "tasks/", "planning/"))
+    ]
+    sensitive = any(
+        token in _zero_v735_repo_rel_path(path).lower()
+        for path in changed_files
+        for token in ("scheduler", "task_runtime", "task_runner", "execution_guard")
+    )
+
+    edit_scope = "single_file" if len(changed_files) <= 1 else "multi_file"
+    if source_changes and len(changed_files) > 1:
+        edit_scope = "repo_scale"
+
+    risk_level = "low"
+    requires_confirmation = False
+    blocked_reason = ""
+    if core_changes:
+        risk_level = "medium"
+        requires_confirmation = True
+        blocked_reason = "repo source apply requires confirmation"
+    if len(core_changes) > 1 or sensitive or (source_changes and len(changed_files) > 1):
+        risk_level = "high"
+        requires_confirmation = True
+        blocked_reason = "high-risk repo source apply blocked without confirmation"
+    if source_changes and not blocked_reason:
+        risk_level = "medium"
+        requires_confirmation = True
+        blocked_reason = "repo source apply requires confirmation"
+
+    dependency_hints = {
+        "imported_module_names": sorted({name for path in changed_files for name in _zero_v735_imported_module_names(path)}),
+        "importers": impacted_files,
+        "source_changes": source_changes,
+    }
+    verify_plan = _zero_v735_build_verify_plan(changed_files, impacted_files)
+    custom_verify_plan = edit_payload.get("verify_plan")
+    if isinstance(custom_verify_plan, dict):
+        custom_commands = custom_verify_plan.get("commands")
+        if isinstance(custom_commands, list):
+            merged = list(verify_plan.get("commands", []))
+            merged.extend(str(item).strip() for item in custom_commands if str(item).strip())
+            verify_plan["commands"] = list(dict.fromkeys(merged))
+    confirmed = bool(step.get("confirmed") or step.get("confirmation") or step.get("repo_scale_confirmed") or step.get("scope_confirmed"))
+    auto_apply_allowed = not requires_confirmation or confirmed
+    if confirmed:
+        blocked_reason = ""
+
+    return {
+        "target_path": _zero_v735_repo_rel_path(target_path),
+        "changed_files": changed_files,
+        "impacted_files": impacted_files,
+        "dependency_graph": copy.deepcopy(dependency_impact.get("dependency_graph", {})),
+        "dependency_hints": dependency_hints,
+        "edit_scope": edit_scope,
+        "risk_level": risk_level,
+        "requires_confirmation": requires_confirmation,
+        "blocked_reason": "" if auto_apply_allowed else blocked_reason,
+        "verify_plan": verify_plan,
+        "auto_apply_allowed": auto_apply_allowed,
+    }
+
+
+def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_result=None):
+    edit_payload = _zero_v734_extract_edit_payload(step if isinstance(step, dict) else {})
+    if edit_payload is None:
+        edit_payload = _zero_v734_extract_edit_payload(previous_result if isinstance(previous_result, dict) else {})
+    if edit_payload is None and isinstance(task, dict):
+        repair_context = task.get("repair_context")
+        if isinstance(repair_context, dict):
+            edit_payload = _zero_v734_extract_edit_payload({"repair_context": repair_context})
+
+    if edit_payload is None:
+        has_legacy_patch = bool(str((step or {}).get("patch_path") or (step or {}).get("path") or "").strip())
+        if has_legacy_patch:
+            return _ZERO_V734_ORIGINAL_APPLY_UNIFIED_DIFF_STEP(self, step, task=task, context=context, previous_result=previous_result)
+        message = "missing old_text/new_text replacement pair"
+        return self._apply_patch_error("invalid_edit_payload_schema", message, "", _zero_v734_resolve_apply_target_path(step or {}, {}))
+
+    validation = _zero_v734_validate_edit_payload(edit_payload)
+    target_path = _zero_v734_resolve_apply_target_path(step or {}, edit_payload)
+    if not validation.get("ok"):
+        return self._apply_patch_error("invalid_edit_payload_schema", str(validation.get("error") or "invalid edit payload"), "", target_path)
+    if not target_path:
+        return self._apply_patch_error("validation_error", "apply step missing target_path", "", target_path)
+
+    repo_impact = _zero_v735_analyze_repo_impact(target_path=target_path, edit_payload=edit_payload, step=step)
+    is_multi_file_payload = str(validation.get("mode") or "") == "multi_file"
+    changed_files = list(repo_impact.get("changed_files") or [])
+    shared_changed_files = [path for path in changed_files if str(path).replace("\\", "/").startswith("workspace/shared/")]
+    repo_source_changed_files = [path for path in changed_files if _zero_v735_is_repo_source_path(path)]
+    if is_multi_file_payload and repo_source_changed_files:
+        repo_impact["auto_apply_allowed"] = False
+        repo_impact["requires_confirmation"] = True
+        repo_impact["risk_level"] = "high"
+        repo_impact["blocked_reason"] = "repo source multi-file repair cannot auto apply"
+    if is_multi_file_payload and len(shared_changed_files) != len(changed_files):
+        repo_impact["auto_apply_allowed"] = False
+        repo_impact["requires_confirmation"] = True
+        repo_impact["risk_level"] = "high"
+        repo_impact["blocked_reason"] = "multi-file auto apply is limited to workspace/shared files"
+    if not bool(repo_impact.get("auto_apply_allowed", False)):
+        message = str(repo_impact.get("blocked_reason") or "repo source apply blocked without confirmation")
+        error = self._apply_patch_error("repo_scope_confirmation_required", message, "", target_path, details={"repo_impact": repo_impact})
+        error["repo_impact"] = copy.deepcopy(repo_impact)
+        if isinstance(error.get("result"), dict):
+            error["result"]["repo_impact"] = copy.deepcopy(repo_impact)
+        return error
+
+    if is_multi_file_payload:
+        applied_metadata = []
+        for item in validation.get("file_edits") or []:
+            item_target = _zero_v735_repo_rel_path(item.get("target_path"))
+            item_validation = item.get("validation") if isinstance(item.get("validation"), dict) else {}
+            try:
+                full_target_path = self.resolve_write_path(relative_path=item_target, task=task, default_scope="shared")
+                if not os.path.exists(full_target_path):
+                    raise FileNotFoundError(f"target file not found: {full_target_path}")
+                with open(full_target_path, "r", encoding="utf-8") as fh:
+                    original_text = fh.read()
+                mode = str(item_validation.get("mode") or "")
+                if mode == "replace":
+                    old_text = str(item_validation.get("old_text") or "")
+                    new_text = str(item_validation.get("new_text") or "")
+                    if old_text not in original_text:
+                        raise ValueError("old_text not found in target file")
+                    updated_text = original_text.replace(old_text, new_text, 1)
+                else:
+                    updated_text = str(item_validation.get("content") or "")
+                if updated_text == original_text:
+                    raise ValueError("edit payload produced no changes")
+                backup_path = full_target_path + ".bak_edit_payload"
+                with open(backup_path, "w", encoding="utf-8") as fh:
+                    fh.write(original_text)
+                with open(full_target_path, "w", encoding="utf-8") as fh:
+                    fh.write(updated_text)
+                applied_metadata.append(
+                    {
+                        "target_path": item_target,
+                        "full_target_path": full_target_path,
+                        "backup_path": backup_path,
+                        "old_text": original_text,
+                        "new_text": updated_text,
+                        "schema": str((item.get("edit") or {}).get("schema") or edit_payload.get("schema") or "replacement_pair_v1"),
+                        "restore_available": True,
+                    }
+                )
+            except Exception as exc:
+                error = self._apply_patch_error(
+                    "multi_file_apply_failed",
+                    f"multi-file apply failed for {item_target}: {exc}",
+                    "",
+                    item_target,
+                    details={"repo_impact": repo_impact, "per_file_rollback_metadata": copy.deepcopy(applied_metadata)},
+                )
+                error["repo_impact"] = copy.deepcopy(repo_impact)
+                error["per_file_rollback_metadata"] = copy.deepcopy(applied_metadata)
+                error["rollback_metadata"] = {"restore_available": bool(applied_metadata), "per_file": copy.deepcopy(applied_metadata)}
+                if isinstance(error.get("result"), dict):
+                    error["result"]["repo_impact"] = copy.deepcopy(repo_impact)
+                    error["result"]["per_file_rollback_metadata"] = copy.deepcopy(applied_metadata)
+                    error["result"]["rollback_metadata"] = copy.deepcopy(error["rollback_metadata"])
+                return error
+        first_meta = applied_metadata[0] if applied_metadata else {}
+        return {
+            "ok": True,
+            "type": "apply_patch",
+            "target_path": target_path,
+            "message": f"multi-file edit payload applied: {len(applied_metadata)} files",
+            "final_answer": f"multi-file edit payload applied: {len(applied_metadata)} files",
+            "edit_payload": copy.deepcopy(edit_payload),
+            "repo_impact": copy.deepcopy(repo_impact),
+            "per_file_rollback_metadata": copy.deepcopy(applied_metadata),
+            "rollback_metadata": {
+                "target_path": first_meta.get("target_path", target_path),
+                "full_target_path": first_meta.get("full_target_path", ""),
+                "backup_path": first_meta.get("backup_path", ""),
+                "restore_available": bool(applied_metadata),
+                "per_file": copy.deepcopy(applied_metadata),
+            },
+            "result": {
+                "target_path": target_path,
+                "applied": True,
+                "edit_payload": copy.deepcopy(edit_payload),
+                "repo_impact": copy.deepcopy(repo_impact),
+                "per_file_rollback_metadata": copy.deepcopy(applied_metadata),
+                "rollback_metadata": {
+                    "target_path": first_meta.get("target_path", target_path),
+                    "full_target_path": first_meta.get("full_target_path", ""),
+                    "backup_path": first_meta.get("backup_path", ""),
+                    "restore_available": bool(applied_metadata),
+                    "per_file": copy.deepcopy(applied_metadata),
+                },
+            },
+            "error": None,
+        }
+
+    try:
+        full_target_path = self.resolve_write_path(relative_path=target_path, task=task, default_scope="shared")
+    except Exception as exc:
+        return self._apply_patch_error("path_resolve_failed", f"apply edit path resolve failed: {exc}", "", target_path)
+    if not os.path.exists(full_target_path):
+        return self._apply_patch_error("file_not_found", f"target file not found: {full_target_path}", "", target_path, full_target_path=full_target_path)
+
+    try:
+        with open(full_target_path, "r", encoding="utf-8") as fh:
+            original_text = fh.read()
+    except Exception as exc:
+        return self._apply_patch_error("read_failed", f"apply edit read failed: {exc}", "", target_path, full_target_path=full_target_path)
+
+    mode = str(validation.get("mode") or "")
+    if mode == "replace":
+        old_text = str(validation.get("old_text") or "")
+        new_text = str(validation.get("new_text") or "")
+        if old_text not in original_text:
+            return self._apply_patch_error("old_text_not_found", "old_text not found in target file", "", target_path, full_target_path=full_target_path)
+        updated_text = original_text.replace(old_text, new_text, 1)
+    else:
+        updated_text = str(validation.get("content") or "")
+
+    if updated_text == original_text:
+        return self._apply_patch_error("patch_no_change", "edit payload produced no changes", "", target_path, full_target_path=full_target_path)
+
+    backup_path = full_target_path + ".bak_edit_payload"
+    try:
+        with open(backup_path, "w", encoding="utf-8") as fh:
+            fh.write(original_text)
+        with open(full_target_path, "w", encoding="utf-8") as fh:
+            fh.write(updated_text)
+    except Exception as exc:
+        return self._apply_patch_error("write_failed", f"apply edit write failed: {exc}", "", target_path, full_target_path=full_target_path, details={"backup_path": backup_path})
+
+    return {
+        "ok": True,
+        "type": "apply_patch",
+        "target_path": target_path,
+        "full_target_path": full_target_path,
+        "backup_path": backup_path,
+        "message": f"edit payload applied: {target_path}",
+        "final_answer": f"edit payload applied: {target_path}",
+        "edit_payload": copy.deepcopy(edit_payload),
+        "repo_impact": copy.deepcopy(repo_impact),
+        "rollback_metadata": {
+            "target_path": target_path,
+            "full_target_path": full_target_path,
+            "backup_path": backup_path,
+            "old_text": original_text,
+            "new_text": updated_text,
+            "schema": str(edit_payload.get("schema") or "replacement_pair_v1"),
+            "restore_available": True,
+        },
+        "result": {
+            "target_path": target_path,
+            "full_target_path": full_target_path,
+            "backup_path": backup_path,
+            "applied": True,
+            "edit_payload": copy.deepcopy(edit_payload),
+            "repo_impact": copy.deepcopy(repo_impact),
+            "old_text": edit_payload.get("old_text"),
+            "new_text": edit_payload.get("new_text"),
+            "rollback_metadata": {
+                "target_path": target_path,
+                "full_target_path": full_target_path,
+                "backup_path": backup_path,
+                "old_text": original_text,
+                "new_text": updated_text,
+                "schema": str(edit_payload.get("schema") or "replacement_pair_v1"),
+                "restore_available": True,
+            },
+        },
+        "error": None,
+    }
+
+
+StepExecutor.__init__ = _zero_v734_step_executor_init

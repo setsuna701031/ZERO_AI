@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 from dataclasses import asdict, is_dataclass
@@ -551,15 +552,35 @@ class RunPythonStepHandler(BaseStepHandler):
         context: Optional[Dict[str, Any]],
         previous_result: Any,
     ) -> Dict[str, Any]:
+        cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
+
+        command_text = str(
+            step.get("command")
+            or step.get("cmd")
+            or ""
+        ).strip()
+
+        if command_text:
+            return self._run_python_command(
+                command_text=command_text,
+                step=step,
+                task=task,
+                context=context,
+                cwd=cwd,
+            )
+
         path = str(step.get("path", "")).strip()
         if not path:
             return self._error(
                 error_type="python_path_missing",
                 message="python path missing",
                 step=step,
+                result={
+                    "cwd": cwd,
+                    "hint": "run_python requires either 'command' or 'path'",
+                },
             )
 
-        cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
         script_path = self._resolve_python_script_path(path=path, step=step, task=task, context=context, cwd=cwd)
 
         if not os.path.exists(script_path):
@@ -574,7 +595,21 @@ class RunPythonStepHandler(BaseStepHandler):
                 },
             )
 
-        command = [sys.executable, script_path]
+        python_argv = self._resolve_python_executable()
+        if not python_argv:
+            return self._error(
+                error_type="python_executable_missing",
+                message="python executable missing",
+                step=step,
+                result={
+                    "path": path,
+                    "resolved_path": script_path,
+                    "cwd": cwd,
+                    "candidates": self._python_executable_candidates_for_report(),
+                },
+            )
+
+        command = list(python_argv) + [script_path]
 
         extra_args = step.get("args", [])
         if isinstance(extra_args, list):
@@ -596,6 +631,7 @@ class RunPythonStepHandler(BaseStepHandler):
                     "path": path,
                     "resolved_path": script_path,
                     "cwd": cwd,
+                    "argv": command,
                     "stdout": "",
                     "stderr": str(e),
                     "returncode": None,
@@ -605,9 +641,11 @@ class RunPythonStepHandler(BaseStepHandler):
         ok = completed.returncode == 0
         result = {
             "type": "run_python",
+            "mode": "path",
             "path": path,
             "resolved_path": script_path,
             "cwd": cwd,
+            "argv": command,
             "stdout": completed.stdout,
             "stderr": completed.stderr,
             "returncode": completed.returncode,
@@ -620,6 +658,8 @@ class RunPythonStepHandler(BaseStepHandler):
                 extra={
                     "stdout": completed.stdout,
                     "stderr": completed.stderr,
+                    "message": completed.stdout or "python completed",
+                    "final_answer": completed.stdout or "python completed",
                 },
             )
 
@@ -633,6 +673,168 @@ class RunPythonStepHandler(BaseStepHandler):
                 "stderr": completed.stderr,
             },
         )
+
+    def _run_python_command(
+        self,
+        *,
+        command_text: str,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        cwd: str,
+    ) -> Dict[str, Any]:
+        python_argv = self._resolve_python_executable()
+        if not python_argv:
+            return self._error(
+                error_type="python_executable_missing",
+                message="python executable missing",
+                step=step,
+                result={
+                    "command": command_text,
+                    "cwd": cwd,
+                    "candidates": self._python_executable_candidates_for_report(),
+                },
+            )
+
+        try:
+            parts = shlex.split(command_text, posix=False)
+        except Exception as e:
+            return self._error(
+                error_type="run_python_command_parse_failed",
+                message=f"run_python command parse failed: {e}",
+                step=step,
+                result={
+                    "command": command_text,
+                    "cwd": cwd,
+                },
+            )
+
+        if not parts:
+            return self._error(
+                error_type="python_command_missing",
+                message="python command missing",
+                step=step,
+                result={
+                    "command": command_text,
+                    "cwd": cwd,
+                },
+            )
+
+        first = str(parts[0]).strip().strip('"').strip("'").lower()
+        if first in {"python", "python3", "py"} or first.endswith("python.exe"):
+            argv = list(python_argv) + parts[1:]
+        elif first.endswith(".py"):
+            script_path = self._resolve_python_script_path(
+                path=parts[0],
+                step=step,
+                task=task,
+                context=context,
+                cwd=cwd,
+            )
+            argv = list(python_argv) + [script_path] + parts[1:]
+        else:
+            return self._error(
+                error_type="run_python_command_not_python",
+                message="run_python command must start with python/py/python3 or a .py file",
+                step=step,
+                result={
+                    "command": command_text,
+                    "cwd": cwd,
+                    "first_token": parts[0],
+                },
+            )
+
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+            )
+        except Exception as e:
+            return self._error(
+                error_type="run_python_exception",
+                message=f"run python command failed: {e}",
+                step=step,
+                result={
+                    "command": command_text,
+                    "argv": argv,
+                    "cwd": cwd,
+                    "stdout": "",
+                    "stderr": str(e),
+                    "returncode": None,
+                },
+            )
+
+        ok = completed.returncode == 0
+        result = {
+            "type": "run_python",
+            "mode": "command",
+            "command": command_text,
+            "argv": argv,
+            "cwd": cwd,
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+            "returncode": completed.returncode,
+        }
+
+        if ok:
+            return self._success(
+                result=result,
+                step=step,
+                extra={
+                    "stdout": completed.stdout,
+                    "stderr": completed.stderr,
+                    "message": completed.stdout or "python command completed",
+                    "final_answer": completed.stdout or "python command completed",
+                },
+            )
+
+        return self._error(
+            error_type="python_failed",
+            message=f"python failed (code {completed.returncode})",
+            step=step,
+            result=result,
+            extra={
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+            },
+        )
+
+    def _resolve_python_executable(self) -> list[str]:
+        candidates = []
+
+        if isinstance(sys.executable, str) and sys.executable.strip():
+            candidates.append([sys.executable.strip()])
+
+        candidates.extend([
+            ["py", "-3"],
+            ["python"],
+            ["python3"],
+        ])
+
+        for candidate in candidates:
+            try:
+                completed = subprocess.run(
+                    candidate + ["--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except Exception:
+                continue
+
+            if completed.returncode == 0:
+                return candidate
+
+        return []
+
+    def _python_executable_candidates_for_report(self) -> list[str]:
+        values = []
+        if isinstance(sys.executable, str) and sys.executable.strip():
+            values.append(sys.executable.strip())
+        values.extend(["py -3", "python", "python3"])
+        return values
 
     def _resolve_python_script_path(
         self,
@@ -668,13 +870,13 @@ class RunPythonStepHandler(BaseStepHandler):
                     add_candidate(os.path.join(base, clean))
 
         if isinstance(task, dict):
-            for key in ("task_dir", "workspace", "sandbox_dir", "cwd", "workspace_dir"):
+            for key in ("task_dir", "workspace", "sandbox_dir", "cwd", "workspace_dir", "target_repo_root", "repo_root"):
                 base = str(task.get(key, "")).strip()
                 if base:
                     add_candidate(os.path.join(base, clean))
 
         if isinstance(context, dict):
-            for key in ("task_dir", "workspace", "sandbox_dir", "cwd"):
+            for key in ("task_dir", "workspace", "sandbox_dir", "cwd", "target_repo_root"):
                 base = str(context.get(key, "")).strip()
                 if base:
                     add_candidate(os.path.join(base, clean))

@@ -199,7 +199,7 @@ class Planner:
                 )
                 return result
 
-            raw_steps, fallback_used = self._plan_steps(text=text, route=route)
+            raw_steps, fallback_used = self._plan_steps(text=text, route=route, context=context)
 
             task_name = self._infer_task_name(
                 task_dir=str(context.get("workspace", "") or ""),
@@ -1177,7 +1177,12 @@ class Planner:
     # core planning
     # ============================================================
 
-    def _plan_steps(self, text: str, route: Any = None) -> Tuple[List[Dict[str, Any]], bool]:
+    def _plan_steps(
+        self,
+        text: str,
+        route: Any = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[List[Dict[str, Any]], bool]:
         stripped = str(text or "").strip()
 
         looks_multi_clause = len(self._split_clauses(stripped)) > 1
@@ -1227,6 +1232,7 @@ class Planner:
                 text=clause,
                 route=route,
                 last_path=last_path,
+                context=context,
             )
             if clause_fallback_used:
                 fallback_used = True
@@ -1420,6 +1426,7 @@ class Planner:
         text: str,
         route: Any = None,
         last_path: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[List[Dict[str, Any]], bool, Optional[str]]:
         stripped = str(text or "").strip()
         lowered = stripped.lower()
@@ -1438,6 +1445,7 @@ class Planner:
             text=stripped,
             lowered=lowered,
             last_path=last_path,
+            context=context,
         )
         if action_steps is not None:
             self.trace_logger.log_decision(
@@ -1458,7 +1466,7 @@ class Planner:
                 message=cmd,
                 source="planner",
             )
-            return [{"type": "command", "command": cmd}], False, last_path
+            return [self._make_command_step(command=cmd, context=context)], False, last_path
 
         run_python = self._extract_run_python_request(stripped)
         if run_python:
@@ -1558,6 +1566,7 @@ class Planner:
         text: str,
         lowered: str,
         last_path: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
         append_request = self._match_append_file_request(text)
         if append_request is not None:
@@ -1593,12 +1602,7 @@ class Planner:
 
         command_request = self._match_command_request(text)
         if command_request is not None:
-            return [
-                {
-                    "type": "command",
-                    "command": command_request,
-                }
-            ], last_path
+            return [self._make_command_step(command=command_request, context=context)], last_path
 
         python_request = self._match_run_python_request(text)
         if python_request is not None:
@@ -1650,6 +1654,55 @@ class Planner:
             ], path
 
         return None, last_path
+
+    def _repo_root_from_context(self, context: Optional[Dict[str, Any]] = None) -> str:
+        if not isinstance(context, dict):
+            return ""
+
+        for key in (
+            "target_repo_root",
+            "target_repo",
+            "repo_root",
+            "repository_root",
+            "project_root",
+            "command_cwd",
+            "cwd_override",
+            "cwd",
+        ):
+            value = context.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        route = context.get("route")
+        if isinstance(route, dict):
+            for key in (
+                "target_repo_root",
+                "target_repo",
+                "repo_root",
+                "repository_root",
+                "project_root",
+                "cwd",
+            ):
+                value = route.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+        return ""
+
+    def _make_command_step(
+        self,
+        command: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        step = {
+            "type": "command",
+            "command": str(command or "").strip(),
+        }
+        repo_root = self._repo_root_from_context(context)
+        if repo_root:
+            step["command_cwd"] = repo_root
+            step["target_repo_root"] = repo_root
+        return step
 
     def _match_hello_file_shortcut(self, lowered: str) -> Optional[Tuple[str, str]]:
         candidates = {
@@ -2121,3 +2174,201 @@ Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_0_2_repair_step_preservation
 
 
 # ZERO v7.0.3 marker: autonomous repair planner emits registered code_chain_repair steps.
+
+
+# ============================================================
+# ZERO v7.1.0 - Planner Repair Scope Preflight Guard
+# ============================================================
+# Planner-side reinforcement. AgentLoop performs the primary preflight before
+# task creation; this keeps direct Planner callers from emitting executable
+# code_chain_repair steps for missing or protected paths.
+
+import os as _zero_v710_os
+from pathlib import Path as _ZeroV710Path
+
+_ZERO_V710_ORIGINAL_PLAN_SEMANTIC_ROUTE = Planner._plan_semantic_route
+_ZERO_V710_ORIGINAL_PLAN_STEPS = Planner._plan_steps
+
+
+def _zero_v710_planner_normalize_path_text(path_text: str) -> str:
+    value = str(path_text or "").strip().strip("'\"`").replace("\\", "/")
+    while "//" in value:
+        value = value.replace("//", "/")
+    return value.lstrip("./")
+
+
+def _zero_v710_planner_extract_any_py_path(text: str) -> str:
+    match = re.search(
+        r"((?:workspace|core|services|tests|ui)[/\\][A-Za-z0-9_./\\ -]+?\.py|app\.py|system_boot\.py)",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return _zero_v710_planner_normalize_path_text(match.group(1))
+
+
+def _zero_v710_planner_looks_like_repair_intent(text: str) -> bool:
+    lowered = str(text or "").strip().lower().replace("\\", "/")
+    if not lowered or ".py" not in lowered:
+        return False
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數", "函式", "程式"))
+    return has_analyze and has_repair and has_code_target
+
+
+def _zero_v710_planner_repair_scope_decision(text: str) -> Dict[str, Any]:
+    target_path = _zero_v710_planner_extract_any_py_path(text)
+    if not target_path:
+        return {"ok": False, "error": "missing_target_path", "reason": "repair request is missing an explicit Python target path", "target_path": ""}
+    normalized = _zero_v710_planner_normalize_path_text(target_path)
+    lowered = normalized.lower()
+    protected = (
+        lowered == "app.py"
+        or lowered == "system_boot.py"
+        or lowered.startswith("core/")
+        or lowered.startswith("services/")
+        or lowered.startswith("tests/")
+        or lowered.startswith("ui/")
+    )
+    if protected:
+        return {"ok": False, "error": "repair_scope_blocked", "reason": f"blocked by repair scope guard: {normalized}", "target_path": normalized}
+    if not normalized.startswith("workspace/shared/") or not normalized.endswith(".py"):
+        return {"ok": False, "error": "repair_scope_blocked", "reason": f"autonomous repair requires workspace/shared/*.py target: {normalized}", "target_path": normalized}
+    try:
+        repo_root = _ZeroV710Path.cwd().resolve()
+        target = (repo_root / normalized).resolve()
+        target.relative_to(repo_root)
+    except Exception:
+        return {"ok": False, "error": "path_escapes_repo_root", "reason": f"repair target escapes repo root: {normalized}", "target_path": normalized}
+    if not target.exists():
+        return {"ok": False, "error": "file_not_found", "reason": f"file not found: {normalized}", "target_path": normalized}
+    return {"ok": True, "error": None, "reason": "repair scope preflight passed", "target_path": normalized}
+
+
+def _zero_v710_planner_make_failed_repair_step(text: str, decision: Dict[str, Any]) -> Dict[str, Any]:
+    target_path = str(decision.get("target_path") or "").strip()
+    reason = str(decision.get("reason") or decision.get("error") or "repair preflight failed")
+    return {
+        "type": "code_chain_repair_preflight_failed",
+        "task_text": str(text or "").strip(),
+        "target_path": target_path,
+        "planner_autonomous_repair": True,
+        "repair_scope_guard": True,
+        "error": str(decision.get("error") or "repair_preflight_failed"),
+        "reason": reason,
+        "description": "Autonomous repair blocked before Code Chain execution",
+    }
+
+
+def _zero_v710_planner_plan_semantic_route(self, text: str, context: Optional[Dict[str, Any]] = None):
+    if _zero_v710_planner_looks_like_repair_intent(text):
+        decision = _zero_v710_planner_repair_scope_decision(text)
+        if not bool(decision.get("ok")):
+            return [
+                _zero_v710_planner_make_failed_repair_step(text, decision)
+            ], "autonomous_code_repair_v0", "repair_scope_preflight_failed"
+    return _ZERO_V710_ORIGINAL_PLAN_SEMANTIC_ROUTE(self, text=text, context=context)
+
+
+def _zero_v710_planner_plan_steps(self, text: str, route: Any = None):
+    if _zero_v710_planner_looks_like_repair_intent(text):
+        decision = _zero_v710_planner_repair_scope_decision(text)
+        if not bool(decision.get("ok")):
+            return [_zero_v710_planner_make_failed_repair_step(text, decision)], False
+    return _ZERO_V710_ORIGINAL_PLAN_STEPS(self, text=text, route=route)
+
+
+Planner._plan_semantic_route = _zero_v710_planner_plan_semantic_route
+Planner._plan_steps = _zero_v710_planner_plan_steps
+Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_1_0_repair_scope_guard"
+
+
+# ============================================================
+# ZERO v7.3.0 - Autonomous Multi-Step Repair Chain
+# ============================================================
+# Purpose:
+# - Keep v7.1 repair scope preflight.
+# - Expand planner-driven repair from a single code_chain_repair step into:
+#     1) code_chain_verify
+#     2) code_chain_repair
+#     3) apply_patch
+#     4) code_chain_verify
+# - Do not broaden target scope; still only workspace/shared/*.py.
+
+_ZERO_V730_ORIGINAL_PLAN_SEMANTIC_ROUTE = Planner._plan_semantic_route
+_ZERO_V730_ORIGINAL_PLAN_STEPS = Planner._plan_steps
+
+
+def _zero_v730_planner_build_repair_chain_steps(text: str, target_path: str) -> List[Dict[str, Any]]:
+    task_text = str(text or "").strip()
+    target_path = _zero_v710_planner_normalize_path_text(target_path)
+    return [
+        {
+            "type": "code_chain_verify",
+            "task_text": task_text,
+            "target_path": target_path,
+            "planner_autonomous_repair": True,
+            "repair_scope": "single_file_math_functions_minimal",
+            "continue_on_failure": True,
+            "description": "Verify target code before autonomous Code Chain repair",
+            "preserve_step_type": True,
+        },
+        {
+            "type": "code_chain_repair",
+            "task_text": task_text,
+            "target_path": target_path,
+            "planner_autonomous_repair": True,
+            "repair_scope": "single_file_math_functions_minimal",
+            "description": "Apply planner-driven autonomous code repair through Code Chain",
+            "preserve_step_type": True,
+        },
+        {
+            "type": "apply_patch",
+            "task_text": task_text,
+            "target_path": target_path,
+            "planner_autonomous_repair": True,
+            "repair_scope": "single_file_math_functions_minimal",
+            "description": "Apply validated edit payload produced by Code Chain repair",
+            "preserve_step_type": True,
+        },
+        {
+            "type": "code_chain_verify",
+            "task_text": task_text,
+            "target_path": target_path,
+            "planner_autonomous_repair": True,
+            "repair_scope": "single_file_math_functions_minimal",
+            "description": "Verify target code after autonomous Code Chain repair",
+            "preserve_step_type": True,
+        },
+    ]
+
+
+def _zero_v730_planner_plan_semantic_route(self, text: str, context: Optional[Dict[str, Any]] = None):
+    if _zero_v710_planner_looks_like_repair_intent(text):
+        decision = _zero_v710_planner_repair_scope_decision(text)
+        if not bool(decision.get("ok")):
+            return [
+                _zero_v710_planner_make_failed_repair_step(text, decision)
+            ], "autonomous_code_repair_v0", "repair_scope_preflight_failed"
+        return (
+            _zero_v730_planner_build_repair_chain_steps(text, str(decision.get("target_path") or "")),
+            "autonomous_code_repair_v1_multistep",
+            "planner_autonomous_multistep_repair_code_chain",
+        )
+    return _ZERO_V730_ORIGINAL_PLAN_SEMANTIC_ROUTE(self, text=text, context=context)
+
+
+def _zero_v730_planner_plan_steps(self, text: str, route: Any = None):
+    if _zero_v710_planner_looks_like_repair_intent(text):
+        decision = _zero_v710_planner_repair_scope_decision(text)
+        if not bool(decision.get("ok")):
+            return [_zero_v710_planner_make_failed_repair_step(text, decision)], False
+        return _zero_v730_planner_build_repair_chain_steps(text, str(decision.get("target_path") or "")), False
+    return _ZERO_V730_ORIGINAL_PLAN_STEPS(self, text=text, route=route)
+
+
+Planner._plan_semantic_route = _zero_v730_planner_plan_semantic_route
+Planner._plan_steps = _zero_v730_planner_plan_steps
+Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_3_0_autonomous_multistep_repair_chain"

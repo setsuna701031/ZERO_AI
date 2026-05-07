@@ -49,7 +49,7 @@ except Exception:  # pragma: no cover - optional reader in minimal runtimes
 
 class AgentLoop:
     """
-    ZERO Agent Loop v3 - interface contract stabilization + self-edit analysis-decision-action policy
+    ZERO Agent Loop v3 - interface contract stabilization + self-edit analysis-decision-action policy + v7.2.3 repair gate unification
 
     本版重點：
     1. 保留 direct / task / llm / single-shot 主幹
@@ -4288,6 +4288,46 @@ class AgentLoop:
                 extra={"create_result": create_result},
             )
 
+        # v7.2.3: Planner Autonomous Repair Gate Unification.
+        # Scheduler may suppress duplicate autonomous repair requests before
+        # enqueue.  Do not treat that as a freshly-created task, do not persist
+        # over the existing task, and do not submit it again.  This keeps the
+        # planner/task entrypoint aligned with the scheduler duplicate gate.
+        if bool(create_result.get("duplicate_suppressed", False)) or bool(create_result.get("suppress", False)):
+            final_answer = str(
+                create_result.get("final_answer")
+                or create_result.get("message")
+                or "duplicate autonomous repair task suppressed"
+            ).strip()
+            if not final_answer:
+                final_answer = "duplicate autonomous repair task suppressed"
+
+            return self._make_agent_response(
+                ok=True,
+                mode="task_duplicate_suppressed",
+                context=context,
+                route=route,
+                plan=normalized_plan,
+                execution={
+                    "ok": True,
+                    "steps_executed": 0,
+                    "results": [],
+                    "execution_log": [],
+                    "execution_trace": [],
+                    "last_result": copy.deepcopy(create_result),
+                    "final_answer": final_answer,
+                    "error": None,
+                },
+                final_answer=final_answer,
+                error=None,
+                extra={
+                    "create_result": create_result,
+                    "duplicate_suppressed": True,
+                    "repair_fingerprint": create_result.get("repair_fingerprint"),
+                    "existing_task_id": create_result.get("task_id") or create_result.get("task_name"),
+                },
+            )
+
         created_task = create_result.get("task")
         if not isinstance(created_task, dict):
             task_id = str(create_result.get("task_name") or "").strip()
@@ -5176,3 +5216,210 @@ def _zero_v7_0_1_run(self, user_input: str) -> Dict[str, Any]:
 
 
 AgentLoop.run = _zero_v7_0_1_run
+
+
+# ============================================================
+# ZERO v7.1.0 - Repair Scope Guard + Preflight Validation
+# ============================================================
+# Purpose:
+# - Bounded autonomous repair requests must fail before task creation when the
+#   target path is missing or outside the allowed repair scope.
+# - Protected project/core paths must not be silently consumed by the older
+#   scheduler self-edit shortcut.
+
+_ZERO_V710_ORIGINAL_AGENT_LOOP_RUN = AgentLoop.run
+
+
+def _zero_v710_normalize_path_text(path_text: str) -> str:
+    value = str(path_text or "").strip().strip("'\"`").replace("\\", "/")
+    while "//" in value:
+        value = value.replace("//", "/")
+    return value.lstrip("./")
+
+
+def _zero_v710_extract_any_py_path(text: str) -> str:
+    match = re.search(
+        r"((?:workspace|core|services|tests|ui)[/\\][A-Za-z0-9_./\\ -]+?\.py|app\.py|system_boot\.py)",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return _zero_v710_normalize_path_text(match.group(1))
+
+
+def _zero_v710_looks_like_repair_intent(text: str) -> bool:
+    lowered = str(text or "").strip().lower().replace("\\", "/")
+    if not lowered:
+        return False
+    if ".py" not in lowered:
+        return False
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數", "函式", "程式"))
+    return has_analyze and has_repair and has_code_target
+
+
+def _zero_v710_repair_scope_decision(text: str) -> Dict[str, Any]:
+    path_text = _zero_v710_extract_any_py_path(text)
+    if not path_text:
+        return {
+            "ok": False,
+            "error": "missing_target_path",
+            "reason": "repair request is missing an explicit Python target path",
+            "target_path": "",
+            "changed_files": [],
+        }
+
+    normalized = _zero_v710_normalize_path_text(path_text)
+    lowered = normalized.lower()
+    protected = (
+        lowered == "app.py"
+        or lowered == "system_boot.py"
+        or lowered.startswith("core/")
+        or lowered.startswith("services/")
+        or lowered.startswith("tests/")
+        or lowered.startswith("ui/")
+    )
+    if protected:
+        return {
+            "ok": False,
+            "error": "repair_scope_blocked",
+            "reason": f"blocked by repair scope guard: {normalized}",
+            "target_path": normalized,
+            "changed_files": [],
+        }
+
+    if not normalized.startswith("workspace/shared/") or not normalized.endswith(".py"):
+        return {
+            "ok": False,
+            "error": "repair_scope_blocked",
+            "reason": f"autonomous repair requires workspace/shared/*.py target: {normalized}",
+            "target_path": normalized,
+            "changed_files": [],
+        }
+
+    try:
+        repo_root = Path.cwd().resolve()
+        target = (repo_root / normalized).resolve()
+        target.relative_to(repo_root)
+    except Exception:
+        return {
+            "ok": False,
+            "error": "path_escapes_repo_root",
+            "reason": f"repair target escapes repo root: {normalized}",
+            "target_path": normalized,
+            "changed_files": [],
+        }
+
+    if not target.exists():
+        return {
+            "ok": False,
+            "error": "file_not_found",
+            "reason": f"file not found: {normalized}",
+            "target_path": normalized,
+            "changed_files": [],
+        }
+
+    return {
+        "ok": True,
+        "error": None,
+        "reason": "repair scope preflight passed",
+        "target_path": normalized,
+        "changed_files": [],
+    }
+
+
+def _zero_v710_make_preflight_response(self, text: str, decision: Dict[str, Any]) -> Dict[str, Any]:
+    target_path = str(decision.get("target_path") or "").strip()
+    reason = str(decision.get("reason") or decision.get("error") or "repair preflight failed").strip()
+    final_answer = f"planner autonomous repair preflight failed: {reason}; changed_files=0"
+    route = {
+        "mode": "code_chain_repair_preflight",
+        "task": False,
+        "forced_route": True,
+        "planner_autonomous_repair": True,
+        "target_path": target_path,
+        "error": decision.get("error"),
+    }
+    execution = {
+        "ok": False,
+        "steps_executed": 0,
+        "results": [],
+        "execution_log": [
+            {
+                "type": "code_chain_repair_preflight",
+                "status": "failed",
+                "ok": False,
+                "target_path": target_path,
+                "error": decision.get("error"),
+                "reason": reason,
+                "changed_files": [],
+            }
+        ],
+        "execution_trace": [
+            {
+                "step_type": "code_chain_repair_preflight",
+                "ok": False,
+                "message": final_answer,
+                "final_answer": final_answer,
+                "error_type": str(decision.get("error") or "repair_preflight_failed"),
+                "classification": "repair_scope_guard",
+                "attempts": 0,
+                "max_attempts": 0,
+                "retry_used": False,
+            }
+        ],
+        "last_result": {
+            "ok": False,
+            "target_path": target_path,
+            "error": decision.get("error"),
+            "reason": reason,
+            "changed_files": [],
+        },
+        "final_answer": final_answer,
+        "error": reason,
+    }
+    plan = {
+        "ok": False,
+        "planner_mode": "repair_scope_guard_v7_1_0",
+        "intent": "code_chain_repair",
+        "semantic_type": "autonomous_code_repair_v0",
+        "execution_route": "repair_scope_preflight_failed",
+        "final_answer": final_answer,
+        "steps": [],
+        "error": reason,
+        "meta": {
+            "fallback_used": False,
+            "step_count": 0,
+            "target_path": target_path,
+            "changed_files": [],
+        },
+    }
+    return self._make_agent_response(
+        ok=False,
+        mode="code_chain_repair_preflight",
+        context={},
+        route=route,
+        plan=plan,
+        execution=execution,
+        final_answer=final_answer,
+        error=reason,
+        extra={
+            "code_chain_result": execution["last_result"],
+            "repair_scope_guard": copy.deepcopy(decision),
+            "original_task": text,
+        },
+    )
+
+
+def _zero_v710_agent_loop_run(self, user_input: str) -> Dict[str, Any]:
+    text = str(user_input or "").strip()
+    if _zero_v710_looks_like_repair_intent(text):
+        decision = _zero_v710_repair_scope_decision(text)
+        if not bool(decision.get("ok")):
+            return _zero_v710_make_preflight_response(self, text, decision)
+    return _ZERO_V710_ORIGINAL_AGENT_LOOP_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v710_agent_loop_run

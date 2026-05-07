@@ -4,6 +4,9 @@ import copy
 import json
 import os
 import re
+import shlex
+import subprocess
+import sys
 import traceback
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -14,6 +17,8 @@ from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.audit_log import AuditLogger
+from core.runtime.repair_planner import RepairPlanner
+from core.runtime.repair_step_injector import RepairStepInjector
 
 MAX_PUBLIC_LIST_ITEMS = 20
 MAX_PUBLIC_TRACE_ITEMS = 100
@@ -52,6 +57,8 @@ class TaskRunner:
         self.debug = debug
         self.reflection_engine = reflection_engine if reflection_engine else StepReflectionEngine()
         self.audit = AuditLogger(workspace_root=getattr(self.runtime, "workspace_root", "workspace"))
+        self.repair_planner = RepairPlanner()
+        self.repair_step_injector = RepairStepInjector()
 
     # ============================================================
     # main loop
@@ -121,7 +128,99 @@ class TaskRunner:
             if capability_result is not None:
                 return self._finalize_public_result(capability_result)
 
-            result = self._run_one_step(task, current_tick=current_tick)
+            result: Dict[str, Any] = {
+                "ok": True,
+                "action": "no_step_executed",
+                "task": copy.deepcopy(task),
+                "runtime_state": state,
+                "status": str(state.get("status") or "running"),
+            }
+
+            max_auto_ticks = self._resolve_max_auto_ticks(task=task, state=state)
+            auto_tick_count = 0
+
+            while auto_tick_count < max_auto_ticks:
+                result = self._run_one_step(task, current_tick=current_tick + auto_tick_count)
+
+                if not isinstance(result, dict):
+                    result = {
+                        "ok": False,
+                        "action": "invalid_result",
+                        "task": copy.deepcopy(task),
+                        "runtime_state": self.runtime.load_runtime_state(task),
+                        "status": "failed",
+                        "error": "TaskRunner._run_one_step returned invalid result",
+                    }
+                    break
+
+                runtime_state = result.get("runtime_state")
+                if not isinstance(runtime_state, dict):
+                    runtime_state = self.runtime.load_runtime_state(task)
+
+                self._ensure_execution_trace_defaults(task, runtime_state)
+
+                status = str(
+                    runtime_state.get("status")
+                    or result.get("status")
+                    or ""
+                ).strip().lower()
+
+                action = str(result.get("action") or "").strip().lower()
+                next_action = str(runtime_state.get("next_action") or "").strip().lower()
+
+                if status in {
+                    "finished",
+                    "done",
+                    "success",
+                    "completed",
+                    "failed",
+                    "error",
+                    "cancelled",
+                    "canceled",
+                    "timeout",
+                    "blocked",
+                    "waiting",
+                    "waiting_blocker",
+                    "waiting_review",
+                    "paused",
+                }:
+                    break
+
+                if action in {
+                    "blocked_for_review",
+                    "subgoal_blocked",
+                    "step_failed",
+                    "exception_failed",
+                    "already_terminal",
+                    "already_finished",
+                    "task_finished",
+                    "capability_executed",
+                    "capability_failed",
+                    "regression_verify_failed",
+                    "strategy_retry",
+                    "retry",
+                    "replan",
+                }:
+                    break
+
+                if next_action != "run_next_tick":
+                    break
+
+                auto_tick_count += 1
+
+            if auto_tick_count >= max_auto_ticks:
+                runtime_state = result.get("runtime_state")
+                if isinstance(runtime_state, dict):
+                    runtime_state["auto_tick_limit_reached"] = True
+                    runtime_state["auto_tick_limit"] = max_auto_ticks
+                    try:
+                        runtime_state = self.runtime.save_runtime_state(task, runtime_state)
+                    except Exception:
+                        pass
+                    result["runtime_state"] = runtime_state
+                result["auto_tick_limit_reached"] = True
+                result["auto_tick_limit"] = max_auto_ticks
+
             return self._finalize_public_result(result)
 
         except Exception as e:
@@ -185,6 +284,51 @@ class TaskRunner:
     # ============================================================
     # capability execution
     # ============================================================
+
+    def _resolve_max_auto_ticks(self, *, task: Dict[str, Any], state: Dict[str, Any]) -> int:
+        """
+        Resolve the maximum number of automatic runtime ticks for one public run() call.
+
+        This turns TaskRunner from a single-step executor into a bounded autonomous
+        continuation dispatcher:
+
+            step_completed + next_action=run_next_tick
+            -> continue executing the next step
+            -> stop only at terminal / waiting / blocked / review states
+
+        The limit prevents accidental infinite loops if runtime state gets stuck.
+        """
+        raw_value = None
+
+        if isinstance(task, dict):
+            raw_value = (
+                task.get("max_auto_ticks")
+                or task.get("max_runtime_ticks")
+                or task.get("auto_tick_limit")
+            )
+
+        if raw_value is None and isinstance(state, dict):
+            raw_value = (
+                state.get("max_auto_ticks")
+                or state.get("max_runtime_ticks")
+                or state.get("auto_tick_limit")
+            )
+
+        if raw_value is None:
+            raw_value = 32
+
+        try:
+            value = int(raw_value)
+        except Exception:
+            value = 32
+
+        if value < 1:
+            return 1
+
+        if value > 128:
+            return 128
+
+        return value
 
     def _maybe_run_enabled_capability(
         self,
@@ -340,6 +484,127 @@ class TaskRunner:
 
         return built_route
 
+
+    # ============================================================
+    # target repo routing
+    # ============================================================
+
+    def _normalize_target_repo_root(self, value: Any) -> str:
+        text = str(value or "").strip().strip('"').strip("'")
+        if not text:
+            return ""
+        text = os.path.expandvars(os.path.expanduser(text))
+        try:
+            text = os.path.abspath(text)
+        except Exception:
+            pass
+        if os.path.isdir(text):
+            return os.path.normpath(text)
+        return ""
+
+    def _extract_target_repo_root_from_mapping(self, value: Any) -> str:
+        if not isinstance(value, dict):
+            return ""
+
+        for key in (
+            "target_repo_root",
+            "target_root",
+            "repo_root",
+            "project_root",
+            "working_root",
+            "workspace_target_root",
+        ):
+            resolved = self._normalize_target_repo_root(value.get(key))
+            if resolved:
+                return resolved
+
+        for nested_key in ("config", "runtime_config", "engineering_config", "capability_execution"):
+            nested = value.get(nested_key)
+            if isinstance(nested, dict):
+                resolved = self._extract_target_repo_root_from_mapping(nested)
+                if resolved:
+                    return resolved
+
+        repair_context = value.get("repair_context")
+        if isinstance(repair_context, dict):
+            resolved = self._normalize_target_repo_root(repair_context.get("target_repo_root"))
+            if resolved:
+                return resolved
+            engineering_execution = repair_context.get("engineering_execution")
+            if isinstance(engineering_execution, dict):
+                resolved = self._normalize_target_repo_root(engineering_execution.get("target_repo_root"))
+                if resolved:
+                    return resolved
+
+        return ""
+
+    def _resolve_target_repo_root(self, task: Dict[str, Any], state: Optional[Dict[str, Any]] = None) -> str:
+        resolved = self._extract_target_repo_root_from_mapping(task)
+        if resolved:
+            return resolved
+
+        resolved = self._extract_target_repo_root_from_mapping(state)
+        if resolved:
+            return resolved
+
+        resolved = self._normalize_target_repo_root(os.environ.get("ZERO_TARGET_REPO_ROOT"))
+        if resolved:
+            return resolved
+
+        return ""
+
+    def _sync_target_repo_context(self, task: Dict[str, Any], state: Dict[str, Any]) -> str:
+        target_repo_root = self._resolve_target_repo_root(task=task, state=state)
+        if not target_repo_root:
+            return ""
+
+        if isinstance(task, dict):
+            task["target_repo_root"] = target_repo_root
+
+        if isinstance(state, dict):
+            state["target_repo_root"] = target_repo_root
+            repair_context = state.setdefault("repair_context", {})
+            if isinstance(repair_context, dict):
+                repair_context["target_repo_root"] = target_repo_root
+                engineering_execution = repair_context.setdefault("engineering_execution", {})
+                if isinstance(engineering_execution, dict):
+                    engineering_execution["target_repo_root"] = target_repo_root
+                    engineering_execution["target_routing_version"] = "aer_v9_2_0"
+                    engineering_execution["last_target_routing_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        return target_repo_root
+
+    def _resolve_step_cwd(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> str:
+        target_repo_root = self._resolve_target_repo_root(task=task, state=state)
+
+        if isinstance(step, dict):
+            for key in ("cwd", "working_dir", "workdir"):
+                value = str(step.get(key) or "").strip()
+                if not value:
+                    continue
+                expanded = os.path.expandvars(os.path.expanduser(value))
+                if os.path.isabs(expanded):
+                    return os.path.normpath(expanded)
+                if target_repo_root:
+                    return os.path.normpath(os.path.join(target_repo_root, expanded))
+                return os.path.normpath(expanded)
+
+        if target_repo_root:
+            return target_repo_root
+
+        return str(state.get("task_dir") or "")
+
+    def _target_routed_context(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> Dict[str, Any]:
+        target_repo_root = self._sync_target_repo_context(task=task, state=state)
+        cwd = self._resolve_step_cwd(task=task, state=state, step=step)
+        return {
+            "cwd": cwd,
+            "task_dir": state.get("task_dir"),
+            "workspace_root": state.get("workspace_root") or getattr(self.runtime, "workspace_root", "workspace"),
+            "target_repo_root": target_repo_root,
+            "target_routing_enabled": bool(target_repo_root),
+        }
+
     def _make_json_safe(self, value: Any) -> Any:
         if isinstance(value, dict):
             return {str(key): self._make_json_safe(item) for key, item in value.items()}
@@ -392,6 +657,192 @@ class TaskRunner:
 
         return "\n".join(lines)
 
+
+    # ============================================================
+    # engineering execution action linkage
+    # ============================================================
+
+    def _runtime_step_action_type(self, step: Any) -> str:
+        if not isinstance(step, dict):
+            return "unknown"
+        return str(step.get("type") or step.get("action") or step.get("operation") or "unknown").strip().lower() or "unknown"
+
+    def _runtime_step_target(self, step: Any) -> str:
+        if not isinstance(step, dict):
+            return ""
+        for key in ("target", "target_path", "path", "file_path", "output_path", "summary_output_path", "action_items_output_path", "command", "cmd"):
+            value = step.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return ""
+
+    def _runtime_step_id(self, step: Any, step_index: int) -> str:
+        if isinstance(step, dict):
+            for key in ("id", "step_id", "name"):
+                value = step.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+        return "step_" + str(int(step_index))
+
+    def _runtime_action_id(self, task: Dict[str, Any], step: Any, step_index: int) -> str:
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "task").strip()
+        return "action_" + task_id + "_" + self._runtime_step_id(step, step_index) + "_" + self._runtime_step_action_type(step)
+
+    def _runtime_linked_session_node(self, task: Dict[str, Any], step: Any, step_index: int) -> str:
+        if isinstance(step, dict):
+            for key in ("linked_session_node", "session_node", "node_id", "repair_session_node"):
+                value = step.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+        repair_context = task.get("repair_context") if isinstance(task, dict) else {}
+        if isinstance(repair_context, dict):
+            repair_session = repair_context.get("repair_session")
+            if isinstance(repair_session, dict):
+                session_id = str(repair_session.get("session_id") or repair_session.get("id") or "").strip()
+                if session_id:
+                    return session_id + ":step_" + str(int(step_index))
+        return ""
+
+    def _runtime_action_metadata(self, step: Any, step_index: int, current_tick: int, trace_tick: int) -> Dict[str, Any]:
+        return {
+            "step_index": int(step_index),
+            "current_tick": current_tick,
+            "trace_tick": trace_tick,
+            "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+        }
+
+    def _safe_update_current_engineering_action(self, *, task: Dict[str, Any], step: Any, step_index: int, current_tick: int, trace_tick: int) -> None:
+        fn = getattr(self.runtime, "update_current_engineering_action", None)
+        if not callable(fn):
+            return
+        try:
+            fn(
+                task=task,
+                action_type=self._runtime_step_action_type(step),
+                target=self._runtime_step_target(step),
+                step_id=self._runtime_step_id(step, step_index),
+                action_id=self._runtime_action_id(task, step, step_index),
+                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
+                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
+            )
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+
+    def _safe_complete_engineering_action(self, *, task: Dict[str, Any], step: Any, step_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
+        fn = getattr(self.runtime, "complete_engineering_action", None)
+        if not callable(fn):
+            return
+        try:
+            fn(
+                task=task,
+                action_type=self._runtime_step_action_type(step),
+                target=self._runtime_step_target(step),
+                step_id=self._runtime_step_id(step, step_index),
+                action_id=self._runtime_action_id(task, step, step_index),
+                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
+                result=copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result},
+                changed_files=self._extract_changed_files_from_step_result(step_result),
+                tick=trace_tick if trace_tick is not None else current_tick,
+                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
+            )
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+
+    def _safe_fail_engineering_action(self, *, task: Dict[str, Any], step: Any, step_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
+        fn = getattr(self.runtime, "fail_engineering_action", None)
+        if not callable(fn):
+            return
+        try:
+            error = ""
+            if isinstance(step_result, dict):
+                error = self._stringify_failure_message(step_result.get("error") or step_result.get("message") or "")
+            fn(
+                task=task,
+                action_type=self._runtime_step_action_type(step),
+                target=self._runtime_step_target(step),
+                step_id=self._runtime_step_id(step, step_index),
+                action_id=self._runtime_action_id(task, step, step_index),
+                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
+                error=error,
+                result=copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result},
+                tick=trace_tick if trace_tick is not None else current_tick,
+                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
+            )
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+
+    def _safe_block_engineering_action(self, *, task: Dict[str, Any], step: Any, step_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int, reason: str = "") -> None:
+        fn = getattr(self.runtime, "block_engineering_action", None)
+        if not callable(fn):
+            return
+        try:
+            resolved_reason = str(reason or "").strip()
+            if not resolved_reason and isinstance(step_result, dict):
+                resolved_reason = str(step_result.get("policy_reason") or step_result.get("error") or step_result.get("message") or "blocked")
+            fn(
+                task=task,
+                action_type=self._runtime_step_action_type(step),
+                target=self._runtime_step_target(step),
+                step_id=self._runtime_step_id(step, step_index),
+                action_id=self._runtime_action_id(task, step, step_index),
+                linked_session_node=self._runtime_linked_session_node(task, step_index=step_index, step=step),
+                reason=resolved_reason,
+                result=copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result},
+                tick=trace_tick if trace_tick is not None else current_tick,
+                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
+            )
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+
+    def _safe_record_rollback_restore_action(self, *, task: Dict[str, Any], step: Any, rollback_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
+        fn = getattr(self.runtime, "record_rollback_restore_action", None)
+        if not callable(fn):
+            return
+        try:
+            fn(
+                task=task,
+                target=self._runtime_step_target(step),
+                step_id=self._runtime_step_id(step, step_index) + ":rollback_restore",
+                action_id=self._runtime_action_id(task, step, step_index) + "_rollback_restore",
+                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
+                result=copy.deepcopy(rollback_result) if isinstance(rollback_result, dict) else {},
+                changed_files=self._extract_changed_files_from_step_result(rollback_result),
+                tick=trace_tick if trace_tick is not None else current_tick,
+            )
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+
+    def _extract_changed_files_from_step_result(self, step_result: Any) -> List[str]:
+        files: List[str] = []
+
+        def _collect(value: Any) -> None:
+            if isinstance(value, str) and value.strip():
+                item = value.strip()
+                if item not in files:
+                    files.append(item)
+                return
+            if isinstance(value, list):
+                for child in value:
+                    _collect(child)
+                return
+            if isinstance(value, dict):
+                for key in ("changed_files", "modified_files", "created_files", "written_files", "files"):
+                    if key in value:
+                        _collect(value.get(key))
+
+        _collect(step_result)
+        if isinstance(step_result, dict):
+            for key in ("result", "rollback_result"):
+                payload = step_result.get(key)
+                if isinstance(payload, dict):
+                    _collect(payload)
+        return files
+
     # ============================================================
     # step execution
     # ============================================================
@@ -424,11 +875,55 @@ class TaskRunner:
                 "final_answer": finish_result.get("final_answer", ""),
             }
 
+        prepare_result = self.runtime.prepare_current_subgoal(task=task, current_tick=current_tick)
+        prepared_state = copy.deepcopy(prepare_result.get("runtime_state", state))
+        self._ensure_execution_trace_defaults(task, prepared_state)
+        if not bool(prepare_result.get("ok", False)):
+            self._safe_block_engineering_action(
+                task=task,
+                step=steps[idx] if isinstance(steps, list) and 0 <= idx < len(steps) else {},
+                step_result=copy.deepcopy(prepare_result),
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=current_tick,
+                reason=str(prepare_result.get("reason") or prepared_state.get("last_error") or "subgoal blocked"),
+            )
+            return {
+                "ok": False,
+                "action": "subgoal_blocked",
+                "task": copy.deepcopy(task),
+                "runtime_state": prepared_state,
+                "status": prepared_state.get("status", "blocked"),
+                "error": prepare_result.get("reason") or prepared_state.get("last_error"),
+                "execution_trace": copy.deepcopy(prepared_state.get("execution_trace", [])),
+            }
+        if str(prepared_state.get("status") or "").strip().lower() == "finished":
+            return {
+                "ok": True,
+                "action": "already_finished",
+                "task": copy.deepcopy(task),
+                "runtime_state": prepared_state,
+                "status": "finished",
+                "final_answer": str(prepared_state.get("final_answer") or ""),
+                "execution_trace": copy.deepcopy(prepared_state.get("execution_trace", [])),
+            }
+        state = prepared_state
+        steps = state.get("steps", []) if isinstance(state.get("steps"), list) else []
+        idx = int(state.get("current_step_index", idx) or idx)
+
         step = steps[idx]
         trace_tick = self._trace_tick_for_step(
             state=state,
             step_index=idx,
             current_tick=current_tick,
+        )
+
+        self._safe_update_current_engineering_action(
+            task=task,
+            step=step,
+            step_index=idx,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
         )
 
         self._append_trace_json_event(
@@ -475,7 +970,7 @@ class TaskRunner:
         result = self.step_executor.execute_step(
             task=task,
             step=step,
-            context={"cwd": state.get("task_dir")},
+            context=self._target_routed_context(task=task, state=state, step=step),
             previous_result=self._get_previous_result(state),
             step_index=idx,
             step_count=len(steps),
@@ -546,6 +1041,16 @@ class TaskRunner:
                 "error": copy.deepcopy(result.get("error")),
             }
 
+            self._safe_block_engineering_action(
+                task=task,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+                reason=str(review_payload.get("policy_reason") or "policy blocked action"),
+            )
+
             wait_result = self.runtime.mark_waiting_review(
                 task=task,
                 current_tick=current_tick,
@@ -587,15 +1092,43 @@ class TaskRunner:
                 "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
             }
 
-        if not result.get("ok"):
-            state = self._persist_step_result_to_runtime_state(
+        if not result.get("ok") and self._should_advance_failed_step_observation(
+            step=step,
+            step_result=result,
+            step_index=idx,
+            step_count=len(steps),
+        ):
+            result["continued_after_failure"] = True
+            result["observed_failure"] = True
+            self._safe_fail_engineering_action(
                 task=task,
-                state=state,
                 step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+            )
+            advance_result = self.runtime.advance_step(
+                task=task,
                 step_result=result,
                 current_tick=current_tick,
             )
+            runtime_state = copy.deepcopy(advance_result.get("runtime_state", {}))
+            self._ensure_execution_trace_defaults(task, runtime_state)
+            return {
+                "ok": True,
+                "action": "step_failed_observed",
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": runtime_state.get("status", "running"),
+                "last_result": copy.deepcopy(result),
+                "current_step_index": runtime_state.get("current_step_index", idx + 1),
+                "steps_total": runtime_state.get("steps_total", len(steps)),
+                "error": result.get("error"),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
 
+        if not result.get("ok"):
             failure_type = self._determine_failure_type(step, result)
             decision = FailurePolicy.decide(failure_type)
 
@@ -605,6 +1138,109 @@ class TaskRunner:
                 "fail": decision.fail,
                 "wait": decision.wait,
             }
+
+            failure_status = "running"
+            if decision.retry:
+                failure_status = "retrying"
+            elif decision.replan and self.replanner:
+                failure_status = "replanning"
+
+            failure_record_result = self.runtime.record_step_failure(
+                task=task,
+                step=step,
+                step_result=result,
+                current_tick=current_tick,
+                status=failure_status,
+            )
+            state = copy.deepcopy(failure_record_result.get("runtime_state", {}))
+            self._safe_fail_engineering_action(
+                task=task,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+            )
+            self._ensure_execution_trace_defaults(task, state)
+
+            repair_injection_result = self._maybe_inject_repair_steps_after_failure(
+                task=task,
+                state=state,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+            )
+            if isinstance(repair_injection_result, dict) and repair_injection_result.get("ok"):
+                runtime_state = copy.deepcopy(repair_injection_result.get("runtime_state", state))
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                return {
+                    "ok": True,
+                    "action": "repair_steps_injected",
+                    "failure_type": failure_type,
+                    "failure_decision": failure_decision,
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": runtime_state.get("status", "running"),
+                    "last_result": copy.deepcopy(result),
+                    "repair_plan": copy.deepcopy(repair_injection_result.get("repair_plan")),
+                    "repair_injection": copy.deepcopy(repair_injection_result.get("repair_injection")),
+                    "current_step_index": runtime_state.get("current_step_index", idx + 1),
+                    "steps_total": runtime_state.get("steps_total"),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
+
+            rollback_result = None
+            if self._should_rollback_after_failed_verify(step=step, step_result=result, state=state):
+                rollback_result = self.runtime.rollback_last_apply(
+                    task=task,
+                    current_tick=current_tick,
+                    verify_error=result.get("error") or result.get("message"),
+                )
+                state = copy.deepcopy(rollback_result.get("runtime_state", state))
+                self._ensure_execution_trace_defaults(task, state)
+                if bool(rollback_result.get("ok", False)):
+                    self._safe_record_rollback_restore_action(
+                        task=task,
+                        step=step,
+                        rollback_result=rollback_result,
+                        step_index=idx,
+                        current_tick=current_tick,
+                        trace_tick=trace_tick,
+                    )
+                    strategy_result = self.runtime.advance_repair_strategy_after_failure(
+                        task=task,
+                        current_tick=current_tick,
+                        failure_reason=result.get("error") or result.get("message"),
+                    )
+                    strategy_state = copy.deepcopy(strategy_result.get("runtime_state", state))
+                    self._ensure_execution_trace_defaults(task, strategy_state)
+                    if strategy_result.get("ok"):
+                        return {
+                            "ok": True,
+                            "action": "strategy_retry",
+                            "task": copy.deepcopy(task),
+                            "runtime_state": strategy_state,
+                            "status": "running",
+                            "last_result": copy.deepcopy(result),
+                            "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+                            "next_strategy": strategy_result.get("next_strategy"),
+                            "current_step_index": strategy_state.get("current_step_index"),
+                            "execution_trace": copy.deepcopy(strategy_state.get("execution_trace", [])),
+                        }
+                    state = strategy_state
+            elif self._is_apply_step(step):
+                repair_context = state.get("repair_context") if isinstance(state, dict) else {}
+                rollback = repair_context.get("rollback") if isinstance(repair_context, dict) else None
+                if isinstance(rollback, dict) and bool(rollback.get("restore_available")):
+                    rollback_result = self.runtime.rollback_last_apply(
+                        task=task,
+                        current_tick=current_tick,
+                        verify_error=result.get("error") or result.get("message"),
+                    )
+                    state = copy.deepcopy(rollback_result.get("runtime_state", state))
+                    self._ensure_execution_trace_defaults(task, state)
 
             self._trace(
                 task,
@@ -679,10 +1315,12 @@ class TaskRunner:
                 task=task,
                 current_tick=current_tick,
                 failure_type=failure_type,
-                failure_message=self._stringify_failure_message(result.get("error")),
+                failure_message=str(state.get("last_error") or self._stringify_failure_message(result.get("error"))),
             )
 
             fail_result["failure_decision"] = failure_decision
+            if isinstance(rollback_result, dict):
+                fail_result["rollback_result"] = copy.deepcopy(rollback_result.get("rollback_result"))
             runtime_state = copy.deepcopy(fail_result.get("runtime_state", {}))
             self._ensure_execution_trace_defaults(task, runtime_state)
             self._append_trace_json_event(
@@ -709,6 +1347,7 @@ class TaskRunner:
                 "status": "failed",
                 "error": result.get("error"),
                 "last_result": copy.deepcopy(result),
+                "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")) if isinstance(rollback_result, dict) else None,
                 "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
             }
 
@@ -717,8 +1356,85 @@ class TaskRunner:
             step_result=result,
             current_tick=current_tick,
         )
+        self._safe_complete_engineering_action(
+            task=task,
+            step=step,
+            step_result=result,
+            step_index=idx,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
         new_state = copy.deepcopy(advance_result.get("runtime_state", {}))
         self._ensure_execution_trace_defaults(task, new_state)
+        if self._is_apply_step(step):
+            regression_result = self._run_regression_verify_phase(
+                task=task,
+                state=new_state,
+                current_tick=current_tick,
+            )
+            if regression_result is not None and not bool(regression_result.get("passed", False)):
+                recorded = self.runtime.record_regression_verify(
+                    task=task,
+                    regression_result=regression_result,
+                    current_tick=current_tick,
+                )
+                new_state = copy.deepcopy(recorded.get("runtime_state", new_state))
+                rollback_result = self.runtime.rollback_last_apply(
+                    task=task,
+                    current_tick=current_tick,
+                    verify_error=str(regression_result.get("error") or "regression verification failed"),
+                )
+                runtime_state = copy.deepcopy(rollback_result.get("runtime_state", new_state))
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                if bool(rollback_result.get("ok", False)):
+                    self._safe_record_rollback_restore_action(
+                        task=task,
+                        step=step,
+                        rollback_result=rollback_result,
+                        step_index=idx,
+                        current_tick=current_tick,
+                        trace_tick=trace_tick,
+                    )
+                    strategy_result = self.runtime.advance_repair_strategy_after_failure(
+                        task=task,
+                        current_tick=current_tick,
+                        failure_reason=str(regression_result.get("error") or "regression verification failed"),
+                    )
+                    strategy_state = copy.deepcopy(strategy_result.get("runtime_state", runtime_state))
+                    self._ensure_execution_trace_defaults(task, strategy_state)
+                    if strategy_result.get("ok"):
+                        return {
+                            "ok": True,
+                            "action": "strategy_retry",
+                            "task": copy.deepcopy(task),
+                            "runtime_state": strategy_state,
+                            "status": "running",
+                            "regression_verify": copy.deepcopy(regression_result),
+                            "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+                            "next_strategy": strategy_result.get("next_strategy"),
+                            "execution_trace": copy.deepcopy(strategy_state.get("execution_trace", [])),
+                        }
+                    runtime_state = strategy_state
+                return {
+                    "ok": False,
+                    "action": "regression_verify_failed",
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": "failed",
+                    "error": runtime_state.get("last_error") or regression_result.get("error"),
+                    "regression_verify": copy.deepcopy(regression_result),
+                    "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+                    "last_result": copy.deepcopy(result),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
+            if regression_result is not None:
+                recorded = self.runtime.record_regression_verify(
+                    task=task,
+                    regression_result=regression_result,
+                    current_tick=current_tick,
+                )
+                new_state = copy.deepcopy(recorded.get("runtime_state", new_state))
+
         new_status = str(new_state.get("status") or advance_result.get("status") or "running").strip().lower()
 
         if new_status == "finished":
@@ -1062,6 +1778,487 @@ class TaskRunner:
 
         return False
 
+    def _should_advance_failed_step_observation(
+        self,
+        *,
+        step: Any,
+        step_result: Any,
+        step_index: int,
+        step_count: int,
+    ) -> bool:
+        if not isinstance(step, dict) or not isinstance(step_result, dict):
+            return False
+        if bool(step_result.get("ok", False)):
+            return False
+        if not bool(step.get("continue_on_failure") or step.get("advance_on_failure")):
+            return False
+        step_type = str(step.get("type") or "").strip().lower()
+
+        # continue_on_failure is an explicit task-level instruction.
+        # It must work for diagnostic/observation steps, not only verify steps.
+        # This is what allows:
+        #   run_python fails -> record failure -> continue -> write failure report.
+        allowed_continue_types = {
+            "verify",
+            "verify_file",
+            "code_chain_verify",
+            "run_python",
+            "command",
+            "shell",
+            "tool",
+            "read_file",
+        }
+
+        if step_type not in allowed_continue_types:
+            return False
+
+        return int(step_index) < max(0, int(step_count) - 1)
+
+    def _maybe_inject_repair_steps_after_failure(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        step_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+        trace_tick: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        AER Repair Hook v1.
+
+        Convert an observed runtime failure into injected repair steps.
+
+        This is deliberately gated.  The runtime will only inject repair steps
+        when the task or failed step explicitly opts in with auto_repair=True.
+
+        Boundary:
+        - The hook does not call an LLM.
+        - The hook does not mutate target repo files directly.
+        - The hook only writes generated repair candidates into the normal task
+          sandbox flow via regular write_file/run_python/verify_file steps.
+        """
+        if not isinstance(task, dict) or not isinstance(state, dict):
+            return None
+        if not isinstance(step, dict) or not isinstance(step_result, dict):
+            return None
+        if bool(step_result.get("ok", False)):
+            return None
+
+        if bool(step.get("repair_injected")):
+            return None
+
+        if not bool(
+            task.get("auto_repair")
+            or task.get("enable_auto_repair")
+            or step.get("auto_repair")
+            or step.get("enable_auto_repair")
+        ):
+            return None
+
+        repair_context = state.setdefault("repair_context", {})
+        if not isinstance(repair_context, dict):
+            repair_context = {}
+            state["repair_context"] = repair_context
+
+        max_injections = self._safe_int(task.get("max_repair_injections") or state.get("max_repair_injections"), 1)
+        if max_injections < 1:
+            max_injections = 1
+        prior_injections = repair_context.get("injections")
+        prior_count = len(prior_injections) if isinstance(prior_injections, list) else 0
+        if prior_count >= max_injections:
+            return None
+
+        source_path = self._infer_repair_source_path(step=step, step_result=step_result)
+        source_text = self._read_repair_source_text(task=task, state=state, source_path=source_path)
+
+        try:
+            repair_plan = self.repair_planner.plan(
+                step_result=copy.deepcopy(step_result),
+                previous_result=copy.deepcopy(state.get("last_step_result")),
+                source_path=source_path,
+                source_text=source_text,
+                target_path="",
+            ).to_dict()
+        except Exception as exc:
+            repair_context["last_repair_plan_error"] = str(exc)
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+            return None
+
+        if not isinstance(repair_plan, dict) or not bool(repair_plan.get("ok", False)):
+            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+            return None
+
+        verify_command = ""
+        action_path = self._first_repair_action_path(repair_plan)
+        if action_path and action_path.lower().endswith(".py"):
+            verify_command = "python -m py_compile " + action_path
+
+        try:
+            injection = self.repair_step_injector.build_injection(
+                repair_plan=copy.deepcopy(repair_plan),
+                task=task,
+                failed_step=step,
+                failed_result=step_result,
+                verify_command=verify_command,
+                report_path=str(task.get("auto_repair_report_path") or "AER_AUTO_REPAIR_REPORT.md"),
+            ).to_dict()
+        except Exception as exc:
+            repair_context["last_repair_injection_error"] = str(exc)
+            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+            return None
+
+        if not isinstance(injection, dict) or not bool(injection.get("ok", False)):
+            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
+            repair_context["last_repair_injection"] = copy.deepcopy(injection)
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+            return None
+
+        injected_steps = injection.get("steps")
+        if not isinstance(injected_steps, list) or not injected_steps:
+            return None
+
+        try:
+            injected_state = self.repair_step_injector.inject_steps_into_state(
+                runtime_state=state,
+                injected_steps=injected_steps,
+                insert_after_index=step_index,
+            )
+        except Exception as exc:
+            repair_context["last_repair_injection_error"] = str(exc)
+            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
+            repair_context["last_repair_injection"] = copy.deepcopy(injection)
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+            return None
+
+        injected_state["status"] = "running"
+        injected_state["next_action"] = "run_next_tick"
+        injected_state["last_repair_plan"] = copy.deepcopy(repair_plan)
+        injected_state["last_repair_injection"] = copy.deepcopy(injection)
+        injected_state["last_error"] = self._stringify_failure_message(step_result.get("error"))
+
+        repair_context = injected_state.setdefault("repair_context", {})
+        if isinstance(repair_context, dict):
+            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
+            repair_context["last_repair_injection"] = copy.deepcopy(injection)
+            repair_context["last_repair_source_path"] = source_path
+            repair_context["last_repair_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        injected_state = self.runtime.save_runtime_state(task, injected_state)
+        self._sync_runtime_state_back_to_task(task, injected_state)
+
+        self._trace(
+            task,
+            "repair_steps_injected",
+            {
+                "step_index": step_index,
+                "current_tick": current_tick,
+                "trace_tick": trace_tick,
+                "source_path": source_path,
+                "repair_plan": copy.deepcopy(repair_plan),
+                "repair_injection": copy.deepcopy(injection),
+                "injected_step_count": len(injected_steps),
+            },
+        )
+        self.audit.log_event(
+            task,
+            "repair_steps_injected",
+            {
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": step_index,
+                "source_path": source_path,
+                "classification": repair_plan.get("classification"),
+                "injected_step_count": len(injected_steps),
+            },
+            source="task_runner",
+        )
+
+        return {
+            "ok": True,
+            "runtime_state": injected_state,
+            "repair_plan": repair_plan,
+            "repair_injection": injection,
+        }
+
+    def _infer_repair_source_path(self, *, step: Any, step_result: Any) -> str:
+        if isinstance(step, dict):
+            for key in ("repair_source_path", "source_path", "path", "target_path", "file_path"):
+                value = step.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+            command = str(step.get("command") or step.get("cmd") or "").strip()
+            inferred = self._infer_python_compile_path_from_command(command)
+            if inferred:
+                return inferred
+
+        if isinstance(step_result, dict):
+            for key in ("path", "resolved_path"):
+                value = step_result.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            result = step_result.get("result")
+            if isinstance(result, dict):
+                for key in ("path", "resolved_path"):
+                    value = result.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+                nested = result.get("result")
+                if isinstance(nested, dict):
+                    for key in ("path", "resolved_path"):
+                        value = nested.get(key)
+                        if isinstance(value, str) and value.strip():
+                            return value.strip()
+
+        return ""
+
+    def _infer_python_compile_path_from_command(self, command: str) -> str:
+        text = str(command or "").strip()
+        if not text:
+            return ""
+        try:
+            parts = shlex.split(text, posix=False)
+        except Exception:
+            parts = text.split()
+        if len(parts) >= 4:
+            lowered = [str(part).strip().strip('"\'').lower() for part in parts]
+            for index in range(0, len(lowered) - 2):
+                if lowered[index] in {"python", "python3", "py"} or lowered[index].endswith("python.exe"):
+                    if lowered[index + 1] == "-m" and lowered[index + 2] == "py_compile":
+                        for candidate in parts[index + 3:]:
+                            cleaned = str(candidate).strip().strip('"\'')
+                            if cleaned.endswith(".py"):
+                                return cleaned
+        for token in parts:
+            cleaned = str(token).strip().strip('"\'')
+            if cleaned.endswith(".py"):
+                return cleaned
+        return ""
+
+    def _read_repair_source_text(self, *, task: Dict[str, Any], state: Dict[str, Any], source_path: str) -> str:
+        if not source_path:
+            return ""
+
+        candidates: List[str] = []
+
+        def add_candidate(value: Any) -> None:
+            text = str(value or "").strip()
+            if not text:
+                return
+            try:
+                normalized = os.path.abspath(text)
+            except Exception:
+                normalized = text
+            if normalized not in candidates:
+                candidates.append(normalized)
+
+        if os.path.isabs(source_path):
+            add_candidate(source_path)
+        else:
+            for base in (
+                state.get("sandbox_dir"),
+                state.get("task_dir"),
+                task.get("sandbox_dir"),
+                task.get("task_dir"),
+                task.get("target_repo_root"),
+                state.get("target_repo_root"),
+            ):
+                if isinstance(base, str) and base.strip():
+                    add_candidate(os.path.join(base, source_path))
+
+        try:
+            resolved = self.step_executor.resolve_read_path(
+                relative_path=source_path,
+                task=task,
+                prefer_scopes=("sandbox", "shared"),
+                return_fallback_candidate_if_missing=True,
+            )
+            add_candidate(resolved)
+        except Exception:
+            pass
+
+        for candidate in candidates:
+            if os.path.exists(candidate) and os.path.isfile(candidate):
+                try:
+                    with open(candidate, "r", encoding="utf-8") as f:
+                        return f.read()
+                except Exception:
+                    continue
+        return ""
+
+    def _first_repair_action_path(self, repair_plan: Any) -> str:
+        if not isinstance(repair_plan, dict):
+            return ""
+        actions = repair_plan.get("actions")
+        if not isinstance(actions, list):
+            return ""
+        for action in actions:
+            if isinstance(action, dict):
+                path = str(action.get("path") or "").strip()
+                if path:
+                    return path
+        return ""
+
+    def _should_rollback_after_failed_verify(self, *, step: Any, step_result: Any, state: Any) -> bool:
+        if not isinstance(step, dict) or not isinstance(step_result, dict) or not isinstance(state, dict):
+            return False
+        if bool(step_result.get("ok", False)):
+            return False
+        step_type = str(step.get("type") or "").strip().lower()
+        if step_type not in {"verify", "verify_file", "code_chain_verify"}:
+            return False
+        repair_context = state.get("repair_context")
+        if not isinstance(repair_context, dict):
+            return False
+        rollback_result = repair_context.get("rollback_result")
+        if isinstance(rollback_result, dict) and rollback_result.get("ok") is True:
+            return False
+        rollback = repair_context.get("rollback")
+        return isinstance(rollback, dict) and bool(rollback.get("restore_available"))
+
+    def _is_apply_step(self, step: Any) -> bool:
+        if not isinstance(step, dict):
+            return False
+        return str(step.get("type") or "").strip().lower() in {"apply_patch", "apply_unified_diff"}
+
+    def _run_regression_verify_phase(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        current_tick: int,
+    ) -> Optional[Dict[str, Any]]:
+        repair_context = state.get("repair_context") if isinstance(state, dict) else {}
+        if not isinstance(repair_context, dict):
+            return None
+        repo_impact = repair_context.get("repo_impact")
+        if not isinstance(repo_impact, dict):
+            return None
+        verify_plan = repo_impact.get("verify_plan")
+        if not isinstance(verify_plan, dict):
+            return None
+
+        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        commands = self._build_regression_verify_commands(verify_plan=verify_plan, repo_impact=repo_impact)
+        results: List[Dict[str, Any]] = []
+        blocked_commands: List[Dict[str, Any]] = []
+        failed_commands: List[Dict[str, Any]] = []
+
+        for command in commands:
+            guard = self._validate_regression_command(command)
+            if not guard.get("ok"):
+                item = {"command": command, "reason": guard.get("error", "blocked regression command")}
+                blocked_commands.append(item)
+                failed_commands.append(item)
+                continue
+            completed = subprocess.run(
+                guard["argv"],
+                cwd=self._resolve_target_repo_root(task=task, state=state) or os.getcwd(),
+                text=True,
+                capture_output=True,
+                timeout=30,
+            )
+            item = {
+                "command": command,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4000:],
+                "stderr": completed.stderr[-4000:],
+                "ok": completed.returncode == 0,
+            }
+            results.append(item)
+            if completed.returncode != 0:
+                failed_commands.append(item)
+
+        passed = not failed_commands and not blocked_commands
+        error = ""
+        if blocked_commands:
+            error = "blocked regression command"
+        elif failed_commands:
+            error = "regression verification failed"
+
+        return {
+            "commands": commands,
+            "results": results,
+            "passed": passed,
+            "failed_commands": failed_commands,
+            "blocked_commands": blocked_commands,
+            "started_at": started_at,
+            "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error": error,
+            "current_tick": current_tick,
+        }
+
+    def _build_regression_verify_commands(self, *, verify_plan: Dict[str, Any], repo_impact: Dict[str, Any]) -> List[str]:
+        commands: List[str] = []
+        raw = verify_plan.get("commands")
+        if isinstance(raw, list):
+            commands.extend(str(item).strip() for item in raw if str(item).strip())
+
+        for key in ("changed_files", "impacted_files"):
+            value = repo_impact.get(key)
+            if not isinstance(value, list):
+                continue
+            compile_files = list(dict.fromkeys(str(item).replace("\\", "/") for item in value if str(item).endswith(".py")))
+            if compile_files:
+                command = "python -m py_compile " + " ".join(compile_files)
+                if command not in commands:
+                    commands.append(command)
+
+        return list(dict.fromkeys(commands))
+
+    def _validate_regression_command(self, command: str) -> Dict[str, Any]:
+        text = str(command or "").strip()
+        try:
+            parts = shlex.split(text, posix=False)
+        except Exception as exc:
+            return {"ok": False, "error": f"blocked regression command: parse failed: {exc}"}
+        if len(parts) < 4:
+            return {"ok": False, "error": "blocked regression command: too short"}
+
+        exe = parts[0].lower()
+        if exe not in {"python", "python3", "py"} and not exe.endswith("python.exe"):
+            return {"ok": False, "error": "blocked regression command: only python is allowed"}
+        if parts[1:3] == ["-m", "py_compile"]:
+            paths = parts[3:]
+            if not paths:
+                return {"ok": False, "error": "blocked regression command: no py_compile paths"}
+            for path in paths:
+                normalized = path.replace("\\", "/").strip("'\"")
+                if not normalized.endswith(".py"):
+                    return {"ok": False, "error": "blocked regression command: py_compile only accepts .py files"}
+                if normalized.startswith("/") or ".." in normalized.split("/"):
+                    return {"ok": False, "error": "blocked regression command: unsafe path"}
+            return {"ok": True, "argv": [sys.executable] + parts[1:]}
+        if parts[1:3] == ["-m", "pytest"]:
+            paths = parts[3:]
+            if not paths:
+                return {"ok": False, "error": "blocked regression command: no pytest paths"}
+            for path in paths:
+                normalized = path.replace("\\", "/").strip("'\"")
+                if not normalized.startswith("tests/"):
+                    return {"ok": False, "error": "blocked regression command: pytest path must be under tests/"}
+            return {"ok": True, "argv": parts}
+        return {"ok": False, "error": "blocked regression command: not on whitelist"}
+
     def _build_policy_review_id(self, *, task: Dict[str, Any], step_index: int, current_tick: int) -> str:
         raw_task_id = str(
             task.get("task_id")
@@ -1085,10 +2282,22 @@ class TaskRunner:
         else:
             error_message = str(result.get("error") or "").lower()
 
+        if (
+            "repo source apply" in error_message
+            or "requires confirmation" in error_message
+            or error_type == "repo_scope_confirmation_required"
+        ):
+            return "unsafe_action"
         if "unsafe" in error_message or "blocked" in error_message:
             return "unsafe_action_blocked"
         if "timeout" in error_message or error_type in {"timeout", "command_timeout", "tool_timeout"}:
             return "timeout"
+        if (
+            "old_text/new_text" in error_message
+            or "invalid_edit_payload" in error_message
+            or error_type == "invalid_edit_payload_schema"
+        ):
+            return "validation_error"
         if "verify" in error_message or "validation" in error_message:
             return "validation_error"
         if (
@@ -1502,3 +2711,334 @@ def _zero_v703_task_runner_determine_failure_type(self, step: Dict[str, Any], re
 
 
 TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type
+
+
+# ============================================================
+# ZERO v7.1.0 - Repair Scope Guard result classification
+# ============================================================
+# Keep preflight-blocked repair steps as failed/unsafe or validation failures;
+# do not let them become finished simple tasks.
+
+try:
+    TaskRunner.SIDE_EFFECT_STEP_TYPES = set(getattr(TaskRunner, "SIDE_EFFECT_STEP_TYPES", set())) | {
+        "code_chain_repair",
+        "autonomous_code_repair",
+        "code_chain_repair_preflight_failed",
+    }
+    TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES = set(getattr(TaskRunner, "CODE_CHAIN_REPAIR_STEP_TYPES", set())) | {
+        "code_chain_repair",
+        "autonomous_code_repair",
+        "code_chain_repair_preflight_failed",
+    }
+except Exception:
+    pass
+
+_ZERO_V710_ORIGINAL_TASK_RUNNER_DETERMINE_FAILURE_TYPE = TaskRunner._determine_failure_type
+
+
+def _zero_v710_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    if step_type in getattr(TaskRunner, "CODE_CHAIN_REPAIR_STEP_TYPES", set()):
+        error_text = str(
+            (result or {}).get("error")
+            or (result or {}).get("message")
+            or (result or {}).get("final_answer")
+            or ""
+        ).lower()
+        if "scope" in error_text or "blocked" in error_text or "unsafe" in error_text:
+            return "unsafe_action_blocked"
+        if "file not found" in error_text or "missing" in error_text or "not found" in error_text:
+            return "tool_error"
+        if "verification" in error_text or "validation" in error_text:
+            return "validation_error"
+        return "validation_error"
+    return _ZERO_V710_ORIGINAL_TASK_RUNNER_DETERMINE_FAILURE_TYPE(self, step, result)
+
+
+TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type
+
+
+# ============================================================
+# ZERO v7.3.1 - Multi-Step Code Chain TaskRunner registration
+# ============================================================
+# Register analyze / repair / verify phases as known Code Chain workflow steps.
+
+_ZERO_V731_TASK_RUNNER_CODE_CHAIN_WORKFLOW_STEP_TYPES = {
+    "code_chain_analyze",
+    "code_chain_repair",
+    "autonomous_code_repair",
+    "code_chain_verify",
+    "code_chain_repair_preflight_failed",
+}
+
+try:
+    TaskRunner.READ_ONLY_STEP_TYPES = set(getattr(TaskRunner, "READ_ONLY_STEP_TYPES", set())) | {
+        "code_chain_analyze",
+        "code_chain_verify",
+    }
+    TaskRunner.SIDE_EFFECT_STEP_TYPES = set(getattr(TaskRunner, "SIDE_EFFECT_STEP_TYPES", set())) | {
+        "code_chain_repair",
+        "autonomous_code_repair",
+        "code_chain_repair_preflight_failed",
+    }
+    TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES = set(getattr(TaskRunner, "CODE_CHAIN_REPAIR_STEP_TYPES", set())) | _ZERO_V731_TASK_RUNNER_CODE_CHAIN_WORKFLOW_STEP_TYPES
+    TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(TaskRunner, "CODE_CHAIN_WORKFLOW_STEP_TYPES", set())) | _ZERO_V731_TASK_RUNNER_CODE_CHAIN_WORKFLOW_STEP_TYPES
+except Exception:
+    pass
+
+_ZERO_V731_ORIGINAL_TASK_RUNNER_DETERMINE_FAILURE_TYPE = TaskRunner._determine_failure_type
+
+
+def _zero_v731_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    if step_type in getattr(TaskRunner, "CODE_CHAIN_WORKFLOW_STEP_TYPES", set()):
+        error_text = str(
+            (result or {}).get("error")
+            or (result or {}).get("message")
+            or (result or {}).get("final_answer")
+            or ""
+        ).lower()
+        if "scope" in error_text or "blocked" in error_text or "unsafe" in error_text:
+            return "unsafe_action_blocked"
+        if "file not found" in error_text or "missing" in error_text or "not found" in error_text:
+            return "tool_error"
+        if "verification" in error_text or "validation" in error_text or "failed_functions" in error_text:
+            return "validation_error"
+        return "validation_error"
+    return _ZERO_V731_ORIGINAL_TASK_RUNNER_DETERMINE_FAILURE_TYPE(self, step, result)
+
+
+TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type
+
+
+# ============================================================
+# ZERO v8.0.0 - Autonomous Engineering Runtime wrapper
+# ============================================================
+# Adds durable Plan -> Execute -> Observe -> Decide -> Replan-candidate
+# bookkeeping around the existing runtime step executor.  This wrapper does
+# not bypass rollback, regression verification, scope gate, or strategy retry.
+
+_ZERO_V800_ORIGINAL_TASK_RUNNER_RUN_ONE_STEP = TaskRunner._run_one_step
+
+
+def _zero_v800_extract_action(result: Any) -> str:
+    if isinstance(result, dict):
+        return str(result.get("action") or "").strip()
+    return ""
+
+
+def _zero_v800_extract_status(result: Any) -> str:
+    if isinstance(result, dict):
+        return str(result.get("status") or "").strip().lower()
+    return ""
+
+
+def _zero_v800_extract_error(result: Any) -> str:
+    if not isinstance(result, dict):
+        return "invalid runner result"
+    for key in ("error", "last_error", "message", "final_answer"):
+        value = result.get(key)
+        if value:
+            return str(value)
+    runtime_state = result.get("runtime_state")
+    if isinstance(runtime_state, dict):
+        for key in ("last_error", "failure_message"):
+            value = runtime_state.get(key)
+            if value:
+                return str(value)
+    return ""
+
+
+def _zero_v800_build_observation(self: TaskRunner, *, task: Dict[str, Any], result: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+    runtime_state = result.get("runtime_state") if isinstance(result.get("runtime_state"), dict) else {}
+    repair_context = runtime_state.get("repair_context") if isinstance(runtime_state, dict) else {}
+    if not isinstance(repair_context, dict):
+        repair_context = {}
+    strategy = repair_context.get("strategy") if isinstance(repair_context.get("strategy"), dict) else {}
+    regression_verify = repair_context.get("regression_verify") if isinstance(repair_context.get("regression_verify"), dict) else result.get("regression_verify")
+    rollback_result = repair_context.get("rollback_result") if isinstance(repair_context.get("rollback_result"), dict) else result.get("rollback_result")
+    repo_impact = repair_context.get("repo_impact") if isinstance(repair_context.get("repo_impact"), dict) else {}
+
+    action = _zero_v800_extract_action(result)
+    status = _zero_v800_extract_status(result)
+    ok = bool(result.get("ok", False)) if isinstance(result, dict) else False
+    error = _zero_v800_extract_error(result)
+
+    summary_parts = []
+    if action:
+        summary_parts.append(action)
+    if status:
+        summary_parts.append(status)
+    if error:
+        summary_parts.append(error[:240])
+
+    return {
+        "tick": current_tick,
+        "action": action,
+        "status": status,
+        "ok": ok,
+        "error": error,
+        "summary": " | ".join(summary_parts),
+        "current_step_index": runtime_state.get("current_step_index") if isinstance(runtime_state, dict) else None,
+        "steps_total": runtime_state.get("steps_total") if isinstance(runtime_state, dict) else None,
+        "last_step_type": self._zero_v800_last_step_type(runtime_state),
+        "strategy": copy.deepcopy(strategy),
+        "regression_verify": copy.deepcopy(regression_verify) if isinstance(regression_verify, dict) else {},
+        "rollback_result": copy.deepcopy(rollback_result) if isinstance(rollback_result, dict) else {},
+        "repo_impact": copy.deepcopy(repo_impact) if isinstance(repo_impact, dict) else {},
+    }
+
+
+def _zero_v800_decide_from_observation(self: TaskRunner, *, observation: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    action = str(observation.get("action") or "")
+    status = str(observation.get("status") or "").lower()
+    ok = bool(observation.get("ok", False))
+    error = str(observation.get("error") or "")
+    strategy = observation.get("strategy") if isinstance(observation.get("strategy"), dict) else {}
+    exhausted = bool(strategy.get("exhausted", False))
+
+    if action == "strategy_retry":
+        return {
+            "decision": "continue_strategy",
+            "phase": "executing",
+            "reason": f"strategy retry selected: {result.get('next_strategy', strategy.get('current_strategy', ''))}",
+            "next_action": "run_next_tick",
+            "next_strategy": result.get("next_strategy") or strategy.get("current_strategy", ""),
+        }
+
+    if action in {"blocked_for_review", "blocked_waiting"} or status in {"waiting", "waiting_review", "blocked", "paused"}:
+        return {
+            "decision": "wait_for_review",
+            "phase": "waiting",
+            "reason": error or "action blocked pending review",
+            "next_action": "wait_for_external_event",
+        }
+
+    if status == "finished" or action in {"already_finished"}:
+        return {
+            "decision": "finish",
+            "phase": "finished",
+            "reason": "runtime reached terminal finished state",
+            "next_action": "none",
+        }
+
+    if status in {"failed", "error", "cancelled", "canceled", "timeout"} or action in {"step_failed", "regression_verify_failed"}:
+        if exhausted or action in {"step_failed", "regression_verify_failed"}:
+            return {
+                "decision": "replan_candidate",
+                "phase": "replanning",
+                "reason": error or "terminal failure observed by engineering runtime",
+                "next_action": "manual_or_planner_replan",
+                "strategy_exhausted": exhausted,
+            }
+        return {
+            "decision": "terminal",
+            "phase": "terminal",
+            "reason": error or "terminal failure",
+            "next_action": "none",
+        }
+
+    if action in {"step_failed_observed", "retry", "replan"}:
+        return {
+            "decision": "continue",
+            "phase": "executing",
+            "reason": action,
+            "next_action": "run_next_tick",
+        }
+
+    if ok:
+        return {
+            "decision": "continue",
+            "phase": "executing",
+            "reason": action or "step completed",
+            "next_action": "run_next_tick",
+        }
+
+    return {
+        "decision": "replan_candidate",
+        "phase": "replanning",
+        "reason": error or "unclassified failure observed",
+        "next_action": "manual_or_planner_replan",
+        "strategy_exhausted": exhausted,
+    }
+
+
+def _zero_v800_last_step_type(self: TaskRunner, runtime_state: Any) -> str:
+    if not isinstance(runtime_state, dict):
+        return ""
+    last = runtime_state.get("last_step_result")
+    if not isinstance(last, dict):
+        return ""
+    step = last.get("step")
+    if isinstance(step, dict):
+        return str(step.get("type") or "")
+    result = last.get("result")
+    if isinstance(result, dict):
+        return str(result.get("step_type") or "")
+    return ""
+
+
+def _zero_v800_task_runner_run_one_step(self: TaskRunner, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+    result = _ZERO_V800_ORIGINAL_TASK_RUNNER_RUN_ONE_STEP(self, task, current_tick)
+    if not isinstance(result, dict):
+        return result
+
+    try:
+        observation = self._zero_v800_build_observation(task=task, result=result, current_tick=current_tick)
+        observed = self.runtime.record_engineering_observation(
+            task=task,
+            observation=observation,
+            current_tick=current_tick,
+        )
+        if isinstance(observed, dict) and isinstance(observed.get("runtime_state"), dict):
+            result["runtime_state"] = copy.deepcopy(observed["runtime_state"])
+
+        decision = self._zero_v800_decide_from_observation(observation=observation, result=result)
+        decided = self.runtime.record_engineering_decision(
+            task=task,
+            decision=decision,
+            current_tick=current_tick,
+        )
+        if isinstance(decided, dict) and isinstance(decided.get("runtime_state"), dict):
+            result["runtime_state"] = copy.deepcopy(decided["runtime_state"])
+
+        if decision.get("decision") == "replan_candidate":
+            runtime_state = result.get("runtime_state") if isinstance(result.get("runtime_state"), dict) else {}
+            last_step = None
+            last_result = None
+            if isinstance(runtime_state, dict) and isinstance(runtime_state.get("last_step_result"), dict):
+                last_record = runtime_state["last_step_result"]
+                last_step = last_record.get("step") if isinstance(last_record.get("step"), dict) else None
+                last_result = last_record.get("result") if isinstance(last_record.get("result"), dict) else None
+            replan = self.runtime.create_engineering_replan_candidate(
+                task=task,
+                reason=decision.get("reason") or observation.get("error") or "engineering replan candidate",
+                failed_step=last_step,
+                failed_result=last_result,
+                current_tick=current_tick,
+            )
+            if isinstance(replan, dict) and isinstance(replan.get("runtime_state"), dict):
+                result["runtime_state"] = copy.deepcopy(replan["runtime_state"])
+                result["engineering_replan_candidate"] = copy.deepcopy(replan.get("replan_candidate"))
+
+        if isinstance(result.get("runtime_state"), dict):
+            result["engineering_session"] = copy.deepcopy(result["runtime_state"].get("engineering_session", {}))
+            result["execution_trace"] = copy.deepcopy(result["runtime_state"].get("execution_trace", result.get("execution_trace", [])))
+    except Exception as exc:
+        # Never let engineering-loop observability break the already-safe
+        # transactional repair runtime.
+        try:
+            runtime_state = self.runtime.load_runtime_state(task)
+            runtime_state["engineering_session_error"] = str(exc)
+            runtime_state = self.runtime.save_runtime_state(task, runtime_state)
+            result["runtime_state"] = runtime_state
+        except Exception:
+            result["engineering_session_error"] = str(exc)
+
+    return result
+
+
+TaskRunner._zero_v800_build_observation = _zero_v800_build_observation
+TaskRunner._zero_v800_decide_from_observation = _zero_v800_decide_from_observation
+TaskRunner._zero_v800_last_step_type = _zero_v800_last_step_type
+TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step
