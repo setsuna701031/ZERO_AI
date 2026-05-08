@@ -20,6 +20,7 @@ from core.runtime.audit_log import AuditLogger
 from core.runtime.repair_planner import RepairPlanner
 from core.runtime.repair_step_injector import RepairStepInjector
 from core.runtime.repair_observability import build_repair_chain_id, build_repair_observability
+from core.runtime.repair_rollback import restore_repair_backup, should_rollback_after_failed_verify
 
 MAX_PUBLIC_LIST_ITEMS = 20
 MAX_PUBLIC_TRACE_ITEMS = 100
@@ -1215,7 +1216,8 @@ class TaskRunner:
 
             rollback_result = None
             if self._should_rollback_after_failed_verify(step=step, step_result=result, state=state):
-                rollback_result = self.runtime.rollback_last_apply(
+                rollback_result = restore_repair_backup(
+                    runtime=self.runtime,
                     task=task,
                     current_tick=current_tick,
                     verify_error=result.get("error") or result.get("message"),
@@ -1401,7 +1403,8 @@ class TaskRunner:
                     current_tick=current_tick,
                 )
                 new_state = copy.deepcopy(recorded.get("runtime_state", new_state))
-                rollback_result = self.runtime.rollback_last_apply(
+                rollback_result = restore_repair_backup(
+                    runtime=self.runtime,
                     task=task,
                     current_tick=current_tick,
                     verify_error=str(regression_result.get("error") or "regression verification failed"),
@@ -2250,21 +2253,11 @@ class TaskRunner:
         return ""
 
     def _should_rollback_after_failed_verify(self, *, step: Any, step_result: Any, state: Any) -> bool:
-        if not isinstance(step, dict) or not isinstance(step_result, dict) or not isinstance(state, dict):
-            return False
-        if bool(step_result.get("ok", False)):
-            return False
-        step_type = str(step.get("type") or "").strip().lower()
-        if step_type not in {"verify", "verify_file", "code_chain_verify"}:
-            return False
-        repair_context = state.get("repair_context")
-        if not isinstance(repair_context, dict):
-            return False
-        rollback_result = repair_context.get("rollback_result")
-        if isinstance(rollback_result, dict) and rollback_result.get("ok") is True:
-            return False
-        rollback = repair_context.get("rollback")
-        return isinstance(rollback, dict) and bool(rollback.get("restore_available"))
+        return should_rollback_after_failed_verify(
+            step=step,
+            step_result=step_result,
+            state=state,
+        )
 
     def _is_apply_step(self, step: Any) -> bool:
         if not isinstance(step, dict):

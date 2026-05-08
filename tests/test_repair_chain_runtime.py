@@ -2046,3 +2046,47 @@ def test_repair_observability_helper_builds_stable_chain_metadata() -> None:
     assert event["repair_block_reason"] == "critical repo path requires review"
     assert event["repair_depth"] == 1
     assert event["max_repair_depth"] == 2
+# ---------------------------------------------------------------------------
+# Repair Rollback Extraction v1
+# ---------------------------------------------------------------------------
+
+
+def test_repair_rollback_helper_decides_failed_verify_restore_available() -> None:
+    from core.runtime.repair_rollback import should_rollback_after_failed_verify
+
+    assert should_rollback_after_failed_verify(
+        step={"type": "code_chain_verify"},
+        step_result={"ok": False, "error": "verification_failed"},
+        state={"repair_context": {"rollback": {"restore_available": True}}},
+    ) is True
+
+    assert should_rollback_after_failed_verify(
+        step={"type": "code_chain_verify"},
+        step_result={"ok": True},
+        state={"repair_context": {"rollback": {"restore_available": True}}},
+    ) is False
+
+    assert should_rollback_after_failed_verify(
+        step={"type": "run_python"},
+        step_result={"ok": False},
+        state={"repair_context": {"rollback": {"restore_available": True}}},
+    ) is False
+
+
+def test_repair_rollback_helper_normalizes_invalid_runtime_result() -> None:
+    from core.runtime.repair_rollback import restore_repair_backup
+
+    class BadRuntime:
+        def rollback_last_apply(self, **kwargs):
+            return "not a dict"
+
+    result = restore_repair_backup(
+        runtime=BadRuntime(),
+        task={"task_id": "bad_runtime"},
+        current_tick=1,
+        verify_error="verification_failed",
+    )
+
+    assert result["ok"] is False
+    assert result["rollback_result"]["ok"] is False
+    assert "invalid result" in result["rollback_result"]["reason"]
