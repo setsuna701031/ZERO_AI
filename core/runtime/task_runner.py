@@ -19,6 +19,7 @@ from core.runtime.task_runtime import TaskRuntime
 from core.runtime.audit_log import AuditLogger
 from core.runtime.repair_planner import RepairPlanner
 from core.runtime.repair_step_injector import RepairStepInjector
+from core.runtime.repair_observability import build_repair_chain_id, build_repair_observability
 
 MAX_PUBLIC_LIST_ITEMS = 20
 MAX_PUBLIC_TRACE_ITEMS = 100
@@ -1884,7 +1885,7 @@ class TaskRunner:
             state["repair_context"] = repair_context
 
         source_path = self._infer_repair_source_path(step=step, step_result=step_result)
-        repair_chain_id = self._build_repair_chain_id(
+        repair_chain_id = build_repair_chain_id(
             task=task,
             source_path=source_path,
             step_index=step_index,
@@ -1905,21 +1906,15 @@ class TaskRunner:
         if not isinstance(policy_decision, dict):
             policy_decision = {"allow": False, "action": "fail", "reason": "invalid repair policy decision"}
 
-        observability = {
-            "repair_chain_id": repair_chain_id,
-            "repair_origin_step": {
-                "step_index": step_index,
-                "step_id": str(step.get("id") or "") if isinstance(step, dict) else "",
-                "step_type": str(step.get("type") or "") if isinstance(step, dict) else "",
-                "source_path": source_path,
-            },
-            "repair_policy_decision": copy.deepcopy(policy_decision),
-            "repair_risk_level": str(policy_decision.get("risk_level") or ""),
-            "repair_block_reason": str(policy_decision.get("reason") or ""),
-            "repair_quarantine_reason": str(policy_decision.get("reason") or "") if bool(policy_decision.get("quarantine")) else "",
-            "repair_depth": policy_decision.get("current_repair_depth", 0),
-            "max_repair_depth": policy_decision.get("max_repair_depth", 1),
-        }
+        observability = build_repair_observability(
+            task=task,
+            step=step,
+            source_path=source_path,
+            step_index=step_index,
+            current_tick=current_tick,
+            policy_decision=policy_decision,
+            repair_chain_id=repair_chain_id,
+        )
         repair_context["last_repair_observability"] = copy.deepcopy(observability)
         repair_context["last_repair_policy_decision"] = copy.deepcopy(policy_decision)
         repair_context["last_repair_chain_id"] = repair_chain_id

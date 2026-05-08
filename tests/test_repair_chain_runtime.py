@@ -2005,3 +2005,44 @@ def test_repair_observability_policy_decision_records_depth_block() -> None:
     assert decision["current_repair_depth"] == 1
     assert decision["max_repair_depth"] == 1
     assert "max repair depth" in decision["reason"]
+
+
+def test_repair_observability_helper_builds_stable_chain_metadata() -> None:
+    from core.runtime.repair_observability import build_repair_chain_id, build_repair_observability
+
+    task = {"task_id": "obs_helper"}
+    step = {"id": "compile", "type": "run_python"}
+    decision = {
+        "allow": False,
+        "action": "review_required",
+        "reason": "critical repo path requires review",
+        "risk_level": "high",
+        "requires_review": True,
+        "quarantine": False,
+        "current_repair_depth": 1,
+        "max_repair_depth": 2,
+    }
+    chain_id = build_repair_chain_id(
+        task=task,
+        source_path="core/runtime/task_runner.py",
+        step_index=3,
+        current_tick=7,
+    )
+    event = build_repair_observability(
+        task=task,
+        step=step,
+        source_path="core/runtime/task_runner.py",
+        step_index=3,
+        current_tick=7,
+        policy_decision=decision,
+        repair_chain_id=chain_id,
+    )
+
+    assert chain_id == "repair_obs_helper_core_runtime_task_runner.py_step_3_tick_7"
+    assert event["repair_chain_id"] == chain_id
+    assert event["repair_origin_step"]["step_id"] == "compile"
+    assert event["repair_origin_step"]["step_type"] == "run_python"
+    assert event["repair_risk_level"] == "high"
+    assert event["repair_block_reason"] == "critical repo path requires review"
+    assert event["repair_depth"] == 1
+    assert event["max_repair_depth"] == 2
