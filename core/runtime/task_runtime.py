@@ -2328,23 +2328,40 @@ class TaskRuntime:
                 strategy = str(item.get("strategy") or "").strip()
                 if strategy and strategy not in strategies:
                     strategies.append(strategy)
-        goal_state = context.get("engineering_goal_state") if isinstance(context, dict) and isinstance(context.get("engineering_goal_state"), dict) else {}
-        goal_summary = goal_state.get("summary") if isinstance(goal_state.get("summary"), dict) else {}
+        engineering_goal_state = (
+            context.get("engineering_goal_state")
+            if isinstance(context, dict) and isinstance(context.get("engineering_goal_state"), dict)
+            else {}
+        )
+        goal_summary = (
+            engineering_goal_state.get("summary")
+            if isinstance(engineering_goal_state.get("summary"), dict)
+            else {}
+        )
+        repair_session = (
+            context.get("repair_session")
+            if isinstance(context, dict) and isinstance(context.get("repair_session"), dict)
+            else {}
+        )
+
         return {
             "total_nodes": len(nodes),
             "failed_nodes": len([item for item in nodes if str(item.get("status") or "") in {"failed", "blocked"}]),
             "rollback_count": len([item for item in nodes if item.get("type") == "rollback"]),
+            "repair_depth": len([item for item in nodes if item.get("type") in {"repair", "apply", "rollback", "strategy_switch", "regression_verify"}]),
+            "strategy_retry_count": len([item for item in nodes if item.get("type") == "strategy_switch"]),
+            "quarantined": bool(repair_session.get("quarantined", False)),
             "strategies_used": strategies,
             "changed_files": changed_files,
             "impacted_files": impacted_files,
             "final_status": final_status,
             "terminal_reason": self._truncate_text(terminal_reason, 500),
-            "total_subgoals": int(goal_summary.get("total_subgoals", 0) or 0) if isinstance((context.get("engineering_goal_state") if isinstance(context, dict) else {}).get("summary"), dict) else 0,
-            "completed_subgoals": int(goal_summary.get("completed_subgoals", 0) or 0) if isinstance((context.get("engineering_goal_state") if isinstance(context, dict) else {}).get("summary"), dict) else 0,
-            "failed_subgoals": int(goal_summary.get("failed_subgoals", 0) or 0) if isinstance((context.get("engineering_goal_state") if isinstance(context, dict) else {}).get("summary"), dict) else 0,
-            "blocked_subgoals": int(goal_summary.get("blocked_subgoals", 0) or 0) if isinstance((context.get("engineering_goal_state") if isinstance(context, dict) else {}).get("summary"), dict) else 0,
-            "current_subgoal_id": str((context.get("engineering_goal_state") if isinstance(context, dict) else {}).get("current_subgoal_id") or ""),
-            "goal_status": str((context.get("engineering_goal_state") if isinstance(context, dict) else {}).get("status") or final_status),
+            "total_subgoals": int(goal_summary.get("total_subgoals", 0) or 0),
+            "completed_subgoals": int(goal_summary.get("completed_subgoals", 0) or 0),
+            "failed_subgoals": int(goal_summary.get("failed_subgoals", 0) or 0),
+            "blocked_subgoals": int(goal_summary.get("blocked_subgoals", 0) or 0),
+            "current_subgoal_id": str(engineering_goal_state.get("current_subgoal_id") or ""),
+            "goal_status": str(engineering_goal_state.get("status") or final_status),
         }
 
     def _link_latest_apply_to_rollback(self, *, context: Dict[str, Any], rollback_node_id: str) -> None:
