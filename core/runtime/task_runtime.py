@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from core.runtime.runtime_state_machine import RuntimeStateMachine
 from core.runtime.failure_policy import FailurePolicy
 from core.runtime.audit_log import AuditLogger
+from core.runtime.runtime_state_guard import RuntimeStateGuard, validate_runtime_state
 
 
 TERMINAL_STATUSES = {
@@ -67,6 +68,7 @@ class TaskRuntime:
         self.trace_log_filename = trace_log_filename
         self.state_machine = RuntimeStateMachine(debug=debug)
         self.audit = AuditLogger(workspace_root=self.workspace_root)
+        self.state_guard = RuntimeStateGuard()
 
     # ============================================================
     # runtime state
@@ -102,6 +104,17 @@ class TaskRuntime:
 
     def save_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         normalized = self._normalize_runtime_state(task, state if isinstance(state, dict) else {})
+        if not str(normalized.get("runtime_owner") or "").strip():
+            normalized = self._stamp_runtime_ownership(
+                normalized,
+                owner="task_runtime",
+                action=str(normalized.get("last_transition_action") or "save_runtime_state"),
+            )
+        guard_warnings = validate_runtime_state(normalized)
+        if guard_warnings:
+            normalized["runtime_state_guard_warnings"] = list(guard_warnings)
+        else:
+            normalized.pop("runtime_state_guard_warnings", None)
         normalized = self._compact_runtime_state_for_storage(normalized)
         runtime_state_file = self._get_runtime_state_file(task)
         self._ensure_parent_dir(runtime_state_file)
@@ -118,6 +131,7 @@ class TaskRuntime:
         current_tick: int = 0,
     ) -> Dict[str, Any]:
         state = self.load_runtime_state(task)
+        state = self._stamp_runtime_ownership(state, owner="task_runtime", action="mark_running")
 
         state["status"] = "running"
         state["last_run_tick"] = current_tick
@@ -150,6 +164,7 @@ class TaskRuntime:
             "status": "running",
             "task": copy.deepcopy(task),
             "runtime_state": state,
+            **self._runtime_transition_metadata(state, "mark_running"),
         }
 
     def advance_step(
@@ -449,6 +464,7 @@ class TaskRuntime:
         state = self.load_runtime_state(task)
         state = self._sync_steps_from_task(task, state)
         state = self._sync_loop_fields_from_task(task, state)
+        state = self._stamp_runtime_ownership(state, owner="task_runtime", action="mark_finished")
 
         state["status"] = "finished"
         state["current_step_index"] = int(state.get("steps_total", 0) or 0)
@@ -517,6 +533,7 @@ class TaskRuntime:
             "task": copy.deepcopy(task),
             "runtime_state": state,
             "final_answer": state.get("final_answer", ""),
+            **self._runtime_transition_metadata(state, "mark_finished"),
         }
 
 
@@ -744,6 +761,7 @@ class TaskRuntime:
         state = self.load_runtime_state(task)
         state = self._sync_steps_from_task(task, state)
         state = self._sync_loop_fields_from_task(task, state)
+        state = self._stamp_runtime_ownership(state, owner="task_runtime", action="mark_failed")
 
         failure_type = self._normalize_failure_type(failure_type)
         decision = FailurePolicy.decide(failure_type)
@@ -821,6 +839,25 @@ class TaskRuntime:
             "decision": state["failure_decision"],
             "task": copy.deepcopy(task),
             "runtime_state": state,
+        }
+
+    # ============================================================
+    # runtime ownership
+    # ============================================================
+
+    def _stamp_runtime_ownership(self, state: Dict[str, Any], *, owner: str, action: str) -> Dict[str, Any]:
+        stamped = copy.deepcopy(state if isinstance(state, dict) else {})
+        stamped["runtime_owner"] = str(owner or "task_runtime")
+        stamped["last_transition_owner"] = str(owner or "task_runtime")
+        stamped["last_transition_action"] = str(action or "runtime_state_update")
+        stamped["last_transition_at"] = self._now()
+        return stamped
+
+    def _runtime_transition_metadata(self, state: Dict[str, Any], action: str) -> Dict[str, Any]:
+        return {
+            "runtime_owner": str((state or {}).get("runtime_owner") or "task_runtime"),
+            "transition_owner": str((state or {}).get("last_transition_owner") or "task_runtime"),
+            "transition_action": str((state or {}).get("last_transition_action") or action),
         }
 
     # ============================================================
