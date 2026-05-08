@@ -2028,14 +2028,31 @@ class TaskRunner:
             reason = str(policy_decision.get("reason") or "repair policy blocked")
             state["repair_policy_decision"] = copy.deepcopy(policy_decision)
             state["repair_observability"] = copy.deepcopy(observability)
-            state["last_error"] = reason
             if action == "review_required" or bool(policy_decision.get("requires_review")):
-                state["status"] = "review_required"
-                state["next_action"] = "wait_for_external_event"
+                state = self.runtime.apply_runtime_transition(
+                    task,
+                    state,
+                    owner="task_runtime",
+                    action="repair_policy_review_required",
+                    updates={
+                        "status": "review_required",
+                        "next_action": "wait_for_external_event",
+                        "last_error": reason,
+                    },
+                )
                 state["requires_review"] = True
             else:
-                state["status"] = "failed"
-                state["next_action"] = "finish"
+                state = self.runtime.apply_runtime_transition(
+                    task,
+                    state,
+                    owner="task_runtime",
+                    action="repair_policy_failed",
+                    updates={
+                        "status": "failed",
+                        "next_action": "finish",
+                        "last_error": reason,
+                    },
+                )
             if bool(policy_decision.get("quarantine")):
                 state["repair_quarantine"] = {
                     "active": True,
@@ -2150,11 +2167,19 @@ class TaskRunner:
                 pass
             return None
 
-        injected_state["status"] = "running"
-        injected_state["next_action"] = "run_next_tick"
+        injected_state = self.runtime.apply_runtime_transition(
+            task,
+            injected_state,
+            owner="task_runtime",
+            action="repair_steps_injected",
+            updates={
+                "status": "running",
+                "next_action": "run_next_tick",
+                "last_error": self._stringify_failure_message(step_result.get("error")),
+            },
+        )
         injected_state["last_repair_plan"] = copy.deepcopy(repair_plan)
         injected_state["last_repair_injection"] = copy.deepcopy(injection)
-        injected_state["last_error"] = self._stringify_failure_message(step_result.get("error"))
 
         repair_context = injected_state.setdefault("repair_context", {})
         if isinstance(repair_context, dict):
@@ -2381,10 +2406,17 @@ class TaskRunner:
         context["engineering_goal_state"] = self.runtime._refresh_goal_state_summary(goal_state, final_status="blocked")
         blocked_state = copy.deepcopy(state)
         blocked_state["repair_context"] = context
-        blocked_state["status"] = "blocked"
-        blocked_state["last_error"] = reason
-        blocked_state["updated_at"] = self.runtime._now()
-        blocked_state = self.runtime.save_runtime_state(task, blocked_state)
+        blocked_state = self.runtime.apply_runtime_transition(
+            task,
+            blocked_state,
+            owner="task_runtime",
+            action="subgoal_dependency_blocked",
+            updates={
+                "status": "blocked",
+                "last_error": reason,
+            },
+            save=True,
+        )
         self.runtime._sync_task_from_runtime_state(task, blocked_state)
         self._ensure_execution_trace_defaults(task, blocked_state)
 
@@ -3459,10 +3491,27 @@ def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict
 
     runtime_state = public_result.get("runtime_state")
     if isinstance(runtime_state, dict):
+        updates: Dict[str, Any] = {}
         if "current_step_index" not in runtime_state and "current_step_index" in public_result:
-            runtime_state["current_step_index"] = public_result["current_step_index"]
+            updates["current_step_index"] = public_result["current_step_index"]
         if "steps_total" not in runtime_state and "steps_total" in public_result:
-            runtime_state["steps_total"] = public_result["steps_total"]
+            updates["steps_total"] = public_result["steps_total"]
+        if updates:
+            try:
+                runtime_obj = getattr(public_result.get("task_runtime"), "apply_runtime_transition", None)
+                if callable(runtime_obj):
+                    runtime_state = runtime_obj(
+                        public_result.get("task") if isinstance(public_result.get("task"), dict) else {},
+                        runtime_state,
+                        owner="task_runtime",
+                        action="finalize_public_result_metadata",
+                        updates=updates,
+                    )
+                    public_result["runtime_state"] = runtime_state
+                else:
+                    runtime_state.update(updates)
+            except Exception:
+                runtime_state.update(updates)
 
     task = public_result.get("task")
     if isinstance(task, dict):

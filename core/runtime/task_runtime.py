@@ -845,6 +845,64 @@ class TaskRuntime:
     # runtime ownership
     # ============================================================
 
+    def apply_runtime_transition(
+        self,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        *,
+        owner: str,
+        action: str,
+        updates: Optional[Dict[str, Any]] = None,
+        save: bool = False,
+        allow_terminal_write: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Apply controlled runtime-state updates through RuntimeStateGuard.
+
+        This is the phase-2 runtime ownership funnel:
+        callers may request updates, but TaskRuntime remains the authority that
+        stamps ownership metadata, validates state, optionally persists it, and
+        syncs the task snapshot.
+
+        The method intentionally accepts only a small dict of top-level runtime
+        fields for now. Nested repair_context edits remain owned by the existing
+        repair/runtime helpers until later phases.
+        """
+
+        if not isinstance(state, dict):
+            state = {}
+
+        next_state = copy.deepcopy(state)
+        transition_owner = str(owner or "task_runtime").strip().lower() or "task_runtime"
+        transition_action = str(action or "runtime_transition").strip() or "runtime_transition"
+
+        for key, value in (updates or {}).items():
+            section = str(key or "").strip()
+            if not section:
+                continue
+            mutation = self.state_guard.update_section(
+                next_state,
+                section=section,
+                owner=transition_owner,
+                patch=value,
+                action="set",
+                allow_terminal_write=allow_terminal_write,
+            )
+            next_state = mutation.state
+
+        next_state = self._stamp_runtime_ownership(
+            next_state,
+            owner=transition_owner,
+            action=transition_action,
+        )
+        next_state["updated_at"] = self._now()
+
+        if save:
+            next_state = self.save_runtime_state(task, next_state)
+            self._sync_task_from_runtime_state(task, next_state)
+
+        return next_state
+
     def _stamp_runtime_ownership(self, state: Dict[str, Any], *, owner: str, action: str) -> Dict[str, Any]:
         stamped = copy.deepcopy(state if isinstance(state, dict) else {})
         stamped["runtime_owner"] = str(owner or "task_runtime")
