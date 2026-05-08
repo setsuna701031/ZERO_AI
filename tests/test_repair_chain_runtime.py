@@ -2090,3 +2090,138 @@ def test_repair_rollback_helper_normalizes_invalid_runtime_result() -> None:
     assert result["ok"] is False
     assert result["rollback_result"]["ok"] is False
     assert "invalid result" in result["rollback_result"]["reason"]
+# ---------------------------------------------------------------------------
+# Repair Context Budget Guard v1
+# ---------------------------------------------------------------------------
+
+
+def _budget_task(task_id: str = "budget_guard") -> dict:
+    task_dir = TEST_ROOT / "tasks" / task_id
+    return {
+        "task_id": task_id,
+        "task_name": task_id,
+        "goal": "budget guard",
+        "status": "queued",
+        "task_dir": str(task_dir),
+        "runtime_state_file": str(task_dir / "runtime_state.json"),
+        "steps": [{"id": "noop", "type": "noop"}],
+        "current_step_index": 0,
+    }
+
+
+def test_budget_caps_execution_trace_growth() -> None:
+    from core.runtime.task_runtime import MAX_STORED_TRACE_ITEMS
+
+    task = _budget_task("budget_trace_cap")
+    runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+    state = runtime.ensure_runtime_state(task)
+
+    state["execution_trace"] = [
+        {"event": "trace_item", "index": index}
+        for index in range(MAX_STORED_TRACE_ITEMS + 25)
+    ]
+
+    saved = runtime.save_runtime_state(task, state)
+    stored = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
+
+    expected_len = min(MAX_STORED_TRACE_ITEMS, MAX_STORED_TRACE_ITEMS + 25)
+    assert len(saved["execution_trace"]) <= MAX_STORED_TRACE_ITEMS
+    assert len(stored["execution_trace"]) <= MAX_STORED_TRACE_ITEMS
+    assert len(stored["execution_trace"]) == len(saved["execution_trace"])
+    assert stored["execution_trace"][-1]["index"] == MAX_STORED_TRACE_ITEMS + 24
+
+
+def test_budget_truncates_large_stdout() -> None:
+    from core.runtime.task_runtime import MAX_STORED_TEXT_CHARS
+
+    task = _budget_task("budget_large_stdout")
+    runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+    state = runtime.ensure_runtime_state(task)
+
+    large_stdout = "x" * (MAX_STORED_TEXT_CHARS + 500)
+    state["last_step_result"] = {
+        "step_index": 0,
+        "step": {"id": "huge", "type": "run_python"},
+        "result": {
+            "ok": False,
+            "stdout": large_stdout,
+            "stderr": large_stdout,
+        },
+    }
+    state["last_output"] = large_stdout
+
+    saved = runtime.save_runtime_state(task, state)
+    stored = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
+    stored_text = json.dumps(stored)
+
+    assert "<truncated:" in stored_text
+    assert len(stored["last_output"]) < len(large_stdout)
+    result_payload = stored["last_step_result"]["result"]["result"]
+    assert len(result_payload["stdout"]) < len(large_stdout)
+    assert len(saved["last_step_result"]["result"]["result"]["stdout"]) < len(large_stdout)
+
+
+def test_budget_drops_recursive_runtime_state_keys() -> None:
+    task = _budget_task("budget_recursive_keys")
+    runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+    state = runtime.ensure_runtime_state(task)
+
+    state["runtime_state"] = {"should_not_persist": True}
+    state["raw_result"] = {"should_not_persist": True}
+    state["repair_context"] = {
+        "ok": True,
+        "runtime_state": {"nested_should_not_persist": True},
+        "task": {"nested_should_not_persist": True},
+        "nested": {
+            "runner_result": {"nested_should_not_persist": True},
+            "safe_value": "kept",
+        },
+    }
+
+    saved = runtime.save_runtime_state(task, state)
+    stored = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
+    stored_text = json.dumps(stored)
+
+    assert "should_not_persist" not in stored_text
+    assert "nested_should_not_persist" not in stored_text
+    assert "runtime_state" not in stored
+    assert "raw_result" not in stored.get("repair_context", {})
+    assert stored["repair_context"]["ok"] is True
+    assert stored["repair_context"]["nested"]["safe_value"] == "kept"
+    assert saved["repair_context"]["nested"]["safe_value"] == "kept"
+
+
+def test_budget_limits_repair_history_growth() -> None:
+    from core.runtime.task_runtime import MAX_STORED_LIST_ITEMS
+
+    task = _budget_task("budget_repair_history")
+    runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+    state = runtime.ensure_runtime_state(task)
+
+    state["repair_context"] = {
+        "strategy": {
+            "strategy_history": [
+                {"index": index, "strategy": "minimal_patch", "outcome": "failed"}
+                for index in range(MAX_STORED_LIST_ITEMS + 30)
+            ],
+        },
+        "injections": [
+            {"index": index, "step_ids": [f"repair_{index}"]}
+            for index in range(MAX_STORED_LIST_ITEMS + 30)
+        ],
+    }
+    state["execution_log"] = [
+        {"step_index": index, "step": {"type": "noop"}, "result": {"ok": True}}
+        for index in range(MAX_STORED_LIST_ITEMS + 30)
+    ]
+
+    saved = runtime.save_runtime_state(task, state)
+    stored = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
+
+    assert len(stored["execution_log"]) <= MAX_STORED_LIST_ITEMS
+    assert stored["execution_log"][-1]["step_index"] == MAX_STORED_LIST_ITEMS + 29
+    assert len(stored["repair_context"]["strategy"]["strategy_history"]) <= MAX_STORED_LIST_ITEMS
+    assert stored["repair_context"]["strategy"]["strategy_history"][-1]["index"] == MAX_STORED_LIST_ITEMS + 29
+    assert len(stored["repair_context"]["injections"]) <= MAX_STORED_LIST_ITEMS
+    assert stored["repair_context"]["injections"][-1]["index"] == MAX_STORED_LIST_ITEMS + 29
+    assert saved["repair_context"]["injections"][-1]["index"] == MAX_STORED_LIST_ITEMS + 29
