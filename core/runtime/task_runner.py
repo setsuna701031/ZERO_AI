@@ -1862,6 +1862,57 @@ class TaskRunner:
             repair_context = {}
             state["repair_context"] = repair_context
 
+        source_path = self._infer_repair_source_path(step=step, step_result=step_result)
+
+        repair_policy_decision = FailurePolicy.decide_repair(
+            task=task,
+            state=state,
+            step=step,
+            step_result=step_result,
+            source_path=source_path,
+        ).to_dict()
+        repair_context["repair_policy_decision"] = copy.deepcopy(repair_policy_decision)
+        state["repair_policy_decision"] = copy.deepcopy(repair_policy_decision)
+
+        if not bool(repair_policy_decision.get("allow", False)):
+            state["repair_policy_blocked"] = True
+            state["repair_policy_reason"] = str(repair_policy_decision.get("reason") or "repair blocked")
+            if bool(repair_policy_decision.get("quarantine", False)):
+                state["repair_quarantine"] = True
+            if str(repair_policy_decision.get("action") or "") == "review_required":
+                state["status"] = "waiting_review"
+                state["next_action"] = "wait_for_external_event"
+                state["requires_review"] = True
+                state["last_error"] = str(repair_policy_decision.get("reason") or "repair requires review")
+            try:
+                self.runtime.save_runtime_state(task, state)
+            except Exception:
+                pass
+            self._trace(
+                task,
+                "repair_policy_blocked",
+                {
+                    "step_index": step_index,
+                    "current_tick": current_tick,
+                    "trace_tick": trace_tick,
+                    "source_path": source_path,
+                    "decision": copy.deepcopy(repair_policy_decision),
+                },
+            )
+            self.audit.log_event(
+                task,
+                "repair_policy_blocked",
+                {
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
+                    "step_index": step_index,
+                    "source_path": source_path,
+                    "decision": copy.deepcopy(repair_policy_decision),
+                },
+                source="repair_policy",
+            )
+            return None
+
         max_injections = self._safe_int(task.get("max_repair_injections") or state.get("max_repair_injections"), 1)
         if max_injections < 1:
             max_injections = 1
@@ -1870,7 +1921,6 @@ class TaskRunner:
         if prior_count >= max_injections:
             return None
 
-        source_path = self._infer_repair_source_path(step=step, step_result=step_result)
         source_text = self._read_repair_source_text(task=task, state=state, source_path=source_path)
 
         try:
