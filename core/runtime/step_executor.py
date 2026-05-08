@@ -505,6 +505,27 @@ class StepExecutor:
                     return os.path.abspath(value.strip())
         return ""
 
+    def _normalize_runtime_mode(self, value: Any) -> str:
+        text = str(value or "").strip().lower()
+        if text in {"execute", "replay", "audit", "repair_replay"}:
+            return text
+        return "execute"
+
+    def _extract_runtime_mode_from_mapping(self, value: Any) -> str:
+        if not isinstance(value, dict):
+            return ""
+        for key in ("runtime_mode", "mode", "execution_mode"):
+            raw = value.get(key)
+            if raw is not None and str(raw).strip():
+                return self._normalize_runtime_mode(raw)
+        runtime_context = value.get("runtime_context")
+        if isinstance(runtime_context, dict):
+            for key in ("runtime_mode", "mode", "execution_mode"):
+                raw = runtime_context.get(key)
+                if raw is not None and str(raw).strip():
+                    return self._normalize_runtime_mode(raw)
+        return ""
+
     def _normalize_task(self, task: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if not isinstance(task, dict):
             return task
@@ -539,14 +560,23 @@ class StepExecutor:
                 "result_file",
                 "execution_log_file",
                 "log_file",
+                "runtime_mode",
             ):
                 if key not in merged and key in task:
                     merged[key] = task.get(key)
 
         if isinstance(context, dict):
-            for key in ("workspace", "cwd", "task_dir", "sandbox_dir", "file_content"):
+            for key in ("workspace", "cwd", "task_dir", "sandbox_dir", "file_content", "runtime_mode"):
                 if key not in merged and key in context:
                     merged[key] = context.get(key)
+
+        if "runtime_mode" not in merged or not str(merged.get("runtime_mode") or "").strip():
+            runtime_mode = (
+                self._extract_runtime_mode_from_mapping(context)
+                or self._extract_runtime_mode_from_mapping(task)
+                or "execute"
+            )
+            merged["runtime_mode"] = runtime_mode
 
         if step_index is not None and "step_index" not in merged:
             merged["step_index"] = step_index
@@ -561,6 +591,7 @@ class StepExecutor:
 
         step_type = str(payload.get("type") or "unknown").strip().lower()
         payload["type"] = step_type
+        payload["runtime_mode"] = self._normalize_runtime_mode(payload.get("runtime_mode") or "execute")
 
         if "step_index" in payload:
             payload["step_index"] = self._safe_int(payload.get("step_index"), payload.get("step_index"))
@@ -670,6 +701,7 @@ class StepExecutor:
             inner_result = {"result": raw_result}
 
         step_type = str(step.get("type", "")).strip().lower()
+        runtime_mode = self._normalize_runtime_mode(step.get("runtime_mode") or "execute")
 
         if step_type in {"command", "shell", "run_python"}:
             inner_result = self._normalize_command_inner_result(inner_result)
@@ -686,6 +718,7 @@ class StepExecutor:
                 "step_index": step.get("step_index"),
                 "step_count": step.get("step_count"),
                 "task_id": task_id,
+                "runtime_mode": runtime_mode,
                 "step": copy.deepcopy(original_step or {}),
                 "result": inner_result,
                 "message": message,
@@ -708,6 +741,7 @@ class StepExecutor:
             "step_index": step.get("step_index"),
             "step_count": step.get("step_count"),
             "task_id": task_id,
+            "runtime_mode": runtime_mode,
             "step": copy.deepcopy(original_step or {}),
             "result": inner_result,
             "message": message or error_payload.get("message") or "step failed",
@@ -878,9 +912,11 @@ class StepExecutor:
         details: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         step_type = str(step.get("type", "")).strip().lower()
+        runtime_mode = self._normalize_runtime_mode(step.get("runtime_mode") or "execute")
         return {
             "ok": False,
             "step_type": step_type,
+            "runtime_mode": runtime_mode,
             "step_index": step.get("step_index"),
             "step_count": step.get("step_count"),
             "task_id": self._extract_task_id(task),
@@ -2350,9 +2386,16 @@ class StepExecutor:
             or ""
         ).strip().lower()
 
+        runtime_mode = self._normalize_runtime_mode(
+            result.get("runtime_mode")
+            or (step_payload.get("runtime_mode") if isinstance(step_payload, dict) else "")
+            or "execute"
+        )
+
         event: Dict[str, Any] = {
             "step_index": result.get("step_index"),
             "step_type": step_type,
+            "runtime_mode": runtime_mode,
             "ok": bool(result.get("ok", False)),
             "message": result.get("message"),
             "final_answer": result.get("final_answer"),
@@ -2372,9 +2415,15 @@ class StepExecutor:
 
     def _attach_execution_trace(self, step: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
         normalized = copy.deepcopy(result)
+        normalized["runtime_mode"] = self._normalize_runtime_mode(
+            normalized.get("runtime_mode")
+            or (step.get("runtime_mode") if isinstance(step, dict) else "")
+            or "execute"
+        )
         normalized["execution_trace"] = self._build_execution_trace(step, normalized)
 
         if isinstance(normalized.get("result"), dict):
+            normalized["result"]["runtime_mode"] = normalized["runtime_mode"]
             normalized["result"]["execution_trace"] = copy.deepcopy(normalized["execution_trace"])
 
         return normalized

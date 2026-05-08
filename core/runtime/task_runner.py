@@ -666,6 +666,54 @@ class TaskRunner:
 
 
     # ============================================================
+    # runtime mode propagation
+    # ============================================================
+
+    def _normalize_runtime_mode(self, value: Any) -> str:
+        text = str(value or "").strip().lower()
+        if text in {"execute", "replay", "audit", "repair_replay"}:
+            return text
+        return "execute"
+
+    def _extract_runtime_mode_from_mapping(self, value: Any) -> str:
+        if not isinstance(value, dict):
+            return ""
+
+        for key in ("runtime_mode", "mode", "execution_mode"):
+            raw = value.get(key)
+            if raw is not None and str(raw).strip():
+                return self._normalize_runtime_mode(raw)
+
+        runtime_context = value.get("runtime_context")
+        if isinstance(runtime_context, dict):
+            for key in ("runtime_mode", "mode", "execution_mode"):
+                raw = runtime_context.get(key)
+                if raw is not None and str(raw).strip():
+                    return self._normalize_runtime_mode(raw)
+
+        repair_context = value.get("repair_context")
+        if isinstance(repair_context, dict):
+            raw = repair_context.get("runtime_mode")
+            if raw is not None and str(raw).strip():
+                return self._normalize_runtime_mode(raw)
+
+        return ""
+
+    def _resolve_runtime_mode(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any = None) -> str:
+        for payload in (step, state, task):
+            mode = self._extract_runtime_mode_from_mapping(payload)
+            if mode:
+                return mode
+        return "execute"
+
+    def _apply_runtime_mode_to_step(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> tuple[Dict[str, Any], str]:
+        runtime_mode = self._resolve_runtime_mode(task=task, state=state, step=step)
+        normalized_step = copy.deepcopy(step) if isinstance(step, dict) else {}
+        normalized_step["runtime_mode"] = runtime_mode
+        return normalized_step, runtime_mode
+
+
+    # ============================================================
     # engineering execution action linkage
     # ============================================================
 
@@ -927,7 +975,11 @@ class TaskRunner:
         steps = state.get("steps", []) if isinstance(state.get("steps"), list) else []
         idx = int(state.get("current_step_index", idx) or idx)
 
-        step = steps[idx]
+        step, runtime_mode = self._apply_runtime_mode_to_step(
+            task=task,
+            state=state,
+            step=steps[idx],
+        )
         trace_tick = self._trace_tick_for_step(
             state=state,
             step_index=idx,
@@ -953,6 +1005,7 @@ class TaskRunner:
                 "steps_total": len(steps),
                 "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
                 "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "runtime_mode": runtime_mode,
             },
         )
         self.audit.log_event(
@@ -965,6 +1018,7 @@ class TaskRunner:
                 "steps_total": len(steps),
                 "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
                 "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "runtime_mode": runtime_mode,
             },
             source="task_runner",
         )
@@ -978,6 +1032,7 @@ class TaskRunner:
                 "step_index": idx,
                 "step_type": str(step.get("type") or "").strip().lower() if isinstance(step, dict) else "",
                 "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
+                "runtime_mode": runtime_mode,
                 "step": copy.deepcopy(step) if isinstance(step, dict) else {},
             },
             source="policy_layer",
@@ -986,7 +1041,10 @@ class TaskRunner:
         result = self.step_executor.execute_step(
             task=task,
             step=step,
-            context=self._target_routed_context(task=task, state=state, step=step),
+            context={
+                **self._target_routed_context(task=task, state=state, step=step),
+                "runtime_mode": runtime_mode,
+            },
             previous_result=self._get_previous_result(state),
             step_index=idx,
             step_count=len(steps),
@@ -1001,6 +1059,7 @@ class TaskRunner:
                 "execution_trace": [],
             }
 
+        result["runtime_mode"] = runtime_mode
         result = self._ensure_step_execution_trace(step=step, step_result=result, step_index=idx)
 
         self._append_step_result_trace_json(
@@ -1021,6 +1080,7 @@ class TaskRunner:
                 "step_id": str(step.get("id") or "").strip() if isinstance(step, dict) else "",
                 "ok": bool(result.get("ok", False)) if isinstance(result, dict) else False,
                 "error": copy.deepcopy(result.get("error")) if isinstance(result, dict) else "invalid_result",
+                "runtime_mode": runtime_mode,
             },
             source="task_runner",
         )
