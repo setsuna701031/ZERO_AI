@@ -58,7 +58,32 @@ class ExecutionGuard:
     ) -> Dict[str, Any]:
         step = step if isinstance(step, dict) else {}
         step_type = str(step.get("type") or "").strip().lower()
+        runtime_mode = str(step.get("runtime_mode") or "execute").strip().lower() or "execute"
         task_dir_abs = os.path.abspath(task_dir)
+
+        # Runtime replay boundary phase 1:
+        # replay/audit/repair_replay are observation-only modes.  They may read or
+        # verify existing state, but they must never trigger write/apply/command
+        # execution through the guard.
+        if runtime_mode in {"replay", "audit", "repair_replay"}:
+            readonly_allowed = {
+                "noop",
+                "llm",
+                "llm_generate",
+                "verify",
+                "verify_file",
+                "regression_verify",
+                "read_file",
+                "respond",
+                "final_answer",
+            }
+            if step_type not in readonly_allowed:
+                return self._deny(
+                    f"{runtime_mode} runtime cannot execute side-effect step: {step_type}",
+                    guard_mode="readonly_runtime_blocked",
+                    policy_action="deny",
+                    policy_reason=f"{runtime_mode} runtime is readonly",
+                )
 
         # ZERO v7.0.3: Code Chain repair steps are controlled self-edit steps.
         # They are allowed through the guard only for workspace Python targets;

@@ -9,6 +9,7 @@ from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.step_executor import StepExecutor
 from core.tasks.scheduler import Scheduler
+from core.tasks.execution_guard import ExecutionGuard
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -2225,3 +2226,39 @@ def test_budget_limits_repair_history_growth() -> None:
     assert len(stored["repair_context"]["injections"]) <= MAX_STORED_LIST_ITEMS
     assert stored["repair_context"]["injections"][-1]["index"] == MAX_STORED_LIST_ITEMS + 29
     assert saved["repair_context"]["injections"][-1]["index"] == MAX_STORED_LIST_ITEMS + 29
+
+def test_replay_runtime_blocks_apply_patch_execution() -> None:
+    workspace = TEST_ROOT / "replay_guard_workspace"
+    shared = workspace / "shared"
+    task_dir = workspace / "tasks" / "replay_block"
+    shared.mkdir(parents=True, exist_ok=True)
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    target = shared / "test.py"
+    target.write_text("A\n", encoding="utf-8")
+
+    guard = ExecutionGuard(
+        workspace_root=str(workspace),
+        shared_dir=str(shared),
+        allow_commands=False,
+    )
+
+    result = guard.check_step(
+        {
+            "type": "apply_patch",
+            "runtime_mode": "replay",
+            "target_path": "workspace/shared/test.py",
+            "edit_payload": {
+                "old_text": "A\n",
+                "new_text": "B\n",
+                "schema": "replacement_pair_v1",
+            },
+        },
+        task_dir=str(task_dir),
+    )
+
+    assert result["ok"] is False
+    assert result["guard_mode"] == "readonly_runtime_blocked"
+    assert "readonly" in result["policy_reason"]
+    assert target.read_text(encoding="utf-8") == "A\n"
+
