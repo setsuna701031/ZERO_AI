@@ -10,6 +10,7 @@ from core.runtime.runtime_state_machine import RuntimeStateMachine
 from core.runtime.failure_policy import FailurePolicy
 from core.runtime.audit_log import AuditLogger
 from core.runtime.runtime_state_guard import RuntimeStateGuard, validate_runtime_state
+from core.runtime.runtime_transition_policy import RuntimeTransitionPolicy, RuntimeTransitionPolicyError
 
 
 TERMINAL_STATUSES = {
@@ -69,6 +70,7 @@ class TaskRuntime:
         self.state_machine = RuntimeStateMachine(debug=debug)
         self.audit = AuditLogger(workspace_root=self.workspace_root)
         self.state_guard = RuntimeStateGuard()
+        self.transition_policy = RuntimeTransitionPolicy()
 
     # ============================================================
     # runtime state
@@ -876,7 +878,21 @@ class TaskRuntime:
         transition_owner = str(owner or "task_runtime").strip().lower() or "task_runtime"
         transition_action = str(action or "runtime_transition").strip() or "runtime_transition"
 
-        for key, value in (updates or {}).items():
+        transition_updates = copy.deepcopy(updates or {})
+        policy_decision = self.transition_policy.check_transition(
+            current_state=next_state,
+            updates=transition_updates,
+            owner=transition_owner,
+            action=transition_action,
+        )
+        if not policy_decision.ok:
+            raise RuntimeTransitionPolicyError(policy_decision.reason)
+
+        next_state.setdefault("runtime_transition_policy", {})
+        if isinstance(next_state.get("runtime_transition_policy"), dict):
+            next_state["runtime_transition_policy"]["last_decision"] = policy_decision.to_dict()
+
+        for key, value in transition_updates.items():
             section = str(key or "").strip()
             if not section:
                 continue
