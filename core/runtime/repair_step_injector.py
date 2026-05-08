@@ -5,6 +5,16 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
+try:
+    from core.runtime.runtime_mode import READONLY_RUNTIME_MODES, RuntimeMode
+except Exception:  # pragma: no cover - compatibility fallback
+    class RuntimeMode(str):
+        EXECUTE = "execute"
+        REPLAY = "replay"
+        AUDIT = "audit"
+        REPAIR_REPLAY = "repair_replay"
+    READONLY_RUNTIME_MODES = {"replay", "audit", "repair_replay"}
+
 
 @dataclass
 class InjectedRepairStep:
@@ -96,6 +106,17 @@ class RepairStepInjector:
         verify_command: str = "",
         report_path: str = "AER_AUTO_REPAIR_REPORT.md",
     ) -> RepairInjectionResult:
+        runtime_mode = self._runtime_mode_from_payload(repair_plan, task, failed_step, failed_result)
+        if self._is_readonly_runtime_mode(runtime_mode):
+            return RepairInjectionResult(
+                ok=False,
+                reason=f"{runtime_mode} runtime cannot inject repair steps",
+                diagnostics={
+                    "runtime_mode": runtime_mode,
+                    "guard_mode": "readonly_runtime_repair_injection_blocked",
+                },
+            )
+
         if not isinstance(repair_plan, dict):
             return RepairInjectionResult(
                 ok=False,
@@ -240,6 +261,10 @@ class RepairStepInjector:
         if not isinstance(runtime_state, dict):
             raise TypeError("runtime_state must be a dict")
 
+        runtime_mode = self._runtime_mode_from_payload(runtime_state)
+        if self._is_readonly_runtime_mode(runtime_mode):
+            raise PermissionError(f"{runtime_mode} runtime cannot inject repair steps into state")
+
         if not isinstance(injected_steps, list):
             raise TypeError("injected_steps must be a list")
 
@@ -365,6 +390,34 @@ class RepairStepInjector:
             or task.get("task_name")
             or ""
         ).strip()
+
+    def _runtime_mode_from_payload(self, *payloads: Any) -> str:
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                continue
+
+            value = str(payload.get("runtime_mode") or "").strip().lower()
+            if value:
+                return value
+
+            runtime_context = payload.get("runtime_context")
+            if isinstance(runtime_context, dict):
+                value = str(runtime_context.get("runtime_mode") or "").strip().lower()
+                if value:
+                    return value
+
+            repair_context = payload.get("repair_context")
+            if isinstance(repair_context, dict):
+                value = str(repair_context.get("runtime_mode") or "").strip().lower()
+                if value:
+                    return value
+
+        return str(getattr(RuntimeMode, "EXECUTE", "execute")).strip().lower()
+
+    def _is_readonly_runtime_mode(self, mode: Any) -> bool:
+        text = str(mode or "").strip().lower()
+        readonly_values = {str(item.value if hasattr(item, "value") else item).strip().lower() for item in READONLY_RUNTIME_MODES}
+        return text in readonly_values
 
     def _safe_id(self, value: str) -> str:
         text = str(value or "").strip()

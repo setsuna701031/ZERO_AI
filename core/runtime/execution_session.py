@@ -4,6 +4,16 @@ from dataclasses import dataclass, field, asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+
+try:
+    from core.runtime.runtime_mode import READONLY_RUNTIME_MODES, RuntimeMode
+except Exception:  # pragma: no cover - compatibility fallback
+    class RuntimeMode(str):
+        EXECUTE = "execute"
+        REPLAY = "replay"
+        AUDIT = "audit"
+        REPAIR_REPLAY = "repair_replay"
+    READONLY_RUNTIME_MODES = {"replay", "audit", "repair_replay"}
 from uuid import uuid4
 
 
@@ -15,22 +25,43 @@ class ExecutionSession:
     started_at: str
     ended_at: str | None
     status: str
+    runtime_mode: str = "execute"
+    readonly: bool = False
     steps: List[Dict[str, Any]] = field(default_factory=list)
     tool_results: List[Dict[str, Any]] = field(default_factory=list)
     audit_request_ids: List[str] = field(default_factory=list)
 
     @classmethod
     def start(cls, task: Any) -> "ExecutionSession":
+        runtime_mode = _runtime_mode(task)
         return cls(
             session_id=str(uuid4()),
             task_id=_task_id(task),
             task_summary=_task_summary(task),
             started_at=_now_iso(),
             ended_at=None,
-            status="running",
+            status="observing" if _is_readonly_runtime_mode(runtime_mode) else "running",
+            runtime_mode=runtime_mode,
+            readonly=_is_readonly_runtime_mode(runtime_mode),
         )
 
     def add_step(self, step_name: str, status: str, detail: Any = None) -> None:
+        if self.readonly and str(status or "").strip().lower() in {"executing", "executed", "running", "mutated", "written", "rollback", "injected"}:
+            self.steps.append(
+                {
+                    "step_name": str(step_name or ""),
+                    "status": "blocked_readonly",
+                    "detail": {
+                        "runtime_mode": self.runtime_mode,
+                        "guard_mode": "readonly_runtime_session_step_blocked",
+                        "requested_status": str(status or ""),
+                        "summary": _summarize(detail),
+                    },
+                    "timestamp": _now_iso(),
+                }
+            )
+            return
+
         self.steps.append(
             {
                 "step_name": str(step_name or ""),
@@ -42,6 +73,23 @@ class ExecutionSession:
 
     def add_tool_result(self, tool_result: Any) -> None:
         payload = _as_dict(tool_result)
+        if self.readonly:
+            side_effect_level = str(payload.get("side_effect_level") or payload.get("effect") or "none").strip().lower()
+            if side_effect_level not in {"", "none", "read", "readonly", "observation", "observe"}:
+                self.tool_results.append(
+                    {
+                        "request_id": str(_find_first(payload, "request_id") or "") or None,
+                        "tool": str(payload.get("tool") or payload.get("tool_name") or ""),
+                        "ok": False,
+                        "side_effect_level": side_effect_level,
+                        "summary": {
+                            "runtime_mode": self.runtime_mode,
+                            "guard_mode": "readonly_runtime_session_tool_result_blocked",
+                            "message": f"{self.runtime_mode} runtime cannot record side-effect tool result",
+                        },
+                    }
+                )
+                return
         request_id = _find_first(payload, "request_id")
         if request_id:
             request_id_text = str(request_id)
@@ -67,7 +115,10 @@ class ExecutionSession:
         )
 
     def finish(self, status: str = "finished") -> None:
-        self.status = str(status or "finished")
+        if self.readonly and str(status or "").strip().lower() in {"finished", "success", "completed"}:
+            self.status = "observed"
+        else:
+            self.status = str(status or "finished")
         self.ended_at = _now_iso()
 
     def to_dict(self) -> Dict[str, Any]:
@@ -78,6 +129,8 @@ class ExecutionSession:
             "started_at": self.started_at,
             "ended_at": self.ended_at,
             "status": self.status,
+            "runtime_mode": self.runtime_mode,
+            "readonly": bool(self.readonly),
             "steps": list(self.steps),
             "tool_results": list(self.tool_results),
             "audit_request_ids": list(self.audit_request_ids),
@@ -179,3 +232,31 @@ def _type_summary(value: Any) -> Dict[str, Any]:
     if isinstance(value, (list, tuple, set)):
         return {"type": type(value).__name__, "items": len(value)}
     return {"type": type(value).__name__}
+
+
+
+def _runtime_mode(task: Any) -> str:
+    if isinstance(task, dict):
+        value = str(task.get("runtime_mode") or "").strip().lower()
+        if value:
+            return value
+
+        runtime_context = task.get("runtime_context")
+        if isinstance(runtime_context, dict):
+            value = str(runtime_context.get("runtime_mode") or "").strip().lower()
+            if value:
+                return value
+
+        repair_context = task.get("repair_context")
+        if isinstance(repair_context, dict):
+            value = str(repair_context.get("runtime_mode") or "").strip().lower()
+            if value:
+                return value
+
+    return str(getattr(RuntimeMode, "EXECUTE", "execute")).strip().lower()
+
+
+def _is_readonly_runtime_mode(mode: Any) -> bool:
+    text = str(mode or "").strip().lower()
+    readonly_values = {str(item.value if hasattr(item, "value") else item).strip().lower() for item in READONLY_RUNTIME_MODES}
+    return text in readonly_values

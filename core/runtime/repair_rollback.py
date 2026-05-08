@@ -3,6 +3,16 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict
 
+try:
+    from core.runtime.runtime_mode import READONLY_RUNTIME_MODES, RuntimeMode
+except Exception:  # pragma: no cover - compatibility fallback
+    class RuntimeMode(str):
+        EXECUTE = "execute"
+        REPLAY = "replay"
+        AUDIT = "audit"
+        REPAIR_REPLAY = "repair_replay"
+    READONLY_RUNTIME_MODES = {"replay", "audit", "repair_replay"}
+
 
 def should_rollback_after_failed_verify(
     *,
@@ -21,6 +31,10 @@ def should_rollback_after_failed_verify(
     """
 
     if not isinstance(step, dict) or not isinstance(step_result, dict) or not isinstance(state, dict):
+        return False
+
+    runtime_mode = _runtime_mode_from_payload(step, step_result, state)
+    if _is_readonly_runtime_mode(runtime_mode):
         return False
 
     if bool(step_result.get("ok", False)):
@@ -65,6 +79,23 @@ def restore_repair_backup(
 
     if not isinstance(task, dict):
         task = {}
+
+    runtime_mode = _runtime_mode_from_payload(task)
+    if _is_readonly_runtime_mode(runtime_mode):
+        return {
+            "ok": False,
+            "status": "blocked",
+            "runtime_state": {},
+            "runtime_mode": runtime_mode,
+            "rollback_result": {
+                "ok": False,
+                "reason": f"{runtime_mode} runtime cannot restore repair backup",
+                "restore_source": "",
+                "restored_files": [],
+                "failed_files": [],
+                "guard_mode": "readonly_runtime_rollback_blocked",
+            },
+        }
 
     rollback_fn = getattr(runtime, "rollback_last_apply", None)
     if not callable(rollback_fn):
@@ -150,3 +181,33 @@ def compact_rollback_result(value: Any) -> Dict[str, Any]:
         "restored_files": list(payload.get("restored_files") or []) if isinstance(payload.get("restored_files"), list) else [],
         "failed_files": list(payload.get("failed_files") or []) if isinstance(payload.get("failed_files"), list) else [],
     }
+
+
+def _runtime_mode_from_payload(*payloads: Any) -> str:
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+
+        value = str(payload.get("runtime_mode") or "").strip().lower()
+        if value:
+            return value
+
+        runtime_context = payload.get("runtime_context")
+        if isinstance(runtime_context, dict):
+            value = str(runtime_context.get("runtime_mode") or "").strip().lower()
+            if value:
+                return value
+
+        repair_context = payload.get("repair_context")
+        if isinstance(repair_context, dict):
+            value = str(repair_context.get("runtime_mode") or "").strip().lower()
+            if value:
+                return value
+
+    return str(getattr(RuntimeMode, "EXECUTE", "execute")).strip().lower()
+
+
+def _is_readonly_runtime_mode(mode: Any) -> bool:
+    text = str(mode or "").strip().lower()
+    readonly_values = {str(item.value if hasattr(item, "value") else item).strip().lower() for item in READONLY_RUNTIME_MODES}
+    return text in readonly_values
