@@ -1172,6 +1172,25 @@ class TaskRunner:
                 current_tick=current_tick,
                 trace_tick=trace_tick,
             )
+            if isinstance(repair_injection_result, dict) and repair_injection_result.get("policy_blocked"):
+                runtime_state = copy.deepcopy(repair_injection_result.get("runtime_state", state))
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                return {
+                    "ok": False,
+                    "action": "repair_policy_blocked",
+                    "failure_type": failure_type,
+                    "failure_decision": failure_decision,
+                    "repair_policy_decision": copy.deepcopy(repair_injection_result.get("repair_policy_decision", {})),
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": runtime_state.get("status", "failed"),
+                    "error": runtime_state.get("last_error", "repair policy blocked"),
+                    "last_result": copy.deepcopy(result),
+                    "current_step_index": runtime_state.get("current_step_index", idx),
+                    "steps_total": runtime_state.get("steps_total"),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
+
             if isinstance(repair_injection_result, dict) and repair_injection_result.get("ok"):
                 runtime_state = copy.deepcopy(repair_injection_result.get("runtime_state", state))
                 self._ensure_execution_trace_defaults(task, runtime_state)
@@ -1180,6 +1199,8 @@ class TaskRunner:
                     "action": "repair_steps_injected",
                     "failure_type": failure_type,
                     "failure_decision": failure_decision,
+                    "repair_policy_decision": copy.deepcopy(repair_injection_result.get("repair_policy_decision", {})),
+                    "repair_chain_id": repair_injection_result.get("repair_chain_id", ""),
                     "task": copy.deepcopy(task),
                     "runtime_state": runtime_state,
                     "status": runtime_state.get("status", "running"),
@@ -1863,29 +1884,89 @@ class TaskRunner:
             state["repair_context"] = repair_context
 
         source_path = self._infer_repair_source_path(step=step, step_result=step_result)
-
-        repair_policy_decision = FailurePolicy.decide_repair(
+        repair_chain_id = self._build_repair_chain_id(
+            task=task,
+            source_path=source_path,
+            step_index=step_index,
+            current_tick=current_tick,
+        )
+        policy_decision_obj = FailurePolicy.decide_repair(
             task=task,
             state=state,
             step=step,
             step_result=step_result,
             source_path=source_path,
-        ).to_dict()
-        repair_context["repair_policy_decision"] = copy.deepcopy(repair_policy_decision)
-        state["repair_policy_decision"] = copy.deepcopy(repair_policy_decision)
+        )
+        policy_decision = (
+            policy_decision_obj.to_dict()
+            if hasattr(policy_decision_obj, "to_dict")
+            else copy.deepcopy(policy_decision_obj)
+        )
+        if not isinstance(policy_decision, dict):
+            policy_decision = {"allow": False, "action": "fail", "reason": "invalid repair policy decision"}
 
-        if not bool(repair_policy_decision.get("allow", False)):
-            state["repair_policy_blocked"] = True
-            state["repair_policy_reason"] = str(repair_policy_decision.get("reason") or "repair blocked")
-            if bool(repair_policy_decision.get("quarantine", False)):
-                state["repair_quarantine"] = True
-            if str(repair_policy_decision.get("action") or "") == "review_required":
-                state["status"] = "waiting_review"
+        observability = {
+            "repair_chain_id": repair_chain_id,
+            "repair_origin_step": {
+                "step_index": step_index,
+                "step_id": str(step.get("id") or "") if isinstance(step, dict) else "",
+                "step_type": str(step.get("type") or "") if isinstance(step, dict) else "",
+                "source_path": source_path,
+            },
+            "repair_policy_decision": copy.deepcopy(policy_decision),
+            "repair_risk_level": str(policy_decision.get("risk_level") or ""),
+            "repair_block_reason": str(policy_decision.get("reason") or ""),
+            "repair_quarantine_reason": str(policy_decision.get("reason") or "") if bool(policy_decision.get("quarantine")) else "",
+            "repair_depth": policy_decision.get("current_repair_depth", 0),
+            "max_repair_depth": policy_decision.get("max_repair_depth", 1),
+        }
+        repair_context["last_repair_observability"] = copy.deepcopy(observability)
+        repair_context["last_repair_policy_decision"] = copy.deepcopy(policy_decision)
+        repair_context["last_repair_chain_id"] = repair_chain_id
+
+        self._trace(
+            task,
+            "repair_policy_decision",
+            {
+                "step_index": step_index,
+                "current_tick": current_tick,
+                "trace_tick": trace_tick,
+                **copy.deepcopy(observability),
+            },
+        )
+        self.audit.log_event(
+            task,
+            "repair_policy_decision",
+            {
+                "tick": trace_tick,
+                "scheduler_tick": current_tick,
+                "step_index": step_index,
+                **copy.deepcopy(observability),
+            },
+            source="repair_policy",
+        )
+
+        if not bool(policy_decision.get("allow", False)):
+            action = str(policy_decision.get("action") or "fail").strip().lower()
+            reason = str(policy_decision.get("reason") or "repair policy blocked")
+            state["repair_policy_decision"] = copy.deepcopy(policy_decision)
+            state["repair_observability"] = copy.deepcopy(observability)
+            state["last_error"] = reason
+            if action == "review_required" or bool(policy_decision.get("requires_review")):
+                state["status"] = "review_required"
                 state["next_action"] = "wait_for_external_event"
                 state["requires_review"] = True
-                state["last_error"] = str(repair_policy_decision.get("reason") or "repair requires review")
+            else:
+                state["status"] = "failed"
+                state["next_action"] = "finish"
+            if bool(policy_decision.get("quarantine")):
+                state["repair_quarantine"] = {
+                    "active": True,
+                    "reason": reason,
+                    "repair_chain_id": repair_chain_id,
+                }
             try:
-                self.runtime.save_runtime_state(task, state)
+                state = self.runtime.save_runtime_state(task, state)
             except Exception:
                 pass
             self._trace(
@@ -1895,23 +1976,16 @@ class TaskRunner:
                     "step_index": step_index,
                     "current_tick": current_tick,
                     "trace_tick": trace_tick,
-                    "source_path": source_path,
-                    "decision": copy.deepcopy(repair_policy_decision),
+                    **copy.deepcopy(observability),
                 },
             )
-            self.audit.log_event(
-                task,
-                "repair_policy_blocked",
-                {
-                    "tick": trace_tick,
-                    "scheduler_tick": current_tick,
-                    "step_index": step_index,
-                    "source_path": source_path,
-                    "decision": copy.deepcopy(repair_policy_decision),
-                },
-                source="repair_policy",
-            )
-            return None
+            return {
+                "ok": False,
+                "policy_blocked": True,
+                "runtime_state": state,
+                "repair_policy_decision": copy.deepcopy(policy_decision),
+                "repair_chain_id": repair_chain_id,
+            }
 
         max_injections = self._safe_int(task.get("max_repair_injections") or state.get("max_repair_injections"), 1)
         if max_injections < 1:
@@ -2048,6 +2122,18 @@ class TaskRunner:
             "repair_plan": repair_plan,
             "repair_injection": injection,
         }
+
+    def _build_repair_chain_id(
+        self,
+        *,
+        task: Dict[str, Any],
+        source_path: str,
+        step_index: int,
+        current_tick: int,
+    ) -> str:
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "task").strip()
+        source = str(source_path or "unknown").replace("\\", "/").replace("/", "_").replace(":", "")
+        return f"repair_{task_id}_{source}_step_{int(step_index)}_tick_{int(current_tick)}"
 
     def _infer_repair_source_path(self, *, step: Any, step_result: Any) -> str:
         if isinstance(step, dict):

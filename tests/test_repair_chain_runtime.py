@@ -8,7 +8,6 @@ from pathlib import Path
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.step_executor import StepExecutor
-from core.runtime.failure_policy import FailurePolicy
 from core.tasks.scheduler import Scheduler
 
 
@@ -1929,58 +1928,33 @@ def test_boundary_terminal_repair_task_does_not_duplicate_execution_log_after_re
 
 
 # ---------------------------------------------------------------------------
-# Repair Policy Layer v1
+# Repair Observability Layer v1
 # ---------------------------------------------------------------------------
+# These tests verify that autonomous repair decisions can be reconstructed from
+# durable policy metadata, not only from raw step logs.
 
 
-def test_repair_policy_blocks_recursive_repair_injected_step() -> None:
+def test_repair_observability_policy_decision_contains_reconstruction_fields() -> None:
+    from core.runtime.failure_policy import FailurePolicy
+
     decision = FailurePolicy.decide_repair(
-        task={"auto_repair": True},
-        state={"repair_context": {}},
-        step={"type": "run_python", "repair_injected": True, "path": "workspace/shared/recursive.py"},
+        task={"auto_repair": True, "max_repair_depth": 2},
+        state={"repair_context": {"injections": []}},
+        step={"type": "run_python", "path": "workspace/shared/observability.py"},
         step_result={"ok": False, "error": "python failed"},
-        source_path="workspace/shared/recursive.py",
+        source_path="workspace/shared/observability.py",
     ).to_dict()
 
-    assert decision["allow"] is False
-    assert decision["action"] == "fail"
-    assert decision["quarantine"] is True
-    assert "recursive" in decision["reason"]
+    assert decision["allow"] is True
+    assert decision["action"] == "allow"
+    assert decision["risk_level"] == "low"
+    assert decision["max_repair_depth"] == 2
+    assert decision["current_repair_depth"] == 0
 
 
-def test_repair_policy_blocks_when_max_repair_depth_reached() -> None:
-    decision = FailurePolicy.decide_repair(
-        task={"auto_repair": True, "max_repair_depth": 1},
-        state={"repair_context": {"injections": [{"injected_step_count": 2}]}},
-        step={"type": "run_python", "path": "workspace/shared/depth.py"},
-        step_result={"ok": False, "error": "python failed"},
-        source_path="workspace/shared/depth.py",
-    ).to_dict()
+def test_repair_observability_policy_decision_records_review_required_reason() -> None:
+    from core.runtime.failure_policy import FailurePolicy
 
-    assert decision["allow"] is False
-    assert decision["action"] == "fail"
-    assert decision["current_repair_depth"] == 1
-    assert decision["max_repair_depth"] == 1
-    assert "max repair depth" in decision["reason"]
-
-
-def test_repair_policy_quarantines_after_rollback_hard_failure() -> None:
-    decision = FailurePolicy.decide_repair(
-        task={"auto_repair": True},
-        state={"repair_context": {"rollback_result": {"ok": False, "reason": "restore failed"}}},
-        step={"type": "run_python", "path": "workspace/shared/quarantine.py"},
-        step_result={"ok": False, "error": "python failed"},
-        source_path="workspace/shared/quarantine.py",
-    ).to_dict()
-
-    assert decision["allow"] is False
-    assert decision["action"] == "fail"
-    assert decision["quarantine"] is True
-    assert decision["risk_level"] == "high"
-    assert "rollback" in decision["reason"]
-
-
-def test_repair_policy_requires_review_for_critical_repo_path() -> None:
     decision = FailurePolicy.decide_repair(
         task={"auto_repair": True, "max_repair_depth": 2},
         state={"repair_context": {}},
@@ -1996,15 +1970,38 @@ def test_repair_policy_requires_review_for_critical_repo_path() -> None:
     assert "critical repo path" in decision["reason"]
 
 
-def test_repair_policy_allows_normal_sandbox_compile_repair() -> None:
+def test_repair_observability_policy_decision_records_quarantine_reason() -> None:
+    from core.runtime.failure_policy import FailurePolicy
+
     decision = FailurePolicy.decide_repair(
-        task={"auto_repair": True, "max_repair_depth": 1},
-        state={"repair_context": {}},
-        step={"type": "run_python", "path": "broken_demo.py"},
+        task={"auto_repair": True},
+        state={"repair_context": {"rollback_result": {"ok": False, "reason": "restore failed"}}},
+        step={"type": "run_python", "path": "workspace/shared/quarantine.py"},
         step_result={"ok": False, "error": "python failed"},
-        source_path="broken_demo.py",
+        source_path="workspace/shared/quarantine.py",
     ).to_dict()
 
-    assert decision["allow"] is True
-    assert decision["action"] == "allow"
-    assert decision["risk_level"] == "low"
+    assert decision["allow"] is False
+    assert decision["action"] == "fail"
+    assert decision["quarantine"] is True
+    assert decision["risk_level"] == "high"
+    assert "rollback failure quarantine" in decision["reason"]
+
+
+def test_repair_observability_policy_decision_records_depth_block() -> None:
+    from core.runtime.failure_policy import FailurePolicy
+
+    decision = FailurePolicy.decide_repair(
+        task={"auto_repair": True, "max_repair_depth": 1},
+        state={"repair_context": {"injections": [{"injected_step_count": 2}]}},
+        step={"type": "run_python", "path": "workspace/shared/depth.py"},
+        step_result={"ok": False, "error": "python failed"},
+        source_path="workspace/shared/depth.py",
+    ).to_dict()
+
+    assert decision["allow"] is False
+    assert decision["action"] == "fail"
+    assert decision["risk_level"] == "medium"
+    assert decision["current_repair_depth"] == 1
+    assert decision["max_repair_depth"] == 1
+    assert "max repair depth" in decision["reason"]
