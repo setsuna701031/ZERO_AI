@@ -1770,3 +1770,158 @@ def test_engineering_execution_action_landing_for_legacy_repair_task() -> None:
     assert execution["completed_actions"][1]["step_type"] == "code_chain_repair"
     assert execution["completed_actions"][2]["step_type"] == "apply_unified_diff"
     assert execution["completed_actions"][3]["step_type"] == "code_chain_verify"
+# ---------------------------------------------------------------------------
+# Repair Boundary Tests v1
+# ---------------------------------------------------------------------------
+# These tests are intentionally appended as a boundary-only layer.
+# They do not add new runtime features; they verify that the current repair
+# runtime does not enter recursive / infinite / unsafe states under failure.
+
+
+def test_boundary_verify_forever_failure_exhausts_strategy_without_infinite_loop() -> None:
+    probe = REPO_ROOT / "workspace" / "shared" / "boundary_verify_forever.py"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    original_exists = probe.exists()
+    original_text = probe.read_text(encoding="utf-8") if original_exists else None
+
+    try:
+        probe.write_text("def add(a,b)\n    return a+b\n", encoding="utf-8")
+
+        runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+        runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)
+        task_factory = lambda: _strategy_task(
+            "boundary_verify_forever",
+            "workspace/shared/boundary_verify_forever.py",
+            max_strategy_attempts=2,
+        )
+
+        results = _run_until_terminal(runner, task_factory, max_ticks=12)
+        state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+
+        assert len(results) <= 12
+        assert results[-1]["status"] == "failed"
+        assert state["status"] == "failed"
+        assert state["repair_context"]["strategy"]["exhausted"] is True
+        assert "verification_failed" in state["last_error"]
+    finally:
+        if original_exists:
+            probe.write_text(original_text or "", encoding="utf-8")
+        elif probe.exists():
+            probe.unlink()
+
+        backup = Path(str(probe) + ".bak_edit_payload")
+        if backup.exists():
+            backup.unlink()
+
+
+def test_boundary_recursive_repair_goal_is_fingerprint_suppressed() -> None:
+    workspace = TEST_ROOT / "boundary_recursive_scheduler"
+    shared = workspace / "shared"
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "recursive_repair.py").write_text("def broken(:\n", encoding="utf-8")
+
+    scheduler = Scheduler(workspace_dir=str(workspace), debug=False)
+    goal = (
+        "repair recursive repair task that tries to repair its own repair "
+        "for workspace/shared/recursive_repair.py"
+    )
+
+    first_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
+    second_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
+    third_gate = scheduler._pre_enqueue_repair_fingerprint_gate(goal=goal)
+
+    assert first_gate["ok"] is True
+    assert first_gate["suppress"] is False
+
+    assert second_gate["ok"] is True
+    assert second_gate["suppress"] is True
+    assert second_gate["duplicate_suppressed"] is True
+
+    assert third_gate["ok"] is True
+    assert third_gate["suppress"] is True
+    assert third_gate["duplicate_suppressed"] is True
+
+
+def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> None:
+    probe = REPO_ROOT / "workspace" / "shared" / "boundary_corrupt_rollback.py"
+    backup_path = Path(str(probe) + ".bak_edit_payload")
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    original_exists = probe.exists()
+    original_text = probe.read_text(encoding="utf-8") if original_exists else None
+
+    try:
+        probe.write_text("def add(a,b)\n    return a+b\n", encoding="utf-8")
+        if backup_path.exists():
+            backup_path.unlink()
+
+        runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+        runner = TaskRunner(
+            step_executor=FinalVerifyFailExecutor(delete_backup_before_verify=True),
+            task_runtime=runtime,
+        )
+        task_factory = lambda: _strategy_task(
+            "boundary_corrupt_rollback",
+            "workspace/shared/boundary_corrupt_rollback.py",
+            max_strategy_attempts=1,
+        )
+
+        for tick in range(1, 5):
+            runner.run_task(task_factory(), current_tick=tick)
+
+        state_after_failure = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+        result_after_terminal = runner.run_task(task_factory(), current_tick=5)
+        state_after_rerun = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+
+        assert state_after_failure["status"] == "failed"
+        assert "rollback_result" in state_after_failure["repair_context"]
+        assert "verification_failed" in state_after_failure["last_error"]
+
+        assert result_after_terminal["status"] == "failed"
+        assert state_after_rerun["status"] == "failed"
+        assert state_after_rerun["repair_context"]["rollback_result"] == state_after_failure["repair_context"]["rollback_result"]
+    finally:
+        if original_exists:
+            probe.write_text(original_text or "", encoding="utf-8")
+        elif probe.exists():
+            probe.unlink()
+
+        if backup_path.exists():
+            backup_path.unlink()
+
+
+def test_boundary_terminal_repair_task_does_not_duplicate_execution_log_after_rerun() -> None:
+    probe = REPO_ROOT / "workspace" / "shared" / "boundary_terminal_rerun.py"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    original_exists = probe.exists()
+    original_text = probe.read_text(encoding="utf-8") if original_exists else None
+
+    try:
+        probe.write_text("def add(a,b)\n    return a+b\n", encoding="utf-8")
+
+        runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+        runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)
+        task_factory = lambda: _strategy_task(
+            "boundary_terminal_rerun",
+            "workspace/shared/boundary_terminal_rerun.py",
+        )
+
+        results = _run_until_terminal(runner, task_factory, max_ticks=12)
+        state_after_finished = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+        log_len_after_finished = len(state_after_finished.get("execution_log", []))
+
+        rerun_result = runner.run_task(task_factory(), current_tick=99)
+        state_after_rerun = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+
+        assert results[-1]["status"] == "finished"
+        assert rerun_result["status"] == "finished"
+        assert len(state_after_rerun.get("execution_log", [])) == log_len_after_finished
+        assert state_after_rerun["status"] == "finished"
+    finally:
+        if original_exists:
+            probe.write_text(original_text or "", encoding="utf-8")
+        elif probe.exists():
+            probe.unlink()
+
+        backup = Path(str(probe) + ".bak_edit_payload")
+        if backup.exists():
+            backup.unlink()
