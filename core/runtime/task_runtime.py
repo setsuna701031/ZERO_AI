@@ -1841,11 +1841,17 @@ class TaskRuntime:
         if idx >= len(steps):
             context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status="finished")
             state["repair_context"] = context
-            state["current_step_index"] = len(steps)
-            state["status"] = "finished"
-            state["updated_at"] = self._now()
-            state = self.save_runtime_state(task, state)
-            self._sync_task_from_runtime_state(task, state)
+            state = self.apply_runtime_transition(
+                task,
+                state,
+                owner="task_runtime",
+                action="subgoal_flow_finished",
+                updates={
+                    "current_step_index": len(steps),
+                    "status": "finished",
+                },
+                save=True,
+            )
             return {"ok": True, "status": "finished", "runtime_state": state, "task": copy.deepcopy(task)}
 
         subgoal = self._subgoal_for_step_index(goal_state, steps, idx)
@@ -1882,11 +1888,17 @@ class TaskRuntime:
                 blocked_reason=reason,
             )
             state["repair_context"] = context
-            state["status"] = "blocked"
-            state["last_error"] = reason
-            state["updated_at"] = self._now()
-            state = self.save_runtime_state(task, state)
-            self._sync_task_from_runtime_state(task, state)
+            state = self.apply_runtime_transition(
+                task,
+                state,
+                owner="task_runtime",
+                action="subgoal_dependency_blocked",
+                updates={
+                    "status": "blocked",
+                    "last_error": reason,
+                },
+                save=True,
+            )
             return {"ok": False, "blocked": True, "status": "blocked", "reason": reason, "runtime_state": state, "task": copy.deepcopy(task)}
 
         self._set_subgoal_status(goal_state, subgoal_id, "running")
