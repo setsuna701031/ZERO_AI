@@ -60,6 +60,9 @@ from core.tasks.scheduler_core.public_task_record_helpers import (
     refresh_task_public_fields,
     sync_runtime_back_to_repo_with_retry_collapse,
 )
+from core.tasks.scheduler_core.runtime_resume_gate import (
+    apply_runtime_resume_gate,
+)
 from core.tasks.scheduler_core.trace_helpers import (
     extract_execution_trace_from_payload,
     get_trace_file_for_task,
@@ -518,8 +521,6 @@ class Scheduler(RuntimeTaskScheduler):
             return int(value)
         except Exception:
             return int(default)
-
-    # dispatch runtime helpers extracted to scheduler_core.dispatch_helpers
 
     def _build_tick_result(
         self,
@@ -4047,41 +4048,13 @@ class Scheduler(RuntimeTaskScheduler):
                     if key in runtime_data:
                         hydrated[key] = copy.deepcopy(runtime_data.get(key))
 
-        # Q package: runtime persistence resume normalization.
-        # If the persisted runtime says the task can continue, keep the task
-        # eligible for queue rebuild after a process restart. Waiting states
-        # remain waiting unless next_action explicitly requests run_next_tick
-        # and blocker/review gates are already cleared.
-        persisted_status = str(hydrated.get("status") or "").strip().lower()
-        persisted_next_action = str(hydrated.get("next_action") or "").strip().lower()
-        review_status = str(hydrated.get("review_status") or "").strip().lower()
-        requires_review = bool(hydrated.get("requires_review", False))
-        approved_review_statuses = {"approved", "accepted", "allowed", "cleared", "resolved"}
-        rejected_review_statuses = {"rejected", "denied", "declined", "cancelled", "canceled"}
-        active_runtime_blockers = self._active_runtime_gate_blockers(hydrated.get("blockers"))
-        active_blocker_count = self._safe_int_for_runtime_gate(hydrated.get("active_blocker_count"), 0)
-        review_pending = bool(requires_review or hydrated.get("review_id") or hydrated.get("review_payload") or persisted_status == STATUS_REVIEW_REQUIRED)
-        if review_status in approved_review_statuses:
-            review_pending = False
-        if review_status in rejected_review_statuses:
-            review_pending = True
-
-        if persisted_next_action == "run_next_tick" and persisted_status in {
-            "running",
-            "queued",
-            "ready",
-            "retry",
-            "waiting",
-            "waiting_blocker",
-            "waiting_review",
-            "blocked",
-            STATUS_REVIEW_REQUIRED,
-        } and not active_runtime_blockers and active_blocker_count <= 0 and not review_pending:
-            hydrated["status"] = "running"
-            hydrated["blocked_reason"] = ""
-            hydrated["waiting_reason"] = ""
-            hydrated["active_blocker_count"] = 0
-            hydrated["agent_action"] = str(hydrated.get("agent_action") or "resume_execution")
+        # Runtime resume gate lives in scheduler_core.runtime_resume_gate.
+        # Hydration owns state reconstruction; the helper owns the deterministic
+        # policy that decides whether persisted waiting/runnable tasks may resume.
+        hydrated = apply_runtime_resume_gate(
+            task=hydrated,
+            status_review_required=STATUS_REVIEW_REQUIRED,
+        )
 
         if not isinstance(hydrated.get("results"), list):
             hydrated["results"] = []
