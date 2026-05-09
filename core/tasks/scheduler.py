@@ -320,7 +320,8 @@ class Scheduler(RuntimeTaskScheduler):
 
         total_dispatched = len(dispatch_results)
 
-        round_executed = self._execute_dispatch_round(
+        round_executed = execute_dispatch_round(
+            scheduler=self,
             dispatch_results=dispatch_results,
             current_tick=self.current_tick,
         )
@@ -518,66 +519,7 @@ class Scheduler(RuntimeTaskScheduler):
         except Exception:
             return int(default)
 
-    def _execute_dispatch_round(
-        self,
-        dispatch_results: List[Any],
-        current_tick: int,
-    ) -> List[Dict[str, Any]]:
-        return execute_dispatch_round(
-            scheduler=self,
-            dispatch_results=dispatch_results,
-            current_tick=current_tick,
-        )
-
-    def _handle_dispatch_result(
-        self,
-        dispatch_result: Any,
-        current_tick: int,
-    ) -> Optional[Dict[str, Any]]:
-        return handle_dispatch_result(
-            scheduler=self,
-            dispatch_result=dispatch_result,
-            current_tick=current_tick,
-            terminal_statuses=TERMINAL_STATUSES,
-        )
-
-    def _handle_missing_repo_task(self, task_id: str) -> Dict[str, Any]:
-        return handle_missing_repo_task(
-            scheduler=self,
-            task_id=task_id,
-            status_failed=STATUS_FAILED,
-        )
-
-    def _handle_run_one_step_exception(
-        self,
-        task_id: str,
-        error: Exception,
-    ) -> Dict[str, Any]:
-        return handle_run_one_step_exception(
-            scheduler=self,
-            task_id=task_id,
-            error=error,
-            status_failed=STATUS_FAILED,
-        )
-
-    def _finalize_dispatched_task(
-        self,
-        dispatch_result: Any,
-        repo_task: Dict[str, Any],
-        runner_result: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        return finalize_dispatched_task(
-            scheduler=self,
-            dispatch_result=dispatch_result,
-            repo_task=repo_task,
-            runner_result=runner_result,
-            status_blocked=STATUS_BLOCKED,
-            status_finished=STATUS_FINISHED,
-            status_failed=STATUS_FAILED,
-        )
-
-    def _scheduler_dispatch_idle(self) -> bool:
-        return scheduler_dispatch_idle(scheduler=self)
+    # dispatch runtime helpers extracted to scheduler_core.dispatch_helpers
 
     def _build_tick_result(
         self,
