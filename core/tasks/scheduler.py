@@ -104,6 +104,7 @@ from core.tasks.scheduler_core.llm_step_helpers import (
     execute_llm_step,
 )
 from core.tasks.scheduler_core.atomic_edit_helpers import AtomicEditSession
+from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 
 try:
     from core.tools.repo_edit_agent_bridge import run_repo_edit_decision
@@ -5426,6 +5427,24 @@ class Scheduler(RuntimeTaskScheduler):
         if planner is None:
             return None
 
+        request = {
+            "context": context,
+            "user_input": user_input,
+            "route": route,
+            "goal": user_input,
+        }
+
+        def _record_gateway_side_check(raw_plan: Any) -> None:
+            try:
+                run_scheduler_planner_gateway(
+                    lambda _request, _raw_plan=raw_plan: _raw_plan,
+                    request,
+                    legacy_payload=raw_plan if isinstance(raw_plan, dict) else None,
+                    allow_legacy_fallback=True,
+                )
+            except Exception:
+                pass
+
         for method_name in ("plan", "run", "__call__"):
             method = getattr(planner, method_name, None)
             if not callable(method):
@@ -5441,14 +5460,18 @@ class Scheduler(RuntimeTaskScheduler):
 
             for kwargs in candidate_calls:
                 try:
-                    return method(**kwargs)
+                    raw_plan = method(**kwargs)
+                    _record_gateway_side_check(raw_plan)
+                    return raw_plan
                 except TypeError:
                     continue
                 except Exception:
                     return None
 
             try:
-                return method(user_input)
+                raw_plan = method(user_input)
+                _record_gateway_side_check(raw_plan)
+                return raw_plan
             except Exception:
                 return None
 
