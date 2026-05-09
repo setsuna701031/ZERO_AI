@@ -15,6 +15,7 @@ from core.planning.replanner import Replanner
 from core.planning.planner import Planner
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
+from core.runtime.trace_runtime import TraceRuntime
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
@@ -214,6 +215,7 @@ class Scheduler(RuntimeTaskScheduler):
         self.max_scheduler_rounds_per_tick = max(1, int(max_scheduler_rounds_per_tick))
         self.default_max_replans = max(1, int(default_max_replans))
         self.llm_client = llm_client
+        self.trace_runtime = TraceRuntime(repo_root=Path.cwd())
 
         self.task_workspace = TaskWorkspace(os.path.join(self.workspace_dir, "tasks"))
         self.workspace_root = os.path.abspath(self.workspace_dir)
