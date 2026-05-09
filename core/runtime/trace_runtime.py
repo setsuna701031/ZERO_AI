@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from core.tools.execution_trace import ExecutionTrace
+
 
 class TraceRuntime:
     """
@@ -11,8 +13,8 @@ class TraceRuntime:
 
     This module is intentionally conservative:
     - It can build new standalone trace paths.
-    - It can also preserve Scheduler legacy trace path behavior.
-    - It does not replace trace persistence schema.
+    - It can preserve Scheduler legacy trace path behavior.
+    - It can load/save Scheduler traces without changing trace schema.
     """
 
     def __init__(self, repo_root: str | Path | None = None) -> None:
@@ -41,31 +43,55 @@ class TraceRuntime:
         os.makedirs(task_dir, exist_ok=True)
 
         trace_file = str(task.get("trace_file") or "").strip()
-
         if trace_file:
             return trace_file
 
         return os.path.join(task_dir, "trace.json")
 
+    def load_scheduler_trace_for_task(
+        self,
+        *,
+        task: Dict[str, Any],
+        tasks_root: str | Path,
+        task_id: str = "",
+    ) -> ExecutionTrace:
+        trace_path = self.scheduler_trace_file_for_task(
+            task=task,
+            tasks_root=tasks_root,
+            task_id=task_id,
+        )
+        trace = ExecutionTrace(trace_file=trace_path)
+        trace.load(trace_path)
+        task["trace_file"] = trace_path
+        return trace
+
+    def save_scheduler_trace_for_task(
+        self,
+        *,
+        task: Dict[str, Any],
+        trace: ExecutionTrace,
+        tasks_root: str | Path,
+        task_id: str = "",
+    ) -> Optional[str]:
+        trace_path = self.scheduler_trace_file_for_task(
+            task=task,
+            tasks_root=tasks_root,
+            task_id=task_id,
+        )
+        saved = trace.save(trace_path)
+        task["trace_file"] = trace_path
+        return saved
+
     def trace_summary(self, trace: Any) -> Dict[str, Any]:
         if isinstance(trace, dict):
             events = trace.get("events")
             if isinstance(events, list):
-                return {
-                    "event_count": len(events),
-                    "has_events": bool(events),
-                }
+                return {"event_count": len(events), "has_events": bool(events)}
 
         if isinstance(trace, list):
-            return {
-                "event_count": len(trace),
-                "has_events": bool(trace),
-            }
+            return {"event_count": len(trace), "has_events": bool(trace)}
 
-        return {
-            "event_count": 0,
-            "has_events": False,
-        }
+        return {"event_count": 0, "has_events": False}
 
     def trace_status(self, trace: Any) -> str:
         if isinstance(trace, dict):
@@ -134,7 +160,6 @@ class TraceRuntime:
                 safe.append("_")
 
         text = "".join(safe).strip("._")
-
         return text or "unknown_task"
 
 
