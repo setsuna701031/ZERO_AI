@@ -56,8 +56,10 @@ from core.tasks.scheduler_core.repo_state_helpers import (
     sync_unblocked_state,
 )
 from core.tasks.scheduler_core.trace_helpers import (
+    extract_execution_trace_from_payload,
     get_trace_file_for_task,
     load_trace_for_task,
+    promote_execution_trace_in_executed_results,
     save_trace_for_task,
     trace_replan,
     trace_status,
@@ -612,48 +614,13 @@ class Scheduler(RuntimeTaskScheduler):
         return result
 
     def _extract_execution_trace_from_payload(self, payload: Any) -> List[Dict[str, Any]]:
-        if isinstance(payload, dict):
-            direct = payload.get("execution_trace")
-            if isinstance(direct, list):
-                return [copy.deepcopy(item) for item in direct if isinstance(item, dict)]
-
-            for key in ("result", "raw_result", "runner_result", "last_result", "task"):
-                nested = payload.get(key)
-                extracted = self._extract_execution_trace_from_payload(nested)
-                if extracted:
-                    return extracted
-
-        if isinstance(payload, list):
-            for item in payload:
-                extracted = self._extract_execution_trace_from_payload(item)
-                if extracted:
-                    return extracted
-
-        return []
+        return extract_execution_trace_from_payload(payload)
 
     def _promote_execution_trace_in_executed_results(
         self,
         executed_results: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        promoted: List[Dict[str, Any]] = []
-
-        for item in executed_results:
-            if not isinstance(item, dict):
-                promoted.append(item)
-                continue
-
-            normalized = copy.deepcopy(item)
-            trace = self._extract_execution_trace_from_payload(normalized)
-            if trace:
-                normalized["execution_trace"] = trace
-
-                result_payload = normalized.get("result")
-                if isinstance(result_payload, dict) and "execution_trace" not in result_payload:
-                    result_payload["execution_trace"] = copy.deepcopy(trace)
-
-            promoted.append(normalized)
-
-        return promoted
+        return promote_execution_trace_in_executed_results(executed_results)
 
     def _can_requeue_task(self, task_id: str) -> bool:
         task = self._get_task_from_repo(task_id)
@@ -1942,26 +1909,13 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def _get_trace_file_for_task(self, task: Dict[str, Any]) -> str:
-        return self.trace_runtime.scheduler_trace_file_for_task(
-            task=task,
-            tasks_root=self.tasks_root,
-            task_id=self._extract_task_id(task),
-        )
+        return get_trace_file_for_task(scheduler=self, task=task)
 
     def _load_trace_for_task(self, task: Dict[str, Any]) -> ExecutionTrace:
-        return self.trace_runtime.load_scheduler_trace_for_task(
-            task=task,
-            tasks_root=self.tasks_root,
-            task_id=self._extract_task_id(task),
-        )
+        return load_trace_for_task(scheduler=self, task=task)
 
     def _save_trace_for_task(self, task: Dict[str, Any], trace: ExecutionTrace) -> Optional[str]:
-        return self.trace_runtime.save_scheduler_trace_for_task(
-            task=task,
-            trace=trace,
-            tasks_root=self.tasks_root,
-            task_id=self._extract_task_id(task),
-        )
+        return save_trace_for_task(scheduler=self, task=task, trace=trace)
 
     def _trace_summary(
         self,
@@ -1971,7 +1925,7 @@ class Scheduler(RuntimeTaskScheduler):
         tick: Optional[int] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        return self.trace_runtime.scheduler_trace_summary(
+        return trace_summary(
             scheduler=self,
             trace=trace,
             task=task,
@@ -1989,7 +1943,7 @@ class Scheduler(RuntimeTaskScheduler):
         final_answer: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        return self.trace_runtime.scheduler_trace_status(
+        return trace_status(
             scheduler=self,
             trace=trace,
             task=task,
@@ -2010,7 +1964,7 @@ class Scheduler(RuntimeTaskScheduler):
         error: str = "",
         tick: Optional[int] = None,
     ) -> None:
-        return self.trace_runtime.scheduler_trace_step(
+        return trace_step(
             scheduler=self,
             trace=trace,
             task=task,
@@ -2029,17 +1983,13 @@ class Scheduler(RuntimeTaskScheduler):
         tick: Optional[int],
         replan_result: Dict[str, Any],
     ) -> None:
-        return self.trace_runtime.scheduler_trace_replan(
+        return trace_replan(
             scheduler=self,
             trace=trace,
             task=task,
             tick=tick,
             replan_result=replan_result,
         )
-
-    # ------------------------------------------------------------
-    # 查詢 API
-    # ------------------------------------------------------------
 
     def get_queue_rows(self) -> Dict[str, Any]:
         queued_rows = self.dispatcher.list_queued()
