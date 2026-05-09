@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class TraceRuntime:
@@ -9,9 +10,9 @@ class TraceRuntime:
     Trace runtime boundary container.
 
     This module is intentionally conservative:
-    - It does not replace Scheduler trace methods yet.
-    - It does not mutate Scheduler behavior.
-    - It provides a stable extraction target for future trace persistence logic.
+    - It can build new standalone trace paths.
+    - It can also preserve Scheduler legacy trace path behavior.
+    - It does not replace trace persistence schema.
     """
 
     def __init__(self, repo_root: str | Path | None = None) -> None:
@@ -20,6 +21,31 @@ class TraceRuntime:
     def trace_file_for_task(self, task: Dict[str, Any]) -> Path:
         task_id = self._task_id(task)
         return self.repo_root / "workspace" / "runtime_traces" / f"{task_id}.json"
+
+    def scheduler_trace_file_for_task(
+        self,
+        *,
+        task: Dict[str, Any],
+        tasks_root: str | Path,
+        task_id: str = "",
+    ) -> str:
+        if not isinstance(task, dict):
+            return os.path.join(str(tasks_root), "unknown_task", "trace.json")
+
+        task_dir = str(task.get("task_dir") or "").strip()
+
+        if not task_dir:
+            resolved_task_id = str(task_id or self._task_id(task) or "unknown_task").strip()
+            task_dir = os.path.join(str(tasks_root), resolved_task_id)
+
+        os.makedirs(task_dir, exist_ok=True)
+
+        trace_file = str(task.get("trace_file") or "").strip()
+
+        if trace_file:
+            return trace_file
+
+        return os.path.join(task_dir, "trace.json")
 
     def trace_summary(self, trace: Any) -> Dict[str, Any]:
         if isinstance(trace, dict):

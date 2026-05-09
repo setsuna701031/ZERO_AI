@@ -1940,7 +1940,11 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def _get_trace_file_for_task(self, task: Dict[str, Any]) -> str:
-        return get_trace_file_for_task(scheduler=self, task=task)
+        return self.trace_runtime.scheduler_trace_file_for_task(
+            task=task,
+            tasks_root=self.tasks_root,
+            task_id=self._extract_task_id(task),
+        )
 
     def _load_trace_for_task(self, task: Dict[str, Any]) -> ExecutionTrace:
         return load_trace_for_task(scheduler=self, task=task)
