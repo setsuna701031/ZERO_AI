@@ -1954,7 +1954,12 @@ class Scheduler(RuntimeTaskScheduler):
         )
 
     def _save_trace_for_task(self, task: Dict[str, Any], trace: ExecutionTrace) -> Optional[str]:
-        return save_trace_for_task(scheduler=self, task=task, trace=trace)
+        return self.trace_runtime.save_scheduler_trace_for_task(
+            task=task,
+            trace=trace,
+            tasks_root=self.tasks_root,
+            task_id=self._extract_task_id(task),
+        )
 
     def _trace_summary(
         self,
@@ -1964,7 +1969,7 @@ class Scheduler(RuntimeTaskScheduler):
         tick: Optional[int] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        return trace_summary(
+        return self.trace_runtime.scheduler_trace_summary(
             scheduler=self,
             trace=trace,
             task=task,
@@ -1982,7 +1987,7 @@ class Scheduler(RuntimeTaskScheduler):
         final_answer: str = "",
         extra: Optional[Dict[str, Any]] = None,
     ) -> None:
-        return trace_status(
+        return self.trace_runtime.scheduler_trace_status(
             scheduler=self,
             trace=trace,
             task=task,
@@ -2003,7 +2008,7 @@ class Scheduler(RuntimeTaskScheduler):
         error: str = "",
         tick: Optional[int] = None,
     ) -> None:
-        return trace_step(
+        return self.trace_runtime.scheduler_trace_step(
             scheduler=self,
             trace=trace,
             task=task,
@@ -2022,7 +2027,7 @@ class Scheduler(RuntimeTaskScheduler):
         tick: Optional[int],
         replan_result: Dict[str, Any],
     ) -> None:
-        return trace_replan(
+        return self.trace_runtime.scheduler_trace_replan(
             scheduler=self,
             trace=trace,
             task=task,
