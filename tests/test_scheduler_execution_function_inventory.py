@@ -62,20 +62,28 @@ def test_scheduler_has_core_execution_entrypoints() -> None:
     assert missing == []
 
 
-def test_scheduler_has_simple_runner_execution_boundary_candidates() -> None:
-    names = set(_function_names())
+def test_scheduler_simple_runner_boundary_is_runtime_owned() -> None:
+    content = TARGET.read_text(encoding="utf-8", errors="ignore")
 
-    expected = {
+    forbidden_wrappers = [
+        "def _handle_simple_terminal_task",
+        "def _handle_simple_blocked_task",
+        "def _handle_simple_finished_task",
+        "def _handle_simple_invalid_step",
+        "def _handle_simple_step_exception",
+        "def _handle_simple_step_success",
+    ]
+
+    for wrapper in forbidden_wrappers:
+        assert wrapper not in content, wrapper
+
+    required_entrypoints = {
         "_run_simple_task_tick",
         "_execute_simple_step",
-        "_handle_simple_terminal_task",
-        "_handle_simple_blocked_task",
-        "_handle_simple_finished_task",
-        "_handle_simple_invalid_step",
-        "_handle_simple_step_exception",
-        "_handle_simple_step_success",
     }
 
-    missing = sorted(expected - names)
+    names = set(_function_names())
+
+    missing = sorted(required_entrypoints - names)
 
     assert missing == []
