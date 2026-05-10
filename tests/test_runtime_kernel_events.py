@@ -17,6 +17,7 @@ def test_normalize_runtime_kernel_event_preserves_raw_and_safe_fallbacks():
 
     assert event["source"] == "unknown"
     assert event["event_type"] == "unknown_event"
+    assert event["action_type"] == "unknown"
     assert event["status"] == "unknown"
     assert event["summary"] == "unknown_event"
     assert event["timestamp"] == ""
@@ -29,6 +30,7 @@ def test_normalize_runtime_kernel_events_accepts_malformed_event():
     assert len(events) == 1
     assert events[0]["source"] == "unknown"
     assert events[0]["event_type"] == "unknown_event"
+    assert events[0]["action_type"] == "unknown"
     assert events[0]["summary"] == "malformed event"
     assert events[0]["raw"] == "bad-event"
 
@@ -44,6 +46,7 @@ def test_blocker_event_extracts_reason():
 
     assert event["source"] == "blocker"
     assert event["event_type"] == "task_blocked"
+    assert event["action_type"] == "blocker"
     assert event["status"] == "blocked"
     assert event["summary"] == "blocker: dependency unmet"
     assert event["timestamp"] == 123
@@ -66,11 +69,48 @@ def test_execution_event_extracts_action_result_and_error():
     )
 
     assert ok_event["source"] == "execution"
+    assert ok_event["event_type"] == "execution_gateway_completed"
+    assert ok_event["action_type"] == "write_file"
     assert ok_event["status"] == "ok"
     assert ok_event["summary"] == "execution action: write_file; result: write_file"
     assert failed_event["source"] == "execution"
+    assert failed_event["event_type"] == "execution_step_rejected"
+    assert failed_event["action_type"] == "write_file"
     assert failed_event["status"] == "error"
     assert failed_event["summary"] == "execution action: write_file; error: missing path"
+
+
+def test_execution_action_classifier_handles_python_verify_and_command_events():
+    python_event = normalize_runtime_kernel_event(
+        {
+            "source": "execution",
+            "action": "run_python",
+            "command": "python workspace/shared/hello.py",
+            "result": {"ok": True, "message": "done"},
+        }
+    )
+    verify_event = normalize_runtime_kernel_event(
+        {
+            "source": "execution",
+            "action": "verify",
+            "result_error": "boom",
+        }
+    )
+    command_event = normalize_runtime_kernel_event(
+        {
+            "source": "execution",
+            "command": "echo hello",
+            "result": {"ok": True, "message": "command executed"},
+        }
+    )
+
+    assert python_event["event_type"] == "run_python"
+    assert python_event["action_type"] == "run_python"
+    assert verify_event["event_type"] == "verify"
+    assert verify_event["action_type"] == "verify"
+    assert verify_event["summary"] == "execution action: verify; error: boom"
+    assert command_event["event_type"] == "unknown_event"
+    assert command_event["action_type"] == "run_command"
 
 
 def test_planner_event_extracts_plan_step_and_intent():
@@ -79,6 +119,8 @@ def test_planner_event_extracts_plan_step_and_intent():
     intent_event = normalize_runtime_kernel_event({"intent": "edit repo", "is_valid": True})
 
     assert plan_event["source"] == "planner"
+    assert plan_event["event_type"] == "unknown_event"
+    assert plan_event["action_type"] == "plan"
     assert plan_event["summary"] == "planner: create file"
     assert step_event["source"] == "planner"
     assert step_event["summary"] == "planner: write content"
@@ -96,10 +138,15 @@ def test_explicit_sources_cover_repair_runtime_and_summary_counts():
     summary = summarize_normalized_kernel_events(events)
 
     assert events[0]["source"] == "repair"
+    assert events[0]["action_type"] == "write_file"
     assert events[0]["summary"] == "repair: apply patch"
     assert events[1]["source"] == "runtime"
+    assert events[1]["action_type"] == "run_command"
+    assert events[1]["event_type"] == "runtime_step_started"
     assert events[1]["summary"] == "runtime: run_command"
     assert summary["event_count"] == 2
     assert summary["by_source"]["repair"] == 1
     assert summary["by_source"]["runtime"] == 1
+    assert summary["by_action"]["write_file"] == 1
+    assert summary["by_action"]["run_command"] == 1
     assert summary["latest_event"]["event_type"] == "runtime_step_started"
