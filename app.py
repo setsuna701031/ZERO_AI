@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from core.display.runtime_presenter import format_runtime_replay_compact, format_runtime_replay_detail, format_runtime_replay_summary
 from core.display.runtime_repair_presenter import format_runtime_repair_suggestion
 from core.display.runtime_repair_envelope_presenter import format_runtime_repair_envelope
+from core.display.runtime_repair_planner_bridge_presenter import format_runtime_repair_planner_bridge
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.persona.presentation_bridge import render_cli_view, render_json_view
 from core.persona.runtime_bridge import PersonaRuntimeBridge
@@ -26,6 +27,7 @@ from core.tasks.runtime_kernel_status import build_task_runtime_kernel_status, f
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
 from core.tasks.runtime_repair_contract import build_runtime_repair_contract
 from core.tasks.runtime_repair_envelope import build_runtime_repair_envelope
+from core.tasks.runtime_repair_planner_bridge import build_runtime_repair_planner_bridge
 from core.tasks.runtime_repair_suggestion import build_runtime_repair_suggestion
 from services.system_boot import boot_system
 
@@ -799,6 +801,46 @@ def _build_task_runtime_repair_envelope_display(task: Dict[str, Any]) -> str:
     return format_runtime_repair_envelope(envelope)
 
 
+def _build_task_runtime_repair_planner_bridge_display(task: Dict[str, Any]) -> str:
+    try:
+        snapshot = build_runtime_replay_snapshot(task)
+        suggestion = build_runtime_repair_suggestion(snapshot)
+        contract = build_runtime_repair_contract(suggestion)
+        envelope = build_runtime_repair_envelope(suggestion, contract=contract)
+        bridge = build_runtime_repair_planner_bridge(envelope)
+    except Exception as exc:
+        bridge = {
+            "ok": False,
+            "task_id": _extract_task_id(task),
+            "status": _extract_status(task),
+            "bridge_mode": "read_only_planner_gate",
+            "planner_allowed": False,
+            "requires_confirmation": True,
+            "repair_intent": {
+                "intent_type": "unavailable",
+                "source": "runtime_repair_envelope",
+                "scope": "unknown",
+                "risk": "high",
+                "mode": "manual_review",
+                "allowed_actions": ["inspect_runtime_state", "inspect_trace"],
+                "inspection_targets": ["runtime_state.json", "trace.json"],
+                "mutation_allowed": False,
+                "execution_allowed": False,
+            },
+            "allowed_actions": ["inspect_runtime_state", "inspect_trace"],
+            "blocked_actions": ["schedule_task", "execute_repair", "apply_patch", "write_file", "run_shell_command"],
+            "inspection_targets": ["runtime_state.json", "trace.json"],
+            "repair_mode": "manual_review",
+            "repair_scope": "unknown",
+            "repair_risk": "high",
+            "max_retry": 0,
+            "reason": f"runtime repair planner bridge unavailable: {exc}",
+            "human_summary": "Planner bridge payload could not be built. Keep runtime repair planning manual until the bridge is available.",
+        }
+
+    return format_runtime_repair_planner_bridge(bridge)
+
+
 def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
     file_path = _safe_str(path)
     if not file_path or not os.path.isfile(file_path):
@@ -1320,6 +1362,8 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_repair_display(task), "  "))
     print("runtime_repair_envelope:")
     print(textwrap.indent(_build_task_runtime_repair_envelope_display(task), "  "))
+    print("runtime_repair_planner_bridge:")
+    print(textwrap.indent(_build_task_runtime_repair_planner_bridge_display(task), "  "))
     if paths:
         print("paths:")
         for key, value in paths.items():
@@ -1384,6 +1428,8 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_repair_display(task), "  "))
     print("runtime_repair_envelope:")
     print(textwrap.indent(_build_task_runtime_repair_envelope_display(task), "  "))
+    print("runtime_repair_planner_bridge:")
+    print(textwrap.indent(_build_task_runtime_repair_planner_bridge_display(task), "  "))
     visible_path_keys = ["result_path", "sandbox_path", "task_dir", "plan_path", "runtime_state_path", "execution_log_path", "trace_path", "snapshot_path"]
     any_path = False
     for key in visible_path_keys:
