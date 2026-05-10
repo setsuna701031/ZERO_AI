@@ -5,6 +5,10 @@ from typing import Any, Dict, Mapping
 from core.tasks.runtime_replay_narrative import build_runtime_replay_narrative
 
 
+SUMMARY_FIELD_LIMIT = 220
+DETAIL_FIELD_LIMIT = 360
+
+
 def format_runtime_replay_summary(snapshot_or_narrative: Any) -> str:
     narrative = _ensure_narrative(snapshot_or_narrative)
     return "\n".join(
@@ -12,10 +16,10 @@ def format_runtime_replay_summary(snapshot_or_narrative: Any) -> str:
             "Runtime Replay Summary:",
             f"- task_id: {_display(narrative.get('task_id'))}",
             f"- status: {_display(narrative.get('status'))}",
-            f"- summary: {_display(narrative.get('summary'))}",
-            f"- failure: {_display(narrative.get('failure_narrative'))}",
-            f"- blocker: {_display(narrative.get('blocker_narrative'))}",
-            f"- next_observation: {_display(narrative.get('next_observation'))}",
+            f"- summary: {_display(narrative.get('summary'), SUMMARY_FIELD_LIMIT)}",
+            f"- failure: {_display(narrative.get('failure_narrative'), SUMMARY_FIELD_LIMIT)}",
+            f"- blocker: {_display(narrative.get('blocker_narrative'), SUMMARY_FIELD_LIMIT)}",
+            f"- next_observation: {_display(narrative.get('next_observation'), SUMMARY_FIELD_LIMIT)}",
         ]
     )
 
@@ -27,12 +31,12 @@ def format_runtime_replay_detail(snapshot_or_narrative: Any) -> str:
             "Runtime Replay Detail:",
             f"- task_id: {_display(narrative.get('task_id'))}",
             f"- status: {_display(narrative.get('status'))}",
-            f"- title: {_display(narrative.get('title'))}",
-            f"- summary: {_display(narrative.get('summary'))}",
-            f"- timeline: {_display(narrative.get('timeline_narrative'))}",
-            f"- failure: {_display(narrative.get('failure_narrative'))}",
-            f"- blocker: {_display(narrative.get('blocker_narrative'))}",
-            f"- next_observation: {_display(narrative.get('next_observation'))}",
+            f"- title: {_display(narrative.get('title'), SUMMARY_FIELD_LIMIT)}",
+            f"- summary: {_display(narrative.get('summary'), DETAIL_FIELD_LIMIT)}",
+            f"- timeline: {_display(narrative.get('timeline_narrative'), DETAIL_FIELD_LIMIT)}",
+            f"- failure: {_display(narrative.get('failure_narrative'), DETAIL_FIELD_LIMIT)}",
+            f"- blocker: {_display(narrative.get('blocker_narrative'), DETAIL_FIELD_LIMIT)}",
+            f"- next_observation: {_display(narrative.get('next_observation'), DETAIL_FIELD_LIMIT)}",
         ]
     )
 
@@ -65,9 +69,19 @@ def _looks_like_narrative(value: Mapping[str, Any]) -> bool:
     )
 
 
-def _display(value: Any) -> str:
-    text = _safe_str(value)
+def _display(value: Any, max_len: int = SUMMARY_FIELD_LIMIT) -> str:
+    text = _compact_text(value, max_len=max_len)
     return text if text else "<none>"
+
+
+def _compact_text(value: Any, max_len: int = SUMMARY_FIELD_LIMIT) -> str:
+    text = _safe_str(value)
+    if not text:
+        return ""
+    text = " ".join(text.split())
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3].rstrip() + "..."
 
 
 def _safe_str(value: Any) -> str:

@@ -1927,6 +1927,63 @@ def _is_task_id_token(value: Any) -> bool:
     return False
 
 
+def _resolve_task_alias(system: Any, task_id: str) -> str:
+    normalized = _safe_str(task_id).strip()
+    if not normalized:
+        return normalized
+
+    lowered = normalized.lower()
+    alias_names = {
+        "latest",
+        "latest_finished",
+        "latest-finished",
+        "latest_failed",
+        "latest-failed",
+        "latest_running",
+        "latest-running",
+        "latest_active",
+        "latest-active",
+    }
+    if lowered not in alias_names:
+        return normalized
+
+    tasks = _list_tasks(system)
+    if not isinstance(tasks, list):
+        return normalized
+
+    filtered: List[Dict[str, Any]] = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+
+        status = _safe_str(task.get("status")).lower()
+        if lowered == "latest":
+            filtered.append(task)
+        elif lowered in {"latest_finished", "latest-finished"} and status in {"finished", "completed", "done", "success"}:
+            filtered.append(task)
+        elif lowered in {"latest_failed", "latest-failed"} and status in {"failed", "error"}:
+            filtered.append(task)
+        elif lowered in {"latest_running", "latest-running", "latest_active", "latest-active"} and status in {
+            "running",
+            "queued",
+            "replanning",
+            "blocked",
+        }:
+            filtered.append(task)
+
+    if not filtered:
+        return normalized
+
+    latest_task = filtered[-1]
+    return _first_nonempty_str(
+        latest_task.get("task_id"),
+        latest_task.get("task_name"),
+        latest_task.get("id"),
+        latest_task.get("name"),
+        normalized,
+    )
+
+
 
 def _build_orphan_task_from_runtime_state(task_id: str, runtime_state: Dict[str, Any], task_dir: str) -> Dict[str, Any]:
     normalized_task_id = _safe_str(task_id)
@@ -3461,17 +3518,19 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
         return
     if text.startswith("/task_show "):
         task_id = text.split(maxsplit=1)[1].strip()
-        task = _get_task(system, task_id)
+        resolved_task_id = _resolve_task_alias(system, task_id)
+        task = _get_task(system, resolved_task_id)
         if not isinstance(task, dict):
-            print_json({"ok": False, "error": "task not found", "task_id": task_id})
+            print_json({"ok": False, "error": "task not found", "task_id": resolved_task_id, "requested_task_id": task_id})
             return
         _print_task_summary(task)
         return
     if text.startswith("/task_result "):
         task_id = text.split(maxsplit=1)[1].strip()
-        task = _get_task(system, task_id)
+        resolved_task_id = _resolve_task_alias(system, task_id)
+        task = _get_task(system, resolved_task_id)
         if not isinstance(task, dict):
-            print_json({"ok": False, "error": "task not found", "task_id": task_id})
+            print_json({"ok": False, "error": "task not found", "task_id": resolved_task_id, "requested_task_id": task_id})
             return
         _print_task_result(task)
         return
