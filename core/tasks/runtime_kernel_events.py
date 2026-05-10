@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import copy
 from typing import Any, Dict, List, Mapping, Optional
+
+from core.tasks.runtime_state_hygiene import freeze_runtime_export
 
 
 KERNEL_EVENT_SOURCES = {"planner", "execution", "blocker", "repair", "runtime", "unknown"}
 
 
 def normalize_runtime_kernel_event(event: Any, *, source: Optional[str] = None) -> Dict[str, Any]:
-    raw = copy.deepcopy(event)
+    raw = freeze_runtime_export(event)
     is_malformed = not isinstance(event, Mapping)
     payload = event if isinstance(event, Mapping) else {}
     resolved_source = _normalize_source(source) or _infer_source(payload)

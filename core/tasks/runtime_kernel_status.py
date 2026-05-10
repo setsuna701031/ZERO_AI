@@ -38,6 +38,20 @@ def build_runtime_kernel_status(
         limit=limit,
     )
 
+    return build_runtime_kernel_status_from_events(
+        planner_events=planner_events,
+        execution_events=execution_events,
+    )
+
+
+def build_runtime_kernel_status_from_events(
+    *,
+    planner_events: Any = None,
+    execution_events: Any = None,
+) -> Dict[str, Any]:
+    planner_events = planner_events if isinstance(planner_events, list) else []
+    execution_events = execution_events if isinstance(execution_events, list) else []
+
     planner_summary = summarize_planner_contract_trace(planner_events)
     execution_summary = summarize_execution_contract_trace(execution_events)
     normalized_events = normalize_runtime_kernel_events(

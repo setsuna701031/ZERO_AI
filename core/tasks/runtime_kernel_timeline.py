@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import copy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from core.tasks.runtime_kernel_events import normalize_runtime_kernel_event
+from core.tasks.runtime_state_hygiene import clone_runtime_export, freeze_runtime_export
 
 
 FAILURE_STATUSES = {"failed", "failure", "error", "invalid", "blocked", "rejected"}
@@ -39,7 +39,7 @@ def build_runtime_timeline(events: Any) -> List[Dict[str, Any]]:
                 "status": str(event.get("status") or "unknown"),
                 "summary": str(event.get("summary") or ""),
                 "timestamp": event.get("timestamp", ""),
-                "raw": copy.deepcopy(event.get("raw")),
+                "raw": freeze_runtime_export(event.get("raw")),
             }
         )
     return timeline
@@ -111,7 +111,7 @@ def _ensure_normalized_event(event: Any) -> Dict[str, Any]:
             "status": str(event.get("status") or "unknown"),
             "summary": str(event.get("summary") or ""),
             "timestamp": event.get("timestamp", ""),
-            "raw": copy.deepcopy(event.get("raw")),
+            "raw": clone_runtime_export(event.get("raw")),
         }
     return normalize_runtime_kernel_event(event)
 
