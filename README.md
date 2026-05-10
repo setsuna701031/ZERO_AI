@@ -74,6 +74,72 @@ Important:
 - not a hidden black-box repair flow
 
 
+
+## Runtime Governance / Recovery Kernel
+
+Current engineering checkpoint:
+
+```text
+runtime-repair-transaction-layer
+```
+
+This branch adds a deterministic runtime governance and recovery plane around ZERO's repair workflow.
+
+The current chain is:
+
+```text
+proposal
+-> confirmation
+-> authorization
+-> scope gate
+-> transaction
+-> preview
+-> review
+-> review artifact
+-> state machine
+-> controlled apply planning
+-> executor contract
+-> execution receipt
+-> rollback receipt
+-> execution audit payload
+-> transaction snapshot
+-> recovery payload
+-> hydration contract
+-> replay queue
+-> continuation metadata
+-> governance boundary
+-> persistence contract
+```
+
+Important boundary:
+
+```text
+governance != execution
+recovery != persistence
+replay != scheduler resume
+apply plan != mutation execution
+```
+
+The current layer is intentionally dry-run and contract-first:
+
+```text
+NO real file mutation
+NO real patch execution
+NO shell execution
+NO SQLite backend
+NO automatic restore
+```
+
+This checkpoint prepares ZERO for later controlled mutation execution without coupling scheduler, replay, rollback, audit, and persistence into one unsafe path.
+
+Validation checkpoint:
+
+```text
+492 passed
+```
+
+------------------------------------------------------------------------
+
 ## What ZERO Does
 
 ZERO does not just generate answers.
@@ -195,13 +261,14 @@ github_draft_bundle
 
 L4 Tool Layer: ✔ Complete\
 L5 Decision Core: ✔ Complete\
-L5 Controlled Draft Workflow: ✔ Complete
+L5 Controlled Draft Workflow: ✔ Complete\
+Runtime Governance / Recovery Kernel: ✔ Contract skeleton stabilized
 
 Current phase:\
-→ stabilization + reproducibility + demo packaging
+→ runtime governance + recovery + persistence contract stabilization
 
 Next stage:\
-→ controlled automation (L5 expansion)
+→ persistent runtime backend, crash reload, and controlled mutation executor
 
 ------------------------------------------------------------------------
 

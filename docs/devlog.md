@@ -1,4 +1,171 @@
 
+---
+
+## 2026-05-10 - Runtime Governance / Recovery Kernel skeleton checkpoint
+
+This checkpoint records the runtime repair governance and recovery infrastructure work on branch:
+
+```text
+runtime-repair-transaction-layer
+```
+
+The goal was not to open unrestricted self-modifying execution. The goal was to build deterministic governance, review, replay, recovery, and persistence contracts before allowing any real mutation executor.
+
+### What was completed
+
+Added the runtime repair safety and governance stack:
+
+* `core/tasks/runtime_repair_transaction.py`
+* `core/display/runtime_repair_transaction_presenter.py`
+* `core/tasks/runtime_repair_transaction_preview.py`
+* `core/tasks/runtime_repair_transaction_review.py`
+* `core/tasks/runtime_repair_review_artifact.py`
+* `core/tasks/runtime_repair_transaction_state_machine.py`
+* `core/tasks/runtime_repair_controlled_apply.py`
+* `core/tasks/runtime_repair_apply_executor_contract.py`
+* `core/tasks/runtime_repair_transaction_snapshot.py`
+* `core/tasks/runtime_repair_replay_queue.py`
+* `core/tasks/runtime_repair_governance_boundary.py`
+* `core/tasks/runtime_repair_persistence_contract.py`
+
+Added matching validation:
+
+* `tests/test_runtime_repair_transaction.py`
+* `tests/test_runtime_repair_transaction_presenter.py`
+* `tests/test_runtime_repair_transaction_preview.py`
+* `tests/test_runtime_repair_transaction_review.py`
+* `tests/test_runtime_repair_review_artifact.py`
+* `tests/test_runtime_repair_transaction_state_machine.py`
+* `tests/test_runtime_repair_controlled_apply.py`
+* `tests/test_runtime_repair_apply_executor_contract.py`
+* `tests/test_runtime_repair_transaction_snapshot.py`
+* `tests/test_runtime_repair_replay_queue.py`
+* `tests/test_runtime_repair_governance_boundary.py`
+* `tests/test_runtime_repair_persistence_contract.py`
+
+### Runtime chain established
+
+The completed chain is:
+
+```text
+proposal
+-> confirmation
+-> authorization
+-> scope gate
+-> transaction
+-> preview payload
+-> presenter
+-> review contract
+-> review artifact
+-> state machine
+-> controlled apply planning
+-> executor contract
+-> execution receipt
+-> rollback receipt
+-> execution audit payload
+-> transaction snapshot
+-> recovery payload
+-> hydration contract
+-> replay queue item
+-> replay chain
+-> continuation metadata
+-> governance boundary
+-> persistence contract
+```
+
+### Boundaries preserved
+
+The checkpoint intentionally keeps these boundaries sealed:
+
+```text
+governance != execution
+recovery != persistence
+snapshot != storage backend
+replay != scheduler resume
+apply plan != mutation execution
+boundary != runtime mutation
+```
+
+The new infrastructure remains contract-only:
+
+```text
+NO real file write
+NO real patch execution
+NO shell execution
+NO SQLite backend
+NO automatic restore
+NO scheduler resume
+NO filesystem resume
+```
+
+### Why this matters
+
+This checkpoint moves ZERO from a repair-capable runtime toward an autonomous engineering runtime substrate.
+
+The important step is not that ZERO can mutate files. The important step is that ZERO now has a governed path for deciding whether a repair transaction can be reviewed, authorized, planned, snapshotted, replayed, and prepared for future persistence without directly coupling those responsibilities into `scheduler.py` or `agent_loop.py`.
+
+This reduces the risk that future mutation execution, rollback, replay, audit, and crash recovery become one tangled runtime path.
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python -m pytest tests/test_runtime_repair_governance_boundary.py -q
+python -m pytest tests/test_runtime_repair_replay_queue.py -q
+python -m pytest tests/test_runtime_repair_transaction_snapshot.py -q
+python -m pytest tests/test_runtime_repair_apply_executor_contract.py -q
+python -m pytest tests/test_runtime_repair_controlled_apply.py -q
+python -m pytest tests/test_runtime_repair_persistence_contract.py -q
+python -m pytest tests -q
+```
+
+Observed full-suite result:
+
+```text
+492 passed
+```
+
+### Stable checkpoint after this pass
+
+* runtime repair transaction foundation: working
+* transaction preview payload: working
+* transaction review contract: working
+* review artifact: working
+* transaction state machine: working
+* controlled apply planning: working
+* executor contract: working
+* dry-run execution receipt: working
+* rollback receipt: working
+* transaction snapshot: working
+* recovery payload: working
+* hydration contract: working
+* replay queue: working
+* governance boundary: working
+* persistence contract: working
+* scheduler and agent loop untouched by this branch
+* real mutation execution still disabled
+
+### Next step
+
+Do not jump directly into broad autonomous mutation.
+
+Recommended next stage:
+
+```text
+Persistent Runtime Backend
+```
+
+Expected scope:
+
+```text
+contract -> safe storage adapter -> reload validation -> replay inspection
+```
+
+Still avoid real mutation execution until persistence, replay, and recovery semantics are stable.
+
+
+
 
 ---
 
