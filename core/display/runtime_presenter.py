@@ -43,26 +43,17 @@ def format_runtime_replay_detail(snapshot_or_narrative: Any) -> str:
 
 
 def format_runtime_replay_compact(snapshot_or_narrative: Any) -> str:
-    """
-    Human-readable compact replay view.
+    """Render a compact operator-friendly replay view from structured snapshot data.
 
-    This function intentionally does not change the existing narrative contract.
-    It prefers structured snapshot fields over narrative strings so CLI output does
-    not expose large nested raw payloads.
+    The legacy summary/detail functions intentionally keep their existing narrative
+    contract. This compact view is separate and prefers structured fields so it
+    does not dump nested raw error payloads into the CLI.
     """
     narrative = _ensure_narrative(snapshot_or_narrative)
     snapshot = _extract_snapshot(snapshot_or_narrative, narrative)
 
-    task_id = _first_nonempty(
-        _mapping_get(snapshot, "task_id"),
-        narrative.get("task_id"),
-        "",
-    )
-    status = _first_nonempty(
-        _mapping_get(snapshot, "status"),
-        narrative.get("status"),
-        "unknown",
-    )
+    task_id = _first_nonempty(_mapping_get(snapshot, "task_id"), narrative.get("task_id"))
+    status = _first_nonempty(_mapping_get(snapshot, "status"), narrative.get("status"), "unknown")
     title = _first_nonempty(
         _mapping_get(snapshot, "goal"),
         _mapping_get(snapshot, "title"),
@@ -80,16 +71,6 @@ def format_runtime_replay_compact(snapshot_or_narrative: Any) -> str:
     timeline = _list_or_empty(_mapping_get(snapshot, "timeline"))
     latest_event = _mapping_or_empty(_mapping_get(snapshot, "latest_event"))
 
-    failure_line = _summarize_failed_events(failed_events, status=status)
-    blocker_line = _summarize_blockers(blockers, status=status)
-    latest_line = _summarize_latest_event(latest_event, timeline)
-    next_line = _build_structured_next_observation(
-        status=status,
-        failed_events=failed_events,
-        blockers=blockers,
-        latest_event=latest_event,
-    )
-
     return "\n".join(
         [
             "Runtime Replay Compact:",
@@ -97,10 +78,10 @@ def format_runtime_replay_compact(snapshot_or_narrative: Any) -> str:
             f"- status: {_display(status)}",
             f"- title: {_display(title, COMPACT_FIELD_LIMIT)}",
             f"- summary: {_display(summary, COMPACT_FIELD_LIMIT)}",
-            f"- failure: {_display(failure_line, COMPACT_FIELD_LIMIT)}",
-            f"- blocker: {_display(blocker_line, COMPACT_FIELD_LIMIT)}",
-            f"- latest_event: {_display(latest_line, COMPACT_FIELD_LIMIT)}",
-            f"- next_observation: {_display(next_line, COMPACT_FIELD_LIMIT)}",
+            f"- failed_events: {_display(_summarize_failed_events(failed_events, status=status), COMPACT_FIELD_LIMIT)}",
+            f"- blockers: {_display(_summarize_blockers(blockers, status=status), COMPACT_FIELD_LIMIT)}",
+            f"- latest_event: {_display(_summarize_latest_event(latest_event, timeline), COMPACT_FIELD_LIMIT)}",
+            f"- next_step: {_display(_build_structured_next_step(status=status, failed_events=failed_events, blockers=blockers), COMPACT_FIELD_LIMIT)}",
         ]
     )
 
@@ -148,26 +129,25 @@ def _summarize_failed_events(failed_events: List[Any], *, status: str) -> str:
     events = [item for item in failed_events if isinstance(item, Mapping)]
     if not events:
         if _safe_str(status).lower() in {"failed", "error"}:
-            return "Task is failed, but no structured failed event was captured."
-        return "No failed replay events were captured."
+            return "task failed, but no structured failed event was captured"
+        return "none"
 
     first = events[0]
-    event_type = _first_nonempty(first.get("event_type"), first.get("type"), "failure")
     source = _first_nonempty(first.get("source"), "runtime")
-    status_text = _first_nonempty(first.get("status"), "")
-    summary = _first_nonempty(first.get("summary"), "")
+    event_type = _first_nonempty(first.get("event_type"), first.get("type"), "failure")
+    status_text = _first_nonempty(first.get("status"))
 
     error = _extract_error_payload(first)
     error_type = _first_nonempty(
         _mapping_get(error, "type"),
         _mapping_get(error, "error_type"),
-        _extract_type_token(summary),
+        _deep_find_string(first, "type"),
         "",
     )
     message = _first_nonempty(
         _mapping_get(error, "message"),
         _mapping_get(error, "error"),
-        _extract_message_token(summary),
+        _extract_message_token(first.get("summary")),
         "",
     )
     classification = _first_nonempty(
@@ -182,85 +162,72 @@ def _summarize_failed_events(failed_events: List[Any], *, status: str) -> str:
         "",
     )
 
-    detail_parts: List[str] = []
-    if error_type:
-        detail_parts.append(str(error_type))
-    if message and message != error_type:
-        detail_parts.append(str(message))
-    if classification:
-        detail_parts.append(f"classification={classification}")
-    if attempts:
-        detail_parts.append(f"attempts={attempts}")
-
-    if not detail_parts:
-        compact_summary = _compact_text(summary, max_len=120)
-        if compact_summary:
-            detail_parts.append(compact_summary)
-
-    prefix = f"{len(events)} failed event(s). First: {source} {event_type}"
+    pieces = [f"{len(events)} failed event(s)", f"first={source}:{event_type}"]
     if status_text:
-        prefix += f" [{status_text}]"
-    if detail_parts:
-        prefix += "; " + ", ".join(detail_parts)
-    return prefix + "."
+        pieces.append(f"status={status_text}")
+    if error_type:
+        pieces.append(f"type={error_type}")
+    if message:
+        pieces.append(f"message={_compact_text(message, max_len=64)}")
+    if classification:
+        pieces.append(f"classification={classification}")
+    if attempts:
+        pieces.append(f"attempts={attempts}")
+    return "; ".join(pieces)
 
 
 def _summarize_blockers(blockers: List[Any], *, status: str) -> str:
     if not blockers:
         if _safe_str(status).lower() == "blocked":
-            return "Task is blocked, but no structured blocker reason was captured."
-        return "No blockers were captured."
+            return "task is blocked, but no structured blocker reason was captured"
+        return "none"
 
     first = blockers[0]
-    reason = _blocker_text(first)
+    reason = _blocker_text(first) or "unknown blocker"
     if len(blockers) == 1:
-        return f"One blocker: {reason or 'unknown blocker'}."
-    return f"{len(blockers)} blockers. First: {reason or 'unknown blocker'}."
+        return f"1 blocker: {_compact_text(reason, max_len=96)}"
+    return f"{len(blockers)} blockers; first={_compact_text(reason, max_len=96)}"
 
 
 def _summarize_latest_event(latest_event: Mapping[str, Any], timeline: List[Any]) -> str:
-    event = latest_event if isinstance(latest_event, Mapping) and latest_event else {}
+    event: Mapping[str, Any] = latest_event if isinstance(latest_event, Mapping) and latest_event else {}
     if not event:
         timeline_events = [item for item in timeline if isinstance(item, Mapping)]
         if timeline_events:
             event = timeline_events[-1]
+
     if not event:
-        return "No latest replay event was captured."
+        return "none"
 
     source = _first_nonempty(event.get("source"), "runtime")
     event_type = _first_nonempty(event.get("event_type"), event.get("type"), "event")
-    status = _first_nonempty(event.get("status"), "")
-    summary = _first_nonempty(event.get("summary"), "")
-
-    parts = [f"{source} {event_type}"]
-    if status:
-        parts.append(f"status={status}")
-
+    status = _first_nonempty(event.get("status"))
     action = _first_nonempty(
         _mapping_get(event, "action"),
         _deep_find_string(event, "action"),
         "",
     )
+    summary = _first_nonempty(event.get("summary"), "")
+
+    pieces = [f"{source}:{event_type}"]
+    if status:
+        pieces.append(f"status={status}")
     if action:
-        parts.append(f"action={action}")
-
-    if summary and len(" ".join(parts)) < 120:
-        parts.append(_compact_text(summary, max_len=80))
-
-    return "; ".join(parts)
+        pieces.append(f"action={action}")
+    if summary:
+        pieces.append(_compact_text(_strip_nested_payload_noise(summary), max_len=80))
+    return "; ".join(pieces)
 
 
-def _build_structured_next_observation(
+def _build_structured_next_step(
     *,
     status: str,
     failed_events: List[Any],
     blockers: List[Any],
-    latest_event: Mapping[str, Any],
 ) -> str:
     lowered = _safe_str(status).lower()
     if blockers:
-        return "Review the blocker reason and related task state before taking action."
-
+        return "review blocker reason and task state"
     if failed_events:
         first = failed_events[0] if isinstance(failed_events[0], Mapping) else {}
         error = _extract_error_payload(first)
@@ -270,19 +237,14 @@ def _build_structured_next_observation(
             _deep_find_string(first, "type"),
             "failed event",
         )
-        return f"Inspect execution_log.json and trace.json around {error_type} before deciding on a repair."
-
+        return f"inspect execution_log.json and trace.json around {error_type}"
     if lowered in {"finished", "completed", "done", "success"}:
-        return "Confirm the final output and verify the timeline matches the expected task flow."
-
+        return "confirm final output and timeline"
     if lowered in {"running", "pending", "queued", "in_progress", "replanning"}:
-        latest = _summarize_latest_event(latest_event, [])
-        return f"Check whether the latest event is still progressing: {latest}."
-
+        return "check latest event and confirm progress"
     if lowered in {"failed", "error"}:
-        return "Inspect the latest replay event, execution_log.json, and task error fields before repair."
-
-    return "Inspect the replay snapshot fields before deciding the next human action."
+        return "inspect latest replay event and task error fields"
+    return "inspect replay snapshot fields"
 
 
 def _extract_error_payload(event: Mapping[str, Any]) -> Dict[str, Any]:
@@ -297,6 +259,7 @@ def _extract_error_payload(event: Mapping[str, Any]) -> Dict[str, Any]:
             value = raw.get(key)
             if isinstance(value, Mapping):
                 return dict(value)
+
         result = raw.get("result")
         if isinstance(result, Mapping):
             error = result.get("error")
@@ -378,23 +341,6 @@ def _deep_find_list(data: Any, key: str, depth: int = 0) -> Optional[List[Any]]:
     return None
 
 
-def _extract_type_token(text: Any) -> str:
-    value = _safe_str(text)
-    if "'type':" in value:
-        marker = "'type':"
-        tail = value.split(marker, 1)[1].strip()
-        if tail.startswith("'"):
-            return tail.split("'", 2)[1] if len(tail.split("'", 2)) >= 2 else ""
-        return tail.split(",", 1)[0].strip(" {}")
-    if '"type":' in value:
-        marker = '"type":'
-        tail = value.split(marker, 1)[1].strip()
-        if tail.startswith('"'):
-            return tail.split('"', 2)[1] if len(tail.split('"', 2)) >= 2 else ""
-        return tail.split(",", 1)[0].strip(" {}")
-    return ""
-
-
 def _extract_message_token(text: Any) -> str:
     value = _safe_str(text)
     for marker, quote in (("'message':", "'"), ('"message":', '"')):
@@ -407,6 +353,25 @@ def _extract_message_token(text: Any) -> str:
                 return parts[1]
         return tail.split(",", 1)[0].strip(" {}")
     return ""
+
+
+def _strip_nested_payload_noise(text: Any) -> str:
+    value = _safe_str(text)
+    if not value:
+        return ""
+
+    markers = (
+        "; error: {",
+        "; result: {",
+        ", error: {",
+        ", result: {",
+        " error: {",
+        " result: {",
+    )
+    cut_points = [value.find(marker) for marker in markers if value.find(marker) >= 0]
+    if cut_points:
+        value = value[: min(cut_points)].rstrip(" ;,")
+    return value
 
 
 def _mapping_get(value: Any, key: str) -> Any:
