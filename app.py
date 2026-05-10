@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.display.runtime_presenter import format_runtime_replay_compact, format_runtime_replay_detail, format_runtime_replay_summary
+from core.display.runtime_repair_presenter import format_runtime_repair_suggestion
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.persona.presentation_bridge import render_cli_view, render_json_view
 from core.persona.runtime_bridge import PersonaRuntimeBridge
@@ -733,6 +734,24 @@ def _build_task_runtime_replay_display(task: Dict[str, Any], *, detail: bool = F
     return format_runtime_replay_summary(snapshot)
 
 
+def _build_task_runtime_repair_display(task: Dict[str, Any]) -> str:
+    try:
+        snapshot = build_runtime_replay_snapshot(task)
+    except Exception as exc:
+        snapshot = {
+            "task_id": _extract_task_id(task),
+            "status": _extract_status(task),
+            "goal": _extract_goal(task),
+            "timeline": [],
+            "failed_events": [],
+            "blockers": [],
+            "latest_event": {},
+            "replay_summary": f"runtime replay snapshot unavailable: {exc}",
+            "raw_task": task,
+        }
+    return format_runtime_repair_suggestion(snapshot)
+
+
 def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
     file_path = _safe_str(path)
     if not file_path or not os.path.isfile(file_path):
@@ -1250,6 +1269,8 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_kernel_display(task), "  "))
     print("runtime_replay:")
     print(textwrap.indent(_build_task_runtime_replay_display(task, detail=True, compact=True), "  "))
+    print("runtime_repair:")
+    print(textwrap.indent(_build_task_runtime_repair_display(task), "  "))
     if paths:
         print("paths:")
         for key, value in paths.items():
@@ -1310,6 +1331,8 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_kernel_display(task), "  "))
     print("runtime_replay:")
     print(textwrap.indent(_build_task_runtime_replay_display(task, compact=True), "  "))
+    print("runtime_repair:")
+    print(textwrap.indent(_build_task_runtime_repair_display(task), "  "))
     visible_path_keys = ["result_path", "sandbox_path", "task_dir", "plan_path", "runtime_state_path", "execution_log_path", "trace_path", "snapshot_path"]
     any_path = False
     for key in visible_path_keys:
