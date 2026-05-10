@@ -20,6 +20,8 @@ from core.display.runtime_presenter import format_runtime_replay_compact, format
 from core.display.runtime_repair_presenter import format_runtime_repair_suggestion
 from core.display.runtime_repair_envelope_presenter import format_runtime_repair_envelope
 from core.display.runtime_repair_planner_bridge_presenter import format_runtime_repair_planner_bridge
+from core.display.runtime_repair_planner_proposal_presenter import format_runtime_repair_planner_proposal
+from core.display.runtime_repair_confirmation_presenter import format_runtime_repair_confirmation_gate
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.persona.presentation_bridge import render_cli_view, render_json_view
 from core.persona.runtime_bridge import PersonaRuntimeBridge
@@ -28,6 +30,8 @@ from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
 from core.tasks.runtime_repair_contract import build_runtime_repair_contract
 from core.tasks.runtime_repair_envelope import build_runtime_repair_envelope
 from core.tasks.runtime_repair_planner_bridge import build_runtime_repair_planner_bridge
+from core.tasks.runtime_repair_planner_proposal import build_runtime_repair_planner_proposal
+from core.tasks.runtime_repair_confirmation import build_runtime_repair_confirmation_gate
 from core.tasks.runtime_repair_suggestion import build_runtime_repair_suggestion
 from services.system_boot import boot_system
 
@@ -841,6 +845,82 @@ def _build_task_runtime_repair_planner_bridge_display(task: Dict[str, Any]) -> s
     return format_runtime_repair_planner_bridge(bridge)
 
 
+
+
+def _build_task_runtime_repair_planner_proposal_display(task: Dict[str, Any]) -> str:
+    try:
+        snapshot = build_runtime_replay_snapshot(task)
+        suggestion = build_runtime_repair_suggestion(snapshot)
+        contract = build_runtime_repair_contract(suggestion)
+        envelope = build_runtime_repair_envelope(suggestion, contract=contract)
+        bridge = build_runtime_repair_planner_bridge(envelope)
+        proposal = build_runtime_repair_planner_proposal(bridge)
+    except Exception as exc:
+        proposal = {
+            "ok": False,
+            "task_id": _extract_task_id(task),
+            "status": _extract_status(task),
+            "proposal_type": "runtime_repair_planner_proposal",
+            "proposal_mode": "blocked",
+            "proposal_allowed": False,
+            "planner_allowed": False,
+            "requires_confirmation": True,
+            "repair_intent": {
+                "intent_type": "unavailable",
+                "source": "runtime_repair_planner_bridge",
+                "scope": "unknown",
+                "risk": "high",
+                "mode": "manual_review",
+                "mutation_allowed": False,
+                "execution_allowed": False,
+            },
+            "proposed_actions": [],
+            "blocked_actions": [
+                "schedule_task",
+                "execute_repair",
+                "apply_patch",
+                "write_file",
+                "run_shell_command",
+            ],
+            "inspection_targets": ["runtime_state.json", "trace.json"],
+            "reason": f"runtime repair planner proposal unavailable: {exc}",
+            "human_summary": "Planner proposal could not be built. Keep runtime repair planning manual until the proposal is available.",
+        }
+
+    return format_runtime_repair_planner_proposal(proposal)
+
+
+def _build_task_runtime_repair_confirmation_display(task: Dict[str, Any]) -> str:
+    try:
+        snapshot = build_runtime_replay_snapshot(task)
+        suggestion = build_runtime_repair_suggestion(snapshot)
+        contract = build_runtime_repair_contract(suggestion)
+        envelope = build_runtime_repair_envelope(suggestion, contract=contract)
+        bridge = build_runtime_repair_planner_bridge(envelope)
+        proposal = build_runtime_repair_planner_proposal(bridge)
+        gate = build_runtime_repair_confirmation_gate(proposal)
+    except Exception as exc:
+        gate = {
+            "ok": False,
+            "task_id": _extract_task_id(task),
+            "proposal_id": f"{_extract_task_id(task) or 'task'}:runtime_repair_planner_proposal",
+            "proposal_type": "runtime_repair_planner_proposal",
+            "confirmation_status": "blocked",
+            "requires_confirmation": True,
+            "proposal_allowed": False,
+            "planner_allowed_before_confirmation": False,
+            "planner_allowed_after_confirmation": False,
+            "mutation_allowed_after_confirmation": False,
+            "execution_allowed_after_confirmation": False,
+            "operator": "",
+            "reason": f"runtime repair confirmation gate unavailable: {exc}",
+            "allowed_next_action": "inspect_confirmation_gate",
+            "confirmation_required_fields": ["approved", "operator", "reason"],
+        }
+
+    return format_runtime_repair_confirmation_gate(gate)
+
+
 def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
     file_path = _safe_str(path)
     if not file_path or not os.path.isfile(file_path):
@@ -1364,6 +1444,10 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_repair_envelope_display(task), "  "))
     print("runtime_repair_planner_bridge:")
     print(textwrap.indent(_build_task_runtime_repair_planner_bridge_display(task), "  "))
+    print("runtime_repair_planner_proposal:")
+    print(textwrap.indent(_build_task_runtime_repair_planner_proposal_display(task), "  "))
+    print("runtime_repair_confirmation:")
+    print(textwrap.indent(_build_task_runtime_repair_confirmation_display(task), "  "))
     if paths:
         print("paths:")
         for key, value in paths.items():
@@ -1430,6 +1514,10 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_repair_envelope_display(task), "  "))
     print("runtime_repair_planner_bridge:")
     print(textwrap.indent(_build_task_runtime_repair_planner_bridge_display(task), "  "))
+    print("runtime_repair_planner_proposal:")
+    print(textwrap.indent(_build_task_runtime_repair_planner_proposal_display(task), "  "))
+    print("runtime_repair_confirmation:")
+    print(textwrap.indent(_build_task_runtime_repair_confirmation_display(task), "  "))
     visible_path_keys = ["result_path", "sandbox_path", "task_dir", "plan_path", "runtime_state_path", "execution_log_path", "trace_path", "snapshot_path"]
     any_path = False
     for key in visible_path_keys:
