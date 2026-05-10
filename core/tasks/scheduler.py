@@ -9,7 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from core.planning.replanner import Replanner
 from core.planning.planner import Planner
@@ -105,6 +105,7 @@ from core.tasks.scheduler_core.llm_step_helpers import (
 )
 from core.tasks.scheduler_core.atomic_edit_helpers import AtomicEditSession
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
+from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
 
 try:
     from core.tools.repo_edit_agent_bridge import run_repo_edit_decision
@@ -1469,7 +1470,13 @@ class Scheduler(RuntimeTaskScheduler):
         # planner-only description.  We still run a write-file shaped guard
         # inside _execute_code_edit_step before touching disk.
         if step_type in {"code_edit", "function_fix", "multi_code_edit"}:
-            return self._execute_code_edit_step(task=task, step=step)
+            code_edit_result = self._execute_code_edit_step(task=task, step=step)
+            self._record_execution_gateway_side_check(
+                step=step,
+                legacy_result=code_edit_result,
+                source="scheduler_code_edit",
+            )
+            return code_edit_result
 
         prepared_step, guard_step, step_scope = prepare_simple_step_guard(
             scheduler=self,
@@ -1493,7 +1500,11 @@ class Scheduler(RuntimeTaskScheduler):
             guard_result=guard_result,
         )
         if basic_result is not None:
-            return basic_result
+            return self._run_execution_gateway_basic_step(
+                step=step,
+                legacy_result=basic_result,
+                source="scheduler_basic_step",
+            )
 
         llm_step_result = execute_llm_step(
             scheduler=self,
@@ -1502,7 +1513,11 @@ class Scheduler(RuntimeTaskScheduler):
             step_type=step_type,
         )
         if llm_step_result is not None:
-            return llm_step_result
+            return self._run_execution_gateway_basic_step(
+                step=step,
+                legacy_result=llm_step_result,
+                source="scheduler_llm_step",
+            )
 
         command_like_result = execute_command_like_step(
             scheduler=self,
@@ -1512,9 +1527,123 @@ class Scheduler(RuntimeTaskScheduler):
             step_scope=step_scope,
         )
         if command_like_result is not None:
-            return command_like_result
+            return self._run_execution_gateway_basic_step(
+                step=step,
+                legacy_result=command_like_result,
+                source="scheduler_command_step",
+            )
 
         raise ValueError(f"unsupported step type: {step_type}")
+
+    def _run_execution_gateway_basic_step(
+        self,
+        *,
+        step: Any,
+        legacy_result: Any,
+        source: str = "scheduler_basic_step",
+        trace: bool = True,
+    ) -> Dict[str, Any]:
+        """Return the scheduler execution gateway result for basic steps.
+
+        Phase10-G-13-3A is the first real migration point: basic scheduler
+        steps now pass through the execution gateway before returning to the
+        caller.  The executor used here intentionally returns the legacy
+        result payload, so behavior remains compatible while the returned
+        payload gains runtime-kernel metadata.  If the gateway itself fails,
+        the legacy result is returned unchanged.
+        """
+        legacy_payload = legacy_result if isinstance(legacy_result, Mapping) else {
+            "ok": bool(legacy_result),
+            "action": "legacy_execution_result",
+            "raw_result": legacy_result,
+        }
+
+        try:
+            gateway_result = run_scheduler_step_execution_gateway(
+                lambda _step, _legacy_payload=legacy_payload: _legacy_payload,
+                step,
+                legacy_result=legacy_payload,
+                allow_legacy_fallback=True,
+                trace=trace,
+            )
+        except Exception:
+            return dict(legacy_payload) if isinstance(legacy_payload, Mapping) else {
+                "ok": bool(legacy_payload),
+                "action": "legacy_execution_result",
+                "raw_result": legacy_payload,
+            }
+
+        if isinstance(gateway_result.result, dict):
+            result = dict(gateway_result.result)
+        else:
+            result = dict(legacy_payload)
+
+        result.setdefault("ok", bool(legacy_payload.get("ok", gateway_result.ok)) if isinstance(legacy_payload, Mapping) else bool(gateway_result.ok))
+        result.setdefault("action", str(legacy_payload.get("action") or legacy_payload.get("type") or "execution_result") if isinstance(legacy_payload, Mapping) else "execution_result")
+        result["scheduler_execution_gateway_source"] = str(source or "scheduler_basic_step")
+        result["scheduler_execution_gateway_returned"] = True
+        result["scheduler_execution_gateway_used"] = bool(gateway_result.used_gateway)
+        result["scheduler_execution_legacy_fallback_used"] = bool(gateway_result.used_legacy_fallback)
+        result["scheduler_execution_runtime_ok"] = bool(gateway_result.ok)
+        result["scheduler_execution_runtime_error"] = gateway_result.runtime_error
+        if gateway_result.errors:
+            result["scheduler_execution_gateway_errors"] = list(gateway_result.errors)
+        if gateway_result.warnings:
+            result["scheduler_execution_gateway_warnings"] = list(gateway_result.warnings)
+
+        return result
+
+    def _record_execution_gateway_side_check(
+        self,
+        *,
+        step: Any,
+        legacy_result: Any,
+        source: str = "scheduler_execution",
+        trace: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """Run the execution gateway beside the legacy execution path.
+
+        Phase10-G-13 keeps scheduler behavior legacy-compatible: the caller
+        still returns the original legacy_result.  This side check only
+        exercises the execution gateway boundary and records telemetry so the
+        runtime can be migrated gateway-first later without a blind cutover.
+        """
+        try:
+            legacy_payload = legacy_result if isinstance(legacy_result, Mapping) else {
+                "ok": bool(legacy_result),
+                "action": "legacy_execution_result",
+                "raw_result": legacy_result,
+            }
+
+            gateway_result = run_scheduler_step_execution_gateway(
+                lambda _step, _legacy_payload=legacy_payload: _legacy_payload,
+                step,
+                legacy_result=legacy_payload,
+                allow_legacy_fallback=True,
+                trace=trace,
+            )
+
+            return {
+                "ok": bool(gateway_result.ok),
+                "source": str(source or "scheduler_execution"),
+                "used_gateway": bool(gateway_result.used_gateway),
+                "used_legacy_fallback": bool(gateway_result.used_legacy_fallback),
+                "runtime_error": gateway_result.runtime_error,
+                "errors": list(gateway_result.errors),
+                "warnings": list(gateway_result.warnings),
+                "result_action": str(gateway_result.result.get("action") or ""),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "source": str(source or "scheduler_execution"),
+                "used_gateway": False,
+                "used_legacy_fallback": False,
+                "runtime_error": f"execution_gateway_side_check_failed:{type(exc).__name__}:{exc}",
+                "errors": [f"execution_gateway_side_check_failed:{type(exc).__name__}:{exc}"],
+                "warnings": [],
+                "result_action": "",
+            }
 
     def _resolve_task_dir(self, task: Dict[str, Any]) -> str:
         task_dir = str(task.get("task_dir") or "").strip()
