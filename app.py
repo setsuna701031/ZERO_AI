@@ -18,11 +18,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.display.runtime_presenter import format_runtime_replay_compact, format_runtime_replay_detail, format_runtime_replay_summary
 from core.display.runtime_repair_presenter import format_runtime_repair_suggestion
+from core.display.runtime_repair_envelope_presenter import format_runtime_repair_envelope
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.persona.presentation_bridge import render_cli_view, render_json_view
 from core.persona.runtime_bridge import PersonaRuntimeBridge
 from core.tasks.runtime_kernel_status import build_task_runtime_kernel_status, format_task_runtime_kernel_status
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
+from core.tasks.runtime_repair_contract import build_runtime_repair_contract
+from core.tasks.runtime_repair_envelope import build_runtime_repair_envelope
+from core.tasks.runtime_repair_suggestion import build_runtime_repair_suggestion
 from services.system_boot import boot_system
 
 
@@ -752,6 +756,49 @@ def _build_task_runtime_repair_display(task: Dict[str, Any]) -> str:
     return format_runtime_repair_suggestion(snapshot)
 
 
+def _build_task_runtime_repair_envelope_display(task: Dict[str, Any]) -> str:
+    try:
+        snapshot = build_runtime_replay_snapshot(task)
+    except Exception as exc:
+        snapshot = {
+            "task_id": _extract_task_id(task),
+            "status": _extract_status(task),
+            "goal": _extract_goal(task),
+            "timeline": [],
+            "failed_events": [],
+            "blockers": [],
+            "latest_event": {},
+            "replay_summary": f"runtime replay snapshot unavailable: {exc}",
+            "raw_task": task,
+        }
+
+    try:
+        suggestion = build_runtime_repair_suggestion(snapshot)
+        contract = build_runtime_repair_contract(suggestion)
+        envelope = build_runtime_repair_envelope(suggestion, contract=contract)
+    except Exception as exc:
+        envelope = {
+            "ok": False,
+            "task_id": _extract_task_id(task),
+            "status": _extract_status(task),
+            "repair_mode": "unavailable",
+            "repair_scope": "unknown",
+            "repair_risk": "unknown",
+            "requires_confirmation": True,
+            "allowed_actions": [],
+            "blocked_actions": ["auto_repair", "apply_patch", "write_file", "run_shell_command"],
+            "max_retry": 0,
+            "retry_recommended": False,
+            "inspection_targets": ["runtime_state.json", "trace.json"],
+            "suggestion_type": "runtime_repair_envelope_unavailable",
+            "severity": "high",
+            "reason": f"runtime repair envelope unavailable: {exc}",
+            "human_summary": "Runtime repair envelope could not be built. Keep repair actions manual until the envelope is available.",
+        }
+
+    return format_runtime_repair_envelope(envelope)
+
+
 def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
     file_path = _safe_str(path)
     if not file_path or not os.path.isfile(file_path):
@@ -1271,6 +1318,8 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_replay_display(task, detail=True, compact=True), "  "))
     print("runtime_repair:")
     print(textwrap.indent(_build_task_runtime_repair_display(task), "  "))
+    print("runtime_repair_envelope:")
+    print(textwrap.indent(_build_task_runtime_repair_envelope_display(task), "  "))
     if paths:
         print("paths:")
         for key, value in paths.items():
@@ -1333,6 +1382,8 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     print(textwrap.indent(_build_task_runtime_replay_display(task, compact=True), "  "))
     print("runtime_repair:")
     print(textwrap.indent(_build_task_runtime_repair_display(task), "  "))
+    print("runtime_repair_envelope:")
+    print(textwrap.indent(_build_task_runtime_repair_envelope_display(task), "  "))
     visible_path_keys = ["result_path", "sandbox_path", "task_dir", "plan_path", "runtime_state_path", "execution_log_path", "trace_path", "snapshot_path"]
     any_path = False
     for key in visible_path_keys:
