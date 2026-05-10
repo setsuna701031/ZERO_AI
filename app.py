@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
 from core.persona.presentation_bridge import render_cli_view, render_json_view
 from core.persona.runtime_bridge import PersonaRuntimeBridge
+from core.tasks.runtime_kernel_status import build_task_runtime_kernel_status, format_task_runtime_kernel_status
 from services.system_boot import boot_system
 
 
@@ -675,6 +676,39 @@ def _extract_paths(task: Dict[str, Any]) -> Dict[str, str]:
     return result
 
 
+def _extract_runtime_kernel_trace_paths(task: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    planner_value = _find_first_value(task, ["planner_contract_trace_path", "planner_trace_path", "planner_trace_file"])
+    execution_value = _find_first_value(task, ["execution_contract_trace_path", "execution_trace_path", "execution_trace_file"])
+
+    planner_path = _safe_str(planner_value) or None
+    execution_path = _safe_str(execution_value) or None
+
+    return planner_path, execution_path
+
+
+def _build_task_runtime_kernel_display(task: Dict[str, Any]) -> str:
+    planner_path, execution_path = _extract_runtime_kernel_trace_paths(task)
+    try:
+        status = build_task_runtime_kernel_status(
+            task,
+            planner_trace_path=planner_path,
+            execution_trace_path=execution_path,
+        )
+    except Exception as exc:
+        status = {
+            "kernel": {"status": "unavailable", "total_invalid": 0, "total_errors": 0, "total_warnings": 0},
+            "planner": {"event_count": 0},
+            "execution": {"event_count": 0},
+            "task": {
+                "blocked_reason": _extract_blocked_reason(task),
+                "unresolved_blockers": [],
+                "latest_runtime_step": _extract_current_step_text(task),
+            },
+            "error": str(exc),
+        }
+    return format_task_runtime_kernel_status(status)
+
+
 def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
     file_path = _safe_str(path)
     if not file_path or not os.path.isfile(file_path):
@@ -1188,6 +1222,8 @@ def _print_task_summary(task: Dict[str, Any]) -> None:
     if last_error:
         print("last_error:")
         print(textwrap.indent(last_error, "  "))
+    print("runtime_kernel:")
+    print(textwrap.indent(_build_task_runtime_kernel_display(task), "  "))
     if paths:
         print("paths:")
         for key, value in paths.items():
@@ -1244,6 +1280,8 @@ def _print_task_result(task: Dict[str, Any]) -> None:
     if last_error:
         print("last_error:")
         print(textwrap.indent(last_error, "  "))
+    print("runtime_kernel:")
+    print(textwrap.indent(_build_task_runtime_kernel_display(task), "  "))
     visible_path_keys = ["result_path", "sandbox_path", "task_dir", "plan_path", "runtime_state_path", "execution_log_path", "trace_path", "snapshot_path"]
     any_path = False
     for key in visible_path_keys:
