@@ -106,6 +106,12 @@ from core.tasks.scheduler_core.llm_step_helpers import (
     execute_llm_step,
 )
 from core.tasks.scheduler_core.atomic_edit_helpers import AtomicEditSession
+from core.tasks.scheduler_core.pure_helpers import (
+    _safe_int_for_runtime_gate as _scheduler_helper_safe_int_for_runtime_gate,
+    _extract_task_id as _scheduler_helper_extract_task_id,
+    _strip_quotes as _scheduler_helper_strip_quotes,
+    _extract_file_path as _scheduler_helper_extract_file_path,
+)
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
 
@@ -532,11 +538,8 @@ class Scheduler(RuntimeTaskScheduler):
                 active.append(copy.deepcopy(item))
         return active
 
-    def _safe_int_for_runtime_gate(self, value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except Exception:
-            return int(default)
+    def _safe_int_for_runtime_gate(self, *args, **kwargs):
+        return _scheduler_helper_safe_int_for_runtime_gate(*args, **kwargs)
 
     def _build_tick_result(
         self,
@@ -3967,13 +3970,8 @@ class Scheduler(RuntimeTaskScheduler):
             status_blocked=STATUS_BLOCKED,
         )
 
-    def _extract_task_id(self, task: Dict[str, Any]) -> str:
-        return str(
-            task.get("task_id")
-            or task.get("task_name")
-            or task.get("id")
-            or ""
-        ).strip()
+    def _extract_task_id(self, *args, **kwargs):
+        return _scheduler_helper_extract_task_id(*args, **kwargs)
 
     # ------------------------------------------------------------
     # DAG helpers
@@ -6686,12 +6684,8 @@ class Scheduler(RuntimeTaskScheduler):
 
         return "", False
 
-    def _strip_quotes(self, text: str) -> str:
-        value = str(text or "").strip()
-        if len(value) >= 2:
-            if (value[0] == value[-1]) and value[0] in {"'", '"', "「", "」", "“", "”"}:
-                return value[1:-1]
-        return value
+    def _strip_quotes(self, *args, **kwargs):
+        return _scheduler_helper_strip_quotes(*args, **kwargs)
 
     def _try_plan_read_file(self, text: str) -> Optional[Dict[str, Any]]:
         stripped = str(text or "").strip()
@@ -6707,9 +6701,8 @@ class Scheduler(RuntimeTaskScheduler):
 
         return None
 
-    def _extract_file_path(self, text: str) -> Optional[str]:
-        m = re.search(r"([A-Za-z0-9_\-./\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))", text, flags=re.IGNORECASE)
-        return m.group(1).strip() if m else None
+    def _extract_file_path(self, *args, **kwargs):
+        return _scheduler_helper_extract_file_path(*args, **kwargs)
 
 
 # ============================================================
