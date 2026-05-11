@@ -22,6 +22,11 @@ from core.runtime.repair_step_injector import RepairStepInjector
 from core.runtime.repair_observability import build_repair_chain_id, build_repair_observability
 from core.runtime.repair_rollback import restore_repair_backup, should_rollback_after_failed_verify
 
+try:
+    from core.runtime.mutation_integration import MutationRuntimeIntegration
+except Exception:  # pragma: no cover - optional during staged rollout
+    MutationRuntimeIntegration = None
+
 MAX_PUBLIC_LIST_ITEMS = 20
 MAX_PUBLIC_TRACE_ITEMS = 100
 MAX_PUBLIC_TEXT_CHARS = 12000
@@ -61,6 +66,628 @@ class TaskRunner:
         self.audit = AuditLogger(workspace_root=getattr(self.runtime, "workspace_root", "workspace"))
         self.repair_planner = RepairPlanner()
         self.repair_step_injector = RepairStepInjector()
+        self.mutation_runtime = self._build_mutation_runtime_integration()
+
+    # ============================================================
+    # mutation boundary integration
+    # ============================================================
+
+    def _build_mutation_runtime_integration(self) -> Any:
+        """Build the optional governed mutation runtime bridge.
+
+        Keep this optional so TaskRunner can still boot in minimal/test
+        environments where the staged mutation module has not been installed
+        yet.
+        """
+        if MutationRuntimeIntegration is None:
+            return None
+
+        workspace_root = getattr(self.runtime, "workspace_root", "workspace")
+        try:
+            return MutationRuntimeIntegration(workspace_root=workspace_root)
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+            return None
+
+
+    def _is_autonomous_repair_mutation_step(self, step: Any) -> bool:
+        if not isinstance(step, dict):
+            return False
+        step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+        return step_type in {
+            "code_chain_repair",
+            "autonomous_code_repair",
+            "apply_patch",
+            "apply_unified_diff",
+            "repo_edit",
+            "repo_apply",
+        }
+
+    def _is_self_repair_mutation_step(self, step: Any) -> bool:
+        if not isinstance(step, dict):
+            return False
+        step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+        return step_type in {"code_chain_repair", "autonomous_code_repair"}
+
+
+
+    def _build_repair_chain_consistency_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        step_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+        trace_tick: int,
+    ) -> Dict[str, Any]:
+        if not self._is_autonomous_repair_mutation_step(step):
+            return {}
+
+        repair_context = state.setdefault("repair_context", {}) if isinstance(state, dict) else {}
+        if not isinstance(repair_context, dict):
+            repair_context = {}
+            if isinstance(state, dict):
+                state["repair_context"] = repair_context
+
+        chain_id = ""
+        repair_session = repair_context.get("repair_session")
+        if isinstance(repair_session, dict):
+            chain_id = str(repair_session.get("chain_id") or repair_session.get("session_id") or repair_session.get("id") or "").strip()
+
+        if not chain_id:
+            chain_id = str(
+                task.get("repair_chain_id")
+                or task.get("chain_id")
+                or task.get("task_id")
+                or task.get("task_name")
+                or "repair_chain"
+            ).strip()
+
+        mutation_boundary = step_result.get("mutation_boundary") if isinstance(step_result.get("mutation_boundary"), dict) else {}
+        mutation_reconciliation = step_result.get("mutation_reconciliation") if isinstance(step_result.get("mutation_reconciliation"), dict) else {}
+        replay_validation = step_result.get("repair_replay_validation") if isinstance(step_result.get("repair_replay_validation"), dict) else {}
+        autonomous_repair = step_result.get("autonomous_repair_mutation") if isinstance(step_result.get("autonomous_repair_mutation"), dict) else {}
+
+        step_type_text = str(step.get("type") or step.get("action") or "").strip().lower() if isinstance(step, dict) else ""
+        current_record = {
+            "chain_id": chain_id,
+            "step_index": int(step_index),
+            "step_type": step_type_text,
+            "participant_kind": "autonomous_self_repair" if self._is_self_repair_mutation_step(step) else "governed_mutation",
+            "target": self._runtime_step_target(step),
+            "mutation_id": str(mutation_boundary.get("mutation_id") or autonomous_repair.get("mutation_id") or ""),
+            "mutation_status": str(mutation_boundary.get("status") or ""),
+            "reconciliation_status": str(mutation_reconciliation.get("status") or ""),
+            "replay_status": str(replay_validation.get("status") or ""),
+            "reproducible": bool(replay_validation.get("reproducible")),
+            "ok": bool(step_result.get("ok")) if isinstance(step_result, dict) else False,
+            "current_tick": current_tick,
+            "trace_tick": trace_tick,
+        }
+
+        history: List[Dict[str, Any]] = []
+
+        execution_log = state.get("execution_log") if isinstance(state, dict) else []
+        if isinstance(execution_log, list):
+            for entry in execution_log:
+                if not isinstance(entry, dict):
+                    continue
+                result_payload = entry.get("result")
+                if not isinstance(result_payload, dict):
+                    continue
+
+                existing = result_payload.get("repair_chain_consistency")
+                if isinstance(existing, dict):
+                    latest = existing.get("latest_step")
+                    if isinstance(latest, dict):
+                        if str(latest.get("chain_id") or "") == chain_id:
+                            history.append(copy.deepcopy(latest))
+                        continue
+
+                existing_repair = result_payload.get("autonomous_repair_mutation")
+                existing_mutation = result_payload.get("mutation_boundary")
+                existing_recon = result_payload.get("mutation_reconciliation")
+                existing_replay = result_payload.get("repair_replay_validation")
+
+                # v2.3.1:
+                # Chain participant is any governed mutation result, not only
+                # autonomous repair mutation.  apply_patch/apply_unified_diff
+                # rollback must be counted as part of the same chain.
+                if not isinstance(existing_mutation, dict):
+                    continue
+
+                inferred_step_type = str(result_payload.get("step_type") or "").strip().lower()
+                inferred_kind = "governed_mutation"
+                inferred_target = ""
+                inferred_mutation_id = str(existing_mutation.get("mutation_id") or "")
+
+                if isinstance(existing_repair, dict):
+                    inferred_step_type = str(existing_repair.get("step_type") or inferred_step_type).strip().lower()
+                    inferred_kind = str(existing_repair.get("kind") or inferred_kind).strip() or inferred_kind
+                    inferred_target = str(existing_repair.get("target_path") or existing_repair.get("target") or "")
+
+                if not inferred_target:
+                    result_step = result_payload.get("step")
+                    if isinstance(result_step, dict):
+                        for key in ("target_path", "target", "path", "file_path"):
+                            value = result_step.get(key)
+                            if isinstance(value, str) and value.strip():
+                                inferred_target = value.strip()
+                                break
+
+                inferred = {
+                    "chain_id": chain_id,
+                    "step_index": self._safe_int(result_payload.get("step_index"), len(history)),
+                    "step_type": inferred_step_type,
+                    "participant_kind": inferred_kind,
+                    "target": inferred_target,
+                    "mutation_id": inferred_mutation_id,
+                    "mutation_status": str(existing_mutation.get("status") or ""),
+                    "reconciliation_status": str(existing_recon.get("status") if isinstance(existing_recon, dict) else ""),
+                    "replay_status": str(existing_replay.get("status") if isinstance(existing_replay, dict) else ""),
+                    "reproducible": bool(existing_replay.get("reproducible")) if isinstance(existing_replay, dict) else False,
+                    "ok": bool(result_payload.get("ok")),
+                    "current_tick": entry.get("tick", current_tick),
+                    "trace_tick": entry.get("tick", trace_tick),
+                }
+                history.append(inferred)
+
+        current_key = (
+            current_record.get("step_index"),
+            current_record.get("mutation_id"),
+            current_record.get("step_type"),
+            current_record.get("target"),
+        )
+        existing_keys = {
+            (
+                item.get("step_index"),
+                item.get("mutation_id"),
+                item.get("step_type"),
+                item.get("target"),
+            )
+            for item in history
+            if isinstance(item, dict)
+        }
+        if current_key not in existing_keys:
+            history.append(copy.deepcopy(current_record))
+
+        relevant_history = [
+            item for item in history
+            if isinstance(item, dict) and str(item.get("chain_id") or "") == chain_id
+        ]
+
+        total = len(relevant_history)
+        verified = sum(1 for item in relevant_history if item.get("mutation_status") == "verified")
+        replay_verified = sum(1 for item in relevant_history if item.get("replay_status") == "replay_verified")
+        rolled_back = sum(1 for item in relevant_history if item.get("mutation_status") == "rolled_back")
+        failed = sum(
+            1 for item in relevant_history
+            if item.get("reconciliation_status") in {"failed_rolled_back", "apply_failed", "verification_failed"}
+            or item.get("mutation_status") in {"rolled_back", "apply_failed", "verification_failed"}
+        )
+        governed_mutations = sum(1 for item in relevant_history if item.get("participant_kind") == "governed_mutation")
+        self_repair_mutations = sum(1 for item in relevant_history if item.get("participant_kind") == "autonomous_self_repair")
+
+        if total <= 0:
+            status = "empty"
+        elif failed > 0:
+            status = "chain_has_rollback_or_failure"
+        elif verified == total and replay_verified == total:
+            status = "chain_replay_verified"
+        elif verified == total:
+            status = "chain_verified_without_full_replay"
+        else:
+            status = "chain_incomplete"
+
+        summary = {
+            "enabled": True,
+            "schema": "zero.repair_chain_consistency.v2_3_1",
+            "chain_id": chain_id,
+            "status": status,
+            "total_steps": total,
+            "verified_steps": verified,
+            "replay_verified_steps": replay_verified,
+            "rolled_back_steps": rolled_back,
+            "failed_steps": failed,
+            "governed_mutation_steps": governed_mutations,
+            "autonomous_self_repair_steps": self_repair_mutations,
+            "latest_step": copy.deepcopy(current_record),
+            "history": copy.deepcopy(relevant_history[-100:]),
+        }
+
+        repair_context["repair_chain_consistency_history"] = copy.deepcopy(relevant_history[-100:])
+        repair_context["last_repair_chain_consistency"] = copy.deepcopy(summary)
+
+        engineering_execution = repair_context.setdefault("engineering_execution", {})
+        if isinstance(engineering_execution, dict):
+            engineering_execution["last_repair_chain_consistency"] = copy.deepcopy(summary)
+            engineering_execution["repair_chain_consistency_status"] = status
+            engineering_execution["repair_chain_id"] = chain_id
+            engineering_execution["repair_chain_total_steps"] = total
+            engineering_execution["repair_chain_failed_steps"] = failed
+
+        if isinstance(task, dict):
+            task_repair_context = task.setdefault("repair_context", {})
+            if isinstance(task_repair_context, dict):
+                task_repair_context["repair_chain_consistency_history"] = copy.deepcopy(relevant_history[-100:])
+                task_repair_context["last_repair_chain_consistency"] = copy.deepcopy(summary)
+
+        return summary
+
+
+    def _build_repair_replay_validation(
+        self,
+        *,
+        step: Any,
+        step_result: Dict[str, Any],
+        mutation_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+        trace_tick: int,
+    ) -> Dict[str, Any]:
+        mutation_status = ""
+        verification_ok = None
+        replay_verified = None
+        mutation_id = ""
+
+        if isinstance(mutation_result, dict):
+            mutation_id = str(mutation_result.get("mutation_id") or "")
+            mutation_status = str(mutation_result.get("status") or "").strip()
+            verification = mutation_result.get("verification")
+            if isinstance(verification, dict):
+                verification_ok = bool(verification.get("ok"))
+                replay_verified = bool(verification.get("replay_verified"))
+
+        step_ok = bool(step_result.get("ok")) if isinstance(step_result, dict) else False
+        reproducible = bool(step_ok and mutation_status == "verified" and verification_ok and replay_verified)
+
+        if mutation_status == "rolled_back":
+            replay_status = "rolled_back_not_reproducible"
+        elif reproducible:
+            replay_status = "replay_verified"
+        elif mutation_status == "verified" and verification_ok and replay_verified is False:
+            replay_status = "verification_ok_replay_failed"
+        elif mutation_status == "verified" and verification_ok is False:
+            replay_status = "verification_failed"
+        elif not step_ok:
+            replay_status = "step_failed"
+        else:
+            replay_status = "unknown"
+
+        return {
+            "enabled": True,
+            "schema": "zero.repair_replay_validation.v1",
+            "mutation_id": mutation_id,
+            "step_type": str(step.get("type") or step.get("action") or "").strip().lower() if isinstance(step, dict) else "",
+            "target": self._runtime_step_target(step),
+            "step_ok": step_ok,
+            "mutation_status": mutation_status,
+            "verification_ok": verification_ok,
+            "replay_verified": replay_verified,
+            "reproducible": reproducible,
+            "status": replay_status,
+            "step_index": int(step_index),
+            "current_tick": current_tick,
+            "trace_tick": trace_tick,
+        }
+
+
+    def _attach_autonomous_repair_mutation_metadata(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        step_result: Dict[str, Any],
+        mutation_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+        trace_tick: int,
+    ) -> Dict[str, Any]:
+        normalized = copy.deepcopy(step_result) if isinstance(step_result, dict) else {"ok": False, "raw_result": step_result}
+        if not self._is_autonomous_repair_mutation_step(step):
+            return normalized
+
+        mutation_status = ""
+        if isinstance(mutation_result, dict):
+            mutation_status = str(mutation_result.get("status") or "").strip()
+
+        step_type_text = str(step.get("type") or step.get("action") or "").strip().lower() if isinstance(step, dict) else ""
+        repair_mutation = {
+            "enabled": True,
+            "kind": "autonomous_self_repair" if self._is_self_repair_mutation_step(step) else "governed_mutation",
+            "step_type": step_type_text,
+            "mutation_id": str(mutation_result.get("mutation_id") or "") if isinstance(mutation_result, dict) else "",
+            "mutation_status": mutation_status,
+            "reconciliation_status": str(
+                normalized.get("mutation_reconciliation", {}).get("status")
+                if isinstance(normalized.get("mutation_reconciliation"), dict)
+                else ""
+            ),
+            "target_path": self._runtime_step_target(step),
+            "step_index": int(step_index),
+            "current_tick": current_tick,
+            "trace_tick": trace_tick,
+        }
+
+        normalized["autonomous_repair_mutation"] = repair_mutation
+
+        repair_replay_validation = self._build_repair_replay_validation(
+            step=step,
+            step_result=normalized,
+            mutation_result=mutation_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
+        normalized["repair_replay_validation"] = repair_replay_validation
+
+        repair_chain_consistency = self._build_repair_chain_consistency_record(
+            task=task,
+            state=state,
+            step=step,
+            step_result=normalized,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
+        if repair_chain_consistency:
+            normalized["repair_chain_consistency"] = repair_chain_consistency
+
+
+
+        repair_context = state.get("repair_context") if isinstance(state, dict) else None
+        if isinstance(repair_context, dict):
+            repair_context["last_autonomous_repair_mutation"] = copy.deepcopy(repair_mutation)
+            repair_context["last_repair_replay_validation"] = copy.deepcopy(repair_replay_validation)
+            repair_history = repair_context.setdefault("autonomous_repair_mutation_history", [])
+            if isinstance(repair_history, list):
+                repair_history.append(copy.deepcopy(repair_mutation))
+                if len(repair_history) > 50:
+                    del repair_history[:-50]
+
+            engineering_execution = repair_context.setdefault("engineering_execution", {})
+            if isinstance(engineering_execution, dict):
+                engineering_execution["last_mutation_boundary_status"] = mutation_status
+                engineering_execution["last_mutation_reconciliation_status"] = repair_mutation["reconciliation_status"]
+                engineering_execution["last_autonomous_repair_mutation"] = copy.deepcopy(repair_mutation)
+                engineering_execution["last_repair_replay_validation"] = copy.deepcopy(repair_replay_validation)
+
+        if isinstance(task, dict):
+            task_repair_context = task.get("repair_context")
+            if isinstance(task_repair_context, dict):
+                task_repair_context["last_autonomous_repair_mutation"] = copy.deepcopy(repair_mutation)
+                task_repair_context["last_repair_replay_validation"] = copy.deepcopy(repair_replay_validation)
+
+        return normalized
+
+
+    def _attach_mutation_boundary_after_step(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        step_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+        trace_tick: int,
+    ) -> Dict[str, Any]:
+        """Attach governed mutation lifecycle metadata after a step executes.
+
+        The actual file mutation is still performed by the existing guarded
+        StepExecutor/handler path.  This method only records the mutation
+        boundary lifecycle around the already-produced step_result.
+        """
+        if not isinstance(step_result, dict):
+            return step_result
+
+        if not isinstance(step, dict):
+            return step_result
+
+        integration = self.mutation_runtime
+        if integration is None:
+            return step_result
+
+        try:
+            if not integration.is_mutation_step(step):
+                return step_result
+        except Exception:
+            if self.debug:
+                traceback.print_exc()
+            return step_result
+
+        # If the task targets a separate repo copy, use a short-lived bridge
+        # pointed at that repo so snapshots are taken from the real target.
+        try:
+            target_repo_root = self._resolve_target_repo_root(task=task, state=state)
+        except Exception:
+            target_repo_root = ""
+
+        if target_repo_root and MutationRuntimeIntegration is not None:
+            try:
+                integration = MutationRuntimeIntegration(
+                    workspace_root=getattr(self.runtime, "workspace_root", "workspace"),
+                    project_root=target_repo_root,
+                )
+            except Exception:
+                integration = self.mutation_runtime
+
+        verification_result = {
+            "ok": bool(step_result.get("ok", False)),
+            "source": "task_runner_step_result",
+            "step_index": int(step_index),
+            "tick": trace_tick if trace_tick is not None else current_tick,
+        }
+        replay_result = {
+            "ok": bool(step_result.get("ok", False)),
+            "source": "task_runner_replay_default",
+            "step_index": int(step_index),
+            "tick": trace_tick if trace_tick is not None else current_tick,
+        }
+
+        try:
+            mutation_result = integration.record_after_step(
+                step=step,
+                step_result=step_result,
+                verification_result=verification_result,
+                replay_result=replay_result,
+                approved_by="task_runner",
+                actor="task_runner",
+                rollback_on_failure=True,
+            )
+        except Exception as exc:
+            mutation_result = {
+                "ok": False,
+                "mutation_recorded": False,
+                "error": str(exc),
+                "step_index": int(step_index),
+            }
+
+        normalized = copy.deepcopy(step_result)
+        normalized["mutation_boundary"] = copy.deepcopy(mutation_result)
+        normalized = self._reconcile_mutation_boundary_result(
+            step=step,
+            step_result=normalized,
+            mutation_result=mutation_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
+
+        trace = normalized.get("execution_trace")
+        if isinstance(trace, list) and trace:
+            last = trace[-1]
+            if isinstance(last, dict):
+                last["mutation_boundary"] = copy.deepcopy(mutation_result)
+                last["mutation_reconciliation"] = copy.deepcopy(normalized.get("mutation_reconciliation") or {})
+
+        normalized = self._attach_autonomous_repair_mutation_metadata(
+            task=task,
+            state=state,
+            step=step,
+            step_result=normalized,
+            mutation_result=normalized.get("mutation_boundary", {}) if isinstance(normalized.get("mutation_boundary"), dict) else {},
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
+        return normalized
+
+    def _reconcile_mutation_boundary_result(
+        self,
+        *,
+        step: Any,
+        step_result: Dict[str, Any],
+        mutation_result: Dict[str, Any],
+        step_index: int,
+        current_tick: int,
+        trace_tick: int,
+    ) -> Dict[str, Any]:
+        """Reconcile StepExecutor result with governed mutation lifecycle result.
+
+        v1.5 boundary:
+        - Do not turn a failed mutation apply into success just because rollback
+          worked.
+        - Do make the runtime/public result explicit: failed-and-rolled-back,
+          verified, mutation-record-failed, or non-mutation.
+        - Keep this as result metadata so TaskRuntime can persist it through the
+          normal execution_log / step_results path without changing the state
+          machine contract.
+        """
+        normalized = copy.deepcopy(step_result if isinstance(step_result, dict) else {})
+        boundary = mutation_result if isinstance(mutation_result, dict) else {}
+
+        if not boundary.get("mutation_recorded"):
+            normalized["mutation_reconciliation"] = {
+                "enabled": False,
+                "status": "not_recorded",
+                "reason": str(boundary.get("reason") or boundary.get("error") or "mutation not recorded"),
+                "step_index": int(step_index),
+                "tick": trace_tick if trace_tick is not None else current_tick,
+            }
+            return normalized
+
+        mutation_status = str(boundary.get("status") or "").strip().lower()
+        step_ok = bool(normalized.get("ok", False))
+        verification = boundary.get("verification") if isinstance(boundary.get("verification"), dict) else {}
+        rollback = boundary.get("rollback") if isinstance(boundary.get("rollback"), dict) else {}
+        rollback_completed = bool(rollback.get("rolled_back") or mutation_status == "rolled_back")
+        verified = bool(verification.get("ok") or mutation_status == "verified")
+
+        if verified and step_ok:
+            reconciled_status = "verified"
+            runtime_status_hint = "finished"
+            final_ok = True
+            message = "mutation step verified"
+        elif rollback_completed:
+            reconciled_status = "failed_rolled_back"
+            runtime_status_hint = "failed"
+            final_ok = False
+            message = "mutation step failed; rollback completed"
+        elif mutation_status in {"apply_failed", "verification_failed"}:
+            reconciled_status = mutation_status
+            runtime_status_hint = "failed"
+            final_ok = False
+            message = "mutation step failed before successful verification"
+        elif step_ok and mutation_status:
+            reconciled_status = mutation_status
+            runtime_status_hint = "running"
+            final_ok = step_ok
+            message = "mutation boundary recorded"
+        else:
+            reconciled_status = mutation_status or "unknown"
+            runtime_status_hint = "failed" if not step_ok else "running"
+            final_ok = step_ok
+            message = "mutation boundary recorded with unresolved status"
+
+        reconciliation = {
+            "enabled": True,
+            "status": reconciled_status,
+            "runtime_status_hint": runtime_status_hint,
+            "step_ok": step_ok,
+            "final_ok": final_ok,
+            "mutation_status": mutation_status,
+            "verified": verified,
+            "rollback_completed": rollback_completed,
+            "step_index": int(step_index),
+            "tick": trace_tick if trace_tick is not None else current_tick,
+            "message": message,
+        }
+        normalized["mutation_reconciliation"] = reconciliation
+
+        boundary = copy.deepcopy(boundary)
+        boundary["runtime_reconciliation"] = copy.deepcopy(reconciliation)
+        normalized["mutation_boundary"] = boundary
+
+        if rollback_completed and not step_ok:
+            normalized["ok"] = False
+            normalized["message"] = message
+            normalized["final_answer"] = message
+            error_payload = normalized.get("error")
+            if not isinstance(error_payload, dict):
+                error_payload = {
+                    "type": "mutation_rolled_back_after_failure",
+                    "message": message,
+                    "retryable": False,
+                    "details": {},
+                }
+            else:
+                error_payload = copy.deepcopy(error_payload)
+                error_payload["type"] = str(error_payload.get("type") or "mutation_rolled_back_after_failure")
+                error_payload["message"] = str(error_payload.get("message") or message)
+                error_payload["retryable"] = bool(error_payload.get("retryable", False))
+                if not isinstance(error_payload.get("details"), dict):
+                    error_payload["details"] = {}
+            error_payload["details"]["mutation_boundary_status"] = mutation_status
+            error_payload["details"]["mutation_reconciliation_status"] = reconciled_status
+            error_payload["details"]["rollback_completed"] = True
+            normalized["error"] = error_payload
+
+        return normalized
 
     # ============================================================
     # main loop
@@ -1061,6 +1688,15 @@ class TaskRunner:
 
         result["runtime_mode"] = runtime_mode
         result = self._ensure_step_execution_trace(step=step, step_result=result, step_index=idx)
+        result = self._attach_mutation_boundary_after_step(
+            task=task,
+            state=state,
+            step=step,
+            step_result=result,
+            step_index=idx,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
 
         self._append_step_result_trace_json(
             task=task,
@@ -2722,6 +3358,91 @@ class TaskRunner:
             return safe
         return str(value)
 
+
+    def _sync_repair_chain_summary_from_execution_log(
+        self,
+        *,
+        task: Any,
+        runtime_state: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        v2.2 Repair Chain Summary Persistence.
+
+        v2.1 already attaches repair_chain_consistency to each execution_log
+        entry.  TaskRuntime normalization may rebuild/trim repair_context, so the
+        chain summary must be restored from execution_log before public return
+        and before any final state save.
+
+        Source of truth:
+            runtime_state.execution_log[*].result.repair_chain_consistency
+
+        Destination:
+            runtime_state.repair_context.last_repair_chain_consistency
+            runtime_state.repair_context.repair_chain_consistency_history
+            runtime_state.repair_context.engineering_execution.*
+        """
+        if not isinstance(runtime_state, dict):
+            return runtime_state
+
+        execution_log = runtime_state.get("execution_log")
+        if not isinstance(execution_log, list) or not execution_log:
+            return runtime_state
+
+        latest_summary: Dict[str, Any] = {}
+        history: List[Dict[str, Any]] = []
+
+        for entry in execution_log:
+            if not isinstance(entry, dict):
+                continue
+            result_payload = entry.get("result")
+            if not isinstance(result_payload, dict):
+                continue
+            summary = result_payload.get("repair_chain_consistency")
+            if not isinstance(summary, dict):
+                continue
+
+            latest_step = summary.get("latest_step")
+            if isinstance(latest_step, dict):
+                history.append(copy.deepcopy(latest_step))
+
+            latest_summary = copy.deepcopy(summary)
+
+        if not latest_summary:
+            return runtime_state
+
+        # Prefer summary history if present; otherwise rebuild from latest_step
+        # entries collected from execution_log.
+        summary_history = latest_summary.get("history")
+        if isinstance(summary_history, list) and summary_history:
+            resolved_history = [copy.deepcopy(item) for item in summary_history if isinstance(item, dict)]
+        else:
+            resolved_history = history
+
+        repair_context = runtime_state.setdefault("repair_context", {})
+        if not isinstance(repair_context, dict):
+            repair_context = {}
+            runtime_state["repair_context"] = repair_context
+
+        repair_context["last_repair_chain_consistency"] = copy.deepcopy(latest_summary)
+        repair_context["repair_chain_consistency_history"] = copy.deepcopy(resolved_history[-100:])
+
+        engineering_execution = repair_context.setdefault("engineering_execution", {})
+        if isinstance(engineering_execution, dict):
+            engineering_execution["last_repair_chain_consistency"] = copy.deepcopy(latest_summary)
+            engineering_execution["repair_chain_consistency_status"] = str(latest_summary.get("status") or "")
+            engineering_execution["repair_chain_id"] = str(latest_summary.get("chain_id") or "")
+            engineering_execution["repair_chain_total_steps"] = latest_summary.get("total_steps")
+            engineering_execution["repair_chain_replay_verified_steps"] = latest_summary.get("replay_verified_steps")
+
+        if isinstance(task, dict):
+            task_repair_context = task.setdefault("repair_context", {})
+            if isinstance(task_repair_context, dict):
+                task_repair_context["last_repair_chain_consistency"] = copy.deepcopy(latest_summary)
+                task_repair_context["repair_chain_consistency_history"] = copy.deepcopy(resolved_history[-100:])
+
+        return runtime_state
+
+
     def _finalize_public_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(result, dict):
             return {
@@ -2733,6 +3454,24 @@ class TaskRunner:
 
         task = result.get("task")
         runtime_state = result.get("runtime_state")
+
+        if isinstance(runtime_state, dict):
+            runtime_state = self._sync_repair_chain_summary_from_execution_log(
+                task=task,
+                runtime_state=runtime_state,
+            )
+            result["runtime_state"] = runtime_state
+            if isinstance(task, dict):
+                try:
+                    runtime_state = self.runtime.save_runtime_state(task, runtime_state)
+                    runtime_state = self._sync_repair_chain_summary_from_execution_log(
+                        task=task,
+                        runtime_state=runtime_state,
+                    )
+                    result["runtime_state"] = runtime_state
+                except Exception:
+                    if self.debug:
+                        traceback.print_exc()
 
         safe_runtime_state = None
         if isinstance(runtime_state, dict):

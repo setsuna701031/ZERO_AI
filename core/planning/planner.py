@@ -2360,13 +2360,23 @@ def _zero_v730_planner_plan_semantic_route(self, text: str, context: Optional[Di
     return _ZERO_V730_ORIGINAL_PLAN_SEMANTIC_ROUTE(self, text=text, context=context)
 
 
-def _zero_v730_planner_plan_steps(self, text: str, route: Any = None):
+def _zero_v730_planner_plan_steps(
+    self,
+    text: str,
+    route: Any = None,
+    context: Optional[Dict[str, Any]] = None,
+):
     if _zero_v710_planner_looks_like_repair_intent(text):
         decision = _zero_v710_planner_repair_scope_decision(text)
         if not bool(decision.get("ok")):
             return [_zero_v710_planner_make_failed_repair_step(text, decision)], False
         return _zero_v730_planner_build_repair_chain_steps(text, str(decision.get("target_path") or "")), False
-    return _ZERO_V730_ORIGINAL_PLAN_STEPS(self, text=text, route=route)
+    try:
+        return _ZERO_V730_ORIGINAL_PLAN_STEPS(self, text=text, route=route, context=context)
+    except TypeError as exc:
+        if "unexpected keyword argument 'context'" not in str(exc):
+            raise
+        return _ZERO_V730_ORIGINAL_PLAN_STEPS(self, text=text, route=route)
 
 
 Planner._plan_semantic_route = _zero_v730_planner_plan_semantic_route

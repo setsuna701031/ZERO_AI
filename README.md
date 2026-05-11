@@ -74,6 +74,79 @@ Important:
 - not a hidden black-box repair flow
 
 
+
+## Runtime Repair Transaction / Governance Kernel
+
+Current engineering checkpoint:
+
+```text
+runtime-repair-transaction-layer
+```
+
+This branch adds ZERO's governed repair transaction path: a deterministic, reviewable, replayable, and policy-gated runtime layer around repair and self-modification workflows.
+
+The latest completed chain is:
+
+```text
+transaction
+-> preflight
+-> sandbox apply
+-> diff snapshot
+-> human review
+-> commit token
+-> immutable commit intent
+-> execution lease
+-> final precheck
+-> isolated temp commit
+-> commit artifact
+-> audit bundle
+-> replay
+-> reproducibility verification
+-> lineage graph
+-> knowledge snapshot
+-> knowledge index
+-> candidate retrieval
+-> candidate explanation
+-> read-only recommendation draft
+-> recommendation review
+-> recommendation provenance
+-> risk assessment
+-> decision trace
+-> policy evaluation
+-> governance report
+```
+
+Important boundaries:
+
+```text
+governance != execution
+advisory != authority
+recommendation != mutation
+policy evaluation != scheduler action
+replay != scheduler resume
+knowledge retrieval != auto-repair
+```
+
+The current layer is intentionally controlled:
+
+```text
+NO direct formal workspace mutation
+NO automatic scheduler execution
+NO recommendation auto-apply
+NO hidden shell execution
+NO unrestricted self-modification
+```
+
+Current validation checkpoint:
+
+```text
+692 passed
+```
+
+This checkpoint moves ZERO beyond a repair-capable runtime into a governed engineering runtime substrate: repair actions can be previewed, reviewed, authorized, replayed, traced, risk-assessed, policy-checked, and summarized before any future controlled mutation path is allowed.
+
+------------------------------------------------------------------------
+
 ## What ZERO Does
 
 ZERO does not just generate answers.
@@ -195,13 +268,14 @@ github_draft_bundle
 
 L4 Tool Layer: ✔ Complete\
 L5 Decision Core: ✔ Complete\
-L5 Controlled Draft Workflow: ✔ Complete
+L5 Controlled Draft Workflow: ✔ Complete\
+Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized
 
 Current phase:\
-→ stabilization + reproducibility + demo packaging
+→ governed repair transaction cognition, policy, and report stabilization
 
 Next stage:\
-→ controlled automation (L5 expansion)
+→ patch preview subsystem, governance report export, then controlled persistence/mutation stages
 
 ------------------------------------------------------------------------
 

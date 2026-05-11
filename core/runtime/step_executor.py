@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import py_compile
 import re
+import shutil
+import subprocess
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 from core.tasks.task_paths import TaskPathManager
@@ -1651,23 +1655,35 @@ class StepExecutor:
 
         patch_path = str(step.get("patch_path") or step.get("path") or "").strip()
         target_path = str(step.get("target_path") or step.get("target") or "").strip()
+        preflight = self._analyze_apply_patch_preflight(step, task=task)
+        transaction = self._build_apply_patch_transaction(preflight, status="planned")
+        if not bool(preflight.get("preflight_ok", False)):
+            transaction = self._mark_apply_patch_transaction(transaction, status="blocked", error_reason=str(preflight.get("conflict_reason") or "apply_patch preflight failed"))
+            return self._apply_patch_error(
+                "preflight_failed",
+                str(preflight.get("conflict_reason") or "apply_patch preflight failed"),
+                patch_path,
+                target_path,
+                details={"preflight": preflight, "transaction": transaction},
+            )
 
         if not patch_path:
-            return self._apply_patch_error("validation_error", "apply_patch step missing patch_path", patch_path, target_path)
+            return self._apply_patch_error("validation_error", "apply_patch step missing patch_path", patch_path, target_path, details={"preflight": preflight, "transaction": transaction})
         if not target_path:
-            return self._apply_patch_error("validation_error", "apply_patch step missing target_path", patch_path, target_path)
+            return self._apply_patch_error("validation_error", "apply_patch step missing target_path", patch_path, target_path, details={"preflight": preflight, "transaction": transaction})
 
         patch_norm = patch_path.replace("\\", "/")
         target_norm = target_path.replace("\\", "/")
+        repo_source_target_allowed = bool(preflight.get("repo_source") and preflight.get("confirmed"))
 
         if not patch_norm.lower().endswith((".patch", ".diff")):
-            return self._apply_patch_error("validation_error", "apply_patch only supports .patch or .diff files", patch_path, target_path)
+            return self._apply_patch_error("validation_error", "apply_patch only supports .patch or .diff files", patch_path, target_path, details={"preflight": preflight, "transaction": transaction})
 
         if not (patch_norm.startswith("workspace/shared/") or patch_norm.startswith("shared/")):
-            return self._apply_patch_error("policy_blocked", "apply_patch only allows workspace/shared patch files", patch_path, target_path)
+            return self._apply_patch_error("policy_blocked", "apply_patch only allows workspace/shared patch files", patch_path, target_path, details={"preflight": preflight, "transaction": transaction})
 
-        if not (target_norm.startswith("workspace/shared/") or target_norm.startswith("shared/")):
-            return self._apply_patch_error("policy_blocked", "apply_patch only allows workspace/shared target files", patch_path, target_path)
+        if not repo_source_target_allowed and not (target_norm.startswith("workspace/shared/") or target_norm.startswith("shared/")):
+            return self._apply_patch_error("policy_blocked", "apply_patch only allows workspace/shared target files", patch_path, target_path, details={"preflight": preflight, "transaction": transaction})
 
         try:
             full_patch_path = self.resolve_read_path(
@@ -1676,18 +1692,21 @@ class StepExecutor:
                 prefer_scopes=("shared", "sandbox"),
                 return_fallback_candidate_if_missing=True,
             )
-            full_target_path = self.resolve_write_path(
-                relative_path=target_path,
-                task=task,
-                default_scope="shared",
-            )
+            if repo_source_target_allowed:
+                full_target_path = os.path.abspath(target_path)
+            else:
+                full_target_path = self.resolve_write_path(
+                    relative_path=target_path,
+                    task=task,
+                    default_scope="shared",
+                )
         except Exception as exc:
-            return self._apply_patch_error("path_resolve_failed", f"apply_patch path resolve failed: {exc}", patch_path, target_path)
+            return self._apply_patch_error("path_resolve_failed", f"apply_patch path resolve failed: {exc}", patch_path, target_path, details={"preflight": preflight, "transaction": transaction})
 
         if not os.path.exists(full_patch_path):
-            return self._apply_patch_error("file_not_found", f"patch file not found: {full_patch_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+            return self._apply_patch_error("file_not_found", f"patch file not found: {full_patch_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"preflight": preflight, "transaction": transaction})
         if not os.path.exists(full_target_path):
-            return self._apply_patch_error("file_not_found", f"target file not found: {full_target_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+            return self._apply_patch_error("file_not_found", f"target file not found: {full_target_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"preflight": preflight, "transaction": transaction})
 
         try:
             with open(full_patch_path, "r", encoding="utf-8") as f:
@@ -1695,31 +1714,90 @@ class StepExecutor:
             with open(full_target_path, "r", encoding="utf-8") as f:
                 original_text = f.read()
         except Exception as exc:
-            return self._apply_patch_error("read_failed", f"apply_patch read failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+            return self._apply_patch_error("read_failed", f"apply_patch read failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"preflight": preflight, "transaction": transaction})
+
+        backup_path = full_target_path + ".bak_v04"
+        try:
+            self._create_apply_patch_backup(full_target_path, backup_path)
+            transaction = self._attach_apply_patch_backup_snapshot(
+                transaction,
+                [{"target_path": target_path, "full_target_path": full_target_path, "backup_path": backup_path}],
+            )
+        except Exception as exc:
+            transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason=f"apply_patch backup failed: {exc}")
+            return self._apply_patch_error("backup_failed", f"apply_patch backup failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, backup_path=backup_path, details={"preflight": preflight, "transaction": transaction})
 
         validation = self._validate_unified_diff_text(patch_text)
         if not validation.get("ok"):
             message = str(validation.get("message") or "invalid unified diff")
-            return self._apply_patch_error("invalid_unified_diff", message, patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details=validation)
+            transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason=message)
+            return self._apply_patch_error("invalid_unified_diff", message, patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, backup_path=backup_path, details={"preflight": preflight, "transaction": transaction, "validation": validation})
 
         try:
             patched_text, apply_meta = self._apply_unified_diff_text(original_text, patch_text)
         except Exception as exc:
-            return self._apply_patch_error("patch_apply_failed", f"patch apply failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path)
+            transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason=f"patch apply failed: {exc}")
+            return self._apply_patch_error("patch_apply_failed", f"patch apply failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, backup_path=backup_path, details={"preflight": preflight, "transaction": transaction})
 
         if patched_text == original_text:
-            return self._apply_patch_error("patch_no_change", "patch produced no changes", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details=apply_meta)
+            transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason="patch produced no changes")
+            return self._apply_patch_error("patch_no_change", "patch produced no changes", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, backup_path=backup_path, details={"preflight": preflight, "transaction": transaction, "apply_meta": apply_meta})
 
-        backup_path = full_target_path + ".bak_v04"
         try:
             os.makedirs(os.path.dirname(full_target_path), exist_ok=True)
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(original_text)
             with open(full_target_path, "w", encoding="utf-8") as f:
                 f.write(patched_text)
         except Exception as exc:
-            return self._apply_patch_error("write_failed", f"apply_patch write failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"backup_path": backup_path})
+            rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
+            transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason=f"apply_patch write failed: {exc}")
+            return self._apply_patch_error(
+                "write_failed",
+                f"apply_patch write failed: {exc}",
+                patch_path,
+                target_path,
+                full_patch_path=full_patch_path,
+                full_target_path=full_target_path,
+                backup_path=backup_path,
+                rollback_applied=rollback_applied,
+                details={"preflight": preflight, "transaction": transaction, "backup_path": backup_path, "rollback_error": rollback_error},
+            )
 
+        transaction = self._mark_apply_patch_transaction(transaction, status="applied", changed_files=[target_path])
+        transaction = self._mark_apply_patch_transaction(transaction, status="verifying", changed_files=[target_path])
+        verification = self._run_apply_patch_verify_boundary(
+            step,
+            transaction,
+            [{"target_path": target_path, "full_target_path": full_target_path, "backup_path": backup_path}],
+        )
+        transaction = verification.get("transaction") if isinstance(verification.get("transaction"), dict) else transaction
+        if not bool(verification.get("ok", False)):
+            rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
+            message = str(verification.get("message") or "apply_patch verification failed")
+            rollback_result = self._build_apply_patch_rollback_result(
+                [{"target_path": target_path, "full_target_path": full_target_path, "backup_path": backup_path, "rollback_applied": rollback_applied, "rollback_error": rollback_error}]
+            )
+            transaction = self._mark_apply_patch_transaction(
+                transaction,
+                status="failed",
+                error_reason=message,
+                changed_files=[target_path],
+                rollback_result=rollback_result,
+            )
+            return self._apply_patch_error(
+                "verification_failed",
+                message,
+                patch_path,
+                target_path,
+                full_patch_path=full_patch_path,
+                full_target_path=full_target_path,
+                backup_path=backup_path,
+                rollback_applied=rollback_applied,
+                changed=False,
+                verification_ok=False,
+                details={"preflight": preflight, "transaction": transaction, "verification": verification, "rollback_result": rollback_result, "rollback_error": rollback_error},
+            )
+
+        transaction = self._mark_apply_patch_transaction(transaction, status="committed", changed_files=[target_path])
         return {
             "ok": True,
             "type": "apply_patch",
@@ -1728,6 +1806,14 @@ class StepExecutor:
             "full_patch_path": full_patch_path,
             "full_target_path": full_target_path,
             "backup_path": backup_path,
+            "transaction_ok": True,
+            "preflight_ok": True,
+            "preflight": preflight,
+            "transaction": transaction,
+            "verification_ok": True,
+            "verification": verification,
+            "rollback_applied": False,
+            "changed": True,
             "message": f"patch applied: {target_path}",
             "final_answer": f"patch applied: {target_path}",
             "result": {
@@ -1736,6 +1822,14 @@ class StepExecutor:
                 "full_patch_path": full_patch_path,
                 "full_target_path": full_target_path,
                 "backup_path": backup_path,
+                "transaction_ok": True,
+                "preflight_ok": True,
+                "preflight": preflight,
+                "transaction": transaction,
+                "verification_ok": True,
+                "verification": verification,
+                "rollback_applied": False,
+                "changed": True,
                 "applied": True,
                 "apply_meta": apply_meta,
             },
@@ -1750,6 +1844,10 @@ class StepExecutor:
         target_path: str = "",
         full_patch_path: str = "",
         full_target_path: str = "",
+        backup_path: str = "",
+        rollback_applied: bool = False,
+        changed: bool = False,
+        verification_ok: bool = False,
         details: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         return {
@@ -1759,6 +1857,15 @@ class StepExecutor:
             "target_path": target_path,
             "full_patch_path": full_patch_path,
             "full_target_path": full_target_path,
+            "backup_path": backup_path,
+            "transaction_ok": False,
+            "preflight_ok": bool((details or {}).get("preflight", {}).get("preflight_ok", False)),
+            "preflight": copy.deepcopy((details or {}).get("preflight", {})),
+            "transaction": copy.deepcopy((details or {}).get("transaction", {})),
+            "verification_ok": bool(verification_ok),
+            "rollback_applied": bool(rollback_applied),
+            "rollback_result": copy.deepcopy((details or {}).get("rollback_result", {})),
+            "changed": bool(changed),
             "message": message,
             "final_answer": message,
             "error": {
@@ -1772,9 +1879,430 @@ class StepExecutor:
                 "target_path": target_path,
                 "full_patch_path": full_patch_path,
                 "full_target_path": full_target_path,
+                "backup_path": backup_path,
+                "transaction_ok": False,
+                "preflight_ok": bool((details or {}).get("preflight", {}).get("preflight_ok", False)),
+                "preflight": copy.deepcopy((details or {}).get("preflight", {})),
+                "transaction": copy.deepcopy((details or {}).get("transaction", {})),
+                "verification_ok": bool(verification_ok),
+                "verification": copy.deepcopy((details or {}).get("verification", {})),
+                "rollback_applied": bool(rollback_applied),
+                "rollback_result": copy.deepcopy((details or {}).get("rollback_result", {})),
+                "changed": bool(changed),
                 "applied": False,
             },
         }
+
+    def _create_apply_patch_backup(self, full_target_path: str, backup_path: str) -> str:
+        if not full_target_path or not backup_path:
+            raise ValueError("backup requires target and backup path")
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        shutil.copyfile(full_target_path, backup_path)
+        return backup_path
+
+    def _rollback_apply_patch_target(self, full_target_path: str, backup_path: str) -> Tuple[bool, str]:
+        if not full_target_path or not backup_path or not os.path.exists(backup_path):
+            return False, ""
+        try:
+            shutil.copyfile(backup_path, full_target_path)
+            return True, ""
+        except Exception as exc:
+            return False, str(exc)
+
+    def _analyze_apply_patch_preflight(self, step: Dict[str, Any], task: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        step = step if isinstance(step, dict) else {}
+        patches_value = step.get("patches")
+        patch_items: List[Dict[str, Any]] = []
+        conflict_reasons: List[str] = []
+
+        if isinstance(patches_value, list):
+            if not patches_value:
+                conflict_reasons.append("empty patch list")
+            for item in patches_value:
+                patch_items.append(item if isinstance(item, dict) else {})
+        else:
+            patch_items.append(step)
+
+        patch_files: List[str] = []
+        target_files: List[str] = []
+        full_patch_files: List[str] = []
+        full_target_files: List[str] = []
+
+        for index, item in enumerate(patch_items):
+            patch_path = str(item.get("patch_path") or item.get("path") or "").strip()
+            target_path = str(item.get("target_path") or item.get("target") or "").strip()
+            patch_norm = patch_path.replace("\\", "/").lstrip("./")
+            target_norm = target_path.replace("\\", "/").lstrip("./")
+
+            if not patch_norm:
+                conflict_reasons.append(f"patch[{index}] missing patch_path")
+            else:
+                patch_files.append(patch_norm)
+                if not patch_norm.lower().endswith((".patch", ".diff")):
+                    conflict_reasons.append(f"patch[{index}] invalid patch extension: {patch_norm}")
+                try:
+                    full_patch_path = self.resolve_read_path(
+                        relative_path=patch_path,
+                        task=task,
+                        prefer_scopes=("shared", "sandbox"),
+                        return_fallback_candidate_if_missing=True,
+                    )
+                except Exception as exc:
+                    full_patch_path = ""
+                    conflict_reasons.append(f"patch[{index}] patch path resolve failed: {exc}")
+                if full_patch_path:
+                    full_patch_files.append(full_patch_path)
+                    if not os.path.exists(full_patch_path):
+                        conflict_reasons.append(f"patch[{index}] patch file missing: {patch_norm}")
+
+            if not target_norm:
+                conflict_reasons.append(f"patch[{index}] missing target_path")
+            else:
+                target_files.append(target_norm)
+                full_target_path = ""
+                try:
+                    if self._is_repo_source_patch_path(target_norm):
+                        full_target_path = os.path.abspath(target_norm)
+                    else:
+                        full_target_path = self.resolve_write_path(
+                            relative_path=target_path,
+                            task=task,
+                            default_scope="shared",
+                        )
+                except Exception as exc:
+                    conflict_reasons.append(f"patch[{index}] target path resolve failed: {exc}")
+                if full_target_path:
+                    full_target_files.append(full_target_path)
+                    if not os.path.exists(full_target_path):
+                        conflict_reasons.append(f"patch[{index}] target file missing: {target_norm}")
+
+        duplicate_targets = sorted({path for path in target_files if target_files.count(path) > 1})
+        if duplicate_targets:
+            conflict_reasons.append("duplicate target path in same transaction: " + ", ".join(duplicate_targets))
+
+        changed_files = list(dict.fromkeys(target_files))
+        repo_source_files = [path for path in changed_files if self._is_repo_source_patch_path(path)]
+        repo_source = bool(repo_source_files)
+        edit_scope = "single_file"
+        if len(changed_files) > 1:
+            edit_scope = "repo_scale" if repo_source else "multi_file"
+
+        sensitive_tokens = ("scheduler", "execution_guard", "step_executor", "task_runner", "task_runtime")
+        sensitive = any(token in path.lower() for path in changed_files for token in sensitive_tokens)
+        risk_level = "low"
+        if repo_source:
+            risk_level = "medium"
+        if repo_source and (len(changed_files) > 1 or sensitive):
+            risk_level = "high"
+
+        requires_confirmation = bool(repo_source)
+        confirmed = bool(step.get("confirmed") or step.get("confirmation") or step.get("repo_scale_confirmed") or step.get("scope_confirmed"))
+        if requires_confirmation and not confirmed:
+            conflict_reasons.append("repo source apply requires confirmation")
+
+        conflict_reasons = list(dict.fromkeys(reason for reason in conflict_reasons if str(reason).strip()))
+        conflict_detected = bool(conflict_reasons)
+        return {
+            "preflight_ok": not conflict_detected,
+            "target_files": changed_files,
+            "patch_files": list(dict.fromkeys(patch_files)),
+            "changed_files": changed_files,
+            "full_target_files": full_target_files,
+            "full_patch_files": full_patch_files,
+            "repo_source": repo_source,
+            "repo_source_files": repo_source_files,
+            "edit_scope": edit_scope,
+            "risk_level": risk_level,
+            "requires_confirmation": requires_confirmation,
+            "confirmed": confirmed,
+            "conflict_detected": conflict_detected,
+            "conflict_reason": "; ".join(conflict_reasons),
+        }
+
+    def _is_repo_source_patch_path(self, path_text: str) -> bool:
+        lowered = str(path_text or "").replace("\\", "/").lstrip("./").lower()
+        return lowered.startswith(("core/", "services/", "tests/", "runtime/", "tasks/", "planning/"))
+
+    def _build_apply_patch_transaction(self, preflight: Dict[str, Any], status: str = "planned", error_reason: str = "") -> Dict[str, Any]:
+        preflight = preflight if isinstance(preflight, dict) else {}
+        target_files = [str(item) for item in preflight.get("target_files", []) if str(item).strip()]
+        patch_files = [str(item) for item in preflight.get("patch_files", []) if str(item).strip()]
+        seed = json.dumps(
+            {
+                "target_files": target_files,
+                "patch_files": patch_files,
+                "repo_source": bool(preflight.get("repo_source", False)),
+                "edit_scope": str(preflight.get("edit_scope") or ""),
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+        created_at = str(int(time.time() * 1000))
+        transaction_id = f"patch_tx:{created_at}:{digest}"
+        return {
+            "transaction_id": transaction_id,
+            "transaction_scope": str(preflight.get("edit_scope") or "single_file"),
+            "transaction_files": target_files,
+            "backup_files": [],
+            "backup_snapshot": {},
+            "preflight_ok": bool(preflight.get("preflight_ok", False)),
+            "risk_level": str(preflight.get("risk_level") or "low"),
+            "requires_confirmation": bool(preflight.get("requires_confirmation", False)),
+            "repo_source": bool(preflight.get("repo_source", False)),
+            "edit_scope": str(preflight.get("edit_scope") or "single_file"),
+            "status": str(status or "planned"),
+            "error_reason": str(error_reason or ""),
+            "patch_files": patch_files,
+            "created_at_ms": created_at,
+            "content_hash": digest,
+        }
+
+    def _attach_apply_patch_backup_snapshot(self, transaction: Dict[str, Any], backups: List[Dict[str, Any]]) -> Dict[str, Any]:
+        updated = copy.deepcopy(transaction if isinstance(transaction, dict) else {})
+        snapshot = updated.get("backup_snapshot") if isinstance(updated.get("backup_snapshot"), dict) else {}
+        backup_files = updated.get("backup_files") if isinstance(updated.get("backup_files"), list) else []
+        for item in backups or []:
+            if not isinstance(item, dict):
+                continue
+            target_path = str(item.get("target_path") or item.get("full_target_path") or "").strip()
+            backup_path = str(item.get("backup_path") or "").strip()
+            full_target_path = str(item.get("full_target_path") or "").strip()
+            if backup_path:
+                backup_files.append(backup_path)
+            if target_path:
+                snapshot[target_path] = {
+                    "target_path": target_path,
+                    "full_target_path": full_target_path,
+                    "backup_path": backup_path,
+                }
+        updated["backup_files"] = list(dict.fromkeys(backup_files))
+        updated["backup_snapshot"] = snapshot
+        return updated
+
+    def _mark_apply_patch_transaction(
+        self,
+        transaction: Dict[str, Any],
+        status: str,
+        error_reason: str = "",
+        changed_files: Optional[List[str]] = None,
+        rollback_result: Optional[Dict[str, Any]] = None,
+        verify_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        updated = copy.deepcopy(transaction if isinstance(transaction, dict) else {})
+        previous_status = str(updated.get("status") or "")
+        updated["status"] = str(status or updated.get("status") or "")
+        updated["error_reason"] = str(error_reason or "")
+        if changed_files is not None:
+            updated["changed_files"] = list(dict.fromkeys(str(item) for item in changed_files if str(item).strip()))
+        if rollback_result is not None:
+            updated["rollback_result"] = copy.deepcopy(rollback_result)
+            updated["rollback_error"] = str(rollback_result.get("rollback_error") or "")
+        if verify_metadata is not None:
+            updated.update(copy.deepcopy(verify_metadata))
+        history = updated.get("status_history") if isinstance(updated.get("status_history"), list) else []
+        if not history or previous_status != updated["status"]:
+            history.append({"status": updated["status"], "ts_ms": str(int(time.time() * 1000))})
+        updated["status_history"] = history[-20:]
+        return updated
+
+    def _run_apply_patch_verify_boundary(
+        self,
+        step: Dict[str, Any],
+        transaction: Dict[str, Any],
+        changed_items: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        verify_started_at = str(int(time.time() * 1000))
+        checks: List[str] = []
+        errors: List[str] = []
+        step = step if isinstance(step, dict) else {}
+
+        def add_error(message: str) -> None:
+            if message:
+                errors.append(str(message))
+
+        checks.append("changed_files_exists")
+        if not changed_items:
+            add_error("changed_files is empty")
+
+        for item in changed_items or []:
+            full_target_path = str(item.get("full_target_path") or "")
+            backup_path = str(item.get("backup_path") or "")
+            target_path = str(item.get("target_path") or full_target_path)
+
+            checks.append("file_exists")
+            if not full_target_path or not os.path.exists(full_target_path):
+                add_error(f"target file missing after apply: {target_path}")
+                continue
+
+            checks.append("file_content_changed")
+            if backup_path and os.path.exists(backup_path):
+                try:
+                    with open(full_target_path, "r", encoding="utf-8") as target_fh:
+                        current_text = target_fh.read()
+                    with open(backup_path, "r", encoding="utf-8") as backup_fh:
+                        backup_text = backup_fh.read()
+                    if current_text == backup_text:
+                        add_error(f"file content did not change: {target_path}")
+                except Exception as exc:
+                    add_error(f"file content changed check failed for {target_path}: {exc}")
+
+            legacy_verify = self._verify_apply_patch_target(step, full_target_path)
+            checks.extend(str(check) for check in legacy_verify.get("checks", []) if str(check))
+            if not bool(legacy_verify.get("ok", False)):
+                add_error(str(legacy_verify.get("message") or "legacy verification failed"))
+
+            if bool(step.get("verify_compile", False)):
+                checks.append("verify_compile")
+                if full_target_path.endswith(".py"):
+                    try:
+                        py_compile.compile(full_target_path, doraise=True)
+                    except py_compile.PyCompileError as exc:
+                        add_error(f"compile verification failed for {target_path}: {exc}")
+                    except Exception as exc:
+                        add_error(f"compile verification error for {target_path}: {exc}")
+
+        verify_command = str(step.get("verify_command") or "").strip()
+        if verify_command:
+            checks.append("verify_command")
+            try:
+                command_result = subprocess.run(
+                    verify_command,
+                    shell=True,
+                    cwd=str(step.get("command_cwd") or step.get("cwd") or os.getcwd()),
+                    capture_output=True,
+                    text=True,
+                    timeout=int(step.get("verify_timeout", 30) or 30),
+                )
+                if command_result.returncode != 0:
+                    add_error(
+                        "verify_command failed: "
+                        + verify_command
+                        + f" (returncode={command_result.returncode})"
+                        + (f" stderr={command_result.stderr.strip()}" if command_result.stderr else "")
+                    )
+            except Exception as exc:
+                add_error(f"verify_command error: {exc}")
+
+        verify_finished_at = str(int(time.time() * 1000))
+        ok = not errors
+        verify_metadata = {
+            "verify_started_at": verify_started_at,
+            "verify_finished_at": verify_finished_at,
+            "verify_result": "passed" if ok else "failed",
+            "verify_checks": list(dict.fromkeys(checks)),
+            "verify_errors": errors,
+        }
+        transaction = self._mark_apply_patch_transaction(
+            transaction,
+            status="verifying",
+            verify_metadata=verify_metadata,
+        )
+        return {
+            "ok": ok,
+            "verification_ok": ok,
+            "message": "verification passed" if ok else "; ".join(errors),
+            **verify_metadata,
+            "transaction": transaction,
+        }
+
+    def _build_apply_patch_rollback_result(self, rollback_items: List[Dict[str, Any]]) -> Dict[str, Any]:
+        rollback_error = "; ".join(
+            str(item.get("rollback_error") or "")
+            for item in rollback_items or []
+            if str(item.get("rollback_error") or "").strip()
+        )
+        return {
+            "rollback_applied": any(bool(item.get("rollback_applied")) for item in rollback_items or []),
+            "rollback_error": rollback_error,
+            "rolled_back_files": [
+                str(item.get("target_path") or item.get("full_target_path") or "")
+                for item in rollback_items or []
+                if bool(item.get("rollback_applied"))
+            ],
+            "items": copy.deepcopy(rollback_items or []),
+        }
+
+    def _verify_apply_patch_target(self, step: Dict[str, Any], full_target_path: str) -> Dict[str, Any]:
+        step = step if isinstance(step, dict) else {}
+        checks: List[str] = []
+        verify_contains = step.get("verify_contains")
+        verify_not_contains = step.get("verify_not_contains")
+        verify_python_syntax = bool(step.get("verify_python_syntax", False))
+
+        if isinstance(verify_contains, str) and verify_contains:
+            checks.append("verify_contains")
+        if isinstance(verify_not_contains, str) and verify_not_contains:
+            checks.append("verify_not_contains")
+        if verify_python_syntax:
+            checks.append("verify_python_syntax")
+
+        if not checks:
+            return {"ok": True, "verification_ok": True, "skipped": True, "checks": []}
+
+        try:
+            with open(full_target_path, "r", encoding="utf-8") as fh:
+                current_text = fh.read()
+        except Exception as exc:
+            return {
+                "ok": False,
+                "verification_ok": False,
+                "checks": checks,
+                "message": f"verify read failed: {exc}",
+                "error_type": "verify_read_failed",
+            }
+
+        if isinstance(verify_contains, str) and verify_contains and verify_contains not in current_text:
+            return {
+                "ok": False,
+                "verification_ok": False,
+                "checks": checks,
+                "message": f"verify_contains failed: {verify_contains!r} not found",
+                "error_type": "verify_contains_failed",
+                "verify_contains": verify_contains,
+            }
+
+        if isinstance(verify_not_contains, str) and verify_not_contains and verify_not_contains in current_text:
+            return {
+                "ok": False,
+                "verification_ok": False,
+                "checks": checks,
+                "message": f"verify_not_contains failed: {verify_not_contains!r} found",
+                "error_type": "verify_not_contains_failed",
+                "verify_not_contains": verify_not_contains,
+            }
+
+        if verify_python_syntax:
+            if not str(full_target_path).endswith(".py"):
+                return {
+                    "ok": False,
+                    "verification_ok": False,
+                    "checks": checks,
+                    "message": "verify_python_syntax only supports .py files",
+                    "error_type": "verify_python_syntax_non_python_target",
+                }
+            try:
+                py_compile.compile(full_target_path, doraise=True)
+            except py_compile.PyCompileError as exc:
+                return {
+                    "ok": False,
+                    "verification_ok": False,
+                    "checks": checks,
+                    "message": f"python syntax failed: {exc}",
+                    "error_type": "python_syntax_error",
+                    "error": str(exc),
+                }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "verification_ok": False,
+                    "checks": checks,
+                    "message": f"python syntax check failed: {exc}",
+                    "error_type": "python_syntax_check_failed",
+                    "error": str(exc),
+                }
+
+        return {"ok": True, "verification_ok": True, "skipped": False, "checks": checks}
 
     def _apply_unified_diff_text(self, original_text: str, patch_text: str) -> Tuple[str, Dict[str, Any]]:
         original_lines = str(original_text or "").splitlines(keepends=True)
@@ -3712,7 +4240,307 @@ def _zero_v735_analyze_repo_impact(*, target_path, edit_payload=None, step=None)
     }
 
 
+def _zero_v735_atomic_multi_patch_error(
+    self,
+    *,
+    message,
+    patch_results,
+    changed_files,
+    failed_patch_index,
+    failed_reason,
+    rollback_applied,
+    preflight=None,
+    transaction=None,
+):
+    preflight = preflight if isinstance(preflight, dict) else {}
+    transaction = transaction if isinstance(transaction, dict) else {}
+    return {
+        "ok": False,
+        "type": "apply_patch",
+        "message": message,
+        "final_answer": message,
+        "transaction_ok": False,
+        "preflight_ok": bool(preflight.get("preflight_ok", False)),
+        "preflight": copy.deepcopy(preflight),
+        "transaction": copy.deepcopy(transaction),
+        "atomic": True,
+        "rollback_applied": bool(rollback_applied),
+        "changed": False,
+        "changed_files": list(changed_files or []),
+        "patch_results": copy.deepcopy(patch_results or []),
+        "failed_patch_index": failed_patch_index,
+        "failed_reason": failed_reason,
+        "error": {
+            "type": "atomic_multi_patch_failed",
+            "message": message,
+            "retryable": False,
+            "details": {
+                "atomic": True,
+                "preflight": copy.deepcopy(preflight),
+                "transaction": copy.deepcopy(transaction),
+                "changed_files": list(changed_files or []),
+                "patch_results": copy.deepcopy(patch_results or []),
+                "failed_patch_index": failed_patch_index,
+                "failed_reason": failed_reason,
+                "rollback_applied": bool(rollback_applied),
+            },
+        },
+        "result": {
+            "transaction_ok": False,
+            "preflight_ok": bool(preflight.get("preflight_ok", False)),
+            "preflight": copy.deepcopy(preflight),
+            "transaction": copy.deepcopy(transaction),
+            "atomic": True,
+            "rollback_applied": bool(rollback_applied),
+            "changed": False,
+            "changed_files": list(changed_files or []),
+            "patch_results": copy.deepcopy(patch_results or []),
+            "failed_patch_index": failed_patch_index,
+            "failed_reason": failed_reason,
+        },
+    }
+
+
+def _zero_v735_patch_result_field(patch_result, key, default=""):
+    if not isinstance(patch_result, dict):
+        return default
+    if key in patch_result:
+        return patch_result.get(key, default)
+    nested = patch_result.get("result")
+    if isinstance(nested, dict):
+        return nested.get(key, default)
+    return default
+
+
+def _zero_v735_atomic_multi_patch_step(self, step, task=None, context=None, previous_result=None):
+    patches = step.get("patches") if isinstance(step, dict) else None
+    preflight = self._analyze_apply_patch_preflight(step if isinstance(step, dict) else {}, task=task)
+    transaction = self._build_apply_patch_transaction(preflight, status="planned")
+    if not bool(preflight.get("preflight_ok", False)):
+        failed_reason = str(preflight.get("conflict_reason") or "apply_patch preflight failed")
+        transaction = self._mark_apply_patch_transaction(transaction, status="blocked", error_reason=failed_reason)
+        return _zero_v735_atomic_multi_patch_error(
+            self,
+            message=failed_reason,
+            patch_results=[],
+            changed_files=list(preflight.get("changed_files") or []),
+            failed_patch_index=None,
+            failed_reason=failed_reason,
+            rollback_applied=False,
+            preflight=preflight,
+            transaction=transaction,
+        )
+    if not isinstance(patches, list) or not patches:
+        transaction = self._mark_apply_patch_transaction(transaction, status="blocked", error_reason="apply_patch patches must be a non-empty list")
+        return _zero_v735_atomic_multi_patch_error(
+            self,
+            message="apply_patch patches must be a non-empty list",
+            patch_results=[],
+            changed_files=list(preflight.get("changed_files") or []),
+            failed_patch_index=None,
+            failed_reason="apply_patch patches must be a non-empty list",
+            rollback_applied=False,
+            preflight=preflight,
+            transaction=transaction,
+        )
+
+    patch_results = []
+    changed_files = []
+    rollback_applied_any = False
+    backup_items = []
+
+    for index, patch_item in enumerate(patches):
+        if not isinstance(patch_item, dict):
+            failed_reason = "patch item must be an object"
+            return _zero_v735_atomic_multi_patch_error(
+                self,
+                message=failed_reason,
+                patch_results=patch_results,
+                changed_files=changed_files,
+                failed_patch_index=index,
+                failed_reason=failed_reason,
+                rollback_applied=rollback_applied_any,
+                preflight=preflight,
+                transaction=self._mark_apply_patch_transaction(transaction, status="failed", error_reason=failed_reason),
+            )
+
+        patch_step = copy.deepcopy(step)
+        patch_step.pop("patches", None)
+        patch_step.update(copy.deepcopy(patch_item))
+        patch_step["type"] = "apply_patch"
+
+        patch_result = _ZERO_V734_ORIGINAL_APPLY_UNIFIED_DIFF_STEP(
+            self,
+            patch_step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+        )
+        patch_summary = {
+            "patch_index": index,
+            "ok": bool(patch_result.get("ok", False)) if isinstance(patch_result, dict) else False,
+            "message": patch_result.get("message", "") if isinstance(patch_result, dict) else "invalid patch result",
+            "patch_path": _zero_v735_patch_result_field(patch_result, "patch_path", str(patch_item.get("patch_path") or patch_item.get("path") or "")),
+            "target_path": _zero_v735_patch_result_field(patch_result, "target_path", str(patch_item.get("target_path") or patch_item.get("target") or "")),
+            "full_patch_path": _zero_v735_patch_result_field(patch_result, "full_patch_path", ""),
+            "full_target_path": _zero_v735_patch_result_field(patch_result, "full_target_path", ""),
+            "backup_path": _zero_v735_patch_result_field(patch_result, "backup_path", ""),
+            "transaction_ok": bool(_zero_v735_patch_result_field(patch_result, "transaction_ok", False)),
+            "verification_ok": bool(_zero_v735_patch_result_field(patch_result, "verification_ok", False)),
+            "rollback_applied": bool(_zero_v735_patch_result_field(patch_result, "rollback_applied", False)),
+            "changed": bool(_zero_v735_patch_result_field(patch_result, "changed", False)),
+            "result": copy.deepcopy(patch_result),
+        }
+        patch_results.append(patch_summary)
+        if patch_summary.get("backup_path"):
+            backup_items.append(
+                {
+                    "target_path": str(patch_summary.get("target_path") or ""),
+                    "full_target_path": str(patch_summary.get("full_target_path") or ""),
+                    "backup_path": str(patch_summary.get("backup_path") or ""),
+                }
+            )
+            transaction = self._attach_apply_patch_backup_snapshot(transaction, backup_items)
+
+        if not patch_summary["ok"] or not patch_summary["transaction_ok"]:
+            failed_target_path = str(patch_summary.get("target_path") or "").strip()
+            if failed_target_path and failed_target_path not in changed_files:
+                changed_files.append(failed_target_path)
+            for applied in reversed(patch_results[:-1]):
+                rollback_applied, _rollback_error = self._rollback_apply_patch_target(
+                    str(applied.get("full_target_path") or ""),
+                    str(applied.get("backup_path") or ""),
+                )
+                applied["rollback_applied"] = bool(rollback_applied)
+                applied["rollback_error"] = str(_rollback_error or "")
+                rollback_applied_any = rollback_applied_any or rollback_applied
+            rollback_applied_any = rollback_applied_any or patch_summary["rollback_applied"]
+            failed_reason = str(patch_summary.get("message") or "patch failed")
+            rollback_items = [
+                {
+                    "target_path": str(item.get("target_path") or ""),
+                    "full_target_path": str(item.get("full_target_path") or ""),
+                    "backup_path": str(item.get("backup_path") or ""),
+                    "rollback_applied": bool(item.get("rollback_applied")),
+                    "rollback_error": str(item.get("rollback_error") or ""),
+                }
+                for item in patch_results
+                if item.get("backup_path")
+            ]
+            rollback_result = self._build_apply_patch_rollback_result(rollback_items)
+            transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason=failed_reason, rollback_result=rollback_result)
+            return _zero_v735_atomic_multi_patch_error(
+                self,
+                message=f"atomic multi-file patch failed at index {index}: {failed_reason}",
+                patch_results=patch_results,
+                changed_files=changed_files,
+                failed_patch_index=index,
+                failed_reason=failed_reason,
+                rollback_applied=rollback_applied_any,
+                preflight=preflight,
+                transaction=transaction,
+            )
+
+        target_path = str(patch_summary.get("target_path") or "").strip()
+        if target_path:
+            changed_files.append(target_path)
+
+    changed_files = list(dict.fromkeys(changed_files))
+    transaction = self._mark_apply_patch_transaction(transaction, status="applied", changed_files=changed_files)
+    transaction = self._mark_apply_patch_transaction(transaction, status="verifying", changed_files=changed_files)
+    changed_items = [
+        {
+            "target_path": str(item.get("target_path") or ""),
+            "full_target_path": str(item.get("full_target_path") or ""),
+            "backup_path": str(item.get("backup_path") or ""),
+        }
+        for item in patch_results
+        if item.get("full_target_path")
+    ]
+    verification = self._run_apply_patch_verify_boundary(step if isinstance(step, dict) else {}, transaction, changed_items)
+    transaction = verification.get("transaction") if isinstance(verification.get("transaction"), dict) else transaction
+    if not bool(verification.get("ok", False)):
+        rollback_items = []
+        rollback_applied_any = False
+        for item in reversed(changed_items):
+            rollback_applied, rollback_error = self._rollback_apply_patch_target(
+                str(item.get("full_target_path") or ""),
+                str(item.get("backup_path") or ""),
+            )
+            rollback_applied_any = rollback_applied_any or rollback_applied
+            rollback_items.append(
+                {
+                    "target_path": str(item.get("target_path") or ""),
+                    "full_target_path": str(item.get("full_target_path") or ""),
+                    "backup_path": str(item.get("backup_path") or ""),
+                    "rollback_applied": rollback_applied,
+                    "rollback_error": rollback_error,
+                }
+            )
+        rollback_result = self._build_apply_patch_rollback_result(rollback_items)
+        failed_reason = str(verification.get("message") or "multi-file verification failed")
+        transaction = self._mark_apply_patch_transaction(
+            transaction,
+            status="failed",
+            error_reason=failed_reason,
+            changed_files=changed_files,
+            rollback_result=rollback_result,
+        )
+        return _zero_v735_atomic_multi_patch_error(
+            self,
+            message=f"atomic multi-file verification failed: {failed_reason}",
+            patch_results=patch_results,
+            changed_files=changed_files,
+            failed_patch_index=None,
+            failed_reason=failed_reason,
+            rollback_applied=rollback_applied_any,
+            preflight=preflight,
+            transaction=transaction,
+        )
+
+    transaction = self._mark_apply_patch_transaction(transaction, status="committed", changed_files=changed_files)
+    return {
+        "ok": True,
+        "type": "apply_patch",
+        "message": f"atomic multi-file patch applied: {len(patch_results)} files",
+        "final_answer": f"atomic multi-file patch applied: {len(patch_results)} files",
+        "transaction_ok": True,
+        "preflight_ok": True,
+        "preflight": preflight,
+        "transaction": transaction,
+        "verification_ok": True,
+        "verification": verification,
+        "atomic": True,
+        "rollback_applied": False,
+        "changed": bool(changed_files),
+        "changed_files": changed_files,
+        "patch_results": copy.deepcopy(patch_results),
+        "failed_patch_index": None,
+        "failed_reason": "",
+        "error": None,
+        "result": {
+            "transaction_ok": True,
+            "preflight_ok": True,
+            "preflight": preflight,
+            "transaction": transaction,
+            "verification_ok": True,
+            "verification": verification,
+            "atomic": True,
+            "rollback_applied": False,
+            "changed": bool(changed_files),
+            "changed_files": changed_files,
+            "patch_results": copy.deepcopy(patch_results),
+            "failed_patch_index": None,
+            "failed_reason": "",
+        },
+    }
+
+
 def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_result=None):
+    patches = step.get("patches") if isinstance(step, dict) else None
+    if isinstance(patches, list):
+        return _zero_v735_atomic_multi_patch_step(self, step, task=task, context=context, previous_result=previous_result)
+
     edit_payload = _zero_v734_extract_edit_payload(step if isinstance(step, dict) else {})
     if edit_payload is None:
         edit_payload = _zero_v734_extract_edit_payload(previous_result if isinstance(previous_result, dict) else {})
@@ -3769,6 +4597,8 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
                     raise FileNotFoundError(f"target file not found: {full_target_path}")
                 with open(full_target_path, "r", encoding="utf-8") as fh:
                     original_text = fh.read()
+                backup_path = full_target_path + ".bak_edit_payload"
+                self._create_apply_patch_backup(full_target_path, backup_path)
                 mode = str(item_validation.get("mode") or "")
                 if mode == "replace":
                     old_text = str(item_validation.get("old_text") or "")
@@ -3780,16 +4610,20 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
                     updated_text = str(item_validation.get("content") or "")
                 if updated_text == original_text:
                     raise ValueError("edit payload produced no changes")
-                backup_path = full_target_path + ".bak_edit_payload"
-                with open(backup_path, "w", encoding="utf-8") as fh:
-                    fh.write(original_text)
-                with open(full_target_path, "w", encoding="utf-8") as fh:
-                    fh.write(updated_text)
+                try:
+                    with open(full_target_path, "w", encoding="utf-8") as fh:
+                        fh.write(updated_text)
+                except Exception as write_exc:
+                    rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
+                    raise RuntimeError(f"write failed: {write_exc}; rollback_applied={rollback_applied}; rollback_error={rollback_error}") from write_exc
                 applied_metadata.append(
                     {
                         "target_path": item_target,
                         "full_target_path": full_target_path,
                         "backup_path": backup_path,
+                        "transaction_ok": True,
+                        "rollback_applied": False,
+                        "changed": True,
                         "old_text": original_text,
                         "new_text": updated_text,
                         "schema": str((item.get("edit") or {}).get("schema") or edit_payload.get("schema") or "replacement_pair_v1"),
@@ -3797,11 +4631,20 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
                     }
                 )
             except Exception as exc:
+                rollback_applied_any = "rollback_applied=True" in str(exc)
+                for applied_item in reversed(applied_metadata):
+                    rollback_applied, _rollback_error = self._rollback_apply_patch_target(
+                        str(applied_item.get("full_target_path") or ""),
+                        str(applied_item.get("backup_path") or ""),
+                    )
+                    rollback_applied_any = rollback_applied_any or rollback_applied
                 error = self._apply_patch_error(
                     "multi_file_apply_failed",
                     f"multi-file apply failed for {item_target}: {exc}",
                     "",
                     item_target,
+                    backup_path=str((applied_metadata[-1] if applied_metadata else {}).get("backup_path") or ""),
+                    rollback_applied=rollback_applied_any,
                     details={"repo_impact": repo_impact, "per_file_rollback_metadata": copy.deepcopy(applied_metadata)},
                 )
                 error["repo_impact"] = copy.deepcopy(repo_impact)
@@ -3811,8 +4654,58 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
                     error["result"]["repo_impact"] = copy.deepcopy(repo_impact)
                     error["result"]["per_file_rollback_metadata"] = copy.deepcopy(applied_metadata)
                     error["result"]["rollback_metadata"] = copy.deepcopy(error["rollback_metadata"])
+                    error["result"]["transaction_ok"] = False
+                    error["result"]["rollback_applied"] = rollback_applied_any
+                    error["result"]["changed"] = False
                 return error
         first_meta = applied_metadata[0] if applied_metadata else {}
+        verification_results = []
+        verification_failed = None
+        for applied_item in applied_metadata:
+            verification = self._verify_apply_patch_target(
+                step if isinstance(step, dict) else {},
+                str(applied_item.get("full_target_path") or ""),
+            )
+            verification["target_path"] = applied_item.get("target_path", "")
+            verification_results.append(verification)
+            if not bool(verification.get("ok", False)) and verification_failed is None:
+                verification_failed = verification
+
+        if verification_failed is not None:
+            rollback_applied_any = False
+            for applied_item in reversed(applied_metadata):
+                rollback_applied, _rollback_error = self._rollback_apply_patch_target(
+                    str(applied_item.get("full_target_path") or ""),
+                    str(applied_item.get("backup_path") or ""),
+                )
+                rollback_applied_any = rollback_applied_any or rollback_applied
+            message = str(verification_failed.get("message") or "multi-file edit verification failed")
+            error = self._apply_patch_error(
+                "verification_failed",
+                message,
+                "",
+                target_path,
+                backup_path=str(first_meta.get("backup_path") or ""),
+                rollback_applied=rollback_applied_any,
+                changed=False,
+                verification_ok=False,
+                details={
+                    "repo_impact": repo_impact,
+                    "verification": verification_failed,
+                    "verification_results": verification_results,
+                    "per_file_rollback_metadata": copy.deepcopy(applied_metadata),
+                },
+            )
+            error["repo_impact"] = copy.deepcopy(repo_impact)
+            error["per_file_rollback_metadata"] = copy.deepcopy(applied_metadata)
+            error["rollback_metadata"] = {"restore_available": bool(applied_metadata), "per_file": copy.deepcopy(applied_metadata)}
+            if isinstance(error.get("result"), dict):
+                error["result"]["repo_impact"] = copy.deepcopy(repo_impact)
+                error["result"]["verification_results"] = copy.deepcopy(verification_results)
+                error["result"]["per_file_rollback_metadata"] = copy.deepcopy(applied_metadata)
+                error["result"]["rollback_metadata"] = copy.deepcopy(error["rollback_metadata"])
+            return error
+
         return {
             "ok": True,
             "type": "apply_patch",
@@ -3822,6 +4715,13 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
             "edit_payload": copy.deepcopy(edit_payload),
             "repo_impact": copy.deepcopy(repo_impact),
             "per_file_rollback_metadata": copy.deepcopy(applied_metadata),
+            "patch_path": "",
+            "backup_path": first_meta.get("backup_path", ""),
+            "transaction_ok": True,
+            "verification_ok": True,
+            "verification": {"ok": True, "verification_ok": True, "results": verification_results},
+            "rollback_applied": False,
+            "changed": True,
             "rollback_metadata": {
                 "target_path": first_meta.get("target_path", target_path),
                 "full_target_path": first_meta.get("full_target_path", ""),
@@ -3831,6 +4731,13 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
             },
             "result": {
                 "target_path": target_path,
+                "patch_path": "",
+                "backup_path": first_meta.get("backup_path", ""),
+                "transaction_ok": True,
+                "verification_ok": True,
+                "verification": {"ok": True, "verification_ok": True, "results": verification_results},
+                "rollback_applied": False,
+                "changed": True,
                 "applied": True,
                 "edit_payload": copy.deepcopy(edit_payload),
                 "repo_impact": copy.deepcopy(repo_impact),
@@ -3859,27 +4766,57 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
     except Exception as exc:
         return self._apply_patch_error("read_failed", f"apply edit read failed: {exc}", "", target_path, full_target_path=full_target_path)
 
+    backup_path = full_target_path + ".bak_edit_payload"
+    try:
+        self._create_apply_patch_backup(full_target_path, backup_path)
+    except Exception as exc:
+        return self._apply_patch_error("backup_failed", f"apply edit backup failed: {exc}", "", target_path, full_target_path=full_target_path, backup_path=backup_path)
+
     mode = str(validation.get("mode") or "")
     if mode == "replace":
         old_text = str(validation.get("old_text") or "")
         new_text = str(validation.get("new_text") or "")
         if old_text not in original_text:
-            return self._apply_patch_error("old_text_not_found", "old_text not found in target file", "", target_path, full_target_path=full_target_path)
+            return self._apply_patch_error("old_text_not_found", "old_text not found in target file", "", target_path, full_target_path=full_target_path, backup_path=backup_path)
         updated_text = original_text.replace(old_text, new_text, 1)
     else:
         updated_text = str(validation.get("content") or "")
 
     if updated_text == original_text:
-        return self._apply_patch_error("patch_no_change", "edit payload produced no changes", "", target_path, full_target_path=full_target_path)
+        return self._apply_patch_error("patch_no_change", "edit payload produced no changes", "", target_path, full_target_path=full_target_path, backup_path=backup_path)
 
-    backup_path = full_target_path + ".bak_edit_payload"
     try:
-        with open(backup_path, "w", encoding="utf-8") as fh:
-            fh.write(original_text)
         with open(full_target_path, "w", encoding="utf-8") as fh:
             fh.write(updated_text)
     except Exception as exc:
-        return self._apply_patch_error("write_failed", f"apply edit write failed: {exc}", "", target_path, full_target_path=full_target_path, details={"backup_path": backup_path})
+        rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
+        return self._apply_patch_error(
+            "write_failed",
+            f"apply edit write failed: {exc}",
+            "",
+            target_path,
+            full_target_path=full_target_path,
+            backup_path=backup_path,
+            rollback_applied=rollback_applied,
+            details={"backup_path": backup_path, "rollback_error": rollback_error},
+        )
+
+    verification = self._verify_apply_patch_target(step if isinstance(step, dict) else {}, full_target_path)
+    if not bool(verification.get("ok", False)):
+        rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
+        message = str(verification.get("message") or "apply edit verification failed")
+        return self._apply_patch_error(
+            "verification_failed",
+            message,
+            "",
+            target_path,
+            full_target_path=full_target_path,
+            backup_path=backup_path,
+            rollback_applied=rollback_applied,
+            changed=False,
+            verification_ok=False,
+            details={"backup_path": backup_path, "verification": verification, "rollback_error": rollback_error},
+        )
 
     return {
         "ok": True,
@@ -3887,6 +4824,12 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
         "target_path": target_path,
         "full_target_path": full_target_path,
         "backup_path": backup_path,
+        "patch_path": "",
+        "transaction_ok": True,
+        "verification_ok": True,
+        "verification": verification,
+        "rollback_applied": False,
+        "changed": True,
         "message": f"edit payload applied: {target_path}",
         "final_answer": f"edit payload applied: {target_path}",
         "edit_payload": copy.deepcopy(edit_payload),
@@ -3901,9 +4844,15 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
             "restore_available": True,
         },
         "result": {
+            "patch_path": "",
             "target_path": target_path,
             "full_target_path": full_target_path,
             "backup_path": backup_path,
+            "transaction_ok": True,
+            "verification_ok": True,
+            "verification": verification,
+            "rollback_applied": False,
+            "changed": True,
             "applied": True,
             "edit_payload": copy.deepcopy(edit_payload),
             "repo_impact": copy.deepcopy(repo_impact),
