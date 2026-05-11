@@ -17,6 +17,8 @@ from core.planning.replan_suggestion import build_replan_suggestion, build_repla
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.runtime.trace_runtime import TraceRuntime
 from core.runtime.execution_cycle_runtime import ExecutionCycleRuntime
+from core.runtime.repair_chain_reader import RepairChainReader
+from core.runtime.step_executor import StepExecutor
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
@@ -230,6 +232,7 @@ class Scheduler(RuntimeTaskScheduler):
         self.llm_client = llm_client
         self.trace_runtime = TraceRuntime(repo_root=Path.cwd())
         self.execution_cycle_runtime = ExecutionCycleRuntime(repo_root=Path.cwd())
+        self.repair_chain_reader = RepairChainReader(workspace_root=resolved_workspace_dir)
 
         self.task_workspace = TaskWorkspace(os.path.join(self.workspace_dir, "tasks"))
         self.workspace_root = os.path.abspath(self.workspace_dir)
@@ -250,6 +253,17 @@ class Scheduler(RuntimeTaskScheduler):
             shared_dir=self.shared_dir,
             allow_commands=allow_commands,
         )
+
+        if step_executor is not None:
+            self.step_executor = step_executor
+        else:
+            self.step_executor = StepExecutor(
+                workspace_root=self.workspace_dir,
+                runtime_store=runtime_store,
+                tool_registry=tool_registry,
+                llm_client=self.llm_client,
+                debug=debug,
+            )
 
         if replanner is not None:
             self.replanner = replanner
@@ -662,6 +676,7 @@ class Scheduler(RuntimeTaskScheduler):
         current_status = str(task.get("status") or "").strip().lower()
         if current_status in TERMINAL_STATUSES:
             result = self._build_terminal_skip_runner_result(task=task)
+            result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
             sync_runtime_back_to_repo_with_retry_collapse(scheduler=self, task=task, runner_result=result)
             return self._compact_runner_result(result)
 
@@ -670,9 +685,11 @@ class Scheduler(RuntimeTaskScheduler):
             current_tick=current_tick,
         )
         if loop_result is not None:
+            loop_result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=loop_result)
             return self._compact_runner_result(loop_result)
 
         result = self._run_simple_task_tick(task=task, current_tick=current_tick)
+        result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
         self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
         return self._compact_runner_result(result)
 
@@ -688,6 +705,119 @@ class Scheduler(RuntimeTaskScheduler):
             "final_answer": task.get("final_answer", ""),
         }
 
+    def _read_repair_chain_orchestration_summary(
+        self,
+        *,
+        task: Optional[Dict[str, Any]] = None,
+        runner_result: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Read compact repair-chain orchestration metadata for upper layers.
+
+        Scheduler v3.3 boundary:
+        - Scheduler does not parse deep runtime_state directly.
+        - RepairChainReader owns extraction from runtime_state / runtime_state.json.
+        - This method only chooses the best source and returns a compact summary.
+        """
+        task_payload = copy.deepcopy(task) if isinstance(task, dict) else {}
+        runtime_state: Optional[Dict[str, Any]] = None
+
+        if isinstance(runner_result, dict):
+            maybe_state = runner_result.get("runtime_state")
+            if isinstance(maybe_state, dict):
+                runtime_state = copy.deepcopy(maybe_state)
+
+            if not task_payload:
+                maybe_task = runner_result.get("task")
+                if isinstance(maybe_task, dict):
+                    task_payload = copy.deepcopy(maybe_task)
+
+        if runtime_state is None and isinstance(task_payload.get("runtime_state"), dict):
+            runtime_state = copy.deepcopy(task_payload.get("runtime_state"))
+
+        try:
+            reader = getattr(self, "repair_chain_reader", None)
+            if reader is None:
+                reader = RepairChainReader(workspace_root=getattr(self, "workspace_dir", "workspace"))
+                self.repair_chain_reader = reader
+            summary = reader.read_summary(task=task_payload, runtime_state=runtime_state)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "schema": "zero.scheduler.orchestration_summary.v1",
+                "error": f"repair_chain_reader_failed:{type(exc).__name__}:{exc}",
+            }
+
+        if not isinstance(summary, dict):
+            return {"ok": False, "schema": "zero.scheduler.orchestration_summary.v1", "error": "invalid_reader_summary"}
+
+        return summary
+
+    def _attach_orchestration_summary_to_runner_result(
+        self,
+        *,
+        task: Optional[Dict[str, Any]],
+        runner_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Attach read-only orchestration metadata to runner results.
+
+        Scheduler v3.4.1:
+        - Always return a dict.
+        - Use RepairChainReader compact summary through
+          _read_repair_chain_orchestration_summary.
+        - Attach both:
+            orchestration_summary.repair_chain
+            repair_chain_orchestration
+        - Best-effort only; never change execution success/failure.
+        """
+        if not isinstance(runner_result, dict):
+            return runner_result
+
+        enriched = copy.deepcopy(runner_result)
+
+        try:
+            summary = self._read_repair_chain_orchestration_summary(
+                task=task if isinstance(task, dict) else {},
+                runner_result=enriched,
+            )
+        except Exception:
+            summary = {}
+
+        if not isinstance(summary, dict):
+            return enriched
+
+        chain_status = str(summary.get("chain_status") or "").strip()
+        has_summary = bool(summary.get("ok")) or bool(chain_status)
+        if not has_summary:
+            return enriched
+
+        orchestration_summary = enriched.get("orchestration_summary")
+        if not isinstance(orchestration_summary, dict):
+            orchestration_summary = {}
+            enriched["orchestration_summary"] = orchestration_summary
+
+        orchestration_summary["repair_chain"] = copy.deepcopy(summary)
+
+        enriched["repair_chain_orchestration"] = {
+            "chain_status": chain_status,
+            "is_replay_verified": bool(summary.get("is_replay_verified")),
+            "has_failure_or_rollback": bool(summary.get("has_failure_or_rollback")),
+            "total_steps": summary.get("total_steps", 0),
+            "replay_verified_steps": summary.get("replay_verified_steps", 0),
+            "failed_steps": summary.get("failed_steps", 0),
+            "rolled_back_steps": summary.get("rolled_back_steps", 0),
+        }
+
+        runtime_state = enriched.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            state_summary = runtime_state.get("orchestration_summary")
+            if not isinstance(state_summary, dict):
+                state_summary = {}
+                runtime_state["orchestration_summary"] = state_summary
+            state_summary["repair_chain"] = copy.deepcopy(summary)
+
+        return enriched
+
+
     def _compact_runner_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """Return a short, CLI-friendly result for manual scheduler smoke tests.
 
@@ -701,7 +831,7 @@ class Scheduler(RuntimeTaskScheduler):
         def _compact_multi(payload: Dict[str, Any], parent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             parent = parent if isinstance(parent, dict) else {}
             edits = payload.get("edits") if isinstance(payload.get("edits"), list) else []
-            return {
+            compact = {
                 "ok": bool(payload.get("ok", False)),
                 "action": str(payload.get("action") or "multi_code_edit"),
                 "task_id": str(parent.get("task_id") or result.get("task_id") or ""),
@@ -722,6 +852,11 @@ class Scheduler(RuntimeTaskScheduler):
                 "step_count": result.get("step_count", parent.get("step_count", 0)),
                 "steps_total": result.get("steps_total", parent.get("steps_total", 0)),
             }
+            if isinstance(result.get("orchestration_summary"), dict):
+                compact["orchestration_summary"] = copy.deepcopy(result.get("orchestration_summary"))
+            if isinstance(result.get("repair_chain_orchestration"), dict):
+                compact["repair_chain_orchestration"] = copy.deepcopy(result.get("repair_chain_orchestration"))
+            return compact
 
         action = str(result.get("action") or "").strip().lower()
         if action in {"multi_code_edit", "multi_code_edit_failed"}:
@@ -736,7 +871,7 @@ class Scheduler(RuntimeTaskScheduler):
                     return _compact_multi(nested, parent=last_step_result)
 
         if action in {"simple_task_finished", "terminal_skip"}:
-            return {
+            compact = {
                 "ok": bool(result.get("ok", False)),
                 "action": str(result.get("action") or ""),
                 "task_id": str(result.get("task_id") or ""),
@@ -744,6 +879,10 @@ class Scheduler(RuntimeTaskScheduler):
                 "step_count": result.get("step_count", 0),
                 "steps_total": result.get("steps_total", 0),
             }
+            orchestration_summary = result.get("orchestration_summary")
+            if isinstance(orchestration_summary, dict) and orchestration_summary:
+                compact["orchestration_summary"] = copy.deepcopy(orchestration_summary)
+            return compact
 
         return result
 
@@ -952,6 +1091,7 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         runner_result: Dict[str, Any],
     ) -> None:
+        runner_result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=runner_result)
         sync_runtime_back_to_repo_with_retry_collapse(scheduler=self, task=task, runner_result=runner_result)
 
         refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
@@ -965,6 +1105,285 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
     # simple fallback executor
     # ------------------------------------------------------------
+
+
+    def _handle_simple_step_success(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return handle_simple_step_success(
+            scheduler=self,
+            *args,
+            **kwargs,
+        )
+
+
+    def _handle_simple_step_exception(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Compatibility wrapper used by scheduler_core.simple_runner_helpers.
+
+        Accept both old positional and newer keyword helper call styles.
+
+        Known call shapes include:
+            scheduler._handle_simple_step_exception(task=..., state=..., step=..., error=...)
+            scheduler._handle_simple_step_exception(task, step, exc)
+            scheduler._handle_simple_step_exception(task, state, step, current_tick, exc)
+
+        The wrapper converts guard/policy exceptions into structured runner
+        results instead of allowing raw Python tracebacks to escape.
+        """
+        task = kwargs.get("task")
+        state = kwargs.get("state")
+        step = kwargs.get("step")
+        current_tick = kwargs.get("current_tick")
+        error = kwargs.get("error", kwargs.get("exception"))
+
+        positional = list(args)
+
+        if task is None and positional:
+            task = positional.pop(0)
+
+        # Heuristic for positional styles:
+        #   (task, step, exc)
+        #   (task, state, step, current_tick, exc)
+        if state is None and step is None and positional:
+            first = positional.pop(0)
+            if isinstance(first, dict) and ("steps" in first or "status" in first or "runtime_state_file" in first):
+                # Could be state or step.  If another positional dict follows,
+                # treat first as state and next as step.
+                if positional and isinstance(positional[0], dict):
+                    state = first
+                    step = positional.pop(0)
+                else:
+                    step = first
+            else:
+                step = first
+
+        elif state is None and positional:
+            # Keyword task + positional step/error, or full positional remainder.
+            first = positional.pop(0)
+            if isinstance(first, dict) and positional and isinstance(positional[0], dict):
+                state = first
+                step = positional.pop(0)
+            elif step is None:
+                step = first
+            else:
+                state = first
+
+        if current_tick is None and positional:
+            maybe_tick = positional[0]
+            if isinstance(maybe_tick, int) or (isinstance(maybe_tick, str) and maybe_tick.isdigit()):
+                try:
+                    current_tick = int(positional.pop(0))
+                except Exception:
+                    current_tick = None
+
+        if error is None and positional:
+            error = positional.pop(0)
+
+        if not isinstance(task, dict):
+            task = {}
+        if not isinstance(state, dict):
+            state = copy.deepcopy(task) if isinstance(task, dict) else {}
+        if not isinstance(step, dict):
+            step = {}
+
+        try:
+            return handle_simple_step_exception(
+                scheduler=self,
+                task=task,
+                state=state,
+                step=step,
+                current_tick=current_tick,
+                error=error,
+                **{
+                    key: value
+                    for key, value in kwargs.items()
+                    if key not in {"task", "state", "step", "current_tick", "error", "exception"}
+                },
+            )
+        except TypeError:
+            try:
+                return handle_simple_step_exception(self, task, state, step, current_tick, error)
+            except Exception:
+                return self._fallback_handle_simple_step_exception(
+                    task=task,
+                    state=state,
+                    step=step,
+                    current_tick=current_tick,
+                    error=error,
+                )
+        except Exception:
+            return self._fallback_handle_simple_step_exception(
+                task=task,
+                state=state,
+                step=step,
+                current_tick=current_tick,
+                error=error,
+            )
+
+
+    def _fallback_handle_simple_step_exception(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Dict[str, Any],
+        current_tick: Optional[int] = None,
+        error: Optional[BaseException] = None,
+    ) -> Dict[str, Any]:
+        message = str(error or "simple step exception")
+        error_type = "step_exception"
+        if "requires confirmation" in message or "confirmation" in message:
+            error_type = "repo_scope_confirmation_required"
+        elif "blocked" in message or "guard" in message:
+            error_type = "unsafe_action_blocked"
+
+        step_result = {
+            "ok": False,
+            "step_type": str(step.get("type") or step.get("action") or "").strip().lower() if isinstance(step, dict) else "",
+            "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+            "message": message,
+            "final_answer": message,
+            "error": {
+                "type": error_type,
+                "message": message,
+                "retryable": False,
+                "details": self._extract_repo_impact_from_step_for_error(step=step, message=message),
+            },
+        }
+
+        if isinstance(state, dict):
+            state["status"] = STATUS_FAILED
+            state["last_error"] = message
+            state["failure_message"] = message
+            state["failure_type"] = error_type
+
+        if isinstance(task, dict):
+            task["status"] = STATUS_FAILED
+            task["last_error"] = message
+            task["failure_message"] = message
+            task["failure_type"] = error_type
+
+        # Reuse normal runtime sync if available, but do not let it raise.
+        try:
+            runtime = getattr(self, "task_runtime", None)
+            if runtime is not None and hasattr(runtime, "record_step_failure"):
+                failure_payload = runtime.record_step_failure(
+                    task=task,
+                    step=step,
+                    step_result=step_result,
+                    current_tick=int(current_tick or getattr(self, "current_tick", 0) or 0),
+                    status=STATUS_FAILED,
+                )
+                if isinstance(failure_payload, dict):
+                    runtime_state = failure_payload.get("runtime_state")
+                    if isinstance(runtime_state, dict):
+                        state = runtime_state
+        except Exception:
+            pass
+
+        return {
+            "ok": False,
+            "action": "step_failed",
+            "task_id": self._extract_task_id(task) if isinstance(task, dict) else "",
+            "status": STATUS_FAILED,
+            "task": copy.deepcopy(task) if isinstance(task, dict) else {},
+            "runtime_state": copy.deepcopy(state) if isinstance(state, dict) else {},
+            "step_result": copy.deepcopy(step_result),
+            "last_step_result": copy.deepcopy(step_result),
+            "error": copy.deepcopy(step_result["error"]),
+        }
+
+    def _extract_repo_impact_from_step_for_error(
+        self,
+        *,
+        step: Any,
+        message: str = "",
+    ) -> Dict[str, Any]:
+        if not isinstance(step, dict):
+            return {}
+
+        target_path = str(
+            step.get("target_path")
+            or step.get("target")
+            or step.get("path")
+            or step.get("file_path")
+            or ""
+        ).strip().replace("\\", "/").lstrip("./")
+
+        if not target_path:
+            return {}
+
+        requires_confirmation = "confirmation" in str(message or "").lower()
+        lowered = target_path.lower()
+        repo_source = lowered.startswith(("core/", "services/", "tests/", "runtime/", "tasks/", "planning/"))
+
+        if not requires_confirmation and not repo_source:
+            return {}
+
+        risk_level = "high" if any(token in lowered for token in ("scheduler", "task_runtime", "task_runner", "execution_guard")) else "medium"
+
+        return {
+            "repo_impact": {
+                "target_path": target_path,
+                "changed_files": [target_path],
+                "edit_scope": "single_file",
+                "risk_level": risk_level,
+                "requires_confirmation": True,
+                "blocked_reason": str(message or "repo source apply requires confirmation"),
+            }
+        }
+
+
+    def _load_simple_task_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Compatibility wrapper used by scheduler_core.simple_runner_helpers.
+
+        Keep simple runner state loading delegated to the helper module.  This
+        prevents scheduler.py from duplicating simple-runner state policy while
+        preserving the legacy method contract expected by the helper layer.
+        """
+        try:
+            return load_simple_task_state(scheduler=self, task=task)
+        except TypeError:
+            try:
+                return load_simple_task_state(self, task)
+            except TypeError:
+                return self._fallback_load_simple_task_state(task)
+        except Exception:
+            return self._fallback_load_simple_task_state(task)
+
+    def _fallback_load_simple_task_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(task, dict):
+            return {}
+
+        task_id = str(task.get("task_id") or task.get("task_name") or "").strip()
+        task_dir = str(task.get("task_dir") or "").strip()
+        if not task_dir and task_id:
+            task_dir = os.path.join(self.tasks_root, task_id)
+
+        state: Dict[str, Any] = {}
+        runtime_state_file = os.path.join(task_dir, "runtime_state.json") if task_dir else ""
+        if runtime_state_file and os.path.exists(runtime_state_file):
+            try:
+                with open(runtime_state_file, "r", encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if isinstance(loaded, dict):
+                    state.update(loaded)
+            except Exception:
+                state = {}
+
+        if not state:
+            state = copy.deepcopy(task)
+
+        state.setdefault("task_id", task_id)
+        state.setdefault("task_name", str(task.get("task_name") or task_id))
+        state.setdefault("task_dir", task_dir)
+        state.setdefault("status", str(task.get("status") or "queued"))
+        steps = state.get("steps") if isinstance(state.get("steps"), list) else task.get("steps")
+        if not isinstance(steps, list):
+            steps = []
+        state["steps"] = copy.deepcopy(steps)
+        state["steps_total"] = len(steps)
+        state.setdefault("current_step_index", int(task.get("current_step_index", 0) or 0))
+        return state
+
 
     def _run_simple_task_tick(
         self,
@@ -1487,8 +1906,45 @@ class Scheduler(RuntimeTaskScheduler):
         step = prepared_step
 
         guard_result = self.execution_guard.check_step(step=guard_step, task_dir=task_dir)
-        if not bool(guard_result.get("ok")):
+        apply_patch_guard_fallthrough = (
+            step_type in {"apply_patch", "apply_unified_diff"}
+            and not bool(guard_result.get("ok"))
+            and str(guard_result.get("error") or "").strip().lower()
+            == f"unsupported step type: {step_type}"
+        )
+        if not bool(guard_result.get("ok")) and not apply_patch_guard_fallthrough:
             raise PermissionError(str(guard_result.get("error") or "guard blocked execution"))
+
+        if step_type in {"apply_patch", "apply_unified_diff"}:
+            step_executor = getattr(self, "step_executor", None)
+            if step_executor is None:
+                raise RuntimeError("step_executor unavailable for apply_patch")
+
+            executor_result = step_executor.execute_step(
+                step=step,
+                task=task,
+                context={
+                    "task_dir": task_dir,
+                    "step_scope": step_scope,
+                    "guard_result": guard_result,
+                    "guard_fallthrough_bridge": apply_patch_guard_fallthrough,
+                },
+            )
+            if isinstance(executor_result, Mapping) and not bool(executor_result.get("ok", True)):
+                raise RuntimeError(str(
+                    executor_result.get("message")
+                    or executor_result.get("final_answer")
+                    or executor_result.get("error")
+                    or "apply_patch step failed"
+                ))
+
+            self._record_execution_gateway_side_check(
+                step=step,
+                legacy_result=executor_result,
+                source="scheduler_apply_patch_bridge",
+            )
+
+            return executor_result
 
         basic_result = execute_simple_basic_step(
             scheduler=self,
@@ -1708,6 +2164,27 @@ class Scheduler(RuntimeTaskScheduler):
 
         return ""
 
+
+    def _refresh_task_public_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Compatibility wrapper used by scheduler_core.repo_state_helpers.
+
+        Some helper modules call scheduler._refresh_task_public_fields(...)
+        directly.  Keep the implementation delegated to the imported
+        refresh_task_public_fields helper so the public-field policy stays in
+        scheduler_core.public_task_record_helpers instead of being duplicated
+        here.
+        """
+        try:
+            return refresh_task_public_fields(task)
+        except TypeError:
+            try:
+                return refresh_task_public_fields(scheduler=self, task=task)
+            except TypeError:
+                return self._normalize_public_status_fields(task)
+        except Exception:
+            return self._normalize_public_status_fields(task)
+
+
     def _normalize_public_status_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(task, dict):
             return task
@@ -1809,6 +2286,29 @@ class Scheduler(RuntimeTaskScheduler):
             tick=tick,
             final_answer=final_answer,
             extra=extra,
+        )
+
+    def _trace_step(
+        self,
+        trace: ExecutionTrace,
+        task: Dict[str, Any],
+        step_index: int,
+        step: Dict[str, Any],
+        ok: bool,
+        result: Optional[Dict[str, Any]] = None,
+        error: str = "",
+        tick: Optional[int] = None,
+    ) -> None:
+        return trace_step(
+            scheduler=self,
+            trace=trace,
+            task=task,
+            step_index=step_index,
+            step=step,
+            ok=ok,
+            result=result,
+            error=error,
+            tick=tick,
         )
 
     def get_queue_rows(self) -> Dict[str, Any]:
@@ -6299,10 +6799,8 @@ def _zero_v702_scheduler_execute_simple_step(self, task: Dict[str, Any], step: D
             executor = getattr(self, "step_executor", None)
             if executor is None:
                 try:
-                    from core.runtime.step_executor import StepExecutor
                     executor = StepExecutor(workspace_root=getattr(self, "workspace_dir", "workspace"), debug=bool(getattr(self, "debug", False)))
                 except TypeError:
-                    from core.runtime.step_executor import StepExecutor
                     executor = StepExecutor()
             execute_step = getattr(executor, "execute_step", None)
             if not callable(execute_step):
@@ -7561,3 +8059,42 @@ Scheduler._sync_runner_result_and_requeue_if_ready = _zero_v734_sync_runner_resu
 Scheduler.RETRYING_REPAIR_BRIDGE_VERSION = "v7.3.4"
 Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_4_RETRYING_REPAIR_BRIDGE"
 SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
+
+
+# ============================================================
+# ZERO v3.5.2 - Final run_one_step orchestration attachment
+# ============================================================
+# Some older compatibility wrappers around Scheduler.run_one_step can compact the
+# result after v3.4 attachment.  Keep this final wrapper narrow and read-only:
+# it only re-attaches RepairChainReader compact metadata to the returned payload.
+
+_ZERO_V352_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
+
+
+def _zero_v352_scheduler_run_one_step(
+    self,
+    task: Dict[str, Any],
+    current_tick: Optional[int] = None,
+) -> Dict[str, Any]:
+    result = _ZERO_V352_ORIGINAL_SCHEDULER_RUN_ONE_STEP(
+        self,
+        task=task,
+        current_tick=current_tick,
+    )
+
+    if not isinstance(result, dict):
+        return result
+
+    try:
+        enriched = self._attach_orchestration_summary_to_runner_result(
+            task=task if isinstance(task, dict) else {},
+            runner_result=result,
+        )
+        return enriched if isinstance(enriched, dict) else result
+    except Exception:
+        return result
+
+
+Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
+
+
