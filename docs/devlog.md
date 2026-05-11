@@ -1,3 +1,227 @@
+---
+
+## 2026-05-11 - Runtime Repair Transaction v1-v25 governed cognition checkpoint
+
+This checkpoint records the completion of the governed repair transaction cognition stack on branch:
+
+```text
+runtime-repair-transaction-layer
+```
+
+The goal was not to open unrestricted self-modifying execution. The goal was to build a deterministic transaction, review, authorization, replay, knowledge, recommendation, risk, policy, and governance-report path before allowing any future formal workspace mutation.
+
+### What was completed
+
+Added and stabilized the runtime repair transaction stack in:
+
+* `core/tasks/runtime_repair_apply_transaction.py`
+* `tests/test_runtime_repair_apply_transaction.py`
+
+The completed chain now covers:
+
+```text
+transaction
+-> preflight
+-> sandbox apply
+-> rollback safety
+-> diff snapshot
+-> human review
+-> commit token
+-> immutable commit intent
+-> execution lease
+-> final precheck
+-> isolated temp commit
+-> commit artifact
+-> audit bundle
+-> replay
+-> reproducibility verification
+-> lineage graph
+-> knowledge snapshot
+-> knowledge index
+-> candidate retrieval
+-> candidate explanation
+-> read-only recommendation draft
+-> recommendation review
+-> recommendation provenance
+-> risk assessment
+-> decision trace
+-> policy evaluation
+-> governance report
+```
+
+### Major layers completed
+
+#### Transaction and apply safety
+
+* staged transaction record
+* preflight validation
+* abort lifecycle
+* dry-run apply plan
+* sandbox-only apply
+* rollback and cleanup behavior
+* temp-workspace controlled commit
+
+#### Review and authority separation
+
+* human review gate
+* explicit approval / rejection
+* commit authorization token
+* token expiry / revoke / consume lifecycle
+* immutable commit intent
+* short-lived execution lease
+* final consistency precheck
+
+#### Evidence, replay, and reproducibility
+
+* immutable commit artifact
+* deterministic audit bundle
+* artifact replay
+* reproducibility verification
+* replay workspace isolation
+* original artifact non-mutation
+
+#### Lineage and repair knowledge
+
+* artifact lineage node
+* lineage graph
+* cycle / orphan / tamper validation
+* repair knowledge snapshot
+* knowledge index
+* deterministic query layer
+
+#### Advisory and cognition layer
+
+* similarity query
+* candidate retrieval
+* candidate explanation
+* read-only recommendation draft
+* recommendation review gate
+* recommendation provenance
+* risk assessment
+* decision trace
+* policy evaluation
+* governance report
+
+### Boundaries preserved
+
+The checkpoint intentionally preserves these boundaries:
+
+```text
+governance != execution
+advisory != authority
+recommendation != mutation
+policy evaluation != scheduler action
+knowledge retrieval != auto-repair
+replay != scheduler resume
+commit preview != formal workspace mutation
+```
+
+The layer still does not allow:
+
+```text
+NO direct formal workspace mutation
+NO automatic scheduler execution
+NO recommendation auto-apply
+NO hidden shell execution
+NO unrestricted self-modification
+```
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python -m pytest tests/test_runtime_repair_apply_transaction.py -q
+python -m pytest tests -q
+```
+
+Observed validation result:
+
+```text
+tests/test_runtime_repair_apply_transaction.py: 193 passed
+tests: 692 passed
+```
+
+### Git checkpoint
+
+Committed and pushed on branch:
+
+```text
+runtime-repair-transaction-layer
+```
+
+Commit:
+
+```text
+7dda138 - Add governed repair transaction cognition layers
+```
+
+### Why this matters
+
+This checkpoint moves ZERO from a repair-capable runtime toward a governed engineering cognition runtime.
+
+The important result is not just that ZERO can prepare repairs. The important result is that repair activity can now be represented as a deterministic, reviewable, replayable, risk-assessed, policy-checked, and provenance-preserving chain.
+
+This reduces the risk that future mutation execution, rollback, replay, recommendation, audit, and policy logic become one tangled path inside `scheduler.py` or `agent_loop.py`.
+
+### Stable checkpoint after this pass
+
+* transaction lifecycle: working
+* preflight / abort: working
+* dry-run plan: working
+* sandbox apply / rollback: working
+* commit preview / diff snapshot: working
+* human review gate: working
+* commit token: working
+* immutable intent: working
+* execution lease: working
+* final precheck: working
+* temp-workspace commit: working
+* commit artifact / audit bundle: working
+* replay / reproducibility: working
+* lineage graph: working
+* knowledge snapshot / index: working
+* candidate retrieval / explanation: working
+* read-only recommendation draft: working
+* recommendation review / provenance: working
+* risk assessment: working
+* decision trace: working
+* policy evaluation: working
+* governance report: working
+* recommendation remains read-only
+* scheduler and agent loop not coupled into this stack
+* formal workspace mutation still disabled
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `692 passed`
+* `tests/test_runtime_repair_apply_transaction.py: 193 passed`
+* commit `7dda138`
+* push to `runtime-repair-transaction-layer`
+* the v25 governance report completion summary
+
+### Next step
+
+Do not jump directly into autonomous mutation.
+
+Recommended next checkpoint:
+
+```text
+Runtime Repair Patch Preview Subsystem
+```
+
+Current untracked files:
+
+```text
+core/tasks/runtime_repair_patch_preview.py
+tests/test_runtime_repair_patch_preview.py
+```
+
+Treat this as a separate subsystem checkpoint instead of mixing it into the governed transaction cognition stack.
+
+
 
 ---
 

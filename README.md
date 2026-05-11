@@ -75,7 +75,7 @@ Important:
 
 
 
-## Runtime Governance / Recovery Kernel
+## Runtime Repair Transaction / Governance Kernel
 
 Current engineering checkpoint:
 
@@ -83,60 +83,67 @@ Current engineering checkpoint:
 runtime-repair-transaction-layer
 ```
 
-This branch adds a deterministic runtime governance and recovery plane around ZERO's repair workflow.
+This branch adds ZERO's governed repair transaction path: a deterministic, reviewable, replayable, and policy-gated runtime layer around repair and self-modification workflows.
 
-The current chain is:
+The latest completed chain is:
 
 ```text
-proposal
--> confirmation
--> authorization
--> scope gate
--> transaction
--> preview
--> review
--> review artifact
--> state machine
--> controlled apply planning
--> executor contract
--> execution receipt
--> rollback receipt
--> execution audit payload
--> transaction snapshot
--> recovery payload
--> hydration contract
--> replay queue
--> continuation metadata
--> governance boundary
--> persistence contract
+transaction
+-> preflight
+-> sandbox apply
+-> diff snapshot
+-> human review
+-> commit token
+-> immutable commit intent
+-> execution lease
+-> final precheck
+-> isolated temp commit
+-> commit artifact
+-> audit bundle
+-> replay
+-> reproducibility verification
+-> lineage graph
+-> knowledge snapshot
+-> knowledge index
+-> candidate retrieval
+-> candidate explanation
+-> read-only recommendation draft
+-> recommendation review
+-> recommendation provenance
+-> risk assessment
+-> decision trace
+-> policy evaluation
+-> governance report
 ```
 
-Important boundary:
+Important boundaries:
 
 ```text
 governance != execution
-recovery != persistence
+advisory != authority
+recommendation != mutation
+policy evaluation != scheduler action
 replay != scheduler resume
-apply plan != mutation execution
+knowledge retrieval != auto-repair
 ```
 
-The current layer is intentionally dry-run and contract-first:
+The current layer is intentionally controlled:
 
 ```text
-NO real file mutation
-NO real patch execution
-NO shell execution
-NO SQLite backend
-NO automatic restore
+NO direct formal workspace mutation
+NO automatic scheduler execution
+NO recommendation auto-apply
+NO hidden shell execution
+NO unrestricted self-modification
 ```
 
-This checkpoint prepares ZERO for later controlled mutation execution without coupling scheduler, replay, rollback, audit, and persistence into one unsafe path.
-
-Validation checkpoint:
+Current validation checkpoint:
 
 ```text
-492 passed
+692 passed
 ```
+
+This checkpoint moves ZERO beyond a repair-capable runtime into a governed engineering runtime substrate: repair actions can be previewed, reviewed, authorized, replayed, traced, risk-assessed, policy-checked, and summarized before any future controlled mutation path is allowed.
 
 ------------------------------------------------------------------------
 
@@ -262,13 +269,13 @@ github_draft_bundle
 L4 Tool Layer: ✔ Complete\
 L5 Decision Core: ✔ Complete\
 L5 Controlled Draft Workflow: ✔ Complete\
-Runtime Governance / Recovery Kernel: ✔ Contract skeleton stabilized
+Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized
 
 Current phase:\
-→ runtime governance + recovery + persistence contract stabilization
+→ governed repair transaction cognition, policy, and report stabilization
 
 Next stage:\
-→ persistent runtime backend, crash reload, and controlled mutation executor
+→ patch preview subsystem, governance report export, then controlled persistence/mutation stages
 
 ------------------------------------------------------------------------
 

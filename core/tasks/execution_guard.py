@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shlex
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from core.repo_sandbox.policy import RepoSandboxPolicy
 
@@ -191,9 +193,37 @@ class ExecutionGuard:
 
         if step_type in {"apply_patch", "apply_unified_diff"}:
             raw_path = str(step.get("target_path") or step.get("target") or step.get("path") or "").strip().replace("\\", "/").lstrip("./")
+            patches = step.get("patches")
+            patch_targets: List[str] = []
+            patch_files: List[str] = []
+            conflict_reasons: List[str] = []
+            if isinstance(patches, list):
+                if not patches:
+                    conflict_reasons.append("empty patch list")
+                for item in patches:
+                    if not isinstance(item, dict):
+                        conflict_reasons.append("patch item must be an object")
+                        continue
+                    item_patch = str(item.get("patch_path") or item.get("path") or "").strip().replace("\\", "/").lstrip("./")
+                    item_target = str(item.get("target_path") or item.get("target") or "").strip().replace("\\", "/").lstrip("./")
+                    if item_patch:
+                        patch_files.append(item_patch)
+                    else:
+                        conflict_reasons.append("patch item missing patch_path")
+                    if item_target:
+                        patch_targets.append(item_target)
+                    else:
+                        conflict_reasons.append("patch item missing target_path")
+                if not raw_path and patch_targets:
+                    raw_path = patch_targets[0]
+            else:
+                raw_patch = str(step.get("patch_path") or step.get("path") or "").strip().replace("\\", "/").lstrip("./")
+                if raw_patch:
+                    patch_files.append(raw_patch)
             if not raw_path:
                 return self._deny("apply_patch step missing target_path", guard_mode="missing_path")
             changed_files = [raw_path]
+            changed_files.extend(patch_targets)
             edit_payload = step.get("edit_payload")
             if isinstance(edit_payload, dict):
                 raw_changed = edit_payload.get("changed_files")
@@ -209,45 +239,111 @@ class ExecutionGuard:
                             if item_path:
                                 changed_files.append(item_path)
             changed_files = list(dict.fromkeys(changed_files))
+            duplicate_targets = sorted({path for path in patch_targets if patch_targets.count(path) > 1})
+            if duplicate_targets:
+                conflict_reasons.append("duplicate target path in same transaction: " + ", ".join(duplicate_targets))
             lowered = raw_path.lower()
             repo_source = any(path.lower().startswith(("core/", "services/", "tests/", "runtime/", "tasks/", "planning/")) for path in changed_files)
+            sensitive = any(
+                token in path.lower()
+                for path in changed_files
+                for token in ("scheduler", "execution_guard", "step_executor", "task_runner", "task_runtime")
+            )
+            edit_scope = "single_file"
+            if len(changed_files) > 1:
+                edit_scope = "repo_scale" if repo_source else "multi_file"
+            risk_level = "low"
+            if repo_source:
+                risk_level = "medium"
+            if repo_source and (len(changed_files) > 1 or sensitive):
+                risk_level = "high"
             confirmed = bool(step.get("confirmed") or step.get("confirmation") or step.get("repo_scale_confirmed") or step.get("scope_confirmed"))
-            if repo_source and len(changed_files) > 1:
+            preflight = {
+                "preflight_ok": not conflict_reasons and (not repo_source or confirmed),
+                "target_files": changed_files,
+                "patch_files": list(dict.fromkeys(patch_files)),
+                "changed_files": changed_files,
+                "repo_source": repo_source,
+                "edit_scope": edit_scope,
+                "risk_level": risk_level,
+                "requires_confirmation": bool(repo_source),
+                "confirmed": confirmed,
+                "conflict_detected": bool(conflict_reasons),
+                "conflict_reason": "; ".join(conflict_reasons),
+            }
+            transaction = self._build_apply_patch_guard_transaction(
+                preflight,
+                status="planned" if preflight["preflight_ok"] else "blocked",
+                error_reason=preflight["conflict_reason"],
+            )
+            preflight["transaction"] = transaction
+            if conflict_reasons:
+                transaction["status"] = "blocked"
+                transaction["error_reason"] = preflight["conflict_reason"]
+                return self._deny(
+                    f"apply_patch blocked by preflight: {preflight['conflict_reason']}",
+                    guard_mode="apply_patch_preflight_blocked",
+                    policy_action="deny",
+                    policy_reason="apply_patch preflight conflict",
+                    repo_impact=preflight,
+                    transaction=transaction,
+                )
+            if repo_source and len(changed_files) > 1 and not confirmed:
                 impacted_files = self._find_python_importers(changed_files)
+                preflight["preflight_ok"] = False
+                preflight["requires_confirmation"] = True
+                preflight["conflict_detected"] = True
+                preflight["conflict_reason"] = "repo source multi-file repair cannot auto apply"
+                preflight["impacted_files"] = impacted_files
+                preflight["dependency_hints"] = {"importers": impacted_files}
+                preflight["blocked_reason"] = "repo source multi-file repair cannot auto apply"
+                transaction = self._build_apply_patch_guard_transaction(
+                    preflight,
+                    status="blocked",
+                    error_reason=preflight["conflict_reason"],
+                )
+                preflight["transaction"] = transaction
                 return self._deny(
                     f"apply_patch blocked: repo source multi-file repair cannot auto apply: {raw_path}",
                     guard_mode="repo_source_multi_file_apply_blocked",
                     policy_action="deny",
                     policy_reason="repo source multi-file repair cannot auto apply",
-                    repo_impact={
-                        "target_path": raw_path,
-                        "changed_files": changed_files,
-                        "impacted_files": impacted_files,
-                        "dependency_hints": {"importers": impacted_files},
-                        "edit_scope": "repo_scale",
-                        "risk_level": "high",
-                        "requires_confirmation": True,
-                        "blocked_reason": "repo source multi-file repair cannot auto apply",
-                    },
+                    repo_impact=preflight,
+                    transaction=transaction,
                 )
             if repo_source and not confirmed:
                 impacted_files = self._find_python_importers(changed_files)
+                preflight["preflight_ok"] = False
+                preflight["requires_confirmation"] = True
+                preflight["conflict_detected"] = True
+                preflight["conflict_reason"] = "repo source apply requires confirmation"
+                preflight["impacted_files"] = impacted_files
+                preflight["dependency_hints"] = {"importers": impacted_files}
+                preflight["blocked_reason"] = "repo source apply requires confirmation"
+                transaction = self._build_apply_patch_guard_transaction(
+                    preflight,
+                    status="blocked",
+                    error_reason=preflight["conflict_reason"],
+                )
+                preflight["transaction"] = transaction
                 return self._deny(
                     f"apply_patch blocked: repo source target requires confirmation: {raw_path}",
                     guard_mode="repo_source_apply_requires_confirmation",
                     policy_action="deny",
                     policy_reason="repo source apply requires confirmation",
-                    repo_impact={
-                        "target_path": raw_path,
-                        "changed_files": [raw_path],
-                        "impacted_files": impacted_files,
-                        "dependency_hints": {"importers": impacted_files},
-                        "edit_scope": "single_file",
-                        "risk_level": "high" if any(token in lowered for token in ("scheduler", "task_runtime", "task_runner", "execution_guard")) else "medium",
-                        "requires_confirmation": True,
-                        "blocked_reason": "repo source apply requires confirmation",
-                    },
+                    repo_impact=preflight,
+                    transaction=transaction,
                 )
+
+            return self._allow(
+                guard_mode="apply_patch_allowed",
+                target_path=raw_path,
+                changed_files=changed_files,
+                policy_action="allow",
+                policy_reason="apply_patch passed guard",
+                repo_impact=preflight,
+                transaction=transaction,
+            )
 
         # ---------------------------------------------------------
         # read
@@ -629,6 +725,43 @@ class ExecutionGuard:
             return common == self.project_root
         except Exception:
             return False
+
+    def _build_apply_patch_guard_transaction(
+        self,
+        preflight: Dict[str, Any],
+        status: str = "planned",
+        error_reason: str = "",
+    ) -> Dict[str, Any]:
+        safe = preflight if isinstance(preflight, dict) else {}
+        transaction_files = [str(item) for item in safe.get("target_files", []) if str(item).strip()]
+        patch_files = [str(item) for item in safe.get("patch_files", []) if str(item).strip()]
+        seed = json.dumps(
+            {
+                "target_files": transaction_files,
+                "patch_files": patch_files,
+                "repo_source": bool(safe.get("repo_source", False)),
+                "edit_scope": str(safe.get("edit_scope") or ""),
+            },
+            sort_keys=True,
+            ensure_ascii=True,
+        )
+        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+        return {
+            "transaction_id": f"patch_tx:guard:{digest}",
+            "transaction_scope": str(safe.get("edit_scope") or "single_file"),
+            "transaction_files": transaction_files,
+            "backup_files": [],
+            "backup_snapshot": {},
+            "preflight_ok": bool(safe.get("preflight_ok", False)),
+            "risk_level": str(safe.get("risk_level") or "low"),
+            "requires_confirmation": bool(safe.get("requires_confirmation", False)),
+            "repo_source": bool(safe.get("repo_source", False)),
+            "edit_scope": str(safe.get("edit_scope") or "single_file"),
+            "status": str(status or "planned"),
+            "error_reason": str(error_reason or ""),
+            "patch_files": patch_files,
+            "content_hash": digest,
+        }
 
     # ============================================================
     # result helpers

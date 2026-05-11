@@ -1930,13 +1930,6 @@ class Scheduler(RuntimeTaskScheduler):
                     "guard_fallthrough_bridge": apply_patch_guard_fallthrough,
                 },
             )
-            if isinstance(executor_result, Mapping) and not bool(executor_result.get("ok", True)):
-                raise RuntimeError(str(
-                    executor_result.get("message")
-                    or executor_result.get("final_answer")
-                    or executor_result.get("error")
-                    or "apply_patch step failed"
-                ))
 
             self._record_execution_gateway_side_check(
                 step=step,
