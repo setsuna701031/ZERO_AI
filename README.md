@@ -147,6 +147,60 @@ This checkpoint moves ZERO beyond a repair-capable runtime into a governed engin
 
 ------------------------------------------------------------------------
 
+
+## Patch Runtime Safety (Latest)
+
+ZERO now includes a governed patch runtime boundary with:
+
+- preflight analysis
+- dependency/conflict detection
+- transaction metadata
+- backup snapshot
+- atomic multi-file apply
+- verify / commit boundary
+- rollback recovery
+- regression seal
+
+Current runtime flow:
+
+```text
+planned
+-> applied
+-> verifying
+-> committed
+```
+
+Failure path:
+
+```text
+planned
+-> applied
+-> verifying
+-> rollback
+-> failed
+```
+
+The runtime preserves:
+
+```text
+preflight metadata
+transaction metadata
+verify metadata
+rollback evidence
+```
+
+while keeping:
+
+```text
+guard = gate
+executor = execution
+verify = boundary
+transaction = state
+```
+
+separated to avoid responsibility collapse inside `scheduler.py`.
+
+
 ## What ZERO Does
 
 ZERO does not just generate answers.
@@ -248,6 +302,8 @@ Run tests:
     python tests/run_l4_tool_decision_smoke.py
     python tests/run_l5_tool_decision_core_smoke.py
     python tests/run_l5_external_draft_tools_smoke.py
+    python tests/test_apply_patch_transaction_layer.py
+    python tests/test_step_executor.py
 
 ------------------------------------------------------------------------
 
@@ -272,7 +328,7 @@ L5 Controlled Draft Workflow: ✔ Complete\
 Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized
 
 Current phase:\
-→ governed repair transaction cognition, policy, and report stabilization
+→ runtime transaction safety + verification boundary sealed
 
 Next stage:\
 → patch preview subsystem, governance report export, then controlled persistence/mutation stages
