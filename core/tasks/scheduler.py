@@ -111,6 +111,7 @@ from core.tasks.scheduler_core.pure_helpers import (
     _extract_task_id as _scheduler_helper_extract_task_id,
     _strip_quotes as _scheduler_helper_strip_quotes,
     _extract_file_path as _scheduler_helper_extract_file_path,
+    _canonicalize_steps_for_compare as _scheduler_helper_canonicalize_steps_for_compare,
 )
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
@@ -1462,23 +1463,8 @@ class Scheduler(RuntimeTaskScheduler):
 
         return True, ""
 
-    def _canonicalize_steps_for_compare(self, steps: Any) -> List[Dict[str, Any]]:
-        if not isinstance(steps, list):
-            return []
-
-        canonical: List[Dict[str, Any]] = []
-        for item in steps:
-            if not isinstance(item, dict):
-                canonical.append({"type": str(item)})
-                continue
-
-            normalized: Dict[str, Any] = {}
-            for key in sorted(item.keys()):
-                value = item.get(key)
-                normalized[key] = value.strip() if isinstance(value, str) else value
-            canonical.append(normalized)
-
-        return canonical
+    def _canonicalize_steps_for_compare(self, *args, **kwargs):
+        return _scheduler_helper_canonicalize_steps_for_compare(*args, **kwargs)
 
     def _is_meaningful_replan(self, old_steps: Any, new_steps: Any) -> bool:
         return self._canonicalize_steps_for_compare(old_steps) != self._canonicalize_steps_for_compare(new_steps)

@@ -32,3 +32,19 @@ def _strip_quotes(text: str) -> str:
 def _extract_file_path(text: str) -> Optional[str]:
     m = re.search(r"([A-Za-z0-9_\\\-./\\\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))", text, flags=re.IGNORECASE)
     return m.group(1).strip() if m else None
+
+
+def _canonicalize_steps_for_compare(steps: Any) -> List[Dict[str, Any]]:
+    if not isinstance(steps, list):
+        return []
+    canonical: List[Dict[str, Any]] = []
+    for item in steps:
+        if not isinstance(item, dict):
+            canonical.append({'type': str(item)})
+            continue
+        normalized: Dict[str, Any] = {}
+        for key in sorted(item.keys()):
+            value = item.get(key)
+            normalized[key] = value.strip() if isinstance(value, str) else value
+        canonical.append(normalized)
+    return canonical
