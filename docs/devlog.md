@@ -5531,3 +5531,142 @@ Keep the latest terminal screenshots showing:
 * `python tests/run_document_flow_showcase_smoke.py` returning `ALL PASS`
 * `python tests/run_mainline_smoke.py` / `python main.py smoke` showing `document flow showcase smoke` and `ALL PASS`
 
+
+
+---
+
+## 2026-05-11 - Patch Runtime Transaction / Verification Boundary Seal checkpoint
+
+This checkpoint sealed ZERO's controlled patch runtime execution boundary on branch:
+
+```text
+runtime-repair-transaction-layer
+```
+
+The goal was not unrestricted self-modification.
+
+The goal was to establish a deterministic patch transaction runtime with:
+
+```text
+preflight
+-> transaction
+-> backup snapshot
+-> atomic apply
+-> verify boundary
+-> rollback recovery
+-> regression seal
+```
+
+### Completed layers
+
+Added and stabilized:
+
+* patch dependency / preflight analysis
+* repo source confirmation gate
+* transaction metadata lifecycle
+* backup snapshot handling
+* atomic multi-file apply
+* verify / commit boundary
+* rollback recovery
+* regression seal coverage
+* mutation boundary scaffold
+
+### Runtime flow
+
+Successful path:
+
+```text
+planned
+-> applied
+-> verifying
+-> committed
+```
+
+Failure path:
+
+```text
+planned
+-> applied
+-> verifying
+-> rollback
+-> failed
+```
+
+### Metadata layers preserved
+
+The runtime now preserves independent:
+
+```text
+preflight metadata
+transaction metadata
+verify metadata
+rollback metadata
+```
+
+Important architectural boundary:
+
+```text
+guard = gate
+executor = execution
+verify = boundary
+transaction = state
+```
+
+This prevents scheduler responsibility collapse and reduces the risk that rollback, verification, execution, and policy become one tangled runtime path.
+
+### Validation confirmed
+
+Confirmed passing through compile + manual harness validation:
+
+```text
+tests/test_apply_patch_transaction_layer.py
+tests/test_step_executor.py
+```
+
+Validated behaviors:
+
+* apply_patch handler remains registered
+* no unsupported step type regression
+* committed only appears after verify pass
+* rollback restores original file contents
+* multi-file rollback leaves no half-applied state
+* repo_source unconfirmed remains blocked
+* repo_source confirmed still requires verify before commit
+
+### Git checkpoint
+
+Merged into:
+
+```text
+main
+```
+
+through PR:
+
+```text
+#7
+```
+
+Merge title:
+
+```text
+Seal patch runtime transaction and verification boundary
+```
+
+### Why this matters
+
+This checkpoint moves ZERO from:
+
+```text
+AI patch application
+```
+
+toward:
+
+```text
+transactional engineering runtime
+```
+
+The important result is not only patch execution.
+
+The important result is that execution, verification, rollback, replay, and future governance layers now have a deterministic runtime boundary instead of being mixed directly into scheduler logic.
