@@ -175,3 +175,47 @@ def normalize_runtime_payload(value: Any) -> NormalizedRuntimePayload:
         error_type=error_type,
         raw=value,
     )
+
+def extract_runtime_failure_text(task: Any, runner_result: Any = None) -> str:
+    candidates: list[Any] = []
+
+    runner_payload = _as_mapping(runner_result)
+    if runner_payload is not None:
+        candidates.extend(
+            [
+                runner_payload.get("last_error"),
+                runner_payload.get("failure_message"),
+                runner_payload.get("error"),
+                runner_payload.get("message"),
+                runner_payload.get("final_answer"),
+                runner_payload.get("last_step_result"),
+                runner_payload.get("result"),
+                runner_payload.get("task"),
+            ]
+        )
+
+    task_payload = _as_mapping(task)
+    if task_payload is not None:
+        candidates.extend(
+            [
+                task_payload.get("last_error"),
+                task_payload.get("failure_message"),
+                task_payload.get("error"),
+                task_payload.get("message"),
+                task_payload.get("final_answer"),
+                task_payload.get("last_step_result"),
+            ]
+        )
+
+        for key in ("step_results", "results", "execution_log"):
+            items = task_payload.get(key)
+            if isinstance(items, list):
+                candidates.extend(reversed(items[-5:]))
+
+    for candidate in candidates:
+        text = extract_runtime_error_text(candidate)
+        if text:
+            return text
+
+    return ""
+
