@@ -2101,37 +2101,42 @@ class Scheduler(RuntimeTaskScheduler):
         return sandbox_dir
 
     def _extract_text_from_result_payload(self, payload: Any) -> str:
-        def _extract_text_deep(value: Any, depth: int = 0) -> str:
-            if depth > 8:
+        try:
+            from core.runtime.payload_normalizer import extract_runtime_text
+
+            return extract_runtime_text(payload)
+        except Exception:
+            def _extract_text_deep(value: Any, depth: int = 0) -> str:
+                if depth > 8:
+                    return ""
+
+                if value is None:
+                    return ""
+
+                if isinstance(value, str):
+                    return value
+
+                if isinstance(value, dict):
+                    for key in ("text", "content", "message", "response", "final_answer", "stdout", "checked_text"):
+                        item = value.get(key)
+                        if isinstance(item, str) and item.strip():
+                            return item
+
+                    for nested_key in ("result", "raw", "data", "payload", "previous_result"):
+                        nested = value.get(nested_key)
+                        nested_text = _extract_text_deep(nested, depth + 1)
+                        if nested_text.strip():
+                            return nested_text
+
+                if isinstance(value, list):
+                    for item in reversed(value):
+                        nested_text = _extract_text_deep(item, depth + 1)
+                        if nested_text.strip():
+                            return nested_text
+
                 return ""
 
-            if value is None:
-                return ""
-
-            if isinstance(value, str):
-                return value
-
-            if isinstance(value, dict):
-                for key in ("text", "content", "message", "response", "final_answer", "stdout", "checked_text"):
-                    item = value.get(key)
-                    if isinstance(item, str) and item.strip():
-                        return item
-
-                for nested_key in ("result", "raw", "data", "payload", "previous_result"):
-                    nested = value.get(nested_key)
-                    nested_text = _extract_text_deep(nested, depth + 1)
-                    if nested_text.strip():
-                        return nested_text
-
-            if isinstance(value, list):
-                for item in reversed(value):
-                    nested_text = _extract_text_deep(item, depth + 1)
-                    if nested_text.strip():
-                        return nested_text
-
-            return ""
-
-        return _extract_text_deep(payload)
+            return _extract_text_deep(payload)
 
     def _extract_text_from_previous_result(self, task: Dict[str, Any]) -> str:
         if not isinstance(task, dict):
