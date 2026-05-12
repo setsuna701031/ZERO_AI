@@ -8018,6 +8018,155 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # result after v3.4 attachment.  Keep this final wrapper narrow and read-only:
 # it only re-attaches RepairChainReader compact metadata to the returned payload.
 
+
+
+# ============================================================
+# ZERO Runtime Aggregate Convergence v1.1
+# Scheduler Aggregate Adapter Payload
+# ============================================================
+
+def _zero_v11_scheduler_bool(value):
+    return bool(value)
+
+
+def _zero_v11_scheduler_str(value, default=""):
+    if value is None:
+        return default
+    text = str(value)
+    return text if text else default
+
+
+def _zero_v11_scheduler_copy_dict(value):
+    if isinstance(value, dict):
+        try:
+            return copy.deepcopy(value)
+        except Exception:
+            return dict(value)
+    return {}
+
+
+def _zero_v11_extract_scheduler_error_type(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        for key in ("type", "error_type", "code"):
+            value = error.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        message = error.get("message")
+        if message is not None and str(message).strip():
+            return "scheduler_error"
+
+    if isinstance(error, str) and error.strip():
+        return "scheduler_error"
+
+    for key in ("error_type", "failure_type"):
+        value = payload.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    return ""
+
+
+def _zero_v11_extract_scheduler_error_text(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("error") or error.get("text")
+        if message is not None and str(message).strip():
+            return str(message).strip()
+        if error:
+            return str(error)
+
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+
+    for key in ("error_text", "message", "final_answer"):
+        value = payload.get(key)
+        if value is not None and str(value).strip():
+            if key == "message" and bool(payload.get("ok", False)):
+                continue
+            return str(value).strip()
+
+    return ""
+
+
+def _zero_v11_extract_scheduler_runtime_mode(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    for key in ("runtime_mode", "mode", "execution_mode"):
+        value = payload.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    runtime_context = payload.get("runtime_context")
+    if isinstance(runtime_context, dict):
+        for key in ("runtime_mode", "mode", "execution_mode"):
+            value = runtime_context.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
+    return ""
+
+
+def _zero_v11_extract_scheduler_trace(payload):
+    if not isinstance(payload, dict):
+        return []
+
+    trace = payload.get("execution_trace")
+    if isinstance(trace, list):
+        try:
+            return copy.deepcopy(trace)
+        except Exception:
+            return list(trace)
+
+    result = payload.get("result")
+    if isinstance(result, dict):
+        nested = result.get("execution_trace")
+        if isinstance(nested, list):
+            try:
+                return copy.deepcopy(nested)
+            except Exception:
+                return list(nested)
+
+    return []
+
+
+def _zero_v11_attach_scheduler_adapter_payload(result):
+    if not isinstance(result, dict):
+        return result
+
+    if isinstance(result.get("adapter_payload"), dict):
+        return result
+
+    payload = copy.deepcopy(result)
+
+    ok = bool(payload.get("ok", False))
+    message = _zero_v11_scheduler_str(payload.get("message"), "執行完成" if ok else "執行失敗")
+    final_answer = _zero_v11_scheduler_str(payload.get("final_answer"), message)
+
+    adapter_payload = {
+        "ok": ok,
+        "message": message,
+        "final_answer": final_answer,
+        "text": final_answer or message,
+        "error_text": "" if ok else _zero_v11_extract_scheduler_error_text(payload),
+        "error_type": "" if ok else _zero_v11_extract_scheduler_error_type(payload),
+        "runtime_mode": _zero_v11_extract_scheduler_runtime_mode(payload),
+        "last_result": _zero_v11_scheduler_copy_dict(payload.get("last_result")),
+        "execution_trace": _zero_v11_extract_scheduler_trace(payload),
+        "raw": payload,
+    }
+
+    result["adapter_payload"] = adapter_payload
+    return result
+
+
 _ZERO_V352_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
 
 
@@ -8040,9 +8189,11 @@ def _zero_v352_scheduler_run_one_step(
             task=task if isinstance(task, dict) else {},
             runner_result=result,
         )
-        return enriched if isinstance(enriched, dict) else result
+        result = enriched if isinstance(enriched, dict) else result
     except Exception:
-        return result
+        pass
+
+    return _zero_v11_attach_scheduler_adapter_payload(result)
 
 
 Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
