@@ -6004,3 +6004,126 @@ path_parser_helpers extraction: accepted
 planning_parser_helpers extraction: rejected / reverted
 ```
 
+
+---
+
+## 2026-05-11 - Regression Coverage Phase v1 checkpoint
+
+This checkpoint records the first formal regression gate added after the scheduler helper extraction and runtime execution boundary work.
+
+The goal was not to add scattered tests.
+
+The goal was to create a small repeatable regression contract pack that protects the current scheduler/helper/runtime boundaries before any further extraction or refactor work.
+
+### What was added
+
+Added scheduler/parser regression coverage:
+
+```text
+tests/test_scheduler_parser_helpers.py
+```
+
+Added runtime execution contract coverage:
+
+```text
+tests/test_runtime_execution_contracts.py
+```
+
+Added one entrypoint for the current regression pack:
+
+```text
+tests/run_regression_contracts.py
+```
+
+### Coverage included
+
+Scheduler/parser regression coverage currently protects:
+
+```text
+path parser helpers
+pure helpers
+planning parser behavior that remains inside Scheduler
+scheduler parser semantics
+```
+
+Runtime execution contract coverage currently protects:
+
+```text
+unsupported step type contract
+execute_steps failure contract
+execute_steps empty contract
+apply_patch handler registration
+```
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/test_scheduler_parser_helpers.py
+python tests/test_runtime_execution_contracts.py
+python tests/run_regression_contracts.py
+```
+
+Observed result:
+
+```text
+tests/test_scheduler_parser_helpers.py: 13 tests OK
+tests/test_runtime_execution_contracts.py: 4 tests OK
+tests/run_regression_contracts.py: ALL PASS, 2 test files
+```
+
+### Git checkpoint
+
+Committed and pushed on `main`:
+
+```text
+8633fe6 - test: add scheduler and runtime regression contracts
+```
+
+### Why this matters
+
+This checkpoint turns the recent scheduler extraction work from manual confidence into a repeatable safety gate.
+
+The important result is that future scheduler/helper/runtime changes now have a small contract layer to catch regressions before more extraction work continues.
+
+This protects:
+
+```text
+scheduler orchestration boundary
+pure helper behavior
+path parser helper behavior
+planning parser behavior still inside Scheduler
+StepExecutor unsupported-step behavior
+StepExecutor empty execution behavior
+apply_patch handler availability
+```
+
+### Stable checkpoint after this pass
+
+* scheduler/parser regression tests: working
+* runtime execution contract tests: working
+* regression runner: working
+* current regression gate: ALL PASS
+* working tree clean after commit/push
+
+### Next step
+
+Do not continue broad scheduler extraction immediately.
+
+Recommended next phase:
+
+```text
+Regression Coverage Phase v2
+```
+
+Scope should remain narrow:
+
+```text
+add tests only when they protect an actual extraction/refactor boundary
+avoid speculative contract assertions not matching current runtime behavior
+do not force runtime code to satisfy imagined contracts
+```
+
+The previous failed expansion attempt showed that runtime contract tests must describe the existing stable contract first, not an idealized future contract.
+
