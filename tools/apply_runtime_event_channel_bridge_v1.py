@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+
+EVENT_STREAM_PATH = Path("core/runtime/event_stream.py")
+TEST_PATH = Path("tests/test_runtime_event_channel_bridge_contract.py")
+
+
+EVENT_STREAM_CONTENT = r'''from __future__ import annotations
+
 import copy
 from typing import Any, Dict, List
 
@@ -166,3 +175,118 @@ class RuntimeEventChannel:
     def clear(self) -> None:
         self._events = []
         self._cursor = 0
+'''
+
+
+TEST_CONTENT = r'''from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+from typing import Any, Dict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+
+class RuntimeEventChannelBridgeContractTest(unittest.TestCase):
+    def test_runtime_event_stream_uses_envelope_schema(self) -> None:
+        from core.runtime.event_stream import runtime_event_stream_from_adapter_payload
+
+        payload: Dict[str, Any] = {
+            "adapter_payload": {
+                "execution_trace": [
+                    {
+                        "event_type": "step",
+                        "runtime_mode": "execute",
+                        "task_id": "task-1",
+                        "ok": True,
+                        "status": "done",
+                    }
+                ]
+            }
+        }
+
+        stream = runtime_event_stream_from_adapter_payload(payload, source="adapter")
+
+        self.assertEqual(len(stream), 1)
+        self.assertEqual(stream[0]["event_type"], "step")
+        self.assertEqual(stream[0]["runtime_phase"], "execute")
+        self.assertEqual(stream[0]["task_id"], "task-1")
+        self.assertEqual(stream[0]["source"], "adapter")
+        self.assertEqual(stream[0]["payload"]["status"], "done")
+        self.assertIn("timestamp", stream[0])
+
+    def test_runtime_event_channel_stores_envelope_schema(self) -> None:
+        from core.runtime.event_stream import RuntimeEventChannel
+
+        channel = RuntimeEventChannel()
+        event = channel.append_event(
+            {
+                "event_type": "execution_guard",
+                "runtime_mode": "guard",
+                "task_id": "task-2",
+                "ok": False,
+                "error_text": "blocked",
+            },
+            source="guard",
+        )
+
+        self.assertEqual(event["cursor"], 1)
+        self.assertEqual(event["event_type"], "execution_guard")
+        self.assertEqual(event["runtime_phase"], "guard")
+        self.assertEqual(event["task_id"], "task-2")
+        self.assertEqual(event["payload"]["error_text"], "blocked")
+        self.assertEqual(channel.snapshot()["events"][0]["runtime_phase"], "guard")
+
+    def test_merge_runtime_event_streams_sorts_by_timestamp_envelope(self) -> None:
+        from core.runtime.event_stream import merge_runtime_event_streams
+
+        stream = merge_runtime_event_streams(
+            [{"timestamp": 3, "event_type": "third"}],
+            [{"timestamp": 1, "event_type": "first"}],
+            [{"timestamp": 2, "event_type": "second"}],
+        )
+
+        self.assertEqual([item["event_type"] for item in stream], ["first", "second", "third"])
+
+    def test_attach_runtime_event_stream_normalizes_existing_stream(self) -> None:
+        from core.runtime.event_stream import attach_runtime_event_stream
+
+        payload: Dict[str, Any] = {
+            "runtime_event_stream": [
+                {
+                    "event_type": "status",
+                    "runtime_mode": "execute",
+                    "task_id": "task-3",
+                    "status": "running",
+                }
+            ]
+        }
+
+        adapted = attach_runtime_event_stream(payload, source="existing")
+        stream = adapted.get("runtime_event_stream")
+
+        self.assertEqual(len(stream), 1)
+        self.assertEqual(stream[0]["runtime_phase"], "execute")
+        self.assertEqual(stream[0]["payload"]["status"], "running")
+        self.assertEqual(stream[0]["source"], "existing")
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
+
+def main() -> None:
+    EVENT_STREAM_PATH.write_text(EVENT_STREAM_CONTENT, encoding="utf-8")
+    TEST_PATH.write_text(TEST_CONTENT, encoding="utf-8")
+
+    print("[runtime-event-channel-bridge-v1] updated core/runtime/event_stream.py")
+    print("[runtime-event-channel-bridge-v1] created tests/test_runtime_event_channel_bridge_contract.py")
+
+
+if __name__ == "__main__":
+    main()
