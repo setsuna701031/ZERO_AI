@@ -2954,6 +2954,24 @@ class StepExecutor:
             normalized["result"]["runtime_mode"] = normalized["runtime_mode"]
             normalized["result"]["execution_trace"] = copy.deepcopy(normalized["execution_trace"])
 
+        try:
+            from core.runtime.payload_normalizer import normalize_runtime_adapter_payload
+
+            normalized["adapter_payload"] = normalize_runtime_adapter_payload(normalized)
+        except Exception:
+            normalized["adapter_payload"] = {
+                "ok": normalized.get("ok"),
+                "message": str(normalized.get("message") or ""),
+                "final_answer": str(normalized.get("final_answer") or ""),
+                "text": str(normalized.get("message") or normalized.get("final_answer") or ""),
+                "error_text": "",
+                "error_type": "",
+                "runtime_mode": str(normalized.get("runtime_mode") or ""),
+                "last_result": normalized.get("last_result") if isinstance(normalized.get("last_result"), dict) else None,
+                "execution_trace": copy.deepcopy(normalized.get("execution_trace")) if isinstance(normalized.get("execution_trace"), list) else [],
+                "raw": copy.deepcopy(normalized),
+            }
+
         return normalized
 
     def _merge_execution_traces(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
