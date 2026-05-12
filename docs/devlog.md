@@ -5902,3 +5902,105 @@ pause
 -> avoid moving stateful scheduler behavior into helper modules
 ```
 
+
+---
+
+## 2026-05-11 - Planning Parser Extraction Attempt rejected checkpoint
+
+This checkpoint records a rejected scheduler extraction attempt during the parsing-helper phase.
+
+The attempted target was:
+
+```text
+core/tasks/scheduler_core/planning_parser_helpers.py
+```
+
+Candidate helpers inspected:
+
+```text
+_normalize_verify_step
+_extract_function_name_for_fix
+_try_plan_read_file
+```
+
+### Result
+
+The extraction was reverted.
+
+No source code changes were committed.
+
+The repository returned to:
+
+```text
+working tree clean
+```
+
+### Why it was rejected
+
+The attempted extraction used an automated AST/unparse script.
+
+That approach proved unsafe for this candidate group because the target helper bodies contain Chinese patterns / Chinese keyword strings and planner-facing regex logic.
+
+The generated helper file showed encoding damage / broken string content in planner parsing logic.
+
+This was unacceptable because the affected helpers sit near:
+
+```text
+verify-step normalization
+function-repair targeting
+read-file planning intent
+planner / step-schema semantics
+```
+
+### Boundary preserved
+
+The revert preserved:
+
+```text
+No scheduler.py behavior change
+No planner behavior change
+No verify-step parser change
+No command/read/write planning change
+No StepExecutor change
+No ExecutionGuard change
+No transaction / verify / rollback change
+```
+
+### Rule added
+
+Do not use automated AST/unparse extraction for scheduler helpers that contain:
+
+```text
+Chinese strings
+localized command keywords
+planner intent patterns
+regex-heavy semantic parsing
+step-schema construction
+repair targeting rules
+```
+
+Those helpers require manual full-file extraction, exact string preservation, and dedicated regression tests.
+
+### Next step
+
+Do not retry this extraction immediately.
+
+Before touching this area again:
+
+```text
+1. Print the exact source bodies.
+2. Manually preserve all string literals.
+3. Add or identify planner/parser regression coverage.
+4. Extract only one narrow helper group.
+5. Compile and run StepExecutor smoke.
+6. Prefer full-file overwrite over patch fragments.
+```
+
+Current conclusion:
+
+```text
+pure_helpers extraction: accepted
+path_parser_helpers extraction: accepted
+planning_parser_helpers extraction: rejected / reverted
+```
+
