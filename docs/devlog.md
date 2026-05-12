@@ -6127,3 +6127,171 @@ do not force runtime code to satisfy imagined contracts
 
 The previous failed expansion attempt showed that runtime contract tests must describe the existing stable contract first, not an idealized future contract.
 
+---
+
+## 2026-05-11 - Regression Coverage Phase v2 checkpoint
+
+This checkpoint records the stabilization of the scheduler/runtime regression safety layer after the earlier parser-helper extraction work.
+
+The goal of this phase was not to expand capability. The goal was to establish repeatable regression contracts before continuing deeper scheduler decomposition.
+
+### What was completed
+
+Added and stabilized regression coverage for:
+
+* scheduler parser helpers
+* runtime execution result normalization
+* scheduler extraction boundary protection
+
+Added:
+
+* `tests/test_scheduler_parser_helpers.py`
+* `tests/test_runtime_execution_contracts.py`
+* `tests/test_scheduler_extraction_boundary.py`
+* `tests/run_regression_contracts.py`
+
+### Regression contracts established
+
+The regression runner now validates:
+
+```text
+tests/test_scheduler_parser_helpers.py
+tests/test_runtime_execution_contracts.py
+tests/test_scheduler_extraction_boundary.py
+```
+
+The consolidated regression gate is:
+
+```text
+python tests/run_regression_contracts.py
+```
+
+### Parser helper coverage
+
+Validated extraction/runtime helper behavior for:
+
+```text
+_extract_python_file_paths
+_is_shared_like_path
+_strip_markdown_code_fences
+_extract_all_document_file_paths
+_extract_document_arrow_paths
+_normalize_verify_step
+_extract_function_name_for_fix
+_try_plan_read_file
+```
+
+Confirmed helper extraction preserves existing scheduler behavior.
+
+### Runtime execution contracts
+
+Validated execution result normalization for:
+
+```text
+unsupported step type
+failure indexing
+success normalization
+empty execute_steps flow
+```
+
+The runtime contract layer now guarantees deterministic result envelopes for regression validation.
+
+### Scheduler extraction boundary coverage
+
+Validated scheduler extraction boundaries to ensure:
+
+```text
+helper modules remain stateless
+no queue mutation leaks
+no runtime side effects
+no scheduler execution coupling
+```
+
+The extraction boundary suite protects against accidental responsibility drift while future helper extraction continues.
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/test_scheduler_parser_helpers.py
+python tests/test_runtime_execution_contracts.py
+python tests/test_scheduler_extraction_boundary.py
+python tests/run_regression_contracts.py
+```
+
+Observed result:
+
+```text
+[regression] ALL PASS: 3 test files
+```
+
+### Why this matters
+
+This checkpoint is important because the project is entering a dangerous stage:
+
+```text
+large scheduler decomposition
++
+runtime extraction
++
+behavior preservation
+```
+
+Without regression contracts, future helper extraction risks silently breaking:
+
+* parser behavior
+* execution normalization
+* runtime envelopes
+* scheduler orchestration assumptions
+
+This phase creates a repeatable safety gate before larger decomposition continues.
+
+### Stable checkpoint after this pass
+
+* parser helper regression coverage: working
+* runtime execution contract coverage: working
+* extraction boundary coverage: working
+* consolidated regression runner: working
+* regression replay path: stable
+* scheduler decomposition safety baseline: improved
+
+### Git checkpoints
+
+Committed and pushed:
+
+```text
+8633fe6 - test: add scheduler and runtime regression contracts
+4063c09 - test: add scheduler extraction boundary regression coverage
+8d4ca42 - docs: record regression coverage phase v1
+```
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `ALL PASS: 3 test files`
+* parser helper suite passing
+* runtime execution contract suite passing
+* extraction boundary suite passing
+* clean git status after regression run
+
+### Next step
+
+Do not aggressively extract more scheduler logic yet.
+
+Recommended next phase:
+
+```text
+Scheduler Runtime Contract Stabilization
+```
+
+Priority:
+
+```text
+protect runtime envelopes
+protect task lifecycle contracts
+protect scheduler orchestration boundaries
+expand deterministic regression coverage first
+```
+
