@@ -4,6 +4,11 @@ import copy
 import time
 from typing import Any, Dict, List
 
+from core.runtime.event_normalizer import (
+    normalize_runtime_event_envelope,
+    normalize_runtime_event_stream_envelope,
+)
+
 
 def normalize_runtime_event(event: Any, *, source: str = "") -> Dict[str, Any]:
     if not isinstance(event, dict):
