@@ -5670,3 +5670,120 @@ transactional engineering runtime
 The important result is not only patch execution.
 
 The important result is that execution, verification, rollback, replay, and future governance layers now have a deterministic runtime boundary instead of being mixed directly into scheduler logic.
+
+---
+
+## 2026-05-11 - Scheduler Pure Helper Extraction checkpoint
+
+This checkpoint records the first safe scheduler extraction passes after the runtime transaction / verification boundary seal.
+
+The goal was not to broadly split `core/tasks/scheduler.py`.
+
+The goal was to prove that a small, low-risk extraction path can move pure helper logic into `scheduler_core/` without changing runtime behavior, task lifecycle semantics, execution dispatch, queue behavior, or the recently sealed transaction / verify / rollback chain.
+
+### What was completed
+
+Added:
+
+* `core/tasks/scheduler_core/pure_helpers.py`
+
+Extracted pure helper logic from `core/tasks/scheduler.py`:
+
+* `_safe_int_for_runtime_gate`
+* `_extract_task_id`
+* `_strip_quotes`
+* `_extract_file_path`
+* `_canonicalize_steps_for_compare`
+
+Completed commits:
+
+```text
+08b2d22 - refactor: extract scheduler pure helpers
+de839f5 - refactor: extract scheduler canonicalize helper
+```
+
+### Boundary preserved
+
+This extraction intentionally did not touch:
+
+```text
+NO execution dispatch extraction
+NO queue lifecycle extraction
+NO task state transition rewrite
+NO planner fallback rewrite
+NO repair / replan chain extraction
+NO transaction / verify / rollback changes
+NO StepExecutor changes
+NO ExecutionGuard changes
+NO runtime mutation behavior changes
+```
+
+Scheduler still remains the orchestration surface.
+
+The new helper module is limited to pure utility behavior and must remain free of:
+
+```text
+Scheduler state
+StepExecutor
+ExecutionGuard
+transaction logic
+verify logic
+rollback logic
+queue mutation
+persistence side effects
+```
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python -m py_compile core/tasks/scheduler.py core/tasks/scheduler_core/pure_helpers.py
+python tests/test_step_executor.py
+```
+
+Observed result:
+
+```text
+PASS: test_step_executor.py
+working tree clean
+```
+
+### Why this matters
+
+This is the first real scheduler extraction after the runtime seal.
+
+It matters because it proves that scheduler reduction can proceed through small, reversible, behavior-preserving steps instead of large risky rewrites.
+
+The first attempted broader extraction correctly stopped when helper candidates were found to still reference scheduler state. The final accepted extraction only moved helpers with no `self` dependency and no repair / replan / transaction coupling.
+
+### Stable checkpoint after this pass
+
+* `pure_helpers.py`: added
+* small pure helper extraction: working
+* scheduler import / wrapper forwarding: working
+* StepExecutor contract: preserved
+* unsupported step type contract: preserved
+* transaction / verify / rollback chain: untouched
+* main branch: clean and pushed
+
+### Next step
+
+Do not continue random helper extraction.
+
+The next extraction target must be selected only after confirming:
+
+```text
+no self state dependency
+no repair / replan coupling
+no transaction / verify / rollback coupling
+no queue lifecycle mutation
+no persistence write path
+```
+
+Recommended next move:
+
+```text
+pause extraction or perform another target scan before any third extraction
+```
+
