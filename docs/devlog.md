@@ -5787,3 +5787,118 @@ Recommended next move:
 pause extraction or perform another target scan before any third extraction
 ```
 
+
+---
+
+## 2026-05-11 - Scheduler Path Parser Helper Extraction checkpoint
+
+This checkpoint records the safe extraction of path/text parser helper logic from:
+
+```text
+core/tasks/scheduler.py
+```
+
+into:
+
+```text
+core/tasks/scheduler_core/path_parser_helpers.py
+```
+
+### What was extracted
+
+The following helper functions were moved out of the main scheduler orchestration shell:
+
+* `_extract_python_file_paths`
+* `_is_shared_like_path`
+* `_strip_markdown_code_fences`
+* `_extract_all_document_file_paths`
+* `_extract_document_arrow_paths`
+
+The extraction preserved the scheduler boundary:
+
+```text
+scheduler = orchestration shell
+path_parser_helpers = pure parsing / normalization helpers
+```
+
+### Boundary preserved
+
+This extraction intentionally did not modify:
+
+```text
+queue lifecycle
+execution dispatch
+repair / replan flow
+transaction logic
+verify / rollback logic
+StepExecutor behavior
+ExecutionGuard behavior
+```
+
+The extracted helper module remains free of:
+
+```text
+Scheduler state mutation
+queue mutation
+execution dispatch
+transaction side effects
+verify / rollback side effects
+persistence side effects
+```
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python -m py_compile core/tasks/scheduler.py core/tasks/scheduler_core/path_parser_helpers.py core/tasks/scheduler_core/pure_helpers.py
+python tests/test_step_executor.py
+```
+
+Observed result:
+
+```text
+PASS: test_step_executor.py
+working tree clean
+```
+
+### Git checkpoint
+
+Committed and pushed on `main`:
+
+```text
+6f5800b - refactor: extract scheduler path parser helpers
+```
+
+### Why this matters
+
+This pass continues the scheduler responsibility-reduction work without destabilizing runtime behavior.
+
+The important result is not user-facing capability. The important result is that parser / normalization logic is no longer accumulating inside the main scheduler orchestration file.
+
+This reduces future refactor risk and keeps extraction boundaries explicit:
+
+```text
+scheduler = orchestration
+helpers = deterministic utility behavior
+```
+
+### Stable checkpoint after this pass
+
+* path parser helper extraction: working
+* scheduler compile validation: working
+* StepExecutor regression: PASS
+* runtime behavior unchanged
+* working tree clean after validation
+
+### Next step
+
+Before additional extraction passes:
+
+```text
+pause
+-> regression validation
+-> inspect next extraction target carefully
+-> avoid moving stateful scheduler behavior into helper modules
+```
+
