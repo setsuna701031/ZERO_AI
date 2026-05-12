@@ -310,7 +310,7 @@ class StepExecutor:
             previous_result = result
 
             if not result.get("ok", False):
-                return {
+                aggregate_result = {
                     "ok": False,
                     "summary": "step execution failed",
                     "message": self._extract_step_message(result, failed=True),
@@ -323,9 +323,10 @@ class StepExecutor:
                     "error": copy.deepcopy(result.get("error")),
                     "execution_trace": self._merge_execution_traces(results),
                 }
+                return self._attach_adapter_payload(aggregate_result)
 
         last_result = copy.deepcopy(results[-1]) if results else None
-        return {
+        aggregate_result = {
             "ok": True,
             "summary": "all steps executed",
             "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
@@ -338,6 +339,7 @@ class StepExecutor:
             "error": None,
             "execution_trace": self._merge_execution_traces(results),
         }
+        return self._attach_adapter_payload(aggregate_result)
 
     def resolve_write_path(
         self,
@@ -2941,18 +2943,8 @@ class StepExecutor:
 
         return [event]
 
-    def _attach_execution_trace(self, step: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+    def _attach_adapter_payload(self, result: Dict[str, Any]) -> Dict[str, Any]:
         normalized = copy.deepcopy(result)
-        normalized["runtime_mode"] = self._normalize_runtime_mode(
-            normalized.get("runtime_mode")
-            or (step.get("runtime_mode") if isinstance(step, dict) else "")
-            or "execute"
-        )
-        normalized["execution_trace"] = self._build_execution_trace(step, normalized)
-
-        if isinstance(normalized.get("result"), dict):
-            normalized["result"]["runtime_mode"] = normalized["runtime_mode"]
-            normalized["result"]["execution_trace"] = copy.deepcopy(normalized["execution_trace"])
 
         try:
             from core.runtime.payload_normalizer import normalize_runtime_adapter_payload
@@ -2973,6 +2965,21 @@ class StepExecutor:
             }
 
         return normalized
+
+    def _attach_execution_trace(self, step: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = copy.deepcopy(result)
+        normalized["runtime_mode"] = self._normalize_runtime_mode(
+            normalized.get("runtime_mode")
+            or (step.get("runtime_mode") if isinstance(step, dict) else "")
+            or "execute"
+        )
+        normalized["execution_trace"] = self._build_execution_trace(step, normalized)
+
+        if isinstance(normalized.get("result"), dict):
+            normalized["result"]["runtime_mode"] = normalized["runtime_mode"]
+            normalized["result"]["execution_trace"] = copy.deepcopy(normalized["execution_trace"])
+
+        return self._attach_adapter_payload(normalized)
 
     def _merge_execution_traces(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         merged: List[Dict[str, Any]] = []
