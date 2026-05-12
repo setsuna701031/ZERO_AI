@@ -138,3 +138,84 @@ def merge_runtime_event_streams(*streams: Any) -> List[Dict[str, Any]]:
                 merged.append(normalize_runtime_event(event, source=str(event.get("source") or "runtime")))
 
     return sorted(merged, key=lambda item: float(item.get("ts") or 0))
+
+
+class RuntimeEventChannel:
+    """
+    Append-only in-memory runtime event channel.
+
+    This is intentionally small:
+    - no websocket yet
+    - no UI dependency
+    - no scheduler dependency
+    - stores normalized runtime events only
+    """
+
+    def __init__(self) -> None:
+        self._events: List[Dict[str, Any]] = []
+        self._cursor: int = 0
+
+    def append_event(self, event: Any, *, source: str = "runtime") -> Dict[str, Any]:
+        normalized = normalize_runtime_event(event, source=source)
+        self._cursor += 1
+        normalized["cursor"] = self._cursor
+        self._events.append(copy.deepcopy(normalized))
+        return copy.deepcopy(normalized)
+
+    def append_events(self, events: Any, *, source: str = "runtime") -> List[Dict[str, Any]]:
+        if isinstance(events, dict):
+            if isinstance(events.get("runtime_event_stream"), list):
+                events = events.get("runtime_event_stream")
+            elif isinstance(events.get("events"), list):
+                events = runtime_event_stream_from_trace(events, source=source)
+            else:
+                events = runtime_event_stream_from_adapter_payload(events, source=source)
+
+        if not isinstance(events, list):
+            return []
+
+        appended: List[Dict[str, Any]] = []
+        for event in events:
+            if isinstance(event, dict):
+                appended.append(self.append_event(event, source=source))
+        return appended
+
+    def snapshot(self, *, limit: int | None = None) -> Dict[str, Any]:
+        events = copy.deepcopy(self._events)
+        if isinstance(limit, int) and limit >= 0:
+            events = events[-limit:]
+
+        return {
+            "ok": True,
+            "runtime_mode": "event_channel",
+            "cursor": self._cursor,
+            "event_count": len(self._events),
+            "events": events,
+        }
+
+    def events_since(self, cursor: int = 0, *, limit: int | None = None) -> Dict[str, Any]:
+        try:
+            cursor_value = int(cursor)
+        except Exception:
+            cursor_value = 0
+
+        events = [event for event in self._events if int(event.get("cursor", 0) or 0) > cursor_value]
+        if isinstance(limit, int) and limit >= 0:
+            events = events[:limit]
+
+        return {
+            "ok": True,
+            "runtime_mode": "event_channel",
+            "cursor": self._cursor,
+            "from_cursor": cursor_value,
+            "event_count": len(events),
+            "events": copy.deepcopy(events),
+        }
+
+    def latest_cursor(self) -> int:
+        return int(self._cursor)
+
+    def clear(self) -> None:
+        self._events = []
+        self._cursor = 0
+
