@@ -113,6 +113,13 @@ from core.tasks.scheduler_core.pure_helpers import (
     _extract_file_path as _scheduler_helper_extract_file_path,
     _canonicalize_steps_for_compare as _scheduler_helper_canonicalize_steps_for_compare,
 )
+from core.tasks.scheduler_core.path_parser_helpers import (
+    _extract_python_file_paths as _scheduler_path_parser_helper_extract_python_file_paths,
+    _is_shared_like_path as _scheduler_path_parser_helper_is_shared_like_path,
+    _strip_markdown_code_fences as _scheduler_path_parser_helper_strip_markdown_code_fences,
+    _extract_all_document_file_paths as _scheduler_path_parser_helper_extract_all_document_file_paths,
+    _extract_document_arrow_paths as _scheduler_path_parser_helper_extract_document_arrow_paths,
+)
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
 
@@ -5350,18 +5357,11 @@ class Scheduler(RuntimeTaskScheduler):
             },
         }
 
-    def _extract_python_file_paths(self, text: str) -> List[str]:
-        results: List[str] = []
-        pattern = r"\b([A-Za-z0-9_\-./\\]+?\.py)\b"
-        for match in re.finditer(pattern, str(text or "")):
-            value = str(match.group(1)).strip().replace("\\", "/")
-            if value and value not in results:
-                results.append(value)
-        return results
+    def _extract_python_file_paths(self, *args, **kwargs):
+        return _scheduler_path_parser_helper_extract_python_file_paths(*args, **kwargs)
 
-    def _is_shared_like_path(self, path: str) -> bool:
-        normalized = str(path or "").replace("\\", "/").lstrip("./")
-        return normalized.startswith("workspace/shared/") or normalized.startswith("shared/")
+    def _is_shared_like_path(self, *args, **kwargs):
+        return _scheduler_path_parser_helper_is_shared_like_path(*args, **kwargs)
 
     def _find_python_file_containing_function(self, function_name: str) -> str:
         name = str(function_name or "").strip()
@@ -5622,22 +5622,8 @@ class Scheduler(RuntimeTaskScheduler):
             "edit_mode": edit_mode,
         }
 
-    def _strip_markdown_code_fences(self, content: str) -> str:
-        text = str(content or "")
-        stripped = text.strip()
-        if not stripped.startswith("```"):
-            return text
-
-        lines = text.splitlines(keepends=True)
-        if not lines:
-            return text
-
-        first = lines[0].strip().lower()
-        if first.startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        return "".join(lines)
+    def _strip_markdown_code_fences(self, *args, **kwargs):
+        return _scheduler_path_parser_helper_strip_markdown_code_fences(*args, **kwargs)
 
     def _resolve_code_edit_abs_path(self, path: str, task_dir: str) -> str:
         normalized = str(path or "").strip().replace("\\", "/")
@@ -6356,37 +6342,11 @@ class Scheduler(RuntimeTaskScheduler):
         }
 
 
-    def _extract_all_document_file_paths(self, text: str) -> List[str]:
-        if not text:
-            return []
+    def _extract_all_document_file_paths(self, *args, **kwargs):
+        return _scheduler_path_parser_helper_extract_all_document_file_paths(*args, **kwargs)
 
-        results: List[str] = []
-        pattern = r"\b([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b"
-        for match in re.finditer(pattern, text):
-            value = str(match.group(1)).strip()
-            if value and value not in results:
-                results.append(value)
-        return results
-
-    def _extract_document_arrow_paths(self, text: str) -> Optional[Tuple[str, str]]:
-        stripped = str(text or "").strip()
-        if not stripped:
-            return None
-
-        match = re.search(
-            r"([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\s*->\s*([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))",
-            stripped,
-            flags=re.IGNORECASE,
-        )
-        if not match:
-            return None
-
-        source_path = str(match.group(1)).strip()
-        output_path = str(match.group(2)).strip()
-        if not source_path or not output_path:
-            return None
-
-        return source_path, output_path
+    def _extract_document_arrow_paths(self, *args, **kwargs):
+        return _scheduler_path_parser_helper_extract_document_arrow_paths(*args, **kwargs)
 
     def _extract_document_source_path(self, text: str, all_paths: List[str]) -> str:
         stripped = str(text or "").strip()
