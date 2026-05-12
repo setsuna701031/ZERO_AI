@@ -770,7 +770,7 @@ class ExecutionGuard:
     def _allow(self, **extra: Any) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"ok": True}
         payload.update(extra)
-        return payload
+        return self._attach_guard_observability_event(payload)
 
     def _deny(self, error: str, **extra: Any) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
@@ -778,6 +778,46 @@ class ExecutionGuard:
             "error": str(error or "blocked by execution guard"),
         }
         payload.update(extra)
+        return self._attach_guard_observability_event(payload)
+
+    def _attach_guard_observability_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return payload
+
+        if isinstance(payload.get("observability_event"), dict):
+            return payload
+
+        ok = bool(payload.get("ok", False))
+        guard_mode = str(payload.get("guard_mode") or ("allowed" if ok else "blocked"))
+        policy_action = str(payload.get("policy_action") or ("allow" if ok else "deny"))
+        policy_reason = str(payload.get("policy_reason") or payload.get("error") or "")
+
+        event = {
+            "event_type": "execution_guard",
+            "ok": ok,
+            "guard_mode": guard_mode,
+            "policy_action": policy_action,
+            "policy_reason": policy_reason,
+            "error_text": "" if ok else str(payload.get("error") or ""),
+            "runtime_mode": str(payload.get("runtime_mode") or "guard"),
+        }
+
+        payload["observability_event"] = event
+
+        if "adapter_payload" not in payload:
+            payload["adapter_payload"] = {
+                "ok": ok,
+                "message": policy_reason or ("guard allowed" if ok else "guard blocked"),
+                "final_answer": policy_reason or ("guard allowed" if ok else "guard blocked"),
+                "text": policy_reason or ("guard allowed" if ok else "guard blocked"),
+                "error_text": "" if ok else str(payload.get("error") or policy_reason or ""),
+                "error_type": "" if ok else guard_mode,
+                "runtime_mode": "guard",
+                "last_result": {},
+                "execution_trace": [event],
+                "raw": dict(payload),
+            }
+
         return payload
 
 
