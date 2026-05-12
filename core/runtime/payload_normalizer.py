@@ -88,6 +88,8 @@ def extract_runtime_text(value: Any) -> str:
 def extract_runtime_error_text(value: Any) -> str:
     payload = _as_mapping(value)
     if payload is None:
+        if isinstance(value, str):
+            return value.strip()
         return ""
 
     error = _as_mapping(payload.get("error"))

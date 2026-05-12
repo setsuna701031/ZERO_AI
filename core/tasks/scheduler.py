@@ -4817,48 +4817,53 @@ class Scheduler(RuntimeTaskScheduler):
         return ""
 
     def _extract_error_text_deep(self, value: Any, depth: int = 0) -> str:
-        if depth > 8 or value in (None, "", [], {}):
+        try:
+            from core.runtime.payload_normalizer import extract_runtime_error_text
+
+            return extract_runtime_error_text(value)
+        except Exception:
+            if depth > 8 or value in (None, "", [], {}):
+                return ""
+
+            if isinstance(value, str):
+                return value.strip()
+
+            if isinstance(value, dict):
+                error = value.get("error")
+                if isinstance(error, dict):
+                    message = error.get("message")
+                    if isinstance(message, str) and message.strip():
+                        return message.strip()
+                elif isinstance(error, str) and error.strip():
+                    return error.strip()
+
+                for key in (
+                    "last_error",
+                    "failure_message",
+                    "message",
+                    "final_answer",
+                    "stderr",
+                    "output_text",
+                    "summary_text",
+                    "content",
+                    "text",
+                ):
+                    item = value.get(key)
+                    if isinstance(item, str) and item.strip():
+                        return item.strip()
+
+                for key in ("result", "last_step_result", "task", "raw_result", "runner_result"):
+                    text = self._extract_error_text_deep(value.get(key), depth + 1)
+                    if text:
+                        return text
+
+            if isinstance(value, list):
+                for item in reversed(value):
+                    text = self._extract_error_text_deep(item, depth + 1)
+                    if text:
+                        return text
+
             return ""
-
-        if isinstance(value, str):
-            return value.strip()
-
-        if isinstance(value, dict):
-            error = value.get("error")
-            if isinstance(error, dict):
-                message = error.get("message")
-                if isinstance(message, str) and message.strip():
-                    return message.strip()
-            elif isinstance(error, str) and error.strip():
-                return error.strip()
-
-            for key in (
-                "last_error",
-                "failure_message",
-                "message",
-                "final_answer",
-                "stderr",
-                "output_text",
-                "summary_text",
-                "content",
-                "text",
-            ):
-                item = value.get(key)
-                if isinstance(item, str) and item.strip():
-                    return item.strip()
-
-            for key in ("result", "last_step_result", "task", "raw_result", "runner_result"):
-                text = self._extract_error_text_deep(value.get(key), depth + 1)
-                if text:
-                    return text
-
-        if isinstance(value, list):
-            for item in reversed(value):
-                text = self._extract_error_text_deep(item, depth + 1)
-                if text:
-                    return text
-
-        return ""
 
     def _is_fatal_failure_text(self, text: str) -> bool:
         lowered = str(text or "").strip().lower()
