@@ -219,3 +219,37 @@ def extract_runtime_failure_text(task: Any, runner_result: Any = None) -> str:
 
     return ""
 
+def normalize_runtime_adapter_payload(value: Any) -> Dict[str, Any]:
+    payload = _as_mapping(value)
+    normalized = normalize_runtime_payload(value)
+
+    result: Dict[str, Any] = {
+        "ok": normalized.ok,
+        "message": normalized.message,
+        "final_answer": normalized.final_answer,
+        "text": normalized.text,
+        "error_text": normalized.error_text,
+        "error_type": normalized.error_type,
+        "runtime_mode": "",
+        "last_result": None,
+        "execution_trace": [],
+        "raw": value,
+    }
+
+    if payload is None:
+        return result
+
+    runtime_mode = _as_text(payload.get("runtime_mode"))
+    if runtime_mode:
+        result["runtime_mode"] = runtime_mode
+
+    last_result = payload.get("last_result")
+    if isinstance(last_result, dict):
+        result["last_result"] = last_result
+
+    trace = payload.get("execution_trace")
+    if isinstance(trace, list):
+        result["execution_trace"] = [item for item in trace if isinstance(item, dict)]
+
+    return result
+
