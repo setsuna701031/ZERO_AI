@@ -235,6 +235,165 @@ class TraceRuntime:
             "payload": dict(payload or {}),
         }
 
+
+    # ============================================================
+    # ZERO Runtime Aggregate Convergence v1.2
+    # Trace Runtime Aggregate Adapter Payload
+    # ============================================================
+
+    def attach_adapter_payload(self, payload: Any) -> Any:
+        if not isinstance(payload, dict):
+            return payload
+
+        if isinstance(payload.get("adapter_payload"), dict):
+            return payload
+
+        ok = bool(payload.get("ok", True))
+        message = self._adapter_str(
+            payload.get("message"),
+            "trace runtime ok" if ok else "trace runtime failed",
+        )
+        final_answer = self._adapter_str(payload.get("final_answer"), message)
+
+        adapter_payload = {
+            "ok": ok,
+            "message": message,
+            "final_answer": final_answer,
+            "text": final_answer or message,
+            "error_text": "" if ok else self._adapter_error_text(payload),
+            "error_type": "" if ok else self._adapter_error_type(payload),
+            "runtime_mode": self._adapter_runtime_mode(payload),
+            "last_result": self._adapter_copy_dict(payload.get("last_result")),
+            "execution_trace": self._adapter_execution_trace(payload),
+            "raw": copy.deepcopy(payload),
+        }
+
+        payload["adapter_payload"] = adapter_payload
+        return payload
+
+    def trace_adapter_payload(
+        self,
+        *,
+        ok: bool = True,
+        message: str = "",
+        final_answer: str = "",
+        runtime_mode: str = "trace",
+        execution_trace: Optional[list[dict[str, Any]]] = None,
+        last_result: Optional[Dict[str, Any]] = None,
+        error: Optional[Any] = None,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "ok": bool(ok),
+            "message": str(message or ("trace runtime ok" if ok else "trace runtime failed")),
+            "final_answer": str(final_answer or message or ("trace runtime ok" if ok else "trace runtime failed")),
+            "runtime_mode": str(runtime_mode or "trace"),
+            "execution_trace": copy.deepcopy(execution_trace) if isinstance(execution_trace, list) else [],
+            "last_result": copy.deepcopy(last_result) if isinstance(last_result, dict) else {},
+            "error": copy.deepcopy(error) if error is not None else None,
+        }
+
+        for key, value in extra.items():
+            if key not in payload:
+                payload[key] = copy.deepcopy(value)
+
+        return self.attach_adapter_payload(payload)
+
+    def trace_to_adapter_payload(self, trace: Any, *, message: str = "trace runtime ok") -> Dict[str, Any]:
+        if hasattr(trace, "to_dict") and callable(getattr(trace, "to_dict")):
+            trace_payload = trace.to_dict()
+        elif isinstance(trace, dict):
+            trace_payload = copy.deepcopy(trace)
+        elif isinstance(trace, list):
+            trace_payload = {"events": copy.deepcopy(trace)}
+        else:
+            trace_payload = {"events": []}
+
+        events = trace_payload.get("events")
+        if not isinstance(events, list):
+            events = []
+
+        payload = {
+            "ok": True,
+            "message": message,
+            "final_answer": message,
+            "runtime_mode": "trace",
+            "execution_trace": copy.deepcopy(events),
+            "last_result": copy.deepcopy(events[-1]) if events else {},
+            "trace": trace_payload,
+            "event_count": len(events),
+            "error": None,
+        }
+        return self.attach_adapter_payload(payload)
+
+    def _adapter_str(self, value: Any, default: str = "") -> str:
+        if value is None:
+            return default
+        text = str(value)
+        return text if text else default
+
+    def _adapter_copy_dict(self, value: Any) -> Dict[str, Any]:
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+        return {}
+
+    def _adapter_runtime_mode(self, payload: Dict[str, Any]) -> str:
+        for key in ("runtime_mode", "mode", "execution_mode"):
+            value = payload.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return "trace"
+
+    def _adapter_execution_trace(self, payload: Dict[str, Any]) -> list[dict[str, Any]]:
+        trace = payload.get("execution_trace")
+        if isinstance(trace, list):
+            return copy.deepcopy(trace)
+
+        trace_payload = payload.get("trace")
+        if isinstance(trace_payload, dict):
+            events = trace_payload.get("events")
+            if isinstance(events, list):
+                return copy.deepcopy(events)
+
+        return []
+
+    def _adapter_error_type(self, payload: Dict[str, Any]) -> str:
+        error = payload.get("error")
+        if isinstance(error, dict):
+            for key in ("type", "error_type", "code"):
+                value = error.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+            return "trace_runtime_error" if error else ""
+
+        if isinstance(error, str) and error.strip():
+            return "trace_runtime_error"
+
+        value = payload.get("error_type")
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+        return ""
+
+    def _adapter_error_text(self, payload: Dict[str, Any]) -> str:
+        error = payload.get("error")
+        if isinstance(error, dict):
+            for key in ("message", "error", "text"):
+                value = error.get(key)
+                if value is not None and str(value).strip():
+                    return str(value).strip()
+            return str(error) if error else ""
+
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+
+        for key in ("error_text", "message", "final_answer"):
+            value = payload.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+
+        return ""
+
     def _task_id(self, task: Dict[str, Any]) -> str:
         if not isinstance(task, dict):
             return "unknown_task"
