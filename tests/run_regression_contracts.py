@@ -10,6 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REGRESSION_TESTS = [
     Path("tests/test_scheduler_parser_helpers.py"),
     Path("tests/test_runtime_execution_contracts.py"),
+    Path("tests/test_scheduler_extraction_boundary.py"),
 ]
 
 
