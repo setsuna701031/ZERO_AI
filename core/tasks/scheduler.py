@@ -4780,41 +4780,49 @@ class Scheduler(RuntimeTaskScheduler):
         task: Optional[Dict[str, Any]],
         runner_result: Optional[Dict[str, Any]] = None,
     ) -> str:
-        candidates: List[Any] = []
+        try:
+            from core.runtime.payload_normalizer import extract_runtime_failure_text
 
-        if isinstance(runner_result, dict):
-            candidates.extend([
-                runner_result.get("last_error"),
-                runner_result.get("failure_message"),
-                runner_result.get("error"),
-                runner_result.get("message"),
-                runner_result.get("final_answer"),
-                runner_result.get("last_step_result"),
-                runner_result.get("result"),
-                runner_result.get("task"),
-            ])
+            return extract_runtime_failure_text(
+                task=task,
+                runner_result=runner_result,
+            )
+        except Exception:
+            candidates: List[Any] = []
 
-        if isinstance(task, dict):
-            candidates.extend([
-                task.get("last_error"),
-                task.get("failure_message"),
-                task.get("error"),
-                task.get("message"),
-                task.get("final_answer"),
-                task.get("last_step_result"),
-            ])
+            if isinstance(runner_result, dict):
+                candidates.extend([
+                    runner_result.get("last_error"),
+                    runner_result.get("failure_message"),
+                    runner_result.get("error"),
+                    runner_result.get("message"),
+                    runner_result.get("final_answer"),
+                    runner_result.get("last_step_result"),
+                    runner_result.get("result"),
+                    runner_result.get("task"),
+                ])
 
-            for key in ("step_results", "results", "execution_log"):
-                items = task.get(key)
-                if isinstance(items, list):
-                    candidates.extend(reversed(items[-5:]))
+            if isinstance(task, dict):
+                candidates.extend([
+                    task.get("last_error"),
+                    task.get("failure_message"),
+                    task.get("error"),
+                    task.get("message"),
+                    task.get("final_answer"),
+                    task.get("last_step_result"),
+                ])
 
-        for candidate in candidates:
-            text = self._extract_error_text_deep(candidate)
-            if text:
-                return text
+                for key in ("step_results", "results", "execution_log"):
+                    items = task.get(key)
+                    if isinstance(items, list):
+                        candidates.extend(reversed(items[-5:]))
 
-        return ""
+            for candidate in candidates:
+                text = self._extract_error_text_deep(candidate)
+                if text:
+                    return text
+
+            return ""
 
     def _extract_error_text_deep(self, value: Any, depth: int = 0) -> str:
         try:
