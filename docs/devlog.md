@@ -6295,3 +6295,116 @@ protect scheduler orchestration boundaries
 expand deterministic regression coverage first
 ```
 
+---
+
+## 2026-05-11 - Runtime Contract Hardening v1 checkpoint
+
+This checkpoint records the first hardening pass that converts `tests/test_step_executor.py` from a smoke/output inspection script into a runtime contract assertion layer.
+
+The goal was not to change runtime behavior.
+
+The goal was to lock the currently proven StepExecutor result envelopes so future runtime refactors do not silently break the execution contract.
+
+### What was completed
+
+Updated:
+
+```text
+tests/test_step_executor.py
+```
+
+The test now keeps its existing readable smoke output while adding explicit assertions for stable StepExecutor envelopes.
+
+### Contracts hardened
+
+The first locked contracts are:
+
+```text
+unsupported_step_type
+execute_steps failure envelope
+execute_steps empty envelope
+handler registration baseline
+```
+
+This intentionally avoids asserting unproven or imagined future contracts.
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/test_step_executor.py
+python tests/run_regression_contracts.py
+```
+
+Observed results:
+
+```text
+PASS: test_step_executor.py
+[regression] ALL PASS: 3 test files
+```
+
+### Git checkpoint
+
+Committed and pushed on `main`:
+
+```text
+c9807d9 - test: harden step executor runtime contracts
+```
+
+### Why this matters
+
+This checkpoint starts hardening the AER runtime envelope.
+
+Before this pass, `test_step_executor.py` printed useful diagnostic output, but important result-envelope behavior was not fully locked by assertions.
+
+After this pass, future StepExecutor changes must preserve the proven runtime contract for:
+
+```text
+unsupported step type behavior
+batch failure envelope
+empty batch success envelope
+basic handler availability
+```
+
+This protects the scheduler/runtime boundary because scheduler-side orchestration relies on stable execution result shapes.
+
+### Stable checkpoint after this pass
+
+* StepExecutor smoke: working
+* unsupported step type contract: asserted
+* execute_steps failure envelope: asserted
+* execute_steps empty envelope: asserted
+* regression gate: still passing
+* working tree clean after commit/push
+
+### Next step
+
+Continue contract hardening carefully.
+
+Do not assert idealized future behavior.
+
+Only harden runtime contracts after they are observed stable through:
+
+```text
+direct smoke output
+regression runner
+existing runtime behavior
+```
+
+Recommended next phase:
+
+```text
+Runtime Contract Hardening v2
+```
+
+Candidate scope:
+
+```text
+successful write/read/verify result envelope
+task lifecycle result envelope
+scheduler tick result envelope
+```
+
+Do not touch queue mutation or scheduler extraction in the same pass.
+
