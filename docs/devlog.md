@@ -6408,3 +6408,180 @@ scheduler tick result envelope
 
 Do not touch queue mutation or scheduler extraction in the same pass.
 
+---
+
+## 2026-05-11 - Runtime Contract Hardening v2 checkpoint
+
+This checkpoint records the second StepExecutor runtime contract hardening pass.
+
+The goal was not to add new runtime capability.
+
+The goal was to lock the currently proven successful execution envelope for the stable write/read/verify path.
+
+### What was completed
+
+Updated:
+
+```text
+tests/test_step_executor.py
+```
+
+The test now asserts the successful batch execution contract for:
+
+```text
+write_file -> read_file -> verify
+```
+
+This complements the earlier v1 hardening pass that locked:
+
+```text
+unsupported_step_type
+execute_steps failure envelope
+execute_steps empty envelope
+handler registration baseline
+```
+
+### Successful path contract locked
+
+The successful runtime path now asserts:
+
+```text
+ok == True
+summary == all steps executed
+message == CONTRACT_OK
+final_answer == CONTRACT_OK
+step_count == 3
+completed_steps == 3
+failed_step == None
+error == None
+results length == 3
+last_result step_type == verify
+execution_trace length == 3
+```
+
+Each successful step result now asserts the stable shape for:
+
+```text
+runtime_mode
+step_type
+step_index
+step_count
+message
+final_answer
+error
+task_id
+step payload
+inner result payload
+execution_trace entry
+```
+
+### Step-specific contracts
+
+The write step asserts stable fields for:
+
+```text
+type == write_file
+path == workspace/shared/contract_ok.txt
+content == CONTRACT_OK
+scope == sandbox
+bytes == len(CONTRACT_OK)
+```
+
+The read step asserts stable fields for:
+
+```text
+type == read_file
+path == workspace/shared/contract_ok.txt
+content == CONTRACT_OK
+candidates exists
+full_path exists
+```
+
+The verify step asserts stable fields for:
+
+```text
+type == verify
+path == workspace/shared/contract_ok.txt
+content == CONTRACT_OK
+actual == True
+expected == CONTRACT_OK
+mode == contains
+candidates exists
+full_path exists
+```
+
+### What was intentionally not locked
+
+The test does not assert unstable environment-specific values such as:
+
+```text
+exact temp directory path
+exact Windows full_path prefix
+candidate ordering beyond list existence
+absolute filesystem path identity
+```
+
+This keeps the contract deterministic without overfitting to one local machine.
+
+### Validation confirmed
+
+Confirmed passing:
+
+```text
+python tests/test_step_executor.py
+python tests/run_regression_contracts.py
+```
+
+Observed result:
+
+```text
+PASS: test_step_executor.py
+[regression] ALL PASS: 3 test files
+```
+
+### Git checkpoint
+
+Committed and pushed on `main`:
+
+```text
+f57134d - test: harden successful runtime execution contracts
+```
+
+### Why this matters
+
+This checkpoint turns the successful StepExecutor path from a smoke-tested behavior into an asserted runtime contract.
+
+ZERO now has hard regression protection for both failure and success envelopes in the StepExecutor layer.
+
+This is important because scheduler-side orchestration depends on stable runtime result shapes. If a future runtime refactor changes these envelopes accidentally, the contract test should fail immediately instead of letting the breakage surface later inside scheduler or agent-loop behavior.
+
+### Stable checkpoint after this pass
+
+* unsupported runtime envelope: asserted
+* failure batch runtime envelope: asserted
+* empty batch runtime envelope: asserted
+* successful write/read/verify runtime envelope: asserted
+* execution_trace success shape: asserted
+* regression gate: still passing
+* working tree clean after commit/push
+
+### Next step
+
+Do not expand this into scheduler extraction yet.
+
+Recommended next phase:
+
+```text
+Scheduler Runtime Contract Mapping
+```
+
+Goal:
+
+```text
+identify which scheduler paths depend on StepExecutor result envelope fields
+document scheduler -> runtime assumptions
+only harden those assumptions after observing current behavior
+```
+
+Avoid mixing runtime contract mapping with broad scheduler refactoring in the same pass.
+
