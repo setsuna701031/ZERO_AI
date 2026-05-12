@@ -1,99 +1,232 @@
 from __future__ import annotations
 
+import inspect
+import pprint
 import sys
+import tempfile
 from pathlib import Path
-from pprint import pprint
+from typing import Any, Dict, List
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.runtime.step_executor import StepExecutor
+
+def _make_step_executor(workspace_root: Path) -> Any:
+    from core.runtime.step_executor import StepExecutor
+
+    signature = inspect.signature(StepExecutor)
+    kwargs: Dict[str, Any] = {}
+
+    if "workspace_root" in signature.parameters:
+        kwargs["workspace_root"] = workspace_root
+    if "workspace_dir" in signature.parameters:
+        kwargs["workspace_dir"] = workspace_root
+    if "runtime_store" in signature.parameters:
+        kwargs["runtime_store"] = None
+    if "tool_registry" in signature.parameters:
+        kwargs["tool_registry"] = None
+    if "llm_client" in signature.parameters:
+        kwargs["llm_client"] = None
+    if "debug" in signature.parameters:
+        kwargs["debug"] = False
+
+    return StepExecutor(**kwargs)
 
 
-def print_block(title: str, data) -> None:
-    print("\n" + "=" * 80)
+def _execute_step(executor: Any, step: Dict[str, Any], *, step_index: int | None = None, step_count: int | None = None) -> Dict[str, Any]:
+    if hasattr(executor, "execute_step"):
+        method = executor.execute_step
+    elif hasattr(executor, "run_step"):
+        method = executor.run_step
+    else:
+        raise AssertionError("StepExecutor has no execute_step/run_step method")
+
+    attempts = [
+        lambda: method(step, step_index=step_index, step_count=step_count),
+        lambda: method(step=step, step_index=step_index, step_count=step_count),
+        lambda: method(step),
+        lambda: method(step=step),
+    ]
+
+    last_error: TypeError | None = None
+    for call in attempts:
+        try:
+            result = call()
+            if not isinstance(result, dict):
+                raise AssertionError(f"execute_step returned non-dict result: {type(result)!r}")
+            return result
+        except TypeError as exc:
+            last_error = exc
+
+    raise AssertionError(f"Unable to call StepExecutor step method: {last_error}")
+
+
+def _execute_steps(executor: Any, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not hasattr(executor, "execute_steps"):
+        raise AssertionError("StepExecutor has no execute_steps method")
+
+    method = executor.execute_steps
+    attempts = [
+        lambda: method(steps),
+        lambda: method(steps=steps),
+    ]
+
+    last_error: TypeError | None = None
+    for call in attempts:
+        try:
+            result = call()
+            if not isinstance(result, dict):
+                raise AssertionError(f"execute_steps returned non-dict result: {type(result)!r}")
+            return result
+        except TypeError as exc:
+            last_error = exc
+
+    raise AssertionError(f"Unable to call StepExecutor.execute_steps: {last_error}")
+
+
+def _list_handlers(executor: Any) -> List[str]:
+    if hasattr(executor, "list_handlers"):
+        return sorted(str(x) for x in executor.list_handlers())
+    if hasattr(executor, "handlers"):
+        handlers = getattr(executor, "handlers", {})
+        if isinstance(handlers, dict):
+            return sorted(str(x) for x in handlers.keys())
+    return []
+
+
+def _print_section(title: str) -> None:
+    print()
+    print("=" * 80)
     print(title)
     print("=" * 80)
-    if isinstance(data, dict):
-        pprint(data, sort_dicts=False)
-    else:
-        print(data)
 
 
-def assert_true(condition: bool, message: str) -> None:
-    if not condition:
-        raise AssertionError(message)
+def _assert_unsupported_step_contract(result: Dict[str, Any]) -> None:
+    assert result.get("ok") is False
+    assert result.get("step_type") == "not_real_step"
+    assert result.get("runtime_mode") == "execute"
+    assert result.get("message") == "unsupported step type: not_real_step"
+    assert result.get("final_answer") == "unsupported step type: not_real_step"
+
+    error = result.get("error")
+    assert isinstance(error, dict)
+    assert error.get("type") == "unsupported_step_type"
+    assert error.get("message") == "unsupported step type: not_real_step"
+    assert error.get("retryable") is False
+
+    trace = result.get("execution_trace")
+    assert isinstance(trace, list)
+    assert len(trace) >= 1
+
+    first = trace[0]
+    assert first.get("step_type") == "not_real_step"
+    assert first.get("runtime_mode") == "execute"
+    assert first.get("ok") is False
+    assert first.get("message") == "unsupported step type: not_real_step"
+    assert first.get("final_answer") == "unsupported step type: not_real_step"
+    assert first.get("error_type") == "unsupported_step_type"
+    assert first.get("classification") is None
+    assert first.get("attempts") == 1
+    assert first.get("max_attempts") == 1
+    assert first.get("retry_used") is False
 
 
-def main() -> None:
-    executor = StepExecutor(debug=True)
+def _assert_execute_steps_failure_contract(result: Dict[str, Any]) -> None:
+    assert result.get("ok") is False
+    assert result.get("summary") == "step execution failed"
+    assert result.get("message") == "unsupported step type: not_real_step"
+    assert result.get("final_answer") == "unsupported step type: not_real_step"
+    assert result.get("step_count") == 2
+    assert result.get("completed_steps") == 0
+    assert result.get("failed_step") == 0
 
-    print("\n[StepExecutor Smoke Test]")
+    results = result.get("results")
+    assert isinstance(results, list)
+    assert len(results) == 1
+    _assert_unsupported_step_contract(results[0])
+    assert results[0].get("step_index") == 1
+    assert results[0].get("step_count") == 2
+
+    last_result = result.get("last_result")
+    assert isinstance(last_result, dict)
+    assert last_result.get("step_type") == "not_real_step"
+
+    error = result.get("error")
+    assert isinstance(error, dict)
+    assert error.get("type") == "unsupported_step_type"
+    assert error.get("retryable") is False
+
+    trace = result.get("execution_trace")
+    assert isinstance(trace, list)
+    assert len(trace) >= 1
+    assert trace[0].get("step_index") == 1
+    assert trace[0].get("error_type") == "unsupported_step_type"
+
+
+def _assert_execute_steps_empty_contract(result: Dict[str, Any]) -> None:
+    assert result == {
+        "ok": True,
+        "summary": "all steps executed",
+        "message": "執行完成",
+        "final_answer": "執行完成",
+        "step_count": 0,
+        "completed_steps": 0,
+        "failed_step": None,
+        "results": [],
+        "last_result": None,
+        "error": None,
+        "execution_trace": [],
+    }
+
+
+def main() -> int:
+    print("[StepExecutor Smoke Test]")
     print(f"project_root = {PROJECT_ROOT}")
 
-    # 1. list handlers
-    handlers = executor.list_handlers()
-    print_block("1. list_handlers", handlers)
+    with tempfile.TemporaryDirectory() as tmp:
+        executor = _make_step_executor(Path(tmp))
 
-    assert_true(isinstance(handlers, list), "handlers should be a list")
-    assert_true("write_file" in handlers, "write_file handler should exist")
-    assert_true("read_file" in handlers, "read_file handler should exist")
-    assert_true("command" in handlers, "command handler should exist")
-    assert_true("verify" in handlers, "verify handler should exist")
+        _print_section("1. list_handlers")
+        handlers = _list_handlers(executor)
+        pprint.pprint(handlers)
 
-    # 2. unsupported step type
-    result_unsupported = executor.execute_step({"type": "not_real_step"})
-    print_block("2. unsupported step type", result_unsupported)
+        assert "apply_patch" in handlers
+        assert "verify" in handlers
+        assert "read_file" in handlers
+        assert "write_file" in handlers
 
-    assert_true(result_unsupported["ok"] is False, "unsupported step should fail")
-    assert_true(result_unsupported["error"] is not None, "unsupported step should have error")
-    assert_true(
-        result_unsupported["error"]["type"] == "unsupported_step_type",
-        "unsupported step error type mismatch",
-    )
+        _print_section("2. unsupported step type")
+        unsupported_result = _execute_step(executor, {"type": "not_real_step"})
+        pprint.pprint(unsupported_result)
+        _assert_unsupported_step_contract(unsupported_result)
 
-    # 3. execute_steps with one failing step
-    result_batch_fail = executor.execute_steps(
-        steps=[
-            {"type": "not_real_step"},
-            {"type": "not_real_step_again"},
-        ],
-        task=None,
-        context=None,
-    )
-    print_block("3. execute_steps fail", result_batch_fail)
+        _print_section("3. execute_steps fail")
+        failed_batch_result = _execute_steps(
+            executor,
+            [
+                {"type": "not_real_step"},
+                {"type": "noop", "message": "should not run after unsupported step"},
+            ],
+        )
+        pprint.pprint(failed_batch_result)
+        _assert_execute_steps_failure_contract(failed_batch_result)
 
-    assert_true(result_batch_fail["ok"] is False, "batch with invalid step should fail")
-    assert_true(result_batch_fail["failed_step"] == 0, "failed_step should be 0")
-    assert_true(result_batch_fail["step_count"] == 2, "step_count should be 2")
-    assert_true(result_batch_fail["completed_steps"] == 0, "completed_steps should be 0")
-    assert_true(isinstance(result_batch_fail["results"], list), "results should be list")
-    assert_true(len(result_batch_fail["results"]) == 1, "batch should stop at first failed step")
+        _print_section("4. execute_steps empty")
+        empty_result = _execute_steps(executor, [])
+        pprint.pprint(empty_result)
+        _assert_execute_steps_empty_contract(empty_result)
 
-    # 4. execute_steps with empty steps
-    result_batch_empty = executor.execute_steps(
-        steps=[],
-        task=None,
-        context=None,
-    )
-    print_block("4. execute_steps empty", result_batch_empty)
-
-    assert_true(result_batch_empty["ok"] is True, "empty batch should succeed")
-    assert_true(result_batch_empty["step_count"] == 0, "empty batch step_count should be 0")
-    assert_true(result_batch_empty["completed_steps"] == 0, "empty batch completed_steps should be 0")
-    assert_true(result_batch_empty["failed_step"] is None, "empty batch failed_step should be None")
-    assert_true(result_batch_empty["error"] is None, "empty batch error should be None")
-
-    print("\n" + "=" * 80)
-    print("驗收結論")
-    print("=" * 80)
+    _print_section("驗收結論")
     print("1. StepExecutor 可正常建立")
     print("2. unsupported step type 會回固定錯誤格式")
     print("3. execute_steps 失敗批次格式固定")
     print("4. execute_steps 空批次格式固定")
-    print("\nPASS: test_step_executor.py")
+    print()
+    print("PASS: test_step_executor.py")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
