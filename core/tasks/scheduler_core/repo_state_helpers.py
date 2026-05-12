@@ -259,6 +259,56 @@ def _repo_runtime_adapter_execution_trace(payload: Dict[str, Any]) -> List[Dict[
 
     return []
 
+
+# ============================================================
+# ZERO Runtime Observability Layer v1B
+# Failure / Retry Observability Envelope
+# ============================================================
+
+def build_failure_observability_event(
+    *,
+    event_type: str,
+    task: Dict[str, Any],
+    task_id: str = "",
+    error_text: str = "",
+    status: str = "",
+) -> Dict[str, Any]:
+    task_payload = task if isinstance(task, dict) else {}
+    resolved_task_id = str(
+        task_id
+        or task_payload.get("task_id")
+        or task_payload.get("id")
+        or task_payload.get("task_name")
+        or ""
+    ).strip()
+
+    resolved_status = str(status or task_payload.get("status") or "").strip().lower()
+    resolved_error = str(
+        error_text
+        or task_payload.get("last_error")
+        or task_payload.get("failure_message")
+        or ""
+    ).strip()
+
+    failure_type = str(
+        task_payload.get("failure_type")
+        or ("repo_task_failed" if resolved_status == "failed" else "repo_task_requeued")
+    ).strip()
+
+    event = {
+        "event_type": str(event_type or "repo_task_failure"),
+        "ok": False if resolved_status in {"failed", "error"} else True,
+        "task_id": resolved_task_id,
+        "status": resolved_status,
+        "failure_type": failure_type,
+        "error_text": resolved_error,
+        "runtime_mode": "repo_state",
+        "retry_count": int(task_payload.get("retry_count", 0) or 0),
+        "replan_count": int(task_payload.get("replan_count", 0) or 0),
+        "repair_fingerprint": str(task_payload.get("repair_fingerprint") or ""),
+    }
+    return event
+
 def extract_effective_status_and_answer(
     original_task: Optional[Dict[str, Any]],
     refreshed_task: Optional[Dict[str, Any]],
@@ -329,6 +379,13 @@ def mark_repo_task_failed(scheduler: Any, task_id: str, error: str = "") -> None
     task["last_failure_tick"] = getattr(scheduler, "current_tick", 0)
     task["scheduler_build"] = scheduler.SCHEDULER_BUILD if hasattr(scheduler, "SCHEDULER_BUILD") else getattr(scheduler, "scheduler_build", "")
     task["history"] = scheduler._append_history(task.get("history"), "failed")
+    task["observability_event"] = build_failure_observability_event(
+        event_type="repo_task_failed",
+        task=task,
+        task_id=task_id,
+        error_text=final_error,
+        status="failed",
+    )
 
     scheduler._persist_task_payload(task_id=task_id, task=task)
     scheduler.worker_pool.release_by_task(task_id)
@@ -356,6 +413,14 @@ def mark_repo_task_queued(scheduler: Any, task_id: str, error: str = "") -> None
         task["failure_message"] = ""
 
     task["history"] = scheduler._append_history(task.get("history"), "queued")
+    if final_error:
+        task["observability_event"] = build_failure_observability_event(
+            event_type="repo_task_requeued",
+            task=task,
+            task_id=task_id,
+            error_text=final_error,
+            status="queued",
+        )
     scheduler._persist_task_payload(task_id=task_id, task=task)
 
 
