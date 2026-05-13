@@ -11,6 +11,8 @@ import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+from core.runtime.event_stream import attach_runtime_event_stream
+
 from core.tasks.task_paths import TaskPathManager
 from core.runtime.step_handlers import (
     ToolStepHandler,
@@ -323,7 +325,9 @@ class StepExecutor:
                     "error": copy.deepcopy(result.get("error")),
                     "execution_trace": self._merge_execution_traces(results),
                 }
-                return self._attach_adapter_payload(aggregate_result)
+                aggregate_result = self._attach_adapter_payload(aggregate_result)
+                attach_runtime_event_stream(aggregate_result, source="step_executor")
+                return aggregate_result
 
         last_result = copy.deepcopy(results[-1]) if results else None
         aggregate_result = {
@@ -339,7 +343,9 @@ class StepExecutor:
             "error": None,
             "execution_trace": self._merge_execution_traces(results),
         }
-        return self._attach_adapter_payload(aggregate_result)
+        aggregate_result = self._attach_adapter_payload(aggregate_result)
+        attach_runtime_event_stream(aggregate_result, source="step_executor")
+        return aggregate_result
 
     def resolve_write_path(
         self,
