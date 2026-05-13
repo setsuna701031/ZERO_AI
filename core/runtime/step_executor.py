@@ -70,6 +70,7 @@ class StepExecutor:
         llm_client=None,
         workspace_root: str = "workspace",
         debug: bool = False,
+        evidence_adapter=None,
     ) -> None:
         self.tool_registry = tool_registry
         self.runtime_store = runtime_store
@@ -77,6 +78,7 @@ class StepExecutor:
         self.llm_client = llm_client
         self.workspace_root = os.path.abspath(workspace_root)
         self.debug = debug
+        self.evidence_adapter = evidence_adapter
 
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
@@ -183,6 +185,12 @@ class StepExecutor:
         if self.debug:
             print(f"[StepExecutor] step_type = {step_type}")
 
+        self._emit_evidence_before_step(
+            step=step_payload,
+            task=normalized_task,
+            step_type=step_type,
+        )
+
         handler = self.handlers.get(step_type)
         if handler is None:
             result = self._error_step_result(
@@ -192,7 +200,14 @@ class StepExecutor:
                 message=f"unsupported step type: {step_type}",
                 details={"supported_step_types": self.list_handlers()},
             )
-            return self._attach_execution_trace(raw_step, result)
+            traced_result = self._attach_execution_trace(raw_step, result)
+            self._emit_evidence_after_result(
+                step=step_payload,
+                task=normalized_task,
+                step_type=step_type,
+                result=traced_result,
+            )
+            return traced_result
 
         configured_max_attempts = self._safe_int(
             kwargs.get("max_attempts", step_payload.get("max_attempts", 3)),
@@ -255,7 +270,14 @@ class StepExecutor:
                     if isinstance(normalized_result.get("result"), dict):
                         normalized_result["result"]["retry"] = copy.deepcopy(normalized_result["retry"])
 
-                return self._attach_execution_trace(raw_step, normalized_result)
+                traced_result = self._attach_execution_trace(raw_step, normalized_result)
+                self._emit_evidence_after_result(
+                    step=current_step_payload,
+                    task=normalized_task,
+                    step_type=step_type,
+                    result=traced_result,
+                )
+                return traced_result
 
             last_result = normalized_result
 
@@ -281,7 +303,14 @@ class StepExecutor:
             max_attempts=configured_max_attempts,
         )
         retry_result["step"] = copy.deepcopy(raw_step or {})
-        return self._attach_execution_trace(raw_step, retry_result)
+        traced_retry_result = self._attach_execution_trace(raw_step, retry_result)
+        self._emit_evidence_after_result(
+            step=step_payload,
+            task=normalized_task,
+            step_type=step_type,
+            result=traced_retry_result,
+        )
+        return traced_retry_result
 
     def execute_steps(
         self,
@@ -346,6 +375,174 @@ class StepExecutor:
         aggregate_result = self._attach_adapter_payload(aggregate_result)
         attach_runtime_event_stream(aggregate_result, source="step_executor")
         return aggregate_result
+
+    def _emit_evidence_before_step(
+        self,
+        step: Dict[str, Any],
+        task: Dict[str, Any],
+        step_type: str,
+    ) -> None:
+        adapter = getattr(self, "evidence_adapter", None)
+        if adapter is None or not hasattr(adapter, "emit_before_step"):
+            return
+
+        try:
+            adapter.emit_before_step(
+                task_id=self._evidence_task_id(step=step, task=task),
+                step_id=self._evidence_step_id(step=step),
+                step_type=self._evidence_step_type(step_type=step_type),
+                metadata=self._evidence_metadata(step=step, task=task),
+                runtime_args=self._evidence_runtime_args(step=step),
+            )
+        except Exception:
+            return
+
+    def _emit_evidence_after_result(
+        self,
+        step: Dict[str, Any],
+        task: Dict[str, Any],
+        step_type: str,
+        result: Dict[str, Any],
+    ) -> None:
+        adapter = getattr(self, "evidence_adapter", None)
+        if adapter is None:
+            return
+
+        task_id = self._evidence_task_id(step=step, task=task)
+        step_id = self._evidence_step_id(step=step)
+        evidence_refs = self._evidence_refs(result=result)
+        metadata = self._evidence_metadata(step=step, task=task)
+        runtime_args = self._evidence_runtime_args(step=step)
+        normalized_step_type = self._evidence_step_type(step_type=step_type)
+
+        try:
+            if self._evidence_result_blocked(result) and hasattr(adapter, "emit_blocked"):
+                adapter.emit_blocked(
+                    task_id=task_id,
+                    step_id=step_id,
+                    step_type=normalized_step_type,
+                    reason=self._evidence_failure_reason(result),
+                    evidence_refs=evidence_refs,
+                    metadata=metadata,
+                    runtime_args=runtime_args,
+                )
+                return
+            if not bool(result.get("ok", False)) and hasattr(adapter, "emit_failure"):
+                adapter.emit_failure(
+                    task_id=task_id,
+                    step_id=step_id,
+                    step_type=normalized_step_type,
+                    error=self._evidence_failure_reason(result),
+                    evidence_refs=evidence_refs,
+                    metadata=metadata,
+                    runtime_args=runtime_args,
+                )
+                return
+            if hasattr(adapter, "emit_after_step"):
+                adapter.emit_after_step(
+                    task_id=task_id,
+                    step_id=step_id,
+                    step_type=normalized_step_type,
+                    step_result=copy.deepcopy(result),
+                    evidence_refs=evidence_refs,
+                    metadata=metadata,
+                    runtime_args=runtime_args,
+                )
+        except Exception:
+            return
+
+    def _evidence_task_id(self, step: Dict[str, Any], task: Dict[str, Any]) -> str:
+        for payload in (step, task):
+            if isinstance(payload, dict):
+                for key in ("task_id", "id", "taskId"):
+                    value = payload.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value.strip()
+        return "unknown_task"
+
+    def _evidence_step_id(self, step: Dict[str, Any]) -> str:
+        if isinstance(step, dict):
+            for key in ("step_id", "id", "stepId", "name"):
+                value = step.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            index = step.get("step_index")
+            if index is not None:
+                return str(index)
+        return "unknown_step"
+
+    def _evidence_step_type(self, step_type: str) -> str:
+        normalized = str(step_type or "").strip().lower()
+        return normalized if normalized else "unknown_step_type"
+
+    def _evidence_metadata(self, step: Dict[str, Any], task: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "step_metadata": copy.deepcopy(step.get("metadata"))
+            if isinstance(step, dict)
+            else None,
+            "task_metadata": copy.deepcopy(task.get("metadata"))
+            if isinstance(task, dict)
+            else None,
+        }
+
+    def _evidence_runtime_args(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "attempt": copy.deepcopy(step.get("attempt"))
+            if isinstance(step, dict)
+            else None,
+            "max_attempts": copy.deepcopy(step.get("max_attempts"))
+            if isinstance(step, dict)
+            else None,
+        }
+
+    def _evidence_refs(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        refs: Dict[str, Any] = {}
+        if isinstance(result, dict):
+            for key in (
+                "snapshot_id",
+                "replay_id",
+                "audit_id",
+                "rollback_id",
+                "bundle_id",
+                "evidence_refs",
+            ):
+                if key in result:
+                    refs[key] = copy.deepcopy(result.get(key))
+            nested = result.get("result")
+            if isinstance(nested, dict):
+                for key in (
+                    "snapshot_id",
+                    "replay_id",
+                    "audit_id",
+                    "rollback_id",
+                    "bundle_id",
+                    "evidence_refs",
+                ):
+                    if key in nested and key not in refs:
+                        refs[key] = copy.deepcopy(nested.get(key))
+        return refs
+
+    def _evidence_result_blocked(self, result: Dict[str, Any]) -> bool:
+        sources = [result]
+        if isinstance(result.get("result"), dict):
+            sources.append(result["result"])
+        for source in sources:
+            for key in ("status", "error", "error_type", "reason"):
+                value = str(source.get(key) or "").strip().lower()
+                if value in {"blocked", "denied"}:
+                    return True
+                if "blocked" in value or "denied" in value:
+                    return True
+        return False
+
+    def _evidence_failure_reason(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "ok": bool(result.get("ok", False)) if isinstance(result, dict) else False,
+            "status": copy.deepcopy(result.get("status")) if isinstance(result, dict) else None,
+            "error": copy.deepcopy(result.get("error")) if isinstance(result, dict) else None,
+            "error_type": copy.deepcopy(result.get("error_type")) if isinstance(result, dict) else None,
+            "message": copy.deepcopy(result.get("message")) if isinstance(result, dict) else None,
+        }
 
     def resolve_write_path(
         self,

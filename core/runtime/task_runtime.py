@@ -63,10 +63,12 @@ class TaskRuntime:
         workspace_root: str = "workspace",
         debug: bool = False,
         trace_log_filename: str = "task_runtime_trace.log",
+        evidence_adapter: Any = None,
     ) -> None:
         self.workspace_root = workspace_root
         self.debug = debug
         self.trace_log_filename = trace_log_filename
+        self.evidence_adapter = evidence_adapter
         self.state_machine = RuntimeStateMachine(debug=debug)
         self.audit = AuditLogger(workspace_root=self.workspace_root)
         self.state_guard = RuntimeStateGuard()
@@ -90,6 +92,7 @@ class TaskRuntime:
 
         state = self._build_initial_runtime_state(task)
         self._write_json(runtime_state_file, state)
+        self._emit_task_runtime_evidence("created", task=task, state=state)
         return state
 
     def load_runtime_state(self, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -161,13 +164,15 @@ class TaskRuntime:
             runtime_state_file=self._get_runtime_state_file(task),
         )
 
-        return {
+        result = {
             "ok": True,
             "status": "running",
             "task": copy.deepcopy(task),
             "runtime_state": state,
             **self._runtime_transition_metadata(state, "mark_running"),
         }
+        self._emit_task_runtime_evidence("started", task=task, state=state)
+        return result
 
     def advance_step(
         self,
@@ -209,12 +214,14 @@ class TaskRuntime:
                 runtime_state_file=self._get_runtime_state_file(task),
             )
 
-            return {
+            result = {
                 "ok": True,
                 "status": "finished",
                 "task": copy.deepcopy(task),
                 "runtime_state": state,
             }
+            self._emit_task_runtime_evidence("completed", task=task, state=state)
+            return result
 
         current_step = steps[idx] if isinstance(steps, list) and 0 <= idx < len(steps) else None
 
@@ -327,12 +334,17 @@ class TaskRuntime:
             runtime_state_file=self._get_runtime_state_file(task),
         )
 
-        return {
+        result = {
             "ok": True,
             "status": state.get("status", "running"),
             "task": copy.deepcopy(task),
             "runtime_state": state,
         }
+        if str(state.get("status") or "").strip().lower() in {"finished", "completed"}:
+            self._emit_task_runtime_evidence("completed", task=task, state=state)
+        else:
+            self._emit_task_runtime_evidence("started", task=task, state=state)
+        return result
 
     def record_step_failure(
         self,
@@ -449,12 +461,28 @@ class TaskRuntime:
             runtime_state_file=self._get_runtime_state_file(task),
         )
 
-        return {
+        result = {
             "ok": False,
             "status": state.get("status", "running"),
             "task": copy.deepcopy(task),
             "runtime_state": state,
         }
+        normalized_status = str(state.get("status") or "").strip().lower()
+        if normalized_status in {"failed", "error"}:
+            self._emit_task_runtime_evidence(
+                "failed",
+                task=task,
+                state=state,
+                error=sanitized_step_result.get("error"),
+            )
+        elif normalized_status in {"blocked", "denied", "replanning"}:
+            self._emit_task_runtime_evidence(
+                "blocked",
+                task=task,
+                state=state,
+                reason=state.get("last_error") or normalized_status,
+            )
+        return result
 
     def mark_finished(
         self,
@@ -529,7 +557,7 @@ class TaskRuntime:
             runtime_state_file=self._get_runtime_state_file(task),
         )
 
-        return {
+        result = {
             "ok": True,
             "status": "finished",
             "task": copy.deepcopy(task),
@@ -537,6 +565,8 @@ class TaskRuntime:
             "final_answer": state.get("final_answer", ""),
             **self._runtime_transition_metadata(state, "mark_finished"),
         }
+        self._emit_task_runtime_evidence("completed", task=task, state=state)
+        return result
 
 
     # ============================================================
@@ -605,7 +635,7 @@ class TaskRuntime:
             source="task_runtime",
         )
 
-        return {
+        result = {
             "ok": True,
             "status": state.get("status", "waiting_blocker"),
             "task": copy.deepcopy(task),
@@ -621,6 +651,22 @@ class TaskRuntime:
             "next_action": state.get("next_action", ""),
             "waiting_reason": state.get("waiting_reason", ""),
         }
+        requested_status = str(status or "").strip().lower()
+        current_status = str(state.get("status") or "").strip().lower()
+        if requested_status in {"blocked", "denied", "replanning"} or current_status in {
+            "blocked",
+            "denied",
+            "replanning",
+            "waiting_blocker",
+            "waiting_review",
+        }:
+            self._emit_task_runtime_evidence(
+                "blocked",
+                task=task,
+                state=state,
+                reason=state.get("waiting_reason") or requested_status or current_status,
+            )
+        return result
 
     def mark_waiting_review(
         self,
@@ -834,7 +880,7 @@ class TaskRuntime:
             source="task_runtime",
         )
 
-        return {
+        result = {
             "ok": False,
             "status": "failed",
             "failure_type": failure_type,
@@ -842,6 +888,13 @@ class TaskRuntime:
             "task": copy.deepcopy(task),
             "runtime_state": state,
         }
+        self._emit_task_runtime_evidence(
+            "failed",
+            task=task,
+            state=state,
+            error={"failure_type": failure_type, "message": failure_message},
+        )
+        return result
 
     # ============================================================
     # runtime ownership
@@ -917,6 +970,26 @@ class TaskRuntime:
             next_state = self.save_runtime_state(task, next_state)
             self._sync_task_from_runtime_state(task, next_state)
 
+        status_value = str(next_state.get("status") or "").strip().lower()
+        if status_value in {"running"}:
+            self._emit_task_runtime_evidence("started", task=task, state=next_state)
+        elif status_value in {"finished", "completed"}:
+            self._emit_task_runtime_evidence("completed", task=task, state=next_state)
+        elif status_value in {"failed", "error"}:
+            self._emit_task_runtime_evidence(
+                "failed",
+                task=task,
+                state=next_state,
+                error=next_state.get("last_error") or status_value,
+            )
+        elif status_value in {"blocked", "denied", "replanning"}:
+            self._emit_task_runtime_evidence(
+                "blocked",
+                task=task,
+                state=next_state,
+                reason=next_state.get("waiting_reason") or status_value,
+            )
+
         return next_state
 
     def _stamp_runtime_ownership(self, state: Dict[str, Any], *, owner: str, action: str) -> Dict[str, Any]:
@@ -933,6 +1006,49 @@ class TaskRuntime:
             "transition_owner": str((state or {}).get("last_transition_owner") or "task_runtime"),
             "transition_action": str((state or {}).get("last_transition_action") or action),
         }
+
+    def _emit_task_runtime_evidence(
+        self,
+        phase: str,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        error: Any = None,
+        reason: Any = None,
+    ) -> None:
+        adapter = getattr(self, "evidence_adapter", None)
+        if adapter is None:
+            return
+
+        phase_name = str(phase or "").strip().lower()
+        method_name = {
+            "created": "emit_created",
+            "started": "emit_started",
+            "completed": "emit_completed",
+            "failed": "emit_failed",
+            "blocked": "emit_blocked",
+        }.get(phase_name)
+        if not method_name:
+            return
+
+        method = getattr(adapter, method_name, None)
+        if not callable(method):
+            return
+
+        task_id = str((state or {}).get("task_id") or self._task_id(task)).strip()
+        runtime_status = str((state or {}).get("status") or "").strip()
+        if not runtime_status:
+            runtime_status = str((task or {}).get("status") or "unknown").strip()
+
+        try:
+            if phase_name == "failed":
+                method(task_id, runtime_status, error)
+            elif phase_name == "blocked":
+                method(task_id, runtime_status, reason)
+            else:
+                method(task_id, runtime_status)
+        except Exception:
+            return
 
     # ============================================================
     # utils
