@@ -674,6 +674,9 @@ def sync_runtime_back_to_repo(
     merged.setdefault("review_id", "")
     merged.setdefault("review_status", "")
     merged.setdefault("requires_review", False)
+    merged.setdefault("transaction_state", "")
+    merged.setdefault("allowed_next_action", "")
+    merged.setdefault("approval_required", bool(merged.get("requires_approval", False)))
     merged.setdefault("agent_action", "")
     if not isinstance(merged.get("review_payload"), dict):
         merged["review_payload"] = {}
