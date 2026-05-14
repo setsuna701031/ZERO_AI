@@ -12,6 +12,8 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Optional
 
 from core.tools.tool_router import ToolRouter
+from core.runtime.governed_repair_api import execute_governed_repair_mutation
+from core.runtime.mutation_session import MutationApprovalMode, MutationVerificationRequirement
 
 
 class BaseStepHandler:
@@ -264,6 +266,134 @@ class BaseStepHandler:
             return int(text)
         except Exception:
             return None
+
+
+class GovernedRepairMutationStepHandler(BaseStepHandler):
+    def handle(
+        self,
+        step: Dict[str, Any],
+        task: Optional[Dict[str, Any]],
+        context: Optional[Dict[str, Any]],
+        previous_result: Any,
+    ) -> Dict[str, Any]:
+        mutation = step.get("mutation")
+        if not isinstance(mutation, dict):
+            return self._error(
+                error_type="governed_repair_mutation_missing",
+                message="governed_repair_mutation requires a mutation object",
+                step=step,
+            )
+
+        task_id = str(
+            step.get("task_id")
+            or (task or {}).get("task_id")
+            or (task or {}).get("id")
+            or "repair_task"
+        ).strip()
+
+        proposal_id = str(
+            step.get("proposal_id")
+            or f"{task_id}_proposal"
+        ).strip()
+
+        goal = str(
+            step.get("goal")
+            or step.get("repair_reason")
+            or "governed repair mutation"
+        ).strip()
+
+        allowed_roots = step.get("allowed_roots")
+        if not isinstance(allowed_roots, list) or not allowed_roots:
+            target_path = str(
+                mutation.get("target_path")
+                or mutation.get("path")
+                or ""
+            ).replace("\\", "/")
+            root = target_path.split("/", 1)[0] if "/" in target_path else "."
+            allowed_roots = [root]
+
+        workspace_root = (
+            step.get("workspace_root")
+            or (context or {}).get("workspace_root")
+            or (task or {}).get("target_repo_root")
+            or (task or {}).get("repo_root")
+            or (task or {}).get("workspace_dir")
+            or (task or {}).get("task_dir")
+            or "."
+        )
+
+        sandbox_source_root = (
+            step.get("sandbox_source_root")
+            or (context or {}).get("sandbox_source_root")
+            or (task or {}).get("sandbox_dir")
+            or workspace_root
+        )
+
+        rollback_root = (
+            step.get("rollback_root")
+            or (context or {}).get("rollback_root")
+            or (task or {}).get("rollback_dir")
+            or (task or {}).get("task_dir")
+            or workspace_root
+        )
+
+        report_root = (
+            step.get("report_root")
+            or (context or {}).get("report_root")
+            or (task or {}).get("report_dir")
+            or (task or {}).get("task_dir")
+            or workspace_root
+        )
+
+        try:
+            result = execute_governed_repair_mutation(
+                task_id=task_id,
+                proposal_id=proposal_id,
+                goal=goal,
+                mutation=mutation,
+                workspace_root=workspace_root,
+                sandbox_source_root=sandbox_source_root,
+                rollback_root=rollback_root,
+                report_root=report_root,
+                allowed_roots=tuple(str(item) for item in allowed_roots if str(item).strip()),
+                scope_gate={"scope_allowed": True},
+                approval_mode=MutationApprovalMode.AUTO,
+                verification=MutationVerificationRequirement.NONE,
+                dry_run=bool(step.get("dry_run", False)),
+                metadata={
+                    "source": "governed_repair_mutation_step_handler",
+                    "step_id": step.get("id"),
+                    "repair_injected": bool(step.get("repair_injected", False)),
+                },
+            )
+        except Exception as exc:
+            return self._error(
+                error_type="governed_repair_mutation_failed",
+                message=f"governed repair mutation failed: {exc}",
+                step=step,
+                details={
+                    "task_id": task_id,
+                    "proposal_id": proposal_id,
+                    "allowed_roots": allowed_roots,
+                },
+            )
+
+        payload = result.to_dict()
+
+        return self._success(
+            result={
+                "type": "governed_repair_mutation",
+                "task_id": task_id,
+                "proposal_id": proposal_id,
+                "mutation": mutation,
+                "pipeline_result": payload,
+            },
+            step=step,
+            extra={
+                "message": "governed repair mutation completed",
+                "final_answer": "governed repair mutation completed",
+            },
+        )
 
 
 class ToolStepHandler(BaseStepHandler):

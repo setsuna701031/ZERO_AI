@@ -18,6 +18,7 @@ from core.runtime.step_handlers import (
     ToolStepHandler,
     CommandStepHandler,
     WriteFileStepHandler,
+    GovernedRepairMutationStepHandler,
     ReadFileStepHandler,
     RespondStepHandler,
     EnsureFileStepHandler,
@@ -106,6 +107,7 @@ class StepExecutor:
         self.register_handler("command", CommandStepHandler(self).handle)
         self.register_handler("run_python", RunPythonStepHandler(self).handle)
         self.register_handler("write_file", WriteFileStepHandler(self).handle)
+        self.register_handler("governed_repair_mutation", GovernedRepairMutationStepHandler(self).handle)
         self.register_handler("workspace_write", WriteFileStepHandler(self).handle)
         self.register_handler("append_file", self._handle_append_file_step)
         self.register_handler("workspace_append", self._handle_append_file_step)

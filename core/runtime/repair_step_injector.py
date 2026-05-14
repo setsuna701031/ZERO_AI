@@ -13,23 +13,17 @@ except Exception:  # pragma: no cover - compatibility fallback
         REPLAY = "replay"
         AUDIT = "audit"
         REPAIR_REPLAY = "repair_replay"
+
     READONLY_RUNTIME_MODES = {"replay", "audit", "repair_replay"}
 
 
 @dataclass
 class InjectedRepairStep:
-    """
-    A runtime step generated from a repair plan.
-
-    This object is intentionally simple so TaskRunner / TaskRuntime can later
-    inject it into the normal steps list without learning a new execution model.
-    """
-
     id: str
     type: str
     payload: Dict[str, Any] = field(default_factory=dict)
     reason: str = ""
-    source: str = "repair_step_injector_v0"
+    source: str = "repair_step_injector_v1"
 
     def to_step(self) -> Dict[str, Any]:
         step = {
@@ -51,13 +45,6 @@ class InjectedRepairStep:
 
 @dataclass
 class RepairInjectionResult:
-    """
-    Result of converting a RepairPlan into runtime steps.
-
-    This does not mutate runtime state by itself.
-    It only produces a safe, inspectable list of steps.
-    """
-
     ok: bool
     reason: str = ""
     injected_steps: List[InjectedRepairStep] = field(default_factory=list)
@@ -77,25 +64,6 @@ class RepairInjectionResult:
 
 
 class RepairStepInjector:
-    """
-    Convert RepairPlanner output into normal TaskRunner steps.
-
-    v0 boundary:
-    - Does not mutate task/runtime_state directly.
-    - Does not execute commands.
-    - Does not decide LLM behavior.
-    - Only converts repair actions into write/verify/report steps.
-    - Keeps everything sandbox-safe by default.
-
-    Expected flow later:
-
-        run_python failed
-        -> RepairPlanner.plan(...)
-        -> RepairStepInjector.build_injection(...)
-        -> TaskRuntime injects returned steps after current_step_index
-        -> normal TaskRunner executes them
-    """
-
     def build_injection(
         self,
         *,
@@ -159,14 +127,30 @@ class RepairStepInjector:
 
             injected.append(
                 InjectedRepairStep(
-                    id=f"{base_id}_repair_write_candidate_{index}",
-                    type="write_file",
+                    id=f"{base_id}_repair_governed_mutation_{index}",
+                    type="governed_repair_mutation",
                     payload={
-                        "path": path,
-                        "content": content,
+                        "task_id": task_id or "repair_task",
+                        "proposal_id": f"{base_id}_proposal_{index}",
+                        "goal": str(
+                            action.get("reason")
+                            or repair_plan.get("summary")
+                            or "governed runtime repair mutation"
+                        ),
+                        "mutation": {
+                            "op_type": "write_file",
+                            "target_path": path,
+                            "content": content,
+                        },
+                        "allowed_roots": [
+                            path.replace("\\", "/").split("/", 1)[0]
+                            if "/" in path.replace("\\", "/")
+                            else "."
+                        ],
                         "scope": str(action.get("scope") or "sandbox"),
+                        "repair_injected": True,
                     },
-                    reason=str(action.get("reason") or "write repair candidate"),
+                    reason=str(action.get("reason") or "governed repair mutation"),
                 )
             )
 
@@ -241,6 +225,7 @@ class RepairStepInjector:
                 "confidence": confidence,
                 "action_count": len(actions),
                 "injected_step_count": len(injected),
+                "governed_repair_mutation_enabled": True,
             },
         )
 
@@ -251,13 +236,6 @@ class RepairStepInjector:
         injected_steps: List[Dict[str, Any]],
         insert_after_index: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        Return a copied runtime_state with injected steps inserted.
-
-        This method still does not save anything to disk.
-        TaskRunner / TaskRuntime should own persistence.
-        """
-
         if not isinstance(runtime_state, dict):
             raise TypeError("runtime_state must be a dict")
 
@@ -299,7 +277,7 @@ class RepairStepInjector:
                         ],
                     }
                 )
-            repair_context["last_injection_version"] = "repair_step_injector_v0"
+            repair_context["last_injection_version"] = "repair_step_injector_v1"
 
         return state
 
@@ -323,7 +301,7 @@ class RepairStepInjector:
 
         return (
             "AER_AUTO_REPAIR_PLAN_OK\n\n"
-            "ZERO generated a repair plan and converted it into runtime steps.\n\n"
+            "ZERO generated a repair plan and converted it into governed runtime repair steps.\n\n"
             "```json\n"
             + json.dumps(payload, ensure_ascii=False, indent=2)
             + "\n```\n"
@@ -416,7 +394,10 @@ class RepairStepInjector:
 
     def _is_readonly_runtime_mode(self, mode: Any) -> bool:
         text = str(mode or "").strip().lower()
-        readonly_values = {str(item.value if hasattr(item, "value") else item).strip().lower() for item in READONLY_RUNTIME_MODES}
+        readonly_values = {
+            str(item.value if hasattr(item, "value") else item).strip().lower()
+            for item in READONLY_RUNTIME_MODES
+        }
         return text in readonly_values
 
     def _safe_id(self, value: str) -> str:
