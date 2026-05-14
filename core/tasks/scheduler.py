@@ -8306,6 +8306,44 @@ Scheduler.approve_review_item = _zero_scheduler_approve_review_item
 Scheduler.reject_review_item = _zero_scheduler_reject_review_item
 
 
+def _zero_scheduler_get_review_queue(self) -> Dict[str, Any]:
+    snapshot = self.get_queue_snapshot()
+
+    review_queue = snapshot.get("review_queue")
+    if not isinstance(review_queue, list):
+        review_queue = []
+
+    normalized = []
+
+    for item in review_queue:
+        if not isinstance(item, dict):
+            continue
+
+        normalized.append({
+            "task_id": str(item.get("task_id") or ""),
+            "status": str(item.get("status") or ""),
+            "review_status": str(item.get("review_status") or ""),
+            "transaction_state": str(item.get("transaction_state") or ""),
+            "allowed_next_action": str(item.get("allowed_next_action") or ""),
+            "requires_review": bool(item.get("requires_review", False)),
+            "requires_approval": bool(item.get("requires_approval", False)),
+            "review_payload": copy.deepcopy(item.get("review_payload", {})),
+            "blocked_reason": str(item.get("blocked_reason") or ""),
+            "next_action": str(item.get("next_action") or ""),
+            "agent_action": str(item.get("agent_action") or ""),
+        })
+
+    return {
+        "ok": True,
+        "review_queue": normalized,
+        "review_queue_size": len(normalized),
+    }
+
+
+Scheduler.get_review_queue = _zero_scheduler_get_review_queue
+
+
+
 _ZERO_V352_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
 
 
