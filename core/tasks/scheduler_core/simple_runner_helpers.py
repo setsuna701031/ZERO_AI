@@ -4,6 +4,7 @@ import copy
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.tools.execution_trace import ExecutionTrace
+from core.tasks.scheduler_core.trace_helpers import trace_step
 
 
 def _run_simple_task_tick(
@@ -22,7 +23,8 @@ def _run_simple_task_tick(
     trace = scheduler._load_trace_for_task(task)
 
     if task_status in getattr(scheduler, "TERMINAL_STATUSES", set()):
-        return scheduler._handle_simple_terminal_task(
+        return _handle_simple_terminal_task(
+            scheduler=scheduler,
             task=task,
             trace=trace,
             task_id=task_id,
@@ -32,7 +34,8 @@ def _run_simple_task_tick(
 
     deps_ready, blocked_reason = scheduler._task_dependencies_satisfied(task)
     if not deps_ready:
-        return scheduler._handle_simple_blocked_task(
+        return _handle_simple_blocked_task(
+            scheduler=scheduler,
             task=task,
             trace=trace,
             task_id=task_id,
@@ -45,7 +48,8 @@ def _run_simple_task_tick(
     )
 
     if current_step_index >= len(steps):
-        return scheduler._handle_simple_finished_task(
+        return _handle_simple_finished_task(
+            scheduler=scheduler,
             task=task,
             trace=trace,
             task_id=task_id,
@@ -60,7 +64,8 @@ def _run_simple_task_tick(
 
     step = steps[current_step_index]
     if not isinstance(step, dict):
-        return scheduler._handle_simple_invalid_step(
+        return _handle_simple_invalid_step(
+            scheduler=scheduler,
             task=task,
             trace=trace,
             task_id=task_id,
@@ -73,7 +78,8 @@ def _run_simple_task_tick(
     try:
         step_result = scheduler._execute_simple_step(task=task, step=step)
     except Exception as e:
-        return scheduler._handle_simple_step_exception(
+        return _handle_simple_step_exception(
+            scheduler=scheduler,
             task=task,
             trace=trace,
             task_id=task_id,
@@ -87,7 +93,8 @@ def _run_simple_task_tick(
             last_step_result=last_step_result,
         )
 
-    return scheduler._handle_simple_step_success(
+    return _handle_simple_step_success(
+        scheduler=scheduler,
         task=task,
         trace=trace,
         task_id=task_id,
@@ -334,7 +341,8 @@ def _handle_simple_step_exception(
     task["last_failure_tick"] = scheduler.current_tick
     task["last_run_tick"] = scheduler.current_tick
 
-    scheduler._trace_step(
+    trace_step(
+        scheduler=scheduler,
         trace=trace,
         task=task,
         step_index=current_step_index,
@@ -499,7 +507,8 @@ def _handle_simple_step_success(
     task["current_step_index"] = current_step_index + 1
     task["last_run_tick"] = scheduler.current_tick
 
-    scheduler._trace_step(
+    trace_step(
+        scheduler=scheduler,
         trace=trace,
         task=task,
         step_index=current_step_index,

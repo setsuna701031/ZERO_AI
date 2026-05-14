@@ -173,14 +173,14 @@ class Scheduler(RuntimeTaskScheduler):
     TERMINAL_STATUSES = TERMINAL_STATUSES
 
     """
-    收束版 Scheduler + ExecutionTrace
+    ?????Scheduler + ExecutionTrace
 
-    本版修正：
-    1. task mode 優先走 agent_loop 外掛 planner / llm_planner，不再只靠舊本地單步 planner
-    2. task mode 補上 ensure_file step 支援
-    3. task-local 檔案預設落在 task sandbox，而不是 task_dir 根目錄
-    4. task hydration / result 回寫保持一致
-    5. finished task 應該真的帶出 steps / results / final_answer
+    ?????????????
+    1. task mode ?????agent_loop ??鞎?? planner / llm_planner????????????????頩????? planner
+    2. task mode ?????? ensure_file step ?????
+    3. task-local ???????????????task sandbox?????????task_dir ??雓????
+    4. task hydration / result ????????????????
+    5. finished task ?????????????steps / results / final_answer
     """
 
     def __init__(
@@ -205,6 +205,7 @@ class Scheduler(RuntimeTaskScheduler):
         allow_commands: bool = False,
         replanner: Any = None,
         llm_client: Any = None,
+        evidence_adapter: Any = None,
         max_scheduler_rounds_per_tick: int = 50,
         default_max_replans: int = 3,
         **kwargs: Any,
@@ -241,6 +242,8 @@ class Scheduler(RuntimeTaskScheduler):
         self.task_runtime = task_runtime
         self.task_runner = task_runner
         self.agent_loop = kwargs.get("agent_loop", None)
+        self.evidence_adapter = evidence_adapter
+        self.scheduler_id = str(kwargs.get("scheduler_id") or "scheduler")
         self.max_scheduler_rounds_per_tick = max(1, int(max_scheduler_rounds_per_tick))
         self.default_max_replans = max(1, int(default_max_replans))
         self.llm_client = llm_client
@@ -285,11 +288,26 @@ class Scheduler(RuntimeTaskScheduler):
             self.replanner = Replanner(llm_client=llm_client)
 
     # ------------------------------------------------------------
-    # 相容舊介面
+    # ???????????
     # ------------------------------------------------------------
 
     def run_next(self) -> Dict[str, Any]:
         return self.tick()
+
+    def enqueue(self, task_id: str) -> bool:
+        result = super().enqueue(task_id)
+        if result:
+            self._emit_scheduler_evidence("enqueued", task_id=task_id, queue_name="task_queue")
+        return result
+
+    def enqueue_task(self, task_id: str) -> bool:
+        return self.enqueue(task_id)
+
+    def dequeue(self) -> Optional[str]:
+        task_id = super().dequeue()
+        if task_id:
+            self._emit_scheduler_evidence("dequeued", task_id=task_id, queue_name="task_queue")
+        return task_id
 
     def run_one(
         self,
@@ -307,7 +325,7 @@ class Scheduler(RuntimeTaskScheduler):
         return self.rebuild_ready_queue()
 
     # ------------------------------------------------------------
-    # 主循環
+    # ??????
     # ------------------------------------------------------------
 
     def tick(self, current_tick: Optional[int] = None) -> Dict[str, Any]:
@@ -350,6 +368,16 @@ class Scheduler(RuntimeTaskScheduler):
                 last_synced=last_synced,
                 all_executed_results=[],
             )
+
+        for dispatch_result in dispatch_results:
+            scheduled_task = getattr(dispatch_result, "task", None)
+            task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
+            if task_id:
+                self._emit_scheduler_evidence(
+                    "dequeued",
+                    task_id=task_id,
+                    queue_name="ready",
+                )
 
         total_dispatched = len(dispatch_results)
 
@@ -531,6 +559,12 @@ class Scheduler(RuntimeTaskScheduler):
             self.worker_pool.release_by_task(task_id)
         except Exception:
             pass
+        self._emit_scheduler_evidence(
+            "cancelled",
+            task_id=task_id,
+            queue_name="ready",
+            reason="ready_queue_cancel",
+        )
 
     def _active_runtime_gate_blockers(self, blockers: Any) -> List[Dict[str, Any]]:
         if not isinstance(blockers, list):
@@ -588,6 +622,47 @@ class Scheduler(RuntimeTaskScheduler):
 
         return result
 
+    def _emit_scheduler_evidence(
+        self,
+        phase: str,
+        *,
+        task_id: str,
+        queue_name: str = "ready",
+        reason: Any = None,
+    ) -> None:
+        adapter = getattr(self, "evidence_adapter", None)
+        if adapter is None:
+            return
+
+        phase_name = str(phase or "").strip().lower()
+        method_name = {
+            "enqueued": "emit_enqueued",
+            "dequeued": "emit_dequeued",
+            "dispatched": "emit_dispatched",
+            "requeued": "emit_requeued",
+            "cancelled": "emit_cancelled",
+        }.get(phase_name)
+        if not method_name:
+            return
+
+        method = getattr(adapter, method_name, None)
+        if not callable(method):
+            return
+
+        scheduler_id = str(getattr(self, "scheduler_id", "") or "scheduler")
+        clean_task_id = str(task_id or "").strip()
+        clean_queue_name = str(queue_name or "ready").strip() or "ready"
+        if not clean_task_id:
+            return
+
+        try:
+            if phase_name in {"requeued", "cancelled"}:
+                method(scheduler_id, clean_task_id, clean_queue_name, reason)
+            else:
+                method(scheduler_id, clean_task_id, clean_queue_name)
+        except Exception:
+            return
+
     def _extract_execution_trace_from_payload(self, payload: Any) -> List[Dict[str, Any]]:
         return extract_execution_trace_from_payload(payload)
 
@@ -608,6 +683,29 @@ class Scheduler(RuntimeTaskScheduler):
 
         deps_ready, _ = self._task_dependencies_satisfied(task)
         return deps_ready
+
+    def _queue_contains_task(self, task_id: str) -> bool:
+        try:
+            return bool(self.scheduler_queue.contains(str(task_id or "").strip()))
+        except Exception:
+            return False
+
+    def _repo_task_to_scheduled_task(self, task: Dict[str, Any]) -> ScheduledTask:
+        task_id = self._extract_task_id(task)
+        return ScheduledTask(
+            task_id=task_id,
+            title=str(task.get("title") or task.get("goal") or task_id),
+            priority=self._safe_int_for_runtime_gate(task.get("priority"), 0),
+            status=str(task.get("status") or STATUS_QUEUED),
+            retry_count=self._safe_int_for_runtime_gate(task.get("retry_count"), 0),
+            max_retries=self._safe_int_for_runtime_gate(task.get("max_retries"), 0),
+            payload=copy.deepcopy(task),
+            metadata={
+                "task_name": str(task.get("task_name") or task_id),
+                "scheduler_build": SCHEDULER_BUILD,
+            },
+            last_error=task.get("last_error"),
+        )
 
     # ------------------------------------------------------------
     # runtime scheduler sync
@@ -683,6 +781,7 @@ class Scheduler(RuntimeTaskScheduler):
     ) -> Dict[str, Any]:
         task = self._hydrate_task_from_workspace(task)
         task = self._ensure_executable_steps_for_task(task)
+        task_id = self._extract_task_id(task)
 
         current_status = str(task.get("status") or "").strip().lower()
         if current_status in TERMINAL_STATUSES:
@@ -690,6 +789,12 @@ class Scheduler(RuntimeTaskScheduler):
             result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
             sync_runtime_back_to_repo_with_retry_collapse(scheduler=self, task=task, runner_result=result)
             return self._compact_runner_result(result)
+
+        self._emit_scheduler_evidence(
+            "dispatched",
+            task_id=task_id,
+            queue_name="runtime",
+        )
 
         loop_result = self._run_task_via_agent_loop_with_fallback_check(
             task=task,
@@ -1111,123 +1216,18 @@ class Scheduler(RuntimeTaskScheduler):
 
         refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
         if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
-            self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+            requeued = self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+            if requeued:
+                self._emit_scheduler_evidence(
+                    "requeued",
+                    task_id=self._extract_task_id(refreshed_task),
+                    queue_name="ready",
+                    reason=refreshed_status,
+                )
 
     # ------------------------------------------------------------
     # simple fallback executor
     # ------------------------------------------------------------
-
-
-    def _handle_simple_step_success(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        return handle_simple_step_success(
-            scheduler=self,
-            *args,
-            **kwargs,
-        )
-
-
-    def _handle_simple_step_exception(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        """Compatibility wrapper used by scheduler_core.simple_runner_helpers.
-
-        Accept both old positional and newer keyword helper call styles.
-
-        Known call shapes include:
-            scheduler._handle_simple_step_exception(task=..., state=..., step=..., error=...)
-            scheduler._handle_simple_step_exception(task, step, exc)
-            scheduler._handle_simple_step_exception(task, state, step, current_tick, exc)
-
-        The wrapper converts guard/policy exceptions into structured runner
-        results instead of allowing raw Python tracebacks to escape.
-        """
-        task = kwargs.get("task")
-        state = kwargs.get("state")
-        step = kwargs.get("step")
-        current_tick = kwargs.get("current_tick")
-        error = kwargs.get("error", kwargs.get("exception"))
-
-        positional = list(args)
-
-        if task is None and positional:
-            task = positional.pop(0)
-
-        # Heuristic for positional styles:
-        #   (task, step, exc)
-        #   (task, state, step, current_tick, exc)
-        if state is None and step is None and positional:
-            first = positional.pop(0)
-            if isinstance(first, dict) and ("steps" in first or "status" in first or "runtime_state_file" in first):
-                # Could be state or step.  If another positional dict follows,
-                # treat first as state and next as step.
-                if positional and isinstance(positional[0], dict):
-                    state = first
-                    step = positional.pop(0)
-                else:
-                    step = first
-            else:
-                step = first
-
-        elif state is None and positional:
-            # Keyword task + positional step/error, or full positional remainder.
-            first = positional.pop(0)
-            if isinstance(first, dict) and positional and isinstance(positional[0], dict):
-                state = first
-                step = positional.pop(0)
-            elif step is None:
-                step = first
-            else:
-                state = first
-
-        if current_tick is None and positional:
-            maybe_tick = positional[0]
-            if isinstance(maybe_tick, int) or (isinstance(maybe_tick, str) and maybe_tick.isdigit()):
-                try:
-                    current_tick = int(positional.pop(0))
-                except Exception:
-                    current_tick = None
-
-        if error is None and positional:
-            error = positional.pop(0)
-
-        if not isinstance(task, dict):
-            task = {}
-        if not isinstance(state, dict):
-            state = copy.deepcopy(task) if isinstance(task, dict) else {}
-        if not isinstance(step, dict):
-            step = {}
-
-        try:
-            return handle_simple_step_exception(
-                scheduler=self,
-                task=task,
-                state=state,
-                step=step,
-                current_tick=current_tick,
-                error=error,
-                **{
-                    key: value
-                    for key, value in kwargs.items()
-                    if key not in {"task", "state", "step", "current_tick", "error", "exception"}
-                },
-            )
-        except TypeError:
-            try:
-                return handle_simple_step_exception(self, task, state, step, current_tick, error)
-            except Exception:
-                return self._fallback_handle_simple_step_exception(
-                    task=task,
-                    state=state,
-                    step=step,
-                    current_tick=current_tick,
-                    error=error,
-                )
-        except Exception:
-            return self._fallback_handle_simple_step_exception(
-                task=task,
-                state=state,
-                step=step,
-                current_tick=current_tick,
-                error=error,
-            )
 
 
     def _fallback_handle_simple_step_exception(
@@ -2282,29 +2282,6 @@ class Scheduler(RuntimeTaskScheduler):
             extra=extra,
         )
 
-    def _trace_step(
-        self,
-        trace: ExecutionTrace,
-        task: Dict[str, Any],
-        step_index: int,
-        step: Dict[str, Any],
-        ok: bool,
-        result: Optional[Dict[str, Any]] = None,
-        error: str = "",
-        tick: Optional[int] = None,
-    ) -> None:
-        return trace_step(
-            scheduler=self,
-            trace=trace,
-            task=task,
-            step_index=step_index,
-            step=step,
-            ok=ok,
-            result=result,
-            error=error,
-            tick=tick,
-        )
-
     def get_queue_rows(self) -> Dict[str, Any]:
         queued_rows = self.dispatcher.list_queued()
         return {
@@ -2805,7 +2782,7 @@ class Scheduler(RuntimeTaskScheduler):
         self._save_repair_fingerprint_index(data)
 
     # ------------------------------------------------------------
-    # 任務操作 API
+    # ??????? API
     # ------------------------------------------------------------
 
 
@@ -3308,7 +3285,7 @@ class Scheduler(RuntimeTaskScheduler):
         if isinstance(override_steps, list):
             planner_result["steps"] = copy.deepcopy(override_steps)
             planner_result["intent"] = "manual_inline"
-            planner_result["final_answer"] = f"已規劃 {len(override_steps)} 個步驟"
+            planner_result["final_answer"] = f"planned {len(override_steps)} steps"
 
         steps = planner_result.get("steps", [])
         if not isinstance(steps, list):
@@ -3858,6 +3835,12 @@ class Scheduler(RuntimeTaskScheduler):
         result = self._set_status(task_name, "cancelled")
         self.scheduler_queue.cancel(task_name)
         self.worker_pool.release_by_task(task_name)
+        self._emit_scheduler_evidence(
+            "cancelled",
+            task_id=task_name,
+            queue_name="ready",
+            reason="cancel_task",
+        )
         return result
 
     def set_task_priority(self, task_name: str, priority: int) -> Dict[str, Any]:
@@ -3959,7 +3942,7 @@ class Scheduler(RuntimeTaskScheduler):
         )
 
     def _enqueue_repo_task_if_ready(self, task: Dict[str, Any], overwrite: bool = False) -> bool:
-        return enqueue_repo_task_if_ready(
+        enqueued = enqueue_repo_task_if_ready(
             scheduler=self,
             task=task,
             overwrite=overwrite,
@@ -3967,6 +3950,13 @@ class Scheduler(RuntimeTaskScheduler):
             ready_statuses=READY_STATUSES,
             status_blocked=STATUS_BLOCKED,
         )
+        if enqueued:
+            self._emit_scheduler_evidence(
+                "enqueued",
+                task_id=self._extract_task_id(task),
+                queue_name="ready",
+            )
+        return enqueued
 
     def _extract_task_id(self, *args, **kwargs):
         return _scheduler_helper_extract_task_id(*args, **kwargs)
@@ -5098,7 +5088,7 @@ class Scheduler(RuntimeTaskScheduler):
             r"\bfix\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
             r"\brepair\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
             r"\bcorrect\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
-            r"\b修(?:正|復)?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:function|函式|函数)\b",
+            r"(?:修復|修正|修理)\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:function|函式|功能)?\b",
             r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\b",
             r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
         ]
@@ -5137,7 +5127,7 @@ class Scheduler(RuntimeTaskScheduler):
         if not raw:
             return None
 
-        if not any(marker in lowered for marker in ("fix", "repair", "correct", "修", "修正", "修復")):
+        if not any(marker in lowered for marker in ("fix", "repair", "correct")):
             return None
 
         # Explicit paths are the safest form.  Keep supporting them first.
@@ -5231,7 +5221,7 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "planner_mode": "deterministic_v5_7_2_atomic_multi_function_fix",
             "intent": "multi_function_fix_atomic",
-            "final_answer": "已規劃 atomic multi-file function fix 步驟",
+            "final_answer": "???????atomic multi-file function fix ?????",
             "steps": [
                 {
                     "type": "multi_code_edit",
@@ -5317,8 +5307,8 @@ class Scheduler(RuntimeTaskScheduler):
         if not raw:
             return None
 
-        fix_markers = ["fix", "repair", "correct", "修", "修正", "修復"]
-        function_markers = ["function", "def ", "函式", "函数"]
+        fix_markers = ["fix", "repair", "correct"]
+        function_markers = ["function", "def "]
         if not any(marker in lowered for marker in fix_markers):
             return None
         if not any(marker in lowered for marker in function_markers):
@@ -5350,7 +5340,7 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "planner_mode": "deterministic_v5_6_8_engineering_correct_function_fix_fallback",
             "intent": "function_fix",
-            "final_answer": "已規劃 function fix fallback 步驟",
+            "final_answer": "???????function fix fallback ?????",
             "steps": [
                 {
                     "type": "code_edit",
@@ -5740,8 +5730,8 @@ class Scheduler(RuntimeTaskScheduler):
                 arg_names.append(item)
 
         lower_instruction = str(instruction or "").lower()
-        should_add = name == "add" or "add" in lower_instruction or "addition" in lower_instruction or "加" in lower_instruction
-        should_multiply = name in {"multiply", "mul"} or "multiply" in lower_instruction or "multiplication" in lower_instruction or "乘" in lower_instruction
+        should_add = name == "add" or "add" in lower_instruction or "addition" in lower_instruction
+        should_multiply = name in {"multiply", "mul"} or "multiply" in lower_instruction or "multiplication" in lower_instruction
         if should_add and len(arg_names) >= 2:
             replacement_body = f"{indent}    return {arg_names[0]} + {arg_names[1]}\n"
         elif should_multiply and len(arg_names) >= 2:
@@ -5781,9 +5771,9 @@ class Scheduler(RuntimeTaskScheduler):
             "contains",
             "equals",
             "exists",
-            "確認",
-            "檢查",
-            "驗證",
+            "????",
+            "check",
+            "????",
         ]
 
         if any(marker in text for marker in shared_markers):
@@ -5911,7 +5901,7 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "command",
-                "final_answer": "已規劃 1 個步驟",
+                "final_answer": "planned 1 step",
                 "steps": [command_step],
             }
 
@@ -5920,7 +5910,7 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "write_file",
-                "final_answer": "已規劃 1 個步驟",
+                "final_answer": "planned 1 step",
                 "steps": [write_step],
             }
 
@@ -5929,7 +5919,7 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "read_file",
-                "final_answer": "已規劃 1 個步驟",
+                "final_answer": "planned 1 step",
                 "steps": [read_step],
             }
 
@@ -5937,7 +5927,7 @@ class Scheduler(RuntimeTaskScheduler):
             return {
                 "planner_mode": "deterministic_v6_task_os_fallback",
                 "intent": "hello_world_python_multi_step",
-                "final_answer": "已規劃 3 個步驟",
+                "final_answer": "planned 3 steps",
                 "steps": [
                     {
                         "type": "write_file",
@@ -5958,7 +5948,7 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "planner_mode": "deterministic_v6_task_os_fallback",
             "intent": "unresolved",
-            "final_answer": "目前 task planner 還無法把這個 goal 轉成可執行 steps。",
+            "final_answer": "task planner could not convert this goal into executable steps",
             "steps": [],
         }
 
@@ -6319,7 +6309,7 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "planner_mode": str(plan.get("planner_mode") or "external_task_planner"),
             "intent": str(plan.get("intent") or normalized_steps[0].get("type") or "task"),
-            "final_answer": str(plan.get("final_answer") or f"已規劃 {len(normalized_steps)} 個步驟"),
+            "final_answer": str(plan.get("final_answer") or f"planned {len(normalized_steps)} steps"),
             "steps": normalized_steps,
             "meta": copy.deepcopy(plan.get("meta", {})) if isinstance(plan.get("meta"), dict) else {},
         }
@@ -6433,15 +6423,15 @@ class Scheduler(RuntimeTaskScheduler):
             "extract action items",
             "todo",
             "to-do",
-            "行動項目",
-            "待辦事項",
+            "??雓◇??????",
+            "??蟡????????",
         ]
         summary_keywords = [
             "summary",
             "summarize",
             "summarise",
-            "摘要",
-            "總結",
+            "???",
+            "????",
         ]
 
         wants_action_items = any(keyword in lowered for keyword in action_keywords)
@@ -6554,13 +6544,13 @@ class Scheduler(RuntimeTaskScheduler):
         lowered = str(text or "").lower()
         candidates = [
             "hello world python",
-            "hello world 的 python",
-            "寫一個 hello world python",
-            "建立 hello world python",
-            "做一個 hello world python",
+            "hello world ??python",
+            "??此?????hello world python",
+            "???? hello world python",
+            "?????hello world python",
             "python hello world",
-            "建立一個 hello.py 印出 hello world",
-            "hello.py 印出 hello world",
+            "??????????hello.py ?????hello world",
+            "hello.py ?????hello world",
         ]
         return any(item in lowered for item in candidates)
 
@@ -6577,7 +6567,7 @@ class Scheduler(RuntimeTaskScheduler):
             r"^execute\s+(.+)$",
             r"^shell\s+(.+)$",
             r"^bash\s+(.+)$",
-            r"^執行\s+(.+)$",
+            r"^???\s+(.+)$",
         ]
 
         for pattern in patterns:
@@ -6602,7 +6592,7 @@ class Scheduler(RuntimeTaskScheduler):
         stripped = str(text or "").strip()
         lowered = stripped.lower()
 
-        if not any(k in stripped for k in ["寫", "建立", "新增"]) and not any(
+        if not any(k in stripped for k in ["write", "create", "make"]) and not any(
             k in lowered for k in ["write", "create", "make"]
         ):
             return None
@@ -6628,12 +6618,12 @@ class Scheduler(RuntimeTaskScheduler):
         stripped = str(text or "").strip()
 
         patterns = [
-            r"內容是\s*(.+)$",
-            r"內容為\s*(.+)$",
-            r"內容:\s*(.+)$",
-            r"內容：\s*(.+)$",
-            r"寫入\s*(.+)$",
-            r"放入\s*(.+)$",
+            r"????????(.+)$",
+            r"????????(.+)$",
+            r"????:\s*(.+)$",
+            r"???????s*(.+)$",
+            r"??此???拆????*(.+)$",
+            r"??????\s*(.+)$",
             r"content is\s+(.+)$",
             r"content:\s*(.+)$",
             r"with content\s+(.+)$",
@@ -6660,7 +6650,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         path = m.group(1).strip()
         lowered = stripped.lower()
-        if any(x in lowered for x in ["read", "讀", "看", "open", "檢查", "查看"]):
+        if any(x in lowered for x in ["read", "open", "show", "cat", "查看"]):
             return {"type": "read_file", "path": path}
 
         return None
@@ -6701,9 +6691,9 @@ def _zero_v702_looks_like_autonomous_repair(text: str) -> bool:
         return False
     if "workspace/" not in lowered.replace("\\", "/") or ".py" not in lowered:
         return False
-    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
-    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
-    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數", "函式"))
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code"))
     return has_analyze and has_repair and has_code_target
 
 
@@ -6725,7 +6715,7 @@ def _zero_v702_build_code_chain_repair_plan(goal: str) -> Optional[Dict[str, Any
     return {
         "planner_mode": "scheduler_v7_0_2_repair_step_preservation",
         "intent": "autonomous_code_repair",
-        "final_answer": "已規劃 Code Chain repair 步驟",
+        "final_answer": "???????Code Chain repair ?????",
         "steps": [step],
         "meta": {
             "planner_autonomous_repair": True,
@@ -8147,7 +8137,7 @@ def _zero_v11_attach_scheduler_adapter_payload(result):
     payload = copy.deepcopy(result)
 
     ok = bool(payload.get("ok", False))
-    message = _zero_v11_scheduler_str(payload.get("message"), "執行完成" if ok else "執行失敗")
+    message = _zero_v11_scheduler_str(payload.get("message"), "?????????" if ok else "???????")
     final_answer = _zero_v11_scheduler_str(payload.get("final_answer"), message)
 
     adapter_payload = {
@@ -8197,5 +8187,3 @@ def _zero_v352_scheduler_run_one_step(
 
 
 Scheduler.run_one_step = _zero_v352_scheduler_run_one_step
-
-

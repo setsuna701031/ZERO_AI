@@ -75,6 +75,68 @@ Important:
 
 
 
+## Runtime Aggregate Convergence / Evidence Kernel
+
+Current engineering checkpoint:
+
+```text
+runtime-aggregate-convergence-v1
+```
+
+This branch adds ZERO's deterministic runtime aggregate and evidence substrate.
+It does not connect new runtime contracts directly into `scheduler.py`, `agent_loop.py`, or `step_executor.py`.
+
+The completed runtime primitive chain is:
+
+```text
+RuntimeExecutionGraph
+-> RuntimeOperation
+-> RuntimeTransaction
+-> ExecutionPlan
+-> ExecutionPlanSnapshot
+-> ExecutionReplayRecord
+-> ExecutionAuditRecord / ExecutionAuditTrail
+-> RollbackVerificationRecord
+-> RuntimeEvidenceBundle
+-> RuntimeEvidenceSerializer
+-> RuntimeEvidenceStore / InMemoryRuntimeEvidenceStore
+```
+
+The layer provides:
+
+- deterministic dependency topology
+- operation and transaction contracts
+- execution plan identity
+- immutable plan snapshots
+- replay verification records
+- audit trail evidence
+- rollback-order verification
+- portable evidence bundles
+- canonical JSON serialization
+- persistence boundary abstraction with an in-memory store
+
+Important boundaries:
+
+```text
+contract != scheduler action
+replay verification != tool rerun
+audit evidence != execution authority
+rollback verification != rollback execution
+persistence boundary != sqlite/file backend
+serialization != networking
+```
+
+Current validation checkpoint:
+
+```text
+tests/run_regression_contracts.py: ALL PASS, 49 test files
+```
+
+This checkpoint moves ZERO closer to a deterministic runtime kernel substrate: execution plans can be represented, snapshotted, verified, audited, rollback-checked, bundled, serialized, and stored behind a boundary before any future runtime integration is allowed.
+
+------------------------------------------------------------------------
+
+
 ## Runtime Repair Transaction / Governance Kernel
 
 Current engineering checkpoint:
@@ -304,6 +366,7 @@ Run tests:
     python tests/run_l5_external_draft_tools_smoke.py
     python tests/test_apply_patch_transaction_layer.py
     python tests/test_step_executor.py
+    python tests/run_regression_contracts.py
 
 ------------------------------------------------------------------------
 
@@ -325,13 +388,14 @@ github_draft_bundle
 L4 Tool Layer: ✔ Complete\
 L5 Decision Core: ✔ Complete\
 L5 Controlled Draft Workflow: ✔ Complete\
-Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized
+Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized\
+Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed
 
 Current phase:\
-→ runtime transaction safety + verification boundary sealed
+→ deterministic runtime evidence and persistence boundary sealed
 
 Next stage:\
-→ patch preview subsystem, governance report export, then controlled persistence/mutation stages
+→ filesystem evidence store / runtime integration only after contract stability is confirmed
 
 ------------------------------------------------------------------------
 

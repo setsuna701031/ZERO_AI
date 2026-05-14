@@ -8,6 +8,7 @@ import traceback
 from typing import Any, Dict, List, Optional, Type
 
 from core.planning.task_replanner import TaskReplanner
+from core.runtime.runtime_mainline_evidence_seal import build_runtime_mainline_evidence_seal
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
@@ -178,10 +179,29 @@ class ZeroSystem:
         self.enable_llm_planner = _read_bool_env("ZERO_ENABLE_LLM_PLANNER", False)
 
         self.task_repository = TaskRepository(self.tasks_db_path)
+        self.runtime_evidence_seal = None
+        self.scheduler_evidence_adapter = None
+        self.task_runtime_evidence_adapter = None
+        self.step_executor_evidence_adapter = None
+
+        try:
+            self.runtime_evidence_seal = build_runtime_mainline_evidence_seal(
+                workspace_root=self.workspace,
+            )
+            self.scheduler_evidence_adapter = self.runtime_evidence_seal.scheduler_adapter
+            self.task_runtime_evidence_adapter = self.runtime_evidence_seal.task_adapter
+            self.step_executor_evidence_adapter = self.runtime_evidence_seal.step_adapter
+        except Exception as e:
+            self.boot_errors["runtime_evidence_seal"] = {
+                "stage": "constructor",
+                "error": f"{e.__class__.__name__}: {e}",
+                "traceback": traceback.format_exc(),
+            }
 
         self.task_runtime = TaskRuntime(
             workspace_root=self.workspace,
             debug=False,
+            evidence_adapter=self.task_runtime_evidence_adapter,
         )
 
         router_cls = _resolve_router_class()
@@ -245,6 +265,7 @@ class ZeroSystem:
             workspace_root=self.workspace,
             llm_client=self.llm_client,
             debug=False,
+            evidence_adapter=self.step_executor_evidence_adapter,
         )
 
         planner_cls = _resolve_planner_class()
@@ -309,6 +330,7 @@ class ZeroSystem:
             task_runner=self.task_runner,
             step_executor=self.step_executor,
             debug=False,
+            evidence_adapter=self.scheduler_evidence_adapter,
         )
 
         self.task_workspace = getattr(self.scheduler, "task_workspace", None)

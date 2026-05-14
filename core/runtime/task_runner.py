@@ -667,26 +667,36 @@ class TaskRunner:
             normalized["ok"] = False
             normalized["message"] = message
             normalized["final_answer"] = message
-            error_payload = normalized.get("error")
-            if not isinstance(error_payload, dict):
-                error_payload = {
-                    "type": "mutation_rolled_back_after_failure",
-                    "message": message,
-                    "retryable": False,
-                    "details": {},
-                }
-            else:
-                error_payload = copy.deepcopy(error_payload)
+            original_error = normalized.get("error")
+            error_payload = {
+                "type": "mutation_rolled_back_after_failure",
+                "message": message,
+                "retryable": False,
+                "details": {
+                    "mutation_boundary_status": mutation_status,
+                    "mutation_reconciliation_status": reconciled_status,
+                    "rollback_completed": True,
+                },
+            }
+            if isinstance(original_error, dict):
+                error_payload = copy.deepcopy(original_error)
                 error_payload["type"] = str(error_payload.get("type") or "mutation_rolled_back_after_failure")
                 error_payload["message"] = str(error_payload.get("message") or message)
                 error_payload["retryable"] = bool(error_payload.get("retryable", False))
                 if not isinstance(error_payload.get("details"), dict):
                     error_payload["details"] = {}
-            error_payload["details"]["mutation_boundary_status"] = mutation_status
-            error_payload["details"]["mutation_reconciliation_status"] = reconciled_status
-            error_payload["details"]["rollback_completed"] = True
-            normalized["error"] = error_payload
-
+                error_payload["details"]["mutation_boundary_status"] = mutation_status
+                error_payload["details"]["mutation_reconciliation_status"] = reconciled_status
+                error_payload["details"]["rollback_completed"] = True
+                normalized["error"] = error_payload
+            else:
+                raw_error = str(original_error or "").strip()
+                if raw_error:
+                    normalized["error"] = raw_error
+                    error_payload["details"]["original_error"] = raw_error
+                else:
+                    normalized["error"] = message
+            normalized["mutation_rollback_error"] = error_payload
         return normalized
 
     # ============================================================
@@ -3703,9 +3713,9 @@ def _zero_v702_runner_looks_like_autonomous_repair(text: str) -> bool:
         return False
     if "workspace/" not in lowered.replace("\\", "/") or ".py" not in lowered:
         return False
-    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose", "分析", "檢查"))
-    has_repair = any(token in lowered for token in ("repair", "fix", "correct", "修復", "修正"))
-    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code", "函數", "函式"))
+    has_analyze = any(token in lowered for token in ("analyze", "inspect", "check", "diagnose"))
+    has_repair = any(token in lowered for token in ("repair", "fix", "correct"))
+    has_code_target = any(token in lowered for token in ("function", "functions", "math", "code"))
     return has_analyze and has_repair and has_code_target
 
 
@@ -4027,6 +4037,14 @@ def _zero_v800_decide_from_observation(self: TaskRunner, *, observation: Dict[st
         }
 
     if status in {"failed", "error", "cancelled", "canceled", "timeout"} or action in {"step_failed", "regression_verify_failed"}:
+        if "code_chain_repair failed" in error.lower():
+            return {
+                "decision": "replan_candidate",
+                "phase": "replanning",
+                "reason": error or "code chain repair failure observed by engineering runtime",
+                "next_action": "manual_or_planner_replan",
+                "strategy_exhausted": exhausted,
+            }
         if exhausted or action in {"step_failed", "regression_verify_failed"}:
             return {
                 "decision": "replan_candidate",
@@ -4263,4 +4281,3 @@ def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict
 
 
 TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result
-

@@ -1,5 +1,245 @@
 ---
 
+## 2026-05-13 - Runtime Aggregate Convergence v1 deterministic evidence checkpoint
+
+This checkpoint records the runtime aggregate convergence work on branch:
+
+```text
+runtime-aggregate-convergence-v1
+```
+
+The goal was not to wire the new runtime evidence stack directly into scheduler, agent loop, or step executor. The goal was to seal deterministic runtime contracts first so future execution, replay, audit, rollback, serialization, and persistence work has a stable substrate instead of becoming another tangled path inside `scheduler.py` or `agent_loop.py`.
+
+### What was completed
+
+Added and stabilized the deterministic runtime primitive / evidence chain under `core/runtime/`:
+
+* `core/runtime/runtime_execution_graph.py`
+* `core/runtime/runtime_operation.py`
+* `core/runtime/runtime_transaction.py`
+* `core/runtime/execution_plan.py`
+* `core/runtime/execution_plan_snapshot.py`
+* `core/runtime/execution_replay.py`
+* `core/runtime/execution_audit.py`
+* `core/runtime/rollback_verification.py`
+* `core/runtime/runtime_evidence_bundle.py`
+* `core/runtime/runtime_evidence_serialization.py`
+* `core/runtime/runtime_evidence_persistence.py`
+
+Added matching regression contracts, including:
+
+* `tests/test_runtime_execution_graph_contract.py`
+* `tests/test_runtime_operation_contract.py`
+* `tests/test_runtime_transaction_contract.py`
+* `tests/test_execution_plan_contract.py`
+* `tests/test_execution_plan_snapshot_contract.py`
+* `tests/test_execution_replay_contract.py`
+* `tests/test_execution_audit_contract.py`
+* `tests/test_rollback_verification_contract.py`
+* `tests/test_runtime_evidence_bundle_contract.py`
+* `tests/test_runtime_evidence_serialization_contract.py`
+* `tests/test_runtime_evidence_persistence_contract.py`
+* `tests/test_runtime_transaction_orchestrator_contract.py`
+
+Updated:
+
+* `tests/run_regression_contracts.py`
+
+### Runtime chain established
+
+The completed deterministic runtime chain is:
+
+```text
+RuntimeExecutionGraph
+-> RuntimeOperation
+-> RuntimeTransaction
+-> ExecutionPlan
+-> ExecutionPlanSnapshot
+-> ExecutionReplayVerifier
+-> ExecutionAuditTrail
+-> RollbackVerificationVerifier
+-> RuntimeEvidenceBundle
+-> RuntimeEvidenceSerializer
+-> RuntimeEvidenceStore / InMemoryRuntimeEvidenceStore
+```
+
+### Major layers completed
+
+#### Execution topology and operation contracts
+
+* deterministic dependency graph
+* dependency validation
+* cycle / duplicate / self-edge rejection
+* deterministic topological execution order
+* runtime operation status transition contract
+* terminal-state transition freeze
+* operation result / failure attach-once behavior
+* operation fingerprint using canonical JSON
+
+#### Transaction and execution plan contracts
+
+* deterministic operation group contract
+* duplicate operation rejection
+* transaction aggregate status derived from operation state
+* execution plan graph/transaction identity validation
+* graph node IDs aligned with transaction operation IDs
+* deterministic plan execution order
+* plan fingerprint tied to graph structure and transaction fingerprint
+
+#### Snapshot, replay, and audit evidence
+
+* immutable execution plan snapshot
+* snapshot isolation from later plan / graph / transaction mutation
+* replay verification against snapshot
+* mismatch diagnostics for plan fingerprint, execution order, operation fingerprints, missing operations, extra operations, and aggregate status
+* immutable audit record from replay evidence
+* audit trail with deterministic append order and trail fingerprint
+
+#### Rollback verification and evidence packaging
+
+* reverse dependency-safe rollback order verification
+* rollback mismatch diagnostics
+* runtime evidence bundle combining snapshot, replay, audit, and rollback verification evidence
+* identity consistency checks across bundle components
+* deterministic bundle fingerprint
+
+#### Serialization and persistence boundary
+
+* canonical JSON serialization for evidence bundles
+* deterministic serialize -> deserialize -> serialize roundtrip
+* fingerprint mismatch rejection
+* missing-field rejection
+* payload mutation isolation
+* abstract runtime evidence store boundary
+* in-memory evidence store implementation for contract validation
+* deterministic store fingerprint from ordered bundle fingerprints
+
+### Boundaries preserved
+
+This checkpoint intentionally preserves these boundaries:
+
+```text
+contract != scheduler action
+replay verification != tool rerun
+audit evidence != execution authority
+rollback verification != rollback execution
+persistence boundary != sqlite/file backend
+serialization != networking
+orchestrator contract != main runtime integration
+```
+
+The new stack still does not allow:
+
+```text
+NO scheduler coupling
+NO agent_loop coupling
+NO step_executor coupling
+NO real tool replay
+NO real rollback execution
+NO filesystem persistence backend
+NO sqlite backend
+NO networking export
+NO UI integration
+NO formal workspace mutation
+```
+
+### Validation confirmed
+
+Confirmed passing during this checkpoint:
+
+```text
+tests/test_runtime_execution_graph_contract.py: PASS, 30 tests
+tests/test_runtime_operation_contract.py: PASS, 18 tests
+tests/test_runtime_transaction_contract.py: PASS, 21 tests
+tests/test_execution_plan_contract.py: PASS, 14 tests
+tests/test_execution_plan_snapshot_contract.py: 11 tests OK
+tests/test_execution_replay_contract.py: 13 tests OK
+tests/test_execution_audit_contract.py: 12 tests OK
+tests/test_rollback_verification_contract.py: 11 tests OK
+tests/test_runtime_evidence_bundle_contract.py: 9 tests OK
+tests/test_runtime_evidence_serialization_contract.py: 10 tests OK
+tests/test_runtime_evidence_persistence_contract.py: 12 tests OK
+tests/run_regression_contracts.py: ALL PASS, 49 test files
+```
+
+### Git checkpoint
+
+Pushed branch:
+
+```text
+runtime-aggregate-convergence-v1
+```
+
+Observed push range:
+
+```text
+92284b1..1ea2da1  runtime-aggregate-convergence-v1 -> runtime-aggregate-convergence-v1
+```
+
+### Why this matters
+
+This checkpoint moves ZERO from a repair-capable and governance-aware runtime toward a deterministic runtime evidence kernel.
+
+The important result is not that ZERO executes more tools. The important result is that ZERO can now represent execution structure, operation state, transaction grouping, execution plans, snapshots, replay verification, audit evidence, rollback verification, evidence bundles, serialization payloads, and persistence boundaries as deterministic contracts before those pieces are allowed into the live runtime path.
+
+This reduces the risk that future execution replay, rollback, audit, persistence, repair evidence, and scheduler integration collapse into one untestable runtime path.
+
+### Stable checkpoint after this pass
+
+* runtime execution graph: working
+* runtime operation contract: working
+* runtime transaction contract: working
+* execution plan contract: working
+* execution plan snapshot: working
+* replay verification: working
+* audit record / audit trail: working
+* rollback verification: working
+* runtime evidence bundle: working
+* evidence serialization: working
+* persistence boundary abstraction: working
+* regression contract runner: 49 files passing
+* scheduler, agent loop, and step executor remain uncoupled
+* real rollback, real replay, filesystem persistence, and runtime integration remain disabled
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `tests/run_regression_contracts.py: ALL PASS: 49 test files`
+* Runtime Evidence Persistence Contract v1 completion summary
+* Runtime Evidence Serialization Contract v1 completion summary
+* Runtime Evidence Bundle Contract v1 completion summary
+* Rollback Verification Contract v1 completion summary
+* Execution Audit / Replay / Snapshot completion summaries
+* push to `runtime-aggregate-convergence-v1`
+* commit range `92284b1..1ea2da1`
+
+### Next step
+
+Do not connect this stack directly into the live scheduler path yet.
+
+Recommended next checkpoint:
+
+```text
+FilesystemEvidenceStore v1
+```
+
+Expected boundary:
+
+```text
+contract -> safe file adapter -> load validation -> fingerprint verification -> no scheduler execution
+```
+
+Still avoid:
+
+```text
+NO automatic scheduler resume
+NO executor replay
+NO rollback execution
+NO hidden workspace mutation
+NO agent_loop integration until evidence store semantics are stable
+```
+
 ## 2026-05-11 - Runtime Repair Transaction v1-v25 governed cognition checkpoint
 
 This checkpoint records the completion of the governed repair transaction cognition stack on branch:

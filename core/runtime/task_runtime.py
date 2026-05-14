@@ -821,6 +821,8 @@ class TaskRuntime:
         state["failure_message"] = failure_message
         state["updated_at"] = self._now()
         context = self._normalize_repair_context_for_task(state.get("repair_context"), task=task, state=state)
+        if failure_message:
+            context["last_error"] = failure_message
         goal_state = context.get("engineering_goal_state") if isinstance(context.get("engineering_goal_state"), dict) else {}
         current_subgoal_id = str(goal_state.get("current_subgoal_id") or "")
         if current_subgoal_id:
