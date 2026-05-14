@@ -2302,6 +2302,36 @@ class Scheduler(RuntimeTaskScheduler):
 
     def get_queue_snapshot(self) -> Dict[str, Any]:
         repo_tasks = self._list_repo_tasks()
+        review_queue = [
+            task for task in repo_tasks
+            if (
+                bool(task.get("requires_review", False))
+                or bool(task.get("requires_approval", False))
+                or str(task.get("status") or "").strip().lower() == STATUS_REVIEW_REQUIRED
+                or str(task.get("review_status") or "").strip().lower() in {
+                    "pending",
+                    "required",
+                    "requested",
+                    "waiting",
+                    "waiting_review",
+                    "review_required",
+                    "pending_review",
+                }
+            )
+            and str(task.get("review_status") or "").strip().lower() not in {
+                "approved",
+                "accepted",
+                "allowed",
+                "cleared",
+                "resolved",
+                "rejected",
+                "denied",
+                "declined",
+                "cancelled",
+                "canceled",
+            }
+        ]
+
         return {
             "ok": True,
             "scheduler_build": SCHEDULER_BUILD,
@@ -2310,6 +2340,8 @@ class Scheduler(RuntimeTaskScheduler):
             "ready_queue_size": len(self.dispatcher.list_queued()),
             "running_tasks": self.dispatcher.list_running(),
             "running_count": len(self.dispatcher.list_running()),
+            "review_queue": review_queue,
+            "review_queue_size": len(review_queue),
             "worker_pool": self.worker_pool.stats(),
             "workspace_dir": self.workspace_dir,
             "workspace_root": self.workspace_root,
