@@ -30,6 +30,8 @@ class MutationGatewayRequest:
     sandbox_source_root: str | Path
     rollback_root: str | Path
     report_root: str | Path
+    operations: tuple[dict[str, Any], ...] = ()
+    sandbox_files: dict[str, Any] = field(default_factory=dict)
     risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM
     approval_mode: MutationApprovalMode = MutationApprovalMode.REVIEW_REQUIRED
     verification: MutationVerificationRequirement = (
@@ -73,6 +75,8 @@ def run_governed_mutation(
         sandbox_source_root=request.sandbox_source_root,
         rollback_root=request.rollback_root,
         report_root=request.report_root,
+        operations=[dict(item) for item in request.operations],
+        sandbox_files=dict(request.sandbox_files),
         verification_checks=list(request.verification_checks),
         approval_decisions=list(request.approval_decisions),
         dry_run=request.dry_run,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -75,6 +75,8 @@ def run_mutation_runtime_pipeline(
     sandbox_source_root: str | Path,
     rollback_root: str | Path,
     report_root: str | Path,
+    operations: list[dict[str, Any]] | None = None,
+    sandbox_files: dict[str, Any] | None = None,
     verification_checks: list[MutationVerificationCheck] | None = None,
     approval_decisions: list[MutationApprovalDecision] | None = None,
     dry_run: bool = False,
@@ -105,6 +107,9 @@ def run_mutation_runtime_pipeline(
     patch_plan = create_patch_plan(
         session=session,
         relative_paths=relative_paths,
+        operations=operations,
+        sandbox_files=sandbox_files,
+        metadata=metadata,
     )
     patch_plan_path = write_patch_plan(
         patch_plan,

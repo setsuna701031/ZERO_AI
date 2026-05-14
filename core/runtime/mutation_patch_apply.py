@@ -20,6 +20,8 @@ from core.runtime.mutation_session import (
 class MutationPatchItem:
     relative_path: str
     operation: str = "replace"
+    operation_payload: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -30,6 +32,8 @@ class MutationPatchPlan:
     session_id: str
     sandbox_run_id: str | None
     items: tuple[MutationPatchItem, ...]
+    sandbox_files: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
@@ -38,6 +42,8 @@ class MutationPatchPlan:
             "sandbox_run_id": self.sandbox_run_id,
             "created_at": self.created_at,
             "items": [item.to_dict() for item in self.items],
+            "sandbox_files": dict(self.sandbox_files),
+            "metadata": dict(self.metadata),
         }
 
     def to_json(self) -> str:
@@ -62,6 +68,9 @@ def create_patch_plan(
     *,
     session: MutationSession,
     relative_paths: list[str],
+    operations: list[dict[str, Any]] | None = None,
+    sandbox_files: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> MutationPatchPlan:
     normalized_paths = tuple(_normalize_relative_path(path) for path in relative_paths)
 
@@ -72,12 +81,28 @@ def create_patch_plan(
         if not validate_mutation_path(path, session.scope):
             raise ValueError(f"Mutation patch path outside session scope: {path}")
 
-    items = tuple(MutationPatchItem(relative_path=path) for path in normalized_paths)
+    operation_by_path = _operation_payloads_by_path(operations or [])
+    items = tuple(
+        MutationPatchItem(
+            relative_path=path,
+            operation=str(operation_by_path.get(path, {}).get("op_type", "replace") or "replace"),
+            operation_payload=dict(operation_by_path.get(path, {})),
+            metadata={},
+        )
+        for path in normalized_paths
+    )
+
+    normalized_sandbox_files = {
+        _normalize_relative_path(str(path)): str(content)
+        for path, content in dict(sandbox_files or {}).items()
+    }
 
     return MutationPatchPlan(
         session_id=session.session_id,
         sandbox_run_id=session.sandbox_run_id,
         items=items,
+        sandbox_files=normalized_sandbox_files,
+        metadata=dict(metadata or {}),
     )
 
 
@@ -100,6 +125,8 @@ def read_patch_plan(path: str | Path) -> MutationPatchPlan:
         MutationPatchItem(
             relative_path=str(item["relative_path"]),
             operation=str(item.get("operation", "replace")),
+            operation_payload=dict(item.get("operation_payload") or {}),
+            metadata=dict(item.get("metadata") or {}),
         )
         for item in data.get("items", [])
     )
@@ -109,6 +136,8 @@ def read_patch_plan(path: str | Path) -> MutationPatchPlan:
         sandbox_run_id=data.get("sandbox_run_id"),
         created_at=str(data["created_at"]),
         items=items,
+        sandbox_files={str(k): str(v) for k, v in dict(data.get("sandbox_files") or {}).items()},
+        metadata=dict(data.get("metadata") or {}),
     )
 
 
@@ -133,12 +162,14 @@ def apply_patch_plan(
     rollback.mkdir(parents=True, exist_ok=True)
     reports.mkdir(parents=True, exist_ok=True)
 
+    _seed_plan_sandbox_files(plan.sandbox_files, sandbox)
+
     applied_paths: list[str] = []
     skipped_paths: list[str] = []
     rollback_paths: list[str] = []
 
     for item in plan.items:
-        if item.operation != "replace":
+        if item.operation not in ("replace", "write_file", "patch_file"):
             raise ValueError(f"Unsupported patch operation: {item.operation}")
 
         relative_path = _normalize_relative_path(item.relative_path)
@@ -155,7 +186,11 @@ def apply_patch_plan(
         _assert_inside(rollback, rollback_path)
 
         if not source_path.exists():
-            raise FileNotFoundError(f"Sandbox patch source does not exist: {relative_path}")
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            payload_content = _payload_content(item.operation_payload)
+            if payload_content is None:
+                raise FileNotFoundError(f"Sandbox patch source does not exist: {relative_path}")
+            source_path.write_text(payload_content, encoding="utf-8")
 
         if source_path.is_dir():
             raise ValueError(f"Directory patch apply is not supported yet: {relative_path}")
@@ -190,6 +225,7 @@ def apply_patch_plan(
         "applied_paths": applied_paths,
         "skipped_paths": skipped_paths,
         "rollback_paths": rollback_paths,
+        "plan_metadata": dict(plan.metadata),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -207,6 +243,61 @@ def apply_patch_plan(
         rollback_paths=tuple(rollback_paths),
         report_path=str(report_path),
     )
+
+
+def _operation_payloads_by_path(operations: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+
+    for operation in operations:
+        if not isinstance(operation, dict):
+            continue
+
+        raw_path = operation.get("target_path") or operation.get("relative_path") or operation.get("path")
+        if not raw_path:
+            continue
+
+        relative_path = _normalize_relative_path(str(raw_path))
+        result[relative_path] = dict(operation)
+
+    return result
+
+
+def _seed_plan_sandbox_files(
+    sandbox_files: dict[str, str],
+    sandbox_root: Path,
+) -> None:
+    for relative_path, content in sandbox_files.items():
+        normalized = _normalize_relative_path(relative_path)
+        target = (sandbox_root / normalized).resolve()
+        _assert_inside(sandbox_root, target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(str(content), encoding="utf-8")
+
+
+def _payload_content(payload: dict[str, Any]) -> str | None:
+    if "content" in payload and payload.get("content") is not None:
+        return str(payload.get("content"))
+
+    if "patch" in payload and payload.get("patch") is not None:
+        return _minimal_patch_result(str(payload.get("patch")))
+
+    return None
+
+
+def _minimal_patch_result(patch_text: str) -> str:
+    lines: list[str] = []
+    for line in str(patch_text).splitlines():
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        if line.startswith("+"):
+            lines.append(line[1:])
+        elif line.startswith(" ") or line.startswith("\t"):
+            lines.append(line[1:])
+
+    if not lines:
+        raise ValueError("patch_has_no_content")
+
+    return "\n".join(lines) + "\n"
 
 
 def _normalize_relative_path(path: str) -> str:
