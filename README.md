@@ -75,6 +75,59 @@ Important:
 
 
 
+
+## Governed Repair Runtime / Operator Review Loop (Latest)
+
+Current engineering checkpoint:
+
+```text
+runtime-aggregate-convergence-v1
+```
+
+ZERO now includes a human-supervised governed repair runtime loop:
+
+```text
+governed_repair_mutation
+-> MutationBoundary risk classification
+-> approval / verification policy
+-> governed repair transaction
+-> awaiting_review
+-> scheduler review_queue
+-> operator approve / reject
+-> authorized / blocked lifecycle
+-> runtime resume semantics
+-> control API surface
+```
+
+What changed:
+
+- repair-generated mutations now route through boundary risk policy
+- approval-required transactions stop at `awaiting_review`
+- approved reviews transition toward `authorized`
+- rejected reviews transition to `blocked`
+- scheduler exposes a native `review_queue`
+- scheduler exposes `get_review_queue()`, `approve_review_item(...)`, and `reject_review_item(...)`
+- `ZeroControlAPI` exposes review inbox actions without exposing scheduler internals
+
+Important boundaries:
+
+```text
+review queue != UI
+approval != hidden execution
+operator action != unrestricted mutation
+control API != scheduler rewrite
+```
+
+Current validation checkpoint:
+
+```text
+1973 passed, 162 subtests passed
+```
+
+This moves ZERO from a governed repair transaction substrate toward a human-supervised autonomous engineering runtime: repair actions can now be risk-classified, queued for review, surfaced to an operator, approved or rejected, persisted, and resumed through controlled lifecycle semantics.
+
+------------------------------------------------------------------------
+
 ## Runtime Aggregate Convergence / Evidence Kernel
 
 Current engineering checkpoint:
@@ -389,13 +442,14 @@ L4 Tool Layer: ✔ Complete\
 L5 Decision Core: ✔ Complete\
 L5 Controlled Draft Workflow: ✔ Complete\
 Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized\
-Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed
+Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed\
+Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop wired
 
 Current phase:\
-→ deterministic runtime evidence and persistence boundary sealed
+→ governed repair runtime review queue and operator control surface are wired
 
 Next stage:\
-→ filesystem evidence store / runtime integration only after contract stability is confirmed
+→ operator review console / UI adapter v1, without bypassing control API or review gates
 
 ------------------------------------------------------------------------
 

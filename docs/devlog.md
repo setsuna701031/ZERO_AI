@@ -1,5 +1,222 @@
 ---
 
+## 2026-05-14 - Governed Repair Runtime / Operator Review Loop checkpoint
+
+This checkpoint records the governed repair runtime convergence work on branch:
+
+```text
+runtime-aggregate-convergence-v1
+```
+
+The goal was not to add another autonomous mutation path. The goal was to connect the existing governed mutation, review, transaction, scheduler, persistence, and control surfaces into one visible human-supervised runtime loop.
+
+### What was completed
+
+Completed the governed repair execution and review-loop wiring across the runtime path:
+
+* routed `governed_repair_mutation` through `MutationBoundary` risk classification
+* fixed verification precedence so explicit `skip_verification=True` overrides risk-default verification when intentionally requested
+* gated approval-required repair transactions behind `awaiting_review` instead of allowing direct commit
+* wired transaction review approval into lifecycle transitions:
+  * `awaiting_review -> approved -> authorized`
+* wired transaction review rejection into:
+  * `awaiting_review -> blocked`
+* exposed governed repair review lifecycle fields in public task records
+* persisted review lifecycle fields through scheduler repo state sync
+* surfaced `review_queue` in scheduler queue snapshots
+* added scheduler operator review bridge:
+  * `approve_review_item(...)`
+  * `reject_review_item(...)`
+* added scheduler-native review inbox API:
+  * `get_review_queue()`
+* exposed review inbox actions through `ZeroControlAPI`:
+  * `get_review_queue()`
+  * `approve_review_item(...)`
+  * `reject_review_item(...)`
+
+### Runtime chain established
+
+The completed chain is now:
+
+```text
+governed_repair_mutation
+-> MutationBoundary risk classification
+-> approval / verification policy
+-> governed repair transaction
+-> awaiting_review state
+-> persisted review lifecycle fields
+-> scheduler public task projection
+-> scheduler review_queue
+-> operator inbox query
+-> approve / reject action
+-> lifecycle transition
+-> authorized resume semantics
+-> audit / replay continuity
+```
+
+### Major layers completed
+
+#### Risk-aware governed mutation routing
+
+* repair-generated mutation now routes through mutation boundary policy
+* explicit scope is required by default
+* approval mode is derived from risk classification
+* verification mode is derived from risk classification with explicit operator override precedence
+* smoke coverage locks the conservative default behavior
+
+#### Runtime repair transaction lifecycle
+
+* approval-required transactions stop at `awaiting_review`
+* approved transactions transition toward `authorized`
+* rejected transactions transition to `blocked`
+* commit remains allowed only for authorized / approved transactions or no-approval-required transactions
+* audit events are appended for review lifecycle transitions
+* rollback path remains untouched
+
+#### Scheduler visibility and persistence
+
+* public task records now expose review lifecycle state
+* repo state sync persists:
+  * `transaction_state`
+  * `allowed_next_action`
+  * `approval_required`
+* scheduler queue snapshot now includes:
+  * `review_queue`
+  * `review_queue_size`
+* review queue is derived from existing task/public-record state rather than a separate inbox database
+
+#### Operator bridge and control surface
+
+* scheduler has operator-facing review actions:
+  * approve review item
+  * reject review item
+* scheduler exposes review inbox listing via `get_review_queue()`
+* control API exposes the same review actions without forcing callers into scheduler internals
+* no UI implementation was added in this checkpoint; the layer is API/control-surface only
+
+### Boundaries preserved
+
+This checkpoint intentionally preserves these boundaries:
+
+```text
+review queue != UI
+operator action != unrestricted mutation
+approval != immediate hidden execution
+scheduler visibility != scheduler authority expansion
+control API != direct scheduler internals exposure
+```
+
+The new path still does not add:
+
+```text
+NO new UI
+NO unrestricted workspace mutation
+NO hidden autonomous approve/reject
+NO scheduler rewrite
+NO agent_loop rewrite
+NO new review framework
+NO automatic merge / push / external side effects
+```
+
+### Validation confirmed
+
+Confirmed passing during this checkpoint:
+
+```text
+python -m pytest tests/test_runtime_repair_transaction.py tests/test_runtime_repair_transaction_review.py tests/test_step_executor_governed_repair_mutation.py -q
+python -m pytest -q
+```
+
+Observed full-suite validation:
+
+```text
+1973 passed, 162 subtests passed
+```
+
+### Git checkpoints
+
+Committed and pushed on branch:
+
+```text
+runtime-aggregate-convergence-v1
+```
+
+Relevant commits from this pass:
+
+```text
+e03acfa - route governed repair mutation through boundary risk policy
+18b9cc8 - add risk-aware governed repair mutation policy enforcement
+1ae7dc3 - gate runtime repair commit behind approval review state
+7791bbe - wire approval review lifecycle into governed repair transactions
+379bcd6 - expose governed repair review lifecycle in public task records
+cff5bb7 - persist governed repair review lifecycle fields
+ba788cd - surface review queue in scheduler snapshot
+1ed2f43 - add scheduler operator review action bridge
+ecec22f - add scheduler review inbox api
+6ba1ca4 - expose review inbox actions through control api
+```
+
+### Why this matters
+
+This checkpoint moves ZERO from a governed repair transaction substrate into a human-supervised autonomous engineering runtime path.
+
+The important result is not that ZERO can write more files. The important result is that a repair mutation can now become a governed transaction, enter a review queue, be surfaced to an operator, transition through approval or rejection, persist its lifecycle, and remain visible through scheduler and control API surfaces before any resume path is allowed.
+
+This reduces the risk that mutation, review, approval, resume, audit, replay, and UI concerns collapse into one untestable path inside `scheduler.py` or `agent_loop.py`.
+
+### Stable checkpoint after this pass
+
+* governed repair mutation boundary routing: working
+* risk-aware approval/verification policy: working
+* explicit scope gate: working
+* approval-required transaction stop at `awaiting_review`: working
+* approve lifecycle transition to `authorized`: working
+* reject lifecycle transition to `blocked`: working
+* review lifecycle persistence: working
+* public task projection: working
+* scheduler review queue: working
+* scheduler operator action bridge: working
+* scheduler review inbox API: working
+* control API review action surface: working
+* full test suite: passing
+* UI not yet added
+* hidden autonomous approval not enabled
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `1973 passed, 162 subtests passed`
+* `review_queue` added to scheduler snapshot
+* commits pushed to `runtime-aggregate-convergence-v1`
+* `scheduler.get_review_queue()` API completion
+* control API review action completion
+* runtime artifact cleanup before commits
+
+### Next step
+
+Recommended next checkpoint:
+
+```text
+Operator Review Console / UI Adapter v1
+```
+
+Expected boundary:
+
+```text
+review_queue -> display / console adapter -> approve/reject command -> control API -> scheduler bridge
+```
+
+Still avoid:
+
+```text
+NO direct UI-to-mutation shortcut
+NO hidden approval
+NO automatic execution without review state
+NO scheduler rewrite
+NO agent_loop rewrite
+```
+
 ## 2026-05-13 - Runtime Aggregate Convergence v1 deterministic evidence checkpoint
 
 This checkpoint records the runtime aggregate convergence work on branch:
