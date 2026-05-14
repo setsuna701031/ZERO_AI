@@ -404,6 +404,161 @@ class ZeroControlAPI:
             "task_id": normalized_task_id,
         }
 
+    def get_review_queue(self) -> Dict[str, Any]:
+        system = self.ensure_booted()
+        scheduler = _get_scheduler(system)
+
+        if scheduler is None:
+            return {
+                "ok": False,
+                "error": "scheduler unavailable",
+                "mode": "control_api_get_review_queue",
+            }
+
+        fn = getattr(scheduler, "get_review_queue", None)
+
+        if not callable(fn):
+            return {
+                "ok": False,
+                "error": "scheduler.get_review_queue unavailable",
+                "mode": "control_api_get_review_queue",
+            }
+
+        try:
+            result = fn()
+
+            if isinstance(result, dict):
+                result.setdefault("mode", "control_api_get_review_queue")
+                return result
+
+            return {
+                "ok": False,
+                "error": "invalid review queue result",
+                "mode": "control_api_get_review_queue",
+            }
+
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"get_review_queue failed: {e}",
+                "traceback": traceback.format_exc(),
+                "mode": "control_api_get_review_queue",
+            }
+
+
+    def approve_review_item(
+        self,
+        task_id: str,
+        *,
+        transaction: Optional[Dict[str, Any]] = None,
+        review: Optional[Dict[str, Any]] = None,
+        operator: str = "operator",
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        system = self.ensure_booted()
+        scheduler = _get_scheduler(system)
+
+        if scheduler is None:
+            return {
+                "ok": False,
+                "error": "scheduler unavailable",
+                "mode": "control_api_approve_review_item",
+            }
+
+        fn = getattr(scheduler, "approve_review_item", None)
+
+        if not callable(fn):
+            return {
+                "ok": False,
+                "error": "scheduler.approve_review_item unavailable",
+                "mode": "control_api_approve_review_item",
+            }
+
+        try:
+            result = fn(
+                str(task_id or ""),
+                transaction=transaction,
+                review=review,
+                operator=operator,
+                reason=reason,
+            )
+
+            if isinstance(result, dict):
+                result.setdefault("mode", "control_api_approve_review_item")
+                return result
+
+            return {
+                "ok": False,
+                "error": "invalid approve result",
+                "mode": "control_api_approve_review_item",
+            }
+
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"approve_review_item failed: {e}",
+                "traceback": traceback.format_exc(),
+                "mode": "control_api_approve_review_item",
+            }
+
+
+    def reject_review_item(
+        self,
+        task_id: str,
+        *,
+        transaction: Optional[Dict[str, Any]] = None,
+        review: Optional[Dict[str, Any]] = None,
+        operator: str = "operator",
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        system = self.ensure_booted()
+        scheduler = _get_scheduler(system)
+
+        if scheduler is None:
+            return {
+                "ok": False,
+                "error": "scheduler unavailable",
+                "mode": "control_api_reject_review_item",
+            }
+
+        fn = getattr(scheduler, "reject_review_item", None)
+
+        if not callable(fn):
+            return {
+                "ok": False,
+                "error": "scheduler.reject_review_item unavailable",
+                "mode": "control_api_reject_review_item",
+            }
+
+        try:
+            result = fn(
+                str(task_id or ""),
+                transaction=transaction,
+                review=review,
+                operator=operator,
+                reason=reason,
+            )
+
+            if isinstance(result, dict):
+                result.setdefault("mode", "control_api_reject_review_item")
+                return result
+
+            return {
+                "ok": False,
+                "error": "invalid reject result",
+                "mode": "control_api_reject_review_item",
+            }
+
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": f"reject_review_item failed: {e}",
+                "traceback": traceback.format_exc(),
+                "mode": "control_api_reject_review_item",
+            }
+
+
+
     def get_status(self) -> Dict[str, Any]:
         system = self.ensure_booted()
         scheduler = _get_scheduler(system)
