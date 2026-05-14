@@ -65,6 +65,10 @@ from core.tasks.scheduler_core.public_task_record_helpers import (
 from core.tasks.scheduler_core.runtime_resume_gate import (
     apply_runtime_resume_gate,
 )
+from core.tasks.runtime_repair_transaction_review import (
+    approve_runtime_repair_transaction_review,
+    reject_runtime_repair_transaction_review,
+)
 from core.tasks.scheduler_core.trace_helpers import (
     extract_execution_trace_from_payload,
     get_trace_file_for_task,
@@ -8187,6 +8191,119 @@ def _zero_v11_attach_scheduler_adapter_payload(result):
 
     result["adapter_payload"] = adapter_payload
     return result
+
+
+
+def _zero_review_action_find_task(self, task_id: str) -> Dict[str, Any]:
+    task_name = str(task_id or "").strip()
+    if not task_name:
+        return {}
+    task = self._load_task(task_name)
+    return task if isinstance(task, dict) else {}
+
+
+def _zero_review_action_apply_result(
+    self,
+    *,
+    task_id: str,
+    action_result: Dict[str, Any],
+    transaction: Dict[str, Any],
+) -> Dict[str, Any]:
+    task = _zero_review_action_find_task(self, task_id)
+    if not task:
+        return {
+            "ok": False,
+            "error": "task_not_found",
+            "task_id": str(task_id or ""),
+        }
+
+    lifecycle = action_result.get("transaction_lifecycle")
+    if not isinstance(lifecycle, dict):
+        lifecycle = {}
+
+    review_state = str(action_result.get("review_state") or "").strip().lower()
+    task["review_status"] = review_state or str(task.get("review_status") or "")
+    task["requires_review"] = review_state not in {"approved", "rejected"}
+    task["transaction_state"] = str(lifecycle.get("state") or transaction.get("state") or "")
+    task["allowed_next_action"] = str(action_result.get("allowed_next_action") or "")
+
+    if review_state == "approved":
+        task["next_action"] = "run_next_tick"
+        task["agent_action"] = "resume_execution"
+        task["status"] = "waiting_review"
+    elif review_state == "rejected":
+        task["next_action"] = "archive_or_revise_transaction"
+        task["agent_action"] = "review_rejected"
+        task["status"] = STATUS_BLOCKED
+        task["blocked_reason"] = str(action_result.get("human_summary") or "review rejected")
+
+    task["review_payload"] = copy.deepcopy(action_result)
+    task["history"] = self._append_history(task.get("history"), str(task.get("status") or ""))
+
+    self._persist_task_payload(task_id=task_id, task=task)
+    return {
+        "ok": True,
+        "task_id": task_id,
+        "review_state": review_state,
+        "transaction_state": task.get("transaction_state", ""),
+        "status": task.get("status", ""),
+        "task": copy.deepcopy(task),
+        "action_result": copy.deepcopy(action_result),
+    }
+
+
+def _zero_scheduler_approve_review_item(
+    self,
+    task_id: str,
+    *,
+    transaction: Any = None,
+    review: Any = None,
+    operator: str = "operator",
+    reason: str = "",
+) -> Dict[str, Any]:
+    tx = transaction if isinstance(transaction, dict) else {}
+    review_payload = review if isinstance(review, dict) else {}
+    result = approve_runtime_repair_transaction_review(
+        review_payload,
+        operator=operator,
+        reason=reason,
+        transaction=tx,
+    )
+    return _zero_review_action_apply_result(
+        self,
+        task_id=str(task_id or ""),
+        action_result=result,
+        transaction=tx,
+    )
+
+
+def _zero_scheduler_reject_review_item(
+    self,
+    task_id: str,
+    *,
+    transaction: Any = None,
+    review: Any = None,
+    operator: str = "operator",
+    reason: str = "",
+) -> Dict[str, Any]:
+    tx = transaction if isinstance(transaction, dict) else {}
+    review_payload = review if isinstance(review, dict) else {}
+    result = reject_runtime_repair_transaction_review(
+        review_payload,
+        operator=operator,
+        reason=reason,
+        transaction=tx,
+    )
+    return _zero_review_action_apply_result(
+        self,
+        task_id=str(task_id or ""),
+        action_result=result,
+        transaction=tx,
+    )
+
+
+Scheduler.approve_review_item = _zero_scheduler_approve_review_item
+Scheduler.reject_review_item = _zero_scheduler_reject_review_item
 
 
 _ZERO_V352_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
