@@ -63,6 +63,16 @@ def build_public_task_record(
         "requires_review": bool(normalized.get("requires_review", False)),
         "review_status": str(normalized.get("review_status") or ""),
         "review_id": str(normalized.get("review_id") or ""),
+        "transaction_state": str(
+            normalized.get("transaction_state")
+            or normalized.get("repair_transaction_state")
+            or normalized.get("runtime_repair_transaction_state")
+            or ""
+        ),
+        "allowed_next_action": str(normalized.get("allowed_next_action") or ""),
+        "approval_required": bool(
+            normalized.get("approval_required", normalized.get("requires_approval", False))
+        ),
         "agent_action": str(normalized.get("agent_action") or ""),
         "result_path": result_path,
         "result_logical_path": result_logical_path,
