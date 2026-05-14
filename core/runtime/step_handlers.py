@@ -13,7 +13,8 @@ from typing import Any, Dict, Optional
 
 from core.tools.tool_router import ToolRouter
 from core.runtime.governed_repair_api import execute_governed_repair_mutation
-from core.runtime.mutation_session import MutationApprovalMode, MutationVerificationRequirement
+from core.runtime.mutation_boundary import MutationBoundary
+from core.runtime.mutation_session import MutationApprovalMode, MutationRiskLevel, MutationVerificationRequirement
 
 
 class BaseStepHandler:
@@ -345,6 +346,83 @@ class GovernedRepairMutationStepHandler(BaseStepHandler):
             or workspace_root
         )
 
+        target_path = str(
+            mutation.get("target_path")
+            or mutation.get("path")
+            or mutation.get("file_path")
+            or ""
+        ).strip()
+
+        op_type = str(
+            mutation.get("op_type")
+            or mutation.get("operation")
+            or mutation.get("action")
+            or "write_file"
+        ).strip()
+
+        try:
+            boundary = MutationBoundary(
+                workspace_root=str(workspace_root),
+                project_root=str(workspace_root),
+            )
+            preview = boundary.create_preview(
+                operation=op_type,
+                target_files=[target_path],
+                reason=goal,
+                proposed_changes=[mutation],
+                metadata={
+                    "source": "governed_repair_mutation_step_handler",
+                    "step_id": step.get("id"),
+                    "repair_injected": bool(step.get("repair_injected", False)),
+                },
+                created_by="zero",
+            )
+            risk = preview.get("risk") if isinstance(preview, dict) else {}
+        except Exception as exc:
+            return self._error(
+                error_type="governed_repair_risk_classification_failed",
+                message=f"governed repair risk classification failed: {exc}",
+                step=step,
+                details={
+                    "target_path": target_path,
+                    "op_type": op_type,
+                    "workspace_root": str(workspace_root),
+                },
+            )
+
+        risk_level_text = str((risk or {}).get("level") or "medium").strip().lower()
+        if risk_level_text == "critical":
+            risk_level = MutationRiskLevel.CRITICAL
+        elif risk_level_text == "high":
+            risk_level = MutationRiskLevel.HIGH
+        elif risk_level_text == "low":
+            risk_level = MutationRiskLevel.LOW
+        else:
+            risk_level = MutationRiskLevel.MEDIUM
+
+        requires_approval = bool((risk or {}).get("requires_approval", True))
+        requires_verification = bool((risk or {}).get("requires_replay_verification", True))
+
+        approval_mode = (
+            MutationApprovalMode.REVIEW_REQUIRED
+            if requires_approval
+            else (
+                MutationApprovalMode.AUTO
+                if bool(step.get("auto_approve", False))
+                else MutationApprovalMode.REVIEW_REQUIRED
+            )
+        )
+
+        verification = (
+            MutationVerificationRequirement.TARGETED_TESTS
+            if requires_verification
+            else (
+                MutationVerificationRequirement.NONE
+                if bool(step.get("skip_verification", False))
+                else MutationVerificationRequirement.TARGETED_TESTS
+            )
+        )
+
         try:
             result = execute_governed_repair_mutation(
                 task_id=task_id,
@@ -356,10 +434,15 @@ class GovernedRepairMutationStepHandler(BaseStepHandler):
                 rollback_root=rollback_root,
                 report_root=report_root,
                 allowed_roots=tuple(str(item) for item in allowed_roots if str(item).strip()),
-                scope_gate={"scope_allowed": True},
-                approval_mode=MutationApprovalMode.AUTO,
-                verification=MutationVerificationRequirement.NONE,
-                dry_run=bool(step.get("dry_run", False)),
+                scope_gate={
+                    "scope_allowed": bool(step.get("scope_allowed", False)),
+                    "source": "governed_repair_mutation_step_handler",
+                    "policy": "explicit_scope_required",
+                },
+                approval_mode=approval_mode,
+                verification=verification,
+                risk_level=risk_level,
+                dry_run=bool(step.get("dry_run", True)),
                 metadata={
                     "source": "governed_repair_mutation_step_handler",
                     "step_id": step.get("id"),
