@@ -148,6 +148,26 @@ def commit_runtime_repair_transaction(
             summary="Cannot commit repair transaction without staged mutations.",
         )
 
+    if bool(tx.get("requires_approval", False)) and str(tx.get("state") or "").strip().lower() not in {
+        "approved",
+        "authorized",
+    }:
+        tx["state"] = "awaiting_review"
+        tx["summary"] = "Runtime repair transaction awaiting review approval."
+
+        _append_audit_event(
+            tx,
+            event_type="transaction_awaiting_review",
+            status="awaiting_review",
+            summary=tx["summary"],
+            details={
+                "staged_mutation_count": len(staged),
+                "requires_approval": True,
+            },
+        )
+
+        return freeze_runtime_export(tx)
+
     tx["committed_mutations"] = clone_runtime_export(staged)
     tx["state"] = "committed"
     tx["summary"] = f"Runtime repair transaction committed {len(staged)} staged mutation(s)."
