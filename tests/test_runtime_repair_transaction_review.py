@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.tasks.runtime_repair_transaction import (
+    commit_runtime_repair_transaction,
     create_runtime_repair_transaction,
     stage_runtime_repair_mutation,
 )
@@ -155,6 +156,55 @@ def test_approve_runtime_repair_transaction_review() -> None:
     )
 
 
+def test_approve_runtime_repair_transaction_review_authorizes_awaiting_transaction() -> None:
+    tx = create_runtime_repair_transaction(
+        task_id="task-approve-lifecycle",
+        proposal_id="proposal-approve-lifecycle",
+        authorization={
+            "requires_approval": True,
+        },
+        scope_gate={
+            "scope_allowed": True,
+        },
+    )
+
+    tx = stage_runtime_repair_mutation(
+        tx,
+        {
+            "action": "write_file",
+            "target_path": (
+                "workspace/shared/demo.txt"
+            ),
+        },
+    )
+
+    awaiting = commit_runtime_repair_transaction(
+        tx
+    )
+    review = build_runtime_repair_transaction_review(
+        awaiting
+    )
+    approved = approve_runtime_repair_transaction_review(
+        review,
+        operator="operator",
+        reason="looks safe",
+    )
+
+    lifecycle = approved["transaction"]
+
+    assert awaiting["state"] == "awaiting_review"
+    assert review["review_state"] == "awaiting_confirmation"
+    assert lifecycle["state"] == "authorized"
+    assert lifecycle["committed_mutations"] == []
+    assert [
+        event["event_type"]
+        for event in lifecycle["audit_events"][-2:]
+    ] == [
+        "transaction_review_approved",
+        "transaction_authorized",
+    ]
+
+
 def test_reject_runtime_repair_transaction_review() -> None:
     tx = create_runtime_repair_transaction(
         task_id="task-reject",
@@ -204,6 +254,49 @@ def test_reject_runtime_repair_transaction_review() -> None:
         rejected["allowed_next_action"]
         == "archive_or_revise_transaction"
     )
+
+
+def test_reject_runtime_repair_transaction_review_blocks_awaiting_transaction() -> None:
+    tx = create_runtime_repair_transaction(
+        task_id="task-reject-lifecycle",
+        proposal_id="proposal-reject-lifecycle",
+        authorization={
+            "requires_approval": True,
+        },
+        scope_gate={
+            "scope_allowed": True,
+        },
+    )
+
+    tx = stage_runtime_repair_mutation(
+        tx,
+        {
+            "action": "write_file",
+            "target_path": (
+                "workspace/shared/demo.txt"
+            ),
+        },
+    )
+
+    awaiting = commit_runtime_repair_transaction(
+        tx
+    )
+    review = build_runtime_repair_transaction_review(
+        awaiting
+    )
+    rejected = reject_runtime_repair_transaction_review(
+        review,
+        operator="operator",
+        reason="unsafe",
+    )
+
+    lifecycle = rejected["transaction"]
+
+    assert awaiting["state"] == "awaiting_review"
+    assert lifecycle["state"] == "blocked"
+    assert lifecycle["blocked_reason"] == "unsafe"
+    assert lifecycle["committed_mutations"] == []
+    assert lifecycle["audit_events"][-1]["event_type"] == "transaction_review_rejected"
 
 
 def test_classify_runtime_repair_review_state() -> None:

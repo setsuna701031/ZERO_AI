@@ -85,6 +85,33 @@ def test_commit_runtime_repair_transaction_commits_staged_mutations() -> None:
     assert committed["audit_events"][-1]["event_type"] == "transaction_committed"
 
 
+def test_commit_runtime_repair_transaction_awaits_review_when_approval_required() -> None:
+    tx = create_runtime_repair_transaction(
+        task_id="task-approval-gated",
+        proposal_id="proposal-approval-gated",
+        authorization={"requires_approval": True},
+        scope_gate={"scope_allowed": True},
+    )
+    tx = stage_runtime_repair_mutation(
+        tx,
+        {
+            "action": "write_file",
+            "target_path": "workspace/shared/demo.txt",
+            "content": "hello",
+        },
+    )
+
+    awaiting = commit_runtime_repair_transaction(tx)
+    committed = commit_runtime_repair_transaction(awaiting)
+
+    assert awaiting["state"] == "awaiting_review"
+    assert awaiting["committed_mutations"] == []
+    assert awaiting["audit_events"][-1]["event_type"] == "transaction_awaiting_review"
+    assert committed["state"] == "awaiting_review"
+    assert committed["committed_mutations"] == []
+    assert committed["audit_events"][-1]["event_type"] == "transaction_awaiting_review"
+
+
 def test_commit_runtime_repair_transaction_blocks_when_scope_gate_blocks() -> None:
     tx = create_runtime_repair_transaction(
         task_id="task-4",

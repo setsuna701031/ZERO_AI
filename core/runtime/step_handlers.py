@@ -413,15 +413,12 @@ class GovernedRepairMutationStepHandler(BaseStepHandler):
             )
         )
 
-        verification = (
-            MutationVerificationRequirement.TARGETED_TESTS
-            if requires_verification
-            else (
-                MutationVerificationRequirement.NONE
-                if bool(step.get("skip_verification", False))
-                else MutationVerificationRequirement.TARGETED_TESTS
-            )
-        )
+        if bool(step.get("skip_verification", False)):
+            verification = MutationVerificationRequirement.NONE
+        elif requires_verification:
+            verification = MutationVerificationRequirement.TARGETED_TESTS
+        else:
+            verification = MutationVerificationRequirement.NONE
 
         try:
             result = execute_governed_repair_mutation(

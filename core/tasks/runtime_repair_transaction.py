@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from core.tasks.runtime_audit_artifact import build_runtime_audit_artifact
 from core.tasks.runtime_audit_registry import RuntimeAuditRegistry
+from core.tasks.runtime_repair_transaction_state_machine import (
+    can_runtime_repair_transaction_transition,
+)
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
 from core.tasks.runtime_state_hygiene import clone_runtime_export, freeze_runtime_export, make_json_safe
 
@@ -16,6 +19,9 @@ RUNTIME_REPAIR_TRANSACTION_VERSION = "runtime_repair_transaction.v1"
 OPEN_TRANSACTION_STATES = {
     "created",
     "staged",
+    "awaiting_review",
+    "approved",
+    "authorized",
 }
 
 TERMINAL_TRANSACTION_STATES = {
@@ -66,6 +72,11 @@ def create_runtime_repair_transaction(
         "rolled_back_mutations": [],
         "audit_events": [],
         "snapshot_artifacts": [],
+        "requires_approval": _requires_approval_from_sources(
+            safe_authorization,
+            safe_scope_gate,
+            safe_metadata,
+        ),
         "authorization": clone_runtime_export(safe_authorization),
         "scope_gate": clone_runtime_export(safe_scope_gate),
         "metadata": clone_runtime_export(safe_metadata),
@@ -148,7 +159,24 @@ def commit_runtime_repair_transaction(
             summary="Cannot commit repair transaction without staged mutations.",
         )
 
-    if bool(tx.get("requires_approval", False)) and str(tx.get("state") or "").strip().lower() not in {
+    state = _normalize_state(tx.get("state"))
+    requires_approval = _transaction_requires_approval(tx)
+
+    if state == "awaiting_review":
+        tx["summary"] = "Runtime repair transaction awaiting review approval."
+        _append_audit_event(
+            tx,
+            event_type="transaction_awaiting_review",
+            status="awaiting_review",
+            summary=tx["summary"],
+            details={
+                "staged_mutation_count": len(staged),
+                "requires_approval": True,
+            },
+        )
+        return freeze_runtime_export(tx)
+
+    if requires_approval and state not in {
         "approved",
         "authorized",
     }:
@@ -189,6 +217,56 @@ def commit_runtime_repair_transaction(
         snapshots = _list_or_empty(tx.get("snapshot_artifacts"))
         snapshots.append(artifact)
         tx["snapshot_artifacts"] = snapshots
+
+    return freeze_runtime_export(tx)
+
+
+def transition_runtime_repair_transaction_lifecycle(
+    transaction: Any,
+    *,
+    next_state: Any,
+    reason: Any = "",
+    event_type: Any = "",
+    summary: Any = "",
+    details: Any = None,
+) -> Dict[str, Any]:
+    tx = _mutable_transaction(transaction)
+    current_state = _normalize_state(tx.get("state"))
+    target_state = _normalize_state(next_state)
+
+    if not can_runtime_repair_transaction_transition(current_state, target_state):
+        return _blocked_transaction(
+            tx,
+            reason="illegal_state_transition",
+            summary=(
+                "Cannot transition repair transaction "
+                f"from {current_state or 'unknown'} to {target_state or 'unknown'}."
+            ),
+        )
+
+    tx["state"] = target_state
+    tx["summary"] = _first_nonempty(
+        summary,
+        f"Runtime repair transaction transitioned to {target_state}.",
+    )
+    if target_state == "blocked":
+        tx["blocked_reason"] = _first_nonempty(reason, "review_rejected")
+
+    transition_details = {
+        "from_state": current_state,
+        "to_state": target_state,
+        "reason": _first_nonempty(reason),
+    }
+    if isinstance(details, Mapping):
+        transition_details.update(clone_runtime_export(details))
+
+    _append_audit_event(
+        tx,
+        event_type=_first_nonempty(event_type, "transaction_lifecycle_transition"),
+        status=target_state,
+        summary=tx["summary"],
+        details=transition_details,
+    )
 
     return freeze_runtime_export(tx)
 
@@ -304,6 +382,14 @@ def _mutable_transaction(transaction: Any) -> Dict[str, Any]:
     tx.setdefault("rolled_back_mutations", [])
     tx.setdefault("audit_events", [])
     tx.setdefault("snapshot_artifacts", [])
+    tx.setdefault(
+        "requires_approval",
+        _requires_approval_from_sources(
+            tx.get("authorization") if isinstance(tx.get("authorization"), Mapping) else {},
+            tx.get("scope_gate") if isinstance(tx.get("scope_gate"), Mapping) else {},
+            tx.get("metadata") if isinstance(tx.get("metadata"), Mapping) else {},
+        ),
+    )
     tx.setdefault("authorization", {})
     tx.setdefault("scope_gate", {})
     tx.setdefault("metadata", {})
@@ -380,8 +466,41 @@ def _scope_allows_preview(transaction: Mapping[str, Any]) -> bool:
     return bool(scope_gate.get("scope_allowed"))
 
 
+def _transaction_requires_approval(transaction: Mapping[str, Any]) -> bool:
+    if "requires_approval" in transaction:
+        return bool(transaction.get("requires_approval"))
+
+    authorization = transaction.get("authorization")
+    scope_gate = transaction.get("scope_gate")
+    metadata = transaction.get("metadata")
+
+    return _requires_approval_from_sources(
+        authorization if isinstance(authorization, Mapping) else {},
+        scope_gate if isinstance(scope_gate, Mapping) else {},
+        metadata if isinstance(metadata, Mapping) else {},
+    )
+
+
+def _requires_approval_from_sources(*sources: Mapping[str, Any]) -> bool:
+    for source in sources:
+        for key in (
+            "requires_approval",
+            "approval_required",
+            "requires_review",
+            "review_required",
+        ):
+            if key in source:
+                return bool(source.get(key))
+
+    return False
+
+
+def _normalize_state(state: Any) -> str:
+    return str(state or "").strip().lower()
+
+
 def _is_terminal_state(state: Any) -> bool:
-    return str(state or "").strip().lower() in TERMINAL_TRANSACTION_STATES
+    return _normalize_state(state) in TERMINAL_TRANSACTION_STATES
 
 
 def _build_transaction_id(transaction: Mapping[str, Any]) -> str:

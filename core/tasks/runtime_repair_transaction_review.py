@@ -12,6 +12,9 @@ from core.tasks.runtime_repair_confirmation_actions import (
 from core.tasks.runtime_repair_transaction_preview import (
     build_runtime_repair_transaction_preview,
 )
+from core.tasks.runtime_repair_transaction import (
+    transition_runtime_repair_transaction_lifecycle,
+)
 from core.tasks.runtime_state_hygiene import (
     freeze_runtime_export,
 )
@@ -51,10 +54,10 @@ def build_runtime_repair_transaction_review(
             "runtime_repair_transaction"
         ),
         "proposal_allowed": bool(
-            preview.get("commit_ready")
+            _review_can_proceed(tx, preview)
         ),
         "planner_allowed": bool(
-            preview.get("commit_ready")
+            _review_can_proceed(tx, preview)
         ),
         "mutation_allowed": False,
         "execution_allowed": False,
@@ -92,7 +95,7 @@ def build_runtime_repair_transaction_review(
         ),
         "review_state": review_state,
         "review_allowed": bool(
-            preview.get("commit_ready")
+            _review_can_proceed(tx, preview)
         ),
         "risk_level": _safe_text(
             preview.get("risk_level")
@@ -100,6 +103,9 @@ def build_runtime_repair_transaction_review(
         "requires_confirmation": True,
         "preview": freeze_runtime_export(
             preview
+        ),
+        "transaction": freeze_runtime_export(
+            tx
         ),
         "confirmation_gate": (
             freeze_runtime_export(
@@ -134,6 +140,7 @@ def approve_runtime_repair_transaction_review(
     *,
     operator: str = "",
     reason: str = "",
+    transaction: Any = None,
 ) -> Dict[str, Any]:
     safe_review = (
         review if isinstance(review, Mapping) else {}
@@ -156,6 +163,14 @@ def approve_runtime_repair_transaction_review(
             operator=operator,
             reason=reason,
         )
+    )
+
+    lifecycle = _approve_review_transaction(
+        transaction
+        if isinstance(transaction, Mapping)
+        else safe_review.get("transaction"),
+        reason=reason,
+        approval=approval,
     )
 
     return freeze_runtime_export(
@@ -183,6 +198,9 @@ def approve_runtime_repair_transaction_review(
             "approval": freeze_runtime_export(
                 approval
             ),
+            "transaction": freeze_runtime_export(
+                lifecycle
+            ),
             "allowed_next_action": (
                 "build_mutation_authorization"
             ),
@@ -198,6 +216,7 @@ def reject_runtime_repair_transaction_review(
     *,
     operator: str = "",
     reason: str = "",
+    transaction: Any = None,
 ) -> Dict[str, Any]:
     safe_review = (
         review if isinstance(review, Mapping) else {}
@@ -220,6 +239,14 @@ def reject_runtime_repair_transaction_review(
             operator=operator,
             reason=reason,
         )
+    )
+
+    lifecycle = _reject_review_transaction(
+        transaction
+        if isinstance(transaction, Mapping)
+        else safe_review.get("transaction"),
+        reason=reason,
+        rejection=rejection,
     )
 
     return freeze_runtime_export(
@@ -246,6 +273,9 @@ def reject_runtime_repair_transaction_review(
             ),
             "rejection": freeze_runtime_export(
                 rejection
+            ),
+            "transaction": freeze_runtime_export(
+                lifecycle
             ),
             "allowed_next_action": (
                 "archive_or_revise_transaction"
@@ -331,8 +361,89 @@ def build_runtime_repair_review_summary(
     )
 
 
+def _review_can_proceed(
+    transaction: Mapping[str, Any],
+    preview: Mapping[str, Any],
+) -> bool:
+    state = _safe_text(transaction.get("state")).lower()
+    if state == "awaiting_review":
+        mutation_counts = (
+            preview.get("mutation_counts")
+            if isinstance(preview.get("mutation_counts"), Mapping)
+            else {}
+        )
+        return bool(
+            preview.get("scope_allowed", True)
+            and int(mutation_counts.get("staged") or 0) > 0
+        )
+
+    return bool(preview.get("commit_ready"))
+
+
 def _safe_text(value: Any) -> str:
     if value is None:
         return ""
 
     return str(value).strip()
+
+
+def _approve_review_transaction(
+    transaction: Any,
+    *,
+    reason: Any,
+    approval: Mapping[str, Any],
+) -> Dict[str, Any]:
+    tx = transaction if isinstance(transaction, Mapping) else {}
+    state = _safe_text(tx.get("state")).lower()
+
+    if state == "awaiting_review":
+        approved = transition_runtime_repair_transaction_lifecycle(
+            tx,
+            next_state="approved",
+            reason=reason,
+            event_type="transaction_review_approved",
+            summary="Runtime repair transaction review approved.",
+            details={"approval": approval},
+        )
+        return transition_runtime_repair_transaction_lifecycle(
+            approved,
+            next_state="authorized",
+            reason=reason,
+            event_type="transaction_authorized",
+            summary="Runtime repair transaction authorized after review approval.",
+            details={"approval": approval},
+        )
+
+    if state == "approved":
+        return transition_runtime_repair_transaction_lifecycle(
+            tx,
+            next_state="authorized",
+            reason=reason,
+            event_type="transaction_authorized",
+            summary="Runtime repair transaction authorized after review approval.",
+            details={"approval": approval},
+        )
+
+    return freeze_runtime_export({})
+
+
+def _reject_review_transaction(
+    transaction: Any,
+    *,
+    reason: Any,
+    rejection: Mapping[str, Any],
+) -> Dict[str, Any]:
+    tx = transaction if isinstance(transaction, Mapping) else {}
+    state = _safe_text(tx.get("state")).lower()
+
+    if state != "awaiting_review":
+        return freeze_runtime_export({})
+
+    return transition_runtime_repair_transaction_lifecycle(
+        tx,
+        next_state="blocked",
+        reason=reason,
+        event_type="transaction_review_rejected",
+        summary="Runtime repair transaction blocked after review rejection.",
+        details={"rejection": rejection},
+    )
