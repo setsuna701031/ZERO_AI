@@ -3204,6 +3204,44 @@ class TaskRuntime:
         per_file = rollback.get("per_file")
         if not isinstance(per_file, list) or not per_file:
             per_file = context.get("per_file_rollback_metadata")
+
+        if not isinstance(per_file, list) or not per_file:
+            snapshot_sources = [
+                rollback.get("backup_snapshot") if isinstance(rollback, dict) else None,
+                context.get("backup_snapshot") if isinstance(context, dict) else None,
+            ]
+
+            apply_result = context.get("apply_result") if isinstance(context, dict) else None
+            if isinstance(apply_result, dict):
+                transaction = apply_result.get("transaction")
+                if isinstance(transaction, dict):
+                    snapshot_sources.append(transaction.get("backup_snapshot"))
+
+            generated_per_file = []
+            for snapshot in snapshot_sources:
+                if not isinstance(snapshot, dict):
+                    continue
+                for key, item in snapshot.items():
+                    if not isinstance(item, dict):
+                        continue
+                    target_path = str(item.get("target_path") or key or "").strip()
+                    full_target_path = str(item.get("full_target_path") or target_path or "").strip()
+                    backup_path = str(item.get("backup_path") or "").strip()
+                    old_text = item.get("old_text")
+                    generated_per_file.append(
+                        {
+                            "target_path": target_path,
+                            "full_target_path": full_target_path,
+                            "backup_path": backup_path,
+                            "old_text": old_text,
+                        }
+                    )
+
+            if generated_per_file:
+                per_file = generated_per_file
+                rollback["per_file"] = generated_per_file
+                context["per_file_rollback_metadata"] = generated_per_file
+
         if isinstance(per_file, list) and per_file:
             restored_files: List[str] = []
             failed_files: List[Dict[str, Any]] = []
