@@ -11,6 +11,9 @@ from core.runtime.runtime_recovery_execution_contract import (
     CONTRACT_STATUS_DEFERRED,
     RuntimeRecoveryExecutionContractReport,
 )
+from core.runtime.runtime_recovery_operator_summary import (
+    build_runtime_recovery_operator_summary,
+)
 
 
 REVIEW_READY = "ready_for_confirmation"
@@ -34,6 +37,9 @@ class RuntimeRecoveryExecutionReviewReport:
 
     def review_summary(self) -> dict[str, Any]:
         return copy.deepcopy(self._payload.get("review_summary", {}))
+
+    def operator_summary(self) -> dict[str, Any]:
+        return copy.deepcopy(self._payload.get("operator_summary", {}))
 
     def risk_summary(self) -> dict[str, Any]:
         return copy.deepcopy(self._payload.get("risk_summary", {}))
@@ -87,6 +93,20 @@ class RuntimeRecoveryExecutionReviewer:
             blocked_deferred_review=blocked_deferred_review,
             confirmation_review=confirmation_review,
         )
+        operator_gate_result = {
+            "ok": self._safe_text(review_summary.get("state")) == REVIEW_READY,
+            "blocked": self._safe_text(review_summary.get("state")) == REVIEW_BLOCKED,
+            "blockers": [
+                self._safe_text(item.get("reason") or item.get("contract_id"))
+                for item in self._safe_review_list(blocked_deferred_review.get("explanations"))
+            ],
+            "reports": {
+                "contract": review_summary,
+                "approval": confirmation_review,
+            },
+        }
+        operator_summary = build_runtime_recovery_operator_summary(operator_gate_result)
+
         payload = {
             "ok": True,
             "schema": RuntimeRecoveryExecutionReviewReport.SCHEMA,
@@ -99,6 +119,7 @@ class RuntimeRecoveryExecutionReviewer:
                 "execution_contract_fingerprint": contract_report.fingerprint,
             },
             "review_summary": review_summary,
+            "operator_summary": operator_summary,
             "risk_summary": risk_summary,
             "lineage_trust_review": lineage_trust_review,
             "replay_integrity_review": replay_integrity_review,
