@@ -1,5 +1,253 @@
 ---
 
+## 2026-05-15 - Recovery Policy Topology Landing checkpoint
+
+This checkpoint records the landing of the runtime recovery gate topology into the governed repair execution mainline.
+
+The goal was not to hard-code recovery policy into the repair executor. The goal was to add a clean gate adapter path so recovery approval, dry-run, execution-contract, and commit-gate checks can participate in governed repair execution without collapsing policy, execution, command dispatch, and scheduler responsibilities into one layer.
+
+### What was completed
+
+Added a runtime recovery gate hook adapter:
+
+* `core/runtime/runtime_recovery_gate_hook.py`
+  * builds runtime recovery execution contract evidence
+  * runs recovery approval evaluation
+  * runs recovery dry-run simulation
+  * runs recovery commit gate evaluation
+  * normalizes the result into a gate response:
+    * `ok`
+    * `blocked`
+    * `blockers`
+    * `reports`
+
+Extended governed repair execution with an optional gate hook:
+
+* `core/runtime/governed_repair_execution.py`
+  * added `gate_hook`
+  * added `use_runtime_recovery_gate`
+  * resolves either a caller-provided hook or the runtime recovery gate hook
+  * blocks governed repair execution before mutation if the gate returns a blocking result
+  * keeps actual file writes owned by the governed mutation execution layer
+
+Extended the API and bridge pass-through path:
+
+* `core/runtime/governed_repair_api.py`
+  * accepts `gate_hook`
+  * accepts `use_runtime_recovery_gate`
+  * passes both through without importing scheduler, command dispatch, or recovery internals
+
+* `core/runtime/repair_transaction_execution_bridge.py`
+  * accepts `gate_hook`
+  * accepts `use_runtime_recovery_gate`
+  * passes both into governed repair execution after building the executable transaction
+
+Connected the runtime step path:
+
+* `core/runtime/step_handlers.py`
+  * `governed_repair_mutation` step can now opt into:
+    * `use_runtime_recovery_gate=True`
+  * keeps the step handler as a caller/adapter only
+  * does not move approval, dry-run, contract, or commit-gate logic into the handler
+
+Added regression coverage:
+
+* `tests/test_runtime_recovery_gate_hook.py`
+  * verifies the recovery gate adapter returns normalized gate output
+  * confirms reports for:
+    * contract
+    * approval
+    * dry-run
+    * commit
+
+* `tests/test_governed_repair_execution.py`
+  * verifies custom gate hook pass-through
+  * verifies gate hook blocking before write
+  * verifies API-level gate hook pass-through
+  * verifies `use_runtime_recovery_gate=True` can route through the default runtime recovery gate
+
+* `tests/test_command_dispatch_recovery_lifecycle.py`
+  * locks the command-dispatch recovery lifecycle:
+    * `recovery list`
+    * `recovery status`
+    * `run recovery`
+    * `verify recovery`
+
+### Runtime chain established
+
+The completed runtime gate topology is now:
+
+```text
+governed_repair_mutation step
+-> GovernedRepairMutationStepHandler
+-> execute_governed_repair_mutation(...)
+-> execute_committed_runtime_repair_transaction(...)
+-> execute_governed_repair_transaction(...)
+-> runtime_recovery_gate_hook(...)
+-> build_runtime_recovery_execution_contract(...)
+-> approve_runtime_recovery_plan(...)
+-> dry_run_runtime_recovery(...)
+-> gate_runtime_recovery_commit(...)
+-> allow / block governed mutation execution
+```
+
+The command recovery lifecycle path is also locked:
+
+```text
+operator command
+-> CommandDispatch
+-> RuntimeRecoveryCoordinator
+-> recovery plan
+-> replay
+-> verify
+```
+
+### Boundaries preserved
+
+This checkpoint intentionally preserves these boundaries:
+
+```text
+gate hook != mutation executor
+recovery gate != command dispatch
+recovery policy != scheduler rewrite
+approval / dry-run / commit gate != step handler logic
+execution contract != real file write
+governed repair API != direct scheduler access
+step handler != recovery-policy implementation
+```
+
+The new topology still does not add:
+
+```text
+NO hidden autonomous approval
+NO direct recovery gate hard-coded into every repair path
+NO command dispatch dependency in governed repair execution
+NO scheduler / planner / agent coupling
+NO mutation_boundary pollution
+NO automatic GitHub push / merge
+NO unrestricted workspace mutation
+```
+
+### Boundary audit
+
+The ownership audit after this pass showed the new topology stayed small:
+
+```text
+core/runtime/governed_repair_api.py                 96 lines / 1 function
+core/runtime/governed_repair_execution.py           155 lines / 4 functions
+core/runtime/repair_transaction_execution_bridge.py 141 lines / 4 functions
+core/runtime/runtime_recovery_gate_hook.py          121 lines / 4 functions
+```
+
+Domain scan confirmed no drift into:
+
+```text
+scheduler
+planner
+agent
+LLM
+command dispatch
+tool registry
+mutation boundary
+```
+
+The recovery gate hook remains focused on:
+
+```text
+approval
+dry-run
+execution contract
+commit gate
+```
+
+### Validation confirmed
+
+Confirmed focused validation:
+
+```text
+python -m pytest tests/test_runtime_recovery_gate_hook.py -q
+python -m pytest tests/test_governed_repair_execution.py -q
+python -m pytest tests/test_repair_transaction_execution_bridge.py tests/test_governed_repair_execution.py tests/test_governed_repair_mutation_policy_smoke.py -q
+python -m pytest tests/test_step_executor_governed_repair_mutation.py tests/test_governed_repair_execution.py tests/test_runtime_recovery_gate_hook.py tests/test_governed_repair_mutation_policy_smoke.py -q
+```
+
+Confirmed integrated validation:
+
+```text
+16 passed
+493 passed
+503 passed
+```
+
+The important validation result is that the recovery gate topology now participates in the governed repair runtime path without breaking the runtime repair / recovery / replay stack.
+
+### Why this matters
+
+This checkpoint moves ZERO from having recovery governance modules beside the runtime into having a recovery policy topology that can actually guard runtime execution.
+
+The important result is not that another gate module exists. The important result is that governed repair execution can now opt into recovery approval, recovery dry-run, recovery execution-contract, and recovery commit-gate checks through a clean adapter boundary before mutation execution is allowed.
+
+This is a stronger AER property because policy, gate evaluation, execution, command dispatch, and scheduler ownership remain separated while still forming one executable runtime chain.
+
+### Stable checkpoint after this pass
+
+* runtime recovery gate hook: working
+* governed repair execution gate hook: working
+* API pass-through: working
+* bridge pass-through: working
+* step handler opt-in: working
+* command recovery lifecycle test: working
+* recovery policy topology: landed
+* policy / execution boundary: preserved
+* command dispatch boundary: preserved
+* scheduler / planner / agent coupling: avoided
+* runtime repair / recovery / replay regression: passing
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `tests/test_runtime_recovery_gate_hook.py` passing
+* `tests/test_governed_repair_execution.py` passing
+* `16 passed`
+* `493 passed`
+* `503 passed`
+* boundary audit showing:
+  * governed repair API remains 96 lines / 1 function
+  * governed repair execution remains 155 lines / 4 functions
+  * repair transaction bridge remains 141 lines / 4 functions
+  * runtime recovery gate hook remains 121 lines / 4 functions
+* domain scan showing no scheduler / planner / agent / command dispatch drift
+
+### Next step
+
+Recommended next checkpoint:
+
+```text
+Recovery Gate Evidence Hardening
+```
+
+Expected boundary:
+
+```text
+gate result
+-> normalized blocker summary
+-> recovery reports bundle
+-> operator-visible gate explanation
+-> audit/evidence link
+```
+
+Still avoid:
+
+```text
+NO hidden approval
+NO broad scheduler rewrite
+NO agent_loop rewrite
+NO command dispatch dependency inside execution
+NO mutation executor ownership inside recovery gate
+NO automatic external side effects
+```
+
 ## 2026-05-15 - Operator Review Runtime Resume and Rollback Recovery checkpoint
 
 This checkpoint records the completion of the operator review command path, governed runtime resume path, mutation landing proof, and rollback recovery fallback on `main`.
@@ -7308,3 +7556,17 @@ only harden those assumptions after observing current behavior
 
 Avoid mixing runtime contract mapping with broad scheduler refactoring in the same pass.
 
+
+## Command Dispatch Boundary Check
+- command_dispatch.py checked after recovery command wiring.
+- Current size: 458 lines, 19 functions.
+- Domain scan: recovery/review/audit only; no scheduler/planner/repair/github responsibility mixed in.
+- Decision: keep command_dispatch.py as command surface for now; split only if a third command domain is added or orchestration logic grows.
+- Regression: 494 runtime recovery/repair/replay related tests passed.
+
+## Mutation Boundary Hotspot Check
+- mutation_boundary.py checked after recovery command lifecycle stabilization.
+- Current size: 872 lines, 34 functions.
+- Hotspot: run_governed_mutation_lifecycle is 108 lines.
+- Current decision: acceptable as lifecycle runner because it does not directly apply file changes; execution layer still owns real writes.
+- Boundary rule: do not add real apply/diff/patch/policy/commit/scheduler retry logic into mutation_boundary.py. Split if governed lifecycle grows beyond orchestration stitching.

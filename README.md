@@ -129,6 +129,61 @@ This moves ZERO from a governed repair transaction substrate toward a human-supe
 ------------------------------------------------------------------------
 
 
+
+## Recovery Policy Topology Landing (Latest)
+
+Current engineering checkpoint:
+
+```text
+recovery-policy-topology-landing-v1
+```
+
+ZERO now supports an opt-in runtime recovery gate topology inside the governed repair execution path.
+
+Completed runtime chain:
+
+```text
+governed_repair_mutation step
+-> governed repair API
+-> repair transaction execution bridge
+-> governed repair execution
+-> runtime_recovery_gate_hook
+-> recovery execution contract
+-> recovery approval
+-> recovery dry-run
+-> recovery commit gate
+-> allow / block mutation execution
+```
+
+What changed:
+
+- added `core/runtime/runtime_recovery_gate_hook.py`
+- added optional `gate_hook` support to governed repair execution
+- added `use_runtime_recovery_gate=True` as an opt-in execution flag
+- passed the recovery gate option through the governed repair API and execution bridge
+- connected the `governed_repair_mutation` step handler to the runtime recovery gate option
+- locked the recovery command lifecycle with a command-dispatch regression test
+
+Important boundaries:
+
+```text
+recovery gate != mutation executor
+approval / dry-run / commit gate != step handler logic
+command dispatch != governed repair execution
+scheduler / planner / agent remain uncoupled
+```
+
+Current validation checkpoint:
+
+```text
+493 passed
+503 passed
+```
+
+This moves ZERO from having recovery governance modules beside the runtime to having a recovery policy topology that can actually guard governed repair execution before mutation is allowed.
+
+------------------------------------------------------------------------
+
 ## Governed Runtime Resume / Rollback Recovery Chain (Latest)
 
 Current engineering checkpoint:
@@ -524,10 +579,10 @@ Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop
 Operator Review Runtime Resume / Rollback Recovery Chain: ✔ Governed resume, mutation landing, and rollback restore validated
 
 Current phase:\
-→ operator review, governed runtime resume, mutation landing, verification failure rollback, and backup-snapshot restore are wired
+→ recovery policy topology has landed into governed repair execution; operator review, runtime resume, mutation landing, verification failure rollback, and backup-snapshot restore remain wired
 
 Next stage:\
-→ governed rollback / verification evidence hardening and operator review console adapter, without bypassing control API or review gates
+→ recovery gate evidence hardening and operator-visible gate summaries, without bypassing control API, review gates, or execution boundaries
 
 ------------------------------------------------------------------------
 

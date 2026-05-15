@@ -420,6 +420,10 @@ class GovernedRepairMutationStepHandler(BaseStepHandler):
         else:
             verification = MutationVerificationRequirement.NONE
 
+        use_runtime_recovery_gate = bool(
+            step.get("use_runtime_recovery_gate", False)
+        )
+
         try:
             result = execute_governed_repair_mutation(
                 task_id=task_id,
@@ -440,6 +444,7 @@ class GovernedRepairMutationStepHandler(BaseStepHandler):
                 verification=verification,
                 risk_level=risk_level,
                 dry_run=bool(step.get("dry_run", True)),
+                use_runtime_recovery_gate=use_runtime_recovery_gate,
                 metadata={
                     "source": "governed_repair_mutation_step_handler",
                     "step_id": step.get("id"),

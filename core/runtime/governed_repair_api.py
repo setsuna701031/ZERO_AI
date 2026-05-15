@@ -1,7 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from core.runtime.mutation_runtime_pipeline import MutationRuntimePipelineResult
 from core.runtime.mutation_session import (
@@ -17,6 +17,8 @@ from core.tasks.runtime_repair_transaction import (
     create_runtime_repair_transaction,
     stage_runtime_repair_mutation,
 )
+
+GovernedRepairGateHook = Callable[[dict[str, Any]], Any]
 
 
 def execute_governed_repair_mutation(
@@ -37,6 +39,8 @@ def execute_governed_repair_mutation(
     verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
     risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
     dry_run: bool | None = None,
+    gate_hook: GovernedRepairGateHook | None = None,
+    use_runtime_recovery_gate: bool = False,
 ) -> MutationRuntimePipelineResult:
     """
     Public governed repair API.
@@ -47,6 +51,9 @@ def execute_governed_repair_mutation(
     - mutation gateway internals
     - mutation runtime pipeline
     - patch apply primitives
+
+    gate_hook is an optional policy/gate extension point. It is passed through
+    to the execution layer without importing recovery-specific gate modules here.
     """
 
     transaction = create_runtime_repair_transaction(
@@ -84,4 +91,6 @@ def execute_governed_repair_mutation(
         verification=verification,
         risk_level=risk_level,
         dry_run=dry_run,
+        gate_hook=gate_hook,
+        use_runtime_recovery_gate=use_runtime_recovery_gate,
     )

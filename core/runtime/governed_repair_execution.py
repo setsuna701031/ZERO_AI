@@ -1,7 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from core.runtime.mutation_runtime_pipeline import MutationRuntimePipelineResult
 from core.runtime.repair_transaction_gateway_adapter import (
@@ -13,10 +13,52 @@ from core.runtime.mutation_session import (
     MutationRiskLevel,
     MutationVerificationRequirement,
 )
+from core.runtime.runtime_recovery_gate_hook import runtime_recovery_gate_hook
 from core.tasks.runtime_repair_apply_transaction import (
     build_runtime_repair_apply_plan,
     preflight_runtime_repair_apply_transaction,
 )
+
+GovernedRepairGateHook = Callable[[dict[str, Any]], Any]
+
+
+def _is_blocking_gate_result(result: Any) -> bool:
+    if result is None:
+        return False
+    if isinstance(result, bool):
+        return not result
+    if isinstance(result, dict):
+        if result.get("ok") is False:
+            return True
+        if result.get("blocked") is True:
+            return True
+        if result.get("status") in {"blocked", "rejected", "failed"}:
+            return True
+    return False
+
+
+def _gate_error_message(result: Any) -> str:
+    if isinstance(result, dict):
+        for key in ("error", "reason", "message", "summary"):
+            value = result.get(key)
+            if value:
+                return str(value)
+        blockers = result.get("blockers")
+        if blockers:
+            return ", ".join(str(item) for item in blockers)
+    return str(result)
+
+
+def _resolve_gate_hook(
+    gate_hook: GovernedRepairGateHook | None,
+    *,
+    use_runtime_recovery_gate: bool,
+) -> GovernedRepairGateHook | None:
+    if gate_hook is not None:
+        return gate_hook
+    if use_runtime_recovery_gate:
+        return runtime_recovery_gate_hook
+    return None
 
 
 def execute_governed_repair_transaction(
@@ -34,6 +76,8 @@ def execute_governed_repair_transaction(
     approval_mode: MutationApprovalMode = MutationApprovalMode.REVIEW_REQUIRED,
     verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
     dry_run: bool | None = None,
+    gate_hook: GovernedRepairGateHook | None = None,
+    use_runtime_recovery_gate: bool = False,
 ) -> MutationRuntimePipelineResult:
     preflight = preflight_runtime_repair_apply_transaction(
         transaction,
@@ -72,6 +116,26 @@ def execute_governed_repair_transaction(
         verification=verification,
         dry_run=dry_run,
     )
+
+    resolved_gate_hook = _resolve_gate_hook(
+        gate_hook,
+        use_runtime_recovery_gate=use_runtime_recovery_gate,
+    )
+
+    if resolved_gate_hook is not None:
+        gate_result = resolved_gate_hook(
+            {
+                "transaction": transaction,
+                "preflight": preflight,
+                "apply_plan": apply_plan,
+                "request": request,
+            }
+        )
+        if _is_blocking_gate_result(gate_result):
+            raise ValueError(
+                "governed_repair_gate_blocked: "
+                + _gate_error_message(gate_result)
+            )
 
     return run_governed_repair_transaction(
         transaction,

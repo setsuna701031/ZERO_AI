@@ -1,7 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from core.runtime.governed_repair_execution import execute_governed_repair_transaction
 from core.runtime.mutation_runtime_pipeline import MutationRuntimePipelineResult
@@ -10,6 +10,8 @@ from core.runtime.mutation_session import (
     MutationRiskLevel,
     MutationVerificationRequirement,
 )
+
+GovernedRepairGateHook = Callable[[dict[str, Any]], Any]
 
 
 def execute_committed_runtime_repair_transaction(
@@ -24,6 +26,8 @@ def execute_committed_runtime_repair_transaction(
     verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
     risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
     dry_run: bool | None = None,
+    gate_hook: GovernedRepairGateHook | None = None,
+    use_runtime_recovery_gate: bool = False,
 ) -> MutationRuntimePipelineResult:
     executable = build_executable_repair_transaction(transaction)
 
@@ -41,6 +45,8 @@ def execute_committed_runtime_repair_transaction(
         verification=verification,
         risk_level=risk_level,
         dry_run=dry_run,
+        gate_hook=gate_hook,
+        use_runtime_recovery_gate=use_runtime_recovery_gate,
     )
 
 
