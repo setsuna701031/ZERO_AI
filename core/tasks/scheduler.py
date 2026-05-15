@@ -8198,8 +8198,56 @@ def _zero_review_action_find_task(self, task_id: str) -> Dict[str, Any]:
     task_name = str(task_id or "").strip()
     if not task_name:
         return {}
-    task = self._load_task(task_name)
-    return task if isinstance(task, dict) else {}
+
+    load_task = getattr(self, "_load_task", None)
+    if callable(load_task):
+        try:
+            task = load_task(task_name)
+            if isinstance(task, dict):
+                return task
+        except Exception:
+            pass
+
+    for attr in ("tasks", "task_map", "task_registry", "_tasks"):
+        value = getattr(self, attr, None)
+
+        if isinstance(value, dict):
+            task = value.get(task_name)
+            if isinstance(task, dict):
+                return task
+
+        if isinstance(value, list):
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                item_id = str(
+                    item.get("task_id")
+                    or item.get("id")
+                    or item.get("task_name")
+                    or item.get("name")
+                    or ""
+                ).strip()
+                if item_id == task_name:
+                    return item
+
+    review_queue = getattr(self, "review_queue", None)
+    if isinstance(review_queue, list):
+        for item in review_queue:
+            if not isinstance(item, dict):
+                continue
+
+            item_id = str(
+                item.get("task_id")
+                or item.get("id")
+                or item.get("review_item_id")
+                or item.get("name")
+                or ""
+            ).strip()
+
+            if item_id == task_name:
+                return item
+
+    return {}
 
 
 def _zero_review_action_apply_result(
