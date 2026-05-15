@@ -4,12 +4,17 @@ import copy
 import json
 from typing import Any
 
+from core.runtime.runtime_recovery_event_schema import (
+    RUNTIME_RECOVERY_OPERATOR_SUMMARY_EVENT,
+    build_runtime_recovery_event,
+)
+
 
 class RuntimeRecoveryTraceAdapter:
     """Convert runtime recovery observer reports into trace-safe events."""
 
     SCHEMA = "zero.runtime.recovery_trace_event.v1"
-    EVENT_TYPE = "runtime.recovery.operator_summary"
+    EVENT_TYPE = RUNTIME_RECOVERY_OPERATOR_SUMMARY_EVENT
 
     def to_trace_event(
         self,
@@ -26,38 +31,30 @@ class RuntimeRecoveryTraceAdapter:
             or payload.get("operator_summary")
         )
 
-        event = {
-            "ok": bool(observer_report.get("ok", operator_summary.get("ok", False))),
-            "schema": self.SCHEMA,
-            "event_type": self.EVENT_TYPE,
-            "event_id": self._safe_text(event_id),
-            "task_id": self._safe_text(task_id),
-            "recovery_id": self._safe_text(recovery_id),
-            "read_only": True,
-            "executes_recovery": False,
-            "executes_rollback": False,
-            "executes_repair": False,
-            "invokes_scheduler": False,
-            "adds_persistence": False,
-            "uses_network": False,
-            "readiness": self._safe_text(
+        event = build_runtime_recovery_event(
+            event_type=self.EVENT_TYPE,
+            event_id=event_id,
+            task_id=task_id,
+            recovery_id=recovery_id,
+            readiness=self._safe_text(
                 observer_report.get("readiness")
                 or operator_summary.get("readiness")
             ),
-            "status": self._safe_text(
+            status=self._safe_text(
                 observer_report.get("status")
                 or operator_summary.get("status")
             ),
-            "summary": self._safe_text(
+            summary=self._safe_text(
                 observer_report.get("summary")
                 or operator_summary.get("summary")
             ),
-            "blockers": self._safe_list(
+            blockers=(
                 observer_report.get("blockers")
                 or operator_summary.get("blockers")
             ),
-            "operator_summary": operator_summary,
-        }
+            operator_summary=operator_summary,
+        )
+        event["schema"] = self.SCHEMA
         return self._json_safe(event)
 
     def _observer_report(self, payload: dict[str, Any]) -> dict[str, Any]:
