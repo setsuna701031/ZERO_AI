@@ -1,8 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import copy
 import json
 from typing import Any
+
+from core.runtime.runtime_recovery_event_schema import build_runtime_recovery_event
 
 
 class RuntimeRecoveryObserver:
@@ -12,26 +14,10 @@ class RuntimeRecoveryObserver:
 
     def observe(self, source: Any) -> dict[str, Any]:
         payload = self._payload(source)
-        operator_summary = self._safe_mapping(payload.get("operator_summary"))
-
-        result = {
-            "ok": bool(operator_summary.get("ok", False)),
-            "schema": self.SCHEMA,
-            "mode": "observer_report_only",
-            "read_only": True,
-            "executes_recovery": False,
-            "executes_rollback": False,
-            "executes_repair": False,
-            "invokes_scheduler": False,
-            "adds_persistence": False,
-            "uses_network": False,
-            "readiness": self._safe_text(operator_summary.get("readiness")),
-            "status": self._safe_text(operator_summary.get("status")),
-            "summary": self._safe_text(operator_summary.get("summary")),
-            "blockers": self._safe_list(operator_summary.get("blockers")),
-            "operator_summary": operator_summary,
-        }
-        return self._json_safe(result)
+        event = build_runtime_recovery_event(source=payload)
+        event["schema"] = self.SCHEMA
+        event["mode"] = "observer_report_only"
+        return self._json_safe(event)
 
     def render_text(self, source: Any) -> str:
         report = self.observe(source)
