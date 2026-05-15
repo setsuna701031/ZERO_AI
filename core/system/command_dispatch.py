@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from core.audit.review_audit import ReviewAuditLog
 from core.audit.review_execution_link import ReviewExecutionLinkLog
 from core.control.control_api import ZeroControlAPI
+from core.runtime.runtime_recovery_coordinator import RuntimeRecoveryCoordinator
 
 
 class CommandDispatch:
@@ -25,11 +26,13 @@ class CommandDispatch:
         review_audit: Optional[ReviewAuditLog] = None,
         execution_link_log: Optional[ReviewExecutionLinkLog] = None,
         operator_id: str = "local_operator",
+        recovery_coordinator: RuntimeRecoveryCoordinator | None = None,
     ) -> None:
         self.control_api = control_api or ZeroControlAPI()
         self.review_audit = review_audit or ReviewAuditLog()
         self.execution_link_log = execution_link_log or ReviewExecutionLinkLog()
         self.operator_id = str(operator_id or "local_operator")
+        self.recovery_coordinator = recovery_coordinator or RuntimeRecoveryCoordinator()
 
     def dispatch(self, command: Any) -> Dict[str, Any]:
         text = self._normalize_command(command)
@@ -48,6 +51,10 @@ class CommandDispatch:
         review_action = self._parse_review_command(text)
         if review_action:
             return self._dispatch_review_action(review_action, command=text)
+
+        recovery_action = self._parse_recovery_command(text)
+        if recovery_action:
+            return self._dispatch_recovery_action(recovery_action, command=text)
 
         return self._result(
             ok=False,
@@ -68,6 +75,30 @@ class CommandDispatch:
 
     def invoke(self, command: Any) -> Dict[str, Any]:
         return self.dispatch(command)
+
+    def _dispatch_recovery_action(self, recovery_action, command=None):
+        if recovery_action is None:
+            return {"ok": False, "error": "invalid_recovery_command", "command": command}
+
+        if self.recovery_coordinator is None:
+            return {"ok": False, "error": "missing_recovery_coordinator", "command": command}
+
+        action = recovery_action.get("action")
+        recovery_id = recovery_action.get("recovery_id")
+
+        if action == "list":
+            return self.recovery_coordinator.get_recoveries()
+
+        if action == "status":
+            return self.recovery_coordinator.get_recovery(recovery_id)
+
+        if action == "run":
+            return self.recovery_coordinator.run_recovery(recovery_id)
+
+        if action == "verify":
+            return self.recovery_coordinator.verify_recovery(recovery_id)
+
+        return {"ok": False, "error": "unknown_recovery_action", "action": action, "command": command}
 
     def _dispatch_review_action(self, parsed: Dict[str, Any], *, command: str) -> Dict[str, Any]:
         action = parsed.get("action")
@@ -216,6 +247,24 @@ class CommandDispatch:
                 },
             )
 
+    def _parse_recovery_command(self, text):
+        raw = str(text or "").strip()
+        parts = raw.split()
+
+        if raw == "recovery list":
+            return {"action": "list"}
+
+        if len(parts) >= 3 and parts[0] == "recovery" and parts[1] == "status":
+            return {"action": "status", "recovery_id": parts[2]}
+
+        if len(parts) >= 3 and parts[0] == "run" and parts[1] == "recovery":
+            return {"action": "run", "recovery_id": parts[2]}
+
+        if len(parts) >= 3 and parts[0] == "verify" and parts[1] == "recovery":
+            return {"action": "verify", "recovery_id": parts[2]}
+
+        return None
+
     def _parse_review_command(self, text: str) -> Optional[Dict[str, Any]]:
         normalized = self._compact_spaces(text).lower()
 
@@ -291,6 +340,17 @@ class CommandDispatch:
 
     def _compact_spaces(self, text: str) -> str:
         return re.sub(r"\s+", " ", text).strip()
+
+    def _safe_public_payload(self, value: Any) -> Any:
+        if hasattr(value, "__dict__"):
+            return dict(getattr(value, "__dict__"))
+        if isinstance(value, list):
+            return [self._safe_public_payload(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._safe_public_payload(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): self._safe_public_payload(item) for key, item in value.items()}
+        return value
 
     def _extract_ok(self, result: Any) -> bool:
         if isinstance(result, dict):

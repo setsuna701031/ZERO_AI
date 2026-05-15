@@ -1,5 +1,271 @@
 ---
 
+## 2026-05-15 - Operator Review Runtime Resume and Rollback Recovery checkpoint
+
+This checkpoint records the completion of the operator review command path, governed runtime resume path, mutation landing proof, and rollback recovery fallback on `main`.
+
+The goal was not to add another isolated mutation module. The goal was to connect the existing review, control API, scheduler, audit, runtime resume, mutation execution, verification failure, and rollback restore pieces into one inspectable governed execution chain.
+
+### What was completed
+
+Added the operator command dispatch layer:
+
+* `core/system/command_dispatch.py`
+  * routes semantic review commands such as `review queue`, `approve review <id>`, and `reject review <id>`
+  * calls `ZeroControlAPI.get_review_queue()`
+  * calls `ZeroControlAPI.approve_review_item(...)`
+  * calls `ZeroControlAPI.reject_review_item(...)`
+  * keeps shell command execution separate from operator governance commands
+
+Added governance evidence persistence:
+
+* `core/audit/review_audit.py`
+  * records review queue reads
+  * records approvals
+  * records rejections
+  * persists JSONL audit evidence under `workspace/audit/`
+
+* `core/audit/review_execution_link.py`
+  * links review item IDs to execution / mutation / rollback / trace identifiers when available
+  * records applied files and command metadata
+  * creates replay-friendly JSONL evidence
+
+Fixed scheduler review item lookup:
+
+* `core/tasks/scheduler.py`
+  * review action lookup no longer hard-depends on `_load_task(...)`
+  * falls back to in-memory task collections and `review_queue` entries
+  * allows injected or public review items to transition through approve / reject paths without crashing when `_load_task` is unavailable
+
+Fixed rollback restore metadata fallback:
+
+* `core/runtime/task_runtime.py`
+  * `rollback_last_apply(...)` can now derive `repair_context.rollback.per_file` from available backup snapshot metadata
+  * supports fallback from:
+    * `repair_context.rollback.backup_snapshot`
+    * `repair_context.backup_snapshot`
+    * `repair_context.apply_result.transaction.backup_snapshot`
+  * maps backup snapshot entries into rollback restore records containing:
+    * `target_path`
+    * `full_target_path`
+    * `backup_path`
+    * `old_text`
+
+### Runtime chain established
+
+The completed chain is now:
+
+```text
+operator command
+-> command dispatch
+-> control API review action
+-> scheduler review state mutation
+-> audit event
+-> execution link evidence
+-> approve / reject lifecycle
+-> runtime resume
+-> queued execution
+-> mutation step execution
+-> artifact landing
+-> verification failure rollback trigger
+-> rollback restore from backup snapshot
+-> rollback result evidence
+```
+
+### Validation confirmed
+
+Confirmed semantic command parsing:
+
+```text
+review queue -> get_review_queue
+approve review abc123 -> approve_review_item
+reject review abc123 -> reject_review_item
+```
+
+Confirmed command dispatch evidence path with fake control API:
+
+```text
+ok=True
+audit_event_id present
+execution_link_id present
+```
+
+Confirmed real reject path:
+
+```text
+reject review review-test-1
+-> review_state = rejected
+-> status = blocked
+-> requires_review = False
+-> next_action = archive_or_revise_transaction
+-> audit_event_id present
+-> execution_link_id present
+```
+
+Confirmed real approve path:
+
+```text
+approve review review-approve-1
+-> review_state = approved
+-> requires_review = False
+-> next_action = run_next_tick
+-> agent_action = resume_execution
+-> audit_event_id present
+-> execution_link_id present
+```
+
+Confirmed runtime resume path:
+
+```text
+approve review resume-test-1
+-> resume_task(resume-test-1)
+-> status = queued
+```
+
+Confirmed runtime continuation and mutation landing:
+
+```text
+approve review mutation-test-2
+-> resume_task
+-> run_one
+-> write_file
+-> workspace/shared/runtime_resume_test.txt exists
+-> content = governed runtime execution
+```
+
+Confirmed rollback trigger condition:
+
+```text
+verify step failed
+repair_context.rollback.restore_available = True
+-> should_rollback_after_failed_verify(...) = True
+```
+
+Confirmed rollback restore from backup snapshot fallback:
+
+```text
+workspace/shared/rollback_snapshot_test.txt: mutated
+backup snapshot points to original backup
+restore_repair_backup(...)
+-> ok = True
+-> restored_files includes workspace/shared/rollback_snapshot_test.txt
+-> file content restored to original
+```
+
+Observed full-suite validation after both commits:
+
+```text
+1973 passed, 162 subtests passed
+```
+
+### Git checkpoints
+
+Committed and pushed on `main`:
+
+```text
+352b5f5 - feat: connect operator review governance to runtime resume
+b1fada4 - fix: restore rollback from backup snapshot fallback
+```
+
+### Boundaries preserved
+
+This checkpoint intentionally preserves these boundaries:
+
+```text
+operator command != shell execution
+command dispatch != scheduler internals
+control API != direct mutation bypass
+approval != hidden unrestricted execution
+runtime resume != review bypass
+rollback restore != new mutation authority
+verification failure != silent continuation
+backup snapshot != scheduler rewrite
+```
+
+The new path still does not add:
+
+```text
+NO hidden autonomous approval
+NO direct UI-to-mutation shortcut
+NO unrestricted shell execution
+NO automatic GitHub push / merge
+NO scheduler rewrite
+NO agent_loop rewrite
+NO rollback without restore metadata
+```
+
+### Why this matters
+
+This checkpoint moves ZERO from a reviewable repair runtime into a governed autonomous engineering execution path.
+
+The important result is not that ZERO can write a file. The important result is that ZERO can now take an operator-approved review item, resume it through the scheduler, execute a mutation step, detect verification rollback conditions, restore from backup snapshot evidence, and preserve review / execution evidence along the way.
+
+This is a stronger runtime property than a normal agent loop because mutation, verification, rollback, audit, and operator authority remain inspectable and separated.
+
+### Stable checkpoint after this pass
+
+* operator review command dispatch: working
+* command-to-control-API review routing: working
+* review audit JSONL persistence: working
+* review execution link persistence: working
+* scheduler review lookup fallback: working
+* reject path to blocked state: working
+* approve path to resume state: working
+* `resume_task(...)` to queued state: working
+* `run_one(...)` runtime continuation: working
+* governed `write_file` artifact landing: working
+* verification-failure rollback trigger: working
+* backup snapshot fallback for rollback restore: working
+* rollback restore evidence: working
+* full suite passing: working
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* command dispatch parse results for `review queue`, `approve review`, and `reject review`
+* fake-control command dispatch test returning audit and execution link IDs
+* real reject path setting `review_state=rejected` and `status=blocked`
+* real approve path setting `next_action=run_next_tick` and `agent_action=resume_execution`
+* `resume_task(...)` returning `status=queued`
+* `run_one(...)` finishing resumed execution
+* `workspace/shared/runtime_resume_test.txt` exists with `governed runtime execution`
+* rollback trigger returning `True`
+* rollback snapshot restore returning `ok=True` and restoring `original`
+* `1973 passed, 162 subtests passed`
+* commits `352b5f5` and `b1fada4` pushed to `main`
+
+### Next step
+
+Recommended next checkpoint:
+
+```text
+Rollback / Verification Evidence Hardening
+```
+
+Expected boundary:
+
+```text
+mutation result
+-> verification result
+-> rollback decision
+-> rollback result
+-> evidence bundle / audit link
+-> operator-visible recovery summary
+```
+
+Still avoid:
+
+```text
+NO UI shortcut around control API
+NO hidden rollback without evidence
+NO broad scheduler rewrite
+NO agent_loop rewrite
+NO automatic GitHub write action
+```
+
+---
+
 ## 2026-05-14 - Governed Repair Runtime / Operator Review Loop checkpoint
 
 This checkpoint records the governed repair runtime convergence work on branch:

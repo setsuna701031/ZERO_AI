@@ -128,6 +128,83 @@ This moves ZERO from a governed repair transaction substrate toward a human-supe
 
 ------------------------------------------------------------------------
 
+
+## Governed Runtime Resume / Rollback Recovery Chain (Latest)
+
+Current engineering checkpoint:
+
+```text
+operator-review-runtime-resume-rollback-v1
+```
+
+ZERO now includes a governed operator review path that can resume runtime execution and recover from verification failure through rollback backup evidence.
+
+Completed runtime chain:
+
+```text
+operator command
+-> command dispatch
+-> control API review action
+-> scheduler review state transition
+-> audit event
+-> execution link evidence
+-> runtime resume
+-> mutation execution
+-> verification failure detection
+-> rollback decision
+-> backup snapshot fallback
+-> restore execution
+-> rollback result evidence
+```
+
+What changed:
+
+- added `core/system/command_dispatch.py` for semantic operator review commands
+- added review audit persistence through `core/audit/review_audit.py`
+- added review-to-execution evidence linking through `core/audit/review_execution_link.py`
+- connected approve / reject command dispatch to `ZeroControlAPI` review actions
+- confirmed approve transitions review tasks into resumable runtime state
+- confirmed `resume_task(...)` moves approved work back to queued execution
+- confirmed `run_one(...)` can execute a resumed mutation step and land a workspace artifact
+- fixed scheduler review lookup fallback when `_load_task` is unavailable
+- fixed rollback restore fallback from `backup_snapshot` into `repair_context.rollback.per_file`
+- confirmed rollback can restore a mutated file from backup snapshot evidence
+
+Validated chain:
+
+```text
+approve review
+-> resume_task
+-> queued
+-> run_one
+-> write_file
+-> artifact landing
+-> verify failure rollback trigger
+-> restore from backup snapshot
+-> restored_files evidence
+```
+
+Important boundaries:
+
+```text
+operator command != shell execution
+review approval != unrestricted mutation
+runtime resume != hidden approval
+verification failure != silent failure
+rollback snapshot != new mutation authority
+rollback restore != scheduler rewrite
+```
+
+Current validation checkpoint:
+
+```text
+1973 passed, 162 subtests passed
+```
+
+This moves ZERO from reviewable repair transactions toward a controlled autonomous engineering runtime where operator approval, runtime continuation, mutation landing, verification failure, rollback recovery, and evidence persistence are all part of one inspectable execution chain.
+
+------------------------------------------------------------------------
+
 ## Runtime Aggregate Convergence / Evidence Kernel
 
 Current engineering checkpoint:
@@ -444,12 +521,13 @@ L5 Controlled Draft Workflow: ✔ Complete\
 Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report layer stabilized\
 Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed\
 Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop wired
+Operator Review Runtime Resume / Rollback Recovery Chain: ✔ Governed resume, mutation landing, and rollback restore validated
 
 Current phase:\
-→ governed repair runtime review queue and operator control surface are wired
+→ operator review, governed runtime resume, mutation landing, verification failure rollback, and backup-snapshot restore are wired
 
 Next stage:\
-→ operator review console / UI adapter v1, without bypassing control API or review gates
+→ governed rollback / verification evidence hardening and operator review console adapter, without bypassing control API or review gates
 
 ------------------------------------------------------------------------
 
