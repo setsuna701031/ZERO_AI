@@ -11,6 +11,9 @@ from core.runtime.runtime_recovery_dry_run_executor import (
     DRY_RUN_SIMULATED,
     RuntimeRecoveryDryRunReport,
 )
+from core.runtime.runtime_recovery_operator_summary import (
+    build_runtime_recovery_operator_summary,
+)
 
 
 COMMIT_ALLOWED = "commit_allowed"
@@ -34,6 +37,9 @@ class RuntimeRecoveryCommitGateReport:
 
     def commit_summary(self) -> dict[str, Any]:
         return copy.deepcopy(self._payload.get("commit_summary", {}))
+
+    def operator_summary(self) -> dict[str, Any]:
+        return copy.deepcopy(self._payload.get("operator_summary", {}))
 
     def dry_run_commit_authorization(self) -> dict[str, Any]:
         return copy.deepcopy(self._payload.get("dry_run_commit_authorization", {}))
@@ -106,6 +112,16 @@ class RuntimeRecoveryCommitGate:
             blocked_deferred_propagation=blocked_deferred,
         )
         commit_summary = self._commit_summary(final_readiness, blocked_deferred)
+        operator_gate_result = {
+            "ok": bool(final_readiness.get("commit_allowed", False)),
+            "blocked": not bool(final_readiness.get("commit_allowed", False)),
+            "blockers": blocked_deferred.get("blocked_contracts", []),
+            "reports": {
+                "dry_run": dry_run_authorization,
+                "commit": final_readiness,
+            },
+        }
+        operator_summary = build_runtime_recovery_operator_summary(operator_gate_result)
         payload = {
             "ok": True,
             "schema": RuntimeRecoveryCommitGateReport.SCHEMA,
@@ -122,6 +138,7 @@ class RuntimeRecoveryCommitGate:
                 "dry_run_fingerprint": dry_run.fingerprint,
             },
             "commit_summary": commit_summary,
+            "operator_summary": operator_summary,
             "dry_run_commit_authorization": dry_run_authorization,
             "rollback_commit_gate": rollback_gate,
             "replay_commit_gate": replay_gate,
