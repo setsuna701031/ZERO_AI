@@ -48,8 +48,10 @@ from core.tasks.scheduler_core.dispatch_helpers import (
     handle_run_one_step_exception,
     scheduler_dispatch_idle,
 )
-from core.tasks.scheduler_core.repo_state_helpers import (
+from core.tasks.scheduler_core.dispatch_result_helpers import (
     extract_effective_status_and_answer,
+)
+from core.tasks.scheduler_core.repo_state_helpers import (
     mark_repo_task_failed,
     mark_repo_task_finished,
     mark_repo_task_queued,
