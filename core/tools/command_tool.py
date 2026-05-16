@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 class CommandTool:
@@ -27,56 +28,36 @@ class CommandTool:
 
         timeout = self._extract_timeout(payload, default=20)
 
-        try:
-            result = subprocess.run(
-                command_text,
-                shell=True,
-                cwd=str(self.workspace_root),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
+        gateway_result = safe_subprocess_run(
+            command_text,
+            shell=True,
+            cwd=str(self.workspace_root),
+            timeout=float(timeout),
+        )
 
-            return {
-                "ok": result.returncode == 0,
-                "tool": self.name,
-                "command": command_text,
-                "cwd": str(self.workspace_root),
-                "returncode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "timed_out": False,
-                "error": None if result.returncode == 0 else {
-                    "type": "command_failed",
-                    "message": f"command exited with return code {result.returncode}",
-                    "retryable": False,
-                },
-            }
+        timed_out = bool(
+            gateway_result.get("returncode") is None
+            and gateway_result.get("error")
+            and "timeout" in str(gateway_result.get("error")).lower()
+        )
 
-        except subprocess.TimeoutExpired as exc:
-            return {
-                "ok": False,
-                "tool": self.name,
-                "command": command_text,
-                "cwd": str(self.workspace_root),
-                "returncode": None,
-                "stdout": exc.stdout if isinstance(exc.stdout, str) else "",
-                "stderr": exc.stderr if isinstance(exc.stderr, str) else "",
-                "timed_out": True,
-                "error": {
-                    "type": "timeout",
-                    "message": f"command timeout after {timeout}s",
-                    "retryable": True,
-                },
-            }
-
-        except Exception as exc:
-            return self._error_result(
-                command=command_text,
-                error_type=exc.__class__.__name__,
-                message=str(exc),
-                retryable=False,
-            )
+        return {
+            "ok": gateway_result["ok"],
+            "tool": self.name,
+            "command": command_text,
+            "cwd": str(self.workspace_root),
+            "returncode": gateway_result["returncode"],
+            "stdout": gateway_result["stdout"],
+            "stderr": gateway_result["stderr"],
+            "timed_out": timed_out,
+            "execution_gateway": {
+                "used": True,
+                "shell": gateway_result["shell"],
+                "timeout": gateway_result["timeout"],
+                "error": gateway_result["error"],
+            },
+            "error": self._build_error(gateway_result, timeout, timed_out),
+        }
 
     def run(self, args: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return self.execute(args)
@@ -101,6 +82,37 @@ class CommandTool:
             return default
         return timeout if timeout > 0 else default
 
+    def _build_error(
+        self,
+        gateway_result: Dict[str, Any],
+        timeout: int,
+        timed_out: bool,
+    ) -> Dict[str, Any] | None:
+        if gateway_result.get("ok") is True:
+            return None
+
+        if timed_out:
+            return {
+                "type": "timeout",
+                "message": f"command timeout after {timeout}s",
+                "retryable": True,
+            }
+
+        gateway_error = gateway_result.get("error")
+        if gateway_error:
+            return {
+                "type": "execution_gateway_error",
+                "message": str(gateway_error),
+                "retryable": False,
+            }
+
+        returncode = gateway_result.get("returncode")
+        return {
+            "type": "command_failed",
+            "message": f"command exited with return code {returncode}",
+            "retryable": False,
+        }
+
     def _error_result(
         self,
         command: str,
@@ -117,6 +129,12 @@ class CommandTool:
             "stdout": "",
             "stderr": "",
             "timed_out": False,
+            "execution_gateway": {
+                "used": False,
+                "shell": None,
+                "timeout": None,
+                "error": None,
+            },
             "error": {
                 "type": error_type,
                 "message": message,
