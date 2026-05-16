@@ -52,6 +52,9 @@ from core.tasks.scheduler_core.dispatch_result_helpers import (
     extract_effective_status_and_answer,
 )
 from core.tasks.scheduler_core.repo_state_helpers import (
+    compact_runner_result,
+    get_task_from_repo,
+    list_repo_tasks,
     mark_repo_task_failed,
     mark_repo_task_finished,
     mark_repo_task_queued,
@@ -949,72 +952,7 @@ class Scheduler(RuntimeTaskScheduler):
 
 
     def _compact_runner_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Return a short, CLI-friendly result for manual scheduler smoke tests.
-
-        The full task/runtime state is still synced before this method is used.
-        This only trims the object returned by run_one_step() so terminal output
-        does not dump deeply nested execution_log / step_results payloads.
-        """
-        if not isinstance(result, dict):
-            return result
-
-        def _compact_multi(payload: Dict[str, Any], parent: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-            parent = parent if isinstance(parent, dict) else {}
-            edits = payload.get("edits") if isinstance(payload.get("edits"), list) else []
-            compact = {
-                "ok": bool(payload.get("ok", False)),
-                "action": str(payload.get("action") or "multi_code_edit"),
-                "task_id": str(parent.get("task_id") or result.get("task_id") or ""),
-                "status": str(parent.get("status") or result.get("status") or ""),
-                "atomic": bool(payload.get("atomic", False)),
-                "rollback": bool(
-                    payload.get("rollback")
-                    or payload.get("rollback_applied")
-                    or payload.get("staged_changes_discarded")
-                    or (
-                        str(payload.get("action") or "").strip().lower() == "multi_code_edit_failed"
-                        and bool(payload.get("atomic", False))
-                    )
-                ),
-                "changed_files": payload.get("changed_files", []),
-                "edit_count": int(payload.get("edit_count", len(edits)) or 0),
-                "failed_reason": str(payload.get("failed_reason") or payload.get("error") or ""),
-                "step_count": result.get("step_count", parent.get("step_count", 0)),
-                "steps_total": result.get("steps_total", parent.get("steps_total", 0)),
-            }
-            if isinstance(result.get("orchestration_summary"), dict):
-                compact["orchestration_summary"] = copy.deepcopy(result.get("orchestration_summary"))
-            if isinstance(result.get("repair_chain_orchestration"), dict):
-                compact["repair_chain_orchestration"] = copy.deepcopy(result.get("repair_chain_orchestration"))
-            return compact
-
-        action = str(result.get("action") or "").strip().lower()
-        if action in {"multi_code_edit", "multi_code_edit_failed"}:
-            return _compact_multi(result)
-
-        last_step_result = result.get("last_step_result")
-        if isinstance(last_step_result, dict):
-            nested = last_step_result.get("result")
-            if isinstance(nested, dict):
-                nested_action = str(nested.get("action") or "").strip().lower()
-                if nested_action in {"multi_code_edit", "multi_code_edit_failed"}:
-                    return _compact_multi(nested, parent=last_step_result)
-
-        if action in {"simple_task_finished", "terminal_skip"}:
-            compact = {
-                "ok": bool(result.get("ok", False)),
-                "action": str(result.get("action") or ""),
-                "task_id": str(result.get("task_id") or ""),
-                "status": str(result.get("status") or ""),
-                "step_count": result.get("step_count", 0),
-                "steps_total": result.get("steps_total", 0),
-            }
-            orchestration_summary = result.get("orchestration_summary")
-            if isinstance(orchestration_summary, dict) and orchestration_summary:
-                compact["orchestration_summary"] = copy.deepcopy(orchestration_summary)
-            return compact
-
-        return result
+        return compact_runner_result(result)
 
     def _run_task_via_agent_loop_with_fallback_check(
         self,
@@ -4928,46 +4866,10 @@ class Scheduler(RuntimeTaskScheduler):
                 pass
 
     def _get_task_from_repo(self, task_id: str) -> Optional[Dict[str, Any]]:
-        if not task_id:
-            return None
-
-        repo = self.task_repo
-
-        for method_name in ("get_task", "get", "load_task", "find_task"):
-            method = getattr(repo, method_name, None)
-            if callable(method):
-                try:
-                    value = method(task_id)
-                    if isinstance(value, dict):
-                        return self._hydrate_task_from_workspace(value)
-                except Exception:
-                    pass
-
-        tasks = self._list_repo_tasks()
-        for task in tasks:
-            if not isinstance(task, dict):
-                continue
-            candidate = self._extract_task_id(task)
-            if candidate == task_id:
-                return self._hydrate_task_from_workspace(task)
-
-        return None
+        return get_task_from_repo(self, task_id)
 
     def _list_repo_tasks(self) -> List[Dict[str, Any]]:
-        repo = self.task_repo
-        list_tasks_fn = getattr(repo, "list_tasks", None)
-        if callable(list_tasks_fn):
-            try:
-                loaded = list_tasks_fn()
-                if isinstance(loaded, list):
-                    return [
-                        self._hydrate_task_from_workspace(x)
-                        for x in loaded
-                        if isinstance(x, dict)
-                    ]
-            except Exception:
-                return []
-        return []
+        return list_repo_tasks(self)
 
     def _append_history(self, history: Any, status: str) -> List[str]:
         if isinstance(history, list):
