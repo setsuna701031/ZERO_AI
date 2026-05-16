@@ -32,3 +32,12 @@ runtime/mutations/*.jsonl
 # Local clone/test repos
 zero_ai_clone/
 zero_ai_target/
+
+# Demo/runtime traces
+*.log
+
+# Workspace
+workspace/
+
+# Experimental/local-only tests
+tests/test_memory_engine.py
