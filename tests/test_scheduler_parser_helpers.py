@@ -54,6 +54,51 @@ class SchedulerParserHelpersTest(unittest.TestCase):
         )
         self.assertIsNone(_extract_document_arrow_paths("workspace/shared/input.txt"))
 
+    def test_path_parser_helpers_extract_document_source_path(self) -> None:
+        from core.tasks.scheduler_core.path_parser_helpers import _extract_document_source_path
+
+        paths = ["workspace/shared/input.txt", "workspace/shared/summary.md"]
+        self.assertEqual(
+            _extract_document_source_path("summarize workspace/shared/input.txt", paths),
+            "workspace/shared/input.txt",
+        )
+        self.assertEqual(
+            _extract_document_source_path("workspace/shared/input.txt -> workspace/shared/summary.md", paths),
+            "workspace/shared/input.txt",
+        )
+        self.assertEqual(_extract_document_source_path("make summary", paths), "workspace/shared/input.txt")
+        self.assertEqual(_extract_document_source_path("make summary", []), "")
+
+    def test_path_parser_helpers_extract_document_output_path(self) -> None:
+        from core.tasks.scheduler_core.path_parser_helpers import _extract_document_output_path
+
+        paths = ["workspace/shared/input.txt", "workspace/shared/summary.md"]
+        self.assertEqual(
+            _extract_document_output_path("write summary to workspace/shared/summary.md", paths),
+            "workspace/shared/summary.md",
+        )
+        self.assertEqual(
+            _extract_document_output_path("workspace/shared/input.txt -> workspace/shared/summary.md", paths),
+            "workspace/shared/summary.md",
+        )
+        self.assertEqual(_extract_document_output_path("make summary", paths), "workspace/shared/summary.md")
+        self.assertEqual(_extract_document_output_path("make summary", ["workspace/shared/input.txt"]), "")
+
+    def test_scheduler_document_path_wrappers_use_path_parser_helpers(self) -> None:
+        from core.tasks.scheduler import Scheduler
+
+        scheduler = Scheduler.__new__(Scheduler)
+        paths = ["workspace/shared/input.txt", "workspace/shared/summary.md"]
+
+        self.assertEqual(
+            scheduler._extract_document_source_path("read workspace/shared/input.txt", paths),
+            "workspace/shared/input.txt",
+        )
+        self.assertEqual(
+            scheduler._extract_document_output_path("output to workspace/shared/summary.md", paths),
+            "workspace/shared/summary.md",
+        )
+
     def test_pure_helpers_safe_int_for_runtime_gate(self) -> None:
         from core.tasks.scheduler_core.pure_helpers import _safe_int_for_runtime_gate
 
@@ -78,7 +123,7 @@ class SchedulerParserHelpersTest(unittest.TestCase):
         self.assertEqual(_strip_quotes(""), "")
 
     def test_pure_helpers_extract_file_path(self) -> None:
-        from core.tasks.scheduler_core.pure_helpers import _extract_file_path
+        from core.tasks.scheduler_core.path_parser_helpers import _extract_file_path
 
         self.assertEqual(
             _extract_file_path("please read workspace/shared/input.txt now"),
@@ -89,6 +134,25 @@ class SchedulerParserHelpersTest(unittest.TestCase):
             r"core\tasks\scheduler.py",
         )
         self.assertIsNone(_extract_file_path("no file path here"))
+
+    def test_pure_helpers_extract_file_path_keeps_compatibility_wrapper(self) -> None:
+        from core.tasks.scheduler_core.pure_helpers import _extract_file_path
+
+        self.assertEqual(
+            _extract_file_path("please read workspace/shared/input.txt now"),
+            "workspace/shared/input.txt",
+        )
+
+    def test_scheduler_extract_file_path_wrapper_uses_path_parser_helper(self) -> None:
+        from core.tasks.scheduler import Scheduler
+
+        scheduler = Scheduler.__new__(Scheduler)
+
+        self.assertEqual(
+            scheduler._extract_file_path(r"check core\tasks\scheduler.py"),
+            r"core\tasks\scheduler.py",
+        )
+        self.assertIsNone(scheduler._extract_file_path("no file path here"))
 
     def test_pure_helpers_canonicalize_steps_for_compare(self) -> None:
         from core.tasks.scheduler_core.pure_helpers import _canonicalize_steps_for_compare

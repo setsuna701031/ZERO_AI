@@ -26,6 +26,7 @@ from core.planning.replan_suggestion import build_replan_suggestion, build_repla
 from core.persona.presentation_bridge import render_cli_view, render_json_view
 from core.persona.runtime_bridge import PersonaRuntimeBridge
 from core.tasks.runtime_kernel_status import build_task_runtime_kernel_status, format_task_runtime_kernel_status
+from core.tasks.runtime_state_hygiene import make_json_safe
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
 from core.tasks.runtime_repair_contract import build_runtime_repair_contract
 from core.tasks.runtime_repair_envelope import build_runtime_repair_envelope
@@ -48,7 +49,7 @@ TERMINAL_STATUSES = {
 
 
 def print_json(data: Any) -> None:
-    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+    print(json.dumps(make_json_safe(data), ensure_ascii=False, indent=2))
 
 
 def _repo_root_path() -> Path:

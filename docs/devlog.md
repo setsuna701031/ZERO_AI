@@ -1,4 +1,224 @@
 ---
+## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
+
+This checkpoint records the runtime boundary freeze baseline on `main`.
+
+The goal was not to declare the whole Runtime fully sealed. The goal was to create a clean freeze candidate checkpoint after recovery, replay, mutation governance, evidence, audit, session reconstruction, and boundary contract validation were confirmed green together.
+
+### What was completed
+
+Added the runtime boundary freeze manifest:
+
+* `docs/runtime_boundary_freeze.md`
+  * records the current freeze candidate status
+  * records verified regression groups
+  * defines the no-new-capability rule for large runtime files
+  * lists high-risk files that should not absorb more responsibilities
+  * defines the next allowed work as extraction only after a green baseline
+
+Added mutation recovery observability smoke coverage:
+
+* `tests/test_mutation_recovery_observability_smoke.py`
+  * verifies mutation recovery observability readiness
+  * verifies operator-visible blocker summary behavior
+  * verifies blocked readiness state propagation
+  * keeps dry-run-only recovery behavior visible before mutation execution
+
+### Runtime validation confirmed
+
+Confirmed targeted validation:
+
+```text
+python -m pytest tests/test_mutation_recovery_observability_smoke.py -q
+-> 2 passed
+```
+
+Confirmed mutation recovery / governed execution validation:
+
+```text
+python -m pytest (Get-ChildItem tests/test_mutation_*.py | ForEach-Object { $_.FullName }) tests/test_runtime_repair_transaction_to_governed_execution.py -q
+-> 67 passed
+```
+
+Confirmed runtime recovery / replay validation:
+
+```text
+python -m pytest (Get-ChildItem tests/test_runtime_recovery*.py,tests/test_runtime_replay*.py -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) -q
+-> 183 passed
+```
+
+Confirmed combined recovery / replay / mutation / governed execution validation:
+
+```text
+python -m pytest (Get-ChildItem tests/test_runtime_recovery*.py,tests/test_runtime_replay*.py,tests/test_mutation_*.py -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) tests/test_runtime_repair_transaction_to_governed_execution.py -q
+-> 250 passed
+```
+
+Confirmed evidence / seal / audit validation:
+
+```text
+python -m pytest (Get-ChildItem tests/*evidence*.py,tests/*seal*.py,tests/*audit*.py -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) -q
+-> 254 passed
+```
+
+Confirmed session / reconstruction validation:
+
+```text
+python -m pytest (Get-ChildItem tests/*session*.py,tests/*lineage*.py,tests/*reconstruct*.py,tests/*provenance*.py -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) -q
+-> 40 passed
+```
+
+Confirmed runtime mainline combined validation:
+
+```text
+python -m pytest (Get-ChildItem tests/*evidence*.py,tests/*seal*.py,tests/*audit*.py,tests/*session*.py,tests/*lineage*.py,tests/*reconstruct*.py,tests/*provenance*.py,tests/test_runtime_recovery*.py,tests/test_runtime_replay*.py,tests/test_mutation_*.py -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) tests/test_runtime_repair_transaction_to_governed_execution.py -q
+-> 490 passed
+```
+
+Confirmed boundary / contract / ownership validation:
+
+```text
+python -m pytest (Get-ChildItem tests/*boundary*.py,tests/*contract*.py,tests/*ownership*.py -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) -q
+-> 1249 passed, 154 subtests passed
+```
+
+Confirmed full-suite validation after the freeze baseline commit:
+
+```text
+python -m pytest -q
+-> 2009 passed, 162 subtests passed
+```
+
+### Git checkpoint
+
+Committed and pushed on `main`:
+
+```text
+25202d6 - freeze(runtime): establish runtime boundary freeze baseline
+```
+
+### Freeze rules established
+
+The freeze manifest establishes these rules:
+
+```text
+NO new capability should be added directly into scheduler.py, agent_loop.py, task_runtime.py, step_executor.py, or task_runner.py.
+New behavior must enter through adapter, boundary, policy, evidence, or contract modules.
+Runtime core changes require regression across boundary, evidence, recovery, replay, mutation, and governed execution tests.
+```
+
+### High-risk files identified
+
+The current high-risk responsibility hotspots are:
+
+```text
+core/tasks/scheduler.py
+core/agent/agent_loop.py
+core/runtime/task_runtime.py
+core/runtime/step_executor.py
+core/runtime/task_runner.py
+core/tasks/runtime_repair_apply_transaction.py
+```
+
+Observed large-file scan also showed:
+
+```text
+core/tasks/scheduler.py: 8425 lines
+core/agent/agent_loop.py: 5426 lines
+core/runtime/task_runtime.py: 5267 lines
+core/runtime/step_executor.py: 5106 lines
+core/runtime/task_runner.py: 4284 lines
+core/tasks/runtime_repair_apply_transaction.py: 3818 lines
+```
+
+### Boundaries preserved
+
+This checkpoint intentionally preserves these boundaries:
+
+```text
+freeze baseline != final runtime seal
+boundary freeze != behavior rewrite
+cleanup candidate != immediate extraction
+adapter / policy / evidence / contract != scheduler responsibility
+recovery evidence != hidden mutation authority
+audit seal != execution permission
+```
+
+The checkpoint does not add:
+
+```text
+NO new capability
+NO scheduler rewrite
+NO agent_loop rewrite
+NO direct large-file extraction
+NO hidden approval
+NO automatic GitHub action
+NO new external side effect
+```
+
+### Why this matters
+
+This checkpoint gives ZERO a clean runtime freeze candidate baseline.
+
+The important result is not that the whole runtime is permanently sealed. The important result is that recovery, replay, mutation governance, evidence, audit, session reconstruction, and boundary contracts are now green together, committed, pushed, and documented as the baseline before any slimming or extraction work begins.
+
+This reduces the risk that future cleanup accidentally changes runtime behavior or lets large files absorb more responsibilities.
+
+### Stable checkpoint after this pass
+
+* mutation recovery observability smoke: working
+* recovery / replay regression: passing
+* mutation / governed execution regression: passing
+* evidence / seal / audit regression: passing
+* session reconstruction regression: passing
+* boundary / contract / ownership regression: passing
+* full suite: passing
+* runtime boundary freeze manifest: added
+* freeze baseline commit: pushed to `main`
+* worktree after push and full test: clean
+* runtime is a freeze candidate, not yet declared fully sealed
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `2 passed` for mutation recovery observability smoke
+* `67 passed` for mutation / governed execution validation
+* `183 passed` for recovery / replay validation
+* `250 passed` for combined recovery / replay / mutation / governed execution
+* `254 passed` for evidence / seal / audit
+* `40 passed` for session / reconstruction
+* `490 passed` for runtime mainline combined validation
+* `1249 passed, 154 subtests passed` for boundary / contract / ownership
+* commit `25202d6`
+* `2009 passed, 162 subtests passed`
+* clean `git status --short`
+
+### Next step
+
+Recommended next checkpoint:
+
+```text
+Runtime Freeze Report / Release Note Sync
+```
+
+Expected boundary:
+
+```text
+devlog / README status sync
+-> no runtime code change
+-> no scheduler extraction yet
+-> full-suite result remains the authority
+```
+
+Still avoid:
+
+```text
+NO behavioral rewrite during freeze
+NO large-file extraction before a dedicated plan
+NO new runtime capability
+NO scheduler / agent_loop responsibility growth
+
 
 ## 2026-05-15 - Recovery Policy Topology Landing checkpoint
 
@@ -7570,3 +7790,15 @@ Avoid mixing runtime contract mapping with broad scheduler refactoring in the sa
 - Hotspot: run_governed_mutation_lifecycle is 108 lines.
 - Current decision: acceptable as lifecycle runner because it does not directly apply file changes; execution layer still owns real writes.
 - Boundary rule: do not add real apply/diff/patch/policy/commit/scheduler retry logic into mutation_boundary.py. Split if governed lifecycle grows beyond orchestration stitching.
+
+## Windows Smoke Baseline Reproducibility
+- Status: pending full pass.
+- Updated only smoke runner / launcher output handling for Windows reproducibility.
+- `tests/run_mainline_smoke.py` now uses safe console output and UTF-8 child process environment defaults.
+- `main.py` child process launcher now sets UTF-8 Python output defaults when not already configured.
+- Current machine-generated baseline completed without UnicodeEncodeError interruption.
+- Observed baseline: pass=5, fail=8, missing_required=0, skip_optional=0.
+- Passing smoke labels: tool layer, scheduler, runtime, agent loop, executor.
+- Failing smoke labels: document task, document flow showcase, document pipeline identity, requirement demo, execution demo, semantic task, implementation-proof, full-build-demo.
+- Dominant failing runtime issue: `app.py` CLI JSON output hits `ValueError: Circular reference detected`.
+- This entry is not a full-pass declaration.

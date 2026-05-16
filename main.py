@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import locale
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -96,11 +97,15 @@ def print_help() -> None:
 
 
 def run_process(args: List[str], capture: bool = False) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     return subprocess.run(
         args,
         cwd=str(REPO_ROOT),
         capture_output=capture,
         text=False,
+        env=env,
     )
 
 

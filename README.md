@@ -76,7 +76,76 @@ Important:
 
 
 
-## Governed Repair Runtime / Operator Review Loop (Latest)
+
+## Runtime Boundary Freeze Baseline (Latest)
+
+Current engineering checkpoint:
+
+```text
+runtime-boundary-freeze-baseline
+```
+
+ZERO now has a documented runtime boundary freeze candidate baseline on `main`.
+
+This checkpoint does not declare the whole runtime permanently sealed. It establishes the clean baseline that future cleanup, extraction, and responsibility slimming must preserve.
+
+Verified mainline:
+
+```text
+recovery / replay
+-> mutation governance
+-> governed repair execution
+-> evidence / seal / audit
+-> session reconstruction
+-> boundary / contract / ownership
+-> full-suite regression
+```
+
+Validation checkpoint:
+
+```text
+2009 passed, 162 subtests passed
+```
+
+Freeze baseline commit:
+
+```text
+25202d6 - freeze(runtime): establish runtime boundary freeze baseline
+```
+
+Boundary rule:
+
+```text
+NO new capability should be added directly into scheduler.py, agent_loop.py, task_runtime.py, step_executor.py, or task_runner.py.
+New behavior must enter through adapter, boundary, policy, evidence, or contract modules.
+Runtime core changes require regression across boundary, evidence, recovery, replay, mutation, and governed execution tests.
+```
+
+High-risk files now tracked for responsibility control:
+
+```text
+core/tasks/scheduler.py
+core/agent/agent_loop.py
+core/runtime/task_runtime.py
+core/runtime/step_executor.py
+core/runtime/task_runner.py
+core/tasks/runtime_repair_apply_transaction.py
+```
+
+Important boundaries:
+
+```text
+boundary freeze != final runtime seal
+cleanup candidate != immediate extraction
+audit / evidence seal != execution permission
+adapter / policy / evidence / contract != scheduler responsibility
+```
+
+Next work should be documentation/status sync and then a dedicated cleanup plan. Do not begin scheduler or agent-loop extraction without a green baseline and scoped acceptance criteria.
+
+------------------------------------------------------------------------
+
+## Governed Repair Runtime / Operator Review Loop
 
 Current engineering checkpoint:
 
@@ -553,6 +622,18 @@ Run tests:
     python tests/test_step_executor.py
     python tests/run_regression_contracts.py
 
+Windows smoke baseline:
+
+    python tests/run_mainline_smoke.py
+    python main.py smoke
+
+Current Windows baseline status: pending full pass.
+
+The mainline smoke runner is expected to complete the full smoke list and report
+pass/fail counts without being interrupted by Windows console encoding. A
+machine-generated baseline may include failing runtime smokes; do not treat it
+as a full-pass declaration unless the runner reports `[mainline-smoke] ALL PASS`.
+
 ------------------------------------------------------------------------
 
 ## Architecture (Simplified)
@@ -577,12 +658,13 @@ Runtime Repair Transaction / Governance Kernel: ✔ Governed cognition/report la
 Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed\
 Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop wired
 Operator Review Runtime Resume / Rollback Recovery Chain: ✔ Governed resume, mutation landing, and rollback restore validated
+Runtime Boundary Freeze Baseline: ✔ Freeze candidate documented and full-suite verified
 
 Current phase:\
-→ recovery policy topology has landed into governed repair execution; operator review, runtime resume, mutation landing, verification failure rollback, and backup-snapshot restore remain wired
+→ runtime boundary freeze baseline has landed on `main`; recovery, replay, mutation governance, evidence, audit, session reconstruction, boundary contracts, and full-suite regression are green together
 
 Next stage:\
-→ recovery gate evidence hardening and operator-visible gate summaries, without bypassing control API, review gates, or execution boundaries
+→ runtime freeze report / release-note sync first, then scoped cleanup planning without scheduler, agent_loop, or runtime core responsibility growth
 
 ------------------------------------------------------------------------
 

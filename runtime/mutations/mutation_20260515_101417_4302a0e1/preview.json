@@ -1,0 +1,73 @@
+{
+  "apply": {
+    "applied": false,
+    "changed_files": [],
+    "ok": null,
+    "result": {}
+  },
+  "approval": {
+    "approved": true,
+    "approved_at": "2026-05-15T10:14:17Z",
+    "approved_by": "auto",
+    "reason": "policy smoke docs",
+    "required": false,
+    "risk_level": "low",
+    "risk_reasons": [],
+    "target_files": [
+      "docs/repair_policy_smoke.md"
+    ],
+    "ticket_id": "approval_mutation_20260515_101417_4302a0e1"
+  },
+  "audit": {
+    "created_at": "2026-05-15T10:14:17Z",
+    "created_by": "zero",
+    "events": [
+      {
+        "actor": "zero",
+        "event": "preview_created",
+        "ts": "2026-05-15T10:14:17Z"
+      }
+    ],
+    "updated_at": "2026-05-15T10:14:17Z"
+  },
+  "metadata": {
+    "repair_injected": false,
+    "source": "governed_repair_mutation_step_handler",
+    "step_id": "repair_policy_docs_smoke"
+  },
+  "mutation_id": "mutation_20260515_101417_4302a0e1",
+  "operation": "write_file",
+  "proposed_changes": [
+    {
+      "content": "# smoke\n",
+      "op_type": "write_file",
+      "target_path": "docs/repair_policy_smoke.md"
+    }
+  ],
+  "reason": "policy smoke docs",
+  "requires_approval": false,
+  "risk": {
+    "level": "low",
+    "reasons": [],
+    "requires_approval": false,
+    "requires_replay_verification": true,
+    "requires_rollback_snapshot": true,
+    "target_count": 1
+  },
+  "rollback": {
+    "snapshot_created": false,
+    "snapshot_files": [],
+    "snapshot_id": ""
+  },
+  "schema": "zero.mutation.preview.v1",
+  "status": "preview",
+  "target_files": [
+    "docs/repair_policy_smoke.md"
+  ],
+  "verification": {
+    "replay_result": {},
+    "replay_verified": false,
+    "result": {},
+    "verified": false
+  }
+}

@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
+from urllib import request as urllib_request
 
-import requests
+try:
+    import requests
+except ModuleNotFoundError:
+    requests = None  # type: ignore[assignment]
 
 from config.config import CONFIG, get_env_llm_override
+
+
+def json_dumps_bytes(payload: Dict[str, Any]) -> bytes:
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def json_loads_bytes(payload: bytes) -> Dict[str, Any]:
+    data = json.loads(payload.decode("utf-8"))
+    return data if isinstance(data, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -154,13 +168,23 @@ class LocalLLMClient:
         }
 
         try:
-            response = requests.post(
-                url,
-                json=payload,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
+            if requests is not None:
+                response = requests.post(
+                    url,
+                    json=payload,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                data = response.json()
+            else:
+                request = urllib_request.Request(
+                    url,
+                    data=json_dumps_bytes(payload),
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib_request.urlopen(request, timeout=self.timeout) as response:
+                    data = json_loads_bytes(response.read())
 
             if "success" not in data:
                 data["success"] = True
@@ -169,7 +193,7 @@ class LocalLLMClient:
 
             return data
 
-        except requests.exceptions.RequestException as exc:
+        except Exception as exc:
             return {
                 "response": "",
                 "error": f"Ollama request failed: {exc}",

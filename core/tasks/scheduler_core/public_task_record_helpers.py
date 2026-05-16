@@ -13,6 +13,72 @@ from core.planning.replan_suggestion import (
 from core.tasks.scheduler_core.repo_state_helpers import sync_runtime_back_to_repo
 
 
+def normalize_public_status_fields(
+    task: Dict[str, Any],
+    *,
+    status_created: str = "created",
+    status_blocked: str = "blocked",
+    status_review_required: str = "review_required",
+) -> Dict[str, Any]:
+    if not isinstance(task, dict):
+        return task
+
+    status = str(task.get("status") or status_created).strip().lower() or status_created
+    task["status"] = status
+
+    steps = task.get("steps", [])
+    if not isinstance(steps, list):
+        steps = []
+        task["steps"] = steps
+
+    try:
+        current_step_index = int(task.get("current_step_index", 0) or 0)
+    except Exception:
+        current_step_index = 0
+
+    if current_step_index < 0:
+        current_step_index = 0
+
+    steps_total = len(steps)
+    task["steps_total"] = steps_total
+
+    if status in {"finished", "done", "success", "completed"}:
+        current_step_index = steps_total if steps_total >= 0 else 0
+        task["current_step"] = None
+    else:
+        if steps_total <= 0:
+            current_step_index = 0
+            task["current_step"] = None
+        else:
+            if current_step_index >= steps_total:
+                current_step_index = max(0, steps_total - 1)
+            maybe_step = steps[current_step_index]
+            task["current_step"] = copy.deepcopy(maybe_step) if isinstance(maybe_step, dict) else None
+
+    task["current_step_index"] = current_step_index
+
+    task["final_answer"] = str(task.get("final_answer") or "")
+    task["last_error"] = str(task.get("last_error") or "")
+    task["failure_message"] = str(task.get("failure_message") or "")
+    task["blocked_reason"] = str(task.get("blocked_reason") or "")
+
+    state_detail = ""
+    if status == status_blocked:
+        state_detail = task["blocked_reason"]
+    elif status == status_review_required:
+        state_detail = task["blocked_reason"] or str(task.get("waiting_reason") or "review_required")
+    elif status in {"failed", "error"}:
+        state_detail = task["last_error"] or task["failure_message"]
+    elif status in {"finished", "done", "success", "completed"}:
+        state_detail = task["final_answer"]
+    task["state_detail"] = str(state_detail or "")
+
+    if not isinstance(task.get("history"), list):
+        task["history"] = [status]
+
+    return task
+
+
 def build_public_task_record(
     *,
     scheduler: Any,

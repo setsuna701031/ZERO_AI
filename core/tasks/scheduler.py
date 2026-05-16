@@ -59,8 +59,13 @@ from core.tasks.scheduler_core.repo_state_helpers import (
 )
 from core.tasks.scheduler_core.public_task_record_helpers import (
     build_public_task_record,
+    normalize_public_status_fields,
     refresh_task_public_fields,
     sync_runtime_back_to_repo_with_retry_collapse,
+)
+from core.tasks.scheduler_core.queue_formatting_helpers import (
+    build_queue_rows_payload,
+    build_queue_snapshot_payload,
 )
 from core.tasks.scheduler_core.runtime_resume_gate import (
     apply_runtime_resume_gate,
@@ -106,6 +111,7 @@ from core.tasks.scheduler_core.simple_step_executor_helpers import (
 from core.tasks.scheduler_core.command_step_helpers import (
     execute_command_like_step,
 )
+from core.tasks.scheduler_core.command_planner import try_plan_command
 from core.tasks.scheduler_core.llm_step_helpers import (
     execute_llm_step,
 )
@@ -114,7 +120,6 @@ from core.tasks.scheduler_core.pure_helpers import (
     _safe_int_for_runtime_gate as _scheduler_helper_safe_int_for_runtime_gate,
     _extract_task_id as _scheduler_helper_extract_task_id,
     _strip_quotes as _scheduler_helper_strip_quotes,
-    _extract_file_path as _scheduler_helper_extract_file_path,
     _canonicalize_steps_for_compare as _scheduler_helper_canonicalize_steps_for_compare,
 )
 from core.tasks.scheduler_core.path_parser_helpers import (
@@ -123,6 +128,9 @@ from core.tasks.scheduler_core.path_parser_helpers import (
     _strip_markdown_code_fences as _scheduler_path_parser_helper_strip_markdown_code_fences,
     _extract_all_document_file_paths as _scheduler_path_parser_helper_extract_all_document_file_paths,
     _extract_document_arrow_paths as _scheduler_path_parser_helper_extract_document_arrow_paths,
+    _extract_file_path as _scheduler_path_parser_helper_extract_file_path,
+    _extract_document_source_path as _scheduler_path_parser_helper_extract_document_source_path,
+    _extract_document_output_path as _scheduler_path_parser_helper_extract_document_output_path,
 )
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
@@ -2184,63 +2192,12 @@ class Scheduler(RuntimeTaskScheduler):
 
 
     def _normalize_public_status_fields(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(task, dict):
-            return task
-
-        status = str(task.get("status") or STATUS_CREATED).strip().lower() or STATUS_CREATED
-        task["status"] = status
-
-        steps = task.get("steps", [])
-        if not isinstance(steps, list):
-            steps = []
-            task["steps"] = steps
-
-        try:
-            current_step_index = int(task.get("current_step_index", 0) or 0)
-        except Exception:
-            current_step_index = 0
-
-        if current_step_index < 0:
-            current_step_index = 0
-
-        steps_total = len(steps)
-        task["steps_total"] = steps_total
-
-        if status in {"finished", "done", "success", "completed"}:
-            current_step_index = steps_total if steps_total >= 0 else 0
-            task["current_step"] = None
-        else:
-            if steps_total <= 0:
-                current_step_index = 0
-                task["current_step"] = None
-            else:
-                if current_step_index >= steps_total:
-                    current_step_index = max(0, steps_total - 1)
-                maybe_step = steps[current_step_index]
-                task["current_step"] = copy.deepcopy(maybe_step) if isinstance(maybe_step, dict) else None
-
-        task["current_step_index"] = current_step_index
-
-        task["final_answer"] = str(task.get("final_answer") or "")
-        task["last_error"] = str(task.get("last_error") or "")
-        task["failure_message"] = str(task.get("failure_message") or "")
-        task["blocked_reason"] = str(task.get("blocked_reason") or "")
-
-        state_detail = ""
-        if status == STATUS_BLOCKED:
-            state_detail = task["blocked_reason"]
-        elif status == STATUS_REVIEW_REQUIRED:
-            state_detail = task["blocked_reason"] or str(task.get("waiting_reason") or "review_required")
-        elif status in {"failed", "error"}:
-            state_detail = task["last_error"] or task["failure_message"]
-        elif status in {"finished", "done", "success", "completed"}:
-            state_detail = task["final_answer"]
-        task["state_detail"] = str(state_detail or "")
-
-        if not isinstance(task.get("history"), list):
-            task["history"] = [status]
-
-        return task
+        return normalize_public_status_fields(
+            task,
+            status_created=STATUS_CREATED,
+            status_blocked=STATUS_BLOCKED,
+            status_review_required=STATUS_REVIEW_REQUIRED,
+        )
 
     def _build_simple_final_answer(self, results: List[Dict[str, Any]]) -> str:
         if isinstance(results, list) and results:
@@ -2287,72 +2244,25 @@ class Scheduler(RuntimeTaskScheduler):
         )
 
     def get_queue_rows(self) -> Dict[str, Any]:
-        queued_rows = self.dispatcher.list_queued()
-        return {
-            "ok": True,
-            "scheduler_build": SCHEDULER_BUILD,
-            "tick": getattr(self, "current_tick", 0),
-            "count": len(queued_rows),
-            "rows": [
-                {
-                    "task_id": row.get("task_id"),
-                    "status": row.get("status"),
-                    "priority": row.get("priority"),
-                    "current_step_index": row.get("current_step_index"),
-                }
-                for row in queued_rows
-            ],
-        }
+        return build_queue_rows_payload(
+            dispatcher=self.dispatcher,
+            scheduler_build=SCHEDULER_BUILD,
+            current_tick=getattr(self, "current_tick", 0),
+        )
 
     def get_queue_snapshot(self) -> Dict[str, Any]:
         repo_tasks = self._list_repo_tasks()
-        review_queue = [
-            task for task in repo_tasks
-            if (
-                bool(task.get("requires_review", False))
-                or bool(task.get("requires_approval", False))
-                or str(task.get("status") or "").strip().lower() == STATUS_REVIEW_REQUIRED
-                or str(task.get("review_status") or "").strip().lower() in {
-                    "pending",
-                    "required",
-                    "requested",
-                    "waiting",
-                    "waiting_review",
-                    "review_required",
-                    "pending_review",
-                }
-            )
-            and str(task.get("review_status") or "").strip().lower() not in {
-                "approved",
-                "accepted",
-                "allowed",
-                "cleared",
-                "resolved",
-                "rejected",
-                "denied",
-                "declined",
-                "cancelled",
-                "canceled",
-            }
-        ]
-
-        return {
-            "ok": True,
-            "scheduler_build": SCHEDULER_BUILD,
-            "tick": getattr(self, "current_tick", 0),
-            "ready_queue": self.dispatcher.list_queued(),
-            "ready_queue_size": len(self.dispatcher.list_queued()),
-            "running_tasks": self.dispatcher.list_running(),
-            "running_count": len(self.dispatcher.list_running()),
-            "review_queue": review_queue,
-            "review_queue_size": len(review_queue),
-            "worker_pool": self.worker_pool.stats(),
-            "workspace_dir": self.workspace_dir,
-            "workspace_root": self.workspace_root,
-            "shared_dir": self.shared_dir,
-            "tasks": repo_tasks,
-            "task_count": len(repo_tasks),
-        }
+        return build_queue_snapshot_payload(
+            dispatcher=self.dispatcher,
+            worker_pool=self.worker_pool,
+            repo_tasks=repo_tasks,
+            scheduler_build=SCHEDULER_BUILD,
+            current_tick=getattr(self, "current_tick", 0),
+            review_required_status=STATUS_REVIEW_REQUIRED,
+            workspace_dir=self.workspace_dir,
+            workspace_root=self.workspace_root,
+            shared_dir=self.shared_dir,
+        )
 
 
     # ------------------------------------------------------------
@@ -6393,57 +6303,10 @@ class Scheduler(RuntimeTaskScheduler):
         return _scheduler_path_parser_helper_extract_document_arrow_paths(*args, **kwargs)
 
     def _extract_document_source_path(self, text: str, all_paths: List[str]) -> str:
-        stripped = str(text or "").strip()
-
-        patterns = [
-            r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, stripped, flags=re.IGNORECASE)
-            if match:
-                value = str(match.group(1)).strip()
-                if value:
-                    return value
-
-        arrow = self._extract_document_arrow_paths(stripped)
-        if arrow is not None:
-            return arrow[0]
-
-        if all_paths:
-            return all_paths[0]
-
-        return ""
+        return _scheduler_path_parser_helper_extract_document_source_path(text, all_paths)
 
     def _extract_document_output_path(self, text: str, all_paths: List[str]) -> str:
-        stripped = str(text or "").strip()
-
-        patterns = [
-            r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-            r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, stripped, flags=re.IGNORECASE)
-            if match:
-                value = str(match.group(1)).strip()
-                if value:
-                    return value
-
-        arrow = self._extract_document_arrow_paths(stripped)
-        if arrow is not None:
-            return arrow[1]
-
-        if len(all_paths) >= 2:
-            return all_paths[-1]
-
-        return ""
+        return _scheduler_path_parser_helper_extract_document_output_path(text, all_paths)
 
     def _extract_document_task_payload(self, goal: str) -> Optional[Dict[str, str]]:
         stripped = str(goal or "").strip()
@@ -6591,38 +6454,7 @@ class Scheduler(RuntimeTaskScheduler):
         return any(item in lowered for item in candidates)
 
     def _try_plan_command(self, text: str) -> Optional[Dict[str, Any]]:
-        stripped = str(text or "").strip()
-        lowered = stripped.lower()
-
-        patterns = [
-            r"^cmd\s*:\s*(.+)$",
-            r"^run\s*:\s*(.+)$",
-            r"^run\s+(.+)$",
-            r"^command\s*:\s*(.+)$",
-            r"^command\s+(.+)$",
-            r"^execute\s+(.+)$",
-            r"^shell\s+(.+)$",
-            r"^bash\s+(.+)$",
-            r"^???\s+(.+)$",
-        ]
-
-        for pattern in patterns:
-            m = re.match(pattern, stripped, flags=re.IGNORECASE)
-            if m:
-                command = m.group(1).strip()
-                if command:
-                    return {"type": "command", "command": command}
-
-        if lowered.startswith("python "):
-            return {"type": "command", "command": stripped}
-        if lowered.startswith("py "):
-            return {"type": "command", "command": stripped}
-        if lowered.startswith("cmd /c "):
-            return {"type": "command", "command": stripped}
-        if lowered.startswith("powershell "):
-            return {"type": "command", "command": stripped}
-
-        return None
+        return try_plan_command(text)
 
     def _try_plan_write_file(self, text: str) -> Optional[Dict[str, Any]]:
         stripped = str(text or "").strip()
@@ -6692,7 +6524,128 @@ class Scheduler(RuntimeTaskScheduler):
         return None
 
     def _extract_file_path(self, *args, **kwargs):
-        return _scheduler_helper_extract_file_path(*args, **kwargs)
+        return _scheduler_path_parser_helper_extract_file_path(*args, **kwargs)
+
+
+def _scheduler_path_compat_resolve_guard_target_path(
+    self,
+    raw_path: str,
+    task_dir: str,
+    scope: str = "auto",
+    resolved_path: str = "",
+) -> str:
+    return resolve_guard_target_path(
+        raw_path=raw_path,
+        task_dir=task_dir,
+        shared_dir=self.shared_dir,
+        scope=scope,
+        resolved_path=resolved_path,
+    )
+
+
+Scheduler._resolve_step_path = staticmethod(resolve_step_path)
+Scheduler._resolve_read_path_with_fallback = staticmethod(resolve_read_path_with_fallback)
+Scheduler._needs_scheduler_path_resolution = staticmethod(needs_scheduler_path_resolution)
+Scheduler._normalize_step_scope = staticmethod(normalize_step_scope)
+Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path
+
+
+def _scheduler_dispatch_compat_handle_dispatch_result(
+    self,
+    dispatch_result: Any,
+    current_tick: int,
+) -> Optional[Dict[str, Any]]:
+    return handle_dispatch_result(
+        scheduler=self,
+        dispatch_result=dispatch_result,
+        current_tick=current_tick,
+        terminal_statuses=TERMINAL_STATUSES,
+    )
+
+
+def _scheduler_dispatch_compat_handle_missing_repo_task(self, task_id: str) -> Dict[str, Any]:
+    return handle_missing_repo_task(
+        scheduler=self,
+        task_id=task_id,
+        status_failed=STATUS_FAILED,
+    )
+
+
+def _scheduler_dispatch_compat_handle_run_one_step_exception(
+    self,
+    task_id: str,
+    error: Exception,
+) -> Dict[str, Any]:
+    return handle_run_one_step_exception(
+        scheduler=self,
+        task_id=task_id,
+        error=error,
+        status_failed=STATUS_FAILED,
+    )
+
+
+def _scheduler_dispatch_compat_finalize_dispatched_task(
+    self,
+    dispatch_result: Any,
+    repo_task: Dict[str, Any],
+    runner_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    return finalize_dispatched_task(
+        scheduler=self,
+        dispatch_result=dispatch_result,
+        repo_task=repo_task,
+        runner_result=runner_result,
+        status_blocked=STATUS_BLOCKED,
+        status_finished=STATUS_FINISHED,
+        status_failed=STATUS_FAILED,
+    )
+
+
+def _scheduler_repo_state_compat_extract_effective_status_and_answer(
+    self,
+    original_task: Optional[Dict[str, Any]],
+    refreshed_task: Optional[Dict[str, Any]],
+    runner_result: Optional[Dict[str, Any]],
+) -> Tuple[str, Any]:
+    return extract_effective_status_and_answer(
+        original_task=original_task,
+        refreshed_task=refreshed_task,
+        runner_result=runner_result,
+    )
+
+
+def _scheduler_repo_state_compat_mark_repo_task_finished(
+    self,
+    task_id: str,
+    result: Any = None,
+) -> None:
+    return mark_repo_task_finished(scheduler=self, task_id=task_id, result=result)
+
+
+def _scheduler_repo_state_compat_mark_repo_task_failed(
+    self,
+    task_id: str,
+    error: str = "",
+) -> None:
+    return mark_repo_task_failed(scheduler=self, task_id=task_id, error=error)
+
+
+def _scheduler_repo_state_compat_mark_repo_task_queued(
+    self,
+    task_id: str,
+    error: str = "",
+) -> None:
+    return mark_repo_task_queued(scheduler=self, task_id=task_id, error=error)
+
+
+Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result
+Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task
+Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception
+Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task
+Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer
+Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished
+Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed
+Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued
 
 
 # ============================================================

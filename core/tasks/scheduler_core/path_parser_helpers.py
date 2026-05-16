@@ -61,3 +61,64 @@ def _extract_document_arrow_paths(text: str) -> Optional[Tuple[str, str]]:
         return None
     return (source_path, output_path)
 
+def _extract_file_path(text: str) -> Optional[str]:
+    match = re.search(
+        r"([A-Za-z0-9_\\\-./\\\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).strip() if match else None
+
+def _extract_document_source_path(text: str, all_paths: List[str]) -> str:
+    stripped = str(text or "").strip()
+
+    patterns = [
+        r"\bfrom\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bread\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bsummari[sz]e\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bsummary\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bextract\s+action\s+items\s+from\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            value = str(match.group(1)).strip()
+            if value:
+                return value
+
+    arrow = _extract_document_arrow_paths(stripped)
+    if arrow is not None:
+        return arrow[0]
+
+    if all_paths:
+        return all_paths[0]
+
+    return ""
+
+def _extract_document_output_path(text: str, all_paths: List[str]) -> str:
+    stripped = str(text or "").strip()
+
+    patterns = [
+        r"\binto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bto\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\bwrite\s+.+?\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+        r"\boutput\s+to\s+([A-Za-z0-9_\-./\\]+?\.(?:txt|md|log|json|csv|yaml|yml))\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, stripped, flags=re.IGNORECASE)
+        if match:
+            value = str(match.group(1)).strip()
+            if value:
+                return value
+
+    arrow = _extract_document_arrow_paths(stripped)
+    if arrow is not None:
+        return arrow[1]
+
+    if len(all_paths) >= 2:
+        return all_paths[-1]
+
+    return ""
+

@@ -4,6 +4,8 @@ import re
 
 from typing import Any, Dict, Optional
 
+from core.tasks.scheduler_core.path_parser_helpers import _extract_file_path as _path_parser_extract_file_path
+
 
 # Extracted from core/tasks/scheduler.py as pure helper functions.
 # This module must remain free of Scheduler, StepExecutor, ExecutionGuard,
@@ -30,8 +32,7 @@ def _strip_quotes(text: str) -> str:
 
 
 def _extract_file_path(text: str) -> Optional[str]:
-    m = re.search(r"([A-Za-z0-9_\\\-./\\\\]+?\.(?:py|txt|md|json|yaml|yml|csv|log))", text, flags=re.IGNORECASE)
-    return m.group(1).strip() if m else None
+    return _path_parser_extract_file_path(text)
 
 
 def _canonicalize_steps_for_compare(steps: Any) -> List[Dict[str, Any]]:

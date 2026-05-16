@@ -191,19 +191,28 @@ def _assert_execute_steps_failure_contract(result: Dict[str, Any]) -> None:
 
 
 def _assert_execute_steps_empty_contract(result: Dict[str, Any]) -> None:
-    assert result == {
-        "ok": True,
-        "summary": "all steps executed",
-        "message": "執行完成",
-        "final_answer": "執行完成",
-        "step_count": 0,
-        "completed_steps": 0,
-        "failed_step": None,
-        "results": [],
-        "last_result": None,
-        "error": None,
-        "execution_trace": [],
-    }
+    assert result.get("ok") is True
+    assert result.get("summary") == "all steps executed"
+    assert result.get("message") == "執行完成"
+    assert result.get("final_answer") == "執行完成"
+    assert result.get("step_count") == 0
+    assert result.get("completed_steps") == 0
+    assert result.get("failed_step") is None
+    assert result.get("results") == []
+    assert result.get("last_result") is None
+    assert result.get("error") is None
+    assert result.get("execution_trace") == []
+
+    adapter_payload = result.get("adapter_payload")
+    assert isinstance(adapter_payload, dict)
+    assert adapter_payload.get("ok") is True
+    assert adapter_payload.get("message") == "執行完成"
+    assert adapter_payload.get("final_answer") == "執行完成"
+    assert adapter_payload.get("execution_trace") == []
+
+    runtime_event_stream = result.get("runtime_event_stream")
+    assert isinstance(runtime_event_stream, list)
+    assert runtime_event_stream == []
 
 
 def _assert_success_step_result(

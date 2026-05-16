@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 from pathlib import Path
 
+from app import print_json
 from core.tasks.runtime_audit_artifact import build_runtime_audit_artifact
 from core.tasks.runtime_audit_registry import RuntimeAuditRegistry
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
@@ -23,6 +26,16 @@ class SampleObject:
 class BadDeepcopy:
     def __deepcopy__(self, memo):  # type: ignore[no-untyped-def]
         raise RuntimeError("copy denied")
+
+
+def test_cli_print_json_preserves_normal_dict_and_list_output():
+    payload = {"items": [{"name": "alpha"}, ["beta", 3]], "ok": True}
+    output = io.StringIO()
+
+    with contextlib.redirect_stdout(output):
+        print_json(payload)
+
+    assert json.loads(output.getvalue()) == payload
 
 
 def test_make_json_safe_handles_core_container_and_scalar_types():
@@ -53,8 +66,30 @@ def test_make_json_safe_handles_object_dict_and_circular_reference():
 
     assert safe["obj"]["object_type"] == "SampleObject"
     assert safe["obj"]["attributes"]["name"] == "sample"
-    assert safe["self"] == "<circular_ref>"
+    assert safe["self"] == "<circular-ref:$>"
     json.dumps(safe)
+
+
+def test_make_json_safe_nested_circular_reference_includes_path_placeholder():
+    root = {"outer": {"items": []}}
+    root["outer"]["items"].append({"back": root["outer"]})
+
+    safe = make_json_safe(root)
+
+    assert safe["outer"]["items"][0]["back"] == "<circular-ref:$.outer>"
+    json.dumps(safe)
+
+
+def test_cli_print_json_handles_circular_dict_without_value_error():
+    payload = {"result": {"items": []}}
+    payload["result"]["items"].append(payload["result"])
+    output = io.StringIO()
+
+    with contextlib.redirect_stdout(output):
+        print_json(payload)
+
+    parsed = json.loads(output.getvalue())
+    assert parsed["result"]["items"][0] == "<circular-ref:$.result>"
 
 
 def test_safe_deepcopy_falls_back_when_deepcopy_fails():

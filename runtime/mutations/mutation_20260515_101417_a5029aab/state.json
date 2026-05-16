@@ -1,0 +1,77 @@
+{
+  "apply": {
+    "applied": false,
+    "changed_files": [],
+    "ok": null,
+    "result": {}
+  },
+  "approval": {
+    "approved": false,
+    "approved_at": "",
+    "approved_by": "",
+    "reason": "policy smoke",
+    "required": true,
+    "risk_level": "medium",
+    "risk_reasons": [
+      "repo source path: core/runtime/step_handlers.py"
+    ],
+    "target_files": [
+      "core/runtime/step_handlers.py"
+    ],
+    "ticket_id": "approval_mutation_20260515_101417_a5029aab"
+  },
+  "audit": {
+    "created_at": "2026-05-15T10:14:17Z",
+    "created_by": "zero",
+    "events": [
+      {
+        "actor": "zero",
+        "event": "preview_created",
+        "ts": "2026-05-15T10:14:17Z"
+      }
+    ],
+    "updated_at": "2026-05-15T10:14:17Z"
+  },
+  "metadata": {
+    "repair_injected": false,
+    "source": "governed_repair_mutation_step_handler",
+    "step_id": "repair_policy_smoke"
+  },
+  "mutation_id": "mutation_20260515_101417_a5029aab",
+  "operation": "write_file",
+  "proposed_changes": [
+    {
+      "content": "# smoke\n",
+      "op_type": "write_file",
+      "target_path": "core/runtime/step_handlers.py"
+    }
+  ],
+  "reason": "policy smoke",
+  "requires_approval": true,
+  "risk": {
+    "level": "medium",
+    "reasons": [
+      "repo source path: core/runtime/step_handlers.py"
+    ],
+    "requires_approval": true,
+    "requires_replay_verification": true,
+    "requires_rollback_snapshot": true,
+    "target_count": 1
+  },
+  "rollback": {
+    "snapshot_created": false,
+    "snapshot_files": [],
+    "snapshot_id": ""
+  },
+  "schema": "zero.mutation.preview.v1",
+  "status": "waiting_approval",
+  "target_files": [
+    "core/runtime/step_handlers.py"
+  ],
+  "verification": {
+    "replay_result": {},
+    "replay_verified": false,
+    "result": {},
+    "verified": false
+  }
+}
