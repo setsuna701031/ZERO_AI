@@ -1,5 +1,34 @@
-﻿# Runtime mutation artifacts are generated at runtime.
-# Keep committed samples unless explicitly removed later, but ignore new generated artifacts.
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+
+# Test/runtime temp
+.test_tmp/
+run/
+logs/
+data/logs/
+data/traces/
+data/backups/
+
+# Runtime memory/state
+data/memory/
+data/memory_store.json
+data/reflections/
+
+# Runtime mutation artifacts
 runtime/mutations/*/preview.json
 runtime/mutations/*/state.json
 runtime/mutations/*.jsonl
+
+# Backup artifacts
+*.bak
+
+# Local clone/test repos
+zero_ai_clone/
+zero_ai_target/
