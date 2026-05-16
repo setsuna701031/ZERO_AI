@@ -1,0 +1,707 @@
+# Execution Gateway Preflight Audit
+
+## Scope
+
+This audit only scans execution-related entrypoints and command execution patterns.
+
+No runtime behavior was changed.
+
+## Keyword Hits
+
+- `app.py`:234 — `step_executor` — `def _get_step_executor(system: Any) -> Any:`
+- `app.py`:238 — `step_executor` — `for attr in ("step_executor", "executor"):`
+- `app.py`:1273 — `subprocess.Popen` — `subprocess.Popen(["open", target])`
+- `app.py`:1275 — `subprocess.Popen` — `subprocess.Popen(["xdg-open", target])`
+- `app.py`:3527 — `step_executor` — `step_executor = _get_step_executor(system)`
+- `app.py`:3529 — `step_executor` — `if planner is None or step_executor is None:`
+- `app.py`:3574 — `step_executor` — `execution_result = step_executor.execute_steps(`
+- `core\_archive_candidate\flask_manager.py`:91 — `subprocess.run` — `result = subprocess.run(`
+- `core\_archive_candidate\flask_manager.py`:110 — `subprocess.run` — `result = subprocess.run(`
+- `core\_archive_candidate\flask_manager.py`:139 — `subprocess.run` — `result = subprocess.run(`
+- `core\_archive_candidate\flask_manager.py`:174 — `subprocess.run` — `subprocess.run(`
+- `core\_archive_candidate\flask_manager.py`:245 — `subprocess.Popen` — `process = subprocess.Popen(`
+- `core\_archive_candidate\flask_manager.py`:254 — `subprocess.Popen` — `process = subprocess.Popen(`
+- `core\agent\agent_component_invoker.py`:211 — `step_executor` — `def call_step_executor(`
+- `core\agent\agent_component_invoker.py`:212 — `step_executor` — `step_executor: Any,`
+- `core\agent\agent_component_invoker.py`:221 — `step_executor` — `if not step_executor:`
+- `core\agent\agent_component_invoker.py`:225 — `step_executor` — `step_executor,`
+- `core\agent\agent_component_invoker.py`:238 — `step_executor` — `return {"error": "step_executor has no callable method"}`
+- `core\agent\agent_component_invoker.py`:276 — `step_executor` — `"error": f"step_executor 呼叫失敗: {e}",`
+- `core\agent\agent_component_invoker.py`:287 — `step_executor` — `"error": f"step_executor 呼叫失敗: {e}",`
+- `core\agent\agent_component_invoker.py`:291 — `step_executor` — `return {"error": "step_executor 存在，但沒有找到相容的呼叫方式"}`
+- `core\agent\agent_loop.py`:16 — `step_executor` — `call_step_executor,`
+- `core\agent\agent_loop.py`:31 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `core\agent\agent_loop.py`:71 — `step_executor` — `step_executor=None,`
+- `core\agent\agent_loop.py`:80 — `task_runner` — `task_runner=None,`
+- `core\agent\agent_loop.py`:89 — `step_executor` — `self.step_executor = step_executor`
+- `core\agent\agent_loop.py`:95 — `step_executor` — `self.tool_registry = kwargs.get("tool_registry") or getattr(self.step_executor, "tool_registry", None)`
+- `core\agent\agent_loop.py`:110 — `task_runner` — `self.task_runner = task_runner or TaskRunner(`
+- `core\agent\agent_loop.py`:112 — `step_executor` — `step_executor=self.step_executor,`
+- `core\agent\agent_loop.py`:217 — `ExecutionGuard` — `AgentLoop decision -> self_edit_loop -> Scheduler -> ExecutionGuard`
+- `core\agent\agent_loop.py`:658 — `ExecutionGuard` — `edit files directly and does not bypass Scheduler / ExecutionGuard /`
+- `core\agent\agent_loop.py`:2333 — `task_runner` — `runner = self.task_runner`
+- `core\agent\agent_loop.py`:2338 — `task_runner` — `"action": "task_runner_missing",`
+- `core\agent\agent_loop.py`:2341 — `task_runner` — `"error": "task_runner missing",`
+- `core\agent\agent_loop.py`:2359 — `task_runner` — `"error": "task_runner returned non-dict result",`
+- `core\agent\agent_loop.py`:3889 — `step_executor` — `if not self.step_executor:`
+- `core\agent\agent_loop.py`:3892 — `step_executor` — `"error": "step_executor missing",`
+- `core\agent\agent_loop.py`:3894 — `step_executor` — `"final_answer": "step_executor missing",`
+- `core\agent\agent_loop.py`:3899 — `step_executor` — `step_result = self._call_step_executor(`
+- `core\agent\agent_loop.py`:3912 — `step_executor` — `"error": "step_executor returned invalid result",`
+- `core\agent\agent_loop.py`:4056 — `step_executor` — `if not self.step_executor:`
+- `core\agent\agent_loop.py`:4059 — `step_executor` — `"error": "step_executor missing",`
+- `core\agent\agent_loop.py`:4061 — `step_executor` — `"final_answer": "step_executor missing",`
+- `core\agent\agent_loop.py`:4072 — `step_executor` — `step_result = self._call_step_executor(`
+- `core\agent\agent_loop.py`:4085 — `step_executor` — `"error": "step_executor returned invalid result",`
+- `core\agent\agent_loop.py`:4143 — `step_executor` — `step_executor=self.step_executor,`
+- `core\agent\agent_loop.py`:4895 — `step_executor` — `def _call_step_executor(`
+- `core\agent\agent_loop.py`:4905 — `step_executor` — `return call_step_executor(`
+- `core\agent\agent_loop.py`:4906 — `step_executor` — `step_executor=self.step_executor,`
+- `core\agent\document_flow_trace_writer.py`:14 — `step_executor` — `step_executor: Any = None,`
+- `core\agent\document_flow_trace_writer.py`:48 — `step_executor` — `step_executor=step_executor,`
+- `core\agent\document_flow_trace_writer.py`:196 — `step_executor` — `step_executor: Any = None,`
+- `core\agent\document_flow_trace_writer.py`:199 — `step_executor` — `if effective_llm_client is None and step_executor is not None:`
+- `core\agent\document_flow_trace_writer.py`:200 — `step_executor` — `effective_llm_client = getattr(step_executor, "llm_client", None)`
+- `core\agent\router_backup.py`:12 — `step_executor` — `- direct: 直接交給 step_executor`
+- `core\capabilities\demo_flows.py`:48 — `subprocess.run` — `return subprocess.run(`
+- `core\capabilities\document_flow_orchestrator.py`:208 — `subprocess.run` — `result = subprocess.run(`
+- `core\capabilities\full_build_flow.py`:48 — `subprocess.run` — `return subprocess.run(`
+- `core\events\event_runner.py`:12 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `core\events\event_runner.py`:13 — `step_executor` — `from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter`
+- `core\events\event_runner.py`:51 — `step_executor` — `step_executor=executor,`
+- `core\persona\persona_agent_orchestrator.py`:115 — `subprocess.run` — `result = subprocess.run(`
+- `core\persona\runtime_bridge.py`:483 — `subprocess.run` — `subprocess.run(`
+- `core\persona\runtime_bridge.py`:498 — `subprocess.run` — `subprocess.run(`
+- `core\planning\planner.py`:59 — `step_executor` — `step_executor: Any = None,`
+- `core\planning\planner.py`:68 — `step_executor` — `self.step_executor = step_executor`
+- `core\policy\decision.py`:38 — `ExecutionGuard` — `source: str = "ExecutionGuard.check_step",`
+- `core\policy\decision.py`:58 — `ExecutionGuard` — `source=str(source or "ExecutionGuard.check_step"),`
+- `core\repo_sandbox\controlled_edit.py`:91 — `subprocess.run` — `completed = subprocess.run(`
+- `core\runtime\mutation_boundary.py`:37 — `task_runner` — `"task_runner.py",`
+- `core\runtime\mutation_boundary.py`:42 — `step_executor` — `"step_executor.py",`
+- `core\runtime\mutation_boundary.py`:90 — `ExecutionGuard` — `- bypass ExecutionGuard / Policy / Scheduler.`
+- `core\runtime\mutation_integration.py`:35 — `ExecutionGuard` — `- bypass ExecutionGuard,`
+- `core\runtime\runtime_evidence_consumer.py`:36 — `step_executor` — `"step_executor": self._step_executor_events(getattr(seal, "step_hook", None)),`
+- `core\runtime\runtime_evidence_consumer.py`:122 — `step_executor` — `"step_executor": self._empty_event_summary(),`
+- `core\runtime\runtime_evidence_consumer.py`:160 — `step_executor` — `def _step_executor_events(self, hook: Any) -> dict[str, Any]:`
+- `core\runtime\runtime_evidence_query.py`:80 — `step_executor` — `step_events = self.filter_events(summary, layer="step_executor")`
+- `core\runtime\runtime_evidence_query.py`:98 — `step_executor` — `events = self.filter_events(summary, layer="step_executor").get("events", [])`
+- `core\runtime\runtime_evidence_query.py`:101 — `step_executor` — `"source": "step_executor_event",`
+- `core\runtime\runtime_evidence_query.py`:240 — `step_executor` — `if step_id.startswith("step_executor."):`
+- `core\runtime\runtime_evidence_query.py`:241 — `step_executor` — `return "step_executor"`
+- `core\runtime\runtime_evidence_registry.py`:147 — `step_executor` — `if event.get("layer") != "step_executor":`
+- `core\runtime\runtime_evidence_registry.py`:158 — `step_executor` — `"step_kind": "step_executor_event",`
+- `core\runtime\runtime_evidence_registry.py`:265 — `step_executor` — `if step_id.startswith("step_executor."):`
+- `core\runtime\runtime_evidence_registry.py`:266 — `step_executor` — `return "step_executor"`
+- `core\runtime\runtime_hook_controller.py`:84 — `step_executor` — `source="step_executor",`
+- `core\runtime\runtime_hook_controller.py`:98 — `step_executor` — `source="step_executor",`
+- `core\runtime\runtime_integration_adapter.py`:68 — `step_executor` — `source="step_executor",`
+- `core\runtime\runtime_lifecycle_pipeline.py`:80 — `step_executor` — `source="step_executor",`
+- `core\runtime\runtime_lifecycle_pipeline.py`:95 — `step_executor` — `source="step_executor",`
+- `core\runtime\runtime_lifecycle_pipeline.py`:110 — `step_executor` — `source="step_executor",`
+- `core\runtime\runtime_mainline_evidence_seal.py`:15 — `step_executor` — `from core.runtime.step_executor_evidence_adapter import StepExecutorEvidenceAdapter`
+- `core\runtime\runtime_mainline_evidence_seal.py`:16 — `step_executor` — `from core.runtime.step_executor_evidence_hook import StepExecutorEvidenceHook`
+- `core\runtime\runtime_mainline_evidence_seal.py`:158 — `step_executor` — `"step_executor.execute",`
+- `core\runtime\runtime_mainline_evidence_seal.py`:159 — `step_executor` — `"step_executor.execute",`
+- `core\runtime\runtime_mainline_evidence_seal.py`:161 — `step_executor` — `metadata={"layer": "step_executor"},`
+- `core\runtime\runtime_mainline_evidence_seal.py`:170 — `step_executor` — `"step_executor.execute",`
+- `core\runtime\runtime_mainline_evidence_seal.py`:182 — `step_executor` — `("step_executor.execute", "step_executor.execute", "step_executor"),`
+- `core\runtime\runtime_ownership.py`:9 — `step_executor` — `STEP_EXECUTOR = "step_executor"`
+- `core\runtime\runtime_state_guard.py`:62 — `task_runner` — `"steps": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:68 — `task_runner` — `"execution_trace": ("task_runner", "task_runtime"),`
+- `core\runtime\runtime_state_guard.py`:74 — `task_runner` — `"next_action": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:82 — `task_runner` — `"review_resolved": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:83 — `task_runner` — `"review_approved": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:84 — `task_runner` — `"review_resolution": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:85 — `task_runner` — `"blocker_resolved": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:86 — `task_runner` — `"unblock_confirmed": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:87 — `task_runner` — `"replan_approved": ("task_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:89 — `task_runner` — `"repair_context.strategy": ("repair_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:90 — `task_runner` — `"repair_context.regression_verify": ("task_runner", "repair_runtime"),`
+- `core\runtime\runtime_state_guard.py`:91 — `task_runner` — `"repair_context.rollback": ("repair_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:92 — `task_runner` — `"repair_context.rollback_result": ("repair_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:94 — `task_runner` — `"repair_context.repair_session": ("observation_layer", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:95 — `task_runner` — `"repair_context.repo_impact": ("repair_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:96 — `task_runner` — `"repair_context.multi_file_plan": ("repair_runtime", "task_runner"),`
+- `core\runtime\runtime_state_guard.py`:97 — `task_runner` — `"repair_context.dependency_graph": ("repair_runtime", "task_runner"),`
+- `core\runtime\step_executor.py`:360 — `step_executor` — `attach_runtime_event_stream(aggregate_result, source="step_executor")`
+- `core\runtime\step_executor.py`:378 — `step_executor` — `attach_runtime_event_stream(aggregate_result, source="step_executor")`
+- `core\runtime\step_executor.py`:2197 — `step_executor` — `sensitive_tokens = ("scheduler", "execution_guard", "step_executor", "task_runner", "task_runtime")`
+- `core\runtime\step_executor.py`:2197 — `task_runner` — `sensitive_tokens = ("scheduler", "execution_guard", "step_executor", "task_runner", "task_runtime")`
+- `core\runtime\step_executor.py`:2376 — `subprocess.run` — `command_result = subprocess.run(`
+- `core\runtime\step_executor.py`:2378 — `shell=True` — `shell=True,`
+- `core\runtime\step_executor.py`:3495 — `step_executor` — `def _zero_v703_step_executor_init(self, *args, **kwargs):`
+- `core\runtime\step_executor.py`:3504 — `step_executor` — `StepExecutor.__init__ = _zero_v703_step_executor_init`
+- `core\runtime\step_executor.py`:3892 — `step_executor` — `def _zero_v734_step_executor_init(self, *args, **kwargs):`
+- `core\runtime\step_executor.py`:4417 — `task_runner` — `for token in ("scheduler", "task_runtime", "task_runner", "execution_guard")`
+- `core\runtime\step_executor.py`:5105 — `step_executor` — `StepExecutor.__init__ = _zero_v734_step_executor_init`
+- `core\runtime\step_executor_evidence_adapter.py`:7 — `step_executor` — `from core.runtime.step_executor_evidence_hook import (`
+- `core\runtime\step_handlers.py`:683 — `subprocess.run` — `completed = subprocess.run(`
+- `core\runtime\step_handlers.py`:685 — `shell=True` — `shell=True,`
+- `core\runtime\step_handlers.py`:834 — `subprocess.run` — `completed = subprocess.run(`
+- `core\runtime\step_handlers.py`:963 — `subprocess.run` — `completed = subprocess.run(`
+- `core\runtime\step_handlers.py`:1033 — `subprocess.run` — `completed = subprocess.run(`
+- `core\runtime\task_runner.py`:17 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `core\runtime\task_runner.py`:53 — `step_executor` — `step_executor: Optional[StepExecutor] = None,`
+- `core\runtime\task_runner.py`:61 — `step_executor` — `self.step_executor = step_executor if step_executor else StepExecutor()`
+- `core\runtime\task_runner.py`:521 — `task_runner` — `"source": "task_runner_step_result",`
+- `core\runtime\task_runner.py`:527 — `task_runner` — `"source": "task_runner_replay_default",`
+- `core\runtime\task_runner.py`:538 — `task_runner` — `approved_by="task_runner",`
+- `core\runtime\task_runner.py`:539 — `task_runner` — `actor="task_runner",`
+- `core\runtime\task_runner.py`:1660 — `task_runner` — `source="task_runner",`
+- `core\runtime\task_runner.py`:1678 — `step_executor` — `result = self.step_executor.execute_step(`
+- `core\runtime\task_runner.py`:1693 — `step_executor` — `"error": "step_executor returned invalid result",`
+- `core\runtime\task_runner.py`:1731 — `task_runner` — `source="task_runner",`
+- `core\runtime\task_runner.py`:2008 — `task_runner` — `source="task_runner",`
+- `core\runtime\task_runner.py`:2222 — `task_runner` — `source="task_runner",`
+- `core\runtime\task_runner.py`:2864 — `task_runner` — `source="task_runner",`
+- `core\runtime\task_runner.py`:2973 — `step_executor` — `resolved = self.step_executor.resolve_read_path(`
+- `core\runtime\task_runner.py`:3182 — `subprocess.run` — `completed = subprocess.run(`
+- `core\runtime\task_runner.py`:3462 — `task_runner` — `"error": "task_runner returned invalid result",`
+- `core\runtime\task_runner.py`:3672 — `task_runner` — `trace_path = os.path.join(task_dir, "task_runner_trace.log")`
+- `core\runtime\task_runner.py`:3772 — `task_runner` — `def _zero_v702_task_runner_run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:`
+- `core\runtime\task_runner.py`:3790 — `task_runner` — `TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step`
+- `core\runtime\task_runner.py`:3811 — `task_runner` — `def _zero_v703_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:`
+- `core\runtime\task_runner.py`:3825 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type`
+- `core\runtime\task_runner.py`:3851 — `task_runner` — `def _zero_v710_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:`
+- `core\runtime\task_runner.py`:3870 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type`
+- `core\runtime\task_runner.py`:3904 — `task_runner` — `def _zero_v731_task_runner_determine_failure_type(self, step: Dict[str, Any], result: Dict[str, Any]) -> str:`
+- `core\runtime\task_runner.py`:3923 — `task_runner` — `TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type`
+- `core\runtime\task_runner.py`:4124 — `task_runner` — `def _zero_v800_task_runner_run_one_step(self: TaskRunner, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:`
+- `core\runtime\task_runner.py`:4188 — `task_runner` — `TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step`
+- `core\runtime\task_runner.py`:4219 — `task_runner` — `def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:`
+- `core\runtime\task_runner.py`:4283 — `task_runner` — `TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result`
+- `core\runtime\task_scheduler.py`:7 — `task_runner` — `from .task_runner import TaskRunner`
+- `core\runtime\task_scheduler.py`:38 — `step_executor` — `step_executor: Any = None,`
+- `core\runtime\task_scheduler.py`:41 — `task_runner` — `task_runner: Any = None,`
+- `core\runtime\task_scheduler.py`:42 — `step_executor` — `task_step_executor_adapter: Any = None,`
+- `core\runtime\task_scheduler.py`:43 — `step_executor` — `step_executor_adapter: Any = None,`
+- `core\runtime\task_scheduler.py`:54 — `step_executor` — `self.step_executor = step_executor`
+- `core\runtime\task_scheduler.py`:57 — `step_executor` — `self.task_step_executor_adapter = task_step_executor_adapter`
+- `core\runtime\task_scheduler.py`:58 — `step_executor` — `self.step_executor_adapter = step_executor_adapter`
+- `core\runtime\task_scheduler.py`:70 — `task_runner` — `self.task_runner_error: Optional[str] = None`
+- `core\runtime\task_scheduler.py`:71 — `task_runner` — `self.task_runner_build_trace: List[str] = []`
+- `core\runtime\task_scheduler.py`:73 — `task_runner` — `if task_runner is not None:`
+- `core\runtime\task_scheduler.py`:74 — `task_runner` — `self.task_runner = task_runner`
+- `core\runtime\task_scheduler.py`:75 — `task_runner` — `self.task_runner_error = None`
+- `core\runtime\task_scheduler.py`:76 — `task_runner` — `self.task_runner_build_trace.append("external task_runner provided")`
+- `core\runtime\task_scheduler.py`:78 — `task_runner` — `self.task_runner = self._build_default_task_runner()`
+- `core\runtime\task_scheduler.py`:100 — `task_runner` — `"has_task_runner": self.task_runner is not None,`
+- `core\runtime\task_scheduler.py`:101 — `task_runner` — `"task_runner_error": self.task_runner_error,`
+- `core\runtime\task_scheduler.py`:102 — `task_runner` — `"task_runner_build_trace": copy.deepcopy(self.task_runner_build_trace),`
+- `core\runtime\task_scheduler.py`:113 — `task_runner` — `"has_task_runner": self.task_runner is not None,`
+- `core\runtime\task_scheduler.py`:115 — `task_runner` — `"task_runner_error": self.task_runner_error,`
+- `core\runtime\task_scheduler.py`:116 — `task_runner` — `"task_runner_build_trace": copy.deepcopy(self.task_runner_build_trace),`
+- `core\runtime\task_scheduler.py`:280 — `task_runner` — `if self.task_runner is None:`
+- `core\runtime\task_scheduler.py`:281 — `task_runner` — `self.task_runner = self._build_default_task_runner()`
+- `core\runtime\task_scheduler.py`:283 — `task_runner` — `if self.task_runner is None:`
+- `core\runtime\task_scheduler.py`:288 — `task_runner` — `"message": "task_runner not available",`
+- `core\runtime\task_scheduler.py`:289 — `task_runner` — `"error": self.task_runner_error or "task_runner not available",`
+- `core\runtime\task_scheduler.py`:292 — `task_runner` — `"task_runner_build_trace": copy.deepcopy(self.task_runner_build_trace),`
+- `core\runtime\task_scheduler.py`:348 — `task_runner` — `runner_result = self.task_runner.run_task_tick(`
+- `core\runtime\task_scheduler.py`:375 — `task_runner` — `def _build_default_task_runner(self) -> Optional[TaskRunner]:`
+- `core\runtime\task_scheduler.py`:376 — `task_runner` — `self.task_runner_build_trace = []`
+- `core\runtime\task_scheduler.py`:379 — `step_executor` — `"step_executor",`
+- `core\runtime\task_scheduler.py`:380 — `step_executor` — `"task_step_executor_adapter",`
+- `core\runtime\task_scheduler.py`:381 — `step_executor` — `"step_executor_adapter",`
+- `core\runtime\task_scheduler.py`:394 — `task_runner` — `self.task_runner_error = (`
+- `core\runtime\task_scheduler.py`:398 — `task_runner` — `self.task_runner_build_trace.append(self.task_runner_error)`
+- `core\runtime\task_scheduler.py`:407 — `step_executor` — `"label": f"{executor_name}: step_executor + task_runtime + replanner + verifier + debug",`
+- `core\runtime\task_scheduler.py`:409 — `step_executor` — `"step_executor": executor_value,`
+- `core\runtime\task_scheduler.py`:417 — `step_executor` — `"label": f"{executor_name}: step_executor + task_runtime + debug",`
+- `core\runtime\task_scheduler.py`:419 — `step_executor` — `"step_executor": executor_value,`
+- `core\runtime\task_scheduler.py`:425 — `step_executor` — `"label": f"{executor_name}: step_executor + task_runtime",`
+- `core\runtime\task_scheduler.py`:427 — `step_executor` — `"step_executor": executor_value,`
+- `core\runtime\task_scheduler.py`:432 — `step_executor` — `"label": f"{executor_name}: step_executor only",`
+- `core\runtime\task_scheduler.py`:434 — `step_executor` — `"step_executor": executor_value,`
+- `core\runtime\task_scheduler.py`:461 — `task_runner` — `self.task_runner_error = None`
+- `core\runtime\task_scheduler.py`:462 — `task_runner` — `self.task_runner_build_trace.append(f"build success: {label}")`
+- `core\runtime\task_scheduler.py`:467 — `task_runner` — `self.task_runner_build_trace.append(err)`
+- `core\runtime\task_scheduler.py`:469 — `task_runner` — `self.task_runner_error = "failed to build TaskRunner; " + " | ".join(errors)`
+- `core\runtime\task_step_executor_adapter.py`:24 — `step_executor` — `step_executor: Any,`
+- `core\runtime\task_step_executor_adapter.py`:28 — `step_executor` — `self.step_executor = step_executor`
+- `core\runtime\task_step_executor_adapter.py`:88 — `step_executor` — `"error": "step_executor returned non-dict result",`
+- `core\runtime\task_step_executor_adapter.py`:286 — `step_executor` — `fn = getattr(self.step_executor, method_name, None)`
+- `core\runtime\task_step_executor_adapter.py`:290 — `step_executor` — `# 先走你現在 runtime/step_executor.py 常見介面`
+- `core\runtime\task_step_executor_adapter.py`:319 — `step_executor` — `"error": "no callable execution method found on step_executor",`
+- `core\tasks\execution_guard.py`:13 — `ExecutionGuard` — `class ExecutionGuard:`
+- `core\tasks\execution_guard.py`:250 — `step_executor` — `for token in ("scheduler", "execution_guard", "step_executor", "task_runner", "task_runtime")`
+- `core\tasks\execution_guard.py`:250 — `task_runner` — `for token in ("scheduler", "execution_guard", "step_executor", "task_runner", "task_runtime")`
+- `core\tasks\execution_guard.py`:830 — `ExecutionGuard` — `_ZERO_V731_ORIGINAL_EXECUTION_GUARD_CHECK_STEP = ExecutionGuard.check_step`
+- `core\tasks\execution_guard.py`:886 — `ExecutionGuard` — `ExecutionGuard.check_step = _zero_v731_execution_guard_check_step`
+- `core\tasks\scheduler.py`:21 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `core\tasks\scheduler.py`:22 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `core\tasks\scheduler.py`:107 — `step_executor` — `from core.tasks.scheduler_core.simple_step_executor_helpers import (`
+- `core\tasks\scheduler.py`:207 — `step_executor` — `step_executor: Any = None,`
+- `core\tasks\scheduler.py`:210 — `task_runner` — `task_runner: Any = None,`
+- `core\tasks\scheduler.py`:211 — `step_executor` — `task_step_executor_adapter: Any = None,`
+- `core\tasks\scheduler.py`:212 — `step_executor` — `step_executor_adapter: Any = None,`
+- `core\tasks\scheduler.py`:239 — `step_executor` — `step_executor=step_executor,`
+- `core\tasks\scheduler.py`:242 — `task_runner` — `task_runner=task_runner,`
+- `core\tasks\scheduler.py`:243 — `step_executor` — `task_step_executor_adapter=task_step_executor_adapter,`
+- `core\tasks\scheduler.py`:244 — `step_executor` — `step_executor_adapter=step_executor_adapter,`
+- `core\tasks\scheduler.py`:255 — `task_runner` — `self.task_runner = task_runner`
+- `core\tasks\scheduler.py`:280 — `ExecutionGuard` — `self.execution_guard = ExecutionGuard(`
+- `core\tasks\scheduler.py`:286 — `step_executor` — `if step_executor is not None:`
+- `core\tasks\scheduler.py`:287 — `step_executor` — `self.step_executor = step_executor`
+- `core\tasks\scheduler.py`:289 — `step_executor` — `self.step_executor = StepExecutor(`
+- `core\tasks\scheduler.py`:1211 — `step_executor` — `"step_executor",`
+- `core\tasks\scheduler.py`:1344 — `task_runner` — `risk_level = "high" if any(token in lowered for token in ("scheduler", "task_runtime", "task_runner", "execution_guard")) else "medium"`
+- `core\tasks\scheduler.py`:1927 — `step_executor` — `step_executor = getattr(self, "step_executor", None)`
+- `core\tasks\scheduler.py`:1928 — `step_executor` — `if step_executor is None:`
+- `core\tasks\scheduler.py`:1929 — `step_executor` — `raise RuntimeError("step_executor unavailable for apply_patch")`
+- `core\tasks\scheduler.py`:1931 — `step_executor` — `executor_result = step_executor.execute_step(`
+- `core\tasks\scheduler.py`:6728 — `step_executor` — `executor = getattr(self, "step_executor", None)`
+- `core\tasks\scheduler.py`:7458 — `task_runner` — `def _zero_v733_resolve_task_runner(self):`
+- `core\tasks\scheduler.py`:7459 — `task_runner` — `runner = getattr(self, "task_runner", None)`
+- `core\tasks\scheduler.py`:7463 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `core\tasks\scheduler.py`:7465 — `step_executor` — `step_executor=getattr(self, "step_executor", None),`
+- `core\tasks\scheduler.py`:7470 — `task_runner` — `self.task_runner = runner`
+- `core\tasks\scheduler.py`:7479 — `task_runner` — `runner = _zero_v733_resolve_task_runner(self)`
+- `core\tasks\scheduler_core\command_step_helpers.py`:30 — `subprocess.run` — `completed = subprocess.run(`
+- `core\tasks\scheduler_core\command_step_helpers.py`:32 — `shell=True` — `shell=True,`
+- `core\tasks\scheduler_core\command_step_helpers.py`:80 — `subprocess.run` — `completed = subprocess.run(`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:100 — `step_executor` — `step_executor = getattr(scheduler, "step_executor", None)`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:103 — `step_executor` — `if step_executor is not None:`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:105 — `step_executor` — `if hasattr(step_executor, "execute_step") and callable(step_executor.execute_step):`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:106 — `step_executor` — `step_result = step_executor.execute_step(`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:114 — `step_executor` — `elif hasattr(step_executor, "execute") and callable(step_executor.execute):`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:115 — `step_executor` — `step_result = step_executor.execute(`
+- `core\tasks\scheduler_core\llm_step_helpers.py`:123 — `step_executor` — `step_result = step_executor.execute_step(`
+- `core\tasks\scheduler_core\pure_helpers.py`:11 — `ExecutionGuard` — `# This module must remain free of Scheduler, StepExecutor, ExecutionGuard,`
+- `core\tasks\scheduler_core\step_path_helpers.py`:248 — `ExecutionGuard` — `Resolve the path used by ExecutionGuard.`
+- `core\tasks\scheduler_core\step_path_helpers.py`:268 — `ExecutionGuard` — `This does not bypass ExecutionGuard.  It only gives higher layers a`
+- `core\tasks\scheduler_core\step_path_helpers.py`:284 — `ExecutionGuard` — `ExecutionGuard before writing.`
+- `core\tasks\simple_step_runner.py`:141 — `subprocess.run` — `completed = subprocess.run(`
+- `core\tasks\simple_step_runner.py`:143 — `shell=True` — `shell=True,`
+- `core\tasks\simple_step_runner.py`:188 — `subprocess.run` — `completed = subprocess.run(`
+- `core\tasks\task_paths.py`:98 — `task_runner` — `return os.path.join(self.task_dir(task_id), "task_runner_trace.log")`
+- `core\tasks\task_scheduler_loop.py`:5 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `core\tasks\task_state.py`:8 — `task_runner` — `ZERO Task 狀態定義（對齊現行 task_runtime / task_runner）`
+- `core\tools\__init__.py`:14 — `command_tool` — `_command_tool_module = _safe_import("command_tool")`
+- `core\tools\__init__.py`:19 — `command_tool` — `CommandTool = getattr(_command_tool_module, "CommandTool", None)`
+- `core\tools\_archive_candidate\debug_python.py`:48 — `subprocess.run` — `result = subprocess.run(`
+- `core\tools\_archive_candidate\run_python_tool.py`:12 — `subprocess.run` — `result = subprocess.run(`
+- `core\tools\_archive_candidate\run_shell.py`:32 — `subprocess.run` — `result = subprocess.run(`
+- `core\tools\_archive_candidate\run_shell.py`:34 — `shell=True` — `shell=True,`
+- `core\tools\_archive_candidate\terminal_tool.py`:22 — `subprocess.run` — `completed = subprocess.run(`
+- `core\tools\_archive_candidate\terminal_tool.py`:25 — `shell=True` — `shell=True,`
+- `core\tools\command_tool.py`:31 — `subprocess.run` — `result = subprocess.run(`
+- `core\tools\command_tool.py`:33 — `shell=True` — `shell=True,`
+- `core\tools\github_tool.py`:159 — `subprocess.run` — `return subprocess.run(`
+- `core\tools\readonly_tools.py`:165 — `subprocess.run` — `completed = subprocess.run(`
+- `core\tools\tool_registry.py`:33 — `command_tool` — `from core.tools.command_tool import CommandTool`
+- `core\tools\tool_registry.py`:337 — `command_tool` — `command_tool = self._safe_build_command_tool()`
+- `core\tools\tool_registry.py`:338 — `command_tool` — `if command_tool is not None:`
+- `core\tools\tool_registry.py`:341 — `command_tool` — `command_tool,`
+- `core\tools\tool_registry.py`:342 — `command_tool` — `aliases=["command_tool", "shell"],`
+- `core\tools\tool_registry.py`:578 — `command_tool` — `def _safe_build_command_tool(self) -> Optional[Any]:`
+- `core\watch\auto_task_runner.py`:1 — `task_runner` — `# core/watch/auto_task_runner.py`
+- `core\watch\auto_task_runner.py`:149 — `subprocess.run` — `result = subprocess.run(`
+- `demo_controlled_pipeline.py`:139 — `subprocess.run` — `return subprocess.run(`
+- `demos\demo_multi_task_scenario.py`:62 — `subprocess.run` — `completed = subprocess.run(`
+- `main.py`:103 — `subprocess.run` — `return subprocess.run(`
+- `persona_command_console.py`:105 — `subprocess.run` — `proc = subprocess.run(args, text=True, encoding="utf-8", errors="ignore", capture_output=True, check=False)`
+- `persona_workcopy_executor.py`:242 — `subprocess.run` — `subprocess.run(`
+- `persona_workcopy_executor.py`:252 — `subprocess.run` — `proc = subprocess.run(`
+- `run_zero.py`:16 — `subprocess.Popen` — `return subprocess.Popen(`
+- `run_zero.py`:94 — `task_runner` — `"-m", "core.watch.auto_task_runner",`
+- `self_edit_loop.py`:334 — `subprocess.run` — `completed = subprocess.run(`
+- `self_edit_loop.py`:2309 — `subprocess.run` — `completed = subprocess.run(`
+- `self_edit_zero.py`:433 — `subprocess.run` — `proc = subprocess.run(`
+- `services\system_boot.py`:12 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `services\system_boot.py`:13 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `services\system_boot.py`:185 — `step_executor` — `self.step_executor_evidence_adapter = None`
+- `services\system_boot.py`:193 — `step_executor` — `self.step_executor_evidence_adapter = self.runtime_evidence_seal.step_adapter`
+- `services\system_boot.py`:264 — `step_executor` — `self.step_executor = StepExecutor(`
+- `services\system_boot.py`:268 — `step_executor` — `evidence_adapter=self.step_executor_evidence_adapter,`
+- `services\system_boot.py`:277 — `step_executor` — `step_executor=self.step_executor,`
+- `services\system_boot.py`:278 — `step_executor` — `tool_registry=getattr(self.step_executor, "tool_registry", None),`
+- `services\system_boot.py`:319 — `task_runner` — `self.task_runner = TaskRunner(`
+- `services\system_boot.py`:320 — `step_executor` — `step_executor=self.step_executor,`
+- `services\system_boot.py`:330 — `task_runner` — `task_runner=self.task_runner,`
+- `services\system_boot.py`:331 — `step_executor` — `step_executor=self.step_executor,`
+- `services\system_boot.py`:348 — `task_runner` — `setattr(self.task_runner, "agent_loop", self.agent_loop)`
+- `services\system_boot.py`:374 — `step_executor` — `step_executor=self.step_executor,`
+- `services\system_boot.py`:383 — `task_runner` — `task_runner=self.task_runner,`
+- `services\system_boot.py`:399 — `step_executor` — `step_executor=self.step_executor,`
+- `services\system_boot.py`:408 — `task_runner` — `task_runner=self.task_runner,`
+- `services\system_boot.py`:490 — `step_executor` — `"step_executor_type": type(self.step_executor).__name__,`
+- `services\system_boot.py`:498 — `task_runner` — `"task_runner_type": type(self.task_runner).__name__,`
+- `tests\run_agent_loop_observe_decide_smoke.py`:160 — `task_runner` — `task_runner=FakeTaskRunner(`
+- `tests\run_agent_loop_reflection.py`:5 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\run_agent_loop_reflection.py`:30 — `step_executor` — `"step_executor": executor,`
+- `tests\run_agent_loop_reflection.py`:35 — `step_executor` — `"step_executor": executor,`
+- `tests\run_agent_loop_reflection.py`:40 — `step_executor` — `"step_executor": executor,`
+- `tests\run_agent_loop_reflection.py`:56 — `step_executor` — `step_executor = StepExecutor()`
+- `tests\run_agent_loop_reflection.py`:62 — `step_executor` — `executor=step_executor,`
+- `tests\run_agent_loop_reflection.py`:68 — `step_executor` — `step_executor=step_executor,`
+- `tests\run_agent_loop_until_terminal_smoke.py`:242 — `task_runner` — `agent = AgentLoop(task_runner=runner, debug=False)`
+- `tests\run_agent_loop_until_terminal_smoke.py`:282 — `task_runner` — `agent = AgentLoop(task_runner=runner, debug=False)`
+- `tests\run_agent_loop_until_terminal_smoke.py`:325 — `task_runner` — `agent = AgentLoop(task_runner=runner, debug=False)`
+- `tests\run_agent_loop_until_terminal_smoke.py`:364 — `task_runner` — `agent = AgentLoop(task_runner=runner, debug=False)`
+- `tests\run_agent_loop_until_terminal_smoke.py`:403 — `task_runner` — `agent = AgentLoop(task_runner=runner, debug=False)`
+- `tests\run_app_task_loop_cli_smoke.py`:51 — `subprocess.run` — `completed = subprocess.run(`
+- `tests\run_approval_record_smoke.py`:69 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_audit_replay_smoke.py`:41 — `ExecutionGuard` — `policy_source="ExecutionGuard.check_step",`
+- `tests\run_audit_replay_smoke.py`:50 — `ExecutionGuard` — `policy_source="ExecutionGuard.check_step",`
+- `tests\run_controlled_execute_smoke.py`:54 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_document_flow_orchestrator_smoke.py`:92 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_document_flow_showcase_smoke.py`:85 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_document_pipeline_identity_smoke.py`:47 — `subprocess.run` — `proc = subprocess.run(`
+- `tests\run_document_task_smoke.py`:19 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_execution_demo_smoke.py`:14 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_execution_session_smoke.py`:13 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\run_execution_session_smoke.py`:14 — `step_executor` — `from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter`
+- `tests\run_execution_session_smoke.py`:46 — `step_executor` — `step_executor=executor,`
+- `tests\run_full_build_demo_smoke.py`:14 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_github_commit_tool_call_smoke.py`:79 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_github_inbox_smoke.py`:12 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\run_github_inbox_smoke.py`:13 — `step_executor` — `from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter`
+- `tests\run_github_inbox_smoke.py`:47 — `step_executor` — `step_executor=executor,`
+- `tests\run_github_outbox_adapter_smoke.py`:12 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\run_github_outbox_adapter_smoke.py`:13 — `step_executor` — `from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter`
+- `tests\run_github_outbox_adapter_smoke.py`:53 — `step_executor` — `step_executor=executor,`
+- `tests\run_hybrid_demo_smoke.py`:30 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_implementation_proof_smoke.py`:14 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_l4_lifecycle_smoke.py`:21 — `subprocess.run` — `process = subprocess.run(`
+- `tests\run_l5_external_draft_tools_smoke.py`:114 — `os.system` — `forbidden_git_markers = ("subprocess", "os.system", "git push", "git merge", "git commit", "force-push")`
+- `tests\run_l5_run_cli_smoke.py`:33 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_mainline_smoke.py`:55 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_multi_task_demo_smoke.py`:46 — `subprocess.run` — `completed = subprocess.run(`
+- `tests\run_pending_review_gate_smoke.py`:124 — `task_runner` — `agent = AgentLoop(task_runner=runner, task_runtime=runtime, debug=False)`
+- `tests\run_pending_review_gate_smoke.py`:155 — `task_runner` — `terminal_agent = AgentLoop(task_runner=terminal_runner, task_runtime=runtime, debug=False)`
+- `tests\run_persona_agent_demo_smoke.py`:88 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_persona_main_entry_smoke.py`:18 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_persona_policy_layer_smoke.py`:32 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_regression_contracts.py`:16 — `step_executor` — `Path("tests/test_step_executor_runtime_event_integration_contract.py"),`
+- `tests\run_regression_contracts.py`:72 — `step_executor` — `Path("tests/test_step_executor_evidence_hook_contract.py"),`
+- `tests\run_regression_contracts.py`:76 — `step_executor` — `Path("tests/test_step_executor_evidence_adapter_contract.py"),`
+- `tests\run_regression_contracts.py`:77 — `step_executor` — `Path("tests/test_step_executor_hook_attachment_contract.py"),`
+- `tests\run_regression_contracts.py`:92 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_requirement_demo_smoke.py`:14 — `subprocess.run` — `return subprocess.run(`
+- `tests\run_runtime_smoke.py`:12 — `step_executor` — `"test_step_executor.py",`
+- `tests\run_runtime_smoke.py`:33 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_semantic_task_smoke.py`:18 — `subprocess.run` — `process = subprocess.run(`
+- `tests\run_task_runner_capability_gate_smoke.py`:12 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `tests\run_task_runner_capability_gate_smoke.py`:17 — `task_runner` — `INPUT_PATH = SHARED_DIR / "task_runner_capability_input.txt"`
+- `tests\run_task_runner_capability_gate_smoke.py`:18 — `task_runner` — `SUMMARY_OUTPUT_PATH = SHARED_DIR / "task_runner_capability_summary.txt"`
+- `tests\run_task_runner_capability_gate_smoke.py`:19 — `task_runner` — `ACTION_ITEMS_OUTPUT_PATH = SHARED_DIR / "task_runner_capability_action_items.txt"`
+- `tests\run_task_runner_capability_gate_smoke.py`:69 — `task_runner` — `task_id = "task_runner_capability_gate_smoke"`
+- `tests\run_task_runner_capability_gate_smoke.py`:95 — `task_runner` — `"reason": "task_runner_capability_gate_smoke",`
+- `tests\run_task_runner_capability_gate_smoke.py`:113 — `task_runner` — `"reason": "task_runner_capability_gate_smoke",`
+- `tests\run_tool_layer_smoke.py`:24 — `subprocess.run` — `result = subprocess.run(`
+- `tests\run_tool_router_smoke.py`:12 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\run_tool_router_smoke.py`:13 — `step_executor` — `from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter`
+- `tests\run_tool_router_smoke.py`:34 — `step_executor` — `step_executor=executor,`
+- `tests\run_trace_replay_smoke.py`:104 — `subprocess.run` — `completed = subprocess.run(`
+- `tests\run_trace_replay_smoke.py`:144 — `subprocess.run` — `json_completed = subprocess.run(`
+- `tests\test_apply_patch_transaction_layer.py`:10 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_apply_patch_transaction_layer.py`:11 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tests\test_apply_patch_transaction_layer.py`:166 — `ExecutionGuard` — `guard = ExecutionGuard(workspace_root="workspace", shared_dir="workspace/shared")`
+- `tests\test_apply_patch_transaction_layer.py`:168 — `step_executor` — `step={"type": "apply_patch", "patch_path": "workspace/shared/source.patch", "target_path": "core/runtime/step_executor.py"},`
+- `tests\test_apply_patch_transaction_layer.py`:181 — `step_executor` — `def test_repo_source_unconfirmed_step_executor_blocks_without_writing(tmp_path: Path, monkeypatch) -> None:`
+- `tests\test_controlled_mutation_adapter_contract.py`:209 — `step_executor` — `self.assertFalse(hasattr(adapter, "step_executor"))`
+- `tests\test_controlled_mutation_boundary_contract.py`:221 — `step_executor` — `self.assertFalse(hasattr(boundary, "step_executor"))`
+- `tests\test_controlled_mutation_evidence_bundle_contract.py`:379 — `step_executor` — `self.assertFalse(hasattr(bundle, "step_executor"))`
+- `tests\test_controlled_mutation_rollback_boundary_contract.py`:333 — `step_executor` — `self.assertFalse(hasattr(boundary, "step_executor"))`
+- `tests\test_controlled_mutation_sandbox_executor_contract.py`:330 — `step_executor` — `self.assertFalse(hasattr(executor, "step_executor"))`
+- `tests\test_controlled_mutation_sandbox_plan_contract.py`:247 — `step_executor` — `self.assertFalse(hasattr(plan, "step_executor"))`
+- `tests\test_controlled_mutation_verification_boundary_contract.py`:333 — `step_executor` — `self.assertFalse(hasattr(boundary, "step_executor"))`
+- `tests\test_guard_observability_envelope_contract.py`:16 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tests\test_guard_observability_envelope_contract.py`:19 — `ExecutionGuard` — `guard = ExecutionGuard(workspace_root=tmp, shared_dir=tmp)`
+- `tests\test_guard_observability_envelope_contract.py`:42 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tests\test_guard_observability_envelope_contract.py`:45 — `ExecutionGuard` — `guard = ExecutionGuard(workspace_root=tmp, shared_dir=tmp)`
+- `tests\test_guard_observability_envelope_contract.py`:71 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tests\test_guard_observability_envelope_contract.py`:74 — `ExecutionGuard` — `guard = ExecutionGuard(workspace_root=tmp, shared_dir=tmp)`
+- `tests\test_llm_tool_decision.py`:14 — `command_tool` — `- command_tool:`
+- `tests\test_repair_chain_runtime.py`:8 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `tests\test_repair_chain_runtime.py`:10 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_repair_chain_runtime.py`:12 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tests\test_repair_chain_runtime.py`:226 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:262 — `step_executor` — `TaskRunner(step_executor=executor, task_runtime=runtime).run_task(_repair_task(), current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:265 — `step_executor` — `resumed_runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:277 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:372 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:418 — `step_executor` — `runner = TaskRunner(step_executor=InvalidRepairThenRealApplyExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:452 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:487 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(delete_backup_before_verify=True), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:522 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:611 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(_apply_task("shared_low_risk", step), current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:646 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:667 — `task_runner` — `"changed_files": ["core/runtime/task_runtime.py", "core/runtime/task_runner.py"],`
+- `tests\test_repair_chain_runtime.py`:672 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:682 — `task_runner` — `assert impact["changed_files"] == ["core/runtime/task_runtime.py", "core/runtime/task_runner.py"]`
+- `tests\test_repair_chain_runtime.py`:708 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:755 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:796 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:841 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:892 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:923 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:950 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:987 — `step_executor` — `runner = TaskRunner(step_executor=RegressionFailThenRealRepairExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1014 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1045 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1072 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1112 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1133 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1162 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1193 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1222 — `step_executor` — `runner = TaskRunner(step_executor=RegressionFailThenRealRepairExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1268 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1297 — `step_executor` — `first_runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1304 — `step_executor` — `second_runner = TaskRunner(step_executor=StepExecutor(), task_runtime=reloaded_runtime)`
+- `tests\test_repair_chain_runtime.py`:1354 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1395 — `step_executor` — `first_runner = TaskRunner(step_executor=RepairChainExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1400 — `step_executor` — `second_runner = TaskRunner(step_executor=RepairChainExecutor(), task_runtime=TaskRuntime(workspace_root=str(TEST_ROOT)))`
+- `tests\test_repair_chain_runtime.py`:1429 — `step_executor` — `result = TaskRunner(step_executor=RepairChainExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1452 — `step_executor` — `result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1481 — `step_executor` — `TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1508 — `step_executor` — `TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1540 — `step_executor` — `TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)`
+- `tests\test_repair_chain_runtime.py`:1568 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1596 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1606 — `step_executor` — `TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=TaskRuntime(workspace_root=str(TEST_ROOT))).run_task(task_factory(), current_tick=99)`
+- `tests\test_repair_chain_runtime.py`:1635 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1757 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1792 — `step_executor` — `runner = TaskRunner(step_executor=FinalVerifyFailExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1860 — `step_executor` — `step_executor=FinalVerifyFailExecutor(delete_backup_before_verify=True),`
+- `tests\test_repair_chain_runtime.py`:1903 — `step_executor` — `runner = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime)`
+- `tests\test_repair_chain_runtime.py`:1962 — `task_runner` — `step={"type": "run_python", "path": "core/runtime/task_runner.py"},`
+- `tests\test_repair_chain_runtime.py`:1964 — `task_runner` — `source_path="core/runtime/task_runner.py",`
+- `tests\test_repair_chain_runtime.py`:2028 — `task_runner` — `source_path="core/runtime/task_runner.py",`
+- `tests\test_repair_chain_runtime.py`:2035 — `task_runner` — `source_path="core/runtime/task_runner.py",`
+- `tests\test_repair_chain_runtime.py`:2042 — `task_runner` — `assert chain_id == "repair_obs_helper_core_runtime_task_runner.py_step_3_tick_7"`
+- `tests\test_repair_chain_runtime.py`:2240 — `ExecutionGuard` — `guard = ExecutionGuard(`
+- `tests\test_runtime_aggregate_schema_lock_v2.py`:67 — `step_executor` — `def test_step_executor_runtime_schema_has_adapter_and_event_stream(self) -> None:`
+- `tests\test_runtime_aggregate_schema_lock_v2.py`:69 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_aggregate_schema_lock_v2.py`:113 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_boundary_contract.py`:31 — `step_executor` — `def test_step_executor_execution_result_write_allowed(self) -> None:`
+- `tests\test_runtime_boundary_contract.py`:42 — `step_executor` — `def test_step_executor_queue_transition_rejected(self) -> None:`
+- `tests\test_runtime_contract_integrity.py`:17 — `step_executor` — `def _make_step_executor(self, workspace_root: Path) -> Any:`
+- `tests\test_runtime_contract_integrity.py`:18 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_contract_integrity.py`:98 — `step_executor` — `executor = self._make_step_executor(Path(tmp))`
+- `tests\test_runtime_contract_integrity.py`:148 — `step_executor` — `executor = self._make_step_executor(Path(tmp))`
+- `tests\test_runtime_contract_integrity.py`:190 — `step_executor` — `executor = self._make_step_executor(Path(tmp))`
+- `tests\test_runtime_evidence_consumer_contract.py`:90 — `step_executor` — `mutable_summary["events"]["step_executor"]["phases"].append("polluted")`
+- `tests\test_runtime_evidence_consumer_contract.py`:96 — `step_executor` — `self.assertNotIn("polluted", after["events"]["step_executor"]["phases"])`
+- `tests\test_runtime_evidence_consumer_contract.py`:127 — `step_executor` — `self.assertEqual(summary["events"]["step_executor"]["phases"], ["before_step", "after_step"])`
+- `tests\test_runtime_evidence_consumer_contract.py`:128 — `step_executor` — `self.assertEqual(summary["events"]["step_executor"]["statuses"], ["pending", "succeeded"])`
+- `tests\test_runtime_evidence_query_contract.py`:35 — `step_executor` — `"execution": query.lookup_execution(first_seal, "step_executor.execute"),`
+- `tests\test_runtime_evidence_query_contract.py`:41 — `step_executor` — `"execution": query.lookup_execution(second_seal, "step_executor.execute"),`
+- `tests\test_runtime_evidence_query_contract.py`:57 — `step_executor` — `missing_step = query.lookup_step(None, "step_executor.execute")`
+- `tests\test_runtime_evidence_query_contract.py`:86 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_evidence_query_contract.py`:93 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_evidence_query_contract.py`:108 — `step_executor` — `"source": "step_executor_event",`
+- `tests\test_runtime_evidence_query_contract.py`:149 — `step_executor` — `layer="step_executor",`
+- `tests\test_runtime_evidence_query_contract.py`:154 — `step_executor` — `self.assertEqual(filtered["events"][0]["layer"], "step_executor")`
+- `tests\test_runtime_evidence_registry_contract.py`:39 — `step_executor` — `execution = snapshot.lookup_execution("step_executor.execute")`
+- `tests\test_runtime_evidence_registry_contract.py`:43 — `step_executor` — `self.assertEqual(execution["execution_id"], "step_executor.execute")`
+- `tests\test_runtime_evidence_registry_contract.py`:86 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_evidence_registry_contract.py`:92 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_evidence_registry_contract.py`:104 — `step_executor` — `self.assertEqual(failed[0]["source"], "step_executor_event")`
+- `tests\test_runtime_evidence_replay_reconstruction_contract.py`:43 — `step_executor` — `["scheduler.dispatch", "task_runtime.lifecycle", "step_executor.execute"],`
+- `tests\test_runtime_evidence_replay_reconstruction_contract.py`:61 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_evidence_replay_reconstruction_contract.py`:75 — `step_executor` — `("step_executor", "before_step"),`
+- `tests\test_runtime_evidence_replay_reconstruction_contract.py`:76 — `step_executor` — `("step_executor", "after_step"),`
+- `tests\test_runtime_evidence_replay_reconstruction_contract.py`:100 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_evidence_replay_reconstruction_contract.py`:123 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_evidence_replay_validation_contract.py`:62 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_evidence_replay_validation_contract.py`:113 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_evidence_snapshot_contract.py`:72 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_evidence_snapshot_contract.py`:78 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_execution_contracts.py`:16 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tests\test_runtime_execution_contracts.py`:17 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_execution_contracts.py`:64 — `step_executor` — `def test_step_executor_unsupported_step_type_contract(self) -> None:`
+- `tests\test_runtime_execution_contracts.py`:66 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_execution_contracts.py`:85 — `step_executor` — `def test_step_executor_execute_steps_failure_contract(self) -> None:`
+- `tests\test_runtime_execution_contracts.py`:87 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_execution_contracts.py`:117 — `step_executor` — `def test_step_executor_execute_steps_empty_contract(self) -> None:`
+- `tests\test_runtime_execution_contracts.py`:119 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_execution_contracts.py`:135 — `step_executor` — `def test_step_executor_lists_apply_patch_handler(self) -> None:`
+- `tests\test_runtime_execution_contracts.py`:137 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_hook_controller_contract.py`:75 — `step_executor` — `"step_executor",`
+- `tests\test_runtime_hook_controller_contract.py`:83 — `step_executor` — `"step_executor",`
+- `tests\test_runtime_kernel_boundary_contract.py`:22 — `step_executor` — `"simple_step_executor_helpers.py",`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:128 — `step_executor` — `def _step_executor(self, tmp: Path, adapter: Any = None) -> Any:`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:129 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:160 — `step_executor` — `from core.runtime.step_executor_evidence_adapter import StepExecutorEvidenceAdapter`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:161 — `step_executor` — `from core.runtime.step_executor_evidence_hook import StepExecutorEvidenceHook`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:189 — `step_executor` — `executor = self._step_executor(tmp, adapters["step_adapter"])`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:229 — `step_executor` — `+ [("step_executor", event.phase) for event in step_events]`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:265 — `step_executor` — `("step_executor", "before_step"),`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:266 — `step_executor` — `("step_executor", "after_step"),`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:312 — `step_executor` — `from core.runtime.step_executor_evidence_adapter import StepExecutorEvidenceAdapter`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:313 — `step_executor` — `from core.runtime.step_executor_evidence_hook import StepExecutorEvidenceHook`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:340 — `step_executor` — `executor = self._step_executor(`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:388 — `step_executor` — `baseline_step = self._step_executor(tmp).execute_step(`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:402 — `step_executor` — `observed_step = self._step_executor(tmp, adapters["step_adapter"]).execute_step(`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:425 — `step_executor` — `system.step_executor.register_handler(`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:434 — `step_executor` — `result = system.step_executor.execute_step(`
+- `tests\test_runtime_mainline_evidence_seal_contract.py`:444 — `step_executor` — `self.assertIs(system.step_executor.evidence_adapter, seal.step_adapter)`
+- `tests\test_runtime_mode_propagation.py`:7 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `tests\test_runtime_mode_propagation.py`:9 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_mode_propagation.py`:41 — `step_executor` — `def test_step_executor_preserves_runtime_mode_in_result_and_trace() -> None:`
+- `tests\test_runtime_mode_propagation.py`:69 — `step_executor` — `def test_task_runner_propagates_runtime_mode_to_step_executor_result_and_trace() -> None:`
+- `tests\test_runtime_mode_propagation.py`:69 — `task_runner` — `def test_task_runner_propagates_runtime_mode_to_step_executor_result_and_trace() -> None:`
+- `tests\test_runtime_mode_propagation.py`:81 — `step_executor` — `step_executor=StepExecutor(workspace_root=str(TEST_ROOT / "workspace")),`
+- `tests\test_runtime_mode_propagation.py`:102 — `task_runner` — `def test_task_runner_step_runtime_mode_overrides_task_runtime_mode() -> None:`
+- `tests\test_runtime_mode_propagation.py`:115 — `step_executor` — `step_executor=StepExecutor(workspace_root=str(TEST_ROOT / "workspace")),`
+- `tests\test_runtime_mutation_guard_contract.py`:38 — `step_executor` — `def test_step_executor_execution_result_write_allowed(self) -> None:`
+- `tests\test_runtime_mutation_guard_contract.py`:50 — `step_executor` — `def test_step_executor_queue_write_rejected(self) -> None:`
+- `tests\test_runtime_ownership_contract.py`:36 — `step_executor` — `def test_allowed_step_executor_execution_result_write(self) -> None:`
+- `tests\test_runtime_ownership_contract.py`:47 — `step_executor` — `def test_rejected_step_executor_queue_write(self) -> None:`
+- `tests\test_runtime_ownership_enforcement.py`:52 — `task_runner` — `owner="task_runner",`
+- `tests\test_runtime_ownership_enforcement.py`:59 — `task_runner` — `raise AssertionError("task_runner must not own status writes")`
+- `tests\test_runtime_ownership_enforcement.py`:85 — `task_runner` — `owner="task_runner",`
+- `tests\test_runtime_ownership_enforcement.py`:92 — `task_runner` — `raise AssertionError("task_runner must not write after terminal state")`
+- `tests\test_runtime_ownership_enforcement_phase2.py`:8 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `tests\test_runtime_ownership_enforcement_phase2.py`:64 — `task_runner` — `def test_task_runtime_apply_runtime_transition_rejects_task_runner_status_write() -> None:`
+- `tests\test_runtime_ownership_enforcement_phase2.py`:73 — `task_runner` — `owner="task_runner",`
+- `tests\test_runtime_ownership_enforcement_phase2.py`:80 — `task_runner` — `raise AssertionError("task_runner status write should be rejected")`
+- `tests\test_runtime_ownership_enforcement_phase2.py`:83 — `task_runner` — `def test_task_runner_can_use_runtime_transition_funnel_for_owned_status_updates() -> None:`
+- `tests\test_runtime_payload_adapter_contract.py`:16 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tests\test_runtime_payload_adapter_contract.py`:17 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_runtime_payload_adapter_contract.py`:66 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_payload_adapter_contract.py`:87 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_payload_adapter_contract.py`:119 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_payload_adapter_contract.py`:134 — `step_executor` — `def test_runtime_payload_normalizer_can_read_step_executor_failure_payload(self) -> None:`
+- `tests\test_runtime_payload_adapter_contract.py`:138 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_payload_adapter_contract.py`:154 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_runtime_recovery_commit_gate_contract.py`:47 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_recovery_dry_run_executor_contract.py`:42 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_recovery_dry_run_executor_contract.py`:60 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_recovery_execution_contract_contract.py`:37 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_recovery_execution_contract_contract.py`:109 — `step_executor` — `self.assertEqual(first["metadata"]["execution_id"], "step_executor.execute")`
+- `tests\test_runtime_recovery_execution_review_contract.py`:42 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_recovery_plan_contract.py`:40 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_recovery_plan_contract.py`:135 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_recovery_policy_contract.py`:84 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_recovery_reasoning_contract.py`:53 — `step_executor` — `["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],`
+- `tests\test_runtime_recovery_reasoning_contract.py`:67 — `step_executor` — `summary["events"]["step_executor"] = {`
+- `tests\test_runtime_state_registry_contract.py`:28 — `step_executor` — `def test_step_executor_execution_result_records_entry(self) -> None:`
+- `tests\test_runtime_state_registry_contract.py`:95 — `step_executor` — `def test_illegal_step_executor_queue_write_rejected(self) -> None:`
+- `tests\test_step_executor.py`:16 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tests\test_step_executor.py`:17 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_step_executor.py`:341 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor.py`:403 — `step_executor` — `print("PASS: test_step_executor.py")`
+- `tests\test_step_executor_evidence_adapter_contract.py`:15 — `step_executor` — `from core.runtime.step_executor_evidence_hook import StepExecutorEvidenceHook`
+- `tests\test_step_executor_evidence_adapter_contract.py`:20 — `step_executor` — `from core.runtime.step_executor_evidence_adapter import (`
+- `tests\test_step_executor_evidence_adapter_contract.py`:30 — `step_executor` — `from core.runtime.step_executor_evidence_adapter import (`
+- `tests\test_step_executor_evidence_adapter_contract.py`:39 — `step_executor` — `from core.runtime.step_executor_evidence_adapter import (`
+- `tests\test_step_executor_evidence_hook_contract.py`:15 — `step_executor` — `from core.runtime.step_executor_evidence_hook import StepExecutorEvidenceHook`
+- `tests\test_step_executor_evidence_hook_contract.py`:20 — `step_executor` — `from core.runtime.step_executor_evidence_hook import (`
+- `tests\test_step_executor_evidence_hook_contract.py`:125 — `step_executor` — `from core.runtime.step_executor_evidence_hook import StepExecutorEvidenceEvent`
+- `tests\test_step_executor_governed_repair_mutation.py`:5 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_step_executor_governed_repair_mutation.py`:8 — `step_executor` — `def test_step_executor_dispatches_governed_repair_mutation(tmp_path: Path) -> None:`
+- `tests\test_step_executor_hook_attachment_contract.py`:44 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_step_executor_hook_attachment_contract.py`:173 — `step_executor` — `def test_step_executor_does_not_expose_evidence_internals(self) -> None:`
+- `tests\test_step_executor_runtime_aggregate_adapter.py`:16 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tests\test_step_executor_runtime_aggregate_adapter.py`:17 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_step_executor_runtime_aggregate_adapter.py`:52 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor_runtime_aggregate_adapter.py`:73 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor_runtime_aggregate_adapter.py`:84 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor_runtime_aggregate_adapter.py`:98 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:16 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:17 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:52 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:59 — `step_executor` — `self.assertEqual(stream[0].get("source"), "step_executor")`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:66 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:73 — `step_executor` — `self.assertEqual(stream[0].get("source"), "step_executor")`
+- `tests\test_step_executor_runtime_event_integration_contract.py`:78 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tests\test_task_runner_step_advance_persist.py`:7 — `task_runner` — `from core.runtime.task_runner import TaskRunner`
+- `tests\test_task_runner_step_advance_persist.py`:12 — `task_runner` — `TEST_ROOT = REPO_ROOT / ".test_tmp" / "task_runner_step_advance_persist"`
+- `tests\test_task_runner_step_advance_persist.py`:93 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_task_runner_step_advance_persist.py`:129 — `step_executor` — `runner = TaskRunner(step_executor=executor, task_runtime=runtime)`
+- `tests\test_task_runner_step_advance_persist.py`:151 — `step_executor` — `runner = TaskRunner(step_executor=FailingStepExecutor(), task_runtime=runtime)`
+- `tests\test_tool_registry.py`:56 — `command_tool` — `assert_true(registry.has_tool("command_tool") is True, "command_tool alias should resolve")`
+- `tools\apply_guard_observability_envelope_v1.py`:95 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tools\apply_guard_observability_envelope_v1.py`:98 — `ExecutionGuard` — `guard = ExecutionGuard(project_root=tmp)`
+- `tools\apply_guard_observability_envelope_v1.py`:121 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tools\apply_guard_observability_envelope_v1.py`:124 — `ExecutionGuard` — `guard = ExecutionGuard(project_root=tmp)`
+- `tools\apply_guard_observability_envelope_v1.py`:150 — `ExecutionGuard` — `from core.tasks.execution_guard import ExecutionGuard`
+- `tools\apply_guard_observability_envelope_v1.py`:153 — `ExecutionGuard` — `guard = ExecutionGuard(project_root=tmp)`
+- `tools\apply_guard_observability_envelope_v1.py`:180 — `ExecutionGuard` — `raise RuntimeError("ExecutionGuard _allow/_deny block not found")`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:7 — `step_executor` — `STEP_EXECUTOR_PATH = PROJECT_ROOT / "core" / "runtime" / "step_executor.py"`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:8 — `step_executor` — `TEST_PATH = PROJECT_ROOT / "tests" / "test_step_executor_runtime_aggregate_adapter.py"`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:166 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:167 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:202 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:223 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:234 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:248 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:285 — `step_executor` — `print("[runtime-aggregate-adapter-v1] updated core/runtime/step_executor.py")`
+- `tools\apply_runtime_aggregate_adapter_v1.py`:291 — `step_executor` — `print("[runtime-aggregate-adapter-v1] created tests/test_step_executor_runtime_aggregate_adapter.py")`
+- `tools\apply_runtime_aggregate_schema_lock_v2.py`:75 — `step_executor` — `def test_step_executor_runtime_schema_has_adapter_and_event_stream(self) -> None:`
+- `tools\apply_runtime_aggregate_schema_lock_v2.py`:77 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tools\apply_runtime_aggregate_schema_lock_v2.py`:121 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tools\apply_runtime_step_executor_integration_v1.py`:6 — `step_executor` — `STEP_EXECUTOR_PATH = Path("core/runtime/step_executor.py")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:7 — `step_executor` — `TEST_PATH = Path("tests/test_step_executor_runtime_event_integration_contract.py")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:19 — `step_executor` — `attach_runtime_event_stream(aggregate_result, source="step_executor")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:26 — `step_executor` — `attach_runtime_event_stream(aggregate_result, source="step_executor")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:46 — `step_executor` — `def _make_step_executor(workspace_root: Path) -> Any:`
+- `tools\apply_runtime_step_executor_integration_v1.py`:47 — `step_executor` — `from core.runtime.step_executor import StepExecutor`
+- `tools\apply_runtime_step_executor_integration_v1.py`:82 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_step_executor_integration_v1.py`:89 — `step_executor` — `self.assertEqual(stream[0].get("source"), "step_executor")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:96 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_step_executor_integration_v1.py`:103 — `step_executor` — `self.assertEqual(stream[0].get("source"), "step_executor")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:108 — `step_executor` — `executor = _make_step_executor(Path(tmp))`
+- `tools\apply_runtime_step_executor_integration_v1.py`:133 — `step_executor` — `raise RuntimeError("step_executor import marker not found")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:136 — `step_executor` — `if 'attach_runtime_event_stream(aggregate_result, source="step_executor")' not in source:`
+- `tools\apply_runtime_step_executor_integration_v1.py`:148 — `step_executor` — `print("[runtime-step-executor-integration-v1] updated core/runtime/step_executor.py")`
+- `tools\apply_runtime_step_executor_integration_v1.py`:149 — `step_executor` — `print("[runtime-step-executor-integration-v1] created tests/test_step_executor_runtime_event_integration_contract.py")`
+- `tools\audit_execution_gateway.py`:21 — `subprocess.run` — `"subprocess.run",`
+- `tools\audit_execution_gateway.py`:22 — `subprocess.Popen` — `"subprocess.Popen",`
+- `tools\audit_execution_gateway.py`:23 — `subprocess.call` — `"subprocess.call",`
+- `tools\audit_execution_gateway.py`:24 — `subprocess.check_call` — `"subprocess.check_call",`
+- `tools\audit_execution_gateway.py`:25 — `subprocess.check_output` — `"subprocess.check_output",`
+- `tools\audit_execution_gateway.py`:26 — `os.system` — `"os.system",`
+- `tools\audit_execution_gateway.py`:27 — `shell=True` — `"shell=True",`
+- `tools\audit_execution_gateway.py`:28 — `ExecutionGuard` — `"ExecutionGuard",`
+- `tools\audit_execution_gateway.py`:29 — `command_tool` — `"command_tool",`
+- `tools\audit_execution_gateway.py`:30 — `step_executor` — `"step_executor",`
+- `tools\audit_execution_gateway.py`:31 — `task_runner` — `"task_runner",`
+- `tools\audit_execution_gateway.py`:63 — `shell=True` — `hits.append(f"- `{path.relative_to(ROOT)}`:{node.lineno} — AST detected `shell=True`")`
+- `tools\audit_execution_gateway.py`:99 — `shell=True` — `"## AST shell=True Hits",`
+- `tools\audit_execution_gateway.py`:101 — `shell=True` — `*(shell_hits or ["No AST shell=True hits found."]),`
+- `tools\audit_execution_gateway.py`:108 — `shell=True` — `"| shell=True | High | Requires policy, audit, path safety, and explicit command boundary. |",`
+- `tools\audit_execution_gateway.py`:109 — `command_tool` — `"| command_tool.py | Medium | Candidate gateway or adapter target. |",`
+- `tools\audit_execution_gateway.py`:110 — `step_executor` — `"| step_executor.py | High | Runtime execution path; do not change without contract tests. |",`
+- `tools\audit_execution_gateway.py`:111 — `task_runner` — `"| task_runner.py | High | May bridge scheduler/runtime execution. |",`
+- `tools\audit_execution_gateway.py`:112 — `ExecutionGuard` — `"| ExecutionGuard | Low/Medium | Should remain policy boundary, not become executor. |",`
+- `utils\safe_exec.py`:38 — `subprocess.run` — `process = subprocess.run(`
+- `zero_demo.py`:438 — `subprocess.run` — `return subprocess.run(`
+
+## AST shell=True Hits
+
+- `core\runtime\step_executor.py`:2376 — AST detected `shell=True`
+- `core\runtime\step_handlers.py`:683 — AST detected `shell=True`
+- `core\tasks\scheduler_core\command_step_helpers.py`:30 — AST detected `shell=True`
+- `core\tasks\simple_step_runner.py`:141 — AST detected `shell=True`
+- `core\tools\_archive_candidate\run_shell.py`:32 — AST detected `shell=True`
+- `core\tools\_archive_candidate\terminal_tool.py`:22 — AST detected `shell=True`
+- `core\tools\command_tool.py`:31 — AST detected `shell=True`
+
+## Risk Classification
+
+| Area | Risk | Notes |
+|---|---:|---|
+| Direct subprocess usage | High | Should eventually route through a governed execution gateway. |
+| shell=True | High | Requires policy, audit, path safety, and explicit command boundary. |
+| command_tool.py | Medium | Candidate gateway or adapter target. |
+| step_executor.py | High | Runtime execution path; do not change without contract tests. |
+| task_runner.py | High | May bridge scheduler/runtime execution. |
+| ExecutionGuard | Low/Medium | Should remain policy boundary, not become executor. |
+
+## Suggested Consolidation Order
+
+1. Identify existing safe execution helper, if any.
+2. Route low-risk command utility calls through one adapter.
+3. Add audit metadata around command execution.
+4. Add policy checks before shell execution.
+5. Only later migrate step executor command paths.
+6. Do not touch scheduler dispatch/tick paths during this phase.
+
+## Freeze Rule
+
+This file is diagnostic only. It does not authorize runtime behavior changes.
