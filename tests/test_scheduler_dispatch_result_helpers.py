@@ -1,10 +1,66 @@
 from __future__ import annotations
 
-from core.tasks.scheduler_core.dispatch_result_helpers import (
+from types import SimpleNamespace
+from typing import Any, Dict, List
+
+from core.tasks.scheduler_core.dispatch_finalize import (
     _extract_dispatch_failure_error,
+    apply_finalize_decision,
     build_finalize_decision,
     extract_effective_status_and_answer,
 )
+
+
+class RecordingDispatcher:
+    def __init__(self, calls: List[Dict[str, Any]]) -> None:
+        self.calls = calls
+
+    def complete_task(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "complete_task", **kwargs})
+
+    def fail_task(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "fail_task", **kwargs})
+
+
+class RecordingWorkerPool:
+    def __init__(self, calls: List[Dict[str, Any]]) -> None:
+        self.calls = calls
+
+    def release_by_task(self, task_id: str) -> None:
+        self.calls.append({"method": "release_by_task", "task_id": task_id})
+
+
+class RecordingQueue:
+    def __init__(self, calls: List[Dict[str, Any]]) -> None:
+        self.calls = calls
+
+    def requeue(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "requeue", **kwargs})
+
+
+class FinalizeScheduler:
+    def __init__(self, *, can_requeue: bool = True) -> None:
+        self.calls: List[Dict[str, Any]] = []
+        self.dispatcher = RecordingDispatcher(self.calls)
+        self.worker_pool = RecordingWorkerPool(self.calls)
+        self.scheduler_queue = RecordingQueue(self.calls)
+        self.can_requeue = can_requeue
+
+    def _mark_repo_task_finished(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "_mark_repo_task_finished", **kwargs})
+
+    def _mark_repo_task_failed(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "_mark_repo_task_failed", **kwargs})
+
+    def _mark_repo_task_queued(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "_mark_repo_task_queued", **kwargs})
+
+    def _sync_blocked_state(self, **kwargs: Any) -> None:
+        self.calls.append({"method": "_sync_blocked_state", **kwargs})
+
+    def _can_requeue_task(self, task_id: str) -> bool:
+        self.calls.append({"method": "_can_requeue_task", "task_id": task_id})
+        return self.can_requeue
 
 
 def test_extract_effective_status_prefers_runner_result() -> None:
@@ -252,3 +308,109 @@ def test_build_finalize_decision_does_not_use_effective_status_key_yet() -> None
     assert decision["action"] == "requeue_if_ready"
     assert decision["status"] == "running"
     assert decision["final_answer"] == "runner"
+
+
+def test_apply_finalize_decision_dispatches_finish_side_effects() -> None:
+    scheduler = FinalizeScheduler()
+
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id="task-1",
+        scheduled_task=SimpleNamespace(priority=3),
+        decision={"action": "finish", "final_answer": "done"},
+    )
+
+    assert scheduler.calls == [
+        {"method": "complete_task", "task_id": "task-1", "result": "done"},
+        {"method": "_mark_repo_task_finished", "task_id": "task-1", "result": "done"},
+    ]
+
+
+def test_apply_finalize_decision_dispatches_fail_side_effects() -> None:
+    scheduler = FinalizeScheduler()
+
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id="task-1",
+        scheduled_task=SimpleNamespace(priority=3),
+        decision={"action": "fail", "fail_error": "boom"},
+    )
+
+    assert scheduler.calls == [
+        {
+            "method": "fail_task",
+            "task_id": "task-1",
+            "error": "boom",
+            "requeue_on_retry": False,
+        },
+        {"method": "_mark_repo_task_failed", "task_id": "task-1", "error": "boom"},
+    ]
+
+
+def test_apply_finalize_decision_dispatches_block_side_effects() -> None:
+    scheduler = FinalizeScheduler()
+
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id="task-1",
+        scheduled_task=SimpleNamespace(priority=3),
+        decision={"action": "block", "blocked_reason": "waiting dependency"},
+    )
+
+    assert scheduler.calls == [
+        {"method": "release_by_task", "task_id": "task-1"},
+        {
+            "method": "_sync_blocked_state",
+            "task_id": "task-1",
+            "blocked_reason": "waiting dependency",
+        },
+    ]
+
+
+def test_apply_finalize_decision_dispatches_requeue_side_effects() -> None:
+    scheduler = FinalizeScheduler(can_requeue=True)
+
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id="task-1",
+        scheduled_task=SimpleNamespace(priority=3),
+        decision={"action": "requeue_if_ready", "queue_error": "retry later"},
+    )
+
+    assert scheduler.calls == [
+        {"method": "release_by_task", "task_id": "task-1"},
+        {"method": "_can_requeue_task", "task_id": "task-1"},
+        {"method": "requeue", "task_id": "task-1", "priority": 3},
+        {"method": "_mark_repo_task_queued", "task_id": "task-1", "error": "retry later"},
+    ]
+
+
+def test_apply_finalize_decision_requeue_respects_can_requeue_gate() -> None:
+    scheduler = FinalizeScheduler(can_requeue=False)
+
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id="task-1",
+        scheduled_task=SimpleNamespace(priority=3),
+        decision={"action": "requeue_if_ready", "queue_error": "retry later"},
+    )
+
+    assert scheduler.calls == [
+        {"method": "release_by_task", "task_id": "task-1"},
+        {"method": "_can_requeue_task", "task_id": "task-1"},
+    ]
+
+
+def test_apply_finalize_decision_dispatches_default_release_side_effect() -> None:
+    scheduler = FinalizeScheduler()
+
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id="task-1",
+        scheduled_task=SimpleNamespace(priority=3),
+        decision={"action": "release"},
+    )
+
+    assert scheduler.calls == [
+        {"method": "release_by_task", "task_id": "task-1"},
+    ]

@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set
 
-from core.tasks.scheduler_core.dispatch_result_helpers import build_finalize_decision
+from core.tasks.scheduler_core.dispatch_finalize import (
+    apply_finalize_decision,
+    build_finalize_decision,
+)
 
 
 def execute_dispatch_round(
@@ -124,41 +127,15 @@ def finalize_dispatched_task(
         status_finished=status_finished,
         status_failed=status_failed,
     )
-    action = decision.get("action")
     effective_status = str(decision.get("status") or "")
     effective_final_answer = decision.get("final_answer")
 
-    if action == "finish":
-        scheduler.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
-        scheduler._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
-
-    elif action == "fail":
-        fail_error = str(decision.get("fail_error") or "task failed")
-        scheduler.dispatcher.fail_task(
-            task_id=task_id,
-            error=fail_error,
-            requeue_on_retry=False,
-        )
-        scheduler._mark_repo_task_failed(task_id=task_id, error=fail_error)
-
-    elif action == "block":
-        scheduler.worker_pool.release_by_task(task_id)
-        scheduler._sync_blocked_state(
-            task_id=task_id,
-            blocked_reason=str(decision.get("blocked_reason") or ""),
-        )
-
-    elif action == "requeue_if_ready":
-        scheduler.worker_pool.release_by_task(task_id)
-        if scheduler._can_requeue_task(task_id):
-            scheduler.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
-            scheduler._mark_repo_task_queued(
-                task_id=task_id,
-                error=str(decision.get("queue_error") or ""),
-            )
-
-    else:
-        scheduler.worker_pool.release_by_task(task_id)
+    apply_finalize_decision(
+        scheduler=scheduler,
+        task_id=task_id,
+        scheduled_task=scheduled_task,
+        decision=decision,
+    )
 
     return {
         "ok": bool(decision.get("ok", True)),
