@@ -58,6 +58,7 @@ from core.tasks.scheduler_core.repo_state_helpers import (
     mark_repo_task_failed,
     mark_repo_task_finished,
     mark_repo_task_queued,
+    mark_repo_task_with_adapter,
     sync_blocked_state,
     sync_runtime_back_to_repo,
     sync_unblocked_state,
@@ -6523,7 +6524,12 @@ def _scheduler_repo_state_compat_mark_repo_task_finished(
     task_id: str,
     result: Any = None,
 ) -> None:
-    return mark_repo_task_finished(scheduler=self, task_id=task_id, result=result)
+    return mark_repo_task_with_adapter(
+        scheduler=self,
+        operation="finished",
+        task_id=task_id,
+        result=result,
+    )
 
 
 def _scheduler_repo_state_compat_mark_repo_task_failed(
@@ -6531,7 +6537,12 @@ def _scheduler_repo_state_compat_mark_repo_task_failed(
     task_id: str,
     error: str = "",
 ) -> None:
-    return mark_repo_task_failed(scheduler=self, task_id=task_id, error=error)
+    return mark_repo_task_with_adapter(
+        scheduler=self,
+        operation="failed",
+        task_id=task_id,
+        error=error,
+    )
 
 
 def _scheduler_repo_state_compat_mark_repo_task_queued(
@@ -6539,7 +6550,12 @@ def _scheduler_repo_state_compat_mark_repo_task_queued(
     task_id: str,
     error: str = "",
 ) -> None:
-    return mark_repo_task_queued(scheduler=self, task_id=task_id, error=error)
+    return mark_repo_task_with_adapter(
+        scheduler=self,
+        operation="queued",
+        task_id=task_id,
+        error=error,
+    )
 
 
 Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result

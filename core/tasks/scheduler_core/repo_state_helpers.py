@@ -567,6 +567,62 @@ def mark_repo_task_queued(scheduler: Any, task_id: str, error: str = "") -> None
     scheduler._persist_task_payload(task_id=task_id, task=task)
 
 
+def _resolve_repo_task_mark_adapter_callback(scheduler: Any, operation: str) -> Any:
+    adapter = getattr(scheduler, "repo_task_mark_adapter", None)
+    if adapter is None:
+        adapter = getattr(scheduler, "repo_task_mark_callbacks", None)
+    if adapter is None:
+        return None
+
+    names = {
+        "finished": ("mark_finished", "mark_repo_task_finished", "finished"),
+        "failed": ("mark_failed", "mark_repo_task_failed", "failed"),
+        "queued": ("mark_queued", "mark_repo_task_queued", "queued"),
+    }.get(operation, ())
+
+    if isinstance(adapter, dict):
+        for name in names:
+            callback = adapter.get(name)
+            if callable(callback):
+                return callback
+        return None
+
+    for name in names:
+        callback = getattr(adapter, name, None)
+        if callable(callback):
+            return callback
+
+    return None
+
+
+def mark_repo_task_with_adapter(
+    scheduler: Any,
+    operation: str,
+    task_id: str,
+    *,
+    result: Any = None,
+    error: str = "",
+) -> None:
+    normalized_operation = str(operation or "").strip().lower()
+    callback = _resolve_repo_task_mark_adapter_callback(scheduler, normalized_operation)
+    if callable(callback):
+        if normalized_operation == "finished":
+            callback(scheduler=scheduler, task_id=task_id, result=result)
+            return
+        callback(scheduler=scheduler, task_id=task_id, error=error)
+        return
+
+    if normalized_operation == "finished":
+        mark_repo_task_finished(scheduler=scheduler, task_id=task_id, result=result)
+        return
+    if normalized_operation == "failed":
+        mark_repo_task_failed(scheduler=scheduler, task_id=task_id, error=error)
+        return
+    if normalized_operation == "queued":
+        mark_repo_task_queued(scheduler=scheduler, task_id=task_id, error=error)
+        return
+
+
 def sync_blocked_state(scheduler: Any, task_id: str, blocked_reason: str) -> None:
     task = scheduler._get_task_from_repo(task_id)
     if not isinstance(task, dict):
