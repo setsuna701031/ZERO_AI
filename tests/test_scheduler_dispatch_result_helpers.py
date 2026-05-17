@@ -129,7 +129,12 @@ def test_build_finalize_decision_extracts_failure_error_precedence() -> None:
     decision = build_finalize_decision(
         original_task={"status": "queued", "final_answer": "original"},
         refreshed_task={"status": "running", "final_answer": "refreshed"},
-        runner_result={"status": "failed", "final_answer": "runner", "error": "runner error", "ok": False},
+        runner_result={
+            "status": "failed",
+            "final_answer": "runner",
+            "error": "runner error",
+            "ok": False,
+        },
         status_blocked="blocked",
         status_finished="finished",
         status_failed="failed",
@@ -155,3 +160,44 @@ def test_build_finalize_decision_classifies_requeue_candidate() -> None:
     assert decision["action"] == "requeue_if_ready"
     assert decision["status"] == "ready"
     assert decision["final_answer"] == "original"
+
+
+def test_build_finalize_decision_classifies_blocked_action() -> None:
+    decision = build_finalize_decision(
+        original_task={"status": "queued", "final_answer": "original"},
+        refreshed_task={"status": "blocked", "final_answer": ""},
+        runner_result={
+            "status": "blocked",
+            "blocked_reason": "dependency missing",
+            "ok": False,
+        },
+        status_blocked="blocked",
+        status_finished="finished",
+        status_failed="failed",
+    )
+
+    assert decision["action"] == "block"
+    assert decision["status"] == "blocked"
+    assert decision["blocked_reason"] == "dependency missing"
+    assert decision["ok"] is False
+
+
+def test_build_finalize_decision_does_not_use_effective_status_key_yet() -> None:
+    decision = build_finalize_decision(
+        original_task={"status": "queued", "final_answer": "original"},
+        refreshed_task={"status": "running", "final_answer": "refreshed"},
+        runner_result={
+            "status": "running",
+            "effective_status": "FAILED",
+            "final_answer": "runner",
+            "error": "effective failure",
+            "ok": False,
+        },
+        status_blocked="blocked",
+        status_finished="finished",
+        status_failed="failed",
+    )
+
+    assert decision["action"] == "requeue_if_ready"
+    assert decision["status"] == "running"
+    assert decision["final_answer"] == "runner"
