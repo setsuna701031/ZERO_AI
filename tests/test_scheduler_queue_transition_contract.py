@@ -4,6 +4,12 @@ import copy
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
+from core.tasks.scheduler_core.queue_transition_helpers import (
+    decide_queue_transition,
+    is_blocked_queue_status,
+    is_dispatchable_queue_status,
+    is_terminal_queue_status,
+)
 from core.tasks.scheduler_core.queue_sync_helpers import enqueue_repo_task_if_ready
 
 
@@ -115,6 +121,15 @@ def test_finished_task_is_not_requeued() -> None:
     scheduler = QueueTransitionScheduler([task])
     scheduler.scheduler_queue.items["task-1"] = SimpleNamespace(task_id="task-1")
 
+    decision = decide_queue_transition(
+        status=task["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+    )
+
+    assert is_terminal_queue_status(task["status"], scheduler.TERMINAL_STATUSES) is True
+    assert decision == {"action": "remove", "reason": "terminal", "dispatchable": False}
     assert _enqueue(scheduler, task, overwrite=True) is False
     assert scheduler.scheduler_queue.contains("task-1") is False
     assert scheduler.scheduler_queue.enqueued == []
@@ -126,6 +141,15 @@ def test_failed_terminal_task_is_not_requeued() -> None:
     scheduler = QueueTransitionScheduler([task])
     scheduler.scheduler_queue.items["task-1"] = SimpleNamespace(task_id="task-1")
 
+    decision = decide_queue_transition(
+        status=task["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+    )
+
+    assert is_terminal_queue_status(task["status"], scheduler.TERMINAL_STATUSES) is True
+    assert decision == {"action": "remove", "reason": "terminal", "dispatchable": False}
     assert _enqueue(scheduler, task, overwrite=True) is False
     assert scheduler.scheduler_queue.contains("task-1") is False
     assert scheduler.scheduler_queue.enqueued == []
@@ -142,6 +166,25 @@ def test_blocked_dependency_task_stays_blocked() -> None:
     scheduler = QueueTransitionScheduler([task])
     scheduler.scheduler_queue.items["task-1"] = SimpleNamespace(task_id="task-1")
 
+    decision = decide_queue_transition(
+        status=task["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+        deps_ready=False,
+        blocked_reason=task["blocked_reason"],
+    )
+
+    assert is_blocked_queue_status(
+        task["status"],
+        status_blocked=scheduler.STATUS_BLOCKED,
+        blocked_reason=task["blocked_reason"],
+    ) is True
+    assert decision == {
+        "action": "block",
+        "reason": "waiting dependency: dep-1",
+        "dispatchable": False,
+    }
     assert _enqueue(scheduler, task, overwrite=True) is False
     assert scheduler.tasks["task-1"]["status"] == "blocked"
     assert scheduler.tasks["task-1"]["blocked_reason"] == "waiting dependency: dep-1"
@@ -156,6 +199,20 @@ def test_ready_and_queued_tasks_remain_dispatchable() -> None:
     queued = {"task_id": "queued-task", "status": "queued"}
     scheduler = QueueTransitionScheduler([ready, queued])
 
+    assert is_dispatchable_queue_status(ready["status"], scheduler.READY_STATUSES) is True
+    assert is_dispatchable_queue_status(queued["status"], scheduler.READY_STATUSES) is True
+    assert decide_queue_transition(
+        status=ready["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+    ) == {"action": "enqueue", "reason": "ready", "dispatchable": True}
+    assert decide_queue_transition(
+        status=queued["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+    ) == {"action": "enqueue", "reason": "ready", "dispatchable": True}
     assert _enqueue(scheduler, ready, overwrite=True) is True
     assert _enqueue(scheduler, queued, overwrite=True) is True
     assert scheduler.scheduler_queue.contains("ready-task") is True
@@ -169,8 +226,37 @@ def test_repo_task_mark_adapter_does_not_change_queue_transition_behavior() -> N
     scheduler = QueueTransitionScheduler([finished, queued])
     scheduler.scheduler_queue.items["finished-task"] = SimpleNamespace(task_id="finished-task")
 
+    assert decide_queue_transition(
+        status=finished["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+    ) == {"action": "remove", "reason": "terminal", "dispatchable": False}
+    assert decide_queue_transition(
+        status=queued["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+    ) == {"action": "enqueue", "reason": "ready", "dispatchable": True}
     assert _enqueue(scheduler, finished, overwrite=True) is False
     assert _enqueue(scheduler, queued, overwrite=True) is True
     assert scheduler.scheduler_queue.contains("finished-task") is False
     assert scheduler.scheduler_queue.contains("queued-task") is True
     assert scheduler.mark_callback_calls == []
+
+
+def test_already_queued_ready_task_can_keep_dispatch_queue_entry() -> None:
+    task = {"task_id": "task-1", "status": "queued"}
+    scheduler = QueueTransitionScheduler([task])
+    scheduler.scheduler_queue.items["task-1"] = SimpleNamespace(task_id="task-1")
+
+    assert decide_queue_transition(
+        status=task["status"],
+        terminal_statuses=scheduler.TERMINAL_STATUSES,
+        ready_statuses=scheduler.READY_STATUSES,
+        status_blocked=scheduler.STATUS_BLOCKED,
+        already_queued=True,
+        overwrite=False,
+    ) == {"action": "keep", "reason": "already_queued", "dispatchable": True}
+    assert _enqueue(scheduler, task, overwrite=False) is False
+    assert scheduler.scheduler_queue.contains("task-1") is True
