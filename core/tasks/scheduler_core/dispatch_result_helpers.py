@@ -34,3 +34,54 @@ def extract_effective_status_and_answer(
                 break
 
     return status, final_answer
+
+
+def build_finalize_decision(
+    original_task: Optional[Dict[str, Any]],
+    refreshed_task: Optional[Dict[str, Any]],
+    runner_result: Optional[Dict[str, Any]],
+    *,
+    status_blocked: str,
+    status_finished: str,
+    status_failed: str,
+) -> Dict[str, Any]:
+    result = runner_result if isinstance(runner_result, dict) else {}
+    effective_status, effective_final_answer = extract_effective_status_and_answer(
+        original_task=original_task,
+        refreshed_task=refreshed_task,
+        runner_result=result,
+    )
+
+    status = str(effective_status or "").strip().lower()
+    normalized_finished = str(status_finished or "").strip().lower()
+    normalized_failed = str(status_failed or "").strip().lower()
+    normalized_blocked = str(status_blocked or "").strip().lower()
+
+    finished_statuses = {"done", "finished", normalized_finished, "success", "completed"}
+    failed_statuses = {"failed", normalized_failed, "error"}
+    queued_statuses = {"queued", "retry", "ready", "running"}
+    blocked_statuses = {normalized_blocked} if normalized_blocked else set()
+
+    action = "release"
+    fail_error = ""
+    blocked_reason = ""
+
+    if status in finished_statuses:
+        action = "finish"
+    elif status in failed_statuses:
+        action = "fail"
+        fail_error = str(result.get("error") or effective_final_answer or "task failed")
+    elif status in blocked_statuses:
+        action = "block"
+        blocked_reason = str(result.get("blocked_reason") or "")
+    elif status in queued_statuses:
+        action = "requeue_if_ready"
+
+    return {
+        "action": action,
+        "status": status,
+        "final_answer": effective_final_answer,
+        "fail_error": fail_error,
+        "blocked_reason": blocked_reason,
+        "ok": bool(result.get("ok", True)),
+    }

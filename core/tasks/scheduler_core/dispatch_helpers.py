@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set
 
+from core.tasks.scheduler_core.dispatch_result_helpers import build_finalize_decision
+
 
 def execute_dispatch_round(
     scheduler: Any,
@@ -114,22 +116,24 @@ def finalize_dispatched_task(
     task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
 
     refreshed_repo_task = scheduler._get_task_from_repo(task_id)
-    effective_status, effective_final_answer = scheduler._extract_effective_status_and_answer(
+    decision = build_finalize_decision(
         original_task=repo_task,
         refreshed_task=refreshed_repo_task,
         runner_result=runner_result,
+        status_blocked=status_blocked,
+        status_finished=status_finished,
+        status_failed=status_failed,
     )
+    action = decision.get("action")
+    effective_status = str(decision.get("status") or "")
+    effective_final_answer = decision.get("final_answer")
 
-    if effective_status in {"done", "finished", status_finished, "success", "completed"}:
+    if action == "finish":
         scheduler.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
         scheduler._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
 
-    elif effective_status in {"failed", status_failed, "error"}:
-        fail_error = str(
-            (runner_result or {}).get("error")
-            or effective_final_answer
-            or "task failed"
-        )
+    elif action == "fail":
+        fail_error = str(decision.get("fail_error") or "task failed")
         scheduler.dispatcher.fail_task(
             task_id=task_id,
             error=fail_error,
@@ -137,12 +141,14 @@ def finalize_dispatched_task(
         )
         scheduler._mark_repo_task_failed(task_id=task_id, error=fail_error)
 
-    elif effective_status in {status_blocked}:
+    elif action == "block":
         scheduler.worker_pool.release_by_task(task_id)
-        blocked_reason = str((runner_result or {}).get("blocked_reason") or "")
-        scheduler._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason)
+        scheduler._sync_blocked_state(
+            task_id=task_id,
+            blocked_reason=str(decision.get("blocked_reason") or ""),
+        )
 
-    elif effective_status in {"queued", "retry", "ready", "running"}:
+    elif action == "requeue_if_ready":
         scheduler.worker_pool.release_by_task(task_id)
         if scheduler._can_requeue_task(task_id):
             scheduler.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
@@ -155,7 +161,7 @@ def finalize_dispatched_task(
         scheduler.worker_pool.release_by_task(task_id)
 
     return {
-        "ok": bool((runner_result or {}).get("ok", True)),
+        "ok": bool(decision.get("ok", True)),
         "task_id": task_id,
         "worker_id": getattr(dispatch_result, "worker_id", None),
         "status": effective_status,

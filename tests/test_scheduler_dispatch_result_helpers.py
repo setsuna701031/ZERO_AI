@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.tasks.scheduler_core.dispatch_result_helpers import (
+    build_finalize_decision,
     extract_effective_status_and_answer,
 )
 
@@ -102,3 +103,55 @@ def test_extract_effective_status_does_not_use_effective_status_key_yet() -> Non
 
     assert status == "running"
     assert final_answer == "runner"
+
+
+def test_build_finalize_decision_returns_finish_action_without_writes() -> None:
+    decision = build_finalize_decision(
+        original_task={"status": "queued", "final_answer": "original"},
+        refreshed_task={"status": "running", "final_answer": "refreshed"},
+        runner_result={"status": "completed", "final_answer": "runner", "ok": True},
+        status_blocked="blocked",
+        status_finished="finished",
+        status_failed="failed",
+    )
+
+    assert decision == {
+        "action": "finish",
+        "status": "completed",
+        "final_answer": "runner",
+        "fail_error": "",
+        "blocked_reason": "",
+        "ok": True,
+    }
+
+
+def test_build_finalize_decision_extracts_failure_error_precedence() -> None:
+    decision = build_finalize_decision(
+        original_task={"status": "queued", "final_answer": "original"},
+        refreshed_task={"status": "running", "final_answer": "refreshed"},
+        runner_result={"status": "failed", "final_answer": "runner", "error": "runner error", "ok": False},
+        status_blocked="blocked",
+        status_finished="finished",
+        status_failed="failed",
+    )
+
+    assert decision["action"] == "fail"
+    assert decision["status"] == "failed"
+    assert decision["final_answer"] == "runner"
+    assert decision["fail_error"] == "runner error"
+    assert decision["ok"] is False
+
+
+def test_build_finalize_decision_classifies_requeue_candidate() -> None:
+    decision = build_finalize_decision(
+        original_task={"status": "queued", "final_answer": "original"},
+        refreshed_task={"status": "ready", "final_answer": ""},
+        runner_result={"status": "", "final_answer": ""},
+        status_blocked="blocked",
+        status_finished="finished",
+        status_failed="failed",
+    )
+
+    assert decision["action"] == "requeue_if_ready"
+    assert decision["status"] == "ready"
+    assert decision["final_answer"] == "original"
