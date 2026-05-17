@@ -72,18 +72,19 @@ def decide_queue_transition(
     normalized_status = normalize_queue_status(status)
 
     if running_task is not None:
-        return {"action": "remove", "reason": "running_task", "dispatchable": False}
+        return {"action": "remove", "reason": "running_task", "status": normalized_status, "dispatchable": False}
 
     if is_terminal_queue_status(normalized_status, terminal_statuses):
-        return {"action": "remove", "reason": "terminal", "dispatchable": False}
+        return {"action": "remove", "reason": "terminal", "status": normalized_status, "dispatchable": False}
 
     if normalized_status in NON_RUNNABLE_STATUS_ALIASES:
-        return {"action": "remove", "reason": "non_runnable", "dispatchable": False}
+        return {"action": "remove", "reason": "non_runnable", "status": normalized_status, "dispatchable": False}
 
     if not deps_ready:
         return {
             "action": "block",
             "reason": str(blocked_reason or "dependency_not_ready"),
+            "status": normalized_status,
             "dispatchable": False,
         }
 
@@ -92,12 +93,12 @@ def decide_queue_transition(
         status_blocked=status_blocked,
         blocked_reason=blocked_reason,
     ):
-        return {"action": "unblock", "reason": "blocked_ready", "dispatchable": False}
+        return {"action": "unblock", "reason": "blocked_ready", "status": normalized_status, "dispatchable": False}
 
     if not is_dispatchable_queue_status(normalized_status, ready_statuses):
-        return {"action": "remove", "reason": "not_ready", "dispatchable": False}
+        return {"action": "remove", "reason": "not_ready", "status": normalized_status, "dispatchable": False}
 
     if already_queued and not overwrite:
-        return {"action": "keep", "reason": "already_queued", "dispatchable": True}
+        return {"action": "keep", "reason": "already_queued", "status": normalized_status, "dispatchable": True}
 
-    return {"action": "enqueue", "reason": "ready", "dispatchable": True}
+    return {"action": "enqueue", "reason": "ready", "status": normalized_status, "dispatchable": True}

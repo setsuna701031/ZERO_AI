@@ -34,10 +34,13 @@ from core.tasks.scheduler_core.task_scheduler_queue import (
 from core.tasks.scheduler_core.worker_pool import WorkerPool
 from core.tools.execution_trace import ExecutionTrace
 from core.tasks.scheduler_core.queue_sync_helpers import (
-    enqueue_repo_task_if_ready,
     rebuild_ready_queue,
     task_dependencies_satisfied,
     unblock_tasks_if_dependencies_done,
+)
+from core.tasks.scheduler_core.queue_transition_helpers import (
+    decide_queue_transition,
+    normalize_queue_status,
 )
 from core.tasks.scheduler_core.dispatch_helpers import (
     build_tick_result,
@@ -3829,18 +3832,91 @@ class Scheduler(RuntimeTaskScheduler):
         )
 
     def _enqueue_repo_task_if_ready(self, task: Dict[str, Any], overwrite: bool = False) -> bool:
-        enqueued = enqueue_repo_task_if_ready(
-            scheduler=self,
-            task=task,
-            overwrite=overwrite,
+        task = self._hydrate_task_from_workspace(task)
+        task_id = self._extract_task_id(task)
+        if not task_id:
+            return False
+
+        running_task = self.worker_pool.get_running_task(task_id)
+        status = normalize_queue_status(task.get("status"))
+        deps_ready = True
+        blocked_reason = ""
+        terminal_set = {normalize_queue_status(item) for item in TERMINAL_STATUSES}
+        if (
+            running_task is None
+            and status not in terminal_set
+            and status not in {"created", "planning", "replanning", "running", "paused"}
+        ):
+            deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
+
+        decision = decide_queue_transition(
+            status=status,
             terminal_statuses=TERMINAL_STATUSES,
             ready_statuses=READY_STATUSES,
             status_blocked=STATUS_BLOCKED,
+            deps_ready=deps_ready,
+            blocked_reason=blocked_reason or task.get("blocked_reason", ""),
+            running_task=running_task,
+            already_queued=self._queue_contains_task(task_id),
+            overwrite=overwrite,
         )
+
+        action = str(decision.get("action") or "")
+        if action == "remove":
+            if str(decision.get("reason") or "") == "terminal":
+                self.worker_pool.release_by_task(task_id)
+            try:
+                self.scheduler_queue.remove(task_id)
+            except Exception:
+                pass
+            return False
+
+        if action == "block":
+            try:
+                self.scheduler_queue.remove(task_id)
+            except Exception:
+                pass
+            self._sync_blocked_state(
+                task_id=task_id,
+                blocked_reason=str(decision.get("reason") or blocked_reason),
+            )
+            return False
+
+        if action == "unblock":
+            self._sync_unblocked_state(task_id=task_id)
+            refreshed_task = self._get_task_from_repo(task_id)
+            if isinstance(refreshed_task, dict):
+                task = self._hydrate_task_from_workspace(refreshed_task)
+            status = normalize_queue_status(task.get("status"))
+            decision = decide_queue_transition(
+                status=status,
+                terminal_statuses=TERMINAL_STATUSES,
+                ready_statuses=READY_STATUSES,
+                status_blocked=STATUS_BLOCKED,
+                deps_ready=True,
+                blocked_reason=task.get("blocked_reason", ""),
+                running_task=None,
+                already_queued=self._queue_contains_task(task_id),
+                overwrite=overwrite,
+            )
+            action = str(decision.get("action") or "")
+
+        if action == "keep":
+            return False
+
+        if action != "enqueue":
+            try:
+                self.scheduler_queue.remove(task_id)
+            except Exception:
+                pass
+            return False
+
+        scheduled_task = self._repo_task_to_scheduled_task(task)
+        enqueued = self.scheduler_queue.enqueue(scheduled_task, overwrite=overwrite)
         if enqueued:
             self._emit_scheduler_evidence(
                 "enqueued",
-                task_id=self._extract_task_id(task),
+                task_id=task_id,
                 queue_name="ready",
             )
         return enqueued
