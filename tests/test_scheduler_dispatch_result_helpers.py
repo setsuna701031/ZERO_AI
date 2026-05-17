@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.tasks.scheduler_core.dispatch_result_helpers import (
+    _extract_dispatch_failure_error,
     build_finalize_decision,
     extract_effective_status_and_answer,
 )
@@ -121,6 +122,7 @@ def test_build_finalize_decision_returns_finish_action_without_writes() -> None:
         "final_answer": "runner",
         "fail_error": "",
         "blocked_reason": "",
+        "queue_error": "",
         "ok": True,
     }
 
@@ -147,6 +149,36 @@ def test_build_finalize_decision_extracts_failure_error_precedence() -> None:
     assert decision["ok"] is False
 
 
+def test_extract_dispatch_failure_error_prefers_runner_error() -> None:
+    error = _extract_dispatch_failure_error(
+        {"error": "runner error"},
+        "final answer",
+        default="default error",
+    )
+
+    assert error == "runner error"
+
+
+def test_extract_dispatch_failure_error_falls_back_to_final_answer() -> None:
+    error = _extract_dispatch_failure_error(
+        {"error": ""},
+        "final answer",
+        default="default error",
+    )
+
+    assert error == "final answer"
+
+
+def test_extract_dispatch_failure_error_uses_default_last() -> None:
+    error = _extract_dispatch_failure_error(
+        {"error": ""},
+        "",
+        default="default error",
+    )
+
+    assert error == "default error"
+
+
 def test_build_finalize_decision_classifies_requeue_candidate() -> None:
     decision = build_finalize_decision(
         original_task={"status": "queued", "final_answer": "original"},
@@ -160,6 +192,7 @@ def test_build_finalize_decision_classifies_requeue_candidate() -> None:
     assert decision["action"] == "requeue_if_ready"
     assert decision["status"] == "ready"
     assert decision["final_answer"] == "original"
+    assert decision["queue_error"] == ""
 
 
 def test_build_finalize_decision_classifies_blocked_action() -> None:
@@ -180,6 +213,24 @@ def test_build_finalize_decision_classifies_blocked_action() -> None:
     assert decision["status"] == "blocked"
     assert decision["blocked_reason"] == "dependency missing"
     assert decision["ok"] is False
+
+
+def test_build_finalize_decision_blocked_reason_falls_back_to_error() -> None:
+    decision = build_finalize_decision(
+        original_task={"status": "queued", "final_answer": "original"},
+        refreshed_task={"status": "blocked", "final_answer": ""},
+        runner_result={
+            "status": "blocked",
+            "error": "blocked by runtime",
+            "ok": False,
+        },
+        status_blocked="blocked",
+        status_finished="finished",
+        status_failed="failed",
+    )
+
+    assert decision["action"] == "block"
+    assert decision["blocked_reason"] == "blocked by runtime"
 
 
 def test_build_finalize_decision_does_not_use_effective_status_key_yet() -> None:

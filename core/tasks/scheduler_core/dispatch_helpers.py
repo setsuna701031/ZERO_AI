@@ -154,7 +154,7 @@ def finalize_dispatched_task(
             scheduler.scheduler_queue.requeue(task_id=task_id, priority=scheduled_task.priority)
             scheduler._mark_repo_task_queued(
                 task_id=task_id,
-                error=str((runner_result or {}).get("error") or ""),
+                error=str(decision.get("queue_error") or ""),
             )
 
     else:

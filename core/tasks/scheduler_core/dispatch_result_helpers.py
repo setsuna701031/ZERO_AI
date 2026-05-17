@@ -36,6 +36,24 @@ def extract_effective_status_and_answer(
     return status, final_answer
 
 
+def _extract_dispatch_failure_error(
+    runner_result: Optional[Dict[str, Any]],
+    final_answer: Any = "",
+    *,
+    default: str = "task failed",
+) -> str:
+    result = runner_result if isinstance(runner_result, dict) else {}
+    return str(result.get("error") or final_answer or default)
+
+
+def _extract_dispatch_blocked_reason(
+    runner_result: Optional[Dict[str, Any]],
+    final_answer: Any = "",
+) -> str:
+    result = runner_result if isinstance(runner_result, dict) else {}
+    return str(result.get("blocked_reason") or result.get("error") or final_answer or "")
+
+
 def build_finalize_decision(
     original_task: Optional[Dict[str, Any]],
     refreshed_task: Optional[Dict[str, Any]],
@@ -65,15 +83,27 @@ def build_finalize_decision(
     action = "release"
     fail_error = ""
     blocked_reason = ""
+    queue_error = _extract_dispatch_failure_error(
+        result,
+        "",
+        default="",
+    )
 
     if status in finished_statuses:
         action = "finish"
     elif status in failed_statuses:
         action = "fail"
-        fail_error = str(result.get("error") or effective_final_answer or "task failed")
+        fail_error = _extract_dispatch_failure_error(
+            result,
+            effective_final_answer,
+            default="task failed",
+        )
     elif status in blocked_statuses:
         action = "block"
-        blocked_reason = str(result.get("blocked_reason") or "")
+        blocked_reason = _extract_dispatch_blocked_reason(
+            result,
+            effective_final_answer,
+        )
     elif status in queued_statuses:
         action = "requeue_if_ready"
 
@@ -83,5 +113,6 @@ def build_finalize_decision(
         "final_answer": effective_final_answer,
         "fail_error": fail_error,
         "blocked_reason": blocked_reason,
+        "queue_error": queue_error,
         "ok": bool(result.get("ok", True)),
     }
