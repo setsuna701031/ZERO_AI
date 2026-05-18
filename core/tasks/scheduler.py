@@ -54,6 +54,13 @@ from core.tasks.scheduler_core.dispatch_helpers import (
 from core.tasks.scheduler_core.dispatch_result_helpers import (
     extract_effective_status_and_answer,
 )
+from core.tasks.scheduler_core.dispatch_runtime_router import (
+    route_blocked_state,
+    route_enqueue_repo_task_if_ready,
+    route_sync_runner_result_and_requeue_if_ready,
+    route_unblocked_state,
+    route_worker_release,
+)
 from core.tasks.scheduler_core.repo_state_helpers import (
     compact_runner_result,
     get_task_from_repo,
@@ -576,10 +583,7 @@ class Scheduler(RuntimeTaskScheduler):
             self.scheduler_queue.cancel(task_id)
         except Exception:
             pass
-        try:
-            self.worker_pool.release_by_task(task_id)
-        except Exception:
-            pass
+        route_worker_release(self, task_id)
         self._emit_scheduler_evidence(
             "cancelled",
             task_id=task_id,
@@ -827,7 +831,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         result = self._run_simple_task_tick(task=task, current_tick=current_tick)
         result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
-        self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+        route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
         return self._compact_runner_result(result)
 
     def _build_terminal_skip_runner_result(
@@ -1081,7 +1085,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "status": "failed",
                 "error": loop_error_text or "agent loop failed",
             }
-            self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
+            route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
             return result
 
         _write_loop_fallback_trace(
@@ -1092,7 +1096,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
             },
         )
-        self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=runner_result)
+        route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=runner_result)
         return runner_result
 
     def _resolve_explicit_agent_loop(self) -> Any:
@@ -1172,7 +1176,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
         if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
-            requeued = self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
+            requeued = route_enqueue_repo_task_if_ready(self, refreshed_task, overwrite=True)
             if requeued:
                 self._emit_scheduler_evidence(
                     "requeued",
@@ -3628,7 +3632,7 @@ class Scheduler(RuntimeTaskScheduler):
 
             refreshed = self._get_task_from_repo(task_id)
             if isinstance(refreshed, dict):
-                self._enqueue_repo_task_if_ready(refreshed, overwrite=True)
+                route_enqueue_repo_task_if_ready(self, refreshed, overwrite=True)
                 task = refreshed
 
             self._trace_status(
@@ -3711,10 +3715,10 @@ class Scheduler(RuntimeTaskScheduler):
             result = self._set_status(task_name, "queued")
             refreshed = self._get_task_from_repo(task_name)
             if isinstance(refreshed, dict):
-                self._enqueue_repo_task_if_ready(refreshed, overwrite=True)
+                route_enqueue_repo_task_if_ready(self, refreshed, overwrite=True)
             return result
 
-        self._sync_blocked_state(task_id=task_name, blocked_reason=blocked_reason)
+        route_blocked_state(self, task_id=task_name, blocked_reason=blocked_reason)
         result = self._set_status(task_name, STATUS_BLOCKED)
         return {
             **result,
@@ -3724,7 +3728,7 @@ class Scheduler(RuntimeTaskScheduler):
     def cancel_task(self, task_name: str) -> Dict[str, Any]:
         result = self._set_status(task_name, "cancelled")
         self.scheduler_queue.cancel(task_name)
-        self.worker_pool.release_by_task(task_name)
+        route_worker_release(self, task_name)
         self._emit_scheduler_evidence(
             "cancelled",
             task_id=task_name,
@@ -3864,7 +3868,7 @@ class Scheduler(RuntimeTaskScheduler):
         action = str(decision.get("action") or "")
         if action == "remove":
             if str(decision.get("reason") or "") == "terminal":
-                self.worker_pool.release_by_task(task_id)
+                route_worker_release(self, task_id)
             try:
                 self.scheduler_queue.remove(task_id)
             except Exception:
@@ -3876,14 +3880,15 @@ class Scheduler(RuntimeTaskScheduler):
                 self.scheduler_queue.remove(task_id)
             except Exception:
                 pass
-            self._sync_blocked_state(
+            route_blocked_state(
+                self,
                 task_id=task_id,
                 blocked_reason=str(decision.get("reason") or blocked_reason),
             )
             return False
 
         if action == "unblock":
-            self._sync_unblocked_state(task_id=task_id)
+            route_unblocked_state(self, task_id=task_id)
             refreshed_task = self._get_task_from_repo(task_id)
             if isinstance(refreshed_task, dict):
                 task = self._hydrate_task_from_workspace(refreshed_task)
@@ -4114,7 +4119,7 @@ class Scheduler(RuntimeTaskScheduler):
             return
 
         if desired in {STATUS_BLOCKED, "blocked"}:
-            self._sync_blocked_state(task_id=task_id, blocked_reason=blocked_reason or "")
+            route_blocked_state(self, task_id=task_id, blocked_reason=blocked_reason or "")
             return
 
         if desired in {"queued", STATUS_QUEUED, "ready", "retry", "running"}:
@@ -4723,10 +4728,7 @@ class Scheduler(RuntimeTaskScheduler):
             self.scheduler_queue.cancel(task_id)
         except Exception:
             pass
-        try:
-            self.worker_pool.release_by_task(task_id)
-        except Exception:
-            pass
+        route_worker_release(self, task_id)
 
     def _extract_failure_text_for_retry_collapse(
         self,
@@ -6595,6 +6597,12 @@ def _scheduler_repo_state_compat_extract_effective_status_and_answer(
     )
 
 
+# Runtime-tail compatibility / repair bridge fence:
+# This lower scheduler tail is intentionally left as compatibility monkey-patch
+# code while replay/retry ownership is still converging. Direct internal calls
+# here are temporarily tolerated. Do not extract, reroute, or normalize these
+# bindings without dedicated replay/retry verification; future cleanup belongs
+# in a separate tail migration phase.
 def _scheduler_repo_state_compat_mark_repo_task_finished(
     self,
     task_id: str,
@@ -6873,6 +6881,11 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # ZERO v7.2.4 - Repair task expiration / cleanup policy
 # ============================================================
+# Runtime-tail compatibility / repair bridge fence:
+# Queue hygiene tick patches in this region are lower-tail compatibility code.
+# Direct internal calls are temporarily tolerated. Do not extract or reroute
+# this patch chain without dedicated replay/retry verification; future cleanup
+# must be handled as a separate tail migration phase.
 # Purpose:
 # - Expire stale queued autonomous repair tasks.
 # - Expire stale legacy self_edit_scheduler tasks.
@@ -7150,6 +7163,11 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # v7.2.6 - Repair Enqueue Lock Lifecycle
 # ============================================================
+# Runtime-tail compatibility / repair bridge fence:
+# This v7.2.6 queue hygiene extension remains part of the scheduler runtime
+# tail. Direct internal calls are temporarily tolerated here. Do not extract or
+# reroute without dedicated replay/retry verification; future cleanup must be
+# handled as a separate tail migration phase.
 # The v7.2.5 pre-enqueue gate reserves a repair fingerprint as
 # __pending_repair_enqueue__ before the task is created.  If task creation is
 # interrupted or a previous process exits between reservation and registration,
@@ -7418,6 +7436,11 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # ZERO v7.3.3 - Code Chain Workflow Tick Advancement
 # ============================================================
+# Runtime-tail compatibility / repair bridge fence:
+# The run_simple_task_tick patch below is runtime-tail compatibility code.
+# Direct internal calls are temporarily tolerated. Do not extract or reroute
+# this patch without dedicated replay/retry verification; future cleanup must
+# be handled as a separate tail migration phase.
 # v7.3.1/v7.3.2 registered code_chain_analyze / code_chain_repair /
 # code_chain_verify as valid step types, but the legacy scheduler simple runner
 # can still stop after a successful analyze step and mark the task as failed via
@@ -7517,6 +7540,11 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # ZERO v7.3.4 - Retrying -> Repair Bridge
 # ============================================================
+# Runtime-tail compatibility / repair bridge fence:
+# This retrying repair bridge is lower scheduler tail compatibility code.
+# Direct internal calls are temporarily tolerated. Do not extract or reroute
+# this bridge without dedicated replay/retry verification; future cleanup must
+# be handled as a separate tail migration phase.
 # Fix scope:
 # - TaskRuntime can record a failed step as status="retrying".
 # - Older scheduler builds did not treat "retrying" as a ready status and did
