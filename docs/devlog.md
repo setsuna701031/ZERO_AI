@@ -190,6 +190,45 @@ Next expected code contract:
 * `RuntimeGrantIssuer.issue_grant()` checks eligibility before any grant
 * v0 code remains default-deny unless an explicit test mode permits an isolated `dry_run` grant
 
+## 2026-05-18 - Runtime Scheduler Adapter + Handoff Record v0
+
+Added contract-only adapter admission and handoff record layers behind the execution bridge.
+
+New code contracts:
+
+* `RuntimeSchedulerAdapter`
+* `RuntimeSchedulerAdapterDecision`
+* `RuntimeExecutionHandoffRecord`
+
+The adapter only accepts a bridge decision when:
+
+* bridge decision is accepted
+* bridge status is `bridge_accepted`
+* authority scope is `dry_run` or `read_only`
+
+Accepted adapter decisions return:
+
+```text
+accepted=True
+status="adapter_ready"
+```
+
+This remains non-executing:
+
+* no scheduler import
+* no enqueue
+* no execute
+* no mutation, recovery, or replay
+* public surface / connector behavior unchanged
+
+Handoff records preserve lineage and explicitly keep:
+
+```text
+executed=False
+enqueued=False
+scheduler_touched=False
+```
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.

@@ -224,3 +224,10 @@ def test_runtime_execution_bridge_accepted_does_not_enqueue_or_execute():
     assert "mutate" not in calls
     assert "recover" not in calls
     assert "replay" not in calls
+
+
+def test_runtime_execution_bridge_remains_before_adapter_only():
+    imports = _bridge_imports()
+
+    assert "core.runtime.runtime_scheduler_adapter" not in imports
+    assert "core.runtime.runtime_execution_handoff" not in imports
