@@ -141,6 +141,55 @@ Forbidden paths remain explicit:
 * adapter bypassing grant
 * `submit_runtime_task()` executing just because a request was accepted
 
+## 2026-05-18 - Runtime Conditional Grant v0 design
+
+Added `docs/runtime_conditional_grant_v0.md` as a docs-only design checkpoint for the first future conditions that could allow `granted=True`.
+
+Current checkpoint:
+
+* Runtime Admission Governance v0
+* RuntimeExecutionGrant v0
+* RuntimeGrantIssuer v0
+
+Minimum conditional grant principles:
+
+* only `RuntimeGrantIssuer` can produce `granted=True`
+* `policy.allowed=True` is necessary but not sufficient
+* `lease.granted=True` is required
+* `authority_scope` cannot be `none`
+* `risk_level` must be explicitly allowed
+* trace / lease / grant lineage must be complete
+* `granted=True` still does not mean enqueued or executed
+
+First candidate scopes:
+
+* `dry_run`
+* `read_only`
+
+Temporarily forbidden scopes:
+
+* `write`
+* `mutation`
+* `recovery`
+* `replay`
+* `scheduler_enqueue`
+
+Explicit prohibitions remain:
+
+* `submit_runtime_task()` must not execute because a request was accepted
+* connector must not enqueue directly
+* ownership gate must not directly produce grants
+* grant issuer must not call scheduler directly
+* `granted=True` must not directly mean scheduler handoff
+* Execution Bridge / Scheduler Adapter must not be bypassed
+
+Next expected code contract:
+
+* `RuntimeGrantEligibility`
+* `RuntimeGrantIssuer.evaluate_eligibility()`
+* `RuntimeGrantIssuer.issue_grant()` checks eligibility before any grant
+* v0 code remains default-deny unless an explicit test mode permits an isolated `dry_run` grant
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.
