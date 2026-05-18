@@ -29,6 +29,7 @@ from core.agent.agent_route_policy import (
 from core.agent.document_flow_trace_writer import maybe_write_document_flow_trace
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
+from core.runtime.code_chain_patch_restore import request_code_chain_patch_restore
 from core.agent.loop_decision import observe_and_decide
 from core.runtime.blockers import active_blockers, normalize_blockers
 from core.agent.local_observer import observe_runner_result as observe_local_runner_result
@@ -1414,47 +1415,6 @@ class AgentLoop:
         result["error"] = None
         return result
 
-    def _rollback_code_chain_patch_from_backup(
-        self,
-        *,
-        target_path: str,
-        backup_path: str,
-    ) -> Dict[str, Any]:
-        """Restore target from the v6.6.0 pre-patch backup if verification fails."""
-        normalized_target = str(target_path or "").replace("\\", "/").strip()
-        normalized_backup = str(backup_path or "").replace("\\", "/").strip()
-        result: Dict[str, Any] = {
-            "ok": False,
-            "target_path": normalized_target,
-            "backup_path": normalized_backup,
-            "reason": "rollback_not_run",
-            "error": None,
-        }
-
-        if not normalized_target or not normalized_backup:
-            result["reason"] = "rollback_missing_path"
-            result["error"] = "target_path or backup_path is empty"
-            return result
-
-        try:
-            target = Path(normalized_target)
-            backup = Path(normalized_backup)
-            if not backup.exists() or not backup.is_file():
-                result["reason"] = "backup_missing"
-                result["error"] = f"backup not found: {normalized_backup}"
-                return result
-            before_content = backup.read_text(encoding="utf-8")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(before_content, encoding="utf-8")
-            result["ok"] = True
-            result["reason"] = "rollback_restored_from_backup"
-            result["error"] = None
-            return result
-        except Exception as e:
-            result["reason"] = "rollback_failed"
-            result["error"] = f"rollback failed: {type(e).__name__}: {e}"
-            return result
-
     def _try_handle_natural_language_multi_function_patch(self, user_input: str) -> Optional[Dict[str, Any]]:
         """Handle the bounded v6.7.2 add+multiply natural-language patch probe.
 
@@ -1726,7 +1686,7 @@ class AgentLoop:
                 function_names=function_names,
             )
             if not bool(verification_result.get("ok", False)):
-                rollback_result = self._rollback_code_chain_patch_from_backup(
+                rollback_result = request_code_chain_patch_restore(
                     target_path=target_path,
                     backup_path=str(patch_visibility.get("backup_path") or ""),
                 )
