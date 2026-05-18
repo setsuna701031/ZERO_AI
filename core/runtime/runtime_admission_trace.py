@@ -25,4 +25,5 @@ class RuntimeAdmissionTrace:
     risk_level: str
     authority_scope: str
     lease_id: str | None = None
+    grant_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

@@ -14,6 +14,7 @@ from core.runtime.runtime_admission_policy import (
     RuntimeAdmissionPolicyDecision,
 )
 from core.runtime.runtime_admission_trace import RuntimeAdmissionTrace
+from core.runtime.runtime_execution_grant import RuntimeExecutionGrant
 from core.runtime.runtime_execution_lease import RuntimeExecutionLease
 
 
@@ -28,6 +29,7 @@ class RuntimeOwnershipDecision:
     request_id: str
     policy_decision: RuntimeAdmissionPolicyDecision
     lease: RuntimeExecutionLease
+    execution_grant: RuntimeExecutionGrant
     admission_trace: RuntimeAdmissionTrace
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -43,6 +45,8 @@ class RuntimeOwnershipGate:
         policy_decision = self.admission_policy.evaluate(request_envelope)
         request_id = policy_decision.request_id
         trace_id = f"admission_trace:{request_id}" if request_id else "admission_trace:"
+        lease_id = f"execution_lease:{request_id}" if request_id else "execution_lease:"
+        grant_id = f"execution_grant:{request_id}" if request_id else "execution_grant:"
 
         admission_trace = RuntimeAdmissionTrace(
             trace_id=trace_id,
@@ -54,17 +58,32 @@ class RuntimeOwnershipGate:
             policy_rule=policy_decision.rule,
             risk_level=policy_decision.risk_level,
             authority_scope=policy_decision.authority_scope,
-            lease_id=None,
+            lease_id=lease_id,
+            grant_id=grant_id,
             metadata={},
         )
         lease = RuntimeExecutionLease(
-            lease_id="",
+            lease_id=lease_id,
             request_id=request_id,
             granted=False,
             trace_id=admission_trace.trace_id,
             status="lease_not_granted",
             reason=policy_decision.reason,
             owner=None,
+            metadata={},
+        )
+        execution_grant = RuntimeExecutionGrant(
+            grant_id=grant_id,
+            request_id=request_id,
+            trace_id=admission_trace.trace_id,
+            lease_id=lease.lease_id,
+            granted=False,
+            status="grant_not_issued",
+            reason=policy_decision.reason,
+            authority_scope=policy_decision.authority_scope,
+            risk_level=policy_decision.risk_level,
+            granted_by=None,
+            expires_at=None,
             metadata={},
         )
 
@@ -75,6 +94,7 @@ class RuntimeOwnershipGate:
             request_id=request_id,
             policy_decision=policy_decision,
             lease=lease,
+            execution_grant=execution_grant,
             admission_trace=admission_trace,
             metadata={},
         )

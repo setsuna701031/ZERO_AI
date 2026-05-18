@@ -68,6 +68,7 @@ def test_runtime_admission_trace_shape():
         risk_level="unknown",
         authority_scope="none",
         lease_id=None,
+        grant_id="grant-1",
         metadata={"source": "test"},
     )
 
@@ -81,6 +82,7 @@ def test_runtime_admission_trace_shape():
     assert trace.risk_level == "unknown"
     assert trace.authority_scope == "none"
     assert trace.lease_id is None
+    assert trace.grant_id == "grant-1"
     assert trace.metadata == {"source": "test"}
 
 

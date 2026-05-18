@@ -57,6 +57,7 @@ def test_runtime_ownership_gate_imports_cleanly():
 def test_runtime_ownership_decision_shape():
     module = importlib.import_module("core.runtime.runtime_ownership_gate")
     policy_module = importlib.import_module("core.runtime.runtime_admission_policy")
+    grant_module = importlib.import_module("core.runtime.runtime_execution_grant")
     lease_module = importlib.import_module("core.runtime.runtime_execution_lease")
     trace_module = importlib.import_module("core.runtime.runtime_admission_trace")
     policy_decision = policy_module.RuntimeAdmissionPolicyDecision(
@@ -76,6 +77,13 @@ def test_runtime_ownership_decision_shape():
         trace_id="trace-1",
         metadata={"source": "test"},
     )
+    execution_grant = grant_module.RuntimeExecutionGrant(
+        grant_id="grant-1",
+        request_id="request-1",
+        trace_id="trace-1",
+        lease_id="lease-1",
+        metadata={"source": "test"},
+    )
     admission_trace = trace_module.RuntimeAdmissionTrace(
         trace_id="trace-1",
         request_id="request-1",
@@ -87,6 +95,7 @@ def test_runtime_ownership_decision_shape():
         risk_level="unknown",
         authority_scope="none",
         lease_id="lease-1",
+        grant_id="grant-1",
         metadata={"source": "test"},
     )
 
@@ -97,6 +106,7 @@ def test_runtime_ownership_decision_shape():
         request_id="request-1",
         policy_decision=policy_decision,
         lease=lease,
+        execution_grant=execution_grant,
         admission_trace=admission_trace,
         metadata={"source": "test"},
     )
@@ -107,6 +117,7 @@ def test_runtime_ownership_decision_shape():
     assert decision.request_id == "request-1"
     assert decision.policy_decision == policy_decision
     assert decision.lease == lease
+    assert decision.execution_grant == execution_grant
     assert decision.admission_trace == admission_trace
     assert decision.metadata == {"source": "test"}
 
@@ -135,13 +146,24 @@ def test_runtime_ownership_gate_default_decision_does_not_grant_execution():
     assert decision.lease.reason == "execution_not_granted"
     assert decision.lease.request_id == "request-1"
     assert decision.lease.trace_id == decision.admission_trace.trace_id
+    assert decision.execution_grant.granted is False
+    assert decision.execution_grant.status == "grant_not_issued"
+    assert decision.execution_grant.reason == "execution_not_granted"
+    assert decision.execution_grant.authority_scope == "none"
+    assert decision.execution_grant.risk_level == "unknown"
+    assert decision.execution_grant.granted_by is None
+    assert decision.execution_grant.expires_at is None
+    assert decision.execution_grant.request_id == "request-1"
+    assert decision.execution_grant.trace_id == decision.admission_trace.trace_id
+    assert decision.execution_grant.lease_id == decision.lease.lease_id
     assert decision.admission_trace.request_id == "request-1"
     assert decision.admission_trace.decision == "denied"
     assert decision.admission_trace.stage == "ownership_gate"
     assert decision.admission_trace.policy_rule == "default_deny"
     assert decision.admission_trace.risk_level == "unknown"
     assert decision.admission_trace.authority_scope == "none"
-    assert decision.admission_trace.lease_id is None
+    assert decision.admission_trace.lease_id == decision.lease.lease_id
+    assert decision.admission_trace.grant_id == decision.execution_grant.grant_id
     assert decision.admission_trace.trace_id == "admission_trace:request-1"
     assert decision.policy_decision.rule == "default_deny"
     assert decision.metadata == {}
