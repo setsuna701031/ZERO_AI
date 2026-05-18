@@ -269,6 +269,65 @@ The scheduler adapter may expose queue admission through the controller, but it 
 * `queue_admission_id`
 * `queue_admission_status`
 
+## 2026-05-18 - Runtime Controlled Enqueue Boundary v0
+
+Added `docs/runtime_controlled_enqueue_boundary_v0.md` as a docs-only plan for the first future conditions that may allow `scheduler_touched=True` and `enqueued=True`.
+
+Current stable chain:
+
+```text
+Public Surface
+-> Connector
+-> Ownership Gate
+-> Admission Policy
+-> Admission Trace
+-> Execution Lease
+-> Grant Eligibility
+-> Grant Issuer
+-> Execution Grant
+-> Execution Bridge
+-> Scheduler Adapter
+-> Queue Admission
+-> Handoff Record
+```
+
+Core boundaries remain:
+
+* `queue_admission_accepted` does not mean enqueued
+* `adapter_ready` does not mean scheduler touched
+* `bridge_accepted` does not mean execution
+* `grant_issued` does not mean execution
+* `submit_runtime_task` accepted does not mean execution
+
+Minimum future enqueue conditions:
+
+* `queue_admission.accepted=True`
+* `execution_grant.granted=True`
+* explicit allowed `authority_scope`
+* acceptable `risk_level`
+* complete handoff record
+* scheduler adapter is the only scheduler contact point
+* an enqueue record exists
+* enqueue lineage traces `request_id`, `trace_id`, `lease_id`, `grant_id`, and `queue_admission_id`
+
+Forbidden in v0:
+
+* mutation
+* recovery
+* replay
+* `write` scope
+* direct `scheduler_enqueue` scope pass-through
+* public surface direct enqueue
+* connector / gate / bridge scheduler access
+* enqueue causing automatic execution
+
+Next expected code contract:
+
+* `RuntimeControlledEnqueueRequest`
+* `RuntimeControlledEnqueueDecision`
+* `RuntimeControlledEnqueueController`
+* first `enqueued=True` remains non-executing and limited to `dry_run` / `read_only` queue placeholders
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.
