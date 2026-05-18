@@ -13,6 +13,7 @@ from core.runtime.runtime_admission_policy import RuntimeAdmissionPolicyDecision
 from core.runtime.runtime_admission_trace import RuntimeAdmissionTrace
 from core.runtime.runtime_execution_grant import RuntimeExecutionGrant
 from core.runtime.runtime_execution_lease import RuntimeExecutionLease
+from core.runtime.runtime_grant_eligibility import RuntimeGrantEligibilityEvaluator
 
 
 __all__ = ["RuntimeGrantIssuer"]
@@ -23,6 +24,14 @@ class RuntimeGrantIssuer:
 
     issuer_id = "runtime_grant_issuer_v0"
 
+    def __init__(
+        self,
+        eligibility_evaluator: RuntimeGrantEligibilityEvaluator | None = None,
+    ) -> None:
+        self.eligibility_evaluator = (
+            eligibility_evaluator or RuntimeGrantEligibilityEvaluator()
+        )
+
     def issue_grant(
         self,
         policy_decision: RuntimeAdmissionPolicyDecision,
@@ -31,6 +40,18 @@ class RuntimeGrantIssuer:
         metadata: Mapping[str, Any] | None = None,
     ) -> RuntimeExecutionGrant:
         """Return a stable not-issued execution grant."""
+        eligibility = self.eligibility_evaluator.evaluate(
+            policy_decision,
+            admission_trace,
+            lease,
+            metadata=metadata,
+        )
+        grant_metadata = dict(metadata or {})
+        grant_metadata["eligibility"] = {
+            "eligible": eligibility.eligible,
+            "rule": eligibility.rule,
+        }
+
         return RuntimeExecutionGrant(
             grant_id=(
                 f"execution_grant:{lease.request_id}"
@@ -47,5 +68,5 @@ class RuntimeGrantIssuer:
             risk_level="unknown",
             granted_by=self.issuer_id,
             expires_at=None,
-            metadata=dict(metadata or {}),
+            metadata=grant_metadata,
         )

@@ -130,7 +130,97 @@ def test_runtime_grant_issuer_v0_default_deny():
     assert grant.risk_level == "unknown"
     assert grant.granted_by == "runtime_grant_issuer_v0"
     assert grant.expires_at is None
-    assert grant.metadata == {"source": "test"}
+    assert grant.metadata == {
+        "source": "test",
+        "eligibility": {
+            "eligible": False,
+            "rule": "default_deny",
+        },
+    }
+
+
+def test_runtime_grant_issuer_calls_eligibility_evaluator():
+    issuer_module = importlib.import_module("core.runtime.runtime_grant_issuer")
+    policy_module = importlib.import_module("core.runtime.runtime_admission_policy")
+    trace_module = importlib.import_module("core.runtime.runtime_admission_trace")
+    lease_module = importlib.import_module("core.runtime.runtime_execution_lease")
+    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+    calls = []
+
+    class RecordingEvaluator:
+        def evaluate(self, policy_decision, admission_trace, lease, metadata=None):
+            calls.append(
+                {
+                    "policy_decision": policy_decision,
+                    "admission_trace": admission_trace,
+                    "lease": lease,
+                    "metadata": metadata,
+                }
+            )
+            return eligibility_module.RuntimeGrantEligibility(
+                eligible=False,
+                rule="recorded_default_deny",
+                reason="execution_not_granted",
+                authority_scope="none",
+                risk_level="unknown",
+                request_id=lease.request_id,
+                metadata={},
+            )
+
+    issuer = issuer_module.RuntimeGrantIssuer(
+        eligibility_evaluator=RecordingEvaluator()
+    )
+    policy_decision = policy_module.RuntimeAdmissionPolicyDecision(
+        allowed=False,
+        rule="default_deny",
+        reason="execution_not_granted",
+        status="accepted_not_connected",
+        risk_level="unknown",
+        authority_scope="none",
+        request_id="request-1",
+        metadata={},
+    )
+    admission_trace = trace_module.RuntimeAdmissionTrace(
+        trace_id="trace-1",
+        request_id="request-1",
+        stage="ownership_gate",
+        decision="denied",
+        status="accepted_not_connected",
+        reason="execution_not_granted",
+        policy_rule="default_deny",
+        risk_level="unknown",
+        authority_scope="none",
+        lease_id="lease-1",
+        grant_id=None,
+        metadata={},
+    )
+    lease = lease_module.RuntimeExecutionLease(
+        lease_id="lease-1",
+        request_id="request-1",
+        granted=False,
+        trace_id="trace-1",
+    )
+
+    grant = issuer.issue_grant(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={"source": "test"},
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["policy_decision"] == policy_decision
+    assert calls[0]["admission_trace"] == admission_trace
+    assert calls[0]["lease"] == lease
+    assert calls[0]["metadata"] == {"source": "test"}
+    assert grant.granted is False
+    assert grant.status == "grant_not_issued"
+    assert grant.reason == "execution_not_granted"
+    assert grant.granted_by == "runtime_grant_issuer_v0"
+    assert grant.metadata["eligibility"] == {
+        "eligible": False,
+        "rule": "recorded_default_deny",
+    }
 
 
 def test_runtime_grant_issuer_is_only_grant_creation_path():
