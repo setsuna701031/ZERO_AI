@@ -81,6 +81,9 @@ def test_runtime_execution_handoff_record_shape_defaults_to_not_executed():
     assert record.queue_admission_status is None
     assert record.enqueue_id is None
     assert record.enqueue_status is None
+    assert record.execution_token_id is None
+    assert record.execution_pending is False
+    assert record.revoked is False
     assert record.executed is False
     assert record.enqueued is False
     assert record.scheduler_touched is False
@@ -154,6 +157,38 @@ def test_runtime_execution_handoff_record_can_capture_controlled_enqueue_lineage
 
     assert record.enqueue_id == "controlled_enqueue:request-1"
     assert record.enqueue_status == "controlled_enqueue_accepted"
+    assert record.enqueued is True
+    assert record.scheduler_touched is True
+    assert record.executed is False
+
+
+def test_runtime_execution_handoff_record_can_capture_execution_pending_lineage():
+    module = importlib.import_module("core.runtime.runtime_execution_handoff")
+
+    record = module.RuntimeExecutionHandoffRecord(
+        request_id="request-1",
+        trace_id="trace-1",
+        lease_id="lease-1",
+        grant_id="grant-1",
+        bridge_status="bridge_accepted",
+        adapter_status="adapter_ready",
+        authority_scope="dry_run",
+        risk_level="low",
+        queue_admission_id="queue_admission:request-1",
+        queue_admission_status="queue_admission_accepted",
+        enqueue_id="controlled_enqueue:request-1",
+        enqueue_status="controlled_enqueue_accepted",
+        execution_token_id="execution_token:request-1",
+        execution_pending=True,
+        revoked=False,
+        enqueued=True,
+        executed=False,
+        scheduler_touched=True,
+    )
+
+    assert record.execution_token_id == "execution_token:request-1"
+    assert record.execution_pending is True
+    assert record.revoked is False
     assert record.enqueued is True
     assert record.scheduler_touched is True
     assert record.executed is False

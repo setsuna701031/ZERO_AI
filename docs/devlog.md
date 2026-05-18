@@ -361,6 +361,50 @@ This is still not real scheduler enqueue and still not execution. The adapter ma
 * `enqueue_id`
 * `enqueue_status`
 
+## 2026-05-18 - Runtime Execution Pending Token Bundle v0
+
+Added contract-only execution pending state and execution token records after controlled enqueue.
+
+New code contracts:
+
+* `RuntimeExecutionToken`
+* `RuntimeExecutionPendingDecision`
+* `RuntimeExecutionPendingController`
+
+Accepted controlled enqueue may now produce:
+
+```text
+execution_pending=True
+executed=False
+revoked=False
+```
+
+The pending decision returns:
+
+```text
+accepted=True
+status="execution_pending"
+reason="controlled_enqueue_accepted"
+enqueued=True
+scheduler_touched=True
+executed=False
+```
+
+Rejected controlled enqueue keeps:
+
+```text
+execution_pending=False
+executed=False
+```
+
+This remains non-executing: no executor import, no scheduler import, no real execute call, and no mutation / recovery / replay behavior.
+
+`RuntimeExecutionHandoffRecord` now can include:
+
+* `execution_token_id`
+* `execution_pending`
+* `revoked`
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.

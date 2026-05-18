@@ -279,3 +279,20 @@ def test_runtime_controlled_enqueue_does_not_call_scheduler_or_execute():
     assert "mutate" not in calls
     assert "recover" not in calls
     assert "replay" not in calls
+
+
+def test_runtime_controlled_enqueue_can_feed_execution_pending_without_execution():
+    enqueue_module = importlib.import_module("core.runtime.runtime_controlled_enqueue")
+    pending_module = importlib.import_module("core.runtime.runtime_execution_pending")
+    enqueue_controller = enqueue_module.RuntimeControlledEnqueueController()
+    pending_controller = pending_module.RuntimeExecutionPendingController()
+
+    enqueue_decision = enqueue_controller.evaluate(
+        _queue_admission(accepted=True, authority_scope="dry_run")
+    )
+    pending_decision = pending_controller.evaluate(enqueue_decision)
+
+    assert enqueue_decision.enqueued is True
+    assert enqueue_decision.executed is False
+    assert pending_decision.execution_pending is True
+    assert pending_decision.executed is False
