@@ -135,7 +135,66 @@ def test_runtime_grant_issuer_v0_default_deny():
         "eligibility": {
             "eligible": False,
             "rule": "default_deny",
+            "authority_scope": "none",
+            "risk_level": "unknown",
         },
+    }
+
+
+def test_runtime_grant_issuer_does_not_grant_when_eligible_true():
+    issuer_module = importlib.import_module("core.runtime.runtime_grant_issuer")
+    policy_module = importlib.import_module("core.runtime.runtime_admission_policy")
+    trace_module = importlib.import_module("core.runtime.runtime_admission_trace")
+    lease_module = importlib.import_module("core.runtime.runtime_execution_lease")
+    issuer = issuer_module.RuntimeGrantIssuer()
+
+    policy_decision = policy_module.RuntimeAdmissionPolicyDecision(
+        allowed=False,
+        rule="default_deny",
+        reason="execution_not_granted",
+        status="accepted_not_connected",
+        risk_level="unknown",
+        authority_scope="none",
+        request_id="request-1",
+        metadata={},
+    )
+    admission_trace = trace_module.RuntimeAdmissionTrace(
+        trace_id="trace-1",
+        request_id="request-1",
+        stage="ownership_gate",
+        decision="denied",
+        status="accepted_not_connected",
+        reason="execution_not_granted",
+        policy_rule="default_deny",
+        risk_level="unknown",
+        authority_scope="none",
+        lease_id="lease-1",
+        grant_id=None,
+        metadata={},
+    )
+    lease = lease_module.RuntimeExecutionLease(
+        lease_id="lease-1",
+        request_id="request-1",
+        granted=False,
+        trace_id="trace-1",
+    )
+
+    grant = issuer.issue_grant(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={"authority_scope": "dry_run"},
+    )
+
+    assert grant.granted is False
+    assert grant.status == "grant_not_issued"
+    assert grant.reason == "execution_not_granted"
+    assert grant.granted_by == "runtime_grant_issuer_v0"
+    assert grant.metadata["eligibility"] == {
+        "eligible": True,
+        "rule": "scoped_low_risk",
+        "authority_scope": "dry_run",
+        "risk_level": "low",
     }
 
 
@@ -220,6 +279,8 @@ def test_runtime_grant_issuer_calls_eligibility_evaluator():
     assert grant.metadata["eligibility"] == {
         "eligible": False,
         "rule": "recorded_default_deny",
+        "authority_scope": "none",
+        "risk_level": "unknown",
     }
 
 

@@ -4,6 +4,8 @@ import ast
 import importlib
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ELIGIBILITY_PATH = REPO_ROOT / "core" / "runtime" / "runtime_grant_eligibility.py"
@@ -51,21 +53,10 @@ def _eligibility_imports() -> list[str]:
     return imports
 
 
-def test_runtime_grant_eligibility_imports_cleanly():
-    module = importlib.import_module("core.runtime.runtime_grant_eligibility")
-
-    assert module.__all__ == [
-        "RuntimeGrantEligibility",
-        "RuntimeGrantEligibilityEvaluator",
-    ]
-
-
-def test_runtime_grant_eligibility_evaluator_default_deny():
-    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+def _base_inputs():
     policy_module = importlib.import_module("core.runtime.runtime_admission_policy")
     trace_module = importlib.import_module("core.runtime.runtime_admission_trace")
     lease_module = importlib.import_module("core.runtime.runtime_execution_lease")
-    evaluator = eligibility_module.RuntimeGrantEligibilityEvaluator()
 
     policy_decision = policy_module.RuntimeAdmissionPolicyDecision(
         allowed=False,
@@ -97,6 +88,22 @@ def test_runtime_grant_eligibility_evaluator_default_deny():
         granted=False,
         trace_id="trace-1",
     )
+    return policy_decision, admission_trace, lease
+
+
+def test_runtime_grant_eligibility_imports_cleanly():
+    module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+
+    assert module.__all__ == [
+        "RuntimeGrantEligibility",
+        "RuntimeGrantEligibilityEvaluator",
+    ]
+
+
+def test_runtime_grant_eligibility_evaluator_default_deny():
+    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+    evaluator = eligibility_module.RuntimeGrantEligibilityEvaluator()
+    policy_decision, admission_trace, lease = _base_inputs()
 
     eligibility = evaluator.evaluate(
         policy_decision,
@@ -112,6 +119,82 @@ def test_runtime_grant_eligibility_evaluator_default_deny():
     assert eligibility.risk_level == "unknown"
     assert eligibility.request_id == "request-1"
     assert eligibility.metadata == {"source": "test"}
+
+
+@pytest.mark.parametrize("scope", ["dry_run", "read_only"])
+def test_runtime_grant_eligibility_allows_low_risk_scopes(scope: str):
+    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+    evaluator = eligibility_module.RuntimeGrantEligibilityEvaluator()
+    policy_decision, admission_trace, lease = _base_inputs()
+
+    eligibility = evaluator.evaluate(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={"authority_scope": scope},
+    )
+
+    assert eligibility.eligible is True
+    assert eligibility.rule == "scoped_low_risk"
+    assert eligibility.reason == "eligible_for_non_executing_scope"
+    assert eligibility.authority_scope == scope
+    assert eligibility.risk_level == "low"
+    assert eligibility.request_id == "request-1"
+
+
+def test_runtime_grant_eligibility_reads_scope_from_request_metadata():
+    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+    evaluator = eligibility_module.RuntimeGrantEligibilityEvaluator()
+    policy_decision, admission_trace, lease = _base_inputs()
+
+    eligibility = evaluator.evaluate(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={
+            "request": {
+                "metadata": {
+                    "authority_scope": "dry_run",
+                },
+            },
+        },
+    )
+
+    assert eligibility.eligible is True
+    assert eligibility.rule == "scoped_low_risk"
+    assert eligibility.authority_scope == "dry_run"
+    assert eligibility.risk_level == "low"
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "none",
+        "write",
+        "mutation",
+        "recovery",
+        "replay",
+        "scheduler_enqueue",
+        "unknown",
+    ],
+)
+def test_runtime_grant_eligibility_rejects_forbidden_scopes(scope: str):
+    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+    evaluator = eligibility_module.RuntimeGrantEligibilityEvaluator()
+    policy_decision, admission_trace, lease = _base_inputs()
+
+    eligibility = evaluator.evaluate(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={"authority_scope": scope},
+    )
+
+    assert eligibility.eligible is False
+    assert eligibility.rule == "default_deny"
+    assert eligibility.reason == "execution_not_granted"
+    assert eligibility.authority_scope == "none"
+    assert eligibility.risk_level == "unknown"
 
 
 def test_runtime_grant_eligibility_does_not_import_runtime_internals():

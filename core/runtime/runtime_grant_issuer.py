@@ -50,6 +50,8 @@ class RuntimeGrantIssuer:
         grant_metadata["eligibility"] = {
             "eligible": eligibility.eligible,
             "rule": eligibility.rule,
+            "authority_scope": eligibility.authority_scope,
+            "risk_level": eligibility.risk_level,
         }
 
         return RuntimeExecutionGrant(
