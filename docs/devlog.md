@@ -405,6 +405,77 @@ This remains non-executing: no executor import, no scheduler import, no real exe
 * `execution_pending`
 * `revoked`
 
+## 2026-05-18 - Runtime Execution Start Boundary v0
+
+Added `docs/runtime_execution_start_boundary_v0.md` as a docs-only plan for the first future conditions that may allow `executed=True`.
+
+Current remote checkpoint:
+
+* Runtime Execution Lifecycle Skeleton has been pushed to GitHub
+* `execution_pending=True`
+* `executed=False`
+
+Current stable chain:
+
+```text
+Public Surface
+-> Connector
+-> Ownership Gate
+-> Admission Policy
+-> Admission Trace
+-> Execution Lease
+-> Grant Eligibility
+-> Grant Issuer
+-> Execution Grant
+-> Execution Bridge
+-> Scheduler Adapter
+-> Queue Admission
+-> Controlled Enqueue
+-> Execution Token
+-> Execution Pending
+```
+
+Core boundaries remain:
+
+* `execution_pending=True` does not mean `executed=True`
+* `enqueued=True` does not mean `executed=True`
+* `scheduler_touched=True` does not mean `executed=True`
+* `grant_issued` does not mean `executed=True`
+* `submit_runtime_task` accepted does not mean `executed=True`
+
+Minimum future execution-start conditions:
+
+* `execution_pending=True`
+* `execution_token.revoked=False`
+* controlled enqueue accepted
+* queue admission accepted
+* `grant.granted=True`
+* `authority_scope` is `dry_run` or `read_only`
+* `risk_level` is `low`
+* lineage includes `request_id`, `trace_id`, `lease_id`, `grant_id`, `queue_admission_id`, `enqueue_id`, and `execution_token_id`
+* an execution start record exists
+* `executed=True` is produced only by Execution Start Controller
+
+Forbidden in v0:
+
+* `write`
+* `mutation`
+* `recovery`
+* `replay`
+* `scheduler_enqueue`
+* public surface direct execute
+* connector / gate / bridge / adapter direct execute
+* executor import
+* real task execution
+* mutation / recovery / replay side effects
+
+Next expected code contract:
+
+* `RuntimeExecutionStartRequest`
+* `RuntimeExecutionStartDecision`
+* `RuntimeExecutionStartController`
+* first-version `executed=True` remains a non-executing `dry_run` / `read_only` lifecycle marker
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.
