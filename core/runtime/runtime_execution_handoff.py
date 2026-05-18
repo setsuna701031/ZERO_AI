@@ -24,6 +24,8 @@ class RuntimeExecutionHandoffRecord:
     adapter_status: str
     authority_scope: str
     risk_level: str
+    queue_admission_id: str | None = None
+    queue_admission_status: str | None = None
     executed: bool = False
     enqueued: bool = False
     scheduler_touched: bool = False

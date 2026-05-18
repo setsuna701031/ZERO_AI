@@ -77,6 +77,8 @@ def test_runtime_execution_handoff_record_shape_defaults_to_not_executed():
     assert record.adapter_status == "adapter_ready"
     assert record.authority_scope == "dry_run"
     assert record.risk_level == "low"
+    assert record.queue_admission_id is None
+    assert record.queue_admission_status is None
     assert record.executed is False
     assert record.enqueued is False
     assert record.scheduler_touched is False
@@ -101,6 +103,29 @@ def test_runtime_execution_handoff_record_can_capture_rejection_lineage():
     assert record.adapter_status == "adapter_rejected"
     assert record.executed is False
     assert record.enqueued is False
+    assert record.scheduler_touched is False
+
+
+def test_runtime_execution_handoff_record_can_capture_queue_admission_lineage():
+    module = importlib.import_module("core.runtime.runtime_execution_handoff")
+
+    record = module.RuntimeExecutionHandoffRecord(
+        request_id="request-1",
+        trace_id="trace-1",
+        lease_id="lease-1",
+        grant_id="grant-1",
+        bridge_status="bridge_accepted",
+        adapter_status="adapter_ready",
+        authority_scope="read_only",
+        risk_level="low",
+        queue_admission_id="queue_admission:request-1",
+        queue_admission_status="queue_admission_accepted",
+    )
+
+    assert record.queue_admission_id == "queue_admission:request-1"
+    assert record.queue_admission_status == "queue_admission_accepted"
+    assert record.enqueued is False
+    assert record.executed is False
     assert record.scheduler_touched is False
 
 

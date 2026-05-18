@@ -8,9 +8,12 @@ state, recover, or replay.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Mapping, TYPE_CHECKING
 
 from core.runtime.runtime_execution_bridge import RuntimeExecutionBridgeDecision
+
+if TYPE_CHECKING:
+    from core.runtime.runtime_queue_admission import RuntimeQueueAdmissionDecision
 
 
 __all__ = ["RuntimeSchedulerAdapterDecision", "RuntimeSchedulerAdapter"]
@@ -71,4 +74,17 @@ class RuntimeSchedulerAdapter:
             authority_scope=bridge_decision.authority_scope,
             risk_level=bridge_decision.risk_level,
             metadata=dict(metadata or {}),
+        )
+
+    def evaluate_queue_admission(
+        self,
+        adapter_decision: RuntimeSchedulerAdapterDecision,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "RuntimeQueueAdmissionDecision":
+        """Expose queue admission without enqueueing or executing."""
+        from core.runtime.runtime_queue_admission import RuntimeQueueAdmissionController
+
+        return RuntimeQueueAdmissionController().evaluate(
+            adapter_decision,
+            metadata=metadata,
         )

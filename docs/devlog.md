@@ -229,6 +229,46 @@ enqueued=False
 scheduler_touched=False
 ```
 
+## 2026-05-18 - Adapter to Queue Admission Bundle v0
+
+Added contract-only queue admission behind adapter readiness.
+
+New code contracts:
+
+* `RuntimeQueueAdmissionDecision`
+* `RuntimeQueueAdmissionController`
+
+The queue admission controller accepts only:
+
+* adapter decision accepted
+* authority scope `dry_run` or `read_only`
+
+Accepted queue admission returns:
+
+```text
+accepted=True
+status="queue_admission_accepted"
+reason="adapter_ready_for_non_executing_scope"
+enqueued=False
+executed=False
+scheduler_touched=False
+```
+
+Rejected adapter decisions return:
+
+```text
+accepted=False
+status="queue_admission_rejected"
+reason="adapter_not_ready"
+```
+
+The scheduler adapter may expose queue admission through the controller, but it still does not enqueue, execute, import scheduler, or touch mutation / recovery / replay behavior.
+
+`RuntimeExecutionHandoffRecord` now can include:
+
+* `queue_admission_id`
+* `queue_admission_status`
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.
