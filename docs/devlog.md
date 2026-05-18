@@ -54,6 +54,93 @@ NO replay behavior
 NO queue connection
 ```
 
+## 2026-05-18 - Runtime Execution Bridge Plan v0
+
+Added `docs/runtime_execution_bridge_plan_v0.md` as the design-only next step after Runtime Admission Governance v0.
+
+The planned bridge structure is:
+
+```text
+Public Surface
+-> Connector
+-> Ownership Gate
+-> Policy
+-> Trace
+-> Lease
+-> Execution Bridge
+-> Scheduler Adapter
+```
+
+This plan keeps the current default-deny baseline intact:
+
+* no direct `submit_runtime_task()` scheduler call
+* no execution logic in connector
+* no scheduler logic in ownership gate
+* no bypass around policy / trace / lease
+* no mutation, recovery, or replay behavior
+* no enqueue before a real execution grant exists
+
+Bridge contracts to design before behavior:
+
+* `RuntimeExecutionBridge`
+* `RuntimeSchedulerAdapter`
+* `RuntimeExecutionGrant`
+* `RuntimeExecutionHandoffRecord`
+
+## 2026-05-18 - Runtime Execution Grant Model v0
+
+Added `docs/runtime_execution_grant_model_v0.md` as a docs-only contract boundary for future granted execution leases.
+
+The model records the current default-deny state:
+
+* Runtime Admission Governance v0 is frozen
+* Execution Bridge Plan v0 is established
+* execution leases remain `granted=False`
+* `submit_runtime_task()` still returns `accepted_not_connected`
+
+The grant boundary preserves these rules:
+
+* request accepted does not mean execution granted
+* policy allowed does not mean enqueued
+* granted lease only permits possible handoff, not execution
+* scheduler handoff must go through Execution Bridge plus Scheduler Adapter
+* grants must be traceable, auditable, and revocable
+
+The draft `RuntimeExecutionGrant` contract includes:
+
+```text
+grant_id
+request_id
+trace_id
+lease_id
+granted: bool
+status
+reason
+authority_scope
+risk_level
+granted_by
+expires_at
+metadata
+```
+
+Version 0 remains docs-only and default-deny:
+
+* no real `granted=True`
+* no enqueue
+* no execution
+* no scheduler connection
+* no mutation, recovery, or replay connection
+
+Forbidden paths remain explicit:
+
+* public surface directly calling scheduler
+* connector directly enqueueing
+* gate directly executing
+* policy directly mutating
+* bridge bypassing lease
+* adapter bypassing grant
+* `submit_runtime_task()` executing just because a request was accepted
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.
