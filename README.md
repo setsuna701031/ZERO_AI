@@ -79,6 +79,32 @@ Important:
 
 ## Runtime Boundary Freeze Baseline (Latest)
 
+### Runtime Admission Governance v0 Frozen Baseline
+
+Current admission governance checkpoint:
+
+```text
+runtime-admission-governance-v0-frozen-baseline
+```
+
+Established:
+
+- Public Surface -> Connector -> Ownership Gate -> Admission Policy -> Admission Trace -> Execution Lease
+- default-deny baseline
+- request_id / trace_id / lease_id lineage
+- no scheduler/executor/mutation/recovery/replay coupling
+- no execution capability added
+- public behavior unchanged
+
+Validation:
+
+```text
+governance / boundary pack: 36 passed
+regression pack: 80 passed
+total: 116 passed
+existing warning only: datetime.utcnow() deprecation warnings in core/runtime/mutation_boundary.py
+```
+
 Current engineering checkpoint:
 
 ```text

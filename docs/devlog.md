@@ -1,4 +1,59 @@
 ---
+## 2026-05-18 - Runtime Admission Governance v0 frozen baseline
+
+This checkpoint records `Runtime Admission Governance v0` as a frozen baseline.
+
+### What was established
+
+```text
+Public Surface -> Connector -> Ownership Gate -> Admission Policy -> Admission Trace -> Execution Lease
+```
+
+The baseline preserves:
+
+* default-deny admission behavior
+* `request_id` / `trace_id` / `lease_id` lineage
+* no scheduler, executor, mutation, recovery, or replay coupling
+* no execution capability
+* unchanged public behavior
+
+### Validation confirmed
+
+Confirmed governance / boundary pack:
+
+```text
+python -m pytest tests/test_runtime_admission_policy_contract.py tests/test_runtime_admission_trace_contract.py tests/test_runtime_execution_lease_contract.py tests/test_runtime_ownership_gate_contract.py tests/test_runtime_connector_contract.py tests/test_runtime_public_surface_contract.py tests/test_runtime_boundary_imports.py tests/test_runtime_mutation_authority_boundaries.py -q
+-> 36 passed
+```
+
+Confirmed regression pack:
+
+```text
+python -m pytest tests/test_repair_chain_runtime.py tests/test_scheduler_parser_helpers.py -q
+-> 80 passed
+```
+
+Total validation:
+
+```text
+116 passed
+existing warning only: datetime.utcnow() deprecation warnings in core/runtime/mutation_boundary.py
+```
+
+### Baseline boundary
+
+This checkpoint does not add:
+
+```text
+NO scheduler coupling
+NO enqueue
+NO execution grant
+NO mutation behavior
+NO recovery behavior
+NO replay behavior
+NO queue connection
+```
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.
