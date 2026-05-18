@@ -13,6 +13,7 @@ from typing import Any, Mapping, TYPE_CHECKING
 from core.runtime.runtime_execution_bridge import RuntimeExecutionBridgeDecision
 
 if TYPE_CHECKING:
+    from core.runtime.runtime_controlled_enqueue import RuntimeControlledEnqueueDecision
     from core.runtime.runtime_queue_admission import RuntimeQueueAdmissionDecision
 
 
@@ -86,5 +87,20 @@ class RuntimeSchedulerAdapter:
 
         return RuntimeQueueAdmissionController().evaluate(
             adapter_decision,
+            metadata=metadata,
+        )
+
+    def evaluate_controlled_enqueue(
+        self,
+        queue_admission: "RuntimeQueueAdmissionDecision",
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "RuntimeControlledEnqueueDecision":
+        """Expose controlled queue placeholder admission without running work."""
+        from core.runtime.runtime_controlled_enqueue import (
+            RuntimeControlledEnqueueController,
+        )
+
+        return RuntimeControlledEnqueueController().evaluate(
+            queue_admission,
             metadata=metadata,
         )

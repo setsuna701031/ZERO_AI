@@ -328,6 +328,39 @@ Next expected code contract:
 * `RuntimeControlledEnqueueController`
 * first `enqueued=True` remains non-executing and limited to `dry_run` / `read_only` queue placeholders
 
+## 2026-05-18 - Runtime Controlled Enqueue Bundle v0
+
+Added contract-only controlled enqueue after queue admission.
+
+New code contracts:
+
+* `RuntimeControlledEnqueueRequest`
+* `RuntimeControlledEnqueueDecision`
+* `RuntimeControlledEnqueueController`
+
+The controller accepts only:
+
+* queue admission accepted
+* authority scope `dry_run` or `read_only`
+
+Accepted controlled enqueue returns:
+
+```text
+accepted=True
+status="controlled_enqueue_accepted"
+reason="queue_admission_accepted_for_non_executing_scope"
+enqueued=True
+scheduler_touched=True
+executed=False
+```
+
+This is still not real scheduler enqueue and still not execution. The adapter may expose the controlled enqueue decision, but it does not import scheduler, call scheduler enqueue, execute work, or touch mutation / recovery / replay behavior.
+
+`RuntimeExecutionHandoffRecord` now can include:
+
+* `enqueue_id`
+* `enqueue_status`
+
 ## 2026-05-15 - Runtime Boundary Freeze Baseline checkpoint
 
 This checkpoint records the runtime boundary freeze baseline on `main`.

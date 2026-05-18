@@ -219,7 +219,11 @@ def test_runtime_scheduler_adapter_has_no_runtime_authority_methods():
         if not name.startswith("_")
     }
 
-    assert public_names == {"evaluate_bridge_decision", "evaluate_queue_admission"}
+    assert public_names == {
+        "evaluate_bridge_decision",
+        "evaluate_controlled_enqueue",
+        "evaluate_queue_admission",
+    }
     assert not (public_names & set(FORBIDDEN_METHODS))
 
 
@@ -256,3 +260,29 @@ def test_runtime_scheduler_adapter_exposes_queue_admission_without_enqueueing():
     assert queue_decision.executed is False
     assert queue_decision.scheduler_touched is False
     assert queue_decision.metadata == {"source": "test"}
+
+
+def test_runtime_scheduler_adapter_exposes_controlled_enqueue_without_execution():
+    module = importlib.import_module("core.runtime.runtime_scheduler_adapter")
+    adapter = module.RuntimeSchedulerAdapter()
+    adapter_decision = adapter.evaluate_bridge_decision(
+        _bridge_decision(
+            accepted=True,
+            status="bridge_accepted",
+            authority_scope="read_only",
+        )
+    )
+    queue_decision = adapter.evaluate_queue_admission(adapter_decision)
+
+    enqueue_decision = adapter.evaluate_controlled_enqueue(
+        queue_decision,
+        metadata={"source": "test"},
+    )
+
+    assert enqueue_decision.accepted is True
+    assert enqueue_decision.status == "controlled_enqueue_accepted"
+    assert enqueue_decision.reason == "queue_admission_accepted_for_non_executing_scope"
+    assert enqueue_decision.enqueued is True
+    assert enqueue_decision.scheduler_touched is True
+    assert enqueue_decision.executed is False
+    assert enqueue_decision.metadata == {"source": "test"}
