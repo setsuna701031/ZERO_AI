@@ -127,6 +127,23 @@ from core.tasks.scheduler_core.simple_step_executor_helpers import (
 from core.tasks.scheduler_core.command_step_helpers import (
     execute_command_like_step,
 )
+from core.tasks.scheduler_core.code_chain_tick_replay_bridge import (
+    CODE_CHAIN_WORKFLOW_STEP_TYPES as V733_CODE_CHAIN_WORKFLOW_STEP_TYPES,
+    build_code_chain_simple_tick_bridge,
+    current_step_type as code_chain_replay_current_step_type,
+    resolve_task_runner as code_chain_replay_resolve_task_runner,
+)
+from core.tasks.scheduler_core.retrying_repair_replay_state import (
+    prepare_retrying_repair_replay_state,
+)
+from core.tasks.scheduler_core.repair_injection_execution import (
+    execute_repair_injection_transaction,
+    safe_repair_injection_now,
+)
+from core.tasks.scheduler_core.repair_replay_continuation import (
+    build_already_injected_replay_continuation,
+    build_injected_replay_continuation,
+)
 from core.tasks.scheduler_core.command_planner import try_plan_command
 from core.tasks.scheduler_core.llm_step_helpers import (
     execute_llm_step,
@@ -647,6 +664,10 @@ class Scheduler(RuntimeTaskScheduler):
 
         return result
 
+    # Runtime evidence ownership boundary:
+    # Scheduler remains the event source for queue/dispatch lifecycle evidence.
+    # Future migration target: event formatting may move to scheduler_core, but
+    # evidence timing must stay aligned with actual scheduler-owned mutations.
     def _emit_scheduler_evidence(
         self,
         phase: str,
@@ -799,6 +820,10 @@ class Scheduler(RuntimeTaskScheduler):
         result.setdefault("mode", "task_loop")
         return result
 
+    # Runtime ownership boundary:
+    # The scheduler loop owns task dispatch timing and the runtime handoff.
+    # Future repair/retry/queue mutation logic must be added in scheduler_core
+    # helpers and called from here, not embedded directly in this method.
     def run_one_step(
         self,
         task: Dict[str, Any],
@@ -3828,6 +3853,11 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
     # Queue / dispatcher / worker sync
     # ------------------------------------------------------------
+    # Must-remain runtime ownership:
+    # Queue rebuild and actual enqueue execution are scheduler-owned because
+    # they coordinate dependency readiness, worker release, blocked/unblocked
+    # routing, and evidence timing. Future migration target: queue hygiene and
+    # policy can move out, but this primitive must stay the execution boundary.
 
     def rebuild_ready_queue(self) -> List[str]:
         return rebuild_ready_queue(
@@ -3835,6 +3865,10 @@ class Scheduler(RuntimeTaskScheduler):
             terminal_statuses=TERMINAL_STATUSES,
         )
 
+    # Forbidden direct mutation zone:
+    # Do not add new direct queue/retry/repair mutation here. New mutation
+    # policy belongs in dedicated scheduler_core modules that return decisions
+    # for this primitive to execute.
     def _enqueue_repo_task_if_ready(self, task: Dict[str, Any], overwrite: bool = False) -> bool:
         task = self._hydrate_task_from_workspace(task)
         task_id = self._extract_task_id(task)
@@ -4847,6 +4881,11 @@ class Scheduler(RuntimeTaskScheduler):
         )
         return any(signal in lowered for signal in fatal_signals)
 
+    # Runtime persistence ownership boundary:
+    # These writes are compatibility persistence seams for retry collapse and
+    # task lifecycle sync. Future migration target: move persistence policy and
+    # file format handling behind runtime/repository helpers while keeping
+    # scheduler as the caller that decides when lifecycle state must be saved.
     def _write_runtime_state_file_safe(self, task: Dict[str, Any]) -> None:
         if not isinstance(task, dict):
             return
@@ -4867,6 +4906,10 @@ class Scheduler(RuntimeTaskScheduler):
     def _sync_blocked_state(self, task_id: str, blocked_reason: str) -> None:
         return sync_blocked_state(scheduler=self, task_id=task_id, blocked_reason=blocked_reason)
 
+    # Repository persistence ownership boundary:
+    # Scheduler owns the public task lifecycle write point. Do not add repair
+    # or retry mutation here; callers should normalize mutations in
+    # scheduler_core helpers before invoking this persistence primitive.
     def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
         task = refresh_task_public_fields(scheduler=self, task=copy.deepcopy(task), status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
 
@@ -6881,6 +6924,10 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # ZERO v7.2.4 - Repair task expiration / cleanup policy
 # ============================================================
+# Compatibility legacy zone:
+# v724 owns the legacy repair hygiene lifecycle. Keep this binding order and
+# behavior frozen until a dedicated queue hygiene lifecycle helper has replay,
+# stale queue, fingerprint cleanup, and queue snapshot regression coverage.
 # Runtime-tail compatibility / repair bridge fence:
 # Queue hygiene tick patches in this region are lower-tail compatibility code.
 # Direct internal calls are temporarily tolerated. Do not extract or reroute
@@ -7163,6 +7210,10 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # v7.2.6 - Repair Enqueue Lock Lifecycle
 # ============================================================
+# Compatibility legacy zone:
+# v726 owns the pending repair lock lifecycle. Future migration target: move
+# pending lock policy to a scheduler_core repair queue helper, but keep
+# create_task/tick monkey-patch bindings here until ordering is made explicit.
 # Runtime-tail compatibility / repair bridge fence:
 # This v7.2.6 queue hygiene extension remains part of the scheduler runtime
 # tail. Direct internal calls are temporarily tolerated here. Do not extract or
@@ -7436,6 +7487,10 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # ZERO v7.3.3 - Code Chain Workflow Tick Advancement
 # ============================================================
+# Compatibility legacy zone:
+# v733 is the replay bridge compatibility binding for Code Chain workflow
+# advancement. Keep the monkey-patch binding in scheduler.py; helper modules may
+# own pure forwarding logic, but not the runtime binding order.
 # Runtime-tail compatibility / repair bridge fence:
 # The run_simple_task_tick patch below is runtime-tail compatibility code.
 # Direct internal calls are temporarily tolerated. Do not extract or reroute
@@ -7448,87 +7503,16 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # TaskRunner so runtime.advance_step() is the source of truth and the task can
 # progress analyze -> repair -> verify.
 
-_ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES = {
-    "code_chain_analyze",
-    "code_chain_repair",
-    "autonomous_code_repair",
-    "code_chain_verify",
-}
+_ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES = V733_CODE_CHAIN_WORKFLOW_STEP_TYPES
 
 _ZERO_V733_ORIGINAL_RUN_SIMPLE_TASK_TICK = Scheduler._run_simple_task_tick
 
 
-def _zero_v733_current_step_type(task: Dict[str, Any]) -> str:
-    if not isinstance(task, dict):
-        return ""
-    try:
-        idx = int(task.get("current_step_index", 0) or 0)
-    except Exception:
-        idx = 0
-    steps = task.get("steps")
-    if not isinstance(steps, list) or not (0 <= idx < len(steps)):
-        return ""
-    step = steps[idx]
-    if not isinstance(step, dict):
-        return ""
-    return str(step.get("type") or "").strip().lower()
+_zero_v733_current_step_type = code_chain_replay_current_step_type
 
 
-def _zero_v733_resolve_task_runner(self):
-    runner = getattr(self, "task_runner", None)
-    if runner is not None:
-        return runner
-    try:
-        from core.runtime.task_runner import TaskRunner
-        runner = TaskRunner(
-            step_executor=getattr(self, "step_executor", None),
-            task_runtime=getattr(self, "task_runtime", None),
-            replanner=getattr(self, "replanner", None),
-            debug=bool(getattr(self, "debug", False)),
-        )
-        self.task_runner = runner
-        return runner
-    except Exception:
-        return None
-
-
-def _zero_v733_run_simple_task_tick(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
-    step_type = _zero_v733_current_step_type(task)
-    if step_type in _ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES:
-        runner = _zero_v733_resolve_task_runner(self)
-        if runner is None:
-            return {
-                "ok": False,
-                "action": "code_chain_workflow_runner_missing",
-                "status": "failed",
-                "error": "TaskRunner is required for Code Chain workflow step advancement",
-                "task": copy.deepcopy(task) if isinstance(task, dict) else task,
-            }
-
-        tick = current_tick
-        if tick is None:
-            try:
-                tick = int(getattr(self, "current_tick", 0) or 0)
-            except Exception:
-                tick = 0
-
-        result = runner.run_task_tick(task=task, current_tick=tick)
-        if not isinstance(result, dict):
-            result = {
-                "ok": bool(result),
-                "action": "code_chain_workflow_runner_result",
-                "status": "running" if result else "failed",
-                "raw_result": copy.deepcopy(result),
-                "task": copy.deepcopy(task) if isinstance(task, dict) else task,
-            }
-
-        try:
-            self._sync_runner_result_and_requeue_if_ready(task=task, runner_result=result)
-        except Exception:
-            pass
-        return result
-
-    return _ZERO_V733_ORIGINAL_RUN_SIMPLE_TASK_TICK(self, task=task, current_tick=current_tick)
+_zero_v733_resolve_task_runner = code_chain_replay_resolve_task_runner
+_zero_v733_run_simple_task_tick = build_code_chain_simple_tick_bridge(_ZERO_V733_ORIGINAL_RUN_SIMPLE_TASK_TICK)
 
 
 Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick
@@ -7540,6 +7524,11 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # ============================================================
 # ZERO v7.3.4 - Retrying -> Repair Bridge
 # ============================================================
+# Compatibility legacy zone:
+# v734 is the retrying repair bridge compatibility binding. Replay decision,
+# mutation execution, and continuation packaging belong in scheduler_core; this
+# zone keeps runtime ownership boundaries, monkey-patch compatibility, and the
+# actual enqueue primitive call.
 # Runtime-tail compatibility / repair bridge fence:
 # This retrying repair bridge is lower scheduler tail compatibility code.
 # Direct internal calls are temporarily tolerated. Do not extract or reroute
@@ -7567,10 +7556,7 @@ _ZERO_V734_ORIGINAL_SYNC_RUNNER_RESULT_AND_REQUEUE = Scheduler._sync_runner_resu
 
 
 def _zero_v734_safe_now() -> str:
-    try:
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return ""
+    return safe_repair_injection_now()
 
 
 def _zero_v734_extract_nested_dict(payload: Any, keys: List[str]) -> Dict[str, Any]:
@@ -7824,159 +7810,65 @@ def _zero_v734_write_runtime_state(task: Dict[str, Any], state: Dict[str, Any]) 
 
 
 def _zero_v734_land_repair_steps(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
-    task = self._hydrate_task_from_workspace(copy.deepcopy(task)) if isinstance(task, dict) else {}
-    if not isinstance(task, dict) or not task:
-        return {"ok": False, "action": "retrying_repair_bridge_invalid_task", "status": "failed", "error": "invalid task"}
+    replay_state = prepare_retrying_repair_replay_state(
+        self,
+        task,
+        read_runtime_state=_zero_v734_read_runtime_state,
+        allows_auto_repair=_zero_v734_task_allows_auto_repair,
+    )
+    if replay_state.get("return_result") is not None:
+        return replay_state["return_result"]
 
-    task_id = self._extract_task_id(task)
-    if not task_id:
-        return {"ok": False, "action": "retrying_repair_bridge_missing_task_id", "status": "failed", "error": "missing task id"}
-
-    runtime_state = _zero_v734_read_runtime_state(task)
-    if isinstance(runtime_state, dict) and runtime_state:
-        # Runtime state is fresher for current_step_index / last_step_result.
-        for key in (
-            "status",
-            "steps",
-            "current_step_index",
-            "steps_total",
-            "results",
-            "step_results",
-            "execution_log",
-            "execution_trace",
-            "last_step_result",
-            "last_error",
-            "repair_context",
-        ):
-            if key in runtime_state:
-                task[key] = copy.deepcopy(runtime_state.get(key))
-
-    status = str(task.get("status") or "").strip().lower()
-    if status not in {"retrying", "retry"}:
+    task = replay_state["task"]
+    task_id = replay_state["task_id"]
+    runtime_state = replay_state.get("runtime_state")
+    if replay_state.get("delegate_original"):
         return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
 
-    if not _zero_v734_task_allows_auto_repair(task):
-        return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+    repair_context = replay_state["repair_context"]
+    already_injected = replay_state["already_injected"]
+    if already_injected["already_injected"]:
+        continuation = build_already_injected_replay_continuation(
+            task=task,
+            task_id=task_id,
+            already_injected=already_injected,
+            persist_task_payload=self._persist_task_payload,
+        )
+        enqueue_decision = continuation["enqueue_decision"]
+        if enqueue_decision["enqueue_ready"]:
+            self._enqueue_repo_task_if_ready(
+                continuation["enqueue_task"],
+                overwrite=enqueue_decision["overwrite"],
+            )
+        return continuation["result"]
 
-    repair_context = task.get("repair_context") if isinstance(task.get("repair_context"), dict) else {}
-    if repair_context.get("repair_steps_injected") or task.get("repair_steps_injected"):
-        # Already landed.  Make sure it can be dispatched.
-        task["status"] = "queued"
-        task["next_action"] = "run_next_tick"
-        self._persist_task_payload(task_id=task_id, task=task)
-        self._enqueue_repo_task_if_ready(task, overwrite=True)
-        return {
-            "ok": True,
-            "action": "repair_steps_already_injected",
-            "status": "queued",
-            "task_id": task_id,
-            "task": copy.deepcopy(task),
-        }
+    steps = replay_state["steps"]
+    idx = replay_state["current_step_index"]
+    failed_step = replay_state["failed_step"]
 
-    steps = task.get("steps") if isinstance(task.get("steps"), list) else []
-    try:
-        idx = int(task.get("current_step_index", 0) or 0)
-    except Exception:
-        idx = 0
-    if idx < 0:
-        idx = 0
-    if idx >= len(steps):
-        idx = max(0, len(steps) - 1)
+    transaction = execute_repair_injection_transaction(
+        task=task,
+        task_id=task_id,
+        runtime_state=runtime_state,
+        repair_context=repair_context,
+        steps=steps,
+        step_index=idx,
+        failed_step=failed_step,
+        current_tick=current_tick,
+        build_retry_repair_steps=_zero_v734_build_retry_repair_steps,
+        write_runtime_state=_zero_v734_write_runtime_state,
+        persist_task_payload=self._persist_task_payload,
+        status_failed=STATUS_FAILED,
+        now_provider=_zero_v734_safe_now,
+    )
+    continuation = build_injected_replay_continuation(transaction)
+    enqueue_decision = continuation["enqueue_decision"]
+    if enqueue_decision["enqueue_ready"]:
+        enqueue_task = continuation["enqueue_task"]
+        if isinstance(enqueue_task, dict):
+            self._enqueue_repo_task_if_ready(enqueue_task, overwrite=enqueue_decision["overwrite"])
 
-    failed_step = steps[idx] if isinstance(steps, list) and 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
-    last_step = task.get("last_step_result")
-    if isinstance(last_step, dict) and isinstance(last_step.get("step"), dict):
-        failed_step = copy.deepcopy(last_step.get("step"))
-
-    ok, repair_steps, repair_meta = _zero_v734_build_retry_repair_steps(task, failed_step)
-    if not ok:
-        task["status"] = STATUS_FAILED
-        task["last_error"] = "retrying repair bridge failed: " + str(repair_meta.get("reason") or "unknown")
-        task["failure_message"] = task["last_error"]
-        self._persist_task_payload(task_id=task_id, task=task)
-        return {
-            "ok": False,
-            "action": "retrying_repair_bridge_failed",
-            "status": STATUS_FAILED,
-            "task_id": task_id,
-            "error": task["last_error"],
-            "repair_meta": repair_meta,
-            "task": copy.deepcopy(task),
-        }
-
-    # Replace the failed verify step with repair-write + repair-verify.
-    # Keep completed steps before idx.  Drop the original failed step to avoid
-    # repeating the same failing py_compile before the repair write lands.
-    new_steps = copy.deepcopy(steps[:idx]) + copy.deepcopy(repair_steps)
-    if idx + 1 < len(steps):
-        new_steps.extend(copy.deepcopy(steps[idx + 1:]))
-
-    now = _zero_v734_safe_now()
-    repair_context = copy.deepcopy(repair_context)
-    flow = repair_context.get("flow") if isinstance(repair_context.get("flow"), list) else []
-    flow.append({
-        "phase": "repair_steps_injected",
-        "ok": True,
-        "tick": current_tick,
-        "ts": now,
-        "strategy": "minimal_patch",
-        "step_index": idx,
-        "inserted_steps": [step.get("id") for step in repair_steps if isinstance(step, dict)],
-        "target_path": repair_meta.get("relative_path") or repair_meta.get("path") or "",
-    })
-    repair_context["flow"] = flow[-50:]
-    repair_context["repair_steps_injected"] = True
-    repair_context["last_phase"] = "repair_steps_injected"
-    repair_context["proposed_fix"] = {
-        "strategy": "minimal_patch",
-        "path": repair_meta.get("path", ""),
-        "relative_path": repair_meta.get("relative_path", ""),
-        "reason": repair_meta.get("reason", ""),
-    }
-
-    task["steps"] = new_steps
-    task["steps_total"] = len(new_steps)
-    task["current_step_index"] = idx
-    task["status"] = "queued"
-    task["next_action"] = "run_next_tick"
-    task["last_decision"] = "continue"
-    task["last_decision_reason"] = "repair_steps_injected"
-    task["repair_context"] = repair_context
-    task["repair_steps_injected"] = True
-    task["updated_at"] = now
-
-    if isinstance(runtime_state, dict):
-        runtime_state.update({
-            "steps": copy.deepcopy(new_steps),
-            "steps_total": len(new_steps),
-            "current_step_index": idx,
-            "status": "queued",
-            "next_action": "run_next_tick",
-            "last_decision": "continue",
-            "last_decision_reason": "repair_steps_injected",
-            "repair_context": copy.deepcopy(repair_context),
-            "updated_at": now,
-        })
-        _zero_v734_write_runtime_state(task, runtime_state)
-
-    self._persist_task_payload(task_id=task_id, task=task)
-    self._enqueue_repo_task_if_ready(task, overwrite=True)
-
-    return {
-        "ok": True,
-        "action": "repair_steps_injected",
-        "status": "queued",
-        "task_id": task_id,
-        "current_step_index": idx,
-        "steps_total": len(new_steps),
-        "inserted_steps": [step.get("id") for step in repair_steps if isinstance(step, dict)],
-        "repair_meta": {
-            "reason": repair_meta.get("reason", ""),
-            "relative_path": repair_meta.get("relative_path", ""),
-            "cwd": repair_meta.get("cwd", ""),
-        },
-        "task": copy.deepcopy(task),
-    }
+    return continuation["result"]
 
 
 def _zero_v734_run_one_step(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
