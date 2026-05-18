@@ -4,6 +4,8 @@ import ast
 import importlib
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ISSUER_PATH = REPO_ROOT / "core" / "runtime" / "runtime_grant_issuer.py"
@@ -65,6 +67,44 @@ def _call_names(path: Path) -> list[str]:
             calls.append(node.func.attr)
 
     return calls
+
+
+def _base_inputs():
+    policy_module = importlib.import_module("core.runtime.runtime_admission_policy")
+    trace_module = importlib.import_module("core.runtime.runtime_admission_trace")
+    lease_module = importlib.import_module("core.runtime.runtime_execution_lease")
+
+    policy_decision = policy_module.RuntimeAdmissionPolicyDecision(
+        allowed=False,
+        rule="default_deny",
+        reason="execution_not_granted",
+        status="accepted_not_connected",
+        risk_level="unknown",
+        authority_scope="none",
+        request_id="request-1",
+        metadata={},
+    )
+    admission_trace = trace_module.RuntimeAdmissionTrace(
+        trace_id="trace-1",
+        request_id="request-1",
+        stage="ownership_gate",
+        decision="denied",
+        status="accepted_not_connected",
+        reason="execution_not_granted",
+        policy_rule="default_deny",
+        risk_level="unknown",
+        authority_scope="none",
+        lease_id="lease-1",
+        grant_id=None,
+        metadata={},
+    )
+    lease = lease_module.RuntimeExecutionLease(
+        lease_id="lease-1",
+        request_id="request-1",
+        granted=False,
+        trace_id="trace-1",
+    )
+    return policy_decision, admission_trace, lease
 
 
 def test_runtime_grant_issuer_imports_cleanly():
@@ -141,59 +181,108 @@ def test_runtime_grant_issuer_v0_default_deny():
     }
 
 
-def test_runtime_grant_issuer_does_not_grant_when_eligible_true():
+@pytest.mark.parametrize("scope", ["dry_run", "read_only"])
+def test_runtime_grant_issuer_grants_low_risk_non_executing_scopes(scope: str):
     issuer_module = importlib.import_module("core.runtime.runtime_grant_issuer")
-    policy_module = importlib.import_module("core.runtime.runtime_admission_policy")
-    trace_module = importlib.import_module("core.runtime.runtime_admission_trace")
-    lease_module = importlib.import_module("core.runtime.runtime_execution_lease")
     issuer = issuer_module.RuntimeGrantIssuer()
-
-    policy_decision = policy_module.RuntimeAdmissionPolicyDecision(
-        allowed=False,
-        rule="default_deny",
-        reason="execution_not_granted",
-        status="accepted_not_connected",
-        risk_level="unknown",
-        authority_scope="none",
-        request_id="request-1",
-        metadata={},
-    )
-    admission_trace = trace_module.RuntimeAdmissionTrace(
-        trace_id="trace-1",
-        request_id="request-1",
-        stage="ownership_gate",
-        decision="denied",
-        status="accepted_not_connected",
-        reason="execution_not_granted",
-        policy_rule="default_deny",
-        risk_level="unknown",
-        authority_scope="none",
-        lease_id="lease-1",
-        grant_id=None,
-        metadata={},
-    )
-    lease = lease_module.RuntimeExecutionLease(
-        lease_id="lease-1",
-        request_id="request-1",
-        granted=False,
-        trace_id="trace-1",
-    )
+    policy_decision, admission_trace, lease = _base_inputs()
 
     grant = issuer.issue_grant(
         policy_decision,
         admission_trace,
         lease,
-        metadata={"authority_scope": "dry_run"},
+        metadata={"authority_scope": scope},
+    )
+
+    assert grant.granted is True
+    assert grant.status == "grant_issued"
+    assert grant.reason == "eligible_for_non_executing_scope"
+    assert grant.authority_scope == scope
+    assert grant.risk_level == "low"
+    assert grant.granted_by == "runtime_grant_issuer_v0"
+    assert grant.metadata["eligibility"] == {
+        "eligible": True,
+        "rule": "scoped_low_risk",
+        "authority_scope": scope,
+        "risk_level": "low",
+    }
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "write",
+        "mutation",
+        "recovery",
+        "replay",
+        "scheduler_enqueue",
+        "none",
+        "unknown",
+    ],
+)
+def test_runtime_grant_issuer_rejects_forbidden_scopes(scope: str):
+    issuer_module = importlib.import_module("core.runtime.runtime_grant_issuer")
+    issuer = issuer_module.RuntimeGrantIssuer()
+    policy_decision, admission_trace, lease = _base_inputs()
+
+    grant = issuer.issue_grant(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={"authority_scope": scope},
     )
 
     assert grant.granted is False
     assert grant.status == "grant_not_issued"
     assert grant.reason == "execution_not_granted"
+    assert grant.authority_scope == "none"
+    assert grant.risk_level == "unknown"
     assert grant.granted_by == "runtime_grant_issuer_v0"
     assert grant.metadata["eligibility"] == {
+        "eligible": False,
+        "rule": "default_deny",
+        "authority_scope": "none",
+        "risk_level": "unknown",
+    }
+
+
+def test_runtime_grant_issuer_rejects_eligible_true_for_non_grantable_scope():
+    issuer_module = importlib.import_module("core.runtime.runtime_grant_issuer")
+    eligibility_module = importlib.import_module("core.runtime.runtime_grant_eligibility")
+
+    class WriteEligibleEvaluator:
+        def evaluate(self, policy_decision, admission_trace, lease, metadata=None):
+            return eligibility_module.RuntimeGrantEligibility(
+                eligible=True,
+                rule="test_write_allowed",
+                reason="test_only",
+                authority_scope="write",
+                risk_level="low",
+                request_id=lease.request_id,
+                metadata={},
+            )
+
+    issuer = issuer_module.RuntimeGrantIssuer(
+        eligibility_evaluator=WriteEligibleEvaluator()
+    )
+    policy_decision, admission_trace, lease = _base_inputs()
+
+    grant = issuer.issue_grant(
+        policy_decision,
+        admission_trace,
+        lease,
+        metadata={"authority_scope": "write"},
+    )
+
+    assert grant.granted is False
+    assert grant.status == "grant_not_issued"
+    assert grant.reason == "execution_not_granted"
+    assert grant.authority_scope == "none"
+    assert grant.risk_level == "unknown"
+    assert grant.metadata["eligibility"] == {
         "eligible": True,
-        "rule": "scoped_low_risk",
-        "authority_scope": "dry_run",
+        "rule": "test_write_allowed",
+        "authority_scope": "write",
         "risk_level": "low",
     }
 

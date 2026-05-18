@@ -79,6 +79,40 @@ def test_runtime_execution_grant_default_deny_shape():
     assert grant.metadata == {"source": "test"}
 
 
+def test_runtime_execution_grant_issued_shape_is_authority_only():
+    module = importlib.import_module("core.runtime.runtime_execution_grant")
+
+    grant = module.RuntimeExecutionGrant(
+        grant_id="grant-1",
+        request_id="request-1",
+        trace_id="trace-1",
+        lease_id="lease-1",
+        granted=True,
+        status="grant_issued",
+        reason="eligible_for_non_executing_scope",
+        authority_scope="dry_run",
+        risk_level="low",
+        granted_by="runtime_grant_issuer_v0",
+        expires_at=None,
+        metadata={
+            "eligibility": {
+                "eligible": True,
+                "rule": "scoped_low_risk",
+                "authority_scope": "dry_run",
+                "risk_level": "low",
+            },
+        },
+    )
+
+    assert grant.granted is True
+    assert grant.status == "grant_issued"
+    assert grant.reason == "eligible_for_non_executing_scope"
+    assert grant.authority_scope == "dry_run"
+    assert grant.risk_level == "low"
+    assert grant.granted_by == "runtime_grant_issuer_v0"
+    assert grant.metadata["eligibility"]["eligible"] is True
+
+
 def test_runtime_execution_grant_lineage_connects_request_trace_and_lease():
     module = importlib.import_module("core.runtime.runtime_ownership_gate")
     gate = module.RuntimeOwnershipGate()

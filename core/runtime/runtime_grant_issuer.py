@@ -19,6 +19,9 @@ from core.runtime.runtime_grant_eligibility import RuntimeGrantEligibilityEvalua
 __all__ = ["RuntimeGrantIssuer"]
 
 
+GRANTABLE_SCOPES = frozenset({"dry_run", "read_only"})
+
+
 class RuntimeGrantIssuer:
     """Issue default-deny execution grants for governed runtime admission."""
 
@@ -54,6 +57,11 @@ class RuntimeGrantIssuer:
             "risk_level": eligibility.risk_level,
         }
 
+        can_grant = (
+            eligibility.eligible
+            and eligibility.authority_scope in GRANTABLE_SCOPES
+        )
+
         return RuntimeExecutionGrant(
             grant_id=(
                 f"execution_grant:{lease.request_id}"
@@ -63,11 +71,15 @@ class RuntimeGrantIssuer:
             request_id=lease.request_id,
             trace_id=admission_trace.trace_id,
             lease_id=lease.lease_id,
-            granted=False,
-            status="grant_not_issued",
-            reason="execution_not_granted",
-            authority_scope="none",
-            risk_level="unknown",
+            granted=can_grant,
+            status="grant_issued" if can_grant else "grant_not_issued",
+            reason=(
+                "eligible_for_non_executing_scope"
+                if can_grant
+                else "execution_not_granted"
+            ),
+            authority_scope=eligibility.authority_scope if can_grant else "none",
+            risk_level=eligibility.risk_level if can_grant else "unknown",
             granted_by=self.issuer_id,
             expires_at=None,
             metadata=grant_metadata,
