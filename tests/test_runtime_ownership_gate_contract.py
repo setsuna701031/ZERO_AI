@@ -151,7 +151,7 @@ def test_runtime_ownership_gate_default_decision_does_not_grant_execution():
     assert decision.execution_grant.reason == "execution_not_granted"
     assert decision.execution_grant.authority_scope == "none"
     assert decision.execution_grant.risk_level == "unknown"
-    assert decision.execution_grant.granted_by is None
+    assert decision.execution_grant.granted_by == "runtime_grant_issuer_v0"
     assert decision.execution_grant.expires_at is None
     assert decision.execution_grant.request_id == "request-1"
     assert decision.execution_grant.trace_id == decision.admission_trace.trace_id
@@ -167,6 +167,60 @@ def test_runtime_ownership_gate_default_decision_does_not_grant_execution():
     assert decision.admission_trace.trace_id == "admission_trace:request-1"
     assert decision.policy_decision.rule == "default_deny"
     assert decision.metadata == {}
+
+
+def test_runtime_ownership_gate_uses_grant_issuer():
+    module = importlib.import_module("core.runtime.runtime_ownership_gate")
+    grant_module = importlib.import_module("core.runtime.runtime_execution_grant")
+    calls = []
+
+    class RecordingIssuer:
+        def issue_grant(self, policy_decision, admission_trace, lease, metadata=None):
+            calls.append(
+                {
+                    "policy_decision": policy_decision,
+                    "admission_trace": admission_trace,
+                    "lease": lease,
+                    "metadata": metadata,
+                }
+            )
+            return grant_module.RuntimeExecutionGrant(
+                grant_id="recorded-grant",
+                request_id=lease.request_id,
+                trace_id=admission_trace.trace_id,
+                lease_id=lease.lease_id,
+                granted=False,
+                status="grant_not_issued",
+                reason="execution_not_granted",
+                authority_scope="none",
+                risk_level="unknown",
+                granted_by="recording_issuer",
+                expires_at=None,
+                metadata={},
+            )
+
+    gate = module.RuntimeOwnershipGate(grant_issuer=RecordingIssuer())
+    decision = gate.evaluate_request(
+        {
+            "surface": "runtime_public_surface",
+            "operation": "submit_runtime_task",
+            "request": {
+                "task": {"title": "demo"},
+                "metadata": {"request_id": "request-1", "source": "test"},
+            },
+        }
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["policy_decision"] == decision.policy_decision
+    assert calls[0]["lease"] == decision.lease
+    assert calls[0]["admission_trace"].trace_id == decision.admission_trace.trace_id
+    assert calls[0]["admission_trace"].grant_id is None
+    assert calls[0]["metadata"] == {}
+    assert decision.execution_grant.grant_id == "recorded-grant"
+    assert decision.execution_grant.granted is False
+    assert decision.execution_grant.granted_by == "recording_issuer"
+    assert decision.admission_trace.grant_id == decision.execution_grant.grant_id
 
 
 def test_runtime_ownership_gate_calls_admission_policy_first():

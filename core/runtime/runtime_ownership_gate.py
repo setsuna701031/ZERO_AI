@@ -6,7 +6,7 @@ scheduler, enqueue work, execute steps, mutate state, recover, or replay.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Mapping
 
 from core.runtime.runtime_admission_policy import (
@@ -16,6 +16,7 @@ from core.runtime.runtime_admission_policy import (
 from core.runtime.runtime_admission_trace import RuntimeAdmissionTrace
 from core.runtime.runtime_execution_grant import RuntimeExecutionGrant
 from core.runtime.runtime_execution_lease import RuntimeExecutionLease
+from core.runtime.runtime_grant_issuer import RuntimeGrantIssuer
 
 
 __all__ = ["RuntimeOwnershipDecision", "RuntimeOwnershipGate"]
@@ -37,8 +38,13 @@ class RuntimeOwnershipDecision:
 class RuntimeOwnershipGate:
     """Contract-only admission gate for future runtime ownership checks."""
 
-    def __init__(self, admission_policy: RuntimeAdmissionPolicy | None = None) -> None:
+    def __init__(
+        self,
+        admission_policy: RuntimeAdmissionPolicy | None = None,
+        grant_issuer: RuntimeGrantIssuer | None = None,
+    ) -> None:
         self.admission_policy = admission_policy or RuntimeAdmissionPolicy()
+        self.grant_issuer = grant_issuer or RuntimeGrantIssuer()
 
     def evaluate_request(self, request_envelope: Mapping[str, Any]) -> RuntimeOwnershipDecision:
         """Return a stable not-connected admission decision."""
@@ -46,7 +52,6 @@ class RuntimeOwnershipGate:
         request_id = policy_decision.request_id
         trace_id = f"admission_trace:{request_id}" if request_id else "admission_trace:"
         lease_id = f"execution_lease:{request_id}" if request_id else "execution_lease:"
-        grant_id = f"execution_grant:{request_id}" if request_id else "execution_grant:"
 
         admission_trace = RuntimeAdmissionTrace(
             trace_id=trace_id,
@@ -59,7 +64,7 @@ class RuntimeOwnershipGate:
             risk_level=policy_decision.risk_level,
             authority_scope=policy_decision.authority_scope,
             lease_id=lease_id,
-            grant_id=grant_id,
+            grant_id=None,
             metadata={},
         )
         lease = RuntimeExecutionLease(
@@ -72,19 +77,15 @@ class RuntimeOwnershipGate:
             owner=None,
             metadata={},
         )
-        execution_grant = RuntimeExecutionGrant(
-            grant_id=grant_id,
-            request_id=request_id,
-            trace_id=admission_trace.trace_id,
-            lease_id=lease.lease_id,
-            granted=False,
-            status="grant_not_issued",
-            reason=policy_decision.reason,
-            authority_scope=policy_decision.authority_scope,
-            risk_level=policy_decision.risk_level,
-            granted_by=None,
-            expires_at=None,
+        execution_grant = self.grant_issuer.issue_grant(
+            policy_decision,
+            admission_trace,
+            lease,
             metadata={},
+        )
+        admission_trace = replace(
+            admission_trace,
+            grant_id=execution_grant.grant_id,
         )
 
         return RuntimeOwnershipDecision(
