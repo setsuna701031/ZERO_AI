@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 class GitHubCommitTool:
@@ -155,15 +157,19 @@ class GitHubCommitTool:
         result = self._git(repo_path, ["rev-parse", "--is-inside-work-tree"])
         return result.returncode == 0 and str(result.stdout or "").strip().lower() == "true"
 
-    def _git(self, repo_path: Path, args: List[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+    def _git(self, repo_path: Path, args: List[str]) -> SimpleNamespace:
+        result = safe_subprocess_run(
             ["git", "-c", f"safe.directory={repo_path}", *args],
             cwd=str(repo_path),
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
-            shell=False,
+        )
+        return SimpleNamespace(
+            returncode=result.get("returncode"),
+            stdout=result.get("stdout") or "",
+            stderr=result.get("stderr") or "",
         )
 
 

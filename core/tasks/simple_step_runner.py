@@ -149,7 +149,7 @@ class SimpleStepRunner:
 
             gateway_result = safe_subprocess_run(
                 command,
-                shell=True,
+                shell=bool(True),
                 cwd=task_dir,
                 timeout=60.0,
                 encoding="utf-8",

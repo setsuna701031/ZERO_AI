@@ -11,6 +11,7 @@ from core.runtime.failure_policy import FailurePolicy
 from core.runtime.audit_log import AuditLogger
 from core.runtime.runtime_state_guard import RuntimeStateGuard, validate_runtime_state
 from core.runtime.runtime_transition_policy import RuntimeTransitionPolicy, RuntimeTransitionPolicyError
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
 TERMINAL_STATUSES = {
@@ -73,6 +74,10 @@ class TaskRuntime:
         self.audit = AuditLogger(workspace_root=self.workspace_root)
         self.state_guard = RuntimeStateGuard()
         self.transition_policy = RuntimeTransitionPolicy()
+        self.persistence = RuntimePersistenceService(
+            workspace_root=self.workspace_root,
+            source="task_runtime",
+        )
 
     # ============================================================
     # runtime state
@@ -3253,16 +3258,29 @@ class TaskRuntime:
                     if item_backup:
                         if not os.path.exists(item_backup):
                             raise FileNotFoundError(f"backup_path not found: {item_backup}")
-                        with open(item_backup, "r", encoding="utf-8") as fh:
-                            restore_text = fh.read()
+                        restore_text = self.persistence.read_text(item_backup, default="")
                     elif isinstance(item.get("old_text"), str):
                         restore_text = item["old_text"]
                     else:
                         raise ValueError("rollback old_text unavailable")
                     if not item_full_target:
                         raise ValueError("rollback target_path unavailable")
-                    with open(item_full_target, "w", encoding="utf-8") as fh:
-                        fh.write(restore_text)
+                    self.persistence.write_text(
+                        item_full_target,
+                        restore_text,
+                        reason="task_runtime_multi_file_rollback_restore",
+                        lineage={
+                            "source": "task_runtime",
+                            "operation": "rollback_restore",
+                            "target_path": str(item_full_target),
+                        },
+                        provenance={
+                            "source": "task_runtime",
+                            "operation": "rollback_restore",
+                            "target_path": str(item_full_target),
+                        },
+                        metadata={"rollback": True, "multi_file": True},
+                    )
                     restored_files.append(item_target)
                 except Exception as exc:
                     failed_files.append({"target_path": item_target, "error": str(exc)})
@@ -3317,8 +3335,7 @@ class TaskRuntime:
             if backup_path:
                 if not os.path.exists(backup_path):
                     raise FileNotFoundError(f"backup_path not found: {backup_path}")
-                with open(backup_path, "r", encoding="utf-8") as fh:
-                    restore_text = fh.read()
+                restore_text = self.persistence.read_text(backup_path, default="")
                 restore_source = "backup_path"
             elif isinstance(old_text, str):
                 restore_text = old_text
@@ -3328,8 +3345,22 @@ class TaskRuntime:
 
             if not target_path:
                 raise ValueError("rollback target_path unavailable")
-            with open(target_path, "w", encoding="utf-8") as fh:
-                fh.write(restore_text)
+            self.persistence.write_text(
+                target_path,
+                restore_text,
+                reason="task_runtime_rollback_restore",
+                lineage={
+                    "source": "task_runtime",
+                    "operation": "rollback_restore",
+                    "target_path": str(target_path),
+                },
+                provenance={
+                    "source": "task_runtime",
+                    "operation": "rollback_restore",
+                    "target_path": str(target_path),
+                },
+                metadata={"rollback": True},
+            )
 
             rollback_result = {
                 "ok": True,
@@ -3583,21 +3614,31 @@ class TaskRuntime:
             return int(default)
 
     def _ensure_parent_dir(self, file_path: str) -> None:
-        parent = os.path.dirname(file_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
+        self.persistence.ensure_parent_dir(file_path)
 
     def _read_json(self, file_path: str, default: Any) -> Any:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return copy.deepcopy(default)
+        return self.persistence.read_json(file_path, default)
 
     def _write_json(self, file_path: str, data: Any) -> None:
-        self._ensure_parent_dir(file_path)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        self.persistence.write_json(
+            file_path,
+            data,
+            reason="task_runtime_write_json",
+            lineage={
+                "source": "task_runtime",
+                "operation": "write_json",
+                "target_path": str(file_path),
+            },
+            provenance={
+                "source": "task_runtime",
+                "operation": "write_json",
+                "target_path": str(file_path),
+            },
+            metadata={
+                "task_runtime": True,
+                "runtime_state_persistence": True,
+            },
+        )
 
     def _now(self) -> str:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -3617,7 +3658,7 @@ class TaskRuntime:
             if not base_dir:
                 return
 
-            os.makedirs(base_dir, exist_ok=True)
+            self.persistence.ensure_parent_dir(os.path.join(base_dir, self.trace_log_filename))
             trace_path = os.path.join(base_dir, self.trace_log_filename)
 
             record = {
@@ -3626,8 +3667,22 @@ class TaskRuntime:
                 "payload": payload,
             }
 
-            with open(trace_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self.persistence.append_text(
+                trace_path,
+                json.dumps(record, ensure_ascii=False) + "\n",
+                reason="task_runtime_trace_append",
+                lineage={
+                    "source": "task_runtime",
+                    "operation": "trace_append",
+                    "label": str(label or ""),
+                },
+                provenance={
+                    "source": "task_runtime",
+                    "operation": "trace_append",
+                    "label": str(label or ""),
+                },
+                metadata={"trace_log": True},
+            )
         except Exception:
             pass
 

@@ -3,8 +3,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 import json
+import subprocess
 import time
 
+from core.runtime.runtime_execution_request import RuntimeExecutionRequest
+from core.runtime.runtime_execution_policy import RuntimeExecutionPolicy
+from core.runtime.runtime_execution_result import RuntimeExecutionResult
+from core.runtime.runtime_side_effect_registry import RuntimeSideEffectRegistry
 from core.runtime.trace_logger import ensure_trace_logger
 from core.runtime.verifier import Verifier
 
@@ -31,6 +36,8 @@ class Executor:
         retry_delay_seconds: float = 0.0,
         max_replan_rounds: int = 1,
         enable_forced_repair: bool = True,
+        side_effect_registry: Optional[RuntimeSideEffectRegistry] = None,
+        execution_policy: Optional[RuntimeExecutionPolicy] = None,
     ) -> None:
         self.workspace_root = Path(workspace_root).resolve()
         self.workspace_root.mkdir(parents=True, exist_ok=True)
@@ -43,6 +50,8 @@ class Executor:
         self.retry_delay_seconds = max(0.0, float(retry_delay_seconds))
         self.max_replan_rounds = max(0, int(max_replan_rounds))
         self.enable_forced_repair = bool(enable_forced_repair)
+        self.side_effect_registry = side_effect_registry or RuntimeSideEffectRegistry()
+        self.execution_policy = execution_policy or RuntimeExecutionPolicy()
 
     # =========================================================
     # Public
@@ -53,7 +62,10 @@ class Executor:
         task_name: str,
         plan: Dict[str, Any],
         iteration: int,
-    ) -> Dict[str, Any]:
+    ) -> RuntimeExecutionResult:
+        started_at = self._utc_timestamp()
+        execution_id = f"runtime_execution:{task_name}:{iteration}"
+        execution_start_id = f"execution_start:{task_name}:{iteration}"
         self.trace_logger.set_task(task_name)
         self.trace_logger.mark_start(
             title="execute agent loop start",
@@ -176,7 +188,314 @@ class Executor:
         )
 
         self.trace_logger.flush()
-        return final_result
+        finished_at = self._utc_timestamp()
+        side_effects = self.side_effect_registry.register_plan_result(
+            source_execution_id=execution_id,
+            plan_result=final_result,
+        )
+        artifacts = tuple(
+            record.artifact_path
+            for record in side_effects
+            if record.artifact_path
+        )
+        return RuntimeExecutionResult.from_legacy_plan_result(
+            execution_id=execution_id,
+            execution_start_id=execution_start_id,
+            execution_type="plan",
+            started_at=started_at,
+            finished_at=finished_at,
+            legacy_result=final_result,
+            side_effects=side_effects,
+            artifacts=artifacts,
+            lineage={
+                "task_name": task_name,
+                "iteration": iteration,
+                "execution_id": execution_id,
+                "execution_start_id": execution_start_id,
+            },
+            replay_id=f"replay:{execution_id}",
+            repair_session_id=None,
+            risk_level=self._highest_side_effect_risk(side_effects),
+            risk_metadata={
+                "policy_evaluated": True,
+                "policy_state": "allowed",
+                "policy_source": "core.runtime.executor.execute_plan",
+                "audit_tags": ["plan", "side_effect_registry"],
+            },
+            metadata={
+                "canonical_owner": "core.runtime.executor",
+                "legacy_result_compatibility": True,
+                "side_effect_registry_updated": True,
+            },
+        )
+
+    def execute_request(
+        self,
+        request: RuntimeExecutionRequest,
+    ) -> RuntimeExecutionResult:
+        started_at = self._utc_timestamp()
+        execution_id = self._execution_id_for_request(request, started_at)
+        execution_start_id = str(
+            request.lineage.get("execution_start_id")
+            or request.metadata.get("execution_start_id")
+            or f"execution_start:{execution_id}"
+        )
+        policy_result = self.execution_policy.evaluate(request)
+        policy_metadata = policy_result.to_metadata()
+
+        if not policy_result.allowed or policy_result.state == "requires_confirmation":
+            finished_at = self._utc_timestamp()
+            effect = self.side_effect_registry.register(
+                effect_type="blocked_execution",
+                source_execution_id=execution_id,
+                verified=True,
+                rollbackable=False,
+                artifact_path=None,
+                risk_level=policy_result.risk_level,
+                rollback_metadata={"rollback_required": False},
+                metadata={
+                    "policy": policy_metadata,
+                    "command": request.command,
+                    "execution_type": request.execution_type,
+                },
+            )
+            return RuntimeExecutionResult(
+                execution_id=execution_id,
+                execution_start_id=execution_start_id,
+                execution_type=request.execution_type,
+                status="blocked",
+                started_at=started_at,
+                finished_at=finished_at,
+                stdout="",
+                stderr=policy_result.decision.reason,
+                return_code=1,
+                side_effects=(effect,),
+                artifacts=(),
+                verified=False,
+                blocked=True,
+                rollback_required=False,
+                lineage=dict(request.lineage),
+                replay_id=request.replay_id or f"replay:{execution_id}",
+                repair_session_id=request.repair_session_id,
+                risk_level=policy_result.risk_level,
+                risk_metadata=policy_metadata,
+                metadata={
+                    **dict(request.metadata),
+                    **policy_metadata,
+                    "canonical_owner": "core.runtime.executor",
+                    "side_effect_registry_updated": True,
+                    "replay_tagged": True,
+                    "lineage_tagged": bool(request.lineage),
+                },
+            )
+
+        if request.dry_run or policy_result.state == "dry_run_only":
+            finished_at = self._utc_timestamp()
+            effect = self.side_effect_registry.register(
+                effect_type="dry_run_execution",
+                source_execution_id=execution_id,
+                verified=True,
+                rollbackable=False,
+                artifact_path=None,
+                risk_level=policy_result.risk_level,
+                rollback_metadata={"rollback_required": False},
+                metadata={
+                    "policy": policy_metadata,
+                    "command": request.command,
+                    "execution_type": request.execution_type,
+                },
+            )
+            return RuntimeExecutionResult(
+                execution_id=execution_id,
+                execution_start_id=execution_start_id,
+                execution_type=request.execution_type,
+                status="dry_run",
+                started_at=started_at,
+                finished_at=finished_at,
+                stdout="",
+                stderr="",
+                return_code=0,
+                side_effects=(effect,),
+                artifacts=(),
+                verified=True,
+                blocked=False,
+                rollback_required=False,
+                lineage=dict(request.lineage),
+                replay_id=request.replay_id or f"replay:{execution_id}",
+                repair_session_id=request.repair_session_id,
+                risk_level=policy_result.risk_level,
+                risk_metadata=policy_metadata,
+                metadata={
+                    **dict(request.metadata),
+                    **policy_metadata,
+                    "canonical_owner": "core.runtime.executor",
+                    "dry_run": True,
+                    "side_effect_registry_updated": True,
+                    "replay_tagged": True,
+                    "lineage_tagged": bool(request.lineage),
+                },
+            )
+
+        if request.execution_type not in {"command", "subprocess"}:
+            finished_at = self._utc_timestamp()
+            return RuntimeExecutionResult(
+                execution_id=execution_id,
+                execution_start_id=execution_start_id,
+                execution_type=request.execution_type,
+                status="blocked",
+                started_at=started_at,
+                finished_at=finished_at,
+                stdout="",
+                stderr=f"unsupported execution_type: {request.execution_type}",
+                return_code=1,
+                side_effects=(),
+                artifacts=(),
+                verified=False,
+                blocked=True,
+                rollback_required=False,
+                lineage=dict(request.lineage),
+                replay_id=request.replay_id or f"replay:{execution_id}",
+                repair_session_id=request.repair_session_id,
+                risk_level=policy_result.risk_level,
+                risk_metadata=policy_metadata,
+                metadata={
+                    **dict(request.metadata),
+                    **policy_metadata,
+                    "canonical_owner": "core.runtime.executor",
+                    "side_effect_registry_updated": False,
+                },
+            )
+
+        shell = bool(request.metadata.get("shell", False))
+        command: Any
+        if isinstance(request.command, tuple):
+            command = list(request.command)
+        else:
+            command = request.command
+
+        try:
+            completed = subprocess.run(
+                command,
+                shell=shell,
+                cwd=request.working_directory,
+                timeout=request.timeout,
+                env=request.environment,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                check=False,
+            )
+            stdout = completed.stdout or ""
+            stderr = completed.stderr or ""
+            return_code = int(completed.returncode)
+            blocked = False
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+            stderr = (
+                exc.stderr
+                if isinstance(exc.stderr, str) and exc.stderr
+                else f"timeout after {request.timeout} seconds"
+            )
+            return_code = 124
+            blocked = False
+        except Exception as exc:
+            stdout = ""
+            stderr = f"{type(exc).__name__}: {exc}"
+            return_code = 1
+            blocked = False
+
+        finished_at = self._utc_timestamp()
+        status = "succeeded" if return_code == 0 else "failed"
+        effect = self.side_effect_registry.register(
+            effect_type=(
+                "command_execution"
+                if request.execution_type == "command"
+                else "subprocess"
+            ),
+            source_execution_id=execution_id,
+            verified=return_code == 0,
+            rollbackable=False,
+            artifact_path=None,
+            risk_level=policy_result.risk_level,
+            rollback_metadata={
+                "rollback_required": policy_result.state == "rollback_required",
+                "rollbackable": False,
+            },
+            metadata={
+                "command": request.command,
+                "working_directory": request.working_directory,
+                "timeout": request.timeout,
+                "shell": shell,
+                "return_code": return_code,
+                "policy": policy_metadata,
+            },
+        )
+
+        rollback_required = policy_result.state == "rollback_required"
+        return RuntimeExecutionResult(
+            execution_id=execution_id,
+            execution_start_id=execution_start_id,
+            execution_type=request.execution_type,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            stdout=stdout,
+            stderr=stderr,
+            return_code=return_code,
+            side_effects=(effect,),
+            artifacts=(),
+            verified=return_code == 0,
+            blocked=blocked,
+            rollback_required=rollback_required,
+            lineage=dict(request.lineage),
+            replay_id=request.replay_id or f"replay:{execution_id}",
+            repair_session_id=request.repair_session_id,
+            risk_level=policy_result.risk_level,
+            risk_metadata=policy_metadata,
+            metadata={
+                **dict(request.metadata),
+                **policy_metadata,
+                "canonical_owner": "core.runtime.executor",
+                "side_effect_registry_updated": True,
+                "replay_tagged": True,
+                "lineage_tagged": bool(request.lineage),
+                "rollback_metadata": dict(effect.rollback_metadata),
+            },
+        )
+
+    def _utc_timestamp(self) -> str:
+        from datetime import UTC, datetime
+
+        return datetime.now(UTC).isoformat()
+
+    def _execution_id_for_request(
+        self,
+        request: RuntimeExecutionRequest,
+        started_at: str,
+    ) -> str:
+        explicit = request.lineage.get("execution_id") or request.metadata.get("execution_id")
+        if explicit:
+            return str(explicit)
+        seed = str(request.command).replace(" ", "_").replace("\\", "_").replace("/", "_")
+        seed = "".join(ch for ch in seed if ch.isalnum() or ch in {"_", "-", ":"})[:80]
+        return f"runtime_execution:{request.execution_type}:{seed or 'request'}:{started_at}"
+
+    def _highest_side_effect_risk(self, side_effects: tuple[Any, ...]) -> str:
+        order = {
+            "LOW": 0,
+            "MODERATE": 1,
+            "HIGH": 2,
+            "IRREVERSIBLE": 3,
+            "EXTERNAL": 4,
+        }
+        highest = "LOW"
+        for effect in side_effects:
+            risk_level = str(getattr(effect, "risk_level", "LOW") or "LOW")
+            if order.get(risk_level, 0) > order.get(highest, 0):
+                highest = risk_level
+        return highest
+
 
     # =========================================================
     # Single round

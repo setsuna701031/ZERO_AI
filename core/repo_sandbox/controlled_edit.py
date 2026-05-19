@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-import subprocess
 from typing import Callable
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 from .policy import RepoSandboxPolicy, PolicyViolation
 from .sandbox import RepoSandbox, SandboxFile
@@ -87,26 +88,25 @@ class ControlledEditSession:
         if not decision.allowed:
             return False, f"BLOCKED: {decision.reason}\n", decision.reason
 
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=self.sandbox.worktree_root,
-                shell=isinstance(command, str),
-                text=True,
-                capture_output=True,
-                timeout=timeout_seconds,
-            )
-        except subprocess.TimeoutExpired:
+        completed = safe_subprocess_run(
+            command,
+            cwd=str(self.sandbox.worktree_root),
+            shell=isinstance(command, str),
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+        )
+        if completed.get("returncode") is None and completed.get("error"):
             return True, f"TIMEOUT after {timeout_seconds}s: {display_command}\n", None
 
         output = []
-        output.append(f"returncode: {completed.returncode}")
-        if completed.stdout:
+        output.append(f"returncode: {completed.get('returncode')}")
+        if completed.get("stdout"):
             output.append("stdout:")
-            output.append(completed.stdout.rstrip())
-        if completed.stderr:
+            output.append(str(completed.get("stdout") or "").rstrip())
+        if completed.get("stderr"):
             output.append("stderr:")
-            output.append(completed.stderr.rstrip())
+            output.append(str(completed.get("stderr") or "").rstrip())
         return True, "\n".join(output) + "\n", None
 
     def result(self, *, test_command: str | list[str] | None = None) -> ControlledEditResult:

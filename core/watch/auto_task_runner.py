@@ -22,12 +22,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional
 
 from core.control.control_api import Zero
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 DEFAULT_POLL_SECONDS = 2.0
@@ -146,20 +146,20 @@ class AutoTaskRunner:
             str(self.max_cycles),
         ]
 
-        result = subprocess.run(
+        result = safe_subprocess_run(
             command,
             capture_output=True,
             text=True,
         )
 
         return {
-            "ok": result.returncode == 0,
+            "ok": result.get("returncode") == 0,
             "action": "task_loop",
             "task_id": task_id,
             "command": command,
-            "returncode": result.returncode,
-            "stdout": _truncate_tail(result.stdout),
-            "stderr": _truncate_tail(result.stderr),
+            "returncode": result.get("returncode"),
+            "stdout": _truncate_tail(str(result.get("stdout") or "")),
+            "stderr": _truncate_tail(str(result.get("stderr") or "")),
         }
 
     def run_once(self) -> Dict[str, Any]:

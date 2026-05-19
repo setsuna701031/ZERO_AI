@@ -5,7 +5,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 import traceback
 from datetime import datetime
@@ -13,9 +12,11 @@ from typing import Any, Dict, List, Optional
 
 from core.agent.capability_invoker import execute_resolved_capability
 from core.memory.step_reflection_engine import StepReflectionEngine
+from core.runtime.execution_gateway import safe_subprocess_run
 from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runtime import TaskRuntime
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.audit_log import AuditLogger
 from core.runtime.repair_planner import RepairPlanner
 from core.runtime.repair_step_injector import RepairStepInjector
@@ -58,6 +59,10 @@ class TaskRunner:
         reflection_engine: Optional[StepReflectionEngine] = None,
     ) -> None:
         self.runtime = task_runtime if task_runtime else TaskRuntime(debug=debug)
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=getattr(self.runtime, "workspace_root", "workspace"),
+            source="task_runner",
+        )
         self.step_executor = step_executor if step_executor else StepExecutor()
         self.replanner = replanner
         self.verifier = verifier
@@ -2983,8 +2988,7 @@ class TaskRunner:
         for candidate in candidates:
             if os.path.exists(candidate) and os.path.isfile(candidate):
                 try:
-                    with open(candidate, "r", encoding="utf-8") as f:
-                        return f.read()
+                    return self.persistence_service.read_text(candidate, default="")
                 except Exception:
                     continue
         return ""
@@ -3143,8 +3147,7 @@ class TaskRunner:
     def _syntax_strategy_compat_marker_present(self) -> bool:
         marker_path = os.path.join(os.getcwd(), "workspace", "shared", "strategy_math.py")
         try:
-            with open(marker_path, "r", encoding="utf-8") as handle:
-                marker_text = handle.read()
+            marker_text = self.persistence_service.read_text(marker_path, default="")
         except Exception:
             return False
         return "def add(a,b)" in marker_text and "return a+b" in marker_text
@@ -3179,7 +3182,7 @@ class TaskRunner:
                 blocked_commands.append(item)
                 failed_commands.append(item)
                 continue
-            completed = subprocess.run(
+            completed = safe_subprocess_run(
                 guard["argv"],
                 cwd=self._resolve_target_repo_root(task=task, state=state) or os.getcwd(),
                 text=True,
@@ -3188,13 +3191,13 @@ class TaskRunner:
             )
             item = {
                 "command": command,
-                "returncode": completed.returncode,
-                "stdout": completed.stdout[-4000:],
-                "stderr": completed.stderr[-4000:],
-                "ok": completed.returncode == 0,
+                "returncode": completed.get("returncode"),
+                "stdout": str(completed.get("stdout") or "")[-4000:],
+                "stderr": str(completed.get("stderr") or "")[-4000:],
+                "ok": completed.get("returncode") == 0,
             }
             results.append(item)
-            if completed.returncode != 0:
+            if completed.get("returncode") != 0:
                 failed_commands.append(item)
 
         passed = not failed_commands and not blocked_commands
@@ -3601,16 +3604,21 @@ class TaskRunner:
             trace_payload["trace_version"] = int(trace_payload.get("trace_version") or 1)
             trace_payload["event_count"] = len(events)
 
-            with open(trace_path, "w", encoding="utf-8") as f:
-                json.dump(trace_payload, f, ensure_ascii=False, indent=2)
+            self.persistence_service.write_json(
+                trace_path,
+                trace_payload,
+                reason="task_runner_event_trace_write",
+                lineage={"source": "task_runner", "trace_type": "event_trace"},
+                provenance={"source": "task_runner", "trace_path": trace_path},
+                metadata={"operation": "write_trace_json"},
+            )
         except Exception:
             pass
 
     def _read_trace_json(self, trace_path: str) -> Dict[str, Any]:
         try:
             if os.path.exists(trace_path):
-                with open(trace_path, "r", encoding="utf-8") as f:
-                    payload = json.load(f)
+                payload = self.persistence_service.read_json(trace_path, {})
                 if isinstance(payload, dict):
                     if not isinstance(payload.get("events"), list):
                         payload["events"] = []
@@ -3677,8 +3685,14 @@ class TaskRunner:
                 "payload": payload,
             }
 
-            with open(trace_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            self.persistence_service.append_text(
+                trace_path,
+                json.dumps(record, ensure_ascii=False) + "\n",
+                reason="task_runner_trace_append",
+                lineage={"source": "task_runner", "trace_type": "task_runner_trace"},
+                provenance={"source": "task_runner", "trace_path": trace_path},
+                metadata={"operation": "append_task_runner_trace"},
+            )
         except Exception:
             pass
 

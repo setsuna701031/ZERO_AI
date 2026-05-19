@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +11,7 @@ from core.agent.agent_loop import AgentLoop
 from core.persona.display_state_contract import ensure_display_state_contract
 from core.persona.policy_layer import evaluate_persona_runtime_policy, policy_decision_trace
 from core.persona.runtime_state import PersonaRuntimeState, create_persona_runtime_state
+from core.runtime.execution_gateway import safe_subprocess_run
 from core.tools.tool_audit import build_l5_audit_records
 from core.tools.tool_call import ToolCallExecutor, tool_call_trace_event
 from core.tools.tool_registry import ToolRegistry
@@ -480,14 +480,13 @@ class PersonaRuntimeBridge:
         repo = self.workspace_dir / "workspace" / "persona_runtime_demo_repo"
         repo.mkdir(parents=True, exist_ok=True)
         if not (repo / ".git").exists():
-            subprocess.run(
+            safe_subprocess_run(
                 ["git", "init"],
                 cwd=str(repo),
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
-                shell=False,
             )
         return repo
 
@@ -495,14 +494,13 @@ class PersonaRuntimeBridge:
         repo = self.workspace_dir / "workspace" / "hybrid_demo_repo"
         repo.mkdir(parents=True, exist_ok=True)
         if not (repo / ".git").exists():
-            subprocess.run(
+            safe_subprocess_run(
                 ["git", "init"],
                 cwd=str(repo),
                 text=True,
                 encoding="utf-8",
                 errors="replace",
                 capture_output=True,
-                shell=False,
             )
         return repo
 

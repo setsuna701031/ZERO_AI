@@ -6,7 +6,6 @@ import json
 import os
 import re
 from pathlib import Path
-import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Mapping, Optional, Tuple

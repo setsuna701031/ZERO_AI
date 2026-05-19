@@ -5,8 +5,9 @@ import time
 import signal
 import socket
 import py_compile
-import subprocess
 from pathlib import Path
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -88,14 +89,14 @@ def _is_pid_running(pid: int) -> bool:
 
     try:
         if os.name == "nt":
-            result = subprocess.run(
+            result = safe_subprocess_run(
                 ["tasklist", "/FI", f"PID eq {pid}"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="ignore",
             )
-            return str(pid) in result.stdout
+            return str(pid) in str(result.get("stdout") or "")
         else:
             os.kill(pid, 0)
             return True
@@ -107,7 +108,7 @@ def _get_listening_pids_on_port(port: int) -> list[int]:
     pids: set[int] = set()
 
     if os.name == "nt":
-        result = subprocess.run(
+        result = safe_subprocess_run(
             ["netstat", "-ano"],
             capture_output=True,
             text=True,
@@ -115,7 +116,7 @@ def _get_listening_pids_on_port(port: int) -> list[int]:
             errors="ignore",
         )
 
-        for line in result.stdout.splitlines():
+        for line in str(result.get("stdout") or "").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -136,14 +137,14 @@ def _get_listening_pids_on_port(port: int) -> list[int]:
                 except ValueError:
                     pass
     else:
-        result = subprocess.run(
+        result = safe_subprocess_run(
             ["lsof", "-i", f":{port}", "-t"],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="ignore",
         )
-        for line in result.stdout.splitlines():
+        for line in str(result.get("stdout") or "").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -171,7 +172,7 @@ def _is_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
 def _kill_pid(pid: int) -> bool:
     try:
         if os.name == "nt":
-            subprocess.run(
+            safe_subprocess_run(
                 ["taskkill", "/PID", str(pid), "/F"],
                 capture_output=True,
                 text=True,
@@ -241,27 +242,14 @@ def start_flask_internal() -> dict:
 
     try:
         if os.name == "nt":
-            creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-            process = subprocess.Popen(
-                [_python_executable(), str(APP_FILE)],
-                cwd=str(BASE_DIR),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                creationflags=creationflags,
-            )
-        else:
-            process = subprocess.Popen(
-                [_python_executable(), str(APP_FILE)],
-                cwd=str(BASE_DIR),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-
-        pid = process.pid
-        _write_pid(pid)
+            return {
+                "success": False,
+                "message": "Archived Flask manager cannot start detached processes outside canonical executor.",
+            }
+        return {
+            "success": False,
+            "message": "Archived Flask manager cannot start detached processes outside canonical executor.",
+        }
 
         port_open_ok = _wait_for_port_state(HOST, PORT, should_be_open=True, timeout=5.0)
         if not port_open_ok:

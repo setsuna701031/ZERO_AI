@@ -1,4 +1,419 @@
 ---
+## 2026-05-19 - Runtime Kernel Freeze Candidate / Transaction Lifecycle Native Baseline
+
+This checkpoint records the Runtime Kernel Freeze Candidate pass after the governed execution, mutation, authority, state, transaction, lifecycle, and behavior-extraction layers were landed together.
+
+The goal was not to add a new product feature, UI, persona layer, or tool pack. The goal was to make ZERO's runtime kernel more coherent by moving execution, mutation, state persistence, transaction binding, and lifecycle transitions into governed runtime surfaces instead of leaving them as scattered side effects.
+
+### What was completed
+
+Added and stabilized the governed runtime kernel constitution stack:
+
+* `core/runtime/runtime_execution_request.py`
+* `core/runtime/runtime_execution_result.py`
+* `core/runtime/runtime_side_effect_registry.py`
+* `core/runtime/runtime_execution_policy.py`
+* `core/runtime/runtime_mutation_policy.py`
+* `core/runtime/runtime_mutation_transaction.py`
+* `core/runtime/runtime_state_snapshot.py`
+* `core/runtime/runtime_mutation_gateway.py`
+* `core/runtime/runtime_authority.py`
+* `core/runtime/runtime_capability_scope.py`
+* `core/runtime/runtime_kernel_protection.py`
+* `core/runtime/runtime_state_record.py`
+* `core/runtime/runtime_state_graph.py`
+* `core/runtime/runtime_memory_constitution.py`
+* `core/runtime/runtime_session_governance.py`
+* `core/runtime/runtime_state_gateway.py`
+* `core/runtime/runtime_file_service.py`
+* `core/runtime/runtime_persistence_service.py`
+* `core/runtime/runtime_transaction_coordinator.py`
+* `core/runtime/runtime_transaction_context.py`
+* `core/runtime/runtime_lifecycle_coordinator.py`
+* `core/runtime/runtime_lifecycle_context.py`
+* `core/runtime/runtime_execution_lifecycle.py`
+
+Updated runtime behavior extraction paths:
+
+* `core/runtime/step_executor.py`
+  * filesystem mutation responsibility moved behind `RuntimeFileService`
+  * direct write / backup / rollback-style file writes are routed through governed file helpers
+
+* `core/runtime/task_runtime.py`
+  * runtime state persistence moved behind `RuntimePersistenceService`
+  * `_read_json`, `_write_json`, trace append, and rollback restore writes now route through governed persistence helpers
+
+* `core/runtime/task_runner.py`
+  * direct local file persistence / trace writes moved behind `RuntimePersistenceService`
+
+Added enforcement and regression coverage:
+
+* `tests/test_runtime_execution_result_contract.py`
+* `tests/test_runtime_side_effect_registry_contract.py`
+* `tests/test_runtime_execution_ownership_migration_contract.py`
+* `tests/test_runtime_execution_governance_enforcement.py`
+* `tests/test_runtime_mutation_governance_contract.py`
+* `tests/test_runtime_mutation_bypass_enforcement.py`
+* `tests/test_runtime_authority_governance_contract.py`
+* `tests/test_runtime_kernel_protection_enforcement.py`
+* `tests/test_runtime_state_memory_constitution.py`
+* `tests/test_runtime_state_bypass_enforcement.py`
+* `tests/test_runtime_transaction_coordinator_contract.py`
+* `tests/test_runtime_transaction_context_contract.py`
+* `tests/test_runtime_transaction_propagation_contract.py`
+* `tests/test_runtime_transaction_binding_integration.py`
+* `tests/test_runtime_lifecycle_coordinator_contract.py`
+* `tests/test_runtime_lifecycle_binding_integration.py`
+* `tests/test_runtime_execution_lifecycle_integration.py`
+
+### Runtime chain established
+
+The current governed runtime chain is now:
+
+```text
+RuntimeIdentity / AuthorityScope / CapabilityScope
+-> KernelProtection
+-> RuntimeExecutionRequest
+-> RuntimeExecutionPolicy
+-> Executor
+-> RuntimeExecutionResult
+-> RuntimeSideEffectRegistry
+
+RuntimeMutationRequest
+-> RuntimeMutationGateway
+-> MutationPolicy
+-> Authority / Capability / Protection checks
+-> Snapshot
+-> MutationTransaction
+-> SideEffectRegistry
+
+RuntimeStateGateway
+-> RuntimeStateRecord
+-> RuntimeStateGraph
+-> RuntimeMemoryConstitution
+
+RuntimeTransactionContext
+-> RuntimeTransactionCoordinator
+-> artifact binding
+
+RuntimeLifecycleContext
+-> RuntimeLifecycleCoordinator
+-> execution / mutation / state / snapshot / side-effect lifecycle transitions
+```
+
+### Major layers completed
+
+#### Execution governance
+
+Execution now has a canonical request / result path:
+
+```text
+RuntimeExecutionRequest
+-> policy evaluation
+-> canonical Executor
+-> RuntimeExecutionResult
+-> RuntimeSideEffectRegistry
+```
+
+The execution governance enforcement scan blocks future drift such as:
+
+```text
+subprocess.run outside the canonical executor
+subprocess.Popen outside the canonical executor
+os.system
+literal shell=True outside approved execution layers
+```
+
+This preserves the rule:
+
+```text
+execution request != execution authority
+```
+
+#### Mutation governance
+
+Mutation is now represented as a governed transaction:
+
+```text
+RuntimeMutationRequest
+-> policy / authority / scope / protection evaluation
+-> snapshot
+-> operation
+-> transaction result
+-> side-effect record
+```
+
+The mutation bypass scan now verifies that runtime mutation paths do not reintroduce direct write/delete bypasses outside approved gateway/service layers.
+
+#### Authority and kernel protection
+
+Runtime actions now carry identity, authority, capability scope, and protected-zone checks.
+
+Protected zones include kernel-governance areas such as:
+
+```text
+core/runtime/
+core/tasks/
+core/audit/
+```
+
+Key rule preserved:
+
+```text
+SELF_EDIT cannot mutate kernel governance by default.
+```
+
+#### State and memory constitution
+
+Runtime state is now represented through typed records, owner-bound access, memory classes, and graph edges.
+
+State/memory rules include:
+
+```text
+KERNEL memory is protected.
+AUDIT memory is append-only.
+REPLAY memory is immutable after seal.
+SESSION memory is owner-bound.
+CAPABILITY memory obeys capability scope.
+```
+
+#### Behavior extraction
+
+`step_executor.py`, `task_runtime.py`, and `task_runner.py` began losing direct filesystem / persistence authority.
+
+The new responsibility split is:
+
+```text
+StepExecutor = step orchestration
+TaskRuntime = runtime transition orchestration
+TaskRunner = task lifecycle orchestration
+RuntimeFileService = governed file behavior
+RuntimePersistenceService = governed runtime persistence
+RuntimeMutationGateway / RuntimeStateGateway = governed reality/state entrances
+```
+
+#### Transaction coordination and propagation
+
+Added a process-local transaction context and coordinator:
+
+```text
+RuntimeTransactionContext
+-> RuntimeTransactionCoordinator
+```
+
+Runtime artifacts can now bind into a transaction scope:
+
+```text
+execution_ids
+mutation_transaction_ids
+state_ids
+snapshot_ids
+replay_ids
+side_effect_ids
+```
+
+This moves transaction from simple metadata decoration toward a runtime artifact-binding universe.
+
+#### Lifecycle coordination and binding
+
+Added a shared lifecycle coordinator and context:
+
+```text
+created
+active
+verifying
+verified
+rollback_required
+rolling_back
+rolled_back
+committed
+sealed
+failed
+```
+
+Mutation, state, snapshot, side effect, and execution lifecycle helpers now begin sharing one lifecycle vocabulary.
+
+### Validation confirmed
+
+Confirmed kernel validation pack:
+
+```text
+python -m unittest tests.test_runtime_execution_lifecycle_integration
+-> Ran 4 tests ... OK
+
+python -m unittest tests.test_runtime_lifecycle_binding_integration
+-> Ran 8 tests ... OK
+
+python -m unittest tests.test_runtime_lifecycle_coordinator_contract
+-> Ran 10 tests ... OK
+
+python -m unittest tests.test_runtime_transaction_binding_integration
+-> Ran 8 tests ... OK
+
+python -m unittest tests.test_runtime_transaction_propagation_contract
+-> Ran 3 tests ... OK
+
+python -m unittest tests.test_runtime_transaction_context_contract
+-> Ran 12 tests ... OK
+
+python -m unittest tests.test_runtime_transaction_coordinator_contract
+-> Ran 12 tests ... OK
+
+python -m unittest tests.test_runtime_mutation_bypass_enforcement
+-> Ran 3 tests ... OK
+
+python -m unittest tests.test_runtime_state_bypass_enforcement
+-> Ran 5 tests ... OK
+
+python -m unittest tests.test_runtime_mutation_governance_contract
+-> Ran 9 tests ... OK
+
+python -m unittest tests.test_runtime_state_memory_constitution
+-> Ran 10 tests ... OK
+
+python -m compileall core\runtime tests
+-> completed successfully
+```
+
+### Boundaries preserved
+
+This checkpoint intentionally does not add:
+
+```text
+NO public execution opening
+NO accepted_connected_guarded default switch
+NO new UI
+NO persona expansion
+NO tool-pack expansion
+NO cloud/API fallback
+NO planner intelligence expansion
+NO scheduler rewrite
+NO agent_loop rewrite
+NO hidden external side effects
+```
+
+The current public execution surface remains controlled and should not be opened until a separate end-to-end execution admission pass verifies the full path.
+
+### Current freeze-candidate status
+
+This is a Runtime Kernel Freeze Candidate, not a final product release.
+
+Current status:
+
+```text
+execution governance: landed
+mutation governance: landed
+authority governance: landed
+kernel protection: landed
+state/memory constitution: landed
+runtime behavior extraction: started and passing
+transaction coordinator/context: landed
+transaction propagation/binding: landed
+lifecycle coordinator/context: landed
+execution lifecycle integration: landed
+bypass enforcement: passing
+compileall: passing
+```
+
+### Regression risks
+
+Known risk areas after this pass:
+
+* Many files changed in one kernel landing package.
+* Legacy runtime files were partially behavior-extracted but not fully slimmed.
+* `task_runtime.py`, `task_runner.py`, and `step_executor.py` remain large responsibility hotspots.
+* The transaction/lifecycle fabric exists and is binding artifacts, but not every legacy runtime flow is fully transaction-native yet.
+* Public execution should remain closed until a dedicated admission-to-execution validation pass is completed.
+
+### Why this matters
+
+This checkpoint moves ZERO from a runtime that has many governed components into a runtime whose execution, mutation, state, transaction, lifecycle, and side-effect records begin to share one coherent governance fabric.
+
+The important result is not that ZERO gained another feature. The important result is that runtime reality transitions now have a stronger constitution:
+
+```text
+who requested it
+what authority they had
+what scope was allowed
+what protected zone was affected
+what transaction it belonged to
+what lifecycle state it reached
+what side effects were recorded
+what rollback / replay metadata exists
+```
+
+This is closer to a governed autonomous engineering runtime kernel than a normal AI-agent workflow.
+
+### Stable checkpoint after this pass
+
+* transaction coordinator: working
+* transaction context: working
+* transaction propagation: working
+* transaction binding: working
+* lifecycle coordinator: working
+* lifecycle context: working
+* lifecycle binding: working
+* execution lifecycle: working
+* mutation bypass enforcement: working
+* state bypass enforcement: working
+* mutation governance contract: working
+* state/memory constitution: working
+* compileall: working
+* public execution still not opened
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `tests.test_runtime_execution_lifecycle_integration` -> `Ran 4 tests ... OK`
+* `tests.test_runtime_lifecycle_binding_integration` -> `Ran 8 tests ... OK`
+* `tests.test_runtime_lifecycle_coordinator_contract` -> `Ran 10 tests ... OK`
+* `tests.test_runtime_transaction_binding_integration` -> `Ran 8 tests ... OK`
+* `tests.test_runtime_transaction_propagation_contract` -> `Ran 3 tests ... OK`
+* `tests.test_runtime_transaction_context_contract` -> `Ran 12 tests ... OK`
+* `tests.test_runtime_transaction_coordinator_contract` -> `Ran 12 tests ... OK`
+* `tests.test_runtime_mutation_bypass_enforcement` -> `Ran 3 tests ... OK`
+* `tests.test_runtime_state_bypass_enforcement` -> `Ran 5 tests ... OK`
+* `tests.test_runtime_mutation_governance_contract` -> `Ran 9 tests ... OK`
+* `tests.test_runtime_state_memory_constitution` -> `Ran 10 tests ... OK`
+* `python -m compileall core\runtime tests` completed successfully
+
+### Next step
+
+Recommended next checkpoint:
+
+```text
+Runtime Freeze Audit / Commit
+```
+
+Expected boundary:
+
+```text
+git diff --stat
+-> verify no stray *_tx.py / *_binding.py / *_lifecycle.py download artifacts
+-> ensure all downloaded files were used as overwrite targets only
+-> update docs/devlog.md
+-> commit kernel freeze candidate
+```
+
+Recommended commit title:
+
+```text
+runtime: seal governed kernel transaction lifecycle
+```
+
+Still avoid:
+
+```text
+NO public execution switch
+NO accepted_connected_guarded default
+NO new capability
+NO UI/product change
+NO scheduler slimming in the same commit
+NO agent_loop rewrite in the same commit
+```
+
+
 ## 2026-05-18 - Runtime Admission Governance v0 frozen baseline
 
 This checkpoint records `Runtime Admission Governance v0` as a frozen baseline.
@@ -8207,6 +8622,33 @@ python tests/run_regression_contracts.py
 - In this v0 contract, `executed=True` means only "execution lifecycle started"; it does not call executor, run tasks, mutate state, recover, replay, import scheduler/executor, or call `scheduler.enqueue`.
 - Extended execution handoff lineage with `execution_start_id`, `execution_started`, `executed`, and `revoked` fields.
 - Public runtime surface remains request-only and returns `accepted_not_connected`.
+
+## Runtime Lifecycle v0 Freeze Review
+
+- Runtime Lifecycle v0 review started for the public surface through execution handoff record chain.
+- `executed=True` remains a lifecycle marker only.
+- No real execution behavior is connected through this lifecycle baseline.
+- No scheduler/executor coupling is introduced.
+
+## Runtime Execution Landing Package v1
+
+- Started execution ownership landing work from the frozen lifecycle baseline.
+- Canonical execution owner remains `core.runtime.executor.Executor`.
+- Added immutable `RuntimeExecutionResult` as canonical execution currency.
+- Added centralized `RuntimeSideEffectRegistry` and immutable side effect records.
+- Migrated `Executor.execute_plan()` to return `RuntimeExecutionResult` while preserving mapping compatibility for legacy callers.
+- Documented execution ownership audit, illegal execution surfaces, migration plan, and single authority map in `docs/runtime_execution_landing_audit_v1.md`.
+- Public surface remains request-only until guarded connected topology validation can prove no scheduler/recovery/replay bypass.
+
+## Illegal Execution Surface Migration v1
+
+- Added immutable `RuntimeExecutionRequest`.
+- Added canonical `Executor.execute_request()` for command/subprocess execution.
+- Converted `runtime.execution_gateway.safe_subprocess_run()` into a compatibility wrapper that forwards to the canonical executor.
+- Migrated `step_handlers`, `step_executor` verify command, `scheduler_core.command_step_helpers`, `simple_step_runner`, and `command_tool` away from direct subprocess calls.
+- Added ownership migration contract coverage for migrated surfaces, canonical command result emission, side-effect registration, and command tool routing.
+- Migrated remaining non-canonical direct subprocess surfaces in capabilities, persona helpers, repo sandbox controlled edit, runtime task runner regression verification, readonly/github tools, watch auto runner, and archived helpers.
+- Repository-wide direct execution contract now allows direct subprocess only in `core.runtime.executor.Executor`.
 
 Observed result:
 

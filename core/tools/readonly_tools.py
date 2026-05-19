@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
+from core.runtime.execution_gateway import safe_subprocess_run
 from core.tools.tool_policy import build_tool_trace_event, evaluate_tool_policy
 
 
@@ -161,20 +161,18 @@ def _run_git_readonly(
         workspace_root=root,
     )
 
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=str(root),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_seconds,
-            shell=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+    completed = safe_subprocess_run(
+        command,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout_seconds,
+    )
+    if completed.get("returncode") is None and completed.get("error"):
+        stdout = str(completed.get("stdout") or "")
+        stderr = str(completed.get("stderr") or "")
         result = _readonly_result(
             ok=False,
             tool_name=tool_name,
@@ -197,22 +195,11 @@ def _run_git_readonly(
             }
         )
         return result
-    except Exception as exc:
-        return _readonly_result(
-            ok=False,
-            tool_name=tool_name,
-            input_summary=input_summary,
-            output_summary="",
-            policy_decision=policy_decision,
-            task_id=task_id,
-            trace_id=trace_id,
-            error=str(exc),
-        )
 
-    stdout = completed.stdout or ""
-    stderr = completed.stderr or ""
+    stdout = str(completed.get("stdout") or "")
+    stderr = str(completed.get("stderr") or "")
     stdout, truncated, original_line_count = _truncate_lines(stdout, max_lines=max_lines)
-    ok = completed.returncode == 0
+    ok = completed.get("returncode") == 0
     result = _readonly_result(
         ok=ok,
         tool_name=tool_name,
@@ -221,13 +208,13 @@ def _run_git_readonly(
         policy_decision=policy_decision,
         task_id=task_id,
         trace_id=trace_id,
-        error="" if ok else stderr.strip() or f"git exited {completed.returncode}",
+        error="" if ok else stderr.strip() or f"git exited {completed.get('returncode')}",
     )
     result.update(
         {
             "command": command,
             "cwd": str(root),
-            "returncode": completed.returncode,
+            "returncode": completed.get("returncode"),
             "stdout": stdout,
             "stderr": stderr,
             "timed_out": False,

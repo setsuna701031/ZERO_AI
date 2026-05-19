@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import locale
 import re
-import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -44,20 +46,25 @@ def _decode_bytes(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
-def run_process(args: list[str], capture: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(
+def run_process(args: list[str], capture: bool = False) -> SimpleNamespace:
+    result = safe_subprocess_run(
         args,
         cwd=str(REPO_ROOT),
         capture_output=capture,
         text=False,
     )
+    return SimpleNamespace(
+        returncode=result.get("returncode"),
+        stdout=str(result.get("stdout") or "").encode("utf-8", errors="replace"),
+        stderr=str(result.get("stderr") or "").encode("utf-8", errors="replace"),
+    )
 
 
-def stdout_text(result: subprocess.CompletedProcess) -> str:
+def stdout_text(result: SimpleNamespace) -> str:
     return _decode_bytes(result.stdout or b"")
 
 
-def stderr_text(result: subprocess.CompletedProcess) -> str:
+def stderr_text(result: SimpleNamespace) -> str:
     return _decode_bytes(result.stderr or b"")
 
 
@@ -136,11 +143,11 @@ def parse_task_id(text: str) -> str:
     return ""
 
 
-def run_app_command(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
+def run_app_command(*args: str, capture: bool = False) -> SimpleNamespace:
     return run_process([sys.executable, str(APP_PATH), *args], capture=capture)
 
 
-def require_success(result: subprocess.CompletedProcess, label: str) -> None:
+def require_success(result: SimpleNamespace, label: str) -> None:
     if result.returncode != 0:
         raise RuntimeError(
             f"{label} failed with return code {result.returncode}\n"

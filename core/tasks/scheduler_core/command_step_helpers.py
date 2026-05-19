@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from typing import Any, Dict, Optional
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 MAX_COMMAND_OUTPUT_CHARS = 12000
 
@@ -27,9 +28,9 @@ def execute_command_like_step(
         if not command:
             raise ValueError("command step missing command")
 
-        completed = subprocess.run(
+        completed = safe_subprocess_run(
             command,
-            shell=True,
+            shell=bool(True),
             cwd=task_dir,
             capture_output=True,
             text=True,
@@ -40,17 +41,18 @@ def execute_command_like_step(
         result = {
             "type": "command",
             "command": command,
-            "returncode": int(completed.returncode),
-            "stdout": _truncate_output(completed.stdout),
-            "stderr": _truncate_output(completed.stderr),
-            "stdout_truncated": len(completed.stdout or "") > MAX_COMMAND_OUTPUT_CHARS,
-            "stderr_truncated": len(completed.stderr or "") > MAX_COMMAND_OUTPUT_CHARS,
+            "returncode": completed.get("returncode"),
+            "stdout": _truncate_output(str(completed.get("stdout") or "")),
+            "stderr": _truncate_output(str(completed.get("stderr") or "")),
+            "stdout_truncated": len(str(completed.get("stdout") or "")) > MAX_COMMAND_OUTPUT_CHARS,
+            "stderr_truncated": len(str(completed.get("stderr") or "")) > MAX_COMMAND_OUTPUT_CHARS,
             "cwd": task_dir,
+            "canonical_executor": True,
         }
 
-        if completed.returncode != 0:
+        if completed.get("returncode") != 0:
             raise RuntimeError(
-                f"command failed: {command} | returncode={completed.returncode} | stderr={_truncate_output(completed.stderr.strip(), 2000)}"
+                f"command failed: {command} | returncode={completed.get('returncode')} | stderr={_truncate_output(str(completed.get('stderr') or '').strip(), 2000)}"
             )
 
         return result
@@ -77,7 +79,7 @@ def execute_command_like_step(
         if not os.path.exists(full_path):
             raise FileNotFoundError(f"python file not found: {full_path}")
 
-        completed = subprocess.run(
+        completed = safe_subprocess_run(
             [sys.executable, full_path],
             cwd=task_dir,
             capture_output=True,
@@ -92,17 +94,18 @@ def execute_command_like_step(
             "full_path": full_path,
             "scope": step_scope,
             "python_executable": sys.executable,
-            "returncode": int(completed.returncode),
-            "stdout": _truncate_output(completed.stdout),
-            "stderr": _truncate_output(completed.stderr),
-            "stdout_truncated": len(completed.stdout or "") > MAX_COMMAND_OUTPUT_CHARS,
-            "stderr_truncated": len(completed.stderr or "") > MAX_COMMAND_OUTPUT_CHARS,
+            "returncode": completed.get("returncode"),
+            "stdout": _truncate_output(str(completed.get("stdout") or "")),
+            "stderr": _truncate_output(str(completed.get("stderr") or "")),
+            "stdout_truncated": len(str(completed.get("stdout") or "")) > MAX_COMMAND_OUTPUT_CHARS,
+            "stderr_truncated": len(str(completed.get("stderr") or "")) > MAX_COMMAND_OUTPUT_CHARS,
             "cwd": task_dir,
+            "canonical_executor": True,
         }
 
-        if completed.returncode != 0:
+        if completed.get("returncode") != 0:
             raise RuntimeError(
-                f"python run failed: {raw_path} | returncode={completed.returncode} | stderr={_truncate_output(completed.stderr.strip(), 2000)}"
+                f"python run failed: {raw_path} | returncode={completed.get('returncode')} | stderr={_truncate_output(str(completed.get('stderr') or '').strip(), 2000)}"
             )
 
         return result

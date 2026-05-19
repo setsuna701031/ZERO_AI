@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import locale
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -205,7 +206,7 @@ def parse_task_id(text: str) -> str:
 
 def run_app_command(label: str, *args: str) -> CommandResult:
     command = [sys.executable, str(APP_PATH), *args]
-    result = subprocess.run(
+    result = safe_subprocess_run(
         command,
         cwd=str(REPO_ROOT),
         capture_output=True,
@@ -215,9 +216,9 @@ def run_app_command(label: str, *args: str) -> CommandResult:
     return CommandResult(
         label=label,
         args=command,
-        returncode=result.returncode,
-        stdout=_decode_bytes(result.stdout or b""),
-        stderr=_decode_bytes(result.stderr or b""),
+        returncode=result.get("returncode"),
+        stdout=str(result.get("stdout") or ""),
+        stderr=str(result.get("stderr") or ""),
     )
 
 

@@ -6,11 +6,11 @@ import os
 import re
 import shutil
 import shlex
-import subprocess
 import sys
 from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Optional
 
+from core.runtime.execution_gateway import safe_subprocess_run
 from core.tools.tool_router import ToolRouter
 from core.runtime.governed_repair_api import execute_governed_repair_mutation
 from core.runtime.mutation_boundary import MutationBoundary
@@ -679,35 +679,22 @@ class CommandStepHandler(BaseStepHandler):
         cwd = self.executor._resolve_cwd(step=step, task=task, context=context)
         command = self._auto_python(command, cwd)
 
-        try:
-            completed = subprocess.run(
-                command,
-                shell=True,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="command_execute_exception",
-                message=str(e),
-                step=step,
-                result={
-                    "command": command,
-                    "cwd": cwd,
-                    "stdout": "",
-                    "stderr": str(e),
-                    "returncode": None,
-                },
-            )
+        completed = safe_subprocess_run(
+            command,
+            shell=bool(True),
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+        )
 
-        ok = completed.returncode == 0
+        ok = completed.get("returncode") == 0
         result = {
             "command": command,
             "cwd": cwd,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-            "returncode": completed.returncode,
+            "stdout": completed.get("stdout") or "",
+            "stderr": completed.get("stderr") or "",
+            "returncode": completed.get("returncode"),
+            "canonical_executor": True,
         }
 
         if ok:
@@ -715,7 +702,7 @@ class CommandStepHandler(BaseStepHandler):
 
         return self._error(
             error_type="command_failed",
-            message=f"command failed (code {completed.returncode})",
+            message=f"command failed (code {completed.get('returncode')})",
             step=step,
             result=result,
         )
@@ -830,30 +817,14 @@ class RunPythonStepHandler(BaseStepHandler):
         if isinstance(extra_args, list):
             command.extend(str(x) for x in extra_args if x is not None)
 
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=os.path.dirname(script_path) or cwd,
-                capture_output=True,
-                text=True,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="run_python_exception",
-                message=f"run python failed: {e}",
-                step=step,
-                result={
-                    "path": path,
-                    "resolved_path": script_path,
-                    "cwd": cwd,
-                    "argv": command,
-                    "stdout": "",
-                    "stderr": str(e),
-                    "returncode": None,
-                },
-            )
+        completed = safe_subprocess_run(
+            command,
+            cwd=os.path.dirname(script_path) or cwd,
+            capture_output=True,
+            text=True,
+        )
 
-        ok = completed.returncode == 0
+        ok = completed.get("returncode") == 0
         result = {
             "type": "run_python",
             "mode": "path",
@@ -861,9 +832,10 @@ class RunPythonStepHandler(BaseStepHandler):
             "resolved_path": script_path,
             "cwd": cwd,
             "argv": command,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-            "returncode": completed.returncode,
+            "stdout": completed.get("stdout") or "",
+            "stderr": completed.get("stderr") or "",
+            "returncode": completed.get("returncode"),
+            "canonical_executor": True,
         }
 
         if ok:
@@ -871,21 +843,21 @@ class RunPythonStepHandler(BaseStepHandler):
                 result=result,
                 step=step,
                 extra={
-                    "stdout": completed.stdout,
-                    "stderr": completed.stderr,
-                    "message": completed.stdout or "python completed",
-                    "final_answer": completed.stdout or "python completed",
+                    "stdout": completed.get("stdout") or "",
+                    "stderr": completed.get("stderr") or "",
+                    "message": completed.get("stdout") or "python completed",
+                    "final_answer": completed.get("stdout") or "python completed",
                 },
             )
 
         return self._error(
             error_type="python_failed",
-            message=f"python failed (code {completed.returncode})",
+            message=f"python failed (code {completed.get('returncode')})",
             step=step,
             result=result,
             extra={
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
+                "stdout": completed.get("stdout") or "",
+                "stderr": completed.get("stderr") or "",
             },
         )
 
@@ -959,38 +931,24 @@ class RunPythonStepHandler(BaseStepHandler):
                 },
             )
 
-        try:
-            completed = subprocess.run(
-                argv,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-            )
-        except Exception as e:
-            return self._error(
-                error_type="run_python_exception",
-                message=f"run python command failed: {e}",
-                step=step,
-                result={
-                    "command": command_text,
-                    "argv": argv,
-                    "cwd": cwd,
-                    "stdout": "",
-                    "stderr": str(e),
-                    "returncode": None,
-                },
-            )
+        completed = safe_subprocess_run(
+            argv,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+        )
 
-        ok = completed.returncode == 0
+        ok = completed.get("returncode") == 0
         result = {
             "type": "run_python",
             "mode": "command",
             "command": command_text,
             "argv": argv,
             "cwd": cwd,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-            "returncode": completed.returncode,
+            "stdout": completed.get("stdout") or "",
+            "stderr": completed.get("stderr") or "",
+            "returncode": completed.get("returncode"),
+            "canonical_executor": True,
         }
 
         if ok:
@@ -998,49 +956,27 @@ class RunPythonStepHandler(BaseStepHandler):
                 result=result,
                 step=step,
                 extra={
-                    "stdout": completed.stdout,
-                    "stderr": completed.stderr,
-                    "message": completed.stdout or "python command completed",
-                    "final_answer": completed.stdout or "python command completed",
+                    "stdout": completed.get("stdout") or "",
+                    "stderr": completed.get("stderr") or "",
+                    "message": completed.get("stdout") or "python command completed",
+                    "final_answer": completed.get("stdout") or "python command completed",
                 },
             )
 
         return self._error(
             error_type="python_failed",
-            message=f"python failed (code {completed.returncode})",
+            message=f"python failed (code {completed.get('returncode')})",
             step=step,
             result=result,
             extra={
-                "stdout": completed.stdout,
-                "stderr": completed.stderr,
+                "stdout": completed.get("stdout") or "",
+                "stderr": completed.get("stderr") or "",
             },
         )
 
     def _resolve_python_executable(self) -> list[str]:
-        candidates = []
-
         if isinstance(sys.executable, str) and sys.executable.strip():
-            candidates.append([sys.executable.strip()])
-
-        candidates.extend([
-            ["py", "-3"],
-            ["python"],
-            ["python3"],
-        ])
-
-        for candidate in candidates:
-            try:
-                completed = subprocess.run(
-                    candidate + ["--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-            except Exception:
-                continue
-
-            if completed.returncode == 0:
-                return candidate
+            return [sys.executable.strip()]
 
         return []
 

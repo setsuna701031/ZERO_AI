@@ -7,11 +7,12 @@ import os
 import py_compile
 import re
 import shutil
-import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 from core.runtime.event_stream import attach_runtime_event_stream
+from core.runtime.execution_gateway import safe_subprocess_run
+from core.runtime.runtime_file_service import RuntimeFileService
 
 from core.tasks.task_paths import TaskPathManager
 from core.runtime.step_handlers import (
@@ -83,6 +84,7 @@ class StepExecutor:
 
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
+        self.file_service = RuntimeFileService(workspace_root=self.workspace_root, source="step_executor")
 
         self.handlers: Dict[str, StepHandler] = {}
         self._register_builtin_handlers()
@@ -545,6 +547,113 @@ class StepExecutor:
             "error_type": copy.deepcopy(result.get("error_type")) if isinstance(result, dict) else None,
             "message": copy.deepcopy(result.get("message")) if isinstance(result, dict) else None,
         }
+
+    def _runtime_file_service_for_paths(self, *paths: Any, source: str = "step_executor") -> RuntimeFileService:
+        """Return a governed file service with a workspace root covering the supplied paths.
+
+        StepExecutor's normal workspace root is usually ``.../workspace``.  Older
+        repair paths may target repository files under the project root.  This
+        helper keeps those legacy callers governed without making StepExecutor
+        a direct filesystem mutation owner again.
+        """
+        workspace_root = os.path.abspath(self.workspace_root)
+        candidate_root = workspace_root
+
+        absolute_paths: List[str] = []
+        for path in paths:
+            if path is None:
+                continue
+            text = str(path or "").strip()
+            if not text:
+                continue
+            try:
+                absolute_paths.append(os.path.abspath(text))
+            except Exception:
+                continue
+
+        def _is_under(path_text: str, root_text: str) -> bool:
+            try:
+                return os.path.commonpath([path_text, root_text]) == root_text
+            except Exception:
+                return False
+
+        if absolute_paths and not all(_is_under(path, workspace_root) for path in absolute_paths):
+            parent = os.path.dirname(workspace_root)
+            if os.path.basename(workspace_root).lower() == "workspace" and parent:
+                candidate_root = parent
+            else:
+                try:
+                    candidate_root = os.path.commonpath(absolute_paths)
+                    if os.path.isfile(candidate_root):
+                        candidate_root = os.path.dirname(candidate_root)
+                except Exception:
+                    candidate_root = os.getcwd()
+
+        return RuntimeFileService(workspace_root=candidate_root, source=source)
+
+    def _governed_write_text(
+        self,
+        path: str,
+        text: str,
+        *,
+        operation_type: str = "file_write",
+        reason: str = "step_executor_write",
+        lineage: Optional[Dict[str, Any]] = None,
+        provenance: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        service = self._runtime_file_service_for_paths(path)
+        return service.write_text(
+            path=path,
+            text=text,
+            operation_type=operation_type,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+            metadata=metadata,
+        )
+
+    def _governed_append_text(
+        self,
+        path: str,
+        text: str,
+        *,
+        reason: str = "step_executor_append",
+        lineage: Optional[Dict[str, Any]] = None,
+        provenance: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        service = self._runtime_file_service_for_paths(path)
+        return service.append_text(
+            path=path,
+            text=text,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+            metadata=metadata,
+        )
+
+    def _governed_copy_file(
+        self,
+        source_path: str,
+        target_path: str,
+        *,
+        operation_type: str = "generated_artifact_write",
+        reason: str = "step_executor_copy",
+        lineage: Optional[Dict[str, Any]] = None,
+        provenance: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        service = self._runtime_file_service_for_paths(source_path, target_path)
+        return service.copy_file(
+            source_path=source_path,
+            target_path=target_path,
+            operation_type=operation_type,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+            metadata=metadata,
+        )
 
     def resolve_write_path(
         self,
@@ -1951,9 +2060,19 @@ class StepExecutor:
             return self._apply_patch_error("patch_no_change", "patch produced no changes", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, backup_path=backup_path, details={"preflight": preflight, "transaction": transaction, "apply_meta": apply_meta})
 
         try:
-            os.makedirs(os.path.dirname(full_target_path), exist_ok=True)
-            with open(full_target_path, "w", encoding="utf-8") as f:
-                f.write(patched_text)
+            self._governed_write_text(
+                full_target_path,
+                patched_text,
+                operation_type="file_write",
+                reason="apply_unified_diff",
+                lineage={
+                    "step_type": "apply_unified_diff",
+                    "patch_path": patch_path,
+                    "target_path": target_path,
+                },
+                provenance={"source": "StepExecutor._handle_apply_unified_diff_step"},
+                metadata={"backup_path": backup_path, "preflight": copy.deepcopy(preflight)},
+            )
         except Exception as exc:
             rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
             transaction = self._mark_apply_patch_transaction(transaction, status="failed", error_reason=f"apply_patch write failed: {exc}")
@@ -2103,15 +2222,30 @@ class StepExecutor:
     def _create_apply_patch_backup(self, full_target_path: str, backup_path: str) -> str:
         if not full_target_path or not backup_path:
             raise ValueError("backup requires target and backup path")
-        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-        shutil.copyfile(full_target_path, backup_path)
+        self._governed_copy_file(
+            full_target_path,
+            backup_path,
+            operation_type="generated_artifact_write",
+            reason="apply_patch_backup",
+            lineage={"step_type": "apply_patch", "source_path": full_target_path, "backup_path": backup_path},
+            provenance={"source": "StepExecutor._create_apply_patch_backup"},
+            metadata={"backup": True, "restore_available": True},
+        )
         return backup_path
 
     def _rollback_apply_patch_target(self, full_target_path: str, backup_path: str) -> Tuple[bool, str]:
         if not full_target_path or not backup_path or not os.path.exists(backup_path):
             return False, ""
         try:
-            shutil.copyfile(backup_path, full_target_path)
+            self._governed_copy_file(
+                backup_path,
+                full_target_path,
+                operation_type="file_write",
+                reason="apply_patch_rollback",
+                lineage={"step_type": "apply_patch", "target_path": full_target_path, "backup_path": backup_path},
+                provenance={"source": "StepExecutor._rollback_apply_patch_target"},
+                metadata={"rollback": True, "backup_path": backup_path},
+            )
             return True, ""
         except Exception as exc:
             return False, str(exc)
@@ -2373,20 +2507,20 @@ class StepExecutor:
         if verify_command:
             checks.append("verify_command")
             try:
-                command_result = subprocess.run(
+                command_result = safe_subprocess_run(
                     verify_command,
-                    shell=True,
+                    shell=bool(True),
                     cwd=str(step.get("command_cwd") or step.get("cwd") or os.getcwd()),
                     capture_output=True,
                     text=True,
                     timeout=int(step.get("verify_timeout", 30) or 30),
                 )
-                if command_result.returncode != 0:
+                if command_result.get("returncode") != 0:
                     add_error(
                         "verify_command failed: "
                         + verify_command
-                        + f" (returncode={command_result.returncode})"
-                        + (f" stderr={command_result.stderr.strip()}" if command_result.stderr else "")
+                        + f" (returncode={command_result.get('returncode')})"
+                        + (f" stderr={str(command_result.get('stderr') or '').strip()}" if command_result.get("stderr") else "")
                     )
             except Exception as exc:
                 add_error(f"verify_command error: {exc}")
@@ -2669,8 +2803,18 @@ class StepExecutor:
         if newline is True and append_text and not append_text.endswith("\n"):
             append_text += "\n"
 
-        with open(full_path, "a", encoding="utf-8") as f:
-            f.write(append_text)
+        self._governed_append_text(
+            full_path,
+            append_text,
+            reason="append_file_step",
+            lineage={
+                "step_type": "append_file",
+                "path": raw_path,
+                "scope": default_scope,
+            },
+            provenance={"source": "StepExecutor._handle_append_file_step"},
+            metadata={"file_existed": file_existed, "newline": newline},
+        )
 
         return {
             "ok": True,
@@ -3408,27 +3552,57 @@ def _zero_v7_handle_code_chain_repair_step(self, step, task=None, context=None, 
     backup_dir = project_root / "workspace" / "backups" / "code_chain"
     diff_dir = project_root / "workspace" / "audit" / "code_chain" / "diffs"
     audit_dir = project_root / "workspace" / "audit" / "code_chain"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    diff_dir.mkdir(parents=True, exist_ok=True)
-    audit_dir.mkdir(parents=True, exist_ok=True)
+    file_service = RuntimeFileService(workspace_root=project_root, source="step_executor.code_chain_repair")
     backup_path = backup_dir / f"{timestamp}_{safe_name}.bak"
     diff_path = diff_dir / f"{timestamp}_{safe_name}.diff"
     audit_path = audit_dir / f"{timestamp}_{safe_name}.json"
 
-    shutil.copyfile(file_path, backup_path)
+    file_service.copy_file(
+        source_path=file_path,
+        target_path=backup_path,
+        operation_type="generated_artifact_write",
+        reason="code_chain_repair_backup",
+        lineage={"step_type": "code_chain_repair", "target_path": target_path},
+        provenance={"source": "StepExecutor.code_chain_repair"},
+        metadata={"backup": True},
+    )
     diff_text = "".join(difflib.unified_diff(
         before.splitlines(True),
         after.splitlines(True),
         fromfile=f"before/{target_path}",
         tofile=f"after/{target_path}",
     ))
-    diff_path.write_text(diff_text, encoding="utf-8")
-    file_path.write_text(after, encoding="utf-8")
+    file_service.write_text(
+        path=diff_path,
+        text=diff_text,
+        operation_type="generated_artifact_write",
+        reason="code_chain_repair_diff",
+        lineage={"step_type": "code_chain_repair", "target_path": target_path},
+        provenance={"source": "StepExecutor.code_chain_repair"},
+        metadata={"diff": True},
+    )
+    file_service.write_text(
+        path=file_path,
+        text=after,
+        operation_type="file_write",
+        reason="code_chain_repair_apply",
+        lineage={"step_type": "code_chain_repair", "target_path": target_path},
+        provenance={"source": "StepExecutor.code_chain_repair"},
+        metadata={"requested": requested},
+    )
 
     verification = _zero_v7_verify_math_functions(after, requested)
     rollback = False
     if not verification.get("ok"):
-        shutil.copyfile(backup_path, file_path)
+        file_service.copy_file(
+            source_path=backup_path,
+            target_path=file_path,
+            operation_type="file_write",
+            reason="code_chain_repair_rollback",
+            lineage={"step_type": "code_chain_repair", "target_path": target_path},
+            provenance={"source": "StepExecutor.code_chain_repair"},
+            metadata={"rollback": True},
+        )
         rollback = True
 
     changed_lines = sum(1 for line in diff_text.splitlines() if line.startswith("+") or line.startswith("-"))
@@ -3444,7 +3618,15 @@ def _zero_v7_handle_code_chain_repair_step(self, step, task=None, context=None, 
         "changed_lines": changed_lines,
         "changed_files": [] if rollback else [target_path],
     }
-    audit_path.write_text(json.dumps(audit_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    file_service.write_text(
+        path=audit_path,
+        text=json.dumps(audit_payload, ensure_ascii=False, indent=2),
+        operation_type="generated_artifact_write",
+        reason="code_chain_repair_audit",
+        lineage={"step_type": "code_chain_repair", "target_path": target_path},
+        provenance={"source": "StepExecutor.code_chain_repair"},
+        metadata={"audit": True},
+    )
 
     ok = bool(verification.get("ok")) and not rollback
     final = (
@@ -4841,8 +5023,15 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
                 if updated_text == original_text:
                     raise ValueError("edit payload produced no changes")
                 try:
-                    with open(full_target_path, "w", encoding="utf-8") as fh:
-                        fh.write(updated_text)
+                    self._governed_write_text(
+                        full_target_path,
+                        updated_text,
+                        operation_type="file_write",
+                        reason="edit_payload_multi_file_apply",
+                        lineage={"step_type": "apply_patch", "target_path": item_target},
+                        provenance={"source": "StepExecutor._zero_v734_handle_apply_step"},
+                        metadata={"backup_path": backup_path, "schema": str((item.get("edit") or {}).get("schema") or edit_payload.get("schema") or "replacement_pair_v1")},
+                    )
                 except Exception as write_exc:
                     rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
                     raise RuntimeError(f"write failed: {write_exc}; rollback_applied={rollback_applied}; rollback_error={rollback_error}") from write_exc
@@ -5016,8 +5205,15 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
         return self._apply_patch_error("patch_no_change", "edit payload produced no changes", "", target_path, full_target_path=full_target_path, backup_path=backup_path)
 
     try:
-        with open(full_target_path, "w", encoding="utf-8") as fh:
-            fh.write(updated_text)
+        self._governed_write_text(
+            full_target_path,
+            updated_text,
+            operation_type="file_write",
+            reason="edit_payload_apply",
+            lineage={"step_type": "apply_patch", "target_path": target_path},
+            provenance={"source": "StepExecutor._zero_v734_handle_apply_step"},
+            metadata={"backup_path": backup_path, "schema": str(edit_payload.get("schema") or "replacement_pair_v1") if isinstance(edit_payload, dict) else "replacement_pair_v1"},
+        )
     except Exception as exc:
         rollback_applied, rollback_error = self._rollback_apply_patch_target(full_target_path, backup_path)
         return self._apply_patch_error(

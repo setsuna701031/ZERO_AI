@@ -30,7 +30,7 @@ class CommandTool:
 
         gateway_result = safe_subprocess_run(
             command_text,
-            shell=True,
+            shell=bool(True),
             cwd=str(self.workspace_root),
             timeout=float(timeout),
         )

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
+import hashlib
+import json
 from typing import Any, Callable
 
 from core.runtime.runtime_execution_session import (
@@ -23,6 +25,16 @@ class RuntimeReplayRecord:
 
 
 @dataclass(frozen=True)
+class RuntimeReplayIntegrityRecord:
+    original_execution_id: str
+    replay_execution_id: str
+    original_result_hash: str
+    replay_result_hash: str
+    integrity_verified: bool
+    mismatch_reason: str | None = None
+
+
+@dataclass(frozen=True)
 class RuntimeReplaySession:
     replay_id: str
     source_session_id: str | None
@@ -32,6 +44,7 @@ class RuntimeReplaySession:
     payload: Any
     metadata: Any
     verified: bool
+    integrity_records: list[RuntimeReplayIntegrityRecord] = field(default_factory=list)
 
 
 class RuntimeReplayRejected(RuntimeError):
@@ -116,6 +129,49 @@ class RuntimeReplayEngine:
             for replay in self._replays.values()
         ]
 
+    def record_execution_result_integrity(
+        self,
+        *,
+        original_execution_id: str,
+        replay_execution_id: str,
+        original_result: Any,
+        replay_result: Any,
+    ) -> RuntimeReplayIntegrityRecord:
+        original_hash = self._hash_result(original_result)
+        replay_hash = self._hash_result(replay_result)
+        verified = original_hash == replay_hash
+        return RuntimeReplayIntegrityRecord(
+            original_execution_id=str(original_execution_id),
+            replay_execution_id=str(replay_execution_id),
+            original_result_hash=original_hash,
+            replay_result_hash=replay_hash,
+            integrity_verified=verified,
+            mismatch_reason=None if verified else "result_hash_mismatch",
+        )
+
+    def attach_integrity_record(
+        self,
+        replay_id: str,
+        integrity_record: RuntimeReplayIntegrityRecord,
+    ) -> RuntimeReplaySession:
+        replay = self._replays.get(replay_id)
+        if replay is None:
+            raise RuntimeReplayRejected(
+                "runtime replay target does not exist: "
+                f"{replay_id!r}"
+            )
+
+        updated = replace(
+            replay,
+            integrity_records=[
+                *replay.integrity_records,
+                integrity_record,
+            ],
+            verified=replay.verified and integrity_record.integrity_verified,
+        )
+        self._replays[replay_id] = updated
+        return self._copy_replay(updated)
+
     def clear(self) -> None:
         self._replays.clear()
         self._sequence = 0
@@ -150,6 +206,7 @@ class RuntimeReplayEngine:
             payload=payload,
             metadata=metadata,
             verified=True,
+            integrity_records=[],
         )
         self._replays[replay_id] = replay
         return self._copy_replay(replay)
@@ -231,4 +288,19 @@ class RuntimeReplayEngine:
             )
 
     def _copy_replay(self, replay: RuntimeReplaySession) -> RuntimeReplaySession:
-        return replace(replay, records=list(replay.records))
+        return replace(
+            replay,
+            records=list(replay.records),
+            integrity_records=list(replay.integrity_records),
+        )
+
+    def _hash_result(self, result: Any) -> str:
+        if hasattr(result, "to_dict"):
+            result = result.to_dict()
+        payload = json.dumps(
+            result,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()

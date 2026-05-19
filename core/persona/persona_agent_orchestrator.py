@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+
+from core.runtime.execution_gateway import safe_subprocess_run
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -112,7 +113,7 @@ def _decode_process_text(data: bytes) -> str:
 def _run_app_command(label: str, *args: str) -> CommandResult:
     command = [sys.executable, str(APP_PATH), *args]
 
-    result = subprocess.run(
+    result = safe_subprocess_run(
         command,
         cwd=str(REPO_ROOT),
         capture_output=True,
@@ -122,9 +123,9 @@ def _run_app_command(label: str, *args: str) -> CommandResult:
     return CommandResult(
         label=label,
         args=command,
-        returncode=result.returncode,
-        stdout=_decode_process_text(result.stdout or b""),
-        stderr=_decode_process_text(result.stderr or b""),
+        returncode=result.get("returncode"),
+        stdout=str(result.get("stdout") or ""),
+        stderr=str(result.get("stderr") or ""),
     )
 
 
