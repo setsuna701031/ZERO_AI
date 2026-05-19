@@ -1,4 +1,8 @@
 ---
+## 2026-05-19 - Runtime Timeline Evidence Export v1
+
+Added a read-only evidence export helper for reconstructed runtime timelines. The export reuses timeline reconstruction, emits stable evidence entries and summary counts, groups evidence by `repair_chain_id`, detects broken chains from exported evidence, and keeps `generated_at` opt-in for callers that need timestamped evidence.
+
 ## 2026-05-19 - Runtime Timeline / Replay Reconstruction v1
 
 Added read-only runtime timeline reconstruction on top of engineering runtime continuity and observability helpers.
