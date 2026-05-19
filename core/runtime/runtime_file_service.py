@@ -321,6 +321,10 @@ class RuntimeFileService:
             "task_runtime",
             "runtime_persistence_service",
         }
+        governed_backup_source = source_key in {
+            "step_executor",
+        }
+        rollback_capable_source = runtime_persistence_source or governed_backup_source
 
         return _construct(
             RuntimeCapabilityScope,
@@ -341,14 +345,16 @@ class RuntimeFileService:
                 "risk_ceiling": "EXTERNAL",
                 "sandbox_required": False,
                 "sandbox_only": False,
-                "replay_allowed": runtime_persistence_source,
-                "rollback_allowed": runtime_persistence_source,
+                "replay_allowed": rollback_capable_source,
+                "rollback_allowed": rollback_capable_source,
                 "replay_permissions": ("read", "write"),
                 "rollback_permissions": ("read", "write"),
                 "metadata": {
                     "runtime_file_service": True,
                     "workspace_root": str(self.workspace_root),
                     "runtime_persistence_capability": runtime_persistence_source,
+                    "governed_backup_capability": governed_backup_source,
+                    "rollback_capable_source": rollback_capable_source,
                 },
             },
         )
