@@ -29,8 +29,29 @@ def request_code_chain_patch_restore(*, target_path: str, backup_path: str) -> D
             result["error"] = f"backup not found: {normalized_backup}"
             return result
         before_content = backup.read_text(encoding="utf-8")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(before_content, encoding="utf-8")
+        from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
+        RuntimePersistenceService(workspace_root=Path(".").resolve()).write_text(
+            target,
+            before_content,
+            reason="code_chain_patch_restore",
+            lineage={
+                "caller": "code_chain_patch_restore",
+                "artifact_type": "rollback_restore",
+                "target_path": normalized_target,
+                "backup_path": normalized_backup,
+            },
+            provenance={
+                "caller": "code_chain_patch_restore",
+                "artifact_type": "rollback_restore",
+            },
+            metadata={
+                "caller": "code_chain_patch_restore",
+                "runtime_governance_sweep": "final_v1",
+                "artifact_type": "rollback_restore",
+                "backup_path": normalized_backup,
+            },
+        )
         result["ok"] = True
         result["reason"] = "rollback_restored_from_backup"
         result["error"] = None

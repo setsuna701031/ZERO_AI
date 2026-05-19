@@ -73,6 +73,54 @@ class BaseStepHandler:
             payload.update(extra)
         return payload
 
+    def _governed_write_text(
+        self,
+        path: str,
+        text: str,
+        *,
+        reason: str,
+        artifact_type: str,
+        step: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        writer = getattr(self.executor, "_governed_write_text", None)
+        lineage = {
+            "caller": type(self).__name__,
+            "surface": "step_handler",
+            "artifact_type": artifact_type,
+            "step_type": str((step or {}).get("type") or (step or {}).get("action") or ""),
+        }
+        provenance = {
+            "caller": type(self).__name__,
+            "surface": "step_handler",
+            "artifact_type": artifact_type,
+        }
+        metadata = {
+            "caller": type(self).__name__,
+            "runtime_governance_sweep": "final_v1",
+            "artifact_type": artifact_type,
+        }
+        if callable(writer):
+            writer(
+                path,
+                text,
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+                metadata=metadata,
+            )
+            return
+
+        from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
+        RuntimePersistenceService(workspace_root=getattr(self.executor, "workspace_root", ".")).write_text(
+            path,
+            text,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+            metadata=metadata,
+        )
+
 
     def _normalize_external_result(
         self,
@@ -1098,11 +1146,13 @@ class WriteFileStepHandler(BaseStepHandler):
             )
 
         try:
-            parent = os.path.dirname(full_path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write(str(content))
+            self._governed_write_text(
+                full_path,
+                str(content),
+                reason="write_file_step_handler",
+                artifact_type="write_file_payload",
+                step=step,
+            )
         except Exception as e:
             return self._error(
                 error_type="write_file_failed",
@@ -1322,14 +1372,15 @@ class EnsureFileStepHandler(BaseStepHandler):
             )
 
         try:
-            parent = os.path.dirname(full_path)
-            if parent:
-                os.makedirs(parent, exist_ok=True)
-
             created = False
             if not os.path.exists(full_path):
-                with open(full_path, "w", encoding="utf-8") as f:
-                    f.write("")
+                self._governed_write_text(
+                    full_path,
+                    "",
+                    reason="ensure_file_step_handler",
+                    artifact_type="ensure_file_payload",
+                    step=step,
+                )
                 created = True
         except Exception as e:
             return self._error(
