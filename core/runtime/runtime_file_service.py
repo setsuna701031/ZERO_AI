@@ -315,6 +315,13 @@ class RuntimeFileService:
     def _capability_scope(self) -> Any:
         if self.capability_scope is not None:
             return self.capability_scope
+
+        source_key = str(self.source or "").strip().lower()
+        runtime_persistence_source = source_key in {
+            "task_runtime",
+            "runtime_persistence_service",
+        }
+
         return _construct(
             RuntimeCapabilityScope,
             {
@@ -334,11 +341,14 @@ class RuntimeFileService:
                 "risk_ceiling": "EXTERNAL",
                 "sandbox_required": False,
                 "sandbox_only": False,
+                "replay_allowed": runtime_persistence_source,
+                "rollback_allowed": runtime_persistence_source,
                 "replay_permissions": ("read", "write"),
                 "rollback_permissions": ("read", "write"),
                 "metadata": {
                     "runtime_file_service": True,
                     "workspace_root": str(self.workspace_root),
+                    "runtime_persistence_capability": runtime_persistence_source,
                 },
             },
         )
