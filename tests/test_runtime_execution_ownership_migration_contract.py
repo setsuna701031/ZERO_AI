@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ast
 import importlib
@@ -139,7 +139,18 @@ def test_canonical_executor_command_request_emits_result_and_side_effect(tmp_pat
         command=command,
         working_directory=str(tmp_path),
         timeout=20,
-        metadata={"shell": True},
+        metadata={
+            "shell": True,
+            "runtime_identity": {
+                "identity_id": "runtime_test:canonical_executor",
+                "identity_type": "TEST",
+                "source": "pytest",
+            },
+            "provenance": {
+                "source": "pytest",
+                "suite": "runtime_execution_ownership_migration_contract",
+            },
+        },
         lineage={
             "request_id": "request-1",
             "execution_start_id": "execution_start:request-1",
@@ -174,3 +185,4 @@ def test_command_tool_routes_through_canonical_gateway(tmp_path):
     assert result["stdout"].strip() == "tool-owned"
     assert result["execution_gateway"]["used"] is True
     assert result["execution_gateway"]["error"] is None
+
