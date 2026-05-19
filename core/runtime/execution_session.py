@@ -16,6 +16,8 @@ except Exception:  # pragma: no cover - compatibility fallback
     READONLY_RUNTIME_MODES = {"replay", "audit", "repair_replay"}
 from uuid import uuid4
 
+from core.runtime.engineering_runtime_continuity import build_engineering_runtime_continuity_from_task
+
 
 @dataclass
 class ExecutionSession:
@@ -30,12 +32,14 @@ class ExecutionSession:
     steps: List[Dict[str, Any]] = field(default_factory=list)
     tool_results: List[Dict[str, Any]] = field(default_factory=list)
     audit_request_ids: List[str] = field(default_factory=list)
+    engineering_continuity: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def start(cls, task: Any) -> "ExecutionSession":
         runtime_mode = _runtime_mode(task)
+        session_id = str(uuid4())
         return cls(
-            session_id=str(uuid4()),
+            session_id=session_id,
             task_id=_task_id(task),
             task_summary=_task_summary(task),
             started_at=_now_iso(),
@@ -43,6 +47,10 @@ class ExecutionSession:
             status="observing" if _is_readonly_runtime_mode(runtime_mode) else "running",
             runtime_mode=runtime_mode,
             readonly=_is_readonly_runtime_mode(runtime_mode),
+            engineering_continuity=build_engineering_runtime_continuity_from_task(
+                session_id=session_id,
+                task=task,
+            ).to_dict(),
         )
 
     def add_step(self, step_name: str, status: str, detail: Any = None) -> None:
@@ -134,6 +142,7 @@ class ExecutionSession:
             "steps": list(self.steps),
             "tool_results": list(self.tool_results),
             "audit_request_ids": list(self.audit_request_ids),
+            "engineering_continuity": dict(self.engineering_continuity),
         }
 
 

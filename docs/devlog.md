@@ -1,4 +1,15 @@
 ---
+## 2026-05-19 - Engineering Runtime Loop Foundation
+
+Started the first runtime engineering loop continuity layer without adding autonomous self-modification behavior or broadening execution permissions.
+
+- Added a lightweight engineering runtime continuity record for `session_id`, `parent_session_id`, `replay_id`, `repair_chain_id`, `execution_chain_depth`, and `previous_runtime_state_ref`.
+- Attached continuity metadata to runtime execution sessions so it survives session save/load paths.
+- Kept persistence behind `RuntimePersistenceService`; no new raw file writes were introduced.
+- Preserved `RuntimeMutationGateway` mutation ownership and canonical `Executor` command execution ownership.
+- Scheduler, memory, capabilities, persona, UI, and demo flows were not touched.
+- Deferred future loop work: autonomous engineering-loop decisions, richer observability timelines, and cross-session repair planning.
+
 ## 2026-05-19 - Runtime Governance Seal Closeout
 
 Runtime governance seal completed for the current stage.
