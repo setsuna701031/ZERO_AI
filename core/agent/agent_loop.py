@@ -30,6 +30,7 @@ from core.agent.document_flow_trace_writer import maybe_write_document_flow_trac
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 from core.runtime.code_chain_patch_restore import request_code_chain_patch_restore
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.agent.loop_decision import observe_and_decide
 from core.runtime.blockers import active_blockers, normalize_blockers
 from core.agent.local_observer import observe_runner_result as observe_local_runner_result
@@ -1189,6 +1190,43 @@ class AgentLoop:
             text = "target"
         return re.sub(r"[^A-Za-z0-9_.-]+", "_", text)[:120]
 
+    def _code_chain_persistence(self) -> RuntimePersistenceService:
+        return RuntimePersistenceService(workspace_root=Path(".").resolve())
+
+    def _write_code_chain_text(
+        self,
+        path: Path | str,
+        text: str,
+        *,
+        reason: str,
+        target_path: str,
+        artifact_type: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return self._code_chain_persistence().write_text(
+            path,
+            str(text),
+            reason=reason,
+            lineage={
+                "caller": "agent_loop",
+                "surface": "code_chain_patch",
+                "artifact_type": artifact_type,
+                "patch_target_path": str(target_path or ""),
+            },
+            provenance={
+                "caller": "agent_loop",
+                "surface": "code_chain_patch",
+                "artifact_type": artifact_type,
+            },
+            metadata={
+                "caller": "agent_loop",
+                "runtime_seal_pass": "active_mutation_closure_v1",
+                "artifact_type": artifact_type,
+                "patch_target_path": str(target_path or ""),
+                **dict(metadata or {}),
+            },
+        )
+
     def _prepare_code_chain_patch_visibility(
         self,
         *,
@@ -1229,11 +1267,14 @@ class AgentLoop:
         }
 
         try:
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            audit_dir.mkdir(parents=True, exist_ok=True)
-            diff_dir.mkdir(parents=True, exist_ok=True)
             backup_path = backup_dir / f"{timestamp}_{slug}.bak"
-            backup_path.write_text(str(before_content or ""), encoding="utf-8")
+            self._write_code_chain_text(
+                backup_path,
+                str(before_content or ""),
+                reason="agent_loop_code_chain_backup_write",
+                target_path=normalized_target,
+                artifact_type="rollback_backup",
+            )
             visibility["backup_path"] = str(backup_path).replace("\\", "/")
             visibility["backup_created"] = True
             return visibility
@@ -1265,9 +1306,6 @@ class AgentLoop:
         diff_dir = audit_dir / "diffs"
 
         try:
-            audit_dir.mkdir(parents=True, exist_ok=True)
-            diff_dir.mkdir(parents=True, exist_ok=True)
-
             before_lines = str(before_content or "").splitlines()
             after_lines = str(after_content or "").splitlines()
             diff_lines = list(
@@ -1287,7 +1325,14 @@ class AgentLoop:
             )
 
             diff_path = diff_dir / f"{timestamp}_{slug}.diff"
-            diff_path.write_text("\n".join(diff_lines) + ("\n" if diff_lines else ""), encoding="utf-8")
+            self._write_code_chain_text(
+                diff_path,
+                "\n".join(diff_lines) + ("\n" if diff_lines else ""),
+                reason="agent_loop_code_chain_diff_write",
+                target_path=normalized_target,
+                artifact_type="patch_diff",
+                metadata={"diff_line_count": len(diff_lines)},
+            )
 
             visibility.update(
                 {
@@ -1331,7 +1376,28 @@ class AgentLoop:
                 "original_task": visibility.get("original_task"),
             }
             audit_path = audit_dir / f"{timestamp}_{slug}.json"
-            audit_path.write_text(json.dumps(audit_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            self._code_chain_persistence().write_json(
+                audit_path,
+                audit_payload,
+                reason="agent_loop_code_chain_audit_write",
+                lineage={
+                    "caller": "agent_loop",
+                    "surface": "code_chain_patch",
+                    "artifact_type": "patch_audit",
+                    "patch_target_path": normalized_target,
+                },
+                provenance={
+                    "caller": "agent_loop",
+                    "surface": "code_chain_patch",
+                    "artifact_type": "patch_audit",
+                },
+                metadata={
+                    "caller": "agent_loop",
+                    "runtime_seal_pass": "active_mutation_closure_v1",
+                    "artifact_type": "patch_audit",
+                    "patch_target_path": normalized_target,
+                },
+            )
             visibility["audit_path"] = str(audit_path).replace("\\", "/")
             visibility["audit_written"] = True
             return visibility
@@ -1656,7 +1722,19 @@ class AgentLoop:
         if ok:
             try:
                 if patched_content != content:
-                    Path(target_path).write_text(patched_content, encoding="utf-8")
+                    self._write_code_chain_text(
+                        target_path,
+                        patched_content,
+                        reason="agent_loop_scoped_function_patch_apply",
+                        target_path=target_path,
+                        artifact_type="scoped_function_patch",
+                        metadata={
+                            "patch_apply": True,
+                            "rollback_required": True,
+                            "function_names": function_names,
+                            "replacement_count": len(replacements),
+                        },
+                    )
                     changed_files = [target_path]
                 else:
                     changed_files = []

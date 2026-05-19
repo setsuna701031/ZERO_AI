@@ -8,12 +8,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.planning.replan_suggestion import build_replan_suggestion, format_replan_suggestion_cli
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
 ROOT = Path("workspace")
 SHARED_DIR = ROOT / "shared"
 TASKS_DIR = ROOT / "tasks"
 INBOX_DIR = ROOT / "inbox"
+
+
+def _ui_persistence() -> RuntimePersistenceService:
+    return RuntimePersistenceService(workspace_root=Path(".").resolve())
 
 
 def _safe_read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -293,8 +298,6 @@ def drop_text_file(content: str, filename: Optional[str] = None) -> str:
 
     This is intentionally input-only. It does not run scheduler, agent_loop, or any task executor.
     """
-    INBOX_DIR.mkdir(parents=True, exist_ok=True)
-
     if not filename:
         filename = f"ui_drop_{int(time.time())}.txt"
 
@@ -302,7 +305,26 @@ def drop_text_file(content: str, filename: Optional[str] = None) -> str:
     if safe_path is None:
         raise ValueError("Invalid inbox filename. Use a simple file name only.")
 
-    safe_path.write_text(content, encoding="utf-8")
+    _ui_persistence().write_text(
+        safe_path,
+        str(content),
+        reason="ui_bridge_drop_text_file",
+        lineage={
+            "caller": "ui_bridge",
+            "surface": "display_input_drop",
+            "artifact_type": "ui_inbox_text",
+        },
+        provenance={
+            "caller": "ui_bridge",
+            "surface": "display_input_drop",
+            "artifact_type": "ui_inbox_text",
+        },
+        metadata={
+            "caller": "ui_bridge",
+            "runtime_seal_pass": "active_mutation_closure_v1",
+            "artifact_type": "ui_inbox_text",
+        },
+    )
     return str(safe_path)
 
 

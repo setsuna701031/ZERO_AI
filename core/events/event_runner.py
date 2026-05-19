@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from core.events.event_schema import EventRecord
 from core.events.event_to_task import event_to_task
 from core.events.file_event_source import FileEventSource
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_step_executor_adapter import TaskStepExecutorAdapter
 from core.tools.tool_registry import ToolRegistry
@@ -21,6 +22,7 @@ class EventRunner:
         self.outbox_dir = self.workspace_dir / "events_outbox"
         self.results_path = self.outbox_dir / "event_results.jsonl"
         self.event_source = FileEventSource(str(self.workspace_dir))
+        self.persistence = RuntimePersistenceService(workspace_root=self.workspace_dir)
 
     def poll_once(self) -> List[Dict[str, Any]]:
         events = self.event_source.poll_once()
@@ -88,10 +90,49 @@ class EventRunner:
         }
 
     def _append_result(self, record: Dict[str, Any]) -> None:
-        self.outbox_dir.mkdir(parents=True, exist_ok=True)
-        (self.outbox_dir / ".gitkeep").touch()
-        with self.results_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        gitkeep_path = self.outbox_dir / ".gitkeep"
+        if not gitkeep_path.exists():
+            self.persistence.write_text(
+                gitkeep_path,
+                "",
+                reason="event_runner_outbox_gitkeep_write",
+                lineage={
+                    "caller": "event_runner",
+                    "surface": "events_outbox",
+                    "artifact_type": "outbox_marker",
+                },
+                provenance={
+                    "caller": "event_runner",
+                    "surface": "events_outbox",
+                    "artifact_type": "outbox_marker",
+                },
+                metadata={
+                    "caller": "event_runner",
+                    "runtime_seal_pass": "active_mutation_closure_v1",
+                    "artifact_type": "outbox_marker",
+                },
+            )
+        self.persistence.append_text(
+            self.results_path,
+            json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n",
+            reason="event_runner_result_append",
+            lineage={
+                "caller": "event_runner",
+                "surface": "events_outbox",
+                "artifact_type": "event_result_jsonl",
+            },
+            provenance={
+                "caller": "event_runner",
+                "surface": "events_outbox",
+                "artifact_type": "event_result_jsonl",
+            },
+            metadata={
+                "caller": "event_runner",
+                "runtime_seal_pass": "active_mutation_closure_v1",
+                "artifact_type": "event_result_jsonl",
+                "append_only": True,
+            },
+        )
 
 
 def poll_once(repo_root: str | None = None, workspace_dir: str | None = None) -> List[Dict[str, Any]]:
