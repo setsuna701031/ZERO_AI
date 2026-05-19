@@ -1,4 +1,26 @@
 ---
+## 2026-05-19 - Runtime Timeline / Replay Reconstruction v1
+
+Added read-only runtime timeline reconstruction on top of engineering runtime continuity and observability helpers.
+
+- Added pure helpers for ordered timeline entries from continuity/session/replay records.
+- Timeline entries include session, parent, replay, repair-chain, execution-depth, event type, status, and missing-ref flags.
+- Added grouping by `repair_chain_id` and read-only missing parent / previous runtime-state ref summaries.
+- Detects chain breaks without mutating runtime state, handing off to planners, broadening policy/capability scope, or adding persistence authority.
+- Preserved `RuntimePersistenceService`, `RuntimeFileService`, and canonical `Executor` ownership.
+- Scheduler, memory, capabilities, persona, UI/demo flows, and governance policy rules were not touched.
+- Deferred future work: visual timeline UI, cross-session planner handoff, autonomous continuation policy.
+
+## 2026-05-19 - Engineering Runtime Observability v1
+
+Added a read-only observability layer for engineering runtime continuity records.
+
+- Added pure helpers for session chain summaries, replay lineage summaries, `repair_chain_id` grouping, `execution_chain_depth` summaries, and missing parent / previous runtime-state refs.
+- Kept helpers side-effect free: no autonomous decisions, no new write authority, no raw writes, and no persistence path changes.
+- Preserved `RuntimePersistenceService` as the persistence boundary and canonical `Executor` execution ownership.
+- Scheduler, memory, capabilities, persona, UI/demo flows, and governance policy rules were not touched.
+- Deferred future work: visual timeline, cross-session planner handoff, and autonomous continuation policy.
+
 ## 2026-05-19 - Engineering Runtime Loop Foundation
 
 Started the first runtime engineering loop continuity layer without adding autonomous self-modification behavior or broadening execution permissions.
