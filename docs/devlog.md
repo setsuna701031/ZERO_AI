@@ -8200,6 +8200,14 @@ python tests/test_step_executor.py
 python tests/run_regression_contracts.py
 ```
 
+## Execution Start Controller v0
+
+- Added `RuntimeExecutionStartController` as a lifecycle-only start marker for pending non-executing scopes.
+- Accepted start requires `execution_pending=True`, `revoked=False`, `authority_scope` of `dry_run` or `read_only`, and `risk_level=low`.
+- In this v0 contract, `executed=True` means only "execution lifecycle started"; it does not call executor, run tasks, mutate state, recover, replay, import scheduler/executor, or call `scheduler.enqueue`.
+- Extended execution handoff lineage with `execution_start_id`, `execution_started`, `executed`, and `revoked` fields.
+- Public runtime surface remains request-only and returns `accepted_not_connected`.
+
 Observed result:
 
 ```text

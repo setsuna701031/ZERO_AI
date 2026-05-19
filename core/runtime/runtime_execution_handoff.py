@@ -29,7 +29,9 @@ class RuntimeExecutionHandoffRecord:
     enqueue_id: str | None = None
     enqueue_status: str | None = None
     execution_token_id: str | None = None
+    execution_start_id: str | None = None
     execution_pending: bool = False
+    execution_started: bool = False
     revoked: bool = False
     executed: bool = False
     enqueued: bool = False

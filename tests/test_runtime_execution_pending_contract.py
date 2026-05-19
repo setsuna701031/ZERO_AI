@@ -246,3 +246,41 @@ def test_runtime_execution_pending_does_not_call_execute():
     assert "mutate" not in calls
     assert "recover" not in calls
     assert "replay" not in calls
+
+
+@pytest.mark.parametrize("scope", ["dry_run", "read_only"])
+def test_runtime_execution_pending_can_feed_execution_start_marker(scope: str):
+    pending_module = importlib.import_module("core.runtime.runtime_execution_pending")
+    start_module = importlib.import_module("core.runtime.runtime_execution_start")
+    pending_controller = pending_module.RuntimeExecutionPendingController()
+    start_controller = start_module.RuntimeExecutionStartController()
+
+    pending = pending_controller.evaluate(
+        _controlled_enqueue(accepted=True, authority_scope=scope)
+    )
+    token = pending_controller.issue_token(
+        _controlled_enqueue(accepted=True, authority_scope=scope)
+    )
+    request = start_module.RuntimeExecutionStartRequest(
+        request_id=pending.request_id,
+        trace_id=pending.trace_id,
+        lease_id=pending.lease_id,
+        grant_id=pending.grant_id,
+        queue_admission_id=token.queue_admission_id,
+        enqueue_id=pending.enqueue_id,
+        execution_token_id=pending.execution_token_id,
+        authority_scope=pending.authority_scope,
+        risk_level=pending.risk_level,
+        metadata={},
+    )
+
+    started = start_controller.evaluate(
+        request,
+        execution_pending=pending.execution_pending,
+        revoked=token.revoked,
+    )
+
+    assert pending.execution_pending is True
+    assert started.accepted is True
+    assert started.execution_pending is False
+    assert started.executed is True

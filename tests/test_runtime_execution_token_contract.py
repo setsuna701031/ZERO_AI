@@ -113,3 +113,46 @@ def test_runtime_execution_token_has_no_execution_methods():
     }
 
     assert not (public_names & set(FORBIDDEN_METHODS))
+
+
+def test_runtime_execution_token_can_feed_execution_start_without_execution_behavior():
+    token_module = importlib.import_module("core.runtime.runtime_execution_token")
+    start_module = importlib.import_module("core.runtime.runtime_execution_start")
+    controller = start_module.RuntimeExecutionStartController()
+    token = token_module.RuntimeExecutionToken(
+        execution_token_id="execution_token:request-1",
+        request_id="request-1",
+        trace_id="trace-1",
+        lease_id="lease-1",
+        grant_id="grant-1",
+        queue_admission_id="queue_admission:request-1",
+        enqueue_id="controlled_enqueue:request-1",
+        authority_scope="read_only",
+        risk_level="low",
+        execution_pending=True,
+        executed=False,
+        revoked=False,
+        metadata={},
+    )
+    request = start_module.RuntimeExecutionStartRequest(
+        request_id=token.request_id,
+        trace_id=token.trace_id,
+        lease_id=token.lease_id,
+        grant_id=token.grant_id,
+        queue_admission_id=token.queue_admission_id,
+        enqueue_id=token.enqueue_id,
+        execution_token_id=token.execution_token_id,
+        authority_scope=token.authority_scope,
+        risk_level=token.risk_level,
+        metadata={},
+    )
+
+    decision = controller.evaluate(
+        request,
+        execution_pending=token.execution_pending,
+        revoked=token.revoked,
+    )
+
+    assert token.executed is False
+    assert decision.executed is True
+    assert decision.reason == "non_executing_scope_started"
