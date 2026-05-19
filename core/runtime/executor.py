@@ -52,6 +52,9 @@ class Executor:
         self.enable_forced_repair = bool(enable_forced_repair)
         self.side_effect_registry = side_effect_registry or RuntimeSideEffectRegistry()
         self.execution_policy = execution_policy or RuntimeExecutionPolicy()
+        from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
+        self.persistence_service = RuntimePersistenceService(workspace_root=self.workspace_root)
 
     # =========================================================
     # Public
@@ -1648,13 +1651,48 @@ class Executor:
         content: Any,
     ) -> None:
         if isinstance(content, (dict, list)):
-            safe_path.write_text(
+            self.persistence_service.write_text(
+                safe_path,
                 json.dumps(content, indent=2, ensure_ascii=False),
-                encoding="utf-8",
+                reason="executor_write_file_step",
+                lineage={
+                    "caller": "executor",
+                    "surface": "legacy_plan_step",
+                    "artifact_type": "write_file_payload",
+                },
+                provenance={
+                    "caller": "executor",
+                    "surface": "legacy_plan_step",
+                    "artifact_type": "write_file_payload",
+                },
+                metadata={
+                    "caller": "executor",
+                    "runtime_kernel_seal": "ownership_audit_v2",
+                    "artifact_type": "write_file_payload",
+                },
             )
             return
 
-        safe_path.write_text(str(content), encoding="utf-8")
+        self.persistence_service.write_text(
+            safe_path,
+            str(content),
+            reason="executor_write_file_step",
+            lineage={
+                "caller": "executor",
+                "surface": "legacy_plan_step",
+                "artifact_type": "write_file_payload",
+            },
+            provenance={
+                "caller": "executor",
+                "surface": "legacy_plan_step",
+                "artifact_type": "write_file_payload",
+            },
+            metadata={
+                "caller": "executor",
+                "runtime_kernel_seal": "ownership_audit_v2",
+                "artifact_type": "write_file_payload",
+            },
+        )
 
     def _build_step_success_result(
         self,
@@ -1710,8 +1748,28 @@ class Executor:
         step_result: Dict[str, Any],
     ) -> Path:
         step_file = task_dir / f"step_{step_index:02d}.json"
-        with open(step_file, "w", encoding="utf-8") as f:
-            json.dump(step_result, f, indent=2, ensure_ascii=False)
+        self.persistence_service.write_json(
+            step_file,
+            step_result,
+            reason="executor_step_result_write",
+            lineage={
+                "caller": "executor",
+                "surface": "legacy_plan_step",
+                "artifact_type": "step_result",
+                "step_index": step_index,
+            },
+            provenance={
+                "caller": "executor",
+                "surface": "legacy_plan_step",
+                "artifact_type": "step_result",
+            },
+            metadata={
+                "caller": "executor",
+                "runtime_kernel_seal": "ownership_audit_v2",
+                "artifact_type": "step_result",
+                "step_index": step_index,
+            },
+        )
         return step_file
 
     def _log_step_start(
