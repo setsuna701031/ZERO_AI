@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import copy
 import os
@@ -657,6 +657,10 @@ def sync_blocked_state(scheduler: Any, task_id: str, blocked_reason: str) -> Non
         task["scheduler_build"] = build
         changed = True
 
+    sync_fn = getattr(scheduler, "_sync_blocked_state", None)
+    if callable(sync_fn):
+        sync_fn(task_id=task_id, blocked_reason=final_reason)
+
     if changed:
         scheduler._persist_task_payload(task_id=task_id, task=task)
 
@@ -669,7 +673,7 @@ def sync_blocked_state(scheduler: Any, task_id: str, blocked_reason: str) -> Non
         final_answer="",
         extra={
             "action": "sync_blocked_state",
-            "blocked_reason": str(blocked_reason or ""),
+            "blocked_reason": final_reason,
         },
     )
     scheduler._save_trace_for_task(task=task, trace=trace)
@@ -926,3 +930,4 @@ def sync_runtime_back_to_repo(
     if normalized_status in {"running"}:
         sync_unblocked_state(scheduler=scheduler, task_id=task_id)
         return
+
