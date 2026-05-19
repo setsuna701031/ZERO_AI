@@ -1882,8 +1882,10 @@ class StepExecutor:
             }
 
         try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            content = self._runtime_file_service_for_paths(
+                full_path,
+                source="step_executor_read",
+            ).read_text(full_path, encoding="utf-8")
         except Exception as exc:
             return {
                 "ok": False,
@@ -2025,10 +2027,13 @@ class StepExecutor:
             return self._apply_patch_error("file_not_found", f"target file not found: {full_target_path}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"preflight": preflight, "transaction": transaction})
 
         try:
-            with open(full_patch_path, "r", encoding="utf-8") as f:
-                patch_text = f.read()
-            with open(full_target_path, "r", encoding="utf-8") as f:
-                original_text = f.read()
+            read_service = self._runtime_file_service_for_paths(
+                full_patch_path,
+                full_target_path,
+                source="step_executor_read",
+            )
+            patch_text = read_service.read_text(full_patch_path, encoding="utf-8")
+            original_text = read_service.read_text(full_target_path, encoding="utf-8")
         except Exception as exc:
             return self._apply_patch_error("read_failed", f"apply_patch read failed: {exc}", patch_path, target_path, full_patch_path=full_patch_path, full_target_path=full_target_path, details={"preflight": preflight, "transaction": transaction})
 
@@ -2479,10 +2484,13 @@ class StepExecutor:
             checks.append("file_content_changed")
             if backup_path and os.path.exists(backup_path):
                 try:
-                    with open(full_target_path, "r", encoding="utf-8") as target_fh:
-                        current_text = target_fh.read()
-                    with open(backup_path, "r", encoding="utf-8") as backup_fh:
-                        backup_text = backup_fh.read()
+                    read_service = self._runtime_file_service_for_paths(
+                        full_target_path,
+                        backup_path,
+                        source="step_executor_read",
+                    )
+                    current_text = read_service.read_text(full_target_path, encoding="utf-8")
+                    backup_text = read_service.read_text(backup_path, encoding="utf-8")
                     if current_text == backup_text:
                         add_error(f"file content did not change: {target_path}")
                 except Exception as exc:
@@ -2582,8 +2590,10 @@ class StepExecutor:
             return {"ok": True, "verification_ok": True, "skipped": True, "checks": []}
 
         try:
-            with open(full_target_path, "r", encoding="utf-8") as fh:
-                current_text = fh.read()
+            current_text = self._runtime_file_service_for_paths(
+                full_target_path,
+                source="step_executor_read",
+            ).read_text(full_target_path, encoding="utf-8")
         except Exception as exc:
             return {
                 "ok": False,
@@ -5007,8 +5017,10 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
                 full_target_path = self.resolve_write_path(relative_path=item_target, task=task, default_scope="shared")
                 if not os.path.exists(full_target_path):
                     raise FileNotFoundError(f"target file not found: {full_target_path}")
-                with open(full_target_path, "r", encoding="utf-8") as fh:
-                    original_text = fh.read()
+                original_text = self._runtime_file_service_for_paths(
+                    full_target_path,
+                    source="step_executor_read",
+                ).read_text(full_target_path, encoding="utf-8")
                 backup_path = full_target_path + ".bak_edit_payload"
                 self._create_apply_patch_backup(full_target_path, backup_path)
                 mode = str(item_validation.get("mode") or "")
@@ -5180,8 +5192,10 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
         return self._apply_patch_error("file_not_found", f"target file not found: {full_target_path}", "", target_path, full_target_path=full_target_path)
 
     try:
-        with open(full_target_path, "r", encoding="utf-8") as fh:
-            original_text = fh.read()
+        original_text = self._runtime_file_service_for_paths(
+            full_target_path,
+            source="step_executor_read",
+        ).read_text(full_target_path, encoding="utf-8")
     except Exception as exc:
         return self._apply_patch_error("read_failed", f"apply edit read failed: {exc}", "", target_path, full_target_path=full_target_path)
 
