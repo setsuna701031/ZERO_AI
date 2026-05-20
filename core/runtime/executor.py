@@ -12,6 +12,13 @@ from core.runtime.runtime_execution_result import RuntimeExecutionResult
 from core.runtime.runtime_side_effect_registry import RuntimeSideEffectRegistry
 from core.runtime.trace_logger import ensure_trace_logger
 from core.runtime.verifier import Verifier
+from core.runtime.controlled_runtime_execution_boundary import (
+    BOUNDARY_BLOCKED,
+    BOUNDARY_NEEDS_REVIEW,
+    BOUNDARY_READY,
+    build_controlled_runtime_execution_boundary_report,
+    validate_controlled_runtime_execution_boundary_report,
+)
 
 
 class Executor:
@@ -246,6 +253,74 @@ class Executor:
         policy_result = self.execution_policy.evaluate(request)
         policy_metadata = policy_result.to_metadata()
 
+        boundary_report = self._controlled_boundary_report_for_request(request)
+        if boundary_report is not None:
+            boundary_validation = validate_controlled_runtime_execution_boundary_report(boundary_report)
+            boundary_state = str(boundary_report.get("boundary_state") or "").strip()
+            if not boundary_validation.get("ok"):
+                return self._build_controlled_boundary_stop_result(
+                    request=request,
+                    execution_id=execution_id,
+                    execution_start_id=execution_start_id,
+                    started_at=started_at,
+                    policy_metadata=policy_metadata,
+                    policy_risk_level=policy_result.risk_level,
+                    boundary_report=boundary_report,
+                    boundary_validation=boundary_validation,
+                    status="blocked",
+                    effect_type="blocked_execution",
+                    reason="controlled_runtime_execution_boundary_invalid",
+                )
+            if boundary_state == BOUNDARY_BLOCKED:
+                return self._build_controlled_boundary_stop_result(
+                    request=request,
+                    execution_id=execution_id,
+                    execution_start_id=execution_start_id,
+                    started_at=started_at,
+                    policy_metadata=policy_metadata,
+                    policy_risk_level=policy_result.risk_level,
+                    boundary_report=boundary_report,
+                    boundary_validation=boundary_validation,
+                    status="blocked",
+                    effect_type="blocked_execution",
+                    reason=self._controlled_boundary_reason(boundary_report, "controlled_runtime_execution_boundary_blocked"),
+                )
+            if boundary_state == BOUNDARY_NEEDS_REVIEW:
+                return self._build_controlled_boundary_stop_result(
+                    request=request,
+                    execution_id=execution_id,
+                    execution_start_id=execution_start_id,
+                    started_at=started_at,
+                    policy_metadata=policy_metadata,
+                    policy_risk_level=policy_result.risk_level,
+                    boundary_report=boundary_report,
+                    boundary_validation=boundary_validation,
+                    status="review_required",
+                    effect_type="review_required_execution",
+                    reason=self._controlled_boundary_reason(boundary_report, "controlled_runtime_execution_boundary_needs_review"),
+                )
+            if boundary_state != BOUNDARY_READY or boundary_report.get("execution_allowed") is not True:
+                return self._build_controlled_boundary_stop_result(
+                    request=request,
+                    execution_id=execution_id,
+                    execution_start_id=execution_start_id,
+                    started_at=started_at,
+                    policy_metadata=policy_metadata,
+                    policy_risk_level=policy_result.risk_level,
+                    boundary_report=boundary_report,
+                    boundary_validation=boundary_validation,
+                    status="blocked",
+                    effect_type="blocked_execution",
+                    reason="controlled_runtime_execution_boundary_not_ready",
+                )
+            policy_metadata = {
+                **policy_metadata,
+                "controlled_runtime_execution_boundary_evaluated": True,
+                "controlled_runtime_execution_boundary_state": boundary_state,
+                "controlled_runtime_execution_boundary": dict(boundary_report),
+                "controlled_runtime_execution_boundary_validation": dict(boundary_validation),
+            }
+
         if not policy_result.allowed or policy_result.state == "requires_confirmation":
             finished_at = self._utc_timestamp()
             effect = self.side_effect_registry.register(
@@ -465,12 +540,151 @@ class Executor:
                 "lineage_tagged": bool(request.lineage),
                 "rollback_metadata": dict(effect.rollback_metadata),
             },
-        )
+            )
 
     def _utc_timestamp(self) -> str:
         from datetime import UTC, datetime
 
         return datetime.now(UTC).isoformat()
+
+    def _controlled_boundary_report_for_request(
+        self,
+        request: RuntimeExecutionRequest,
+    ) -> dict[str, Any] | None:
+        metadata = request.metadata if isinstance(request.metadata, dict) else {}
+        for key in (
+            "controlled_runtime_execution_boundary_report",
+            "controlled_runtime_execution_boundary",
+            "execution_boundary_report",
+        ):
+            value = metadata.get(key)
+            if isinstance(value, dict):
+                return dict(value)
+
+        contract = metadata.get("controlled_runtime_execution_contract_report")
+        if contract is None:
+            contract = metadata.get("execution_contract_report")
+        if not isinstance(contract, dict):
+            return None
+
+        action_requests = metadata.get("controlled_runtime_action_requests")
+        if action_requests is None:
+            action_requests = metadata.get("action_requests")
+
+        return build_controlled_runtime_execution_boundary_report(
+            execution_contract_report=contract,
+            action_requests=action_requests if isinstance(action_requests, list) else None,
+            approval_gate_report=metadata.get("approval_gate_report"),
+            dry_run_report=metadata.get("dry_run_report"),
+            gateway_report=metadata.get("gateway_report"),
+            readiness_report=metadata.get("readiness_report"),
+            forensic_report=metadata.get("forensic_report"),
+            snapshot_seal=metadata.get("snapshot_seal"),
+            landing_consistency_report=metadata.get("landing_consistency_report"),
+            capability_grant_contract=metadata.get("capability_grant_contract")
+            or metadata.get("runtime_capability_grant_contract"),
+            approval_chain_contract=metadata.get("approval_chain_contract")
+            or metadata.get("runtime_approval_chain_contract"),
+            mutation_transaction_contract=metadata.get("mutation_transaction_contract")
+            or metadata.get("governed_mutation_transaction_contract"),
+            previous_transaction_state=metadata.get("previous_transaction_state"),
+            transaction_verification_report=metadata.get("transaction_verification_report"),
+            transaction_rollback_report=metadata.get("transaction_rollback_report"),
+            transaction_seal_report=metadata.get("transaction_seal_report"),
+            transaction_replay_report=metadata.get("transaction_replay_report"),
+            evidence_chain_records=metadata.get("evidence_chain_records")
+            or metadata.get("runtime_evidence_chain"),
+            replay_evidence=metadata.get("replay_evidence"),
+            seal_evidence=metadata.get("seal_evidence"),
+            reconstruction_contract=metadata.get("reconstruction_contract")
+            or metadata.get("runtime_recovery_reconstruction_contract"),
+            reconstruction_expected_evidence_chain=metadata.get("reconstruction_expected_evidence_chain"),
+            rollback_reconstruction=metadata.get("rollback_reconstruction"),
+            seal_reconstruction=metadata.get("seal_reconstruction"),
+            governance_chain_seal_report=metadata.get("governance_chain_seal_report")
+            or metadata.get("runtime_governance_chain_seal"),
+        )
+
+    def _controlled_boundary_reason(
+        self,
+        boundary_report: dict[str, Any],
+        fallback: str,
+    ) -> str:
+        reason_codes = boundary_report.get("reason_codes")
+        if isinstance(reason_codes, list) and reason_codes:
+            return ",".join(str(item) for item in reason_codes if str(item).strip()) or fallback
+        return fallback
+
+    def _build_controlled_boundary_stop_result(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        execution_id: str,
+        execution_start_id: str,
+        started_at: str,
+        policy_metadata: dict[str, Any],
+        policy_risk_level: str,
+        boundary_report: dict[str, Any],
+        boundary_validation: dict[str, Any],
+        status: str,
+        effect_type: str,
+        reason: str,
+    ) -> RuntimeExecutionResult:
+        finished_at = self._utc_timestamp()
+        boundary_metadata = {
+            "controlled_runtime_execution_boundary_evaluated": True,
+            "controlled_runtime_execution_boundary_state": str(boundary_report.get("boundary_state") or ""),
+            "controlled_runtime_execution_boundary": dict(boundary_report),
+            "controlled_runtime_execution_boundary_validation": dict(boundary_validation),
+        }
+        effect = self.side_effect_registry.register(
+            effect_type=effect_type,
+            source_execution_id=execution_id,
+            verified=True,
+            rollbackable=False,
+            artifact_path=None,
+            risk_level=policy_risk_level,
+            rollback_metadata={"rollback_required": False},
+            metadata={
+                "policy": dict(policy_metadata),
+                "controlled_runtime_execution_boundary": dict(boundary_report),
+                "command": request.command,
+                "execution_type": request.execution_type,
+            },
+        )
+        return RuntimeExecutionResult(
+            execution_id=execution_id,
+            execution_start_id=execution_start_id,
+            execution_type=request.execution_type,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            stdout="",
+            stderr=reason,
+            return_code=1,
+            side_effects=(effect,),
+            artifacts=(),
+            verified=False,
+            blocked=True,
+            rollback_required=False,
+            lineage=dict(request.lineage),
+            replay_id=request.replay_id or f"replay:{execution_id}",
+            repair_session_id=request.repair_session_id,
+            risk_level=policy_risk_level,
+            risk_metadata={
+                **dict(policy_metadata),
+                **boundary_metadata,
+            },
+            metadata={
+                **dict(request.metadata),
+                **dict(policy_metadata),
+                **boundary_metadata,
+                "canonical_owner": "core.runtime.executor",
+                "side_effect_registry_updated": True,
+                "replay_tagged": True,
+                "lineage_tagged": bool(request.lineage),
+            },
+        )
 
     def _execution_id_for_request(
         self,
