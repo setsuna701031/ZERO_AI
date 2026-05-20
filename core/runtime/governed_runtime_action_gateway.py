@@ -306,10 +306,12 @@ def build_governed_action_request_gateway_report(
             affected_repair_chain_ids=affected,
             reason_codes=readiness.get("reason_codes", []),
         )
-        if effective_approval:
+        if _text(readiness.get("transition_state")) == TRANSITION_READY:
+            gateway_state = GATEWAY_READY
+        elif effective_approval:
             gateway_state = GATEWAY_APPROVAL_REQUIRED
         elif effective_dry_run:
-            gateway_state = GATEWAY_READY if _text(readiness.get("transition_state")) == TRANSITION_READY else GATEWAY_DRY_RUN_ONLY
+            gateway_state = GATEWAY_DRY_RUN_ONLY
         else:
             gateway_state = GATEWAY_READY
     report = {

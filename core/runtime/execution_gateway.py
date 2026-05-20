@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Any, Sequence
 
 from core.runtime.executor import Executor
@@ -17,6 +17,9 @@ class ExecutionGatewayResult:
     shell: bool
     timeout: float | None
     error: str | None = None
+    replay_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    risk_metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -80,4 +83,7 @@ def safe_subprocess_run(
         shell=shell,
         timeout=timeout,
         error=(f"timeout after {timeout} seconds" if timed_out else None),
+        replay_id=result.replay_id,
+        metadata=dict(result.metadata),
+        risk_metadata=dict(result.risk_metadata),
     ).to_dict()

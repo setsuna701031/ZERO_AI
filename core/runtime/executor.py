@@ -19,6 +19,16 @@ from core.runtime.controlled_runtime_execution_boundary import (
     build_controlled_runtime_execution_boundary_report,
     validate_controlled_runtime_execution_boundary_report,
 )
+from core.runtime.governed_runtime_action_executor import (
+    build_governed_runtime_action_execution_report,
+)
+from core.runtime.governed_runtime_execution_session import (
+    build_governed_runtime_execution_session_report,
+)
+from core.runtime.governed_runtime_replay_session import (
+    build_governed_runtime_replay_session_report,
+)
+from core.runtime.runtime_evidence_chain import build_runtime_evidence_record
 
 
 class Executor:
@@ -254,6 +264,12 @@ class Executor:
         policy_metadata = policy_result.to_metadata()
 
         boundary_report = self._controlled_boundary_report_for_request(request)
+        governed_metadata = self._governed_runtime_metadata_for_request(
+            request=request,
+            execution_id=execution_id,
+            execution_start_id=execution_start_id,
+            boundary_report=boundary_report,
+        )
         if boundary_report is not None:
             boundary_validation = validate_controlled_runtime_execution_boundary_report(boundary_report)
             boundary_state = str(boundary_report.get("boundary_state") or "").strip()
@@ -270,6 +286,7 @@ class Executor:
                     status="blocked",
                     effect_type="blocked_execution",
                     reason="controlled_runtime_execution_boundary_invalid",
+                    governed_metadata=governed_metadata,
                 )
             if boundary_state == BOUNDARY_BLOCKED:
                 return self._build_controlled_boundary_stop_result(
@@ -284,6 +301,7 @@ class Executor:
                     status="blocked",
                     effect_type="blocked_execution",
                     reason=self._controlled_boundary_reason(boundary_report, "controlled_runtime_execution_boundary_blocked"),
+                    governed_metadata=governed_metadata,
                 )
             if boundary_state == BOUNDARY_NEEDS_REVIEW:
                 return self._build_controlled_boundary_stop_result(
@@ -298,6 +316,7 @@ class Executor:
                     status="review_required",
                     effect_type="review_required_execution",
                     reason=self._controlled_boundary_reason(boundary_report, "controlled_runtime_execution_boundary_needs_review"),
+                    governed_metadata=governed_metadata,
                 )
             if boundary_state != BOUNDARY_READY or boundary_report.get("execution_allowed") is not True:
                 return self._build_controlled_boundary_stop_result(
@@ -312,6 +331,7 @@ class Executor:
                     status="blocked",
                     effect_type="blocked_execution",
                     reason="controlled_runtime_execution_boundary_not_ready",
+                    governed_metadata=governed_metadata,
                 )
             policy_metadata = {
                 **policy_metadata,
@@ -320,6 +340,30 @@ class Executor:
                 "controlled_runtime_execution_boundary": dict(boundary_report),
                 "controlled_runtime_execution_boundary_validation": dict(boundary_validation),
             }
+
+        policy_metadata = {
+            **policy_metadata,
+            **governed_metadata,
+        }
+        governed_execution = governed_metadata.get("governed_runtime_action_execution")
+        governed_execution_state = (
+            str(governed_execution.get("execution_state") or "").strip()
+            if isinstance(governed_execution, dict)
+            else ""
+        )
+        if governed_execution_state == "blocked":
+            return self._build_governed_runtime_boundary_stop_result(
+                request=request,
+                execution_id=execution_id,
+                execution_start_id=execution_start_id,
+                started_at=started_at,
+                policy_metadata=policy_metadata,
+                policy_risk_level=policy_result.risk_level,
+                governed_metadata=governed_metadata,
+                status="blocked",
+                effect_type="blocked_execution",
+                reason="governed_runtime_action_execution_blocked",
+            )
 
         if not policy_result.allowed or policy_result.state == "requires_confirmation":
             finished_at = self._utc_timestamp()
@@ -333,6 +377,7 @@ class Executor:
                 rollback_metadata={"rollback_required": False},
                 metadata={
                     "policy": policy_metadata,
+                    **self._evidence_effect_metadata(policy_metadata),
                     "command": request.command,
                     "execution_type": request.execution_type,
                 },
@@ -379,6 +424,7 @@ class Executor:
                 rollback_metadata={"rollback_required": False},
                 metadata={
                     "policy": policy_metadata,
+                    **self._evidence_effect_metadata(policy_metadata),
                     "command": request.command,
                     "execution_type": request.execution_type,
                 },
@@ -507,6 +553,7 @@ class Executor:
                 "shell": shell,
                 "return_code": return_code,
                 "policy": policy_metadata,
+                **self._evidence_effect_metadata(policy_metadata),
             },
         )
 
@@ -629,8 +676,10 @@ class Executor:
         status: str,
         effect_type: str,
         reason: str,
+        governed_metadata: dict[str, Any] | None = None,
     ) -> RuntimeExecutionResult:
         finished_at = self._utc_timestamp()
+        governed_metadata = dict(governed_metadata or {})
         boundary_metadata = {
             "controlled_runtime_execution_boundary_evaluated": True,
             "controlled_runtime_execution_boundary_state": str(boundary_report.get("boundary_state") or ""),
@@ -648,6 +697,8 @@ class Executor:
             metadata={
                 "policy": dict(policy_metadata),
                 "controlled_runtime_execution_boundary": dict(boundary_report),
+                **governed_metadata,
+                **self._evidence_effect_metadata(governed_metadata),
                 "command": request.command,
                 "execution_type": request.execution_type,
             },
@@ -674,17 +725,298 @@ class Executor:
             risk_metadata={
                 **dict(policy_metadata),
                 **boundary_metadata,
+                **governed_metadata,
             },
             metadata={
                 **dict(request.metadata),
                 **dict(policy_metadata),
                 **boundary_metadata,
+                **governed_metadata,
                 "canonical_owner": "core.runtime.executor",
                 "side_effect_registry_updated": True,
                 "replay_tagged": True,
                 "lineage_tagged": bool(request.lineage),
             },
         )
+
+    def _build_governed_runtime_boundary_stop_result(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        execution_id: str,
+        execution_start_id: str,
+        started_at: str,
+        policy_metadata: dict[str, Any],
+        policy_risk_level: str,
+        governed_metadata: dict[str, Any],
+        status: str,
+        effect_type: str,
+        reason: str,
+    ) -> RuntimeExecutionResult:
+        finished_at = self._utc_timestamp()
+        effect = self.side_effect_registry.register(
+            effect_type=effect_type,
+            source_execution_id=execution_id,
+            verified=True,
+            rollbackable=False,
+            artifact_path=None,
+            risk_level=policy_risk_level,
+            rollback_metadata={"rollback_required": False},
+            metadata={
+                "policy": dict(policy_metadata),
+                **dict(governed_metadata),
+                **self._evidence_effect_metadata(governed_metadata),
+                "command": request.command,
+                "execution_type": request.execution_type,
+            },
+        )
+        return RuntimeExecutionResult(
+            execution_id=execution_id,
+            execution_start_id=execution_start_id,
+            execution_type=request.execution_type,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            stdout="",
+            stderr=reason,
+            return_code=1,
+            side_effects=(effect,),
+            artifacts=(),
+            verified=False,
+            blocked=True,
+            rollback_required=False,
+            lineage=dict(request.lineage),
+            replay_id=request.replay_id or f"replay:{execution_id}",
+            repair_session_id=request.repair_session_id,
+            risk_level=policy_risk_level,
+            risk_metadata={
+                **dict(policy_metadata),
+                **dict(governed_metadata),
+            },
+            metadata={
+                **dict(request.metadata),
+                **dict(policy_metadata),
+                **dict(governed_metadata),
+                "canonical_owner": "core.runtime.executor",
+                "side_effect_registry_updated": True,
+                "replay_tagged": True,
+                "lineage_tagged": bool(request.lineage),
+            },
+        )
+
+    def _governed_runtime_metadata_for_request(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        execution_id: str,
+        execution_start_id: str,
+        boundary_report: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        gateway_report = self._governed_gateway_report_for_request(request)
+        action_execution = build_governed_runtime_action_execution_report(
+            gateway_report=gateway_report,
+            boundary_report=boundary_report,
+            dry_run=bool(request.dry_run),
+            execution_context={
+                "execution_context_id": str(
+                    request.lineage.get("execution_start_id")
+                    or request.metadata.get("execution_start_id")
+                    or ""
+                ),
+                "execution_type": request.execution_type,
+                "runtime_owner": "core.runtime.executor",
+            },
+        )
+        execution_session = build_governed_runtime_execution_session_report(
+            action_execution_report=action_execution,
+            boundary_report=boundary_report,
+            gateway_report=gateway_report,
+            continuation_context={
+                "runtime_owner": "core.runtime.executor",
+                "replay_id": request.replay_id,
+                "lineage": dict(request.lineage),
+            },
+        )
+        replay_session = build_governed_runtime_replay_session_report(
+            execution_session_report=execution_session,
+            resume_context={"resume_allowed": True},
+        )
+        evidence_record = self._build_governed_runtime_evidence_record(
+            request=request,
+            execution_id=execution_id,
+            boundary_report=boundary_report,
+            action_execution=action_execution,
+            execution_session=execution_session,
+            replay_session=replay_session,
+        )
+        audit_metadata = self._build_governed_runtime_audit_metadata(
+            request=request,
+            execution_id=execution_id,
+            execution_start_id=execution_start_id,
+            evidence_record=evidence_record,
+            action_execution=action_execution,
+            execution_session=execution_session,
+            replay_session=replay_session,
+        )
+        return {
+            "governed_runtime_boundary_evaluated": True,
+            "governed_runtime_owner": "core.runtime.executor",
+            "governed_runtime_action_gateway": gateway_report,
+            "governed_runtime_action_execution": action_execution,
+            "governed_runtime_execution_session": execution_session,
+            "governed_runtime_replay_session": replay_session,
+            "governed_runtime_execution_session_id": execution_session.get("execution_session_id"),
+            "governed_runtime_replay_session_id": replay_session.get("replay_session_id"),
+            "runtime_evidence_record": evidence_record,
+            "runtime_evidence_id": evidence_record.get("evidence_id"),
+            "runtime_audit_metadata": audit_metadata,
+            "runtime_audit_id": audit_metadata.get("audit_id"),
+        }
+
+    def _build_governed_runtime_evidence_record(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        execution_id: str,
+        boundary_report: dict[str, Any] | None,
+        action_execution: dict[str, Any],
+        execution_session: dict[str, Any],
+        replay_session: dict[str, Any],
+    ) -> dict[str, Any]:
+        boundary = boundary_report if isinstance(boundary_report, dict) else {}
+        metadata = request.metadata if isinstance(request.metadata, dict) else {}
+        return build_runtime_evidence_record(
+            transaction_id=execution_id,
+            execution_intent=str(
+                boundary.get("execution_intent")
+                or metadata.get("operation")
+                or request.execution_type
+                or "runtime_execution"
+            ),
+            boundary_state=str(boundary.get("boundary_state") or "governed_runtime_boundary"),
+            approval_chain_id=str(
+                metadata.get("approval_chain_id")
+                or metadata.get("approval_id")
+                or ""
+            ),
+            capability_grant_id=str(
+                metadata.get("capability_scope_id")
+                or metadata.get("capability_grant_id")
+                or ""
+            ),
+            verification_state="verified" if not request.dry_run else "dry_run",
+            rollback_state="rollback_not_required",
+            seal_state="evidence_sealed",
+            source_execution_id=execution_id,
+            execution_session_id=str(execution_session.get("execution_session_id") or ""),
+            action_execution_id=str(action_execution.get("governed_action_execution_id") or ""),
+            replay_session_id=str(replay_session.get("replay_session_id") or ""),
+            mutation_transaction_id=str(metadata.get("mutation_transaction_id") or ""),
+            mutation_request_id=str(metadata.get("mutation_request_id") or ""),
+            authority_metadata={
+                "runtime_identity": metadata.get("runtime_identity", {}),
+                "authority_scope_id": metadata.get("authority_scope_id", ""),
+                "capability_scope_id": metadata.get("capability_scope_id", ""),
+            },
+            audit_lineage={
+                "execution_start_id": request.lineage.get("execution_start_id", ""),
+                "request_id": request.lineage.get("request_id", ""),
+                "replay_id": request.replay_id or f"replay:{execution_id}",
+                "repair_session_id": request.repair_session_id or "",
+                "provenance": metadata.get("provenance", {}),
+            },
+            mutation_lineage={
+                "mutation_transaction_id": metadata.get("mutation_transaction_id", ""),
+                "mutation_request_id": metadata.get("mutation_request_id", ""),
+                "lineage": dict(request.lineage),
+            },
+        )
+
+    def _build_governed_runtime_audit_metadata(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        execution_id: str,
+        execution_start_id: str,
+        evidence_record: dict[str, Any],
+        action_execution: dict[str, Any],
+        execution_session: dict[str, Any],
+        replay_session: dict[str, Any],
+    ) -> dict[str, Any]:
+        metadata = request.metadata if isinstance(request.metadata, dict) else {}
+        return {
+            "audit_id": str(metadata.get("audit_id") or f"audit:{execution_id}"),
+            "execution_id": execution_id,
+            "execution_start_id": execution_start_id,
+            "evidence_id": evidence_record.get("evidence_id", ""),
+            "evidence_hash": evidence_record.get("evidence_hash", ""),
+            "action_execution_id": action_execution.get("governed_action_execution_id", ""),
+            "execution_session_id": execution_session.get("execution_session_id", ""),
+            "replay_session_id": replay_session.get("replay_session_id", ""),
+            "replay_id": request.replay_id or f"replay:{execution_id}",
+            "authority": evidence_record.get("authority_metadata", {}),
+            "mutation_transaction_id": metadata.get("mutation_transaction_id", ""),
+            "mutation_request_id": metadata.get("mutation_request_id", ""),
+            "lineage": dict(request.lineage),
+            "provenance": metadata.get("provenance", {}),
+        }
+
+    def _evidence_effect_metadata(
+        self,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "runtime_evidence_record": metadata.get("runtime_evidence_record", {}),
+            "runtime_evidence_id": metadata.get("runtime_evidence_id", ""),
+            "runtime_audit_metadata": metadata.get("runtime_audit_metadata", {}),
+            "runtime_audit_id": metadata.get("runtime_audit_id", ""),
+        }
+
+    def _governed_gateway_report_for_request(
+        self,
+        request: RuntimeExecutionRequest,
+    ) -> dict[str, Any]:
+        metadata = request.metadata if isinstance(request.metadata, dict) else {}
+        for key in (
+            "governed_runtime_action_gateway",
+            "governed_action_gateway_report",
+            "gateway_report",
+        ):
+            value = metadata.get(key)
+            if isinstance(value, dict):
+                return dict(value)
+
+        request_type = "no_action"
+        gateway_state = "dry_run_only" if request.dry_run else "ready"
+        dry_run_only = bool(request.dry_run)
+        action_request = {
+            "request_id": str(request.lineage.get("request_id") or "runtime-execution-request"),
+            "request_type": request_type,
+            "source_action_type": request.execution_type,
+            "dry_run_only": dry_run_only,
+            "approval_required": False,
+            "execute": False,
+            "planner_invoked": False,
+            "task_enqueued": False,
+            "evidence_refs": {},
+            "seal_refs": {},
+            "affected_repair_chain_ids": [],
+            "reason_codes": [],
+        }
+        return {
+            "schema_version": "governed_runtime_action_gateway.v1",
+            "gateway_id": f"governed-runtime-action-gateway:{action_request['request_id']}",
+            "input_readiness_id": str(request.lineage.get("execution_start_id") or ""),
+            "gateway_state": gateway_state,
+            "action_requests": [action_request],
+            "approval_required": False,
+            "dry_run_only": dry_run_only,
+            "blocking_issues": [],
+            "evidence_refs": {},
+            "seal_refs": {},
+            "affected_repair_chain_ids": [],
+            "reason_codes": [],
+        }
 
     def _execution_id_for_request(
         self,

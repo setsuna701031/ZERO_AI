@@ -36,6 +36,10 @@ from core.runtime.mutation_verification import (
     verify_patch_plan,
     write_verification_result,
 )
+from core.runtime.runtime_evidence_chain import (
+    build_runtime_evidence_record,
+    validate_runtime_evidence_record,
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,85 @@ def run_mutation_runtime_pipeline(
     reports = Path(report_root)
     reports.mkdir(parents=True, exist_ok=True)
 
+    pipeline_metadata = dict(metadata or {})
+    evidence_record = build_runtime_evidence_record(
+        transaction_id=session.session_id,
+        execution_intent=session.intent,
+        boundary_state="governed_mutation_runtime_pipeline",
+        approval_chain_id=session.approval_mode.value,
+        capability_grant_id="mutation_scope",
+        verification_state=session.verification.value,
+        rollback_state="rollback_ready",
+        seal_state="evidence_sealed",
+        source_execution_id=session.session_id,
+        execution_session_id=str(
+            pipeline_metadata.get("governed_runtime_execution_session_id")
+            or pipeline_metadata.get("execution_session_id")
+            or session.session_id
+        ),
+        replay_session_id=str(
+            pipeline_metadata.get("governed_runtime_replay_session_id")
+            or pipeline_metadata.get("replay_session_id")
+            or pipeline_metadata.get("replay_id")
+            or f"replay:{session.session_id}"
+        ),
+        mutation_transaction_id=str(pipeline_metadata.get("transaction_id") or ""),
+        mutation_request_id=str(pipeline_metadata.get("mutation_request_id") or ""),
+        authority_metadata={
+            "initiator": session.initiator,
+            "risk_level": session.risk_level.value,
+            "approval_mode": session.approval_mode.value,
+            "repair_authority_governance": pipeline_metadata.get("repair_authority_governance", {}),
+            "authorization": pipeline_metadata.get("authorization", {}),
+            "scope_gate": pipeline_metadata.get("scope_gate", {}),
+        },
+        audit_lineage={
+            "session_id": session.session_id,
+            "initiator": session.initiator,
+            "source": pipeline_metadata.get("source", ""),
+            "transaction_id": pipeline_metadata.get("transaction_id", ""),
+            "mutation_transaction_id": pipeline_metadata.get("mutation_transaction_id", pipeline_metadata.get("transaction_id", "")),
+            "mutation_request_id": pipeline_metadata.get("mutation_request_id", ""),
+            "task_id": pipeline_metadata.get("task_id", ""),
+            "proposal_id": pipeline_metadata.get("proposal_id", ""),
+            "replay_id": pipeline_metadata.get("replay_id", ""),
+            "audit_id": pipeline_metadata.get("audit_id", ""),
+            "lineage": pipeline_metadata.get("lineage", {}),
+        },
+        mutation_lineage={
+            "relative_paths": list(relative_paths),
+            "operation_count": len(operations or []),
+            "mutation_transaction_id": pipeline_metadata.get("mutation_transaction_id", pipeline_metadata.get("transaction_id", "")),
+            "mutation_request_id": pipeline_metadata.get("mutation_request_id", ""),
+            "lineage": pipeline_metadata.get("lineage", {}),
+        },
+    )
+    _assert_canonical_runtime_evidence_for_pipeline(
+        evidence_record,
+        metadata=pipeline_metadata,
+    )
+    pipeline_metadata.update(
+        {
+            "runtime_evidence_record": evidence_record,
+            "runtime_evidence_id": evidence_record["evidence_id"],
+            "runtime_audit_metadata": {
+                "audit_id": str(pipeline_metadata.get("audit_id") or f"audit:{session.session_id}"),
+                "evidence_id": evidence_record["evidence_id"],
+                "evidence_hash": evidence_record["evidence_hash"],
+                "session_id": session.session_id,
+                "execution_session_id": evidence_record.get("execution_session_id", ""),
+                "replay_session_id": evidence_record.get("replay_session_id", ""),
+                "replay_id": pipeline_metadata.get("replay_id", ""),
+                "mutation_transaction_id": pipeline_metadata.get("transaction_id", ""),
+                "mutation_request_id": pipeline_metadata.get("mutation_request_id", ""),
+                "task_id": pipeline_metadata.get("task_id", ""),
+                "proposal_id": pipeline_metadata.get("proposal_id", ""),
+                "authority": evidence_record.get("authority_metadata", {}),
+                "lineage": evidence_record["audit_lineage"],
+            },
+        }
+    )
+
     artifact_paths: dict[str, str] = {}
 
     session_path = write_mutation_session(
@@ -109,7 +192,7 @@ def run_mutation_runtime_pipeline(
         relative_paths=relative_paths,
         operations=operations,
         sandbox_files=sandbox_files,
-        metadata=metadata,
+        metadata=pipeline_metadata,
     )
     patch_plan_path = write_patch_plan(
         patch_plan,
@@ -121,7 +204,7 @@ def run_mutation_runtime_pipeline(
         session=session,
         plan=patch_plan,
         checks=verification_checks,
-        metadata=metadata,
+        metadata=pipeline_metadata,
     )
     verification_path = write_verification_result(
         verification,
@@ -135,7 +218,7 @@ def run_mutation_runtime_pipeline(
         session=session,
         verification=verification,
         decisions=approval_decisions,
-        metadata=metadata,
+        metadata=pipeline_metadata,
     )
     approval_path = write_approval_result(
         approval,
@@ -164,7 +247,7 @@ def run_mutation_runtime_pipeline(
         verification=verification,
         approval=approval,
         apply_result=apply_result,
-        metadata=metadata,
+        metadata=pipeline_metadata,
     )
     audit_path = write_audit_record(
         audit_record,
@@ -206,3 +289,57 @@ def write_pipeline_result(
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _assert_canonical_runtime_evidence_for_pipeline(
+    evidence_record: dict[str, Any],
+    *,
+    metadata: dict[str, Any],
+) -> None:
+    validation = validate_runtime_evidence_record(evidence_record)
+    if not validation.get("ok"):
+        raise ValueError(f"canonical_runtime_evidence_invalid:{validation}")
+
+    if not _repair_authority_seal_required(metadata):
+        return
+
+    missing: list[str] = []
+    for field in (
+        "evidence_id",
+        "execution_session_id",
+        "replay_session_id",
+        "mutation_transaction_id",
+        "mutation_request_id",
+    ):
+        if not str(evidence_record.get(field) or "").strip():
+            missing.append(field)
+
+    authority = evidence_record.get("authority_metadata")
+    if not isinstance(authority, dict) or not authority:
+        missing.append("authority_metadata")
+    elif not isinstance(authority.get("repair_authority_governance"), dict):
+        missing.append("repair_authority_governance")
+
+    audit_lineage = evidence_record.get("audit_lineage")
+    if not isinstance(audit_lineage, dict) or not audit_lineage:
+        missing.append("audit_lineage")
+    else:
+        for field in ("transaction_id", "mutation_request_id", "session_id", "replay_id", "audit_id"):
+            if not str(audit_lineage.get(field) or "").strip():
+                missing.append(f"audit_lineage.{field}")
+
+    if missing:
+        raise ValueError(
+            "repair_transaction_authority_evidence_incomplete:"
+            + ",".join(sorted(set(missing)))
+        )
+
+
+def _repair_authority_seal_required(metadata: dict[str, Any]) -> bool:
+    source = str(metadata.get("source") or "").strip()
+    if source.startswith("runtime_repair"):
+        return True
+    if metadata.get("repair_authority_governance") is not None:
+        return True
+    lineage = metadata.get("lineage")
+    return isinstance(lineage, dict) and str(lineage.get("source") or "").strip() == "runtime_repair_transaction"

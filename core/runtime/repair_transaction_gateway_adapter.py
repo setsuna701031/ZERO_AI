@@ -50,13 +50,62 @@ def build_gateway_request_from_repair_transaction(
         allow_delete_files=False,
     )
 
+    transaction_metadata = safe_transaction.get("metadata")
+    if not isinstance(transaction_metadata, Mapping):
+        transaction_metadata = {}
+
+    transaction_id = _first_nonempty(safe_transaction.get("transaction_id"))
+    mutation_request_id = _first_nonempty(
+        safe_transaction.get("mutation_request_id"),
+        transaction_metadata.get("mutation_request_id"),
+        f"repair_request:{transaction_id}",
+    )
+    replay_id = _first_nonempty(
+        safe_transaction.get("replay_id"),
+        transaction_metadata.get("replay_id"),
+        f"replay:{transaction_id}",
+    )
+    audit_id = _first_nonempty(
+        safe_transaction.get("audit_id"),
+        transaction_metadata.get("audit_id"),
+        f"audit:{transaction_id}",
+    )
+    lineage = transaction_metadata.get("lineage") if isinstance(transaction_metadata.get("lineage"), Mapping) else {}
+
     metadata = {
+        **dict(transaction_metadata),
         "source": "runtime_repair_apply_transaction",
-        "transaction_id": _first_nonempty(safe_transaction.get("transaction_id")),
-        "transaction_status": _first_nonempty(safe_transaction.get("transaction_status")),
+        "transaction_id": transaction_id,
+        "mutation_transaction_id": transaction_id,
+        "mutation_request_id": mutation_request_id,
+        "replay_id": replay_id,
+        "audit_id": audit_id,
+        "transaction_status": _first_nonempty(
+            safe_transaction.get("transaction_status"),
+            safe_transaction.get("state"),
+            safe_transaction.get("status"),
+            transaction_metadata.get("original_state"),
+        ),
         "task_id": _first_nonempty(safe_transaction.get("task_id")),
         "proposal_id": _first_nonempty(safe_transaction.get("proposal_id")),
         "adapter": "repair_transaction_gateway_adapter",
+        "authorization": _mapping_copy(safe_transaction.get("authorization")),
+        "scope_gate": _mapping_copy(safe_transaction.get("scope_gate")),
+        "repair_authority_governance": _repair_authority_governance(
+            safe_transaction,
+            transaction_metadata=transaction_metadata,
+        ),
+        "lineage": {
+            **dict(lineage),
+            "transaction_id": transaction_id,
+            "mutation_transaction_id": transaction_id,
+            "mutation_request_id": mutation_request_id,
+            "task_id": _first_nonempty(safe_transaction.get("task_id")),
+            "proposal_id": _first_nonempty(safe_transaction.get("proposal_id")),
+            "replay_id": replay_id,
+            "audit_id": audit_id,
+            "source": "runtime_repair_transaction",
+        },
     }
 
     return MutationGatewayRequest(
@@ -256,3 +305,34 @@ def _first_nonempty(*values: Any) -> str:
         if text:
             return text
     return ""
+
+
+def _mapping_copy(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _repair_authority_governance(
+    transaction: Mapping[str, Any],
+    *,
+    transaction_metadata: Mapping[str, Any],
+) -> dict[str, Any]:
+    existing = transaction_metadata.get("repair_authority_governance")
+    if isinstance(existing, Mapping):
+        return dict(existing)
+
+    authorization = _mapping_copy(transaction.get("authorization"))
+    scope_gate = _mapping_copy(transaction.get("scope_gate"))
+    return {
+        "governance_source": "runtime_repair_transaction",
+        "transaction_state": _first_nonempty(
+            transaction.get("state"),
+            transaction.get("status"),
+            transaction_metadata.get("original_state"),
+        ),
+        "requires_approval": bool(transaction.get("requires_approval")),
+        "authorization_present": bool(authorization),
+        "scope_gate_present": bool(scope_gate),
+        "scope_allowed": scope_gate.get("scope_allowed", True),
+        "authorization": authorization,
+        "scope_gate": scope_gate,
+    }

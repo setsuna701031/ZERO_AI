@@ -10,6 +10,7 @@ from core.runtime.repair_transaction_execution_bridge import (
     build_executable_repair_transaction,
     execute_committed_runtime_repair_transaction,
 )
+from core.runtime.runtime_evidence_chain import validate_runtime_evidence_record
 from core.tasks.runtime_repair_transaction import (
     commit_runtime_repair_transaction,
     create_runtime_repair_transaction,
@@ -82,6 +83,41 @@ def test_runtime_repair_transaction_lifecycle_executes_through_governed_gateway(
     assert result.apply_result is not None
     assert result.apply_result.applied is True
     assert result.apply_result.applied_paths == ("project/example.py",)
+    assert result.audit_record.metadata["runtime_evidence_id"]
+    assert (
+        validate_runtime_evidence_record(
+            result.audit_record.metadata["runtime_evidence_record"]
+        )["ok"]
+        is True
+    )
+    assert result.audit_record.metadata["runtime_audit_metadata"]["session_id"] == result.session_id
+    assert result.audit_record.metadata["runtime_audit_metadata"]["execution_session_id"] == result.session_id
+    assert result.audit_record.metadata["runtime_audit_metadata"]["replay_session_id"]
+    assert result.audit_record.metadata["runtime_audit_metadata"]["mutation_request_id"] == (
+        f"repair_request:{committed['transaction_id']}"
+    )
+    assert (
+        result.audit_record.metadata["runtime_evidence_record"]["mutation_transaction_id"]
+        == committed["transaction_id"]
+    )
+    assert (
+        result.audit_record.metadata["runtime_evidence_record"]["mutation_request_id"]
+        == f"repair_request:{committed['transaction_id']}"
+    )
+    assert (
+        result.audit_record.metadata["runtime_evidence_record"]["authority_metadata"][
+            "repair_authority_governance"
+        ]["scope_allowed"]
+        is True
+    )
+    assert (
+        result.audit_record.metadata["runtime_audit_metadata"]["lineage"]["transaction_id"]
+        == committed["transaction_id"]
+    )
+    assert (
+        result.audit_record.metadata["runtime_audit_metadata"]["lineage"]["mutation_request_id"]
+        == f"repair_request:{committed['transaction_id']}"
+    )
 
     written = workspace / "project" / "example.py"
 

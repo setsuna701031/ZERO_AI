@@ -113,6 +113,7 @@ def test_runtime_execution_request_result_registry_policy_and_risk_are_mandatory
     request_module = importlib.import_module("core.runtime.runtime_execution_request")
     executor_module = importlib.import_module("core.runtime.executor")
     result_module = importlib.import_module("core.runtime.runtime_execution_result")
+    evidence_module = importlib.import_module("core.runtime.runtime_evidence_chain")
 
     request = request_module.RuntimeExecutionRequest(
         execution_type="subprocess",
@@ -147,14 +148,114 @@ def test_runtime_execution_request_result_registry_policy_and_risk_are_mandatory
     assert result.metadata["side_effect_registry_updated"] is True
     assert result.metadata["replay_tagged"] is True
     assert result.metadata["lineage_tagged"] is True
+    assert result.metadata["governed_runtime_boundary_evaluated"] is True
+    assert result.metadata["governed_runtime_owner"] == "core.runtime.executor"
+    assert result.metadata["governed_runtime_action_execution"]["source_gateway_id"]
+    assert result.metadata["governed_runtime_execution_session"]["source_execution_id"] == (
+        result.metadata["governed_runtime_action_execution"]["governed_action_execution_id"]
+    )
+    assert result.metadata["governed_runtime_replay_session"]["source_execution_session_id"] == (
+        result.metadata["governed_runtime_execution_session"]["execution_session_id"]
+    )
+    evidence_record = result.metadata["runtime_evidence_record"]
+    assert evidence_module.validate_runtime_evidence_record(evidence_record)["ok"] is True
+    assert evidence_record["source_execution_id"] == result.execution_id
+    assert evidence_record["execution_session_id"] == result.metadata["governed_runtime_execution_session_id"]
+    assert evidence_record["replay_session_id"] == result.metadata["governed_runtime_replay_session_id"]
+    assert evidence_record["authority_metadata"]["runtime_identity"]["identity_type"] == "SYSTEM"
+    assert result.metadata["runtime_audit_metadata"]["evidence_id"] == evidence_record["evidence_id"]
     assert result.risk_level == "MODERATE"
     assert result.risk_metadata["policy_state"] == "allowed"
     assert result.side_effects
     assert result.side_effects[0].effect_type == "subprocess"
+    assert result.side_effects[0].metadata["runtime_evidence_id"] == evidence_record["evidence_id"]
+    assert result.side_effects[0].metadata["runtime_audit_metadata"]["execution_session_id"] == (
+        result.metadata["governed_runtime_execution_session_id"]
+    )
     assert result.side_effects[0].risk_level == "MODERATE"
     assert result.side_effects[0].rollback_metadata["rollback_required"] is False
     assert result.replay_id == "replay:governance-request-1"
     assert result.lineage["request_id"] == "governance-request-1"
+
+
+def test_governed_runtime_action_boundary_blocks_raw_execute_flag(tmp_path):
+    request_module = importlib.import_module("core.runtime.runtime_execution_request")
+    executor_module = importlib.import_module("core.runtime.executor")
+
+    request = request_module.RuntimeExecutionRequest(
+        execution_type="subprocess",
+        command=(sys.executable, "-c", "print('bypassed')"),
+        working_directory=str(tmp_path),
+        timeout=20,
+        metadata={
+            "operation": "subprocess",
+            "runtime_identity": {
+                "identity_id": "system:test",
+                "identity_type": "SYSTEM",
+                "source": "tests",
+            },
+            "authority_scope_id": "authority:test",
+            "capability_scope_id": "capability:test",
+            "governed_action_gateway_report": {
+                "schema_version": "governed_runtime_action_gateway.v1",
+                "gateway_id": "gateway-raw-execute",
+                "input_readiness_id": "readiness-raw-execute",
+                "gateway_state": "ready",
+                "action_requests": [
+                    {
+                        "request_id": "raw-execute",
+                        "request_type": "no_action",
+                        "dry_run_only": False,
+                        "approval_required": False,
+                        "execute": True,
+                        "planner_invoked": False,
+                        "task_enqueued": False,
+                    }
+                ],
+                "approval_required": False,
+                "dry_run_only": False,
+                "blocking_issues": [],
+                "evidence_refs": {},
+                "seal_refs": {},
+                "affected_repair_chain_ids": [],
+                "reason_codes": [],
+            },
+        },
+        lineage={
+            "request_id": "governed-boundary-raw-execute",
+            "execution_start_id": "execution_start:governed-boundary-raw-execute",
+        },
+        replay_id="replay:governed-boundary-raw-execute",
+    )
+
+    result = executor_module.Executor(workspace_root=tmp_path).execute_request(request)
+
+    assert result.status == "blocked"
+    assert result.stdout == ""
+    assert result.metadata["governed_runtime_action_execution"]["execution_state"] == "blocked"
+    assert "raw_execute_flag_forbidden" in result.metadata["governed_runtime_action_execution"]["reason_codes"]
+
+
+def test_execution_gateway_facade_preserves_governed_runtime_metadata(tmp_path):
+    gateway_module = importlib.import_module("core.runtime.execution_gateway")
+
+    result = gateway_module.safe_subprocess_run(
+        (sys.executable, "-c", "print('facade')"),
+        cwd=str(tmp_path),
+        timeout=20,
+    )
+
+    assert result["ok"] is True
+    assert result["stdout"].strip() == "facade"
+    assert result["metadata"]["governed_runtime_boundary_evaluated"] is True
+    assert result["metadata"]["governed_runtime_execution_session_id"]
+    assert result["metadata"]["governed_runtime_replay_session_id"]
+    assert result["metadata"]["runtime_evidence_record"]["execution_session_id"] == (
+        result["metadata"]["governed_runtime_execution_session_id"]
+    )
+    assert result["metadata"]["runtime_audit_metadata"]["replay_session_id"] == (
+        result["metadata"]["governed_runtime_replay_session_id"]
+    )
 
 
 def test_execution_policy_layer_exposes_required_states_and_risk_levels():
@@ -236,6 +337,14 @@ class RuntimeExecutionGovernanceEnforcementTest(unittest.TestCase):
             test_runtime_execution_request_result_registry_policy_and_risk_are_mandatory(
                 Path(root)
             )
+
+    def test_governed_runtime_action_boundary_blocks_raw_execute_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            test_governed_runtime_action_boundary_blocks_raw_execute_flag(Path(root))
+
+    def test_execution_gateway_facade_preserves_governed_runtime_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            test_execution_gateway_facade_preserves_governed_runtime_metadata(Path(root))
 
     def test_execution_policy_layer_exposes_required_states_and_risk_levels(self) -> None:
         test_execution_policy_layer_exposes_required_states_and_risk_levels()

@@ -205,6 +205,18 @@ class RuntimeMutationGovernanceContractTest(unittest.TestCase):
         self.assertTrue(result.audit_metadata["audit_compatible"])
         self.assertEqual(result.audit_metadata["lineage"]["parent"], "scheduler")
         self.assertEqual(result.execution_result.replay_id, "replay:lineage-1")
+        self.assertEqual(
+            result.replay_metadata["governed_runtime_execution_session_id"],
+            result.execution_result.metadata["governed_runtime_execution_session_id"],
+        )
+        self.assertEqual(
+            result.audit_metadata["runtime_evidence_id"],
+            result.execution_result.metadata["runtime_evidence_id"],
+        )
+        self.assertEqual(
+            result.audit_metadata["runtime_evidence_record"]["mutation_transaction_id"],
+            result.transaction.transaction_id,
+        )
 
     def test_policy_classifies_required_mutation_types(self) -> None:
         policy = RuntimeMutationPolicy()

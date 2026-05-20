@@ -212,14 +212,67 @@ class RuntimeRecoveryCoordinatorContractTest(unittest.TestCase):
             coordinator.verify_recovery("recovery-1")
 
     def test_verify_marks_plan_verified(self) -> None:
+        from core.runtime.runtime_evidence_chain import validate_runtime_evidence_record
+
         coordinator = self._coordinator_with_failed_source()
-        coordinator.create_recovery("recovery-1", "source-1")
+        coordinator.create_recovery(
+            "recovery-1",
+            "source-1",
+            metadata={
+                "lineage": {
+                    "mutation_transaction_id": "mutation-tx-1",
+                    "mutation_request_id": "mutation-request-1",
+                    "repair_transaction_id": "repair-tx-1",
+                    "continuation_id": "continuation-1",
+                    "handoff_id": "handoff-1",
+                },
+                "authority": {"operator": "test"},
+                "audit_id": "audit:recovery-1",
+            },
+        )
         coordinator.run_recovery("recovery-1")
 
         plan = coordinator.verify_recovery("recovery-1")
+        governance = plan.governance
+        evidence = governance["runtime_evidence_record"]
+        audit = governance["runtime_audit_metadata"]
 
         self.assertEqual(plan.status, "verified")
         self.assertTrue(plan.verified)
+        self.assertTrue(validate_runtime_evidence_record(evidence)["ok"])
+        self.assertEqual(governance["runtime_evidence_id"], evidence["evidence_id"])
+        self.assertEqual(governance["execution_session_id"], plan.repair_session_id)
+        self.assertEqual(governance["replay_session_id"], plan.replay_id)
+        self.assertEqual(governance["mutation_transaction_id"], "mutation-tx-1")
+        self.assertEqual(governance["mutation_request_id"], "mutation-request-1")
+        self.assertEqual(governance["repair_transaction_id"], "repair-tx-1")
+        self.assertEqual(governance["continuation_id"], "continuation-1")
+        self.assertEqual(governance["handoff_id"], "handoff-1")
+        self.assertEqual(audit["runtime_evidence_id"], evidence["evidence_id"])
+        self.assertEqual(audit["authority"]["manual_recovery_authority"]["operator"], "test")
+        self.assertFalse(governance["raw_recovery_execution_allowed"])
+
+    def test_verify_rejects_recovery_without_canonical_governance(self) -> None:
+        from dataclasses import replace
+        from core.runtime.runtime_recovery_coordinator import RuntimeRecoveryRejected
+
+        coordinator = self._coordinator_with_failed_source()
+        coordinator.create_recovery("recovery-1", "source-1")
+        replayed = coordinator.run_recovery("recovery-1")
+
+        coordinator._recoveries["recovery-1"] = replace(
+            replayed,
+            governance={
+                "runtime_evidence_id": "",
+                "runtime_evidence_record": {},
+                "runtime_audit_metadata": {},
+                "authority_metadata": {},
+                "raw_recovery_execution_allowed": True,
+            },
+        )
+
+        with self.assertRaises(RuntimeRecoveryRejected):
+            coordinator.verify_recovery("recovery-1")
 
     def test_verify_requires_replay_verified_true(self) -> None:
         from core.runtime.runtime_recovery_coordinator import (

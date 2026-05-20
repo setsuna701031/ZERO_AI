@@ -32,6 +32,20 @@ EVIDENCE_REQUIRED_FIELDS: tuple[str, ...] = (
     "evidence_signature",
 )
 
+EVIDENCE_SEALED_LINEAGE_FIELDS: tuple[str, ...] = (
+    "source_execution_id",
+    "execution_session_id",
+    "action_execution_id",
+    "replay_session_id",
+    "continuation_id",
+    "handoff_id",
+    "mutation_transaction_id",
+    "mutation_request_id",
+    "authority_metadata",
+    "audit_lineage",
+    "mutation_lineage",
+)
+
 
 def runtime_evidence_chain_required_fields() -> List[str]:
     return list(EVIDENCE_REQUIRED_FIELDS)
@@ -49,6 +63,17 @@ def build_runtime_evidence_record(
     seal_state: str = "",
     previous_evidence_id: str = "",
     timestamp: str | None = None,
+    source_execution_id: str = "",
+    execution_session_id: str = "",
+    action_execution_id: str = "",
+    replay_session_id: str = "",
+    continuation_id: str = "",
+    handoff_id: str = "",
+    mutation_transaction_id: str = "",
+    mutation_request_id: str = "",
+    authority_metadata: Any | None = None,
+    audit_lineage: Any | None = None,
+    mutation_lineage: Any | None = None,
 ) -> Dict[str, Any]:
     record = {
         "schema_version": SCHEMA_VERSION,
@@ -65,6 +90,17 @@ def build_runtime_evidence_record(
         "previous_evidence_id": _text(previous_evidence_id),
         "evidence_hash": "",
         "evidence_signature": "",
+        "source_execution_id": _text(source_execution_id),
+        "execution_session_id": _text(execution_session_id),
+        "action_execution_id": _text(action_execution_id),
+        "replay_session_id": _text(replay_session_id),
+        "continuation_id": _text(continuation_id),
+        "handoff_id": _text(handoff_id),
+        "mutation_transaction_id": _text(mutation_transaction_id),
+        "mutation_request_id": _text(mutation_request_id),
+        "authority_metadata": copy.deepcopy(authority_metadata or {}),
+        "audit_lineage": copy.deepcopy(audit_lineage or {}),
+        "mutation_lineage": copy.deepcopy(mutation_lineage or {}),
     }
     record["evidence_hash"] = compute_runtime_evidence_hash(record)
     record["evidence_id"] = "runtime-evidence-" + record["evidence_hash"][:16]
@@ -179,11 +215,18 @@ def validate_runtime_evidence_chain(
 
 
 def _evidence_hash_payload(record: Mapping[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         field: _text(record.get(field))
         for field in EVIDENCE_REQUIRED_FIELDS
         if field not in {"evidence_id", "evidence_hash", "evidence_signature"}
     }
+    for field in EVIDENCE_SEALED_LINEAGE_FIELDS:
+        value = record.get(field)
+        if isinstance(value, (dict, list, tuple)):
+            payload[field] = copy.deepcopy(value)
+        else:
+            payload[field] = _text(value)
+    return payload
 
 
 def _replay_evidence_state(records: List[Dict[str, Any]], replay_evidence: Any) -> str:

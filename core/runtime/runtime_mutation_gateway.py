@@ -225,8 +225,8 @@ class RuntimeMutationGateway:
                 execution_result=execution_result,
                 verified=False,
                 rollback_metadata={"rollback_required": False},
-                replay_metadata=self._replay_metadata(request, transaction_id),
-                audit_metadata=self._audit_metadata(request, transaction_id),
+                replay_metadata=self._replay_metadata(request, transaction_id, execution_result),
+                audit_metadata=self._audit_metadata(request, transaction_id, execution_result),
                 metadata={
                     "policy": policy_result.to_metadata(),
                     "authority": authority_result.to_metadata(),
@@ -257,8 +257,8 @@ class RuntimeMutationGateway:
                 execution_result=execution_result,
                 verified=False,
                 rollback_metadata={"rollback_required": False},
-                replay_metadata=self._replay_metadata(request, transaction_id),
-                audit_metadata=self._audit_metadata(request, transaction_id),
+                replay_metadata=self._replay_metadata(request, transaction_id, execution_result),
+                audit_metadata=self._audit_metadata(request, transaction_id, execution_result),
                 metadata={
                     "policy": policy_result.to_metadata(),
                     "authority": authority_result.to_metadata(),
@@ -289,8 +289,8 @@ class RuntimeMutationGateway:
                 execution_result=execution_result,
                 verified=False,
                 rollback_metadata={"rollback_required": True},
-                replay_metadata=self._replay_metadata(request, transaction_id),
-                audit_metadata=self._audit_metadata(request, transaction_id),
+                replay_metadata=self._replay_metadata(request, transaction_id, execution_result),
+                audit_metadata=self._audit_metadata(request, transaction_id, execution_result),
                 metadata={
                     "policy": policy_result.to_metadata(),
                     "authority": authority_result.to_metadata(),
@@ -374,8 +374,8 @@ class RuntimeMutationGateway:
                 snapshot_result=snapshot_result,
                 verified=True,
                 rollback_metadata=snapshot_result.snapshot.rollback_metadata,
-                replay_metadata=self._replay_metadata(request, transaction_id),
-                audit_metadata=self._audit_metadata(request, transaction_id),
+                replay_metadata=self._replay_metadata(request, transaction_id, execution_result),
+                audit_metadata=self._audit_metadata(request, transaction_id, execution_result),
                 metadata={
                     "policy": policy_result.to_metadata(),
                     "authority": authority_result.to_metadata(),
@@ -489,8 +489,8 @@ class RuntimeMutationGateway:
             snapshot_result=snapshot_result,
             verified=effect.verified,
             rollback_metadata=dict(effect.rollback_metadata),
-            replay_metadata=self._replay_metadata(request, transaction_id),
-            audit_metadata=self._audit_metadata(request, transaction_id),
+            replay_metadata=self._replay_metadata(request, transaction_id, execution_result),
+            audit_metadata=self._audit_metadata(request, transaction_id, execution_result),
             metadata={
                 "policy": policy_result.to_metadata(),
                 "authority": authority_result.to_metadata(),
@@ -655,23 +655,36 @@ class RuntimeMutationGateway:
         self,
         request: RuntimeMutationRequest,
         transaction_id: str,
+        execution_result: Any = None,
     ) -> dict[str, Any]:
+        execution_metadata = getattr(execution_result, "metadata", {}) if execution_result is not None else {}
         return {
             "replay_id": request.replay_id or f"replay:{transaction_id}",
             "transaction_id": transaction_id,
             "replay_observable": True,
+            "governed_runtime_execution_session_id": execution_metadata.get("governed_runtime_execution_session_id", ""),
+            "governed_runtime_replay_session_id": execution_metadata.get("governed_runtime_replay_session_id", ""),
+            "runtime_evidence_id": execution_metadata.get("runtime_evidence_id", ""),
         }
 
     def _audit_metadata(
         self,
         request: RuntimeMutationRequest,
         transaction_id: str,
+        execution_result: Any = None,
     ) -> dict[str, Any]:
+        execution_metadata = getattr(execution_result, "metadata", {}) if execution_result is not None else {}
+        runtime_audit = execution_metadata.get("runtime_audit_metadata", {})
         return {
             "audit_id": request.audit_id,
             "transaction_id": transaction_id,
             "audit_compatible": True,
             "lineage": dict(request.lineage),
+            "runtime_audit_metadata": dict(runtime_audit) if isinstance(runtime_audit, dict) else {},
+            "runtime_evidence_record": execution_metadata.get("runtime_evidence_record", {}),
+            "runtime_evidence_id": execution_metadata.get("runtime_evidence_id", ""),
+            "governed_runtime_execution_session_id": execution_metadata.get("governed_runtime_execution_session_id", ""),
+            "governed_runtime_replay_session_id": execution_metadata.get("governed_runtime_replay_session_id", ""),
         }
 
     def _content_bytes(self, content: str | bytes | None) -> bytes:
