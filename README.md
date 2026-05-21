@@ -77,6 +77,58 @@ Important:
 
 
 
+
+## RuntimeExecutionResult Globalization ABI Seal (Latest)
+
+Current engineering checkpoint:
+
+```text
+runtime-execution-result-globalization-abi-seal
+```
+
+ZERO now has a canonical runtime execution result surface shared across legacy step payloads, StepExecutor execution, governed repair mutation paths, and repair transaction mainline execution.
+
+Completed normalization surface:
+
+```text
+RuntimeExecutionResult
+-> executed / blocked / failed
+-> verification_passed
+-> evidence
+-> evidence.mutation_summary
+-> impacted_files
+-> rollback_snapshot
+```
+
+What changed:
+
+- legacy runtime payloads now normalize into the canonical execution-result ABI
+- StepExecutor public results now attach `runtime_execution_result`
+- repair transaction mainline results preserve impacted-file evidence
+- frozen `RuntimeExecutionResult` metadata updates are handled safely
+- downstream replay, audit, recovery, rollback, and evidence systems can consume one stable result surface
+
+Validated checkpoint:
+
+```text
+runtime execution result globalization: 3 passed
+runtime recovery execution/review contracts: 16 passed
+governed runtime action gateway: 9 passed
+```
+
+Important boundaries:
+
+```text
+execution result ABI != new capability
+evidence projection != mutation authority
+StepExecutor attachment != scheduler rewrite
+repair transaction metadata != hidden approval
+```
+
+This checkpoint makes ZERO's execution-result layer more stable for AER observability, replay, audit, rollback verification, and recovery reconstruction.
+
+------------------------------------------------------------------------
+
 ## Runtime Boundary Freeze Baseline (Latest)
 
 ### Runtime Admission Governance v0 Frozen Baseline
@@ -685,12 +737,13 @@ Runtime Aggregate Convergence / Evidence Kernel: ✔ Contract layer sealed\
 Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop wired
 Operator Review Runtime Resume / Rollback Recovery Chain: ✔ Governed resume, mutation landing, and rollback restore validated
 Runtime Boundary Freeze Baseline: ✔ Freeze candidate documented and full-suite verified
+RuntimeExecutionResult Globalization ABI: ✔ Canonical execution-result surface sealed
 
 Current phase:\
-→ runtime boundary freeze baseline has landed on `main`; recovery, replay, mutation governance, evidence, audit, session reconstruction, boundary contracts, and full-suite regression are green together
+→ RuntimeExecutionResult globalization ABI is sealed; legacy payloads, StepExecutor results, and repair transaction mainline now expose canonical executed / verification / evidence / impacted-files fields
 
 Next stage:\
-→ runtime freeze report / release-note sync first, then scoped cleanup planning without scheduler, agent_loop, or runtime core responsibility growth
+→ commit the focused RuntimeExecutionResult ABI seal, then continue scoped runtime status sync without scheduler, agent_loop, or new capability expansion
 
 ------------------------------------------------------------------------
 

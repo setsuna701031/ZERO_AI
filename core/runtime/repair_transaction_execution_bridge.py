@@ -144,7 +144,8 @@ def execute_committed_runtime_repair_transaction_mainline(
     )
 
     executable = build_executable_repair_transaction(transaction)
-    return run_governed_repair_transaction_mainline(
+
+    result = run_governed_repair_transaction_mainline(
         executable,
         workspace_root=workspace_root,
         sandbox_source_root=sandbox_source_root,
@@ -159,6 +160,41 @@ def execute_committed_runtime_repair_transaction_mainline(
         risk_level=risk_level,
         dry_run=dry_run,
     )
+
+    impacted_files = [
+        str(operation.get("target_path")).strip()
+        for operation in executable.get("operations", [])
+        if isinstance(operation, Mapping)
+        and str(operation.get("target_path") or "").strip()
+    ]
+
+    impacted_files = list(dict.fromkeys(impacted_files))
+
+    if hasattr(result, "metadata") and isinstance(result.metadata, dict):
+        metadata = dict(result.metadata)
+        metadata["changed_files"] = list(impacted_files)
+        metadata["impacted_files"] = list(impacted_files)
+
+        evidence = metadata.get("evidence")
+        if not isinstance(evidence, dict):
+            evidence = {}
+
+        mutation_summary = evidence.get("mutation_summary")
+        if not isinstance(mutation_summary, dict):
+            mutation_summary = {}
+
+        mutation_summary["changed_files"] = list(impacted_files)
+        mutation_summary["impacted_files"] = list(impacted_files)
+
+        evidence["mutation_summary"] = mutation_summary
+        metadata["evidence"] = evidence
+
+        try:
+            object.__setattr__(result, "metadata", metadata)
+        except Exception:
+            pass
+
+    return result
 
 
 def _operation_from_committed_mutation(mutation: Mapping[str, Any]) -> dict[str, Any]:

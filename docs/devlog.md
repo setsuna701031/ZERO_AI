@@ -1,4 +1,198 @@
 ---
+## 2026-05-21 - RuntimeExecutionResult Globalization ABI Seal
+
+This checkpoint records the RuntimeExecutionResult globalization ABI pass.
+
+The goal was not to add a new capability. The goal was to normalize the execution-result surface shared by legacy step payloads, StepExecutor results, governed repair mutation paths, and repair transaction mainline execution.
+
+### What was completed
+
+Added and stabilized a canonical runtime execution result surface across:
+
+* `core/runtime/runtime_execution_result.py`
+  * normalizes legacy runtime payloads into a stable `RuntimeExecutionResult.to_dict()` surface
+  * exposes canonical execution-state fields:
+    * `executed`
+    * `blocked`
+    * `failed`
+    * `verification_passed`
+  * exposes globalization evidence fields:
+    * `evidence`
+    * `evidence.mutation_summary`
+    * `impacted_files`
+    * `rollback_snapshot`
+  * preserves legacy fields:
+    * `changed_files`
+    * `rollback_metadata`
+    * `verification`
+
+* `core/runtime/step_executor.py`
+  * ensures `execute_step(...)` public results attach a canonical `runtime_execution_result`
+  * keeps StepExecutor as a step orchestration layer rather than the owner of runtime result semantics
+  * preserves visible public ABI fields for callers that read the outer result directly
+
+* `core/runtime/repair_transaction_execution_bridge.py`
+  * preserves target-path / changed-file information from committed repair transactions
+  * injects impacted-file evidence into the returned frozen `RuntimeExecutionResult`
+  * uses frozen dataclass-safe metadata assignment through `object.__setattr__`
+
+Added regression coverage:
+
+* `tests/test_runtime_execution_result_globalization.py`
+  * legacy step payload normalization
+  * StepExecutor canonical runtime execution result attachment
+  * repair transaction mainline `RuntimeExecutionResult` return normalization
+
+### Runtime chain established
+
+The completed normalization chain is now:
+
+```text
+legacy step payload
+-> RuntimeExecutionResult.from_runtime_mapping(...)
+-> RuntimeExecutionResult.to_dict()
+-> executed / blocked / failed / verification_passed
+-> evidence / mutation_summary / impacted_files / rollback_snapshot
+```
+
+StepExecutor path:
+
+```text
+StepExecutor.execute_step(...)
+-> step handler result
+-> execution trace
+-> runtime_execution_result
+-> public ABI fields
+```
+
+Repair transaction mainline path:
+
+```text
+runtime repair transaction
+-> executable repair operation
+-> governed repair transaction mainline
+-> RuntimeExecutionResult
+-> metadata / evidence / impacted_files normalization
+```
+
+### Validation confirmed
+
+Confirmed targeted globalization validation:
+
+```text
+python -m pytest tests/test_runtime_execution_result_globalization.py -xvs
+-> 3 passed
+```
+
+Confirmed runtime recovery execution/review contract validation:
+
+```text
+python -m pytest tests/test_runtime_recovery_execution_contract_contract.py tests/test_runtime_recovery_execution_review_contract.py -xvs
+-> 16 passed
+```
+
+Confirmed governed runtime action gateway validation:
+
+```text
+python -m pytest tests/test_governed_runtime_action_gateway.py -xvs
+-> 9 passed
+```
+
+Combined focused validation from this checkpoint:
+
+```text
+3 passed
+16 passed
+9 passed
+```
+
+### Boundaries preserved
+
+This checkpoint intentionally does not add:
+
+```text
+NO new capability
+NO scheduler rewrite
+NO agent_loop rewrite
+NO UI/product change
+NO public execution opening
+NO mutation authority expansion
+NO hidden approval
+NO cloud/API fallback
+```
+
+The pass only seals execution-result ABI compatibility and evidence projection.
+
+### Why this matters
+
+This checkpoint makes runtime execution results stable enough for downstream runtime systems to consume without guessing which path produced the result.
+
+The important result is that these fields now have one canonical meaning across legacy payloads, StepExecutor, governed repair mutation, and repair transaction mainline execution:
+
+```text
+executed
+blocked
+failed
+verification_passed
+evidence
+evidence.mutation_summary
+impacted_files
+rollback_snapshot
+```
+
+This gives replay, audit, recovery, rollback verification, evidence reconstruction, and AER observability a consistent execution surface instead of path-specific ad hoc payloads.
+
+### Stable checkpoint after this pass
+
+* legacy runtime payload normalization: working
+* StepExecutor runtime result attachment: working
+* repair transaction mainline result globalization: working
+* impacted-file propagation: working
+* recovery execution/review contracts: passing
+* governed runtime action gateway contracts: passing
+* no scheduler / agent-loop responsibility expansion
+
+### Evidence kept
+
+Keep screenshots showing:
+
+* `tests/test_runtime_execution_result_globalization.py` -> `3 passed`
+* `tests/test_runtime_recovery_execution_contract_contract.py` and `tests/test_runtime_recovery_execution_review_contract.py` -> `16 passed`
+* `tests/test_governed_runtime_action_gateway.py` -> `9 passed`
+
+### Next step
+
+Recommended next checkpoint:
+
+```text
+RuntimeExecutionResult ABI Commit / Status Sync
+```
+
+Expected boundary:
+
+```text
+git diff --stat
+-> verify only intended runtime ABI files and docs changed
+-> update docs/devlog.md and README.md
+-> commit focused ABI seal
+```
+
+Recommended commit title:
+
+```text
+runtime: seal execution result globalization abi
+```
+
+Still avoid:
+
+```text
+NO scheduler slimming in the same commit
+NO agent_loop rewrite
+NO new runtime capability
+NO public execution switch
+NO UI/product expansion
+```
+
 ## 2026-05-19 - Runtime Timeline Evidence Export v1
 
 Added a read-only evidence export helper for reconstructed runtime timelines. The export reuses timeline reconstruction, emits stable evidence entries and summary counts, groups evidence by `repair_chain_id`, detects broken chains from exported evidence, and keeps `generated_at` opt-in for callers that need timestamped evidence.
