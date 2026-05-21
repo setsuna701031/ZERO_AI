@@ -9,6 +9,8 @@ from core.runtime.runtime_execution_session import (
     RuntimeExecutionSession,
     RuntimeExecutionSessionManager,
 )
+from core.runtime.runtime_status import status_from_replay_state
+from core.runtime.runtime_status_transition import runtime_status_transition_payload
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,19 @@ class RuntimeReplayRecord:
     metadata: Any
     original_sequence: int
     replay_sequence: int
+    canonical_status: str = "replaying"
+    transition_allowed: bool = True
+    transition_regression: bool = False
+    transition_reason: str = ""
+    transition_trigger: str = ""
+    transition_source: str = ""
+    transition_evidence: dict[str, Any] = field(default_factory=dict)
+    enforcement_readiness: str = ""
+    enforcement_classification: str = ""
+    enforcement_reason: str = ""
+    safe_to_enforce: bool = False
+    review_required: bool = False
+    block_recommended: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +60,19 @@ class RuntimeReplaySession:
     metadata: Any
     verified: bool
     integrity_records: list[RuntimeReplayIntegrityRecord] = field(default_factory=list)
+    canonical_status: str = "replayed"
+    transition_allowed: bool = True
+    transition_regression: bool = False
+    transition_reason: str = ""
+    transition_trigger: str = ""
+    transition_source: str = ""
+    transition_evidence: dict[str, Any] = field(default_factory=dict)
+    enforcement_readiness: str = ""
+    enforcement_classification: str = ""
+    enforcement_reason: str = ""
+    safe_to_enforce: bool = False
+    review_required: bool = False
+    block_recommended: bool = False
 
 
 class RuntimeReplayRejected(RuntimeError):
@@ -161,6 +189,13 @@ class RuntimeReplayEngine:
                 f"{replay_id!r}"
             )
 
+        transition = runtime_status_transition_payload(
+            replay.canonical_status,
+            status_from_replay_state(
+                "replayed" if replay.verified and integrity_record.integrity_verified else "failed"
+            ),
+            source="runtime_replay_engine",
+        )
         updated = replace(
             replay,
             integrity_records=[
@@ -168,6 +203,19 @@ class RuntimeReplayEngine:
                 integrity_record,
             ],
             verified=replay.verified and integrity_record.integrity_verified,
+            canonical_status=transition["to_status"],
+            transition_allowed=transition["allowed"],
+            transition_regression=transition["regression"],
+            transition_reason=transition["transition_reason"],
+            transition_trigger=transition["transition_trigger"],
+            transition_source=transition["transition_source"],
+            transition_evidence=transition["transition_evidence"],
+            enforcement_readiness=transition["enforcement_readiness"],
+            enforcement_classification=transition["enforcement_classification"],
+            enforcement_reason=transition["enforcement_reason"],
+            safe_to_enforce=transition["safe_to_enforce"],
+            review_required=transition["review_required"],
+            block_recommended=transition["block_recommended"],
         )
         self._replays[replay_id] = updated
         return self._copy_replay(updated)
@@ -197,6 +245,11 @@ class RuntimeReplayEngine:
                     ) from exc
 
         self._sequence += 1
+        transition = runtime_status_transition_payload(
+            "replaying",
+            "replayed",
+            source="runtime_replay_engine",
+        )
         replay = RuntimeReplaySession(
             replay_id=replay_id,
             source_session_id=source_session_id,
@@ -207,6 +260,19 @@ class RuntimeReplayEngine:
             metadata=metadata,
             verified=True,
             integrity_records=[],
+            canonical_status=status_from_replay_state("replayed"),
+            transition_allowed=transition["allowed"],
+            transition_regression=transition["regression"],
+            transition_reason=transition["transition_reason"],
+            transition_trigger=transition["transition_trigger"],
+            transition_source=transition["transition_source"],
+            transition_evidence=transition["transition_evidence"],
+            enforcement_readiness=transition["enforcement_readiness"],
+            enforcement_classification=transition["enforcement_classification"],
+            enforcement_reason=transition["enforcement_reason"],
+            safe_to_enforce=transition["safe_to_enforce"],
+            review_required=transition["review_required"],
+            block_recommended=transition["block_recommended"],
         )
         self._replays[replay_id] = replay
         return self._copy_replay(replay)
@@ -225,6 +291,14 @@ class RuntimeReplayEngine:
                 key=lambda item: item.sequence,
             ):
                 replay_sequence += 1
+                previous_phase = "unknown"
+                if replay_records:
+                    previous_phase = replay_records[-1].canonical_status
+                transition = runtime_status_transition_payload(
+                    previous_phase,
+                    status_from_replay_state(lifecycle_record.phase),
+                    source="runtime_replay_engine",
+                )
                 replay_records.append(
                     RuntimeReplayRecord(
                         replay_id=replay_id,
@@ -236,6 +310,19 @@ class RuntimeReplayEngine:
                         metadata=lifecycle_record.metadata,
                         original_sequence=lifecycle_record.sequence,
                         replay_sequence=replay_sequence,
+                        canonical_status=transition["to_status"],
+                        transition_allowed=transition["allowed"],
+                        transition_regression=transition["regression"],
+                        transition_reason=transition["transition_reason"],
+                        transition_trigger=transition["transition_trigger"],
+                        transition_source=transition["transition_source"],
+                        transition_evidence=transition["transition_evidence"],
+                        enforcement_readiness=transition["enforcement_readiness"],
+                        enforcement_classification=transition["enforcement_classification"],
+                        enforcement_reason=transition["enforcement_reason"],
+                        safe_to_enforce=transition["safe_to_enforce"],
+                        review_required=transition["review_required"],
+                        block_recommended=transition["block_recommended"],
                     )
                 )
 

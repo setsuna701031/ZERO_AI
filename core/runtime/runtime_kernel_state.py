@@ -12,8 +12,14 @@ from core.runtime.runtime_events import (
     RuntimeEvent,
     RuntimeStateTransitionEvent,
 )
+from core.runtime.runtime_execution_result_fields import normalize_runtime_execution_fields
 from core.runtime.runtime_event_bus import RuntimeEventBus
 from core.runtime.runtime_journal import RuntimeJournal
+from core.runtime.runtime_status import (
+    canonical_runtime_status_payload,
+    status_from_lifecycle_phase,
+)
+from core.runtime.runtime_status_transition import runtime_status_transition_payload
 
 
 RUNTIME_STATES = {
@@ -57,7 +63,28 @@ class RuntimeStateTransition:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        transition = runtime_status_transition_payload(
+            status_from_lifecycle_phase(self.old_state),
+            status_from_lifecycle_phase(self.new_state),
+            source="runtime_kernel_state",
+            metadata=self.metadata,
+        )
         return {
+            "canonical_status": status_from_lifecycle_phase(self.new_state),
+            "canonical_from_status": transition["from_status"],
+            "canonical_to_status": transition["to_status"],
+            "transition_allowed": transition["allowed"],
+            "transition_regression": transition["regression"],
+            "transition_reason": transition["transition_reason"],
+            "transition_trigger": transition["transition_trigger"],
+            "transition_source": transition["transition_source"],
+            "transition_evidence": transition["transition_evidence"],
+            "enforcement_readiness": transition["enforcement_readiness"],
+            "enforcement_classification": transition["enforcement_classification"],
+            "enforcement_reason": transition["enforcement_reason"],
+            "safe_to_enforce": transition["safe_to_enforce"],
+            "review_required": transition["review_required"],
+            "block_recommended": transition["block_recommended"],
             "sequence": self.sequence,
             "old_state": self.old_state,
             "new_state": self.new_state,
@@ -79,6 +106,7 @@ class RuntimeCheckpoint:
         return {
             "checkpoint_id": self.checkpoint_id,
             "state": self.state,
+            "canonical_status": status_from_lifecycle_phase(self.state),
             "sequence": self.sequence,
             "created_at": self.created_at,
             "payload": copy.deepcopy(self.payload),
@@ -126,14 +154,17 @@ class RuntimeKernelStateMachine:
             new_state=target,
             reason=str(reason or ""),
             created_at=_utc_now(),
-            metadata=dict(metadata or {}),
+            metadata={
+                **dict(metadata or {}),
+                **_kernel_transition_flags(self.state, target, metadata),
+            },
         )
         self.transitions.append(record)
         self.state = target
         return record
 
     def checkpoint(self, payload: dict[str, Any] | None = None) -> RuntimeCheckpoint:
-        data = copy.deepcopy(payload or {})
+        data = _normalize_checkpoint_payload(payload or {})
         seed = {
             "state": self.state,
             "sequence": self._sequence,
@@ -161,6 +192,7 @@ class RuntimeKernelStateMachine:
     def to_dict(self) -> dict[str, Any]:
         return {
             "state": self.state,
+            "canonical_status": status_from_lifecycle_phase(self.state),
             "transitions": [item.to_dict() for item in self.transitions],
             "checkpoints": [item.to_dict() for item in self.checkpoints],
             "events": [item.to_dict() for item in self.events],
@@ -194,6 +226,74 @@ def _utc_now() -> str:
 def _stable_hash(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _kernel_transition_flags(
+    old_state: Any,
+    new_state: Any,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    transition = runtime_status_transition_payload(
+        status_from_lifecycle_phase(old_state),
+        status_from_lifecycle_phase(new_state),
+        source="runtime_kernel_state",
+        metadata=metadata,
+    )
+    return {
+        "canonical_from_status": transition["from_status"],
+        "canonical_to_status": transition["to_status"],
+        "transition_allowed": transition["allowed"],
+        "transition_regression": transition["regression"],
+        "transition_reason": transition["transition_reason"],
+        "transition_trigger": transition["transition_trigger"],
+        "transition_source": transition["transition_source"],
+        "transition_evidence": transition["transition_evidence"],
+        "enforcement_readiness": transition["enforcement_readiness"],
+        "enforcement_classification": transition["enforcement_classification"],
+        "enforcement_reason": transition["enforcement_reason"],
+        "safe_to_enforce": transition["safe_to_enforce"],
+        "review_required": transition["review_required"],
+        "block_recommended": transition["block_recommended"],
+    }
+
+
+def _normalize_checkpoint_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    data = copy.deepcopy(payload or {})
+    if not isinstance(data, dict):
+        return {}
+
+    for key in ("runtime_execution_result", "execution_result"):
+        if isinstance(data.get(key), dict):
+            data[key] = normalize_runtime_execution_fields(
+                data[key],
+                metadata=data[key].get("metadata"),
+                evidence=data[key].get("evidence"),
+            )
+
+    if _looks_like_execution_payload(data):
+        return canonical_runtime_status_payload(normalize_runtime_execution_fields(
+            data,
+            metadata=data.get("metadata"),
+            evidence=data.get("evidence"),
+        ))
+
+    return canonical_runtime_status_payload(data, status=status_from_lifecycle_phase(data.get("state") or data.get("status") or data.get("phase")))
+
+
+def _looks_like_execution_payload(payload: dict[str, Any]) -> bool:
+    return any(
+        key in payload
+        for key in (
+            "ok",
+            "executed",
+            "blocked",
+            "failed",
+            "verification",
+            "verification_passed",
+            "changed_files",
+            "impacted_files",
+        )
+    )
 
 
 __all__ = [

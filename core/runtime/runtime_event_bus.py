@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from core.runtime.runtime_events import RUNTIME_EVENT_CHANNEL, RuntimeEvent
+from core.runtime.runtime_execution_result_fields import normalize_runtime_execution_fields
+from core.runtime.runtime_status import (
+    canonical_runtime_status_payload,
+    status_from_execution_result,
+)
 
 
 EventHandler = Callable[["RuntimeBusEvent"], None]
@@ -68,6 +73,7 @@ class RuntimeEventBus:
         self._validate_channel(channel)
         self._validate_event_type(event_type)
 
+        payload = _normalize_execution_payload(event_type, payload, metadata)
         self._sequence += 1
         event = RuntimeBusEvent(
             channel=channel,
@@ -98,6 +104,19 @@ class RuntimeEventBus:
 
         self._sequence += 1
         sequenced = event.with_sequence(self._sequence)
+        normalized_payload = _normalize_execution_payload(
+            sequenced.event_type,
+            sequenced.payload,
+            metadata if metadata is not None else sequenced.metadata,
+        )
+        if normalized_payload is not sequenced.payload:
+            sequenced = RuntimeEvent(
+                event_type=sequenced.event_type,
+                payload=normalized_payload,
+                metadata=sequenced.metadata,
+                sequence=sequenced.sequence,
+                timestamp=sequenced.timestamp,
+            )
         bus_event = RuntimeBusEvent(
             channel=channel,
             event_type=sequenced.event_type,
@@ -163,3 +182,73 @@ class RuntimeEventBus:
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+
+def _looks_like_execution_payload(event_type: str, payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+
+    if "execution" in str(event_type or "").lower():
+        return True
+
+    return any(
+        key in payload
+        for key in (
+            "ok",
+            "executed",
+            "blocked",
+            "failed",
+            "verification",
+            "verification_passed",
+            "changed_files",
+            "impacted_files",
+            "runtime_execution_result",
+            "execution_result",
+            "status",
+            "phase",
+            "result",
+        )
+    )
+
+
+def _normalize_execution_payload(event_type: str, payload: Any, metadata: Any) -> Any:
+    if not _looks_like_execution_payload(event_type, payload):
+        return payload
+
+    if not isinstance(payload, dict):
+        return payload
+
+    if isinstance(payload.get("runtime_execution_result"), dict):
+        normalized = canonical_runtime_status_payload(
+            payload,
+            status=status_from_execution_result(payload.get("runtime_execution_result")),
+        )
+    elif any(
+        key in payload
+        for key in (
+            "ok",
+            "executed",
+            "blocked",
+            "failed",
+            "verification",
+            "verification_passed",
+            "changed_files",
+            "impacted_files",
+        )
+    ):
+        normalized = normalize_runtime_execution_fields(payload, metadata=metadata)
+    else:
+        normalized = canonical_runtime_status_payload(payload)
+
+    for key in (
+        "runtime_execution_result",
+        "execution_result",
+    ):
+        if isinstance(payload.get(key), dict):
+            normalized[key] = normalize_runtime_execution_fields(
+                payload.get(key),
+                metadata=payload.get(key, {}).get("metadata"),
+                evidence=payload.get(key, {}).get("evidence"),
+            )
+
+    return canonical_runtime_status_payload(normalized)

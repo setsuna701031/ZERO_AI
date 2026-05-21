@@ -26,6 +26,8 @@ from core.runtime.runtime_transaction_context import (
     bind_current_execution,
     merge_current_transaction_metadata,
 )
+from core.runtime.runtime_status import status_from_lifecycle_phase
+from core.runtime.runtime_status_transition import runtime_status_transition_payload
 
 
 def execution_lifecycle_id(execution_id: str) -> str:
@@ -50,6 +52,31 @@ def _merged_provenance(
     return dict(value) if isinstance(value, dict) else dict(provenance or {})
 
 
+def _with_canonical_status(metadata: dict[str, Any] | None, phase: str) -> dict[str, Any]:
+    previous = dict(metadata or {}).get("from_status") or dict(metadata or {}).get("from_phase")
+    transition = runtime_status_transition_payload(
+        status_from_lifecycle_phase(previous),
+        status_from_lifecycle_phase(phase),
+        source="runtime_execution_lifecycle",
+    )
+    return {
+        **dict(metadata or {}),
+        "canonical_status": status_from_lifecycle_phase(phase),
+        "transition_allowed": transition["allowed"],
+        "transition_regression": transition["regression"],
+        "transition_reason": transition["transition_reason"],
+        "transition_trigger": transition["transition_trigger"],
+        "transition_source": transition["transition_source"],
+        "transition_evidence": transition["transition_evidence"],
+        "enforcement_readiness": transition["enforcement_readiness"],
+        "enforcement_classification": transition["enforcement_classification"],
+        "enforcement_reason": transition["enforcement_reason"],
+        "safe_to_enforce": transition["safe_to_enforce"],
+        "review_required": transition["review_required"],
+        "block_recommended": transition["block_recommended"],
+    }
+
+
 def begin_execution_lifecycle(
     execution_id: str,
     *,
@@ -58,7 +85,9 @@ def begin_execution_lifecycle(
     metadata: dict[str, Any] | None = None,
 ) -> None:
     lifecycle_id = execution_lifecycle_id(execution_id)
-    merged_metadata = merge_current_transaction_metadata(metadata)
+    merged_metadata = merge_current_transaction_metadata(
+        _with_canonical_status(metadata, "created")
+    )
     merged_lineage = _merged_lineage(lineage, metadata)
     merged_provenance = _merged_provenance(provenance, metadata)
 
@@ -78,7 +107,10 @@ def begin_execution_lifecycle(
 
     mark_current_lifecycle_active(
         lifecycle_id,
-        metadata={"source": "runtime_execution_lifecycle"},
+        metadata=_with_canonical_status(
+            {"source": "runtime_execution_lifecycle"},
+            "active",
+        ),
     )
 
 
@@ -89,7 +121,7 @@ def mark_execution_verifying(
 ) -> None:
     mark_current_lifecycle_verifying(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "verifying"),
     )
 
 
@@ -100,7 +132,7 @@ def mark_execution_verified(
 ) -> None:
     mark_current_lifecycle_verified(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "verified"),
     )
 
 
@@ -111,7 +143,7 @@ def commit_execution_lifecycle(
 ) -> None:
     mark_current_lifecycle_committed(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "committed"),
     )
 
 
@@ -122,7 +154,7 @@ def seal_execution_lifecycle(
 ) -> None:
     mark_current_lifecycle_sealed(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "sealed"),
     )
 
 
@@ -133,7 +165,7 @@ def fail_execution_lifecycle(
 ) -> None:
     mark_current_lifecycle_failed(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "failed"),
     )
 
 
@@ -144,7 +176,7 @@ def require_execution_rollback(
 ) -> None:
     mark_current_lifecycle_rollback_required(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "rollback_required"),
     )
 
 
@@ -155,7 +187,7 @@ def begin_execution_rollback(
 ) -> None:
     mark_current_lifecycle_rolling_back(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "rolling_back"),
     )
 
 
@@ -166,5 +198,5 @@ def finish_execution_rollback(
 ) -> None:
     mark_current_lifecycle_rolled_back(
         execution_lifecycle_id(execution_id),
-        metadata=metadata,
+        metadata=_with_canonical_status(metadata, "rolled_back"),
     )

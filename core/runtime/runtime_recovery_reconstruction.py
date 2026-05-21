@@ -5,6 +5,9 @@ import hashlib
 import json
 from typing import Any, Dict, Iterable, List, Mapping
 
+from core.runtime.runtime_status import status_from_recovery_state
+from core.runtime.runtime_status_transition import runtime_status_transition_payload
+
 
 SCHEMA_VERSION = "runtime_recovery_reconstruction.v1"
 
@@ -38,12 +41,32 @@ def build_runtime_recovery_reconstruction_contract(
     reconstruction_id: str = "",
 ) -> Dict[str, Any]:
     evidence = [copy.deepcopy(item) for item in source_evidence_chain or [] if isinstance(item, dict)]
+    transition = runtime_status_transition_payload(
+        "unknown",
+        status_from_recovery_state(reconstruction_state),
+        source="runtime_recovery_reconstruction",
+    )
     payload = {
         "schema_version": SCHEMA_VERSION,
         "reconstruction_id": _text(reconstruction_id),
         "source_transaction_id": _text(source_transaction_id),
         "source_evidence_chain": evidence,
         "reconstruction_state": _text(reconstruction_state),
+        "canonical_status": status_from_recovery_state(reconstruction_state),
+        "canonical_from_status": transition["from_status"],
+        "canonical_to_status": transition["to_status"],
+        "transition_allowed": transition["allowed"],
+        "transition_regression": transition["regression"],
+        "transition_reason": transition["transition_reason"],
+        "transition_trigger": transition["transition_trigger"],
+        "transition_source": transition["transition_source"],
+        "transition_evidence": transition["transition_evidence"],
+        "enforcement_readiness": transition["enforcement_readiness"],
+        "enforcement_classification": transition["enforcement_classification"],
+        "enforcement_reason": transition["enforcement_reason"],
+        "safe_to_enforce": transition["safe_to_enforce"],
+        "review_required": transition["review_required"],
+        "block_recommended": transition["block_recommended"],
         "replay_source_count": len(evidence),
         "reconstructed_runtime_state": copy.deepcopy(reconstructed_runtime_state),
         "reconstruction_consistent": bool(reconstruction_consistent),
@@ -165,12 +188,33 @@ def validate_runtime_recovery_reconstruction(
         if isinstance(item, dict)
     )
     state = _reconstruction_state(issues, reconstruction)
+    previous_status = reconstruction.get("previous_status") or reconstruction.get("from_status") or "unknown"
+    transition = runtime_status_transition_payload(
+        status_from_recovery_state(previous_status),
+        status_from_recovery_state(state),
+        source="runtime_recovery_reconstruction",
+    )
     return {
         "ok": not issues,
         "schema_version": SCHEMA_VERSION,
         "reconstruction_id": _text(reconstruction.get("reconstruction_id")),
         "source_transaction_id": transaction_id,
         "reconstruction_state": state,
+        "canonical_status": status_from_recovery_state(state),
+        "canonical_from_status": transition["from_status"],
+        "canonical_to_status": transition["to_status"],
+        "transition_allowed": transition["allowed"],
+        "transition_regression": transition["regression"],
+        "transition_reason": transition["transition_reason"],
+        "transition_trigger": transition["transition_trigger"],
+        "transition_source": transition["transition_source"],
+        "transition_evidence": transition["transition_evidence"],
+        "enforcement_readiness": transition["enforcement_readiness"],
+        "enforcement_classification": transition["enforcement_classification"],
+        "enforcement_reason": transition["enforcement_reason"],
+        "safe_to_enforce": transition["safe_to_enforce"],
+        "review_required": transition["review_required"],
+        "block_recommended": transition["block_recommended"],
         "reconstruction_consistent": not issues and reconstruction_consistent,
         "replay_order_valid": replay_order_valid,
         "reconstruction_divergence_detected": divergence_detected,
