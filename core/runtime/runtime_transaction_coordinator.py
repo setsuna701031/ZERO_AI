@@ -14,6 +14,17 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
+from core.runtime.runtime_seal import attach_runtime_seal
+from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
+from core.runtime.runtime_event_bus import RuntimeEventBus
+from core.runtime.runtime_events import (
+    RUNTIME_EVENT_CHANNEL,
+    RuntimeEvent,
+    TransactionCommittedEvent,
+    TransactionRolledBackEvent,
+)
+from core.runtime.runtime_journal import RuntimeJournal
+
 
 OPEN_STATUSES = {"created", "active", "rollback_required"}
 CLOSED_STATUSES = {"committed", "rolled_back", "sealed", "failed"}
@@ -103,6 +114,27 @@ class RuntimeTransactionScope:
 
 
 @dataclass(frozen=True)
+class RuntimeTransactionSnapshot:
+    transaction_id: str
+    files: tuple[dict[str, Any], ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_timestamp)
+
+    def __post_init__(self) -> None:
+        if not _clean_text(self.transaction_id):
+            raise ValueError("transaction_id is required")
+        object.__setattr__(self, "transaction_id", _clean_text(self.transaction_id))
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "transaction_id": self.transaction_id,
+            "files": [dict(item) for item in self.files],
+            "metadata": dict(self.metadata),
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
 class RuntimeTransactionResult:
     scope: RuntimeTransactionScope
     status: str
@@ -138,8 +170,16 @@ class RuntimeTransactionCoordinator:
     coordinator.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        event_bus: RuntimeEventBus | None = None,
+        journal: RuntimeJournal | None = None,
+    ) -> None:
         self._scopes: dict[str, RuntimeTransactionScope] = {}
+        self._snapshots: dict[str, RuntimeTransactionSnapshot] = {}
+        self.event_bus = event_bus
+        self.journal = journal
 
     def begin_transaction(
         self,
@@ -170,8 +210,42 @@ class RuntimeTransactionCoordinator:
             status="active",
             metadata=dict(metadata or {}),
         )
+        if self.journal is not None:
+            self.journal.append_transaction_boundary(
+                "begin",
+                scope.transaction_id,
+                metadata={"phase": "append_before_apply"},
+            )
         self._scopes[scope.transaction_id] = scope
         return self._result(scope, metadata={"action": "begin_transaction"})
+
+    def capture_snapshot(
+        self,
+        transaction_id: str,
+        *,
+        files: tuple[dict[str, Any], ...] = (),
+        metadata: dict[str, Any] | None = None,
+    ) -> RuntimeTransactionSnapshot:
+        scope = self._require_open(transaction_id)
+        snapshot = RuntimeTransactionSnapshot(
+            transaction_id=scope.transaction_id,
+            files=files,
+            metadata=dict(metadata or {}),
+        )
+        if self.journal is not None:
+            self.journal.append(
+                "transaction_snapshot",
+                payload=snapshot.to_metadata(),
+                metadata={"phase": "append_before_apply"},
+            )
+        self._snapshots[scope.transaction_id] = snapshot
+        return snapshot
+
+    def get_snapshot(self, transaction_id: str) -> RuntimeTransactionSnapshot:
+        cleaned_id = _clean_text(transaction_id)
+        if cleaned_id not in self._snapshots:
+            raise KeyError(f"unknown transaction snapshot: {cleaned_id}")
+        return self._snapshots[cleaned_id]
 
     def get_scope(self, transaction_id: str) -> RuntimeTransactionScope:
         cleaned_id = _clean_text(transaction_id)
@@ -268,6 +342,14 @@ class RuntimeTransactionCoordinator:
         metadata: dict[str, Any] | None = None,
     ) -> RuntimeTransactionResult:
         scope = self._require_open(transaction_id)
+        if scope.rollback_required:
+            raise RuntimeError(f"cannot commit rollback-required transaction: {transaction_id}")
+        if self.journal is not None:
+            self.journal.append_transaction_boundary(
+                "commit",
+                transaction_id,
+                metadata={"phase": "append_before_commit", **dict(metadata or {})},
+            )
         updated = replace(
             scope,
             status="committed",
@@ -275,6 +357,7 @@ class RuntimeTransactionCoordinator:
             metadata=_merge_metadata(scope.metadata, {"last_action": "commit", **dict(metadata or {})}),
         )
         self._scopes[updated.transaction_id] = updated
+        self._emit(TransactionCommittedEvent(transaction_id=updated.transaction_id, metadata=dict(metadata or {})))
         return self._result(
             updated,
             committed=True,
@@ -289,6 +372,12 @@ class RuntimeTransactionCoordinator:
         scope = self._require_not_sealed(transaction_id)
         if scope.status == "committed":
             raise RuntimeError(f"cannot rollback committed transaction: {transaction_id}")
+        if self.journal is not None:
+            self.journal.append_transaction_boundary(
+                "rollback",
+                transaction_id,
+                metadata={"phase": "append_before_rollback", **dict(metadata or {})},
+            )
         updated = replace(
             scope,
             status="rolled_back",
@@ -297,6 +386,7 @@ class RuntimeTransactionCoordinator:
             metadata=_merge_metadata(scope.metadata, {"last_action": "rollback", **dict(metadata or {})}),
         )
         self._scopes[updated.transaction_id] = updated
+        self._emit(TransactionRolledBackEvent(transaction_id=updated.transaction_id, metadata=dict(metadata or {})))
         return self._result(
             updated,
             rolled_back=True,
@@ -385,3 +475,25 @@ class RuntimeTransactionCoordinator:
             rollback_required=scope.rollback_required,
             metadata=dict(metadata or {}),
         )
+
+    def _emit(self, event: RuntimeEvent) -> None:
+        if self.journal is not None:
+            self.journal.append_event(event, phase="after_transaction_boundary")
+        if self.event_bus is not None:
+            self.event_bus.publish_event(event, channel=RUNTIME_EVENT_CHANNEL)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = {
+            "runtime_version": RUNTIME_KERNEL_VERSION,
+            "abi_version": RUNTIME_ABI_VERSION,
+            "artifact_type": "runtime_transaction_coordinator",
+            "transactions": [
+                scope.to_metadata()
+                for _, scope in sorted(self._scopes.items())
+            ],
+            "snapshots": [
+                snapshot.to_metadata()
+                for _, snapshot in sorted(self._snapshots.items())
+            ],
+        }
+        return attach_runtime_seal(payload, artifact_type="runtime_transaction_coordinator")

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.engineering.repo_scan import (
+    build_impacted_plan,
     build_impacted_file_plan,
     classify_repo_file,
     scan_repo,
@@ -135,6 +136,31 @@ def test_impacted_file_plan_feeds_loop_as_planning_artifact_not_success(
     assert "runtime_evidence_id" not in loop_artifact
     assert "governed_mutation_lineage" not in loop_artifact
     assert "execution_summary" not in loop_artifact
+
+
+def test_impacted_plan_infers_transitive_topology_risk_and_verification_owners(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path / "core" / "runtime" / "alpha.py", "from core.runtime import beta\n")
+    _write(tmp_path / "core" / "runtime" / "beta.py", "from core.runtime import gamma\n")
+    _write(tmp_path / "core" / "runtime" / "gamma.py", "VALUE = 1\n")
+    _write(tmp_path / "tests" / "test_alpha.py", "def test_alpha(): pass\n")
+
+    plan = build_impacted_plan(
+        "Update alpha runtime",
+        changed_files=("core/runtime/alpha.py",),
+        repo_root=tmp_path,
+    )
+    payload = plan.to_dict()
+
+    assert "core/runtime/alpha.py" in payload["changed_files"]
+    assert "core/runtime/beta.py" in payload["impacted_modules"]
+    assert "core/runtime/gamma.py" in payload["impacted_modules"]
+    assert payload["verification_targets"] == ["tests/test_alpha.py"]
+    assert payload["mutation_risk"]["level"] == "high"
+    assert payload["verification_owners"]["core/runtime/alpha.py"] == ["tests/test_alpha.py"]
+    assert payload["impacted_runtime_topology"]["transitive"] is True
+    assert payload["impacted_runtime_topology"]["risk_level"] == "high"
 
 
 def _write(path: Path, text: str) -> None:

@@ -41,6 +41,7 @@ class MutationGatewayRequest:
     verification_checks: tuple[MutationVerificationCheck, ...] = ()
     approval_decisions: tuple[MutationApprovalDecision, ...] = ()
     dry_run: bool = False
+    governed_mainline: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -55,6 +56,13 @@ def run_governed_mutation(
     """
 
     _validate_request(request)
+
+    if request.governed_mainline:
+        from core.runtime.governed_mutation_runtime import (
+            run_governed_mutation_runtime,
+        )
+
+        return run_governed_mutation_runtime(request).execution_result  # type: ignore[return-value]
 
     session = create_mutation_session(
         intent=request.intent,
@@ -82,6 +90,15 @@ def run_governed_mutation(
         dry_run=request.dry_run,
         metadata=request.metadata,
     )
+
+
+def run_governed_mutation_mainline(
+    request: MutationGatewayRequest,
+):
+    _validate_request(request)
+    from core.runtime.governed_mutation_runtime import run_governed_mutation_runtime
+
+    return run_governed_mutation_runtime(request).execution_result
 
 
 def _validate_request(

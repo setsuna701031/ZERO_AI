@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.mutation_gateway import MutationGatewayRequest, run_governed_mutation
+from core.runtime.mutation_gateway import (
+    MutationGatewayRequest,
+    run_governed_mutation,
+    run_governed_mutation_mainline,
+)
 from core.runtime.mutation_runtime_pipeline import MutationRuntimePipelineResult
 from core.runtime.mutation_session import (
     MutationApprovalMode,
@@ -162,6 +166,42 @@ def run_governed_repair_transaction(
         dry_run=dry_run,
     )
     return run_governed_mutation(request)
+
+
+def run_governed_repair_transaction_mainline(
+    transaction: Any,
+    *,
+    workspace_root: str | Path,
+    sandbox_source_root: str | Path,
+    rollback_root: str | Path,
+    report_root: str | Path,
+    initiator: str = "repair_transaction_gateway_adapter",
+    intent: str = "governed repair transaction",
+    reason: str = "execute runtime repair transaction through governed mutation gateway",
+    allowed_paths: tuple[str, ...] | None = None,
+    denied_paths: tuple[str, ...] = (),
+    risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
+    approval_mode: MutationApprovalMode = MutationApprovalMode.REVIEW_REQUIRED,
+    verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
+    dry_run: bool | None = None,
+):
+    request = build_gateway_request_from_repair_transaction(
+        transaction,
+        workspace_root=workspace_root,
+        sandbox_source_root=sandbox_source_root,
+        rollback_root=rollback_root,
+        report_root=report_root,
+        initiator=initiator,
+        intent=intent,
+        reason=reason,
+        allowed_paths=allowed_paths,
+        denied_paths=denied_paths,
+        risk_level=risk_level,
+        approval_mode=approval_mode,
+        verification=verification,
+        dry_run=dry_run,
+    )
+    return run_governed_mutation_mainline(request)
 
 
 def _extract_operations(transaction: Mapping[str, Any]) -> list[dict[str, Any]]:

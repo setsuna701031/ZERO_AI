@@ -126,6 +126,41 @@ def build_executable_repair_transaction(transaction: Any) -> dict[str, Any]:
     }
 
 
+def execute_committed_runtime_repair_transaction_mainline(
+    transaction: Any,
+    *,
+    workspace_root: str | Path,
+    sandbox_source_root: str | Path,
+    rollback_root: str | Path,
+    report_root: str | Path,
+    allowed_roots: list[str] | tuple[str, ...],
+    approval_mode: MutationApprovalMode = MutationApprovalMode.REVIEW_REQUIRED,
+    verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
+    risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
+    dry_run: bool | None = None,
+):
+    from core.runtime.repair_transaction_gateway_adapter import (
+        run_governed_repair_transaction_mainline,
+    )
+
+    executable = build_executable_repair_transaction(transaction)
+    return run_governed_repair_transaction_mainline(
+        executable,
+        workspace_root=workspace_root,
+        sandbox_source_root=sandbox_source_root,
+        rollback_root=rollback_root,
+        report_root=report_root,
+        initiator="repair_transaction_execution_bridge",
+        intent="execute committed runtime repair transaction",
+        reason="bridge committed runtime repair transaction into governed mutation execution",
+        allowed_paths=tuple(allowed_roots),
+        approval_mode=approval_mode,
+        verification=verification,
+        risk_level=risk_level,
+        dry_run=dry_run,
+    )
+
+
 def _operation_from_committed_mutation(mutation: Mapping[str, Any]) -> dict[str, Any]:
     raw = mutation.get("raw_mutation")
     raw_mutation = raw if isinstance(raw, Mapping) else mutation
