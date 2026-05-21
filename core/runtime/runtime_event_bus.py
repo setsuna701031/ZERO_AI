@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from core.runtime.runtime_events import RUNTIME_EVENT_CHANNEL, RuntimeEvent
-from core.runtime.runtime_safe_schema import to_runtime_safe_schema
 
 
 EventHandler = Callable[["RuntimeBusEvent"], None]
@@ -71,10 +70,10 @@ class RuntimeEventBus:
 
         self._sequence += 1
         event = RuntimeBusEvent(
-            channel=str(channel),
-            event_type=str(event_type),
-            payload=to_runtime_safe_schema(payload),
-            metadata=to_runtime_safe_schema(metadata),
+            channel=channel,
+            event_type=event_type,
+            payload=payload,
+            metadata=metadata,
             sequence=self._sequence,
             timestamp=self._now_iso(),
         )
@@ -99,14 +98,11 @@ class RuntimeEventBus:
 
         self._sequence += 1
         sequenced = event.with_sequence(self._sequence)
-        event_payload = sequenced.to_dict()
-        event_metadata = metadata if metadata is not None else sequenced.metadata
-
         bus_event = RuntimeBusEvent(
-            channel=str(channel),
-            event_type=str(sequenced.event_type),
-            payload=to_runtime_safe_schema(event_payload),
-            metadata=to_runtime_safe_schema(event_metadata),
+            channel=channel,
+            event_type=sequenced.event_type,
+            payload=sequenced,
+            metadata=metadata if metadata is not None else sequenced.metadata,
             sequence=self._sequence,
             timestamp=sequenced.timestamp,
         )

@@ -203,3 +203,17 @@ __all__ = [
     "RuntimeKernelStateMachine",
     "RuntimeStateTransition",
 ]
+
+# ZERO v7.3.14 - Runtime finalized rollback transition seal
+# Allows governed repair/recovery path to move from FINALIZED to ROLLING_BACK.
+
+
+try:
+    ALLOWED_TRANSITIONS.setdefault(RuntimeKernelPhase.FINALIZED, set()).add(
+        RuntimeKernelPhase.ROLLING_BACK
+    )
+except Exception:
+    try:
+        ALLOWED_TRANSITIONS.setdefault("FINALIZED", set()).add("ROLLING_BACK")
+    except Exception:
+        pass

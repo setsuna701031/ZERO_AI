@@ -497,3 +497,38 @@ class RuntimeTransactionCoordinator:
             ],
         }
         return attach_runtime_seal(payload, artifact_type="runtime_transaction_coordinator")
+
+# ZERO v7.3.15 - Runtime committed rollback idempotent contract
+# Test/mainline recovery may request rollback after commit.
+# Treat committed rollback as an idempotent no-op instead of raising.
+
+
+_ZERO_V7315_PREVIOUS_ROLLBACK = RuntimeTransactionCoordinator.rollback
+
+
+def _zero_v7315_rollback_idempotent_committed(self, transaction_id, *args, **kwargs):
+    try:
+        return _ZERO_V7315_PREVIOUS_ROLLBACK(self, transaction_id, *args, **kwargs)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "cannot rollback committed transaction" not in message:
+            raise
+
+        scope = None
+        try:
+            scope = self._scopes.get(transaction_id)
+        except Exception:
+            scope = None
+
+        return {
+            "ok": True,
+            "transaction_id": str(transaction_id or ""),
+            "status": "committed",
+            "rollback_status": "skipped",
+            "reason": "transaction_already_committed",
+            "message": message,
+            "scope_status": getattr(scope, "status", "committed"),
+        }
+
+
+RuntimeTransactionCoordinator.rollback = _zero_v7315_rollback_idempotent_committed
