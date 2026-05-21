@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable
+
+from core.runtime.runtime_events import RUNTIME_EVENT_CHANNEL, RuntimeEvent
+from core.runtime.runtime_safe_schema import to_runtime_safe_schema
 
 
 EventHandler = Callable[["RuntimeBusEvent"], None]
@@ -14,6 +18,7 @@ class RuntimeBusEvent:
     payload: Any
     metadata: Any
     sequence: int
+    timestamp: str
 
 
 @dataclass
@@ -66,11 +71,12 @@ class RuntimeEventBus:
 
         self._sequence += 1
         event = RuntimeBusEvent(
-            channel=channel,
-            event_type=event_type,
-            payload=payload,
-            metadata=metadata,
+            channel=str(channel),
+            event_type=str(event_type),
+            payload=to_runtime_safe_schema(payload),
+            metadata=to_runtime_safe_schema(metadata),
             sequence=self._sequence,
+            timestamp=self._now_iso(),
         )
         self._events.append(event)
 
@@ -81,6 +87,38 @@ class RuntimeEventBus:
             self._call_handler(subscription.handler, event)
 
         return event
+
+    def publish_event(
+        self,
+        event: RuntimeEvent,
+        *,
+        channel: str = RUNTIME_EVENT_CHANNEL,
+        metadata: Any = None,
+    ) -> RuntimeBusEvent:
+        self._validate_channel(channel)
+
+        self._sequence += 1
+        sequenced = event.with_sequence(self._sequence)
+        event_payload = sequenced.to_dict()
+        event_metadata = metadata if metadata is not None else sequenced.metadata
+
+        bus_event = RuntimeBusEvent(
+            channel=str(channel),
+            event_type=str(sequenced.event_type),
+            payload=to_runtime_safe_schema(event_payload),
+            metadata=to_runtime_safe_schema(event_metadata),
+            sequence=self._sequence,
+            timestamp=sequenced.timestamp,
+        )
+        self._events.append(bus_event)
+
+        for subscription in list(self._subscriptions):
+            if not subscription.active or subscription.channel != channel:
+                continue
+
+            self._call_handler(subscription.handler, bus_event)
+
+        return bus_event
 
     def get_events(self, channel: str | None = None) -> list[RuntimeBusEvent]:
         if channel is None:
@@ -126,3 +164,6 @@ class RuntimeEventBus:
     def _validate_event_type(self, event_type: str) -> None:
         if not str(event_type or "").strip():
             raise RuntimeEventBusError("runtime event bus event_type is required")
+
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat()

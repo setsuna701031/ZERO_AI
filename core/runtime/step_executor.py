@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 from core.runtime.event_stream import attach_runtime_event_stream
 from core.runtime.execution_gateway import safe_subprocess_run
 from core.runtime.runtime_file_service import RuntimeFileService
+from core.runtime.runtime_execution_result import RuntimeExecutionResult
 
 from core.tasks.task_paths import TaskPathManager
 from core.runtime.step_handlers import (
@@ -3305,16 +3306,29 @@ class StepExecutor:
     def _attach_adapter_payload(self, result: Dict[str, Any]) -> Dict[str, Any]:
         normalized = copy.deepcopy(result)
 
+        adapter_input = {
+            "ok": bool(normalized.get("ok", False)),
+            "message": str(normalized.get("message") or ""),
+            "final_answer": str(normalized.get("final_answer") or ""),
+            "summary": str(normalized.get("summary") or ""),
+            "step_type": str(normalized.get("step_type") or ""),
+            "step_index": normalized.get("step_index"),
+            "step_count": normalized.get("step_count"),
+            "completed_steps": normalized.get("completed_steps"),
+            "failed_step": normalized.get("failed_step"),
+            "error": copy.deepcopy(normalized.get("error")),
+        }
+
         try:
             from core.runtime.payload_normalizer import normalize_runtime_adapter_payload
 
-            normalized["adapter_payload"] = normalize_runtime_adapter_payload(normalized)
+            normalized["adapter_payload"] = normalize_runtime_adapter_payload(adapter_input)
         except Exception:
             normalized["adapter_payload"] = {
-                "ok": normalized.get("ok"),
-                "message": str(normalized.get("message") or ""),
-                "final_answer": str(normalized.get("final_answer") or ""),
-                "text": str(normalized.get("message") or normalized.get("final_answer") or ""),
+                "ok": adapter_input.get("ok"),
+                "message": adapter_input.get("message"),
+                "final_answer": adapter_input.get("final_answer"),
+                "text": adapter_input.get("message") or adapter_input.get("final_answer") or "",
                 "error_text": "",
                 "error_type": "",
                 "runtime_mode": str(normalized.get("runtime_mode") or ""),
@@ -3323,6 +3337,51 @@ class StepExecutor:
                 "raw": copy.deepcopy(normalized),
             }
 
+        normalized = self._attach_runtime_execution_result(normalized)
+        return normalized
+
+    def _attach_runtime_execution_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = copy.deepcopy(result)
+        if isinstance(normalized.get("runtime_execution_result"), dict):
+            return normalized
+
+        execution_type = str(normalized.get("step_type") or normalized.get("type") or "step")
+        task_id = str(normalized.get("task_id") or "task").strip() or "task"
+        step_index = normalized.get("step_index")
+        execution_id = f"runtime_execution:step:{task_id}:{execution_type}:{step_index or 'unknown'}"
+        source_payload = {
+            key: copy.deepcopy(value)
+            for key, value in normalized.items()
+            if key not in {"adapter_payload", "runtime_execution_result"}
+        }
+        runtime_result = RuntimeExecutionResult.from_runtime_mapping(
+            execution_id=execution_id,
+            execution_start_id=f"execution_start:{execution_id}",
+            execution_type=execution_type,
+            result=source_payload,
+            lineage={
+                "task_id": task_id,
+                "step_index": step_index,
+                "step_type": execution_type,
+                "source": "step_executor",
+            },
+            replay_id=f"replay:{execution_id}",
+            metadata={
+                "canonical_owner": "core.runtime.step_executor",
+                "legacy_result_compatibility": True,
+            },
+        )
+        runtime_payload = runtime_result.to_dict()
+        normalized["runtime_execution_result"] = runtime_payload
+        normalized["executed"] = runtime_payload["executed"]
+        normalized["blocked"] = runtime_payload["blocked"]
+        normalized["failed"] = runtime_payload["failed"]
+        normalized["verification_passed"] = runtime_payload["verification_passed"]
+        normalized["rolled_back"] = runtime_payload["rolled_back"]
+        normalized["recovered"] = runtime_payload["recovered"]
+        normalized["impacted_files"] = runtime_payload["impacted_files"]
+        normalized["verification_targets"] = runtime_payload["verification_targets"]
+        normalized["rollback_snapshot"] = runtime_payload["rollback_snapshot"]
         return normalized
 
     def _attach_execution_trace(self, step: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
@@ -5313,3 +5372,357 @@ def _zero_v734_handle_apply_step(self, step, task=None, context=None, previous_r
 
 
 StepExecutor.__init__ = _zero_v734_step_executor_init
+
+# ZERO v7.3.9 - Runtime aggregate/event contract final seal
+# Final StepExecutor aggregate contract seal:
+#   - adapter_payload is always dict
+#   - runtime_event_stream is always list
+#   - each event has source/event_type/sequence/timestamp/runtime_phase/payload
+#   - runtime_event_stream cardinality follows execution_trace exactly
+
+def _zero_v739_now_iso():
+    try:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def _zero_v739_error_type_from_payload(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        return str(error.get("type") or error.get("error_type") or "")
+
+    if error is not None:
+        return str(error)
+
+    return str(payload.get("error_type") or "")
+
+
+def _zero_v739_error_text_from_payload(payload):
+    if not isinstance(payload, dict):
+        return ""
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        return str(error.get("message") or error.get("text") or "")
+
+    if error is not None:
+        return str(error)
+
+    return ""
+
+
+def _zero_v739_safe_adapter_payload(result):
+    payload = result if isinstance(result, dict) else {}
+
+    message = str(payload.get("message") or "")
+    final_answer = str(payload.get("final_answer") or "")
+    error_type = _zero_v739_error_type_from_payload(payload)
+    error_text = _zero_v739_error_text_from_payload(payload)
+    text = message or final_answer or error_text
+
+    return {
+        "ok": bool(payload.get("ok", False)),
+        "message": message,
+        "final_answer": final_answer,
+        "text": text,
+        "error_text": error_text,
+        "error_type": error_type,
+        "summary": str(payload.get("summary") or ""),
+        "step_type": str(payload.get("step_type") or ""),
+        "step_index": payload.get("step_index"),
+        "step_count": payload.get("step_count"),
+        "completed_steps": payload.get("completed_steps"),
+        "failed_step": payload.get("failed_step"),
+    }
+
+
+def _zero_v739_attach_adapter_payload(self, result):
+    normalized = copy.deepcopy(result) if isinstance(result, dict) else {}
+    adapter_input = _zero_v739_safe_adapter_payload(normalized)
+
+    adapter_payload = None
+    try:
+        from core.runtime.payload_normalizer import normalize_runtime_adapter_payload
+        adapter_payload = normalize_runtime_adapter_payload(adapter_input)
+    except Exception:
+        adapter_payload = None
+
+    if not isinstance(adapter_payload, dict):
+        adapter_payload = dict(adapter_input)
+
+    if not isinstance(adapter_payload.get("ok"), bool):
+        adapter_payload["ok"] = bool(adapter_input.get("ok", False))
+
+    for key in (
+        "message",
+        "final_answer",
+        "text",
+        "error_text",
+        "error_type",
+        "summary",
+        "step_type",
+    ):
+        if adapter_payload.get(key) is None:
+            adapter_payload[key] = str(adapter_input.get(key) or "")
+
+    for key in ("step_index", "step_count", "completed_steps", "failed_step"):
+        if key not in adapter_payload:
+            adapter_payload[key] = adapter_input.get(key)
+
+    normalized["adapter_payload"] = adapter_payload
+    return normalized
+
+
+def _zero_v739_runtime_phase_from_trace_event(event):
+    if not isinstance(event, dict):
+        return "execute"
+
+    for key in ("runtime_phase", "phase", "runtime_mode"):
+        value = event.get(key)
+        if value is None or not str(value).strip():
+            continue
+
+        text = str(value).strip().lower()
+
+        if text in {"execution", "run", "running"}:
+            return "execute"
+
+        if text in {"verification"}:
+            return "verify"
+
+        return text
+
+    return "execute"
+
+
+def _zero_v739_event_payload_from_trace_event(event):
+    item = event if isinstance(event, dict) else {}
+
+    return {
+        "step_index": item.get("step_index"),
+        "step_type": str(item.get("step_type") or ""),
+        "runtime_mode": str(item.get("runtime_mode") or "execute"),
+        "ok": bool(item.get("ok", False)),
+        "message": str(item.get("message") or ""),
+        "final_answer": str(item.get("final_answer") or ""),
+        "error_type": item.get("error_type"),
+        "classification": item.get("classification"),
+        "attempts": item.get("attempts"),
+        "max_attempts": item.get("max_attempts"),
+        "retry_used": bool(item.get("retry_used", False)),
+    }
+
+
+def _zero_v739_event_from_trace_event(event, sequence, source):
+    item = event if isinstance(event, dict) else {}
+    runtime_phase = _zero_v739_runtime_phase_from_trace_event(item)
+
+    return {
+        "source": str(source or "step_executor"),
+        "event_type": str(item.get("event_type") or "step_execution_result"),
+        "sequence": int(sequence),
+        "timestamp": str(item.get("timestamp") or _zero_v739_now_iso()),
+        "runtime_phase": runtime_phase,
+        "payload": _zero_v739_event_payload_from_trace_event(item),
+    }
+
+
+def _zero_v739_build_runtime_event_stream(payload, source):
+    if not isinstance(payload, dict):
+        return []
+
+    trace = payload.get("execution_trace")
+    if not isinstance(trace, list):
+        return []
+
+    stream = []
+    for index, item in enumerate(trace, start=1):
+        if isinstance(item, dict):
+            stream.append(
+                _zero_v739_event_from_trace_event(
+                    event=item,
+                    sequence=index,
+                    source=source,
+                )
+            )
+
+    return stream
+
+
+def _zero_v739_attach_runtime_event_stream(payload, source="step_executor"):
+    if not isinstance(payload, dict):
+        return payload
+
+    stream = _zero_v739_build_runtime_event_stream(
+        payload=payload,
+        source=source,
+    )
+
+    payload["runtime_event_stream"] = stream
+    payload["event_stream"] = copy.deepcopy(stream)
+    return payload
+
+
+StepExecutor._attach_adapter_payload = _zero_v739_attach_adapter_payload
+attach_runtime_event_stream = _zero_v739_attach_runtime_event_stream
+
+# ZERO v7.3.10 - Adapter execution trace contract seal
+# Keeps adapter_payload.execution_trace aligned with aggregate execution_trace.
+
+
+_ZERO_V7310_PREVIOUS_ATTACH_ADAPTER_PAYLOAD = StepExecutor._attach_adapter_payload
+
+
+def _zero_v7310_adapter_trace_event_from_execution_trace(item, sequence):
+    event = item if isinstance(item, dict) else {}
+
+    return {
+        "sequence": int(sequence),
+        "step_index": event.get("step_index"),
+        "step_type": str(event.get("step_type") or ""),
+        "runtime_mode": str(event.get("runtime_mode") or "execute"),
+        "ok": bool(event.get("ok", False)),
+        "message": str(event.get("message") or ""),
+        "final_answer": str(event.get("final_answer") or ""),
+        "error_type": event.get("error_type"),
+        "classification": event.get("classification"),
+        "attempts": event.get("attempts"),
+        "max_attempts": event.get("max_attempts"),
+        "retry_used": bool(event.get("retry_used", False)),
+    }
+
+
+def _zero_v7310_adapter_execution_trace_from_result(result):
+    if not isinstance(result, dict):
+        return []
+
+    trace = result.get("execution_trace")
+    if not isinstance(trace, list):
+        return []
+
+    output = []
+    for index, item in enumerate(trace, start=1):
+        if isinstance(item, dict):
+            output.append(
+                _zero_v7310_adapter_trace_event_from_execution_trace(
+                    item,
+                    index,
+                )
+            )
+
+    return output
+
+
+def _zero_v7310_attach_adapter_payload(self, result):
+    normalized = _ZERO_V7310_PREVIOUS_ATTACH_ADAPTER_PAYLOAD(self, result)
+
+    if not isinstance(normalized, dict):
+        return normalized
+
+    adapter_payload = normalized.get("adapter_payload")
+    if not isinstance(adapter_payload, dict):
+        adapter_payload = {}
+        normalized["adapter_payload"] = adapter_payload
+
+    adapter_payload["execution_trace"] = _zero_v7310_adapter_execution_trace_from_result(normalized)
+
+    if "stream" not in adapter_payload or not isinstance(adapter_payload.get("stream"), list):
+        adapter_payload["stream"] = copy.deepcopy(adapter_payload["execution_trace"])
+
+    return normalized
+
+
+StepExecutor._attach_adapter_payload = _zero_v7310_attach_adapter_payload
+
+# ZERO v7.3.11 - Adapter last_result contract seal
+# Ensures adapter_payload.last_result is always a dict.
+
+
+_ZERO_V7311_PREVIOUS_ATTACH_ADAPTER_PAYLOAD = StepExecutor._attach_adapter_payload
+
+
+def _zero_v7311_safe_last_result_from_result(result):
+    if not isinstance(result, dict):
+        return {}
+
+    last_result = result.get("last_result")
+    if isinstance(last_result, dict):
+        return {
+            "ok": bool(last_result.get("ok", False)),
+            "step_type": str(last_result.get("step_type") or ""),
+            "step_index": last_result.get("step_index"),
+            "step_count": last_result.get("step_count"),
+            "runtime_mode": str(last_result.get("runtime_mode") or ""),
+            "message": str(last_result.get("message") or ""),
+            "final_answer": str(last_result.get("final_answer") or ""),
+            "error": copy.deepcopy(last_result.get("error")),
+        }
+
+    results = result.get("results")
+    if isinstance(results, list) and results:
+        candidate = results[-1]
+        if isinstance(candidate, dict):
+            return {
+                "ok": bool(candidate.get("ok", False)),
+                "step_type": str(candidate.get("step_type") or ""),
+                "step_index": candidate.get("step_index"),
+                "step_count": candidate.get("step_count"),
+                "runtime_mode": str(candidate.get("runtime_mode") or ""),
+                "message": str(candidate.get("message") or ""),
+                "final_answer": str(candidate.get("final_answer") or ""),
+                "error": copy.deepcopy(candidate.get("error")),
+            }
+
+    return {}
+
+
+def _zero_v7311_attach_adapter_payload(self, result):
+    normalized = _ZERO_V7311_PREVIOUS_ATTACH_ADAPTER_PAYLOAD(self, result)
+
+    if not isinstance(normalized, dict):
+        return normalized
+
+    adapter_payload = normalized.get("adapter_payload")
+    if not isinstance(adapter_payload, dict):
+        adapter_payload = {}
+        normalized["adapter_payload"] = adapter_payload
+
+    adapter_payload["last_result"] = _zero_v7311_safe_last_result_from_result(normalized)
+
+    return normalized
+
+
+StepExecutor._attach_adapter_payload = _zero_v7311_attach_adapter_payload
+
+# ZERO v7.3.12 - Adapter empty last_result contract seal
+# Empty execute_steps([]) keeps adapter_payload.last_result as None.
+# Non-empty aggregate keeps adapter_payload.last_result as dict.
+
+
+_ZERO_V7312_PREVIOUS_ATTACH_ADAPTER_PAYLOAD = StepExecutor._attach_adapter_payload
+
+
+def _zero_v7312_attach_adapter_payload(self, result):
+    normalized = _ZERO_V7312_PREVIOUS_ATTACH_ADAPTER_PAYLOAD(self, result)
+
+    if not isinstance(normalized, dict):
+        return normalized
+
+    adapter_payload = normalized.get("adapter_payload")
+    if not isinstance(adapter_payload, dict):
+        adapter_payload = {}
+        normalized["adapter_payload"] = adapter_payload
+
+    results = normalized.get("results")
+    if isinstance(results, list) and len(results) == 0:
+        adapter_payload["last_result"] = None
+
+    return normalized
+
+
+StepExecutor._attach_adapter_payload = _zero_v7312_attach_adapter_payload
