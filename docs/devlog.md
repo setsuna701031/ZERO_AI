@@ -1,4 +1,156 @@
+## 2026-05-21 - Runtime Enforcement Evidence Persistence Landing
+
+Runtime Enforcement Evidence Persistence Landing completed.
+
+The runtime lifecycle transition path now preserves a stable
+`runtime_enforcement_decision.v1` snapshot in transition result metadata,
+successful lifecycle transition history, and the record-level
+`last_enforcement_decision` field.
+
+This keeps enforcement decisions replay-safe and audit/recovery visible without
+wiring scheduler, agent_loop, StepExecutor, repair bridge, UI, tools, app.py, or
+system_boot.py.
+
+Default behavior remains audit-only. DRY_RUN remains advisory only. ENFORCE
+remains opt-in and blocks only safe hard-block candidates.
+
 ---
+## 2026-05-21 - Runtime Enforcement Integration Landing
+
+Runtime Enforcement Integration Landing completed.
+
+One narrow runtime-layer live transition path now supports an explicit
+`enforcement_mode` argument: `RuntimeLifecycleCoordinator.transition(...)`.
+Default behavior remains audit-only. DRY_RUN is advisory only, and opt-in
+ENFORCE blocks only safe hard-block candidates.
+
+Scheduler, agent_loop, StepExecutor, repair bridge, UI, tools, app.py, and
+system_boot.py remain intentionally unwired.
+
+## 2026-05-21 - Runtime Enforcement Landing Package
+
+This checkpoint lands runtime-layer enforcement modes without wiring hard
+enforcement into scheduler, agent loop, StepExecutor, tools, UI, app startup, or
+system boot.
+
+Default behavior remains audit-only. Runtime transitions now support DRY_RUN
+advisory decisions and explicit opt-in ENFORCE mode. ENFORCE raises only for
+safe hard-block candidates classified as `block_recommended`; observe-only,
+review-required, and canonical allowed transitions remain non-blocking.
+
+The controlled runtime-layer probe is the existing canonical transition summary
+path. Existing callers continue to default to AUDIT_ONLY, while tests can pass
+DRY_RUN or ENFORCE explicitly.
+
+## 2026-05-21 - Runtime Enforcement Readiness Audit
+
+This checkpoint classifies runtime lifecycle/status transitions for future
+enforcement readiness without enforcing them.
+
+Transition reports now distinguish hard-block candidates, observe-only legacy
+shortcuts, and review-required transitions while preserving legacy runtime
+behavior. The audit metadata is attached across lifecycle, kernel, transaction,
+recovery, and replay surfaces.
+
+Validation target:
+
+```text
+Runtime lifecycle/status transitions now include enforcement-readiness metadata, distinguishing safe hard-block candidates from observe-only legacy shortcuts.
+```
+
+## 2026-05-21 - Runtime Transition Evidence Chain
+
+This checkpoint adds evidence lineage for canonical runtime lifecycle/status
+transitions.
+
+Transition reports now carry `transition_evidence`, `transition_reason`,
+`transition_trigger`, and `transition_source` across lifecycle, kernel state,
+transaction, recovery, and replay surfaces. The evidence chain is observational
+and does not add enforcement or change runtime behavior.
+
+Validation target:
+
+```text
+Runtime lifecycle transitions now carry canonical evidence lineage and transition reasoning metadata across replay/recovery/transaction/lifecycle surfaces.
+```
+
+## 2026-05-21 - Runtime Lifecycle Transition Gate
+
+This checkpoint adds a canonical runtime status transition graph for freeze
+stabilization.
+
+Lifecycle, kernel state, transaction, recovery, and replay surfaces now report
+canonical from/to status validation, including whether a transition is allowed
+and whether it is a regression. The gate is observational in this pass and does
+not change legacy runtime behavior.
+
+Validation target:
+
+```text
+Runtime lifecycle/status transitions are now checked against a canonical transition graph without changing legacy runtime behavior.
+```
+
+## 2026-05-21 - Runtime Status Canonicalization Pass
+
+This checkpoint introduces a canonical runtime status vocabulary for
+ABI-adjacent runtime state surfaces.
+
+Runtime event payloads, kernel checkpoints, transaction summaries, lifecycle
+records, recovery reconstruction, and replay sessions now preserve their
+original status/state/phase fields while adding `canonical_status` from the
+shared runtime_status layer.
+
+Validation target:
+
+```text
+Runtime status semantics are now normalized through a canonical runtime_status layer across ABI-adjacent runtime surfaces.
+```
+
+## 2026-05-21 - RuntimeExecutionResult Overlay Collapse Pass
+
+This checkpoint collapses the historical RuntimeExecutionResult v73xx
+monkey-patch overlay chain into a single implementation path.
+
+The public compatibility entrypoints remain in place, but canonical ABI field
+generation now flows through direct methods and the shared
+runtime_execution_result_fields helpers instead of depending on overlay order.
+
+Validation target:
+
+```text
+RuntimeExecutionResult no longer depends on historical overlay monkey-patch chains for canonical ABI fields.
+```
+
+## 2026-05-21 - RuntimeExecutionResult ABI Audit Sweep
+
+This checkpoint sweeps ABI-adjacent runtime surfaces after extracting
+RuntimeExecutionResult field inference.
+
+Runtime event bus, kernel checkpoint payloads, and transaction coordinator
+artifacts now preserve execution-result canonical fields through the shared
+field helpers instead of drifting into local execution semantics.
+
+Validation target:
+
+```text
+Runtime execution-result semantics are now shared through canonical field helpers across ABI-adjacent runtime surfaces.
+```
+
+## 2026-05-21 - RuntimeExecutionResult ABI Freeze Cleanup
+
+This checkpoint extracts RuntimeExecutionResult ABI field inference into pure
+resolver functions.
+
+The cleanup keeps the existing public compatibility entrypoints intact while
+centralizing inference for executed, blocked, failed, verification, evidence,
+changed files, impacted files, and rollback snapshot fields.
+
+Validation target:
+
+```text
+RuntimeExecutionResult ABI field inference extracted and freeze-tested.
+```
+
 ## 2026-05-21 - RuntimeExecutionResult Globalization ABI Seal
 
 This checkpoint records the RuntimeExecutionResult globalization ABI pass.

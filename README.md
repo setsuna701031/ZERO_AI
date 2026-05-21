@@ -86,6 +86,21 @@ Current engineering checkpoint:
 runtime-execution-result-globalization-abi-seal
 ```
 
+Latest status:
+
+```text
+Runtime enforcement decisions are now persisted as stable lifecycle metadata for replay, audit, and recovery visibility while default execution remains audit-only.
+Runtime enforcement now has audit, dry-run, and opt-in enforce modes while default execution remains audit-only.
+Runtime enforcement can now be explicitly enabled on a narrow runtime-layer transition path while default execution remains audit-only.
+Runtime lifecycle/status transitions now include enforcement-readiness metadata, distinguishing safe hard-block candidates from observe-only legacy shortcuts.
+Runtime lifecycle transitions now carry canonical evidence lineage and transition reasoning metadata across replay/recovery/transaction/lifecycle surfaces.
+Runtime lifecycle/status transitions are now checked against a canonical transition graph without changing legacy runtime behavior.
+Runtime status semantics are now normalized through a canonical runtime_status layer across ABI-adjacent runtime surfaces.
+RuntimeExecutionResult no longer depends on historical overlay monkey-patch chains for canonical ABI fields.
+Runtime execution-result semantics are now shared through canonical field helpers across ABI-adjacent runtime surfaces.
+RuntimeExecutionResult ABI field inference extracted and freeze-tested.
+```
+
 ZERO now has a canonical runtime execution result surface shared across legacy step payloads, StepExecutor execution, governed repair mutation paths, and repair transaction mainline execution.
 
 Completed normalization surface:

@@ -11,9 +11,17 @@ coherent lifecycle universe.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
+
+from core.runtime.runtime_enforcement_readiness import (
+    RuntimeEnforcementMode,
+    runtime_enforcement_decision_snapshot,
+)
+from core.runtime.runtime_status import status_from_lifecycle_phase
+from core.runtime.runtime_status_transition import runtime_status_transition_payload
 
 
 RUNTIME_LIFECYCLE_STATES = {
@@ -84,6 +92,74 @@ def _normalize_artifact_type(value: Any) -> str:
     return artifact_type
 
 
+def _transition_validation(
+    from_state: Any,
+    to_state: Any,
+    *,
+    metadata: dict[str, Any] | None = None,
+    enforcement_mode: RuntimeEnforcementMode | str = RuntimeEnforcementMode.AUDIT_ONLY,
+) -> dict[str, Any]:
+    return runtime_status_transition_payload(
+        status_from_lifecycle_phase(from_state),
+        status_from_lifecycle_phase(to_state),
+        source="runtime_lifecycle_coordinator",
+        metadata=metadata,
+        mode=enforcement_mode,
+    )
+
+
+def _transition_audit_fields(transition: dict[str, Any]) -> dict[str, Any]:
+    decision_snapshot = runtime_enforcement_decision_snapshot(
+        transition.get("enforcement_decision")
+    )
+    return {
+        "transition_allowed": transition["allowed"],
+        "transition_regression": transition["regression"],
+        "transition_reason": transition["transition_reason"],
+        "transition_trigger": transition["transition_trigger"],
+        "transition_source": transition["transition_source"],
+        "transition_evidence": copy.deepcopy(transition["transition_evidence"]),
+        "enforcement_readiness": transition["enforcement_readiness"],
+        "enforcement_classification": transition["enforcement_classification"],
+        "enforcement_reason": transition["enforcement_reason"],
+        "safe_to_enforce": transition["safe_to_enforce"],
+        "review_required": transition["review_required"],
+        "block_recommended": transition["block_recommended"],
+        "enforcement_mode": transition.get("enforcement_mode"),
+        "enforcement_decision": decision_snapshot,
+        "enforcement_decision_schema": decision_snapshot["schema"],
+        "enforcement_allowed": transition.get("enforcement_allowed"),
+        "blocked": transition.get("blocked"),
+        "would_block": transition.get("would_block"),
+    }
+
+
+def _transition_persistence_fields(transition: dict[str, Any]) -> dict[str, Any]:
+    audit_fields = _transition_audit_fields(transition)
+    decision_snapshot = runtime_enforcement_decision_snapshot(
+        audit_fields.get("enforcement_decision")
+    )
+    return {
+        "transition_allowed": audit_fields["transition_allowed"],
+        "transition_regression": audit_fields["transition_regression"],
+        "transition_reason": audit_fields["transition_reason"],
+        "transition_trigger": audit_fields["transition_trigger"],
+        "transition_source": audit_fields["transition_source"],
+        "transition_evidence": copy.deepcopy(audit_fields["transition_evidence"]),
+        "enforcement_mode": audit_fields["enforcement_mode"],
+        "enforcement_classification": audit_fields["enforcement_classification"],
+        "enforcement_reason": audit_fields["enforcement_reason"],
+        "safe_to_enforce": audit_fields["safe_to_enforce"],
+        "review_required": audit_fields["review_required"],
+        "block_recommended": audit_fields["block_recommended"],
+        "enforcement_allowed": audit_fields["enforcement_allowed"],
+        "blocked": audit_fields["blocked"],
+        "would_block": audit_fields["would_block"],
+        "enforcement_decision_schema": decision_snapshot["schema"],
+        "enforcement_decision": decision_snapshot,
+    }
+
+
 @dataclass(frozen=True)
 class RuntimeLifecycleRecord:
     lifecycle_id: str
@@ -127,6 +203,7 @@ class RuntimeLifecycleRecord:
             "artifact_id": self.artifact_id,
             "artifact_type": self.artifact_type,
             "state": self.state,
+            "canonical_status": status_from_lifecycle_phase(self.state),
             "transaction_id": self.transaction_id,
             "parent_lifecycle_id": self.parent_lifecycle_id,
             "sealed": self.sealed,
@@ -152,6 +229,22 @@ class RuntimeLifecycleDecision:
     seals_record: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def to_metadata(self) -> dict[str, Any]:
+        transition = _transition_validation(self.from_state, self.to_state)
+        return {
+            "allowed": self.allowed,
+            "from_state": self.from_state,
+            "to_state": self.to_state,
+            "canonical_status": status_from_lifecycle_phase(self.to_state),
+            "canonical_from_status": transition["from_status"],
+            "canonical_to_status": transition["to_status"],
+            **_transition_audit_fields(transition),
+            "reason": self.reason,
+            "requires_rollback": self.requires_rollback,
+            "seals_record": self.seals_record,
+            "metadata": dict(self.metadata),
+        }
+
 
 @dataclass(frozen=True)
 class RuntimeLifecycleResult:
@@ -164,6 +257,28 @@ class RuntimeLifecycleResult:
     @property
     def ok(self) -> bool:
         return self.decision.allowed and self.status in {"created", "transitioned", "unchanged"}
+
+    def to_metadata(self) -> dict[str, Any]:
+        transition = _transition_validation(self.decision.from_state, self.decision.to_state)
+        audit_fields = _transition_audit_fields(transition)
+        audit_fields.update(
+            {
+                key: self.metadata[key]
+                for key in audit_fields
+                if key in self.metadata
+            }
+        )
+        return {
+            "record": self.record.to_metadata(),
+            "decision": self.decision.to_metadata(),
+            "transitioned": self.transitioned,
+            "status": self.status,
+            "canonical_status": status_from_lifecycle_phase(self.record.state),
+            "canonical_from_status": transition["from_status"],
+            "canonical_to_status": transition["to_status"],
+            **audit_fields,
+            "metadata": dict(self.metadata),
+        }
 
 
 class RuntimeLifecyclePolicy:
@@ -277,12 +392,17 @@ class RuntimeLifecycleCoordinator:
             reason="lifecycle_record_created",
             metadata=dict(metadata or {}),
         )
+        transition = _transition_validation("created", "created")
         return RuntimeLifecycleResult(
             record=record,
             decision=decision,
             transitioned=False,
             status="created",
-            metadata={"action": "create_record"},
+            metadata={
+                "action": "create_record",
+                "canonical_status": status_from_lifecycle_phase("created"),
+                **_transition_audit_fields(transition),
+            },
         )
 
     def get_record(self, lifecycle_id: str) -> RuntimeLifecycleRecord:
@@ -297,16 +417,28 @@ class RuntimeLifecycleCoordinator:
         to_state: str,
         *,
         metadata: dict[str, Any] | None = None,
+        enforcement_mode: RuntimeEnforcementMode | str = RuntimeEnforcementMode.AUDIT_ONLY,
     ) -> RuntimeLifecycleResult:
         record = self.get_record(lifecycle_id)
         decision = self.policy.evaluate(record=record, to_state=to_state, metadata=metadata)
+        transition = _transition_validation(
+            decision.from_state,
+            decision.to_state,
+            metadata=metadata,
+            enforcement_mode=enforcement_mode,
+        )
         if not decision.allowed:
             return RuntimeLifecycleResult(
                 record=record,
                 decision=decision,
                 transitioned=False,
                 status="blocked",
-                metadata={"action": "transition_blocked", **dict(metadata or {})},
+                metadata={
+                    "action": "transition_blocked",
+                    "canonical_status": status_from_lifecycle_phase("blocked"),
+                    **_transition_audit_fields(transition),
+                    **dict(metadata or {}),
+                },
             )
 
         target = _normalize_state(to_state)
@@ -316,15 +448,28 @@ class RuntimeLifecycleCoordinator:
                 decision=decision,
                 transitioned=False,
                 status="unchanged",
-                metadata={"action": "transition_unchanged", **dict(metadata or {})},
+                metadata={
+                    "action": "transition_unchanged",
+                    "canonical_status": status_from_lifecycle_phase(target),
+                    **_transition_audit_fields(transition),
+                    **dict(metadata or {}),
+                },
             )
 
+        persistence_fields = _transition_persistence_fields(transition)
         event = {
             "from_state": record.state,
             "to_state": target,
             "reason": decision.reason,
             "timestamp": utc_timestamp(),
-            "metadata": dict(metadata or {}),
+            "metadata": {**persistence_fields, **dict(metadata or {})},
+            "enforcement_decision": persistence_fields["enforcement_decision"],
+            "enforcement_decision_schema": persistence_fields["enforcement_decision_schema"],
+            "enforcement_mode": persistence_fields["enforcement_mode"],
+            "enforcement_classification": persistence_fields["enforcement_classification"],
+            "enforcement_allowed": persistence_fields["enforcement_allowed"],
+            "blocked": persistence_fields["blocked"],
+            "would_block": persistence_fields["would_block"],
         }
         updated = replace(
             record,
@@ -335,7 +480,13 @@ class RuntimeLifecycleCoordinator:
             rollback_required=(record.rollback_required or target == "rollback_required")
             and target not in {"rolled_back", "committed", "sealed"},
             transition_history=(*record.transition_history, event),
-            metadata={**dict(record.metadata), "last_lifecycle_transition": event, **dict(metadata or {})},
+            metadata={
+                **dict(record.metadata),
+                "last_lifecycle_transition": copy.deepcopy(event),
+                "last_enforcement_decision": copy.deepcopy(persistence_fields["enforcement_decision"]),
+                "last_enforcement_decision_schema": persistence_fields["enforcement_decision_schema"],
+                **dict(metadata or {}),
+            },
         )
         self._records[updated.lifecycle_id] = updated
         return RuntimeLifecycleResult(
@@ -343,7 +494,12 @@ class RuntimeLifecycleCoordinator:
             decision=decision,
             transitioned=True,
             status="transitioned",
-            metadata={"action": "transition", **dict(metadata or {})},
+            metadata={
+                "action": "transition",
+                "canonical_status": status_from_lifecycle_phase(target),
+                **_transition_audit_fields(transition),
+                **dict(metadata or {}),
+            },
         )
 
     def mark_active(self, lifecycle_id: str, metadata: dict[str, Any] | None = None) -> RuntimeLifecycleResult:
