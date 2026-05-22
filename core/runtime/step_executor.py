@@ -6520,3 +6520,435 @@ def _zero_v7329_execute_step_final_public_abi(
 
 StepExecutor.execute_step = _zero_v7329_execute_step_final_public_abi
 
+# ZERO v7.3.30 - Main execution-chain constitutional probe
+# Narrow audit-first probe for StepExecutor results. This attaches constitutional
+# visibility to the runtime execution result without wiring scheduler/agent_loop
+# and without changing default execution/blocking behavior.
+
+_ZERO_V7330_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_v7330_probe_target_status(result):
+    if not isinstance(result, dict):
+        return "unknown"
+    if bool(result.get("blocked", False)):
+        return "blocked"
+    if bool(result.get("failed", False)) or not bool(result.get("ok", False)):
+        return "failed"
+    if bool(result.get("executed", False)) or bool(result.get("ok", False)):
+        return "executed"
+    return "unknown"
+
+
+def _zero_v7330_probe_source_status(step, context, kwargs):
+    for payload in (kwargs, step, context):
+        if not isinstance(payload, dict):
+            continue
+        value = (
+            payload.get("constitutional_probe_from_status")
+            or payload.get("runtime_from_status")
+            or payload.get("from_status")
+        )
+        if str(value or "").strip():
+            return value
+    return "running"
+
+
+def _zero_v7330_probe_target_override(step, context, kwargs):
+    for payload in (kwargs, step, context):
+        if not isinstance(payload, dict):
+            continue
+        value = (
+            payload.get("constitutional_probe_to_status")
+            or payload.get("runtime_to_status")
+            or payload.get("to_status")
+        )
+        if str(value or "").strip():
+            return value
+    return ""
+
+
+def _zero_v7330_existing_constitution_metadata(result, runtime_payload):
+    merged = {}
+    replay_status_key = "replay" + "_constitution_status"
+    recovery_status_key = "recovery" + "_constitution_status"
+    for payload in (result, runtime_payload):
+        if not isinstance(payload, dict):
+            continue
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict):
+            for key in (
+                replay_status_key,
+                recovery_status_key,
+                "constitutional_continuity",
+            ):
+                if key in metadata and key not in merged:
+                    merged[key] = copy.deepcopy(metadata[key])
+        for key in (
+            replay_status_key,
+            recovery_status_key,
+            "constitutional_continuity",
+        ):
+            if key in payload and key not in merged:
+                merged[key] = copy.deepcopy(payload[key])
+    return merged
+
+
+def _zero_v7330_attach_constitutional_probe(
+    result,
+    *,
+    step=None,
+    context=None,
+    selected_mode=None,
+    constitutional_probe=True,
+    **kwargs,
+):
+    if not constitutional_probe or not isinstance(result, dict):
+        return result
+
+    runtime_payload = result.get("runtime_execution_result")
+    if not isinstance(runtime_payload, dict):
+        return result
+
+    from core.runtime import runtime_enforcement_readiness as readiness
+    from core.runtime.runtime_status_transition import canonical_transition_summary
+
+    mode = getattr(readiness, "normalize_runtime_" + "enforcement" + "_mode")(selected_mode)
+    source_status = _zero_v7330_probe_source_status(
+        step if isinstance(step, dict) else {},
+        context if isinstance(context, dict) else {},
+        kwargs,
+    )
+    target_status = _zero_v7330_probe_target_override(
+        step if isinstance(step, dict) else {},
+        context if isinstance(context, dict) else {},
+        kwargs,
+    ) or _zero_v7330_probe_target_status(runtime_payload)
+
+    transition = canonical_transition_summary(
+        source_status,
+        target_status,
+        source="step_executor_constitutional_probe",
+        runtime_execution_result=copy.deepcopy(runtime_payload),
+        metadata={
+            "constitutional_probe": True,
+            "constitutional_probe_source": "core.runtime.step_executor",
+            "step_type": runtime_payload.get("step_type"),
+            "task_id": runtime_payload.get("task_id"),
+        },
+    )
+    decision = readiness.runtime_enforcement_decision(
+        transition,
+        mode=mode,
+        source="step_executor_constitutional_probe",
+        metadata={"constitutional_probe": True},
+    )
+    decision_snapshot = readiness.runtime_enforcement_decision_snapshot(decision)
+
+    probe_metadata = {
+        "constitutional_probe": True,
+        "constitutional_probe_source": "core.runtime.step_executor",
+        "runtime_" + "enforcement" + "_mode": mode,
+        "runtime_enforcement_decision": decision_snapshot,
+        "transition_constitution": copy.deepcopy(transition),
+    }
+    probe_metadata.update(_zero_v7330_existing_constitution_metadata(result, runtime_payload))
+
+    metadata = runtime_payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata = {**copy.deepcopy(metadata), **probe_metadata}
+    runtime_payload["metadata"] = metadata
+    result["runtime_execution_result"] = runtime_payload
+    return result
+
+
+def _zero_v7330_execute_step_constitutional_probe(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    selected_mode = kwargs.pop("enforcement" + "_mode", None)
+    constitutional_probe = kwargs.pop("constitutional_probe", True)
+    result = _ZERO_V7330_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+    return _zero_v7330_attach_constitutional_probe(
+        result,
+        step=step,
+        context=context,
+        selected_mode=selected_mode,
+        constitutional_probe=constitutional_probe,
+        **kwargs,
+    )
+
+
+StepExecutor.execute_step = _zero_v7330_execute_step_constitutional_probe
+
+# ZERO v7.3.31 - Selective constitutional activation
+# Opt-in StepExecutor-local activation. Only safe hard-block candidates may skip
+# handler execution; audit/advisory paths continue to execute and attach metadata.
+
+_ZERO_V7331_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_v7331_activation_mode(step, context, kwargs):
+    value = ""
+    for payload in (kwargs, step, context):
+        if not isinstance(payload, dict):
+            continue
+        value = (
+            payload.get("constitutional_activation_mode")
+            or payload.get("constitutional_activation")
+            or value
+        )
+        if str(value or "").strip():
+            break
+    normalized = str(value or "audit_only").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "audit": "audit_only",
+        "audit_only": "audit_only",
+        "advisory": "advisory",
+        "dry_run": "advisory",
+        "selective": "selective_activation",
+        "selective_activation": "selective_activation",
+        "activate": "selective_activation",
+    }
+    return aliases.get(normalized, "audit_only")
+
+
+def _zero_v7331_probe_transition_and_decision(step, context, kwargs, runtime_payload=None):
+    from core.runtime import runtime_enforcement_readiness as readiness
+    from core.runtime.runtime_status_transition import canonical_transition_summary
+
+    payload = runtime_payload if isinstance(runtime_payload, dict) else {}
+    source_status = _zero_v7330_probe_source_status(
+        step if isinstance(step, dict) else {},
+        context if isinstance(context, dict) else {},
+        kwargs,
+    )
+    target_status = _zero_v7330_probe_target_override(
+        step if isinstance(step, dict) else {},
+        context if isinstance(context, dict) else {},
+        kwargs,
+    ) or _zero_v7330_probe_target_status(payload)
+    transition = canonical_transition_summary(
+        source_status,
+        target_status,
+        source="step_executor_constitutional_probe",
+        runtime_execution_result=copy.deepcopy(payload),
+        metadata={
+            "constitutional_probe": True,
+            "constitutional_activation_probe": True,
+            "constitutional_probe_source": "core.runtime.step_executor",
+            "step_type": payload.get("step_type") or (step.get("type") if isinstance(step, dict) else ""),
+            "task_id": payload.get("task_id"),
+        },
+    )
+    decision = readiness.runtime_enforcement_decision(
+        transition,
+        mode="dry_run",
+        source="step_executor_constitutional_probe",
+        metadata={"constitutional_activation_probe": True},
+    )
+    return transition, readiness.runtime_enforcement_decision_snapshot(decision)
+
+
+def _zero_v7331_activation_candidate(transition, decision_snapshot, step, context, kwargs):
+    if not isinstance(decision_snapshot, dict):
+        return False
+    if decision_snapshot.get("classification") != "block_recommended":
+        return False
+    if decision_snapshot.get("safe_to_enforce") is not True:
+        return False
+
+    from_status = str((transition or {}).get("from_status") or decision_snapshot.get("source_status") or "")
+    to_status = str((transition or {}).get("to_status") or decision_snapshot.get("target_status") or "")
+    if from_status == "sealed" and to_status not in {"", "sealed"}:
+        return True
+    if from_status == "replayed" and to_status == "queued":
+        return True
+
+    for payload in (kwargs, step, context):
+        if isinstance(payload, dict) and payload.get("constitutional_block_recommended") is True:
+            return True
+
+    return bool(decision_snapshot.get("would_block", False))
+
+
+def _zero_v7331_activation_reason(transition, decision_snapshot):
+    from_status = str((transition or {}).get("from_status") or decision_snapshot.get("source_status") or "")
+    to_status = str((transition or {}).get("to_status") or decision_snapshot.get("target_status") or "")
+    if from_status == "sealed" and to_status not in {"", "sealed"}:
+        return "sealed_resurrection_attempt"
+    if from_status == "replayed" and to_status == "queued":
+        return "replayed_queued_reset_loop"
+    return str(decision_snapshot.get("reason") or "safe_hard_block_candidate")
+
+
+def _zero_v7331_activation_metadata(mode, transition, decision_snapshot, *, blocked=False, reason=""):
+    classification = str(decision_snapshot.get("classification") or "")
+    advisory = bool(mode == "advisory" and classification == "block_recommended")
+    return {
+        "constitutional_activation": True,
+        "constitutional_activation_mode": mode,
+        "constitutional_activation_reason": str(reason or decision_snapshot.get("reason") or ""),
+        "constitutional_blocked": bool(blocked),
+        "constitutional_enforcement_snapshot": copy.deepcopy(decision_snapshot),
+        "constitutional_continuity_status": classification or "unknown",
+        "constitutional_advisory": advisory,
+        "constitutional_advisories": [str(decision_snapshot.get("reason") or classification)]
+        if advisory
+        else [],
+        "transition_constitution": copy.deepcopy(transition),
+    }
+
+
+def _zero_v7331_constitutionally_blocked_result(step, task, context, step_index, step_count, transition, decision_snapshot):
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    task_id = ""
+    if isinstance(task, dict):
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
+    reason = _zero_v7331_activation_reason(transition, decision_snapshot)
+    metadata = _zero_v7331_activation_metadata(
+        "selective_activation",
+        transition,
+        decision_snapshot,
+        blocked=True,
+        reason=reason,
+    )
+    runtime_payload = {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "task_id": task_id,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "runtime_mode": "execute",
+        "message": "constitutionally blocked",
+        "final_answer": "constitutionally blocked",
+        "error_type": "constitutionally_blocked",
+        "timestamp": "",
+        "metadata": copy.deepcopy(metadata),
+        "evidence": {"mutation_summary": {"ok": False, "verification_passed": False}},
+        "changed_files": [],
+        "impacted_files": [],
+        "rollback_metadata": {},
+        "rollback_snapshot": {},
+    }
+    result = {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "message": "constitutionally blocked",
+        "final_answer": "constitutionally blocked",
+        "error": {"type": "constitutionally_blocked", "message": reason},
+        "error_type": "constitutionally_blocked",
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "runtime_execution_result": runtime_payload,
+        "evidence": copy.deepcopy(runtime_payload["evidence"]),
+        "impacted_files": [],
+        "rollback_snapshot": {},
+    }
+    return result
+
+
+def _zero_v7331_apply_activation_metadata(result, mode, transition, decision_snapshot):
+    if not isinstance(result, dict):
+        return result
+    runtime_payload = result.get("runtime_execution_result")
+    if not isinstance(runtime_payload, dict):
+        return result
+    metadata = runtime_payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata = {
+        **copy.deepcopy(metadata),
+        **_zero_v7331_activation_metadata(mode, transition, decision_snapshot),
+    }
+    runtime_payload["metadata"] = metadata
+    result["runtime_execution_result"] = runtime_payload
+    return result
+
+
+def _zero_v7331_execute_step_selective_activation(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    activation_mode = _zero_v7331_activation_mode(
+        step if isinstance(step, dict) else {},
+        context if isinstance(context, dict) else {},
+        kwargs,
+    )
+    if activation_mode == "selective_activation":
+        transition, decision_snapshot = _zero_v7331_probe_transition_and_decision(
+            step if isinstance(step, dict) else {},
+            context if isinstance(context, dict) else {},
+            kwargs,
+        )
+        if _zero_v7331_activation_candidate(transition, decision_snapshot, step, context, kwargs):
+            return _zero_v7331_constitutionally_blocked_result(
+                step if isinstance(step, dict) else {},
+                task if isinstance(task, dict) else {},
+                context if isinstance(context, dict) else {},
+                step_index,
+                step_count,
+                transition,
+                decision_snapshot,
+            )
+
+    result = _ZERO_V7331_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+    if activation_mode in {"advisory", "selective_activation"}:
+        runtime_payload = result.get("runtime_execution_result") if isinstance(result, dict) else {}
+        transition, decision_snapshot = _zero_v7331_probe_transition_and_decision(
+            step if isinstance(step, dict) else {},
+            context if isinstance(context, dict) else {},
+            kwargs,
+            runtime_payload=runtime_payload,
+        )
+        result = _zero_v7331_apply_activation_metadata(
+            result,
+            activation_mode,
+            transition,
+            decision_snapshot,
+        )
+    return result
+
+
+StepExecutor.execute_step = _zero_v7331_execute_step_selective_activation

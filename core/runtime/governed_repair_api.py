@@ -42,6 +42,7 @@ def execute_governed_repair_mutation(
     dry_run: bool | None = None,
     gate_hook: GovernedRepairGateHook | None = None,
     use_runtime_recovery_gate: bool = False,
+    controlled_mutation_bridge: Any = None,
 ) -> MutationRuntimePipelineResult:
     """
     Public governed repair API.
@@ -94,6 +95,7 @@ def execute_governed_repair_mutation(
         dry_run=dry_run,
         gate_hook=gate_hook,
         use_runtime_recovery_gate=use_runtime_recovery_gate,
+        controlled_mutation_bridge=controlled_mutation_bridge,
     )
 
 
@@ -115,6 +117,7 @@ def execute_governed_repair_mutation_mainline(
     verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
     risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
     dry_run: bool | None = None,
+    controlled_mutation_bridge: Any = None,
 ):
     transaction = create_runtime_repair_transaction(
         task_id=task_id,
@@ -142,4 +145,5 @@ def execute_governed_repair_mutation_mainline(
         verification=verification,
         risk_level=risk_level,
         dry_run=dry_run,
+        controlled_mutation_bridge=controlled_mutation_bridge,
     )

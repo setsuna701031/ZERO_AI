@@ -90,6 +90,12 @@ Latest status:
 
 ```text
 Runtime enforcement decisions are now persisted as stable lifecycle metadata for replay, audit, and recovery visibility while default execution remains audit-only.
+Runtime replay/recovery paths now preserve constitutional continuity, enforcement visibility, and replay legality metadata.
+StepExecutor now carries an audit-first constitutional probe that adds execution-chain enforcement visibility without enabling global blocking.
+Runtime execution can now selectively obey constitutional enforcement rules within the StepExecutor boundary while global runtime execution remains audit-first.
+Scheduler and agent-loop layers can now recognize constitutional execution outcomes without enabling global enforcement.
+Runtime loops now support governed autonomous continuation with constitutional interruption handling, replay/recovery continuity preservation, and terminal constitutional boundary detection.
+Autonomous continuation now classifies governed self-repair candidates and terminal constitutional repair blocks without opening automatic mutation authority.
 Runtime enforcement now has audit, dry-run, and opt-in enforce modes while default execution remains audit-only.
 Runtime enforcement can now be explicitly enabled on a narrow runtime-layer transition path while default execution remains audit-only.
 Runtime lifecycle/status transitions now include enforcement-readiness metadata, distinguishing safe hard-block candidates from observe-only legacy shortcuts.
@@ -753,6 +759,8 @@ Governed Repair Runtime / Operator Review Loop: ✔ Human-supervised review loop
 Operator Review Runtime Resume / Rollback Recovery Chain: ✔ Governed resume, mutation landing, and rollback restore validated
 Runtime Boundary Freeze Baseline: ✔ Freeze candidate documented and full-suite verified
 RuntimeExecutionResult Globalization ABI: ✔ Canonical execution-result surface sealed
+
+Governed self-repair candidates can now enter a controlled mutation bridge while approval, verification, rollback, and audit boundaries remain enforced.
 
 Current phase:\
 → RuntimeExecutionResult globalization ABI is sealed; legacy payloads, StepExecutor results, and repair transaction mainline now expose canonical executed / verification / evidence / impacted-files fields

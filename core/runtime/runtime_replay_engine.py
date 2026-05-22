@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
@@ -10,7 +11,15 @@ from core.runtime.runtime_execution_session import (
     RuntimeExecutionSessionManager,
 )
 from core.runtime.runtime_status import status_from_replay_state
-from core.runtime.runtime_status_transition import runtime_status_transition_payload
+from core.runtime.runtime_status_transition import (
+    is_runtime_status_regression,
+    runtime_status_transition_payload,
+)
+
+
+REPLAY_CONSTITUTION_CANONICAL = "canonical"
+REPLAY_CONSTITUTION_REVIEW_REQUIRED = "review_required"
+REPLAY_CONSTITUTION_BLOCK_RECOMMENDED = "block_recommended"
 
 
 @dataclass(frozen=True)
@@ -37,6 +46,13 @@ class RuntimeReplayRecord:
     safe_to_enforce: bool = False
     review_required: bool = False
     block_recommended: bool = False
+    source_runtime_state_ref: dict[str, Any] = field(default_factory=dict)
+    constitutional_continuity: dict[str, Any] = field(default_factory=dict)
+    continuity_verified: bool = True
+    continuity_break: str = ""
+    replay_constitution_status: str = REPLAY_CONSTITUTION_CANONICAL
+    enforcement_visibility: bool = True
+    enforcement_snapshot: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -73,6 +89,14 @@ class RuntimeReplaySession:
     safe_to_enforce: bool = False
     review_required: bool = False
     block_recommended: bool = False
+    parent_replay_lineage: list[str] = field(default_factory=list)
+    source_runtime_state_refs: list[dict[str, Any]] = field(default_factory=list)
+    constitutional_continuity: dict[str, Any] = field(default_factory=dict)
+    continuity_verified: bool = True
+    continuity_break: str = ""
+    replay_constitution_status: str = REPLAY_CONSTITUTION_CANONICAL
+    enforcement_visibility: bool = True
+    enforcement_snapshot: dict[str, Any] = field(default_factory=dict)
 
 
 class RuntimeReplayRejected(RuntimeError):
@@ -83,6 +107,103 @@ class RuntimeReplayRejected(RuntimeError):
     ) -> None:
         self.original_exception = original_exception
         super().__init__(message)
+
+
+def replay_constitution_summary(
+    *,
+    replay_id: str,
+    parent_replay_lineage: list[str] | None = None,
+    source_runtime_state_refs: list[dict[str, Any]] | None = None,
+    transition: dict[str, Any] | None = None,
+    transition_evidence: dict[str, Any] | None = None,
+    enforcement_snapshot: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize replay constitutional continuity without enforcing it."""
+
+    lineage = [str(item) for item in (parent_replay_lineage or []) if str(item or "").strip()]
+    refs = [
+        copy.deepcopy(item)
+        for item in (source_runtime_state_refs or [])
+        if isinstance(item, dict)
+    ]
+    transition_payload = copy.deepcopy(transition) if isinstance(transition, dict) else {}
+    evidence = (
+        copy.deepcopy(transition_evidence)
+        if isinstance(transition_evidence, dict)
+        else copy.deepcopy(transition_payload.get("transition_evidence"))
+        if isinstance(transition_payload.get("transition_evidence"), dict)
+        else {}
+    )
+    snapshot = (
+        copy.deepcopy(enforcement_snapshot)
+        if isinstance(enforcement_snapshot, dict)
+        else copy.deepcopy(transition_payload.get("enforcement_decision"))
+        if isinstance(transition_payload.get("enforcement_decision"), dict)
+        else {}
+    )
+    meta = copy.deepcopy(metadata) if isinstance(metadata, dict) else {}
+
+    review_reasons: list[str] = []
+    block_reasons: list[str] = []
+    if not evidence:
+        review_reasons.append("missing_replay_evidence")
+    if not refs:
+        review_reasons.append("missing_source_runtime_refs")
+    if bool(meta.get("parent_lineage_required")) and not lineage:
+        review_reasons.append("missing_parent_lineage")
+    if replay_id and replay_id in lineage:
+        block_reasons.append("replay_loop")
+    if len(lineage) != len(set(lineage)):
+        block_reasons.append("replay_lineage_corruption")
+    if bool(meta.get("replay_lineage_corrupted") or meta.get("lineage_corruption")):
+        block_reasons.append("replay_lineage_corruption")
+    if bool(transition_payload.get("regression")) and not bool(transition_payload.get("allowed")):
+        review_reasons.append("replay_graph_discontinuity")
+
+    from_status = str(transition_payload.get("from_status") or "")
+    to_status = str(transition_payload.get("to_status") or "")
+    if from_status == "sealed" and to_status not in {"", "sealed"}:
+        block_reasons.append("sealed_active_replay_resurrection")
+    if from_status == "replayed" and to_status == "queued":
+        block_reasons.append("replayed_queued_reset_loop")
+    if is_runtime_status_regression(from_status, to_status) and (
+        from_status in {"sealed", "replayed"} or to_status == "queued"
+    ):
+        block_reasons.append("replay_regression")
+
+    status = REPLAY_CONSTITUTION_CANONICAL
+    if block_reasons:
+        status = REPLAY_CONSTITUTION_BLOCK_RECOMMENDED
+    elif review_reasons:
+        status = REPLAY_CONSTITUTION_REVIEW_REQUIRED
+
+    continuity_breaks = _sorted_unique([*review_reasons, *block_reasons])
+    return {
+        "constitutional_continuity": {
+            "kind": "runtime_replay_constitution",
+            "replay_id": str(replay_id or ""),
+            "parent_replay_lineage": list(lineage),
+            "source_runtime_state_refs": refs,
+            "transition_legal": bool(transition_payload.get("allowed", True)),
+            "transition_regression": bool(transition_payload.get("regression", False)),
+            "evidence_lineage": copy.deepcopy(evidence),
+            "evidence_complete": bool(evidence),
+            "enforcement_visibility": bool(snapshot),
+            "enforcement_snapshot": copy.deepcopy(snapshot),
+            "classification": status,
+        },
+        "continuity_verified": status == REPLAY_CONSTITUTION_CANONICAL,
+        "continuity_break": ",".join(continuity_breaks),
+        "replay_constitution_status": status,
+        "enforcement_visibility": bool(snapshot),
+        "enforcement_snapshot": snapshot,
+        "legality": status,
+        "evidence_complete": bool(evidence),
+        "constitutional_classification": status,
+        "review_required": status == REPLAY_CONSTITUTION_REVIEW_REQUIRED,
+        "block_recommended": status == REPLAY_CONSTITUTION_BLOCK_RECOMMENDED,
+    }
 
 
 class RuntimeReplayEngine:
@@ -196,6 +317,13 @@ class RuntimeReplayEngine:
             ),
             source="runtime_replay_engine",
         )
+        constitution = replay_constitution_summary(
+            replay_id=replay.replay_id,
+            parent_replay_lineage=replay.parent_replay_lineage,
+            source_runtime_state_refs=replay.source_runtime_state_refs,
+            transition=transition,
+            metadata=replay.metadata if isinstance(replay.metadata, dict) else None,
+        )
         updated = replace(
             replay,
             integrity_records=[
@@ -214,8 +342,14 @@ class RuntimeReplayEngine:
             enforcement_classification=transition["enforcement_classification"],
             enforcement_reason=transition["enforcement_reason"],
             safe_to_enforce=transition["safe_to_enforce"],
-            review_required=transition["review_required"],
-            block_recommended=transition["block_recommended"],
+            review_required=transition["review_required"] or constitution["review_required"],
+            block_recommended=transition["block_recommended"] or constitution["block_recommended"],
+            constitutional_continuity=constitution["constitutional_continuity"],
+            continuity_verified=constitution["continuity_verified"],
+            continuity_break=constitution["continuity_break"],
+            replay_constitution_status=constitution["replay_constitution_status"],
+            enforcement_visibility=constitution["enforcement_visibility"],
+            enforcement_snapshot=constitution["enforcement_snapshot"],
         )
         self._replays[replay_id] = updated
         return self._copy_replay(updated)
@@ -250,6 +384,15 @@ class RuntimeReplayEngine:
             "replayed",
             source="runtime_replay_engine",
         )
+        source_refs = _source_runtime_state_refs(records)
+        parent_lineage = _parent_replay_lineage(records)
+        constitution = replay_constitution_summary(
+            replay_id=replay_id,
+            parent_replay_lineage=parent_lineage,
+            source_runtime_state_refs=source_refs,
+            transition=transition,
+            metadata=metadata if isinstance(metadata, dict) else None,
+        )
         replay = RuntimeReplaySession(
             replay_id=replay_id,
             source_session_id=source_session_id,
@@ -271,8 +414,16 @@ class RuntimeReplayEngine:
             enforcement_classification=transition["enforcement_classification"],
             enforcement_reason=transition["enforcement_reason"],
             safe_to_enforce=transition["safe_to_enforce"],
-            review_required=transition["review_required"],
-            block_recommended=transition["block_recommended"],
+            review_required=transition["review_required"] or constitution["review_required"],
+            block_recommended=transition["block_recommended"] or constitution["block_recommended"],
+            parent_replay_lineage=parent_lineage,
+            source_runtime_state_refs=source_refs,
+            constitutional_continuity=constitution["constitutional_continuity"],
+            continuity_verified=constitution["continuity_verified"],
+            continuity_break=constitution["continuity_break"],
+            replay_constitution_status=constitution["replay_constitution_status"],
+            enforcement_visibility=constitution["enforcement_visibility"],
+            enforcement_snapshot=constitution["enforcement_snapshot"],
         )
         self._replays[replay_id] = replay
         return self._copy_replay(replay)
@@ -299,6 +450,21 @@ class RuntimeReplayEngine:
                     status_from_replay_state(lifecycle_record.phase),
                     source="runtime_replay_engine",
                 )
+                source_ref = {
+                    "source_session_id": session.session_id,
+                    "parent_session_id": session.parent_session_id,
+                    "lifecycle_id": lifecycle_record.lifecycle_id,
+                    "original_sequence": lifecycle_record.sequence,
+                    "replay_sequence": replay_sequence,
+                    "canonical_status": transition["to_status"],
+                }
+                constitution = replay_constitution_summary(
+                    replay_id=replay_id,
+                    parent_replay_lineage=_session_parent_lineage(session),
+                    source_runtime_state_refs=[source_ref],
+                    transition=transition,
+                    metadata=session.metadata if isinstance(session.metadata, dict) else None,
+                )
                 replay_records.append(
                     RuntimeReplayRecord(
                         replay_id=replay_id,
@@ -321,8 +487,15 @@ class RuntimeReplayEngine:
                         enforcement_classification=transition["enforcement_classification"],
                         enforcement_reason=transition["enforcement_reason"],
                         safe_to_enforce=transition["safe_to_enforce"],
-                        review_required=transition["review_required"],
-                        block_recommended=transition["block_recommended"],
+                        review_required=transition["review_required"] or constitution["review_required"],
+                        block_recommended=transition["block_recommended"] or constitution["block_recommended"],
+                        source_runtime_state_ref=source_ref,
+                        constitutional_continuity=constitution["constitutional_continuity"],
+                        continuity_verified=constitution["continuity_verified"],
+                        continuity_break=constitution["continuity_break"],
+                        replay_constitution_status=constitution["replay_constitution_status"],
+                        enforcement_visibility=constitution["enforcement_visibility"],
+                        enforcement_snapshot=constitution["enforcement_snapshot"],
                     )
                 )
 
@@ -379,6 +552,10 @@ class RuntimeReplayEngine:
             replay,
             records=list(replay.records),
             integrity_records=list(replay.integrity_records),
+            parent_replay_lineage=list(replay.parent_replay_lineage),
+            source_runtime_state_refs=[copy.deepcopy(item) for item in replay.source_runtime_state_refs],
+            constitutional_continuity=copy.deepcopy(replay.constitutional_continuity),
+            enforcement_snapshot=copy.deepcopy(replay.enforcement_snapshot),
         )
 
     def _hash_result(self, result: Any) -> str:
@@ -391,3 +568,40 @@ class RuntimeReplayEngine:
             separators=(",", ":"),
         )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _session_parent_lineage(session: RuntimeExecutionSession) -> list[str]:
+    lineage = []
+    if session.parent_session_id:
+        lineage.append(str(session.parent_session_id))
+    return lineage
+
+
+def _parent_replay_lineage(records: list[RuntimeReplayRecord]) -> list[str]:
+    lineage = []
+    for record in records:
+        parent = record.source_runtime_state_ref.get("parent_session_id")
+        if parent:
+            lineage.append(str(parent))
+    return _sorted_unique(lineage)
+
+
+def _source_runtime_state_refs(records: list[RuntimeReplayRecord]) -> list[dict[str, Any]]:
+    refs = []
+    seen = set()
+    for record in records:
+        ref = copy.deepcopy(record.source_runtime_state_ref)
+        key = (
+            ref.get("source_session_id"),
+            ref.get("lifecycle_id"),
+            ref.get("original_sequence"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(ref)
+    return refs
+
+
+def _sorted_unique(values: list[str]) -> list[str]:
+    return sorted({str(value) for value in values if str(value or "").strip()})

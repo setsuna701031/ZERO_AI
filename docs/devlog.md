@@ -9123,3 +9123,48 @@ Avoid mixing runtime contract mapping with broad scheduler refactoring in the sa
 - Failing smoke labels: document task, document flow showcase, document pipeline identity, requirement demo, execution demo, semantic task, implementation-proof, full-build-demo.
 - Dominant failing runtime issue: `app.py` CLI JSON output hits `ValueError: Circular reference detected`.
 - This entry is not a full-pass declaration.
+
+## Runtime Replay Constitution Landing
+- Completed Runtime Replay Constitution Landing.
+- Established replay/recovery continuity semantics for lineage, source/target runtime state references, transition legality, evidence lineage, constitutional status, and enforcement snapshot visibility.
+- Added constitutional replay/recovery legality classification for canonical continuity, review-required continuity breaks, and block-recommended replay/recovery corruption paths.
+- Replay/recovery summaries now expose legality, continuity verification, evidence completeness, enforcement visibility, and constitutional classification.
+- Scheduler, agent_loop, and StepExecutor remain intentionally unwired; runtime behavior stays audit-first with no broad enforcement coupling.
+
+## ZERO Main Execution Chain Constitutional Probe Landing
+- Added the first controlled main execution-chain constitutional probe at StepExecutor.
+- The probe defaults to audit-only, attaches runtime enforcement decision metadata to `runtime_execution_result.metadata`, and does not block or raise by default.
+- Dry-run mode reports advisory `would_block` metadata for safe hard-block candidates without stopping execution.
+- Scheduler, agent_loop, repair bridge, UI, tools, app.py, and system_boot.py remain intentionally unwired.
+
+## ZERO Constitutional Activation Landing
+- Completed Constitutional Activation Landing.
+- StepExecutor can now selectively obey runtime constitution for safe hard-block candidates while default execution remains audit-only.
+- Added advisory mode for warnings-only constitutional metadata and selective activation mode for local StepExecutor constitutional blocks.
+- Activation remains local and controlled; scheduler and agent_loop remain intentionally unwired.
+
+## ZERO Scheduler / Agent Loop Constitutional Integration Landing
+- Completed Scheduler / Agent Loop Constitutional Integration Landing.
+- Scheduler can now understand constitutional StepExecutor outcomes, preserve enforcement snapshots, and mark constitutional blocks as governed review boundaries.
+- Agent loop can now surface governed constitutional blocks without auto-bypass or blind replan/retry into the same blocked step.
+- No global enforcement mode was enabled.
+
+## ZERO Autonomous Engineering Continuation Landing
+- Completed Autonomous Engineering Continuation Landing.
+- Established governed continuation semantics across scheduler and agent-loop runtime result handling.
+- Constitutional interruptions now support governed continuation, recovery, and replay candidate metadata while preserving enforcement snapshots and lineage summaries.
+- Terminal constitutional boundaries now stop unsafe continuation instead of entering blind retry or recursive replan collapse.
+- Runtime loop handling now distinguishes governed interruption from ordinary operational failure.
+
+## ZERO Governed Self-Repair Continuation Landing
+- Completed Governed Self-Repair Continuation Landing.
+- Autonomous loop continuation now classifies constitutional interruptions into self-repair candidate, review-required, deferred, and terminal states.
+- No automatic mutation authority was opened; repair bridge execution remains unwired unless an existing guarded path handles it elsewhere.
+- Terminal constitutional repair blocks now remain governed review boundaries rather than retry or repair recursion triggers.
+
+## ZERO Controlled Mutation Bridge Landing
+- Completed Controlled Mutation Bridge Landing.
+- Governed self-repair candidates can now become guarded mutation bridge requests when enforcement snapshots, continuation lineage, and replay/recovery continuity metadata are present.
+- Terminal constitutional repair blocks cannot enter the mutation bridge.
+- Approval, verification, rollback, and audit boundaries remain required by the guarded repair transaction path.
+- No uncontrolled mutation authority, hidden approval, UI/tool/app/system_boot coupling, or direct agent-loop mutation was opened.

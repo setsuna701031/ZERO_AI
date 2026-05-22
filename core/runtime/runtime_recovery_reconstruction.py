@@ -16,6 +16,10 @@ RECONSTRUCTION_FAILED = "failed"
 RECONSTRUCTION_INCONSISTENT = "inconsistent"
 RECONSTRUCTION_DIVERGED = "diverged"
 
+RECOVERY_CONSTITUTION_CANONICAL = "canonical"
+RECOVERY_CONSTITUTION_REVIEW_REQUIRED = "review_required"
+RECOVERY_CONSTITUTION_BLOCK_RECOMMENDED = "block_recommended"
+
 RECONSTRUCTION_REQUIRED_FIELDS: tuple[str, ...] = (
     "reconstruction_id",
     "source_transaction_id",
@@ -46,6 +50,17 @@ def build_runtime_recovery_reconstruction_contract(
         status_from_recovery_state(reconstruction_state),
         source="runtime_recovery_reconstruction",
     )
+    constitution = recovery_constitution_summary(
+        recovery_id=_text(reconstruction_id),
+        recovery_lineage=[_text(source_transaction_id)] if _text(source_transaction_id) else [],
+        recovery_source_state={
+            "source_transaction_id": _text(source_transaction_id),
+            "source_evidence_count": len(evidence),
+        },
+        recovery_target_state=reconstructed_runtime_state,
+        transition=transition,
+        transition_evidence=transition["transition_evidence"],
+    )
     payload = {
         "schema_version": SCHEMA_VERSION,
         "reconstruction_id": _text(reconstruction_id),
@@ -65,8 +80,14 @@ def build_runtime_recovery_reconstruction_contract(
         "enforcement_classification": transition["enforcement_classification"],
         "enforcement_reason": transition["enforcement_reason"],
         "safe_to_enforce": transition["safe_to_enforce"],
-        "review_required": transition["review_required"],
-        "block_recommended": transition["block_recommended"],
+        "review_required": transition["review_required"] or constitution["review_required"],
+        "block_recommended": transition["block_recommended"] or constitution["block_recommended"],
+        "constitutional_continuity": constitution["constitutional_continuity"],
+        "continuity_verified": constitution["continuity_verified"],
+        "continuity_break": constitution["continuity_break"],
+        "recovery_constitution_status": constitution["recovery_constitution_status"],
+        "enforcement_visibility": constitution["enforcement_visibility"],
+        "enforcement_snapshot": constitution["enforcement_snapshot"],
         "replay_source_count": len(evidence),
         "reconstructed_runtime_state": copy.deepcopy(reconstructed_runtime_state),
         "reconstruction_consistent": bool(reconstruction_consistent),
@@ -194,6 +215,24 @@ def validate_runtime_recovery_reconstruction(
         status_from_recovery_state(state),
         source="runtime_recovery_reconstruction",
     )
+    constitution = recovery_constitution_summary(
+        recovery_id=_text(reconstruction.get("reconstruction_id")),
+        recovery_lineage=[
+            item
+            for item in (
+                _text(reconstruction.get("reconstruction_id")),
+                transaction_id,
+            )
+            if item
+        ],
+        recovery_source_state={
+            "source_transaction_id": transaction_id,
+            "source_evidence_count": len(source_chain),
+        },
+        recovery_target_state=reconstruction.get("reconstructed_runtime_state"),
+        transition=transition,
+        transition_evidence=transition["transition_evidence"],
+    )
     return {
         "ok": not issues,
         "schema_version": SCHEMA_VERSION,
@@ -213,8 +252,14 @@ def validate_runtime_recovery_reconstruction(
         "enforcement_classification": transition["enforcement_classification"],
         "enforcement_reason": transition["enforcement_reason"],
         "safe_to_enforce": transition["safe_to_enforce"],
-        "review_required": transition["review_required"],
-        "block_recommended": transition["block_recommended"],
+        "review_required": transition["review_required"] or constitution["review_required"],
+        "block_recommended": transition["block_recommended"] or constitution["block_recommended"],
+        "constitutional_continuity": constitution["constitutional_continuity"],
+        "continuity_verified": constitution["continuity_verified"],
+        "continuity_break": constitution["continuity_break"],
+        "recovery_constitution_status": constitution["recovery_constitution_status"],
+        "enforcement_visibility": constitution["enforcement_visibility"],
+        "enforcement_snapshot": constitution["enforcement_snapshot"],
         "reconstruction_consistent": not issues and reconstruction_consistent,
         "replay_order_valid": replay_order_valid,
         "reconstruction_divergence_detected": divergence_detected,
@@ -223,6 +268,97 @@ def validate_runtime_recovery_reconstruction(
         "replay_source_count": len(source_chain),
         "blocking_issues": _dedupe_issues(issues),
         "reason_codes": _reason_codes_from_issues(issues),
+    }
+
+
+def recovery_constitution_summary(
+    *,
+    recovery_id: str = "",
+    recovery_lineage: list[str] | None = None,
+    recovery_source_state: Any = None,
+    recovery_target_state: Any = None,
+    transition: dict[str, Any] | None = None,
+    transition_evidence: dict[str, Any] | None = None,
+    enforcement_snapshot: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Summarize recovery constitutional continuity without blocking recovery."""
+
+    lineage = [str(item) for item in (recovery_lineage or []) if _text(item)]
+    source_state = copy.deepcopy(recovery_source_state)
+    target_state = copy.deepcopy(recovery_target_state)
+    transition_payload = copy.deepcopy(transition) if isinstance(transition, dict) else {}
+    evidence = (
+        copy.deepcopy(transition_evidence)
+        if isinstance(transition_evidence, dict)
+        else copy.deepcopy(transition_payload.get("transition_evidence"))
+        if isinstance(transition_payload.get("transition_evidence"), dict)
+        else {}
+    )
+    snapshot = (
+        copy.deepcopy(enforcement_snapshot)
+        if isinstance(enforcement_snapshot, dict)
+        else copy.deepcopy(transition_payload.get("enforcement_decision"))
+        if isinstance(transition_payload.get("enforcement_decision"), dict)
+        else {}
+    )
+    meta = copy.deepcopy(metadata) if isinstance(metadata, dict) else {}
+
+    review_reasons: List[str] = []
+    block_reasons: List[str] = []
+    if not evidence:
+        review_reasons.append("missing_recovery_evidence")
+    if not lineage:
+        review_reasons.append("missing_recovery_lineage")
+    if not isinstance(source_state, dict) or not source_state:
+        review_reasons.append("missing_recovery_source_state")
+    elif int(source_state.get("source_evidence_count") or 0) <= 0:
+        review_reasons.append("missing_recovery_evidence")
+    if target_state in (None, ""):
+        review_reasons.append("missing_recovery_target_state")
+    if bool(transition_payload.get("regression")) and not bool(transition_payload.get("allowed")):
+        review_reasons.append("recovery_graph_discontinuity")
+    if bool(meta.get("recovery_lineage_corrupted") or meta.get("lineage_corruption")):
+        block_reasons.append("recovery_lineage_corruption")
+
+    from_status = _text(transition_payload.get("from_status"))
+    to_status = _text(transition_payload.get("to_status"))
+    forbidden_terminal_targets = {"blocked", "failed", "sealed"}
+    if to_status in forbidden_terminal_targets and from_status not in {"", to_status}:
+        block_reasons.append("recovery_target_forbidden_terminal_regression")
+
+    status = RECOVERY_CONSTITUTION_CANONICAL
+    if block_reasons:
+        status = RECOVERY_CONSTITUTION_BLOCK_RECOMMENDED
+    elif review_reasons:
+        status = RECOVERY_CONSTITUTION_REVIEW_REQUIRED
+
+    continuity_breaks = _sorted_unique([*review_reasons, *block_reasons])
+    return {
+        "constitutional_continuity": {
+            "kind": "runtime_recovery_constitution",
+            "recovery_id": _text(recovery_id),
+            "recovery_lineage": list(lineage),
+            "recovery_source_state": source_state,
+            "recovery_target_state": target_state,
+            "transition_legal": bool(transition_payload.get("allowed", True)),
+            "transition_regression": bool(transition_payload.get("regression", False)),
+            "evidence_lineage": copy.deepcopy(evidence),
+            "evidence_complete": bool(evidence),
+            "enforcement_visibility": bool(snapshot),
+            "enforcement_snapshot": copy.deepcopy(snapshot),
+            "classification": status,
+        },
+        "continuity_verified": status == RECOVERY_CONSTITUTION_CANONICAL,
+        "continuity_break": ",".join(continuity_breaks),
+        "recovery_constitution_status": status,
+        "enforcement_visibility": bool(snapshot),
+        "enforcement_snapshot": snapshot,
+        "legality": status,
+        "evidence_complete": bool(evidence),
+        "constitutional_classification": status,
+        "review_required": status == RECOVERY_CONSTITUTION_REVIEW_REQUIRED,
+        "block_recommended": status == RECOVERY_CONSTITUTION_BLOCK_RECOMMENDED,
     }
 
 

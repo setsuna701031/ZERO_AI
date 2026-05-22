@@ -28,8 +28,16 @@ def execute_committed_runtime_repair_transaction(
     dry_run: bool | None = None,
     gate_hook: GovernedRepairGateHook | None = None,
     use_runtime_recovery_gate: bool = False,
+    controlled_mutation_bridge: Any = None,
 ) -> MutationRuntimePipelineResult:
     executable = build_executable_repair_transaction(transaction)
+    bridge_request = build_controlled_mutation_bridge_request(controlled_mutation_bridge)
+    if bridge_request:
+        executable = _with_controlled_mutation_bridge_metadata(executable, bridge_request)
+        if approval_mode == MutationApprovalMode.AUTO:
+            approval_mode = MutationApprovalMode.REVIEW_REQUIRED
+        if verification == MutationVerificationRequirement.NONE:
+            verification = MutationVerificationRequirement.TARGETED_TESTS
 
     return execute_governed_repair_transaction(
         executable,
@@ -126,6 +134,75 @@ def build_executable_repair_transaction(transaction: Any) -> dict[str, Any]:
     }
 
 
+def build_controlled_mutation_bridge_request(source: Any) -> dict[str, Any]:
+    if source is None:
+        return {}
+    payload = source if isinstance(source, Mapping) else {}
+    bridge = payload.get("controlled_mutation_bridge")
+    if isinstance(bridge, Mapping):
+        bridge = dict(bridge)
+    else:
+        bridge = dict(payload)
+
+    state = _first_nonempty(bridge.get("mutation_bridge_state"))
+    eligible = bridge.get("mutation_bridge_eligible") is True
+    terminal = (
+        bridge.get("bridge_terminality") == "terminal"
+        or bridge.get("mutation_bridge_blocked") is True
+        and state == "bridge_blocked_terminal"
+    )
+    if not eligible:
+        raise ValueError(f"controlled_mutation_bridge_not_eligible:{state or 'unknown'}")
+    if terminal:
+        raise ValueError("controlled_mutation_bridge_terminal_block")
+
+    enforcement_snapshot = bridge.get("mutation_bridge_enforcement_snapshot")
+    if not isinstance(enforcement_snapshot, Mapping) or not enforcement_snapshot:
+        raise ValueError("controlled_mutation_bridge_missing_enforcement_snapshot")
+
+    lineage = bridge.get("mutation_bridge_lineage")
+    if not isinstance(lineage, Mapping) or not lineage:
+        raise ValueError("controlled_mutation_bridge_missing_lineage")
+
+    replay_snapshot = bridge.get("mutation_bridge_replay_snapshot")
+    recovery_snapshot = bridge.get("mutation_bridge_recovery_snapshot")
+    summary = bridge.get("controlled_mutation_bridge_summary")
+    if not isinstance(summary, Mapping):
+        summary = {}
+
+    return {
+        "controlled_mutation_bridge": True,
+        "mutation_bridge_state": state or "bridge_ready_for_review",
+        "mutation_bridge_reason": _first_nonempty(
+            bridge.get("mutation_bridge_reason"),
+            summary.get("reason"),
+            "controlled mutation bridge review required",
+        ),
+        "mutation_bridge_eligible": True,
+        "mutation_bridge_requires_review": True,
+        "mutation_bridge_blocked": False,
+        "mutation_bridge_lineage": dict(lineage),
+        "mutation_bridge_enforcement_snapshot": dict(enforcement_snapshot),
+        "mutation_bridge_replay_snapshot": dict(replay_snapshot) if isinstance(replay_snapshot, Mapping) else {},
+        "mutation_bridge_recovery_snapshot": dict(recovery_snapshot) if isinstance(recovery_snapshot, Mapping) else {},
+        "controlled_mutation_bridge_summary": {
+            **dict(summary),
+            "state": state or summary.get("state") or "bridge_ready_for_review",
+            "eligible": True,
+            "requires_review": True,
+            "verification_required": True,
+            "rollback_required": True,
+        },
+        "bridge_legality": "review_required",
+        "bridge_requires_review": True,
+        "bridge_terminality": "non_terminal",
+        "bridge_verification_required": True,
+        "bridge_rollback_required": True,
+        "bridge_approval_mode": MutationApprovalMode.REVIEW_REQUIRED.value,
+        "bridge_verification_mode": MutationVerificationRequirement.TARGETED_TESTS.value,
+    }
+
+
 def execute_committed_runtime_repair_transaction_mainline(
     transaction: Any,
     *,
@@ -138,12 +215,20 @@ def execute_committed_runtime_repair_transaction_mainline(
     verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
     risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
     dry_run: bool | None = None,
+    controlled_mutation_bridge: Any = None,
 ):
     from core.runtime.repair_transaction_gateway_adapter import (
         run_governed_repair_transaction_mainline,
     )
 
     executable = build_executable_repair_transaction(transaction)
+    bridge_request = build_controlled_mutation_bridge_request(controlled_mutation_bridge)
+    if bridge_request:
+        executable = _with_controlled_mutation_bridge_metadata(executable, bridge_request)
+        if approval_mode == MutationApprovalMode.AUTO:
+            approval_mode = MutationApprovalMode.REVIEW_REQUIRED
+        if verification == MutationVerificationRequirement.NONE:
+            verification = MutationVerificationRequirement.TARGETED_TESTS
 
     result = run_governed_repair_transaction_mainline(
         executable,
@@ -257,6 +342,35 @@ def _metadata_value(transaction: Mapping[str, Any], key: str) -> Any:
     if isinstance(metadata, Mapping):
         return metadata.get(key)
     return None
+
+
+def _with_controlled_mutation_bridge_metadata(
+    transaction: Mapping[str, Any],
+    bridge_request: Mapping[str, Any],
+) -> dict[str, Any]:
+    executable = dict(transaction)
+    metadata = _mapping_copy(executable.get("metadata"))
+    metadata["controlled_mutation_bridge"] = dict(bridge_request)
+    metadata["approval_required"] = True
+    metadata["verification_required"] = True
+    metadata["rollback_required"] = True
+    metadata["audit_required"] = True
+    authority = _mapping_copy(metadata.get("repair_authority_governance"))
+    authority["controlled_mutation_bridge"] = {
+        "eligible": True,
+        "requires_review": True,
+        "verification_required": True,
+        "rollback_required": True,
+        "audit_required": True,
+    }
+    metadata["repair_authority_governance"] = authority
+    lineage = _mapping_copy(metadata.get("lineage"))
+    bridge_lineage = bridge_request.get("mutation_bridge_lineage")
+    if isinstance(bridge_lineage, Mapping):
+        lineage["controlled_mutation_bridge"] = dict(bridge_lineage)
+    metadata["lineage"] = lineage
+    executable["metadata"] = metadata
+    return executable
 
 
 def _mapping_copy(value: Any) -> dict[str, Any]:
