@@ -3655,6 +3655,2968 @@ class TaskRuntime:
             source="task_runtime",
         )
 
+    def _classify_persistence_domain(self, file_path: str) -> str:
+        try:
+            target = os.path.abspath(str(file_path))
+        except Exception:
+            return "unknown"
+
+        basename = os.path.basename(target).lower()
+        if basename == "runtime_state.json":
+            return "runtime_state"
+
+        normalized = target.replace("\\", "/").lower()
+        parts = [part for part in normalized.split("/") if part]
+        workspace_root = os.path.abspath(str(self.workspace_root)).replace("\\", "/").lower()
+
+        repo_source_names = {
+            "core",
+            "services",
+            "tests",
+            "docs",
+            "tools",
+            "ui",
+            "scripts",
+        }
+        repo_source_files = {
+            "app.py",
+            "main.py",
+            "readme.md",
+            "pyproject.toml",
+            "pytest.ini",
+            "setup.cfg",
+            "setup.py",
+            "requirements.txt",
+        }
+        if basename in repo_source_files:
+            return "repo_source"
+        try:
+            rel_to_cwd = os.path.relpath(target, os.getcwd())
+            rel_parts = [part.lower() for part in rel_to_cwd.split(os.sep) if part and part != os.curdir]
+            if rel_parts and rel_parts[0] in repo_source_names:
+                return "repo_source"
+        except Exception:
+            pass
+
+        rollback_tokens = {"rollback", "rollbacks", "backup", "backups", "restore", "restores"}
+        if any(token in parts or token in basename for token in rollback_tokens):
+            return "rollback_artifact"
+
+        evidence_tokens = {"runtime_evidence", "evidence", "audit", "journal", "journals"}
+        if any(token in parts or token in basename for token in evidence_tokens):
+            return "evidence"
+
+        mutation_tokens = {
+            "mutation",
+            "mutations",
+            "runtime_transaction",
+            "runtime_transactions",
+            "sandbox",
+            "patch",
+            "patches",
+            "transaction",
+            "transactions",
+        }
+        if any(token in parts or token in basename for token in mutation_tokens):
+            return "mutation_artifact"
+
+        generated_roots = {"shared", "generated", "outbox", "outputs", "artifacts"}
+        if workspace_root and normalized.startswith(workspace_root + "/"):
+            try:
+                rel_workspace = os.path.relpath(target, os.path.abspath(str(self.workspace_root)))
+                workspace_parts = [
+                    part.lower()
+                    for part in rel_workspace.split(os.sep)
+                    if part and part != os.curdir
+                ]
+            except Exception:
+                workspace_parts = []
+            if workspace_parts and workspace_parts[0] in generated_roots:
+                return "workspace_generated"
+
+        return "unknown"
+
+    def _is_repo_source_path(self, file_path: str) -> bool:
+        return self._classify_persistence_domain(file_path) == "repo_source"
+
+    def _runtime_write_scope(self, file_path: str) -> str:
+        domain = self._classify_persistence_domain(file_path)
+        if domain in {
+            "runtime_state",
+            "rollback_artifact",
+            "evidence",
+            "mutation_artifact",
+            "workspace_generated",
+        }:
+            return "runtime"
+        if domain == "repo_source":
+            return "repo_source"
+        return "blocked"
+
+    def _persistence_policy_for_domain(self, domain: str) -> dict:
+        policies = {
+            "runtime_state": {
+                "allow_legacy_json_fallback": True,
+                "allow_runtime_write": True,
+                "allow_repo_source_write": False,
+            },
+            "rollback_artifact": {
+                "allow_legacy_json_fallback": False,
+                "allow_runtime_write": True,
+                "allow_repo_source_write": False,
+            },
+            "evidence": {
+                "allow_legacy_json_fallback": False,
+                "allow_runtime_write": True,
+                "allow_repo_source_write": False,
+            },
+            "mutation_artifact": {
+                "allow_legacy_json_fallback": False,
+                "allow_runtime_write": True,
+                "allow_repo_source_write": False,
+            },
+            "workspace_generated": {
+                "allow_legacy_json_fallback": False,
+                "allow_runtime_write": True,
+                "allow_repo_source_write": False,
+            },
+            "repo_source": {
+                "allow_legacy_json_fallback": False,
+                "allow_runtime_write": False,
+                "allow_repo_source_write": False,
+            },
+            "unknown": {
+                "allow_legacy_json_fallback": False,
+                "allow_runtime_write": False,
+                "allow_repo_source_write": False,
+            },
+        }
+        normalized = str(domain or "unknown")
+        return {"domain": normalized, **dict(policies.get(normalized, policies["unknown"]))}
+
+    def _validate_repo_source_write_metadata(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        has_reason = bool(str(reason or "").strip())
+        has_lineage = isinstance(lineage, dict) and bool(lineage)
+        has_provenance = isinstance(provenance, dict) and bool(provenance)
+        if not (has_reason or has_lineage or has_provenance):
+            raise PermissionError("repo source writes require governance metadata")
+        return {
+            "has_reason": has_reason,
+            "has_lineage": has_lineage,
+            "has_provenance": has_provenance,
+            "reason": str(reason or "").strip(),
+        }
+
+    def _is_governed_mutation_write(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> bool:
+        reason_text = str(reason or "").strip().lower()
+        reason_tokens = {
+            "mutation",
+            "repair",
+            "governed",
+            "patch",
+            "apply",
+            "transaction",
+            "runtime_update",
+            "source_update",
+        }
+        if any(token in reason_text for token in reason_tokens):
+            return True
+
+        def mapping_matches(value: Any) -> bool:
+            if not isinstance(value, dict):
+                return False
+            for key in ("operation", "mutation_id", "repair_id", "transaction_id"):
+                if value.get(key):
+                    return True
+            source = str(value.get("source") or "").strip().lower()
+            return source in {"task_runtime", "governed_mutation"}
+
+        return mapping_matches(lineage) or mapping_matches(provenance)
+
+    def _build_governed_mutation_context(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        domain = self._classify_persistence_domain(file_path)
+        scope = self._runtime_write_scope(file_path)
+        transaction_context = self._extract_transaction_governance_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        lifecycle_flags = transaction_context.get("lifecycle_flags")
+        if not isinstance(lifecycle_flags, dict):
+            lifecycle_flags = self._transaction_lifecycle_flags(str(transaction_context.get("gate_state") or "unknown"))
+        ownership = transaction_context.get("ownership")
+        if not isinstance(ownership, dict):
+            ownership = self._extract_runtime_ownership_chain(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        ownership_flags = transaction_context.get("ownership_flags")
+        if not isinstance(ownership_flags, dict):
+            ownership_flags = self._ownership_chain_flags(ownership)
+        ownership_validation = transaction_context.get("ownership_validation")
+        if not isinstance(ownership_validation, dict):
+            ownership_validation = self._validate_runtime_ownership_for_state(
+                str(transaction_context.get("gate_state") or "unknown"),
+                ownership,
+            )
+        execution_review = transaction_context.get("execution_review")
+        if not isinstance(execution_review, dict):
+            execution_review = self._extract_execution_review_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        execution_review_flags = transaction_context.get("execution_review_flags")
+        if not isinstance(execution_review_flags, dict):
+            execution_review_flags = self._execution_review_flags(execution_review)
+        execution_review_validation = transaction_context.get("execution_review_validation")
+        if not isinstance(execution_review_validation, dict):
+            execution_review_validation = self._validate_execution_review_for_state(
+                str(transaction_context.get("gate_state") or "unknown"),
+                execution_review,
+            )
+        return {
+            "path": str(file_path),
+            "domain": domain,
+            "scope": scope,
+            "reason": str(reason or "").strip(),
+            "governed_mutation": self._is_governed_mutation_write(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "lineage_keys": sorted(str(key) for key in lineage.keys()) if isinstance(lineage, dict) else [],
+            "provenance_keys": sorted(str(key) for key in provenance.keys()) if isinstance(provenance, dict) else [],
+            "has_transaction_context": self._has_transaction_governance_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "transaction_id": transaction_context.get("transaction_id"),
+            "repair_id": transaction_context.get("repair_id"),
+            "mutation_id": transaction_context.get("mutation_id"),
+            "gate_state": transaction_context.get("gate_state"),
+            "gate_flags": transaction_context.get("gate_flags"),
+            "lifecycle_stage": transaction_context.get("lifecycle_stage"),
+            "lifecycle_flags": lifecycle_flags,
+            "can_commit": bool(lifecycle_flags.get("can_commit")),
+            "can_rollback": bool(lifecycle_flags.get("can_rollback")),
+            "ownership": ownership,
+            "ownership_flags": ownership_flags,
+            "ownership_validation": ownership_validation,
+            "execution_review": execution_review,
+            "execution_review_flags": execution_review_flags,
+            "execution_review_validation": execution_review_validation,
+            "transaction_record_preview": self._build_runtime_transaction_record(
+                file_path,
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "is_terminal": bool(transaction_context.get("gate_flags", {}).get("is_terminal"))
+            if isinstance(transaction_context.get("gate_flags"), dict)
+            else False,
+        }
+
+    def _extract_transaction_governance_context(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        def first_value(*keys: str) -> Any:
+            for source in (lineage, provenance):
+                if not isinstance(source, dict):
+                    continue
+                for key in keys:
+                    value = source.get(key)
+                    if value is not None and str(value).strip():
+                        return value
+            return None
+
+        def bool_value(*keys: str) -> bool:
+            value = first_value(*keys)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, dict):
+                return bool(value)
+            text = str(value or "").strip().lower()
+            return text in {"1", "true", "yes", "required", "enabled", "available", "ready"}
+
+        gate_state = self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        lifecycle_stage = self._transaction_lifecycle_stage(gate_state)
+        lifecycle_flags = self._transaction_lifecycle_flags(gate_state)
+        ownership = self._extract_runtime_ownership_chain(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        ownership_flags = self._ownership_chain_flags(ownership)
+        ownership_validation = self._validate_runtime_ownership_for_state(gate_state, ownership)
+        execution_review = self._extract_execution_review_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        execution_review_flags = self._execution_review_flags(execution_review)
+        execution_review_validation = self._validate_execution_review_for_state(gate_state, execution_review)
+        return {
+            "reason": str(reason).strip() if reason is not None and str(reason).strip() else None,
+            "operation": str(first_value("operation") or "").strip() or None,
+            "source": str(first_value("source") or "").strip() or None,
+            "mutation_id": str(first_value("mutation_id", "mutationId") or "").strip() or None,
+            "repair_id": str(first_value("repair_id", "repairId") or "").strip() or None,
+            "transaction_id": str(first_value("transaction_id", "transactionId") or "").strip() or None,
+            "approval_id": str(first_value("approval_id", "approvalId") or "").strip() or None,
+            "previous_gate_state": str(first_value("previous_gate_state", "previous_state") or "").strip() or None,
+            "verification_required": bool_value("verification_required", "requires_verification", "verification"),
+            "commit_required": bool_value("commit_required", "requires_commit", "commit"),
+            "rollback_available": bool_value("rollback_available", "can_rollback", "rollback"),
+            "gate_state": gate_state,
+            "gate_flags": self._transaction_gate_flags(gate_state),
+            "lifecycle_stage": lifecycle_stage,
+            "lifecycle_flags": lifecycle_flags,
+            "ownership": ownership,
+            "ownership_flags": ownership_flags,
+            "ownership_validation": ownership_validation,
+            "execution_review": execution_review,
+            "execution_review_flags": execution_review_flags,
+            "execution_review_validation": execution_review_validation,
+        }
+
+    def _normalize_transaction_gate_state(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> str:
+        def first_state() -> str:
+            for source in (lineage, provenance):
+                if not isinstance(source, dict):
+                    continue
+                for key in (
+                    "gate_state",
+                    "transaction_state",
+                    "mutation_state",
+                    "approval_state",
+                    "review_state",
+                    "verification_state",
+                    "commit_state",
+                    "status",
+                    "state",
+                ):
+                    value = source.get(key)
+                    if value is not None and str(value).strip():
+                        return str(value).strip().lower()
+            return str(reason or "").strip().lower()
+
+        raw = first_state()
+        if not raw:
+            return "unknown"
+        aliases = {
+            "reviewed": "reviewed",
+            "review_passed": "reviewed",
+            "reviewed_ok": "reviewed",
+            "verified": "verified",
+            "verification_passed": "verified",
+            "tests_passed": "verified",
+            "approved": "approved",
+            "approval_granted": "approved",
+            "commit_ready": "commit_ready",
+            "ready_to_commit": "commit_ready",
+            "can_commit": "commit_ready",
+            "committed": "committed",
+            "applied": "committed",
+            "merged": "committed",
+            "rolled_back": "rolled_back",
+            "rollback_complete": "rolled_back",
+            "reverted": "rolled_back",
+            "rejected": "rejected",
+            "denied": "rejected",
+            "blocked": "rejected",
+            "pending": "pending",
+            "created": "pending",
+            "staged": "pending",
+        }
+        if raw in aliases:
+            return aliases[raw]
+        for token, normalized in aliases.items():
+            if token in raw:
+                return normalized
+        return "unknown"
+
+    def _transaction_gate_flags(self, gate_state: str) -> dict:
+        state = str(gate_state or "unknown").strip().lower()
+        return {
+            "is_pending": state == "pending",
+            "is_reviewed": state == "reviewed",
+            "is_verified": state == "verified",
+            "is_approved": state == "approved",
+            "is_commit_ready": state == "commit_ready",
+            "is_committed": state == "committed",
+            "is_rolled_back": state == "rolled_back",
+            "is_rejected": state == "rejected",
+            "is_terminal": state in {"committed", "rolled_back", "rejected"},
+        }
+
+    def _transaction_lifecycle_stage(self, gate_state: str) -> str:
+        state = str(gate_state or "unknown").strip().lower()
+        stages = {
+            "pending": "creation",
+            "reviewed": "review",
+            "verified": "verification",
+            "approved": "approval",
+            "commit_ready": "commit",
+            "committed": "commit",
+            "rolled_back": "rollback",
+            "rejected": "rejection",
+            "unknown": "unknown",
+        }
+        return stages.get(state, "unknown")
+
+    def _transaction_lifecycle_transition_allowed(
+        self,
+        previous_state: str,
+        next_state: str,
+    ) -> bool:
+        previous = str(previous_state or "unknown").strip().lower()
+        next_value = str(next_state or "unknown").strip().lower()
+        allowed = {
+            "pending": {"reviewed", "verified", "approved", "commit_ready", "rejected"},
+            "reviewed": {"verified", "approved", "commit_ready", "rejected"},
+            "verified": {"approved", "commit_ready", "rejected"},
+            "approved": {"commit_ready", "committed", "rejected"},
+            "commit_ready": {"committed", "rolled_back"},
+            "committed": {"committed"},
+            "rolled_back": {"rolled_back"},
+            "rejected": {"rejected"},
+            "unknown": set(),
+        }
+        return next_value in allowed.get(previous, set())
+
+    def _transaction_lifecycle_flags(self, gate_state: str) -> dict:
+        stage = self._transaction_lifecycle_stage(gate_state)
+        state = str(gate_state or "unknown").strip().lower()
+        return {
+            "is_creation_stage": stage == "creation",
+            "is_review_stage": stage == "review",
+            "is_verification_stage": stage == "verification",
+            "is_approval_stage": stage == "approval",
+            "is_commit_stage": stage == "commit",
+            "is_rollback_stage": stage == "rollback",
+            "is_rejection_stage": stage == "rejection",
+            "is_terminal_stage": state in {"committed", "rolled_back", "rejected"},
+            "can_commit": state in {"approved", "commit_ready"},
+            "can_rollback": state in {"pending", "reviewed", "verified", "approved", "commit_ready", "committed"},
+        }
+
+    def _build_transaction_lifecycle_summary(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        gate_state = self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        ownership = self._extract_runtime_ownership_chain(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        execution_review = self._extract_execution_review_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        return {
+            "path": str(file_path),
+            "domain": self._classify_persistence_domain(file_path),
+            "scope": self._runtime_write_scope(file_path),
+            "gate_state": gate_state,
+            "lifecycle_stage": self._transaction_lifecycle_stage(gate_state),
+            "lifecycle_flags": self._transaction_lifecycle_flags(gate_state),
+            "ownership": ownership,
+            "ownership_flags": self._ownership_chain_flags(ownership),
+            "ownership_validation": self._validate_runtime_ownership_for_state(gate_state, ownership),
+            "execution_review": execution_review,
+            "execution_review_flags": self._execution_review_flags(execution_review),
+            "execution_review_validation": self._validate_execution_review_for_state(gate_state, execution_review),
+        }
+
+    def _extract_execution_review_context(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        def first_value(*keys: str) -> Any:
+            for source in (lineage, provenance):
+                if not isinstance(source, dict):
+                    continue
+                for key in keys:
+                    value = source.get(key)
+                    if value is not None and str(value).strip():
+                        return value
+            return None
+
+        def bool_value(*keys: str) -> bool:
+            value = first_value(*keys)
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, dict):
+                return bool(value)
+            text = str(value or "").strip().lower()
+            return text in {"1", "true", "yes", "required", "enabled", "available", "ready", "passed", "done"}
+
+        gate_state = self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        lifecycle_flags = self._transaction_lifecycle_flags(gate_state)
+        executed = bool_value("executed", "execution_done", "has_executed")
+        observed = bool_value("observed", "observation_done", "has_observation")
+        verified = bool_value("verified", "verification_done", "tests_passed")
+        reviewed = bool_value("reviewed", "review_done", "review_passed")
+        approved = bool_value("approved", "approval_done", "approval_granted")
+        commit_ready = bool_value("commit_ready", "ready_to_commit", "can_commit")
+        rollback_ready = bool_value("rollback_ready", "rollback_available", "can_rollback")
+
+        if gate_state == "verified":
+            verified = True
+        if gate_state == "reviewed":
+            reviewed = True
+        if gate_state == "approved":
+            approved = True
+        if gate_state == "commit_ready":
+            commit_ready = True
+        if gate_state == "committed":
+            executed = True
+            commit_ready = True
+        if lifecycle_flags.get("can_rollback"):
+            rollback_ready = True
+
+        return {
+            "executed": bool(executed),
+            "observed": bool(observed),
+            "verified": bool(verified),
+            "reviewed": bool(reviewed),
+            "approved": bool(approved),
+            "commit_ready": bool(commit_ready),
+            "rollback_ready": bool(rollback_ready),
+            "review_id": str(first_value("review_id", "reviewId") or "").strip() or None,
+            "execution_id": str(first_value("execution_id", "executionId") or "").strip() or None,
+            "verification_id": str(first_value("verification_id", "verificationId") or "").strip() or None,
+            "observation_id": str(first_value("observation_id", "observationId") or "").strip() or None,
+        }
+
+    def _execution_review_flags(self, review_context: dict) -> dict:
+        source = review_context if isinstance(review_context, dict) else {}
+        flags = {
+            "has_execution": bool(source.get("executed")),
+            "has_observation": bool(source.get("observed")),
+            "has_verification": bool(source.get("verified")),
+            "has_review": bool(source.get("reviewed")),
+            "has_approval": bool(source.get("approved")),
+            "is_commit_ready": bool(source.get("commit_ready")),
+            "is_rollback_ready": bool(source.get("rollback_ready")),
+        }
+        flags["has_any_review_signal"] = any(flags.values())
+        return flags
+
+    def _build_execution_review_summary(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        execution_review = self._extract_execution_review_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        return {
+            "path": str(file_path),
+            "domain": self._classify_persistence_domain(file_path),
+            "scope": self._runtime_write_scope(file_path),
+            "execution_review": execution_review,
+            "execution_review_flags": self._execution_review_flags(execution_review),
+        }
+
+    def _execution_review_required_for_state(self, gate_state: str) -> List[str]:
+        state = str(gate_state or "unknown").strip().lower()
+        requirements = {
+            "pending": [],
+            "reviewed": ["reviewed"],
+            "verified": ["verified"],
+            "approved": ["reviewed", "approved"],
+            "commit_ready": ["verified", "commit_ready"],
+            "committed": ["executed", "commit_ready"],
+            "rolled_back": ["rollback_ready"],
+            "rejected": [],
+            "unknown": [],
+        }
+        return list(requirements.get(state, []))
+
+    def _validate_execution_review_for_state(
+        self,
+        gate_state: str,
+        review_context: dict,
+    ) -> dict:
+        required = self._execution_review_required_for_state(gate_state)
+        source = review_context if isinstance(review_context, dict) else {}
+        missing = [key for key in required if not bool(source.get(key))]
+        return {
+            "required": required,
+            "missing": missing,
+            "valid": not missing,
+        }
+
+    def _extract_runtime_ownership_chain(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        del reason
+
+        def first_text(keys: List[str]) -> Optional[str]:
+            for source in (lineage, provenance):
+                if not isinstance(source, dict):
+                    continue
+                for key in keys:
+                    value = source.get(key)
+                    if value is not None and str(value).strip():
+                        return str(value).strip()
+            return None
+
+        return {
+            "initiator": first_text(["initiator", "initiated_by", "actor", "requested_by", "source_actor"]),
+            "reviewer": first_text(["reviewer", "reviewed_by", "review_owner"]),
+            "verifier": first_text(["verifier", "verified_by", "verification_owner", "test_owner"]),
+            "approver": first_text(["approver", "approved_by", "approval_owner"]),
+            "committer": first_text(["committer", "committed_by", "commit_owner", "applied_by"]),
+            "rollback_owner": first_text(["rollback_owner", "rollback_by", "reverted_by", "rollback_actor"]),
+            "owner_source": first_text(["owner_source", "ownership_source", "source"]),
+        }
+
+    def _ownership_chain_flags(self, ownership: dict) -> dict:
+        source = ownership if isinstance(ownership, dict) else {}
+        flags = {
+            "has_initiator": bool(str(source.get("initiator") or "").strip()),
+            "has_reviewer": bool(str(source.get("reviewer") or "").strip()),
+            "has_verifier": bool(str(source.get("verifier") or "").strip()),
+            "has_approver": bool(str(source.get("approver") or "").strip()),
+            "has_committer": bool(str(source.get("committer") or "").strip()),
+            "has_rollback_owner": bool(str(source.get("rollback_owner") or "").strip()),
+        }
+        flags["has_any_owner"] = any(flags.values())
+        return flags
+
+    def _build_runtime_ownership_summary(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        ownership = self._extract_runtime_ownership_chain(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        gate_state = self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        execution_review = self._extract_execution_review_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        return {
+            "path": str(file_path),
+            "domain": self._classify_persistence_domain(file_path),
+            "scope": self._runtime_write_scope(file_path),
+            "ownership": ownership,
+            "ownership_flags": self._ownership_chain_flags(ownership),
+            "execution_review": execution_review,
+            "execution_review_flags": self._execution_review_flags(execution_review),
+            "execution_review_validation": self._validate_execution_review_for_state(
+                gate_state,
+                execution_review,
+            ),
+        }
+
+    def _ownership_required_for_gate_state(self, gate_state: str) -> List[str]:
+        state = str(gate_state or "unknown").strip().lower()
+        requirements = {
+            "pending": ["initiator"],
+            "reviewed": ["initiator", "reviewer"],
+            "verified": ["initiator", "verifier"],
+            "approved": ["initiator", "approver"],
+            "commit_ready": ["initiator", "verifier"],
+            "committed": ["initiator", "committer"],
+            "rolled_back": ["initiator", "rollback_owner"],
+            "rejected": ["initiator"],
+            "unknown": [],
+        }
+        return list(requirements.get(state, []))
+
+    def _validate_runtime_ownership_for_state(
+        self,
+        gate_state: str,
+        ownership: dict,
+    ) -> dict:
+        required = self._ownership_required_for_gate_state(gate_state)
+        source = ownership if isinstance(ownership, dict) else {}
+        missing = [role for role in required if not str(source.get(role) or "").strip()]
+        return {
+            "required": required,
+            "missing": missing,
+            "valid": not missing,
+        }
+
+    def _extract_previous_transaction_gate_state(
+        self,
+        *,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> Optional[str]:
+        for source in (lineage, provenance):
+            if not isinstance(source, dict):
+                continue
+            for key in ("previous_gate_state", "previous_state"):
+                value = source.get(key)
+                if value is not None and str(value).strip():
+                    return self._normalize_transaction_gate_state(
+                        provenance={"gate_state": str(value).strip()},
+                    )
+        return None
+
+    def _has_transaction_governance_context(
+        self,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> bool:
+        context = self._extract_transaction_governance_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        if any(context.get(key) for key in ("mutation_id", "repair_id", "transaction_id", "operation")):
+            return True
+        source = str(context.get("source") or "").strip().lower()
+        if any(token in source for token in ("governed_mutation", "task_runtime", "repair", "transaction")):
+            return True
+        return False
+
+    def _build_transaction_governance_summary(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        gate_state = self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        lifecycle_flags = self._transaction_lifecycle_flags(gate_state)
+        ownership = self._extract_runtime_ownership_chain(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        execution_review = self._extract_execution_review_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        return {
+            "path": str(file_path),
+            "domain": self._classify_persistence_domain(file_path),
+            "scope": self._runtime_write_scope(file_path),
+            "governed_mutation": self._is_governed_mutation_write(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "has_transaction_context": self._has_transaction_governance_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "transaction_context": self._extract_transaction_governance_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "gate_state": gate_state,
+            "gate_flags": self._transaction_gate_flags(gate_state),
+            "lifecycle_stage": self._transaction_lifecycle_stage(gate_state),
+            "lifecycle_flags": lifecycle_flags,
+            "can_commit": lifecycle_flags["can_commit"],
+            "can_rollback": lifecycle_flags["can_rollback"],
+            "ownership": ownership,
+            "ownership_flags": self._ownership_chain_flags(ownership),
+            "ownership_validation": self._validate_runtime_ownership_for_state(gate_state, ownership),
+            "execution_review": execution_review,
+            "execution_review_flags": self._execution_review_flags(execution_review),
+            "execution_review_validation": self._validate_execution_review_for_state(gate_state, execution_review),
+            "transaction_record_preview": self._build_runtime_transaction_record(
+                file_path,
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "is_terminal": self._transaction_gate_flags(gate_state)["is_terminal"],
+        }
+
+    def _build_transaction_gate_summary(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        gate_state = self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        lifecycle_flags = self._transaction_lifecycle_flags(gate_state)
+        ownership = self._extract_runtime_ownership_chain(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        execution_review = self._extract_execution_review_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        return {
+            "path": str(file_path),
+            "domain": self._classify_persistence_domain(file_path),
+            "scope": self._runtime_write_scope(file_path),
+            "gate_state": gate_state,
+            "gate_flags": self._transaction_gate_flags(gate_state),
+            "lifecycle_stage": self._transaction_lifecycle_stage(gate_state),
+            "lifecycle_flags": lifecycle_flags,
+            "can_commit": lifecycle_flags["can_commit"],
+            "can_rollback": lifecycle_flags["can_rollback"],
+            "ownership": ownership,
+            "ownership_flags": self._ownership_chain_flags(ownership),
+            "ownership_validation": self._validate_runtime_ownership_for_state(gate_state, ownership),
+            "execution_review": execution_review,
+            "execution_review_flags": self._execution_review_flags(execution_review),
+            "execution_review_validation": self._validate_execution_review_for_state(gate_state, execution_review),
+        }
+
+    def _runtime_write_requires_governance(self, file_path: str) -> bool:
+        return self._runtime_write_scope(file_path) == "repo_source"
+
+    def _runtime_write_governance_summary(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        domain = self._classify_persistence_domain(file_path)
+        scope = self._runtime_write_scope(file_path)
+        transaction_context = self._extract_transaction_governance_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        lifecycle_flags = transaction_context.get("lifecycle_flags")
+        if not isinstance(lifecycle_flags, dict):
+            lifecycle_flags = self._transaction_lifecycle_flags(str(transaction_context.get("gate_state") or "unknown"))
+        ownership = transaction_context.get("ownership")
+        if not isinstance(ownership, dict):
+            ownership = self._extract_runtime_ownership_chain(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        ownership_flags = transaction_context.get("ownership_flags")
+        if not isinstance(ownership_flags, dict):
+            ownership_flags = self._ownership_chain_flags(ownership)
+        ownership_validation = transaction_context.get("ownership_validation")
+        if not isinstance(ownership_validation, dict):
+            ownership_validation = self._validate_runtime_ownership_for_state(
+                str(transaction_context.get("gate_state") or "unknown"),
+                ownership,
+            )
+        execution_review = transaction_context.get("execution_review")
+        if not isinstance(execution_review, dict):
+            execution_review = self._extract_execution_review_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        execution_review_flags = transaction_context.get("execution_review_flags")
+        if not isinstance(execution_review_flags, dict):
+            execution_review_flags = self._execution_review_flags(execution_review)
+        execution_review_validation = transaction_context.get("execution_review_validation")
+        if not isinstance(execution_review_validation, dict):
+            execution_review_validation = self._validate_execution_review_for_state(
+                str(transaction_context.get("gate_state") or "unknown"),
+                execution_review,
+            )
+        return {
+            "path": str(file_path),
+            "domain": domain,
+            "scope": scope,
+            "requires_governance": self._runtime_write_requires_governance(file_path),
+            "governed_mutation": self._is_governed_mutation_write(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "has_transaction_context": self._has_transaction_governance_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "transaction_id": transaction_context.get("transaction_id"),
+            "repair_id": transaction_context.get("repair_id"),
+            "mutation_id": transaction_context.get("mutation_id"),
+            "gate_state": transaction_context.get("gate_state"),
+            "gate_flags": transaction_context.get("gate_flags"),
+            "lifecycle_stage": transaction_context.get("lifecycle_stage"),
+            "lifecycle_flags": lifecycle_flags,
+            "can_commit": bool(lifecycle_flags.get("can_commit")),
+            "can_rollback": bool(lifecycle_flags.get("can_rollback")),
+            "ownership": ownership,
+            "ownership_flags": ownership_flags,
+            "ownership_validation": ownership_validation,
+            "execution_review": execution_review,
+            "execution_review_flags": execution_review_flags,
+            "execution_review_validation": execution_review_validation,
+            "transaction_record_preview": self._build_runtime_transaction_record(
+                file_path,
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "is_terminal": bool(transaction_context.get("gate_flags", {}).get("is_terminal"))
+            if isinstance(transaction_context.get("gate_flags"), dict)
+            else False,
+        }
+
+    def _runtime_transaction_journal_path(self, transaction_id: str) -> str:
+        raw = str(transaction_id or "").strip() or "unknown_transaction"
+        safe_name = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in raw)
+        safe_name = safe_name.strip("_") or "unknown_transaction"
+        return os.path.join(self.workspace_root, "runtime_transactions", f"{safe_name}.json")
+
+    def _build_runtime_transaction_record(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        transaction_context = self._extract_transaction_governance_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        gate_state = str(transaction_context.get("gate_state") or "unknown")
+        lifecycle_flags = transaction_context.get("lifecycle_flags")
+        if not isinstance(lifecycle_flags, dict):
+            lifecycle_flags = self._transaction_lifecycle_flags(gate_state)
+        ownership = transaction_context.get("ownership")
+        if not isinstance(ownership, dict):
+            ownership = self._extract_runtime_ownership_chain(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        execution_review = transaction_context.get("execution_review")
+        if not isinstance(execution_review, dict):
+            execution_review = self._extract_execution_review_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        return {
+            "record_type": "runtime_transaction",
+            "path": str(file_path),
+            "domain": self._classify_persistence_domain(file_path),
+            "scope": self._runtime_write_scope(file_path),
+            "transaction_context": transaction_context,
+            "gate_state": gate_state,
+            "lifecycle_stage": transaction_context.get("lifecycle_stage")
+            or self._transaction_lifecycle_stage(gate_state),
+            "lifecycle_flags": lifecycle_flags,
+            "ownership": ownership,
+            "ownership_validation": transaction_context.get("ownership_validation")
+            if isinstance(transaction_context.get("ownership_validation"), dict)
+            else self._validate_runtime_ownership_for_state(gate_state, ownership),
+            "execution_review": execution_review,
+            "execution_review_validation": transaction_context.get("execution_review_validation")
+            if isinstance(transaction_context.get("execution_review_validation"), dict)
+            else self._validate_execution_review_for_state(gate_state, execution_review),
+            "governed_mutation": self._is_governed_mutation_write(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ),
+            "can_commit": bool(lifecycle_flags.get("can_commit")),
+            "can_rollback": bool(lifecycle_flags.get("can_rollback")),
+            "created_at": self._now(),
+        }
+
+    def _write_runtime_transaction_record(self, record: dict) -> str:
+        source = record if isinstance(record, dict) else {}
+        transaction_context = source.get("transaction_context")
+        if not isinstance(transaction_context, dict):
+            transaction_context = {}
+        transaction_id = str(transaction_context.get("transaction_id") or "").strip()
+        journal_path = self._runtime_transaction_journal_path(transaction_id)
+        self._write_json(journal_path, source)
+        return journal_path
+
+    def _read_runtime_transaction_record(self, transaction_id: str, default: Any = None) -> dict:
+        fallback = copy.deepcopy(default) if default is not None else {}
+        record = self._read_json(self._runtime_transaction_journal_path(transaction_id), fallback)
+        return record if isinstance(record, dict) else fallback
+
+    def _runtime_continuation_action_from_record(self, record: dict) -> str:
+        if not isinstance(record, dict) or not record:
+            return "unknown"
+        gate_state = str(record.get("gate_state") or "unknown").strip().lower()
+        lifecycle_stage = str(record.get("lifecycle_stage") or "unknown").strip().lower()
+        can_rollback = bool(record.get("can_rollback"))
+        if gate_state == "rejected":
+            return "blocked"
+        if gate_state in {"rolled_back", "committed"}:
+            return "stop_terminal"
+        if can_rollback and lifecycle_stage == "rollback":
+            return "continue_rollback"
+        if gate_state == "pending":
+            return "continue_review"
+        if gate_state == "reviewed":
+            return "continue_verification"
+        if gate_state == "verified":
+            return "continue_approval"
+        if gate_state in {"approved", "commit_ready"}:
+            return "continue_commit"
+        return "unknown"
+
+    def _build_runtime_continuation_plan_from_record(self, record: dict) -> dict:
+        source = record if isinstance(record, dict) else {}
+        record_found = bool(source)
+        transaction_context = source.get("transaction_context")
+        if not isinstance(transaction_context, dict):
+            transaction_context = {}
+        action = self._runtime_continuation_action_from_record(source)
+        gate_state = str(source.get("gate_state") or "unknown").strip().lower()
+        lifecycle_stage = str(source.get("lifecycle_stage") or "unknown").strip().lower()
+        return {
+            "record_found": record_found,
+            "transaction_id": str(transaction_context.get("transaction_id") or "").strip() or "unknown_transaction",
+            "path": source.get("path"),
+            "gate_state": gate_state,
+            "lifecycle_stage": lifecycle_stage,
+            "can_commit": bool(source.get("can_commit")) if record_found else False,
+            "can_rollback": bool(source.get("can_rollback")) if record_found else False,
+            "continuation_action": action,
+            "requires_review": action == "continue_review",
+            "requires_verification": action == "continue_verification",
+            "requires_approval": action == "continue_approval",
+            "requires_commit": action == "continue_commit",
+            "requires_rollback": action == "continue_rollback",
+            "terminal": action == "stop_terminal",
+            "blocked": action == "blocked",
+        }
+
+    def _runtime_continuation_plan(self, transaction_id: str) -> dict:
+        record = self._read_runtime_transaction_record(transaction_id, default={})
+        plan = self._build_runtime_continuation_plan_from_record(record)
+        if not plan.get("record_found"):
+            plan["transaction_id"] = str(transaction_id or "unknown_transaction")
+            plan["continuation_action"] = "unknown"
+        return plan
+
+    def _runtime_replay_action_from_continuation_action(self, action: str) -> str:
+        value = str(action or "unknown").strip().lower()
+        actions = {
+            "continue_review": "review",
+            "continue_verification": "verify",
+            "continue_approval": "approve",
+            "continue_commit": "commit",
+            "continue_rollback": "rollback",
+            "stop_terminal": "stop",
+            "blocked": "blocked",
+        }
+        return actions.get(value, "unknown")
+
+    def _runtime_replay_required_evidence(self, replay_action: str) -> List[str]:
+        action = str(replay_action or "unknown").strip().lower()
+        required = {
+            "review": ["transaction_record", "mutation_context"],
+            "verify": ["transaction_record", "mutation_context", "verification_target"],
+            "approve": ["transaction_record", "mutation_context", "review_result"],
+            "commit": ["transaction_record", "mutation_context", "verification_result", "commit_target"],
+            "rollback": ["transaction_record", "mutation_context", "rollback_target"],
+            "stop": ["transaction_record"],
+            "blocked": ["transaction_record", "block_reason"],
+            "unknown": ["transaction_record"],
+        }
+        return list(required.get(action, required["unknown"]))
+
+    def _build_runtime_replay_request_from_plan(self, plan: dict) -> dict:
+        source = plan if isinstance(plan, dict) else {}
+        continuation_action = str(source.get("continuation_action") or "unknown")
+        replay_action = self._runtime_replay_action_from_continuation_action(continuation_action)
+        terminal = bool(source.get("terminal"))
+        blocked = bool(source.get("blocked"))
+        can_execute = not terminal and not blocked and replay_action not in {"stop", "blocked", "unknown"}
+        if terminal:
+            reason = "terminal transaction"
+        elif blocked:
+            reason = "blocked transaction"
+        elif replay_action == "unknown":
+            reason = "unknown replay action"
+        else:
+            reason = "replay action available"
+        return {
+            "request_type": "runtime_replay_request",
+            "transaction_id": str(source.get("transaction_id") or "unknown_transaction"),
+            "path": source.get("path"),
+            "continuation_action": continuation_action,
+            "replay_action": replay_action,
+            "required_evidence": self._runtime_replay_required_evidence(replay_action),
+            "terminal": terminal,
+            "blocked": blocked,
+            "can_execute": bool(can_execute),
+            "reason": reason,
+        }
+
+    def _runtime_replay_request(self, transaction_id: str) -> dict:
+        plan = self._runtime_continuation_plan(transaction_id)
+        request = self._build_runtime_replay_request_from_plan(plan)
+        if not plan.get("record_found"):
+            request["transaction_id"] = str(transaction_id or "unknown_transaction")
+            request["replay_action"] = "unknown"
+            request["required_evidence"] = self._runtime_replay_required_evidence("unknown")
+            request["can_execute"] = False
+            request["reason"] = "unknown replay action"
+        return request
+
+    def _runtime_replay_recovery_summary(self, transaction_id: str) -> dict:
+        plan = self._runtime_continuation_plan(transaction_id)
+        request = self._build_runtime_replay_request_from_plan(plan)
+        if not plan.get("record_found"):
+            request["transaction_id"] = str(transaction_id or "unknown_transaction")
+            request["replay_action"] = "unknown"
+            request["required_evidence"] = self._runtime_replay_required_evidence("unknown")
+            request["can_execute"] = False
+        return {
+            "transaction_id": request.get("transaction_id") or str(transaction_id or "unknown_transaction"),
+            "record_found": bool(plan.get("record_found")),
+            "continuation_action": request.get("continuation_action") or "unknown",
+            "replay_action": request.get("replay_action") or "unknown",
+            "can_execute": bool(request.get("can_execute")),
+            "terminal": bool(request.get("terminal")),
+            "blocked": bool(request.get("blocked")),
+            "required_evidence": list(request.get("required_evidence") or []),
+        }
+
+    def _normalize_replay_available_evidence(self, available_evidence: Any) -> List[str]:
+        if isinstance(available_evidence, dict):
+            return sorted(
+                str(key)
+                for key, value in available_evidence.items()
+                if value and str(key).strip()
+            )
+        if isinstance(available_evidence, (list, tuple, set)):
+            return sorted(str(item) for item in available_evidence if str(item).strip())
+        if available_evidence is None:
+            return []
+        text = str(available_evidence).strip()
+        return [text] if text else []
+
+    def _runtime_replay_execution_risk_level(self, action: str) -> str:
+        normalized = str(action or "unknown").strip().lower()
+        if normalized in {"commit", "rollback"}:
+            return "high"
+        if normalized in {"verify", "approve"}:
+            return "medium"
+        if normalized == "review":
+            return "low"
+        return "blocked"
+
+    def _runtime_recovery_is_terminal_or_blocked(self, recovery: dict) -> bool:
+        source = recovery if isinstance(recovery, dict) else {}
+        status = str(source.get("status") or source.get("recovery_status") or "").strip().lower()
+        if status in {"finished", "failed", "cancelled", "blocked", "terminal"}:
+            return True
+        return bool(source.get("terminal") or source.get("blocked"))
+
+    def _runtime_replay_blocked_reason(
+        self,
+        *,
+        record_found: bool,
+        terminal_recovery: bool,
+        replay_action: str,
+        missing_evidence: List[str],
+    ) -> str:
+        if not record_found:
+            return "missing transaction record"
+        if terminal_recovery:
+            return "terminal recovery state"
+        if str(replay_action or "unknown") == "unknown":
+            return "unknown replay action"
+        if missing_evidence:
+            return "missing required evidence: " + ", ".join(missing_evidence)
+        return ""
+
+    def _build_replay_execution_preflight(
+        self,
+        replay_request: dict,
+        *,
+        available_evidence: Any = None,
+        recovery_summary: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        request = replay_request if isinstance(replay_request, dict) else {}
+        recovery = recovery_summary if isinstance(recovery_summary, dict) else {}
+        transaction_id = str(
+            request.get("transaction_id")
+            or recovery.get("transaction_id")
+            or "unknown_transaction"
+        )
+        replay_action = str(request.get("replay_action") or "unknown")
+        required_evidence = list(request.get("required_evidence") or self._runtime_replay_required_evidence(replay_action))
+        normalized_available = self._normalize_replay_available_evidence(available_evidence)
+        missing_evidence = [item for item in required_evidence if item not in set(normalized_available)]
+        record_found = bool(recovery.get("record_found"))
+        terminal_recovery = self._runtime_recovery_is_terminal_or_blocked(recovery)
+        action_mapped = replay_action not in {"", "unknown"}
+        blocked_reason = self._runtime_replay_blocked_reason(
+            record_found=record_found,
+            terminal_recovery=terminal_recovery,
+            replay_action=replay_action,
+            missing_evidence=missing_evidence,
+        )
+        is_executable = bool(action_mapped and record_found and not missing_evidence and not terminal_recovery)
+        status = "executable" if is_executable else "blocked"
+        resolved_replay_id = str(replay_id or f"replay_{transaction_id}_{replay_action}").strip()
+        debug_context = {
+            "source": "runtime_replay_execution_bridge_v2",
+            "transaction_id": transaction_id,
+            "replay_id": resolved_replay_id,
+            "action": replay_action,
+            "decision_type": "executable" if is_executable else "blocked",
+            "missing_evidence": missing_evidence,
+            "required_evidence": required_evidence,
+            "available_evidence": normalized_available,
+            "blocked_reason": blocked_reason,
+        }
+        return {
+            "replay_id": resolved_replay_id,
+            "transaction_id": transaction_id,
+            "action": replay_action,
+            "status": status,
+            "required_evidence": required_evidence,
+            "available_evidence": normalized_available,
+            "missing_evidence": missing_evidence,
+            "is_executable": is_executable,
+            "blocked_reason": blocked_reason,
+            "risk_level": self._runtime_replay_execution_risk_level(replay_action),
+            "debug_context": debug_context,
+        }
+
+    def _runtime_replay_execution_preflight(
+        self,
+        transaction_id: str,
+        *,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        replay_request = self._runtime_replay_request(transaction_id)
+        recovery_summary = self._runtime_replay_recovery_summary(transaction_id)
+        return self._build_replay_execution_preflight(
+            replay_request,
+            available_evidence=available_evidence,
+            recovery_summary=recovery_summary,
+            replay_id=replay_id,
+        )
+
+    def build_replay_execution_decision(
+        self,
+        preflight: Optional[dict] = None,
+        *,
+        transaction_id: Optional[str] = None,
+        replay_request: Optional[dict] = None,
+        recovery_summary: Optional[dict] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        if not isinstance(preflight, dict):
+            if transaction_id is not None and replay_request is None:
+                preflight = self._runtime_replay_execution_preflight(
+                    transaction_id,
+                    available_evidence=available_evidence,
+                    replay_id=replay_id,
+                )
+            else:
+                preflight = self._build_replay_execution_preflight(
+                    replay_request or {},
+                    available_evidence=available_evidence,
+                    recovery_summary=recovery_summary or {},
+                    replay_id=replay_id,
+                )
+        action = str(preflight.get("action") or "unknown")
+        missing_evidence = list(preflight.get("missing_evidence") or [])
+        debug_context = copy.deepcopy(preflight.get("debug_context") if isinstance(preflight.get("debug_context"), dict) else {})
+        blocked_reason = str(preflight.get("blocked_reason") or "")
+        terminal_block = blocked_reason == "terminal recovery state"
+        if bool(preflight.get("is_executable")):
+            decision_type = "executable"
+        elif blocked_reason == "missing transaction record":
+            decision_type = "blocked_missing_transaction"
+        elif action == "unknown":
+            decision_type = "blocked_unknown_action"
+        elif terminal_block:
+            decision_type = "blocked_terminal_recovery"
+        elif missing_evidence:
+            decision_type = "blocked_missing_evidence"
+        else:
+            decision_type = "blocked_unknown_action"
+        debug_context["decision_type"] = decision_type
+        return {
+            "decision_type": decision_type,
+            "replay_id": preflight.get("replay_id"),
+            "transaction_id": preflight.get("transaction_id"),
+            "action": action,
+            "status": "executable" if decision_type == "executable" else "blocked",
+            "is_executable": decision_type == "executable",
+            "required_evidence": list(preflight.get("required_evidence") or []),
+            "available_evidence": list(preflight.get("available_evidence") or []),
+            "missing_evidence": missing_evidence,
+            "blocked_reason": "" if decision_type == "executable" else blocked_reason,
+            "risk_level": preflight.get("risk_level") or self._runtime_replay_execution_risk_level(action),
+            "debug_context": debug_context,
+        }
+
+    def build_replay_commit_request_preview(
+        self,
+        decision: Optional[dict] = None,
+        *,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+    ) -> dict:
+        source = decision if isinstance(decision, dict) else self.build_replay_execution_decision(
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+        )
+        return {
+            "request_type": "runtime_replay_commit_request_preview",
+            "transaction_id": source.get("transaction_id"),
+            "replay_id": source.get("replay_id"),
+            "action": source.get("action"),
+            "decision_type": source.get("decision_type"),
+            "preview_only": True,
+            "mutation_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "executor_dispatch_allowed": False,
+            "required_evidence": list(source.get("required_evidence") or []),
+            "missing_evidence": list(source.get("missing_evidence") or []),
+            "blocked_reason": source.get("blocked_reason") or "",
+        }
+
+    def build_governed_replay_execution_gateway_preview(
+        self,
+        decision: Optional[dict] = None,
+        *,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        replay_decision = decision if isinstance(decision, dict) else self.build_replay_execution_decision(
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+            replay_id=replay_id,
+        )
+        decision_type = str(replay_decision.get("decision_type") or "blocked_unknown_action")
+        executable = decision_type == "executable"
+        gateway_status = "preview_ready" if executable else "blocked"
+        policy_gate_status = "review_required" if executable else "blocked"
+        action = str(replay_decision.get("action") or "unknown")
+        resolved_transaction_id = replay_decision.get("transaction_id") or transaction_id or "unknown_transaction"
+        resolved_replay_id = replay_decision.get("replay_id") or replay_id or f"replay_{resolved_transaction_id}_{action}"
+        required_evidence = list(replay_decision.get("required_evidence") or [])
+        available = list(replay_decision.get("available_evidence") or [])
+        missing = list(replay_decision.get("missing_evidence") or [])
+        blocked_reason = str(replay_decision.get("blocked_reason") or "")
+        execution_contract = {
+            "preview_only": True,
+            "execution_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "mutation_allowed": False,
+            "command_execution_allowed": False,
+            "requires_human_approval": True,
+            "risk_level": replay_decision.get("risk_level") or self._runtime_replay_execution_risk_level(action),
+            "action": action,
+            "transaction_id": resolved_transaction_id,
+            "replay_id": resolved_replay_id,
+        }
+        evidence_contract = {
+            "required_evidence": required_evidence,
+            "available_evidence": available,
+            "missing_evidence": missing,
+            "evidence_complete": not missing,
+            "decision_type": decision_type,
+        }
+        commit_request_preview = self.build_replay_commit_request_preview(replay_decision)
+        debug_context = {
+            "source": "governed_replay_execution_gateway_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "decision_type": decision_type,
+            "gateway_status": gateway_status,
+            "policy_gate_status": policy_gate_status,
+            "blocked_reason": blocked_reason,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+        }
+        return {
+            "source": "governed_replay_execution_gateway_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "decision_type": decision_type,
+            "gateway_status": gateway_status,
+            "policy_gate_status": policy_gate_status,
+            "execution_contract": execution_contract,
+            "commit_request_preview": commit_request_preview,
+            "evidence_contract": evidence_contract,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_approval_gate(
+        self,
+        gateway_preview: Optional[dict] = None,
+        *,
+        decision: Optional[dict] = None,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        gateway = gateway_preview if isinstance(gateway_preview, dict) else self.build_governed_replay_execution_gateway_preview(
+            decision,
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+            replay_id=replay_id,
+        )
+        gateway_status = str(gateway.get("gateway_status") or "blocked")
+        policy_gate_status = str(gateway.get("policy_gate_status") or "blocked")
+        if gateway_status == "preview_ready":
+            approval_status = "review_required"
+        else:
+            approval_status = "blocked"
+        resolved_replay_id = gateway.get("replay_id") or replay_id
+        resolved_transaction_id = gateway.get("transaction_id") or transaction_id or "unknown_transaction"
+        action = str(gateway.get("action") or "unknown")
+        decision_type = str(gateway.get("decision_type") or "blocked_unknown_action")
+        blocked_reason = str(gateway.get("blocked_reason") or "")
+        execution_contract = gateway.get("execution_contract") if isinstance(gateway.get("execution_contract"), dict) else {}
+        risk_level = execution_contract.get("risk_level") or self._runtime_replay_execution_risk_level(action)
+        debug_context = {
+            "source": "governed_replay_approval_gate_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "gateway_status": gateway_status,
+            "policy_gate_status": policy_gate_status,
+            "approval_status": approval_status,
+            "approval_required": True,
+            "approval_granted": False,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "decision_type": decision_type,
+            "risk_level": risk_level,
+        }
+        return {
+            "source": "governed_replay_approval_gate_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "gateway_status": gateway_status,
+            "policy_gate_status": policy_gate_status,
+            "approval_status": approval_status,
+            "approval_required": True,
+            "approval_granted": False,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "decision_type": decision_type,
+            "risk_level": risk_level,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_controlled_dispatch_preview(
+        self,
+        approval_gate: Optional[dict] = None,
+        *,
+        gateway_preview: Optional[dict] = None,
+        decision: Optional[dict] = None,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        approval = approval_gate if isinstance(approval_gate, dict) else self.build_governed_replay_approval_gate(
+            gateway_preview,
+            decision=decision,
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+            replay_id=replay_id,
+        )
+        gateway = gateway_preview if isinstance(gateway_preview, dict) else {}
+        approval_status = str(approval.get("approval_status") or "blocked")
+        approval_granted = bool(approval.get("approval_granted"))
+        dispatch_status = "blocked" if approval_status == "blocked" else "preview_blocked"
+        blocked_reason = str(approval.get("blocked_reason") or "")
+        if not approval_granted and not blocked_reason:
+            blocked_reason = "approval_not_granted"
+        resolved_replay_id = approval.get("replay_id") or replay_id
+        resolved_transaction_id = approval.get("transaction_id") or transaction_id or "unknown_transaction"
+        action = str(approval.get("action") or "unknown")
+        risk_level = approval.get("risk_level") or self._runtime_replay_execution_risk_level(action)
+        evidence_contract = gateway.get("evidence_contract") if isinstance(gateway.get("evidence_contract"), dict) else {}
+        required_evidence = list(evidence_contract.get("required_evidence") or [])
+        available = list(evidence_contract.get("available_evidence") or [])
+        missing = list(evidence_contract.get("missing_evidence") or [])
+        decision_type = str(approval.get("decision_type") or evidence_contract.get("decision_type") or "blocked_unknown_action")
+        evidence_capture_contract = {
+            "capture_required": True,
+            "capture_mode": "preview_only",
+            "required_evidence": required_evidence,
+            "available_evidence": available,
+            "missing_evidence": missing,
+            "evidence_complete": bool(evidence_contract.get("evidence_complete")) if evidence_contract else not missing,
+            "decision_type": decision_type,
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+        }
+        execution_envelope = {
+            "preview_only": True,
+            "execution_allowed": False,
+            "dispatch_eligible": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "mutation_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "requires_human_approval": True,
+            "approval_granted": False,
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "risk_level": risk_level,
+        }
+        debug_context = {
+            "source": "governed_replay_controlled_dispatch_preview_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "approval_status": approval_status,
+            "approval_granted": False,
+            "dispatch_status": dispatch_status,
+            "dispatch_eligible": False,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+        }
+        return {
+            "source": "governed_replay_controlled_dispatch_preview_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "approval_status": approval_status,
+            "approval_granted": False,
+            "dispatch_status": dispatch_status,
+            "dispatch_eligible": False,
+            "execution_envelope": execution_envelope,
+            "evidence_capture_contract": evidence_capture_contract,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_dispatch_authorization(
+        self,
+        dispatch_preview: Optional[dict] = None,
+        *,
+        approval_gate: Optional[dict] = None,
+        gateway_preview: Optional[dict] = None,
+        decision: Optional[dict] = None,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        dispatch = dispatch_preview if isinstance(dispatch_preview, dict) else self.build_governed_replay_controlled_dispatch_preview(
+            approval_gate,
+            gateway_preview=gateway_preview,
+            decision=decision,
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+            replay_id=replay_id,
+        )
+        dispatch_status = str(dispatch.get("dispatch_status") or "blocked")
+        dispatch_eligible = bool(dispatch.get("dispatch_eligible"))
+        authorization_status = "blocked" if dispatch_status == "blocked" else "review_required"
+        resolved_replay_id = dispatch.get("replay_id") or replay_id
+        resolved_transaction_id = dispatch.get("transaction_id") or transaction_id or "unknown_transaction"
+        action = str(dispatch.get("action") or "unknown")
+        envelope = dispatch.get("execution_envelope") if isinstance(dispatch.get("execution_envelope"), dict) else {}
+        risk_level = envelope.get("risk_level") or self._runtime_replay_execution_risk_level(action)
+        blocked_reason = str(dispatch.get("blocked_reason") or "")
+        sandbox_reason = blocked_reason or "authorization_not_granted"
+        sandbox_preview = {
+            "preview_only": True,
+            "sandbox_eligible": False,
+            "sandbox_execution_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "mutation_allowed": False,
+            "reason": sandbox_reason,
+        }
+        execution_ticket = {
+            "ticket_type": "dispatch_authorization_preview",
+            "preview_only": True,
+            "ticket_status": "not_issued",
+            "authorization_granted": False,
+            "execution_allowed": False,
+            "dispatch_eligible": False,
+            "sandbox_eligible": False,
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "risk_level": risk_level,
+        }
+        immutable_audit_record = {
+            "record_type": "dispatch_authorization_preview",
+            "immutable": True,
+            "preview_only": True,
+            "source": "governed_replay_dispatch_authorization_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "authorization_status": authorization_status,
+            "authorization_granted": False,
+            "dispatch_status": dispatch_status,
+            "dispatch_eligible": False,
+            "sandbox_eligible": False,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "blocked_reason": blocked_reason,
+        }
+        debug_context = {
+            "source": "governed_replay_dispatch_authorization_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "dispatch_status": dispatch_status,
+            "dispatch_eligible": False,
+            "authorization_status": authorization_status,
+            "authorization_required": True,
+            "authorization_granted": False,
+            "sandbox_eligible": False,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+        }
+        return {
+            "source": "governed_replay_dispatch_authorization_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "dispatch_status": dispatch_status,
+            "dispatch_eligible": dispatch_eligible and False,
+            "authorization_status": authorization_status,
+            "authorization_required": True,
+            "authorization_granted": False,
+            "sandbox_eligible": False,
+            "sandbox_preview": sandbox_preview,
+            "execution_ticket": execution_ticket,
+            "immutable_audit_record": immutable_audit_record,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_immutable_journal_preview(
+        self,
+        dispatch_authorization: Optional[dict] = None,
+        *,
+        dispatch_preview: Optional[dict] = None,
+        approval_gate: Optional[dict] = None,
+        gateway_preview: Optional[dict] = None,
+        decision: Optional[dict] = None,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        authorization = dispatch_authorization if isinstance(dispatch_authorization, dict) else self.build_governed_replay_dispatch_authorization(
+            dispatch_preview,
+            approval_gate=approval_gate,
+            gateway_preview=gateway_preview,
+            decision=decision,
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+            replay_id=replay_id,
+        )
+        dispatch = dispatch_preview if isinstance(dispatch_preview, dict) else {}
+        approval = approval_gate if isinstance(approval_gate, dict) else {}
+        gateway = gateway_preview if isinstance(gateway_preview, dict) else {}
+        replay_decision = decision if isinstance(decision, dict) else {}
+        authorization_status = str(authorization.get("authorization_status") or "blocked")
+        dispatch_status = str(authorization.get("dispatch_status") or dispatch.get("dispatch_status") or "blocked")
+        dispatch_eligible = bool(authorization.get("dispatch_eligible") or dispatch.get("dispatch_eligible"))
+        sandbox_eligible = bool(authorization.get("sandbox_eligible"))
+        resolved_replay_id = authorization.get("replay_id") or dispatch.get("replay_id") or replay_id
+        resolved_transaction_id = authorization.get("transaction_id") or dispatch.get("transaction_id") or transaction_id or "unknown_transaction"
+        action = str(authorization.get("action") or dispatch.get("action") or "unknown")
+        blocked_reason = str(authorization.get("blocked_reason") or dispatch.get("blocked_reason") or "")
+        risk_level = authorization.get("risk_level") or self._runtime_replay_execution_risk_level(action)
+        journal_status = "preview_only"
+        authorization_granted = False
+        journal_entry_preview = {
+            "entry_type": "runtime_replay_governance_preview",
+            "immutable": True,
+            "preview_only": True,
+            "write_allowed": False,
+            "append_allowed": False,
+            "persist_allowed": False,
+            "source": "governed_replay_immutable_journal_preview_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "authorization_status": authorization_status,
+            "authorization_granted": authorization_granted,
+            "authorization_blocked": authorization_status == "blocked",
+            "authorization_pending": authorization_status == "review_required",
+            "dispatch_status": dispatch_status,
+            "dispatch_eligible": False,
+            "sandbox_eligible": False,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+        }
+
+        def stage_record(stage: str, status: Any, source: str, reason: Any = None) -> dict:
+            return {
+                "stage": stage,
+                "status": str(status or "unknown"),
+                "source": source,
+                "blocked_reason": str(reason or ""),
+            }
+
+        dispatch_evidence = dispatch.get("evidence_capture_contract") if isinstance(dispatch.get("evidence_capture_contract"), dict) else {}
+        authorization_audit = authorization.get("immutable_audit_record") if isinstance(authorization.get("immutable_audit_record"), dict) else {}
+        decision_type = str(
+            replay_decision.get("decision_type")
+            or gateway.get("decision_type")
+            or approval.get("decision_type")
+            or dispatch_evidence.get("decision_type")
+            or authorization_audit.get("decision_type")
+            or "unknown"
+        )
+        gateway_status = str(gateway.get("gateway_status") or ("blocked" if authorization_status == "blocked" else "preview_ready"))
+        approval_status = str(approval.get("approval_status") or ("blocked" if authorization_status == "blocked" else "review_required"))
+        replay_lineage = [
+            stage_record("replay_request", action, "runtime_replay_execution_bridge_v2", ""),
+            stage_record("preflight", replay_decision.get("status") or decision_type, "runtime_replay_execution_bridge_v2", replay_decision.get("blocked_reason")),
+            stage_record("decision", decision_type, "runtime_replay_execution_bridge_v2", replay_decision.get("blocked_reason")),
+            stage_record("gateway_preview", gateway_status, "governed_replay_execution_gateway_v1", gateway.get("blocked_reason")),
+            stage_record("approval_gate", approval_status, "governed_replay_approval_gate_v1", approval.get("blocked_reason")),
+            stage_record("controlled_dispatch_preview", dispatch_status, "governed_replay_controlled_dispatch_preview_v1", dispatch.get("blocked_reason")),
+            stage_record("dispatch_authorization", authorization_status, "governed_replay_dispatch_authorization_v1", blocked_reason),
+            stage_record("immutable_journal_preview", journal_status, "governed_replay_immutable_journal_preview_v1", blocked_reason),
+        ]
+        terminal_blocked = "terminal" in blocked_reason or decision_type == "blocked_terminal_recovery"
+        missing_evidence_blocked = "missing evidence" in blocked_reason or decision_type == "blocked_missing_evidence"
+        causality_chain = {
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "root_action": action,
+            "decision_type": decision_type,
+            "gateway_status": gateway_status,
+            "approval_status": approval_status,
+            "dispatch_status": dispatch_status,
+            "authorization_status": authorization_status,
+            "journal_status": journal_status,
+            "terminal_blocked": bool(terminal_blocked),
+            "missing_evidence_blocked": bool(missing_evidence_blocked),
+            "execution_allowed": False,
+        }
+        sources = [item["source"] for item in replay_lineage]
+        runtime_provenance = {
+            "provenance_type": "governed_replay_runtime_preview",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "sources": sources,
+            "governance_depth": len(replay_lineage),
+            "final_status": journal_status,
+            "blocked_reason": blocked_reason,
+            "immutable_preview": True,
+            "write_allowed": False,
+        }
+        debug_context = {
+            "source": "governed_replay_immutable_journal_preview_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "authorization_status": authorization_status,
+            "authorization_granted": authorization_granted,
+            "journal_status": journal_status,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+        }
+        return {
+            "source": "governed_replay_immutable_journal_preview_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "authorization_status": authorization_status,
+            "authorization_granted": authorization_granted,
+            "journal_status": journal_status,
+            "journal_entry_preview": journal_entry_preview,
+            "replay_lineage": replay_lineage,
+            "causality_chain": causality_chain,
+            "runtime_provenance": runtime_provenance,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_governance_state_snapshot(
+        self,
+        immutable_journal_preview: Optional[dict] = None,
+        *,
+        dispatch_authorization: Optional[dict] = None,
+        dispatch_preview: Optional[dict] = None,
+        approval_gate: Optional[dict] = None,
+        gateway_preview: Optional[dict] = None,
+        decision: Optional[dict] = None,
+        transaction_id: Optional[str] = None,
+        available_evidence: Any = None,
+        replay_id: Any = None,
+    ) -> dict:
+        journal = immutable_journal_preview if isinstance(immutable_journal_preview, dict) else self.build_governed_replay_immutable_journal_preview(
+            dispatch_authorization,
+            dispatch_preview=dispatch_preview,
+            approval_gate=approval_gate,
+            gateway_preview=gateway_preview,
+            decision=decision,
+            transaction_id=transaction_id,
+            available_evidence=available_evidence,
+            replay_id=replay_id,
+        )
+        journal_entry = journal.get("journal_entry_preview") if isinstance(journal.get("journal_entry_preview"), dict) else {}
+        causality = journal.get("causality_chain") if isinstance(journal.get("causality_chain"), dict) else {}
+        lineage = list(journal.get("replay_lineage") or [])
+        provenance = journal.get("runtime_provenance") if isinstance(journal.get("runtime_provenance"), dict) else {}
+        resolved_replay_id = journal.get("replay_id") or replay_id
+        resolved_transaction_id = journal.get("transaction_id") or transaction_id or "unknown_transaction"
+        action = str(journal.get("action") or "unknown")
+        blocked_reason = str(journal.get("blocked_reason") or "")
+        risk_level = journal.get("risk_level") or self._runtime_replay_execution_risk_level(action)
+        journal_status = str(journal.get("journal_status") or "preview_only")
+        authorization_status = str(journal.get("authorization_status") or journal_entry.get("authorization_status") or "blocked")
+        dispatch_status = str(journal_entry.get("dispatch_status") or causality.get("dispatch_status") or "blocked")
+        approval_status = str(causality.get("approval_status") or ("blocked" if authorization_status == "blocked" else "review_required"))
+        gateway_status = str(causality.get("gateway_status") or ("blocked" if authorization_status == "blocked" else "preview_ready"))
+        decision_type = str(causality.get("decision_type") or "unknown")
+        snapshot_status = "preview_only"
+        final_status = snapshot_status
+        stage_order = [item.get("stage") for item in lineage if isinstance(item, dict) and item.get("stage")]
+        stage_order.append("governance_state_snapshot")
+        stage_statuses = {
+            str(item.get("stage")): str(item.get("status") or "unknown")
+            for item in lineage
+            if isinstance(item, dict) and item.get("stage")
+        }
+        stage_statuses["governance_state_snapshot"] = snapshot_status
+        sources = list(provenance.get("sources") or [item.get("source") for item in lineage if isinstance(item, dict) and item.get("source")])
+        sources.append("governed_replay_governance_state_snapshot_v1")
+        governance_depth = len(stage_order)
+        terminal_blocked = bool(causality.get("terminal_blocked"))
+        missing_evidence_blocked = bool(causality.get("missing_evidence_blocked"))
+        governance_flags = {
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "authorization_granted": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "write_allowed": False,
+            "persist_allowed": False,
+            "append_allowed": False,
+        }
+        snapshot_preview = {
+            "snapshot_type": "governed_replay_state_snapshot_preview",
+            "immutable": True,
+            "preview_only": True,
+            "write_allowed": False,
+            "persist_allowed": False,
+            "append_allowed": False,
+            "source": "governed_replay_governance_state_snapshot_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "journal_status": journal_status,
+            "authorization_status": authorization_status,
+            "dispatch_status": dispatch_status,
+            "approval_status": approval_status,
+            "gateway_status": gateway_status,
+            "decision_type": decision_type,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+        }
+        freeze_frame = {
+            "freeze_type": "governance_state_freeze_frame",
+            "immutable": True,
+            "preview_only": True,
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "final_status": final_status,
+            "blocked_reason": blocked_reason,
+            "governance_depth": governance_depth,
+            "terminal_blocked": terminal_blocked,
+            "missing_evidence_blocked": missing_evidence_blocked,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+        }
+        deterministic_reconstruction_payload = {
+            "reconstruction_type": "deterministic_governance_reconstruction_preview",
+            "preview_only": True,
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "stage_order": stage_order,
+            "stage_statuses": stage_statuses,
+            "blocked_reason": blocked_reason,
+            "final_status": final_status,
+            "governance_depth": governance_depth,
+            "sources": sources,
+        }
+        replayable_governance_state = {
+            "replayable": True,
+            "preview_only": True,
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "current_stage": "governance_state_snapshot",
+            "final_status": final_status,
+            "blocked_reason": blocked_reason,
+            "stage_order": stage_order,
+            "governance_flags": governance_flags,
+        }
+        lineage_digest = {
+            "lineage_stage_count": len(stage_order),
+            "governance_depth": governance_depth,
+            "first_stage": stage_order[0] if stage_order else None,
+            "last_stage": stage_order[-1] if stage_order else None,
+            "sources_count": len(sources),
+            "blocked_reason": blocked_reason,
+            "final_status": final_status,
+        }
+        debug_context = {
+            "source": "governed_replay_governance_state_snapshot_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "snapshot_status": snapshot_status,
+            "final_status": final_status,
+            "governance_depth": governance_depth,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            **governance_flags,
+        }
+        return {
+            "source": "governed_replay_governance_state_snapshot_v1",
+            "replay_id": resolved_replay_id,
+            "transaction_id": resolved_transaction_id,
+            "action": action,
+            "snapshot_status": snapshot_status,
+            "snapshot_preview": snapshot_preview,
+            "freeze_frame": freeze_frame,
+            "deterministic_reconstruction_payload": deterministic_reconstruction_payload,
+            "replayable_governance_state": replayable_governance_state,
+            "lineage_digest": lineage_digest,
+            "governance_flags": governance_flags,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "authorization_granted": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_governance_state_diff_verification(
+        self,
+        snapshot_a: dict,
+        snapshot_b: Optional[dict] = None,
+    ) -> dict:
+        left = snapshot_a if isinstance(snapshot_a, dict) else {}
+        right = snapshot_b if isinstance(snapshot_b, dict) else left
+        compared_fields = [
+            "replay_id",
+            "transaction_id",
+            "action",
+            "snapshot_status",
+            "blocked_reason",
+            "risk_level",
+            "execution_allowed",
+            "mutation_allowed",
+            "executor_dispatch_allowed",
+            "scheduler_dispatch_allowed",
+            "command_execution_allowed",
+            "authorization_granted",
+            "auto_commit",
+            "auto_rollback",
+        ]
+        changed_fields = [field for field in compared_fields if left.get(field) != right.get(field)]
+        unchanged_fields = [field for field in compared_fields if field not in changed_fields]
+        capability_flags = [
+            "execution_allowed",
+            "mutation_allowed",
+            "executor_dispatch_allowed",
+            "scheduler_dispatch_allowed",
+            "command_execution_allowed",
+            "authorization_granted",
+            "auto_commit",
+            "auto_rollback",
+        ]
+        drifted_flags = [flag for flag in capability_flags if bool(left.get(flag)) != bool(right.get(flag))]
+        unsafe_escalations = [flag for flag in capability_flags if bool(left.get(flag)) is False and bool(right.get(flag)) is True]
+        left_payload = left.get("deterministic_reconstruction_payload") if isinstance(left.get("deterministic_reconstruction_payload"), dict) else {}
+        right_payload = right.get("deterministic_reconstruction_payload") if isinstance(right.get("deterministic_reconstruction_payload"), dict) else {}
+        left_order = list(left_payload.get("stage_order") or [])
+        right_order = list(right_payload.get("stage_order") or [])
+        stage_order_consistent = left_order == right_order
+        final_status_consistent = str(left_payload.get("final_status") or "") == str(right_payload.get("final_status") or "")
+        blocked_reason_consistent = str(left.get("blocked_reason") or "") == str(right.get("blocked_reason") or "")
+        deterministic = bool(not changed_fields and stage_order_consistent and final_status_consistent and blocked_reason_consistent)
+        left_digest = left.get("lineage_digest") if isinstance(left.get("lineage_digest"), dict) else {}
+        right_digest = right.get("lineage_digest") if isinstance(right.get("lineage_digest"), dict) else {}
+        governance_depth_consistent = left_digest.get("governance_depth") == right_digest.get("governance_depth")
+        sources_consistent = list(left_payload.get("sources") or []) == list(right_payload.get("sources") or [])
+        lineage_stage_count_consistent = left_digest.get("lineage_stage_count") == right_digest.get("lineage_stage_count")
+        reconstruction_consistent = bool(governance_depth_consistent and sources_consistent and lineage_stage_count_consistent and stage_order_consistent)
+        replay_id = right.get("replay_id") or left.get("replay_id")
+        transaction_id = right.get("transaction_id") or left.get("transaction_id")
+        action = str(right.get("action") or left.get("action") or "unknown")
+        blocked_reason = str(right.get("blocked_reason") or left.get("blocked_reason") or "")
+        risk_level = right.get("risk_level") or left.get("risk_level") or self._runtime_replay_execution_risk_level(action)
+        governance_diff = {
+            "diff_type": "governance_state_snapshot_diff_preview",
+            "preview_only": True,
+            "has_diff": bool(changed_fields),
+            "changed_fields": changed_fields,
+            "unchanged_fields": unchanged_fields,
+            "compared_fields": compared_fields,
+            "snapshot_a_status": left.get("snapshot_status"),
+            "snapshot_b_status": right.get("snapshot_status"),
+            "blocked_reason_changed": "blocked_reason" in changed_fields,
+            "risk_level_changed": "risk_level" in changed_fields,
+            "capability_flags_changed": bool(drifted_flags),
+        }
+        capability_drift_detection = {
+            "drift_type": "capability_flag_drift_detection_preview",
+            "preview_only": True,
+            "drift_detected": bool(drifted_flags),
+            "drifted_flags": drifted_flags,
+            "safe_flags_preserved": not unsafe_escalations,
+            "unsafe_flag_escalation_detected": bool(unsafe_escalations),
+        }
+        deterministic_verification = {
+            "verification_type": "deterministic_governance_snapshot_verification_preview",
+            "preview_only": True,
+            "deterministic": deterministic,
+            "reason": "deterministic snapshot match" if deterministic else "governance snapshot drift detected",
+            "compared_stage_order": {"snapshot_a": left_order, "snapshot_b": right_order},
+            "stage_order_consistent": stage_order_consistent,
+            "final_status_consistent": final_status_consistent,
+            "blocked_reason_consistent": blocked_reason_consistent,
+        }
+        reconstruction_consistency_check = {
+            "check_type": "governance_reconstruction_consistency_preview",
+            "preview_only": True,
+            "reconstruction_consistent": reconstruction_consistent,
+            "governance_depth_consistent": governance_depth_consistent,
+            "sources_consistent": sources_consistent,
+            "lineage_stage_count_consistent": lineage_stage_count_consistent,
+            "reason": "reconstruction inputs consistent" if reconstruction_consistent else "reconstruction input drift detected",
+        }
+        debug_context = {
+            "source": "governed_replay_governance_state_diff_verification_v1",
+            "replay_id": replay_id,
+            "transaction_id": transaction_id,
+            "action": action,
+            "verification_status": "preview_only",
+            "has_diff": bool(changed_fields),
+            "drift_detected": bool(drifted_flags),
+            "unsafe_flag_escalation_detected": bool(unsafe_escalations),
+            "deterministic": deterministic,
+            "reconstruction_consistent": reconstruction_consistent,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "authorization_granted": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+        }
+        return {
+            "source": "governed_replay_governance_state_diff_verification_v1",
+            "replay_id": replay_id,
+            "transaction_id": transaction_id,
+            "action": action,
+            "verification_status": "preview_only",
+            "snapshot_a": left,
+            "snapshot_b": right,
+            "governance_diff": governance_diff,
+            "capability_drift_detection": capability_drift_detection,
+            "deterministic_verification": deterministic_verification,
+            "reconstruction_consistency_check": reconstruction_consistency_check,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "authorization_granted": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "debug_context": debug_context,
+        }
+
+    def build_governed_replay_policy_resolution(self, diff_verification: dict) -> dict:
+        verification = diff_verification if isinstance(diff_verification, dict) else {}
+        capability = verification.get("capability_drift_detection") if isinstance(verification.get("capability_drift_detection"), dict) else {}
+        deterministic_check = verification.get("deterministic_verification") if isinstance(verification.get("deterministic_verification"), dict) else {}
+        reconstruction_check = verification.get("reconstruction_consistency_check") if isinstance(verification.get("reconstruction_consistency_check"), dict) else {}
+        unsafe_escalation = bool(capability.get("unsafe_flag_escalation_detected"))
+        deterministic = bool(deterministic_check.get("deterministic"))
+        reconstruction_consistent = bool(reconstruction_check.get("reconstruction_consistent"))
+        deterministic_failure = not deterministic
+        reconstruction_inconsistency = not reconstruction_consistent
+        if unsafe_escalation:
+            risk_category = "capability_escalation"
+            escalation_target = "capability_integrity_review"
+            recommended_action = "investigate_capability_drift"
+        elif deterministic_failure:
+            risk_category = "deterministic_drift"
+            escalation_target = "deterministic_verification_review"
+            recommended_action = "review_deterministic_pipeline"
+        elif reconstruction_inconsistency:
+            risk_category = "reconstruction_inconsistency"
+            escalation_target = "reconstruction_integrity_review"
+            recommended_action = "review_reconstruction_consistency"
+        else:
+            risk_category = "stable_preview"
+            escalation_target = "stable_preview_review"
+            recommended_action = "maintain_preview_state"
+        escalation_required = risk_category != "stable_preview"
+        governance_stable = not escalation_required
+        capability_integrity_preserved = not unsafe_escalation
+        blocked_reason = str(verification.get("blocked_reason") or "")
+        risk_level = verification.get("risk_level") or "blocked"
+        replay_id = verification.get("replay_id")
+        transaction_id = verification.get("transaction_id")
+        action = str(verification.get("action") or "unknown")
+        risk_classification = {
+            "classification_type": "governance_risk_classification_preview",
+            "preview_only": True,
+            "risk_level": risk_level,
+            "risk_category": risk_category,
+            "escalation_required": escalation_required,
+            "unsafe_flag_escalation_detected": unsafe_escalation,
+            "deterministic_failure_detected": deterministic_failure,
+            "reconstruction_inconsistency_detected": reconstruction_inconsistency,
+        }
+        escalation_routing = {
+            "routing_type": "governance_escalation_routing_preview",
+            "preview_only": True,
+            "escalation_required": escalation_required,
+            "escalation_target": escalation_target,
+            "escalation_reason": risk_category,
+            "human_review_required": True,
+            "sandbox_review_required": escalation_required,
+            "immutable_audit_required": True,
+        }
+        governance_outcome = {
+            "outcome_type": "governance_resolution_preview",
+            "preview_only": True,
+            "final_governance_state": "blocked" if escalation_required else "stable_preview",
+            "blocked": escalation_required,
+            "escalation_required": escalation_required,
+            "governance_stable": governance_stable,
+            "deterministic": deterministic,
+            "reconstruction_consistent": reconstruction_consistent,
+            "capability_integrity_preserved": capability_integrity_preserved,
+        }
+        policy_decision = {
+            "decision_type": "governance_policy_decision_preview",
+            "preview_only": True,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "authorization_granted": False,
+            "escalation_required": escalation_required,
+            "governance_stable": governance_stable,
+            "blocked_reason": blocked_reason,
+            "recommended_action": recommended_action,
+        }
+
+        def integrity_status(stable: bool, escalation_detected: bool) -> dict:
+            return {
+                "status": "stable" if stable else "escalation_required",
+                "stable": stable,
+                "escalation_detected": escalation_detected,
+                "blocked": escalation_detected,
+                "preview_only": True,
+            }
+
+        capability_integrity_status = integrity_status(capability_integrity_preserved, unsafe_escalation)
+        deterministic_integrity_status = integrity_status(deterministic, deterministic_failure)
+        reconstruction_integrity_status = integrity_status(reconstruction_consistent, reconstruction_inconsistency)
+        debug_context = {
+            "source": "governed_replay_policy_resolution_v1",
+            "replay_id": replay_id,
+            "transaction_id": transaction_id,
+            "action": action,
+            "policy_resolution_status": "preview_only",
+            "risk_category": risk_category,
+            "escalation_required": escalation_required,
+            "escalation_target": escalation_target,
+            "governance_stable": governance_stable,
+            "deterministic": deterministic,
+            "reconstruction_consistent": reconstruction_consistent,
+            "capability_integrity_preserved": capability_integrity_preserved,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "authorization_granted": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+        }
+        return {
+            "source": "governed_replay_policy_resolution_v1",
+            "replay_id": replay_id,
+            "transaction_id": transaction_id,
+            "action": action,
+            "policy_resolution_status": "preview_only",
+            "risk_classification": risk_classification,
+            "escalation_routing": escalation_routing,
+            "governance_outcome": governance_outcome,
+            "policy_decision": policy_decision,
+            "capability_integrity_status": capability_integrity_status,
+            "deterministic_integrity_status": deterministic_integrity_status,
+            "reconstruction_integrity_status": reconstruction_integrity_status,
+            "execution_allowed": False,
+            "mutation_allowed": False,
+            "executor_dispatch_allowed": False,
+            "scheduler_dispatch_allowed": False,
+            "command_execution_allowed": False,
+            "authorization_granted": False,
+            "auto_commit": False,
+            "auto_rollback": False,
+            "blocked_reason": blocked_reason,
+            "risk_level": risk_level,
+            "debug_context": debug_context,
+        }
+
+    def _runtime_continuation_recovery_summary(self, transaction_id: str) -> dict:
+        plan = self._runtime_continuation_plan(transaction_id)
+        action = str(plan.get("continuation_action") or "unknown")
+        terminal = bool(plan.get("terminal"))
+        blocked = bool(plan.get("blocked"))
+        record_found = bool(plan.get("record_found"))
+        replay_request = self._build_runtime_replay_request_from_plan(plan)
+        preflight = self._build_replay_execution_preflight(
+            replay_request,
+            available_evidence=replay_request.get("required_evidence"),
+            recovery_summary=self._runtime_replay_recovery_summary(transaction_id),
+        )
+        decision = self.build_replay_execution_decision(preflight)
+        return {
+            "transaction_id": plan.get("transaction_id") or str(transaction_id or "unknown_transaction"),
+            "record_found": record_found,
+            "recoverable": bool(record_found and not terminal and not blocked and action != "unknown"),
+            "continuation_action": action,
+            "replay_action": replay_request.get("replay_action"),
+            "replay_request": replay_request,
+            "replay_preflight": preflight,
+            "replay_decision": decision,
+            "can_execute": bool(replay_request.get("can_execute")),
+            "terminal": terminal,
+            "blocked": blocked,
+            "requires_commit": bool(plan.get("requires_commit")),
+            "requires_rollback": bool(plan.get("requires_rollback")),
+        }
+
+    def _reconstruct_runtime_transaction_context(self, transaction_id: str) -> dict:
+        record = self._read_runtime_transaction_record(transaction_id, default={})
+        record_found = bool(record)
+        transaction_context = record.get("transaction_context") if isinstance(record.get("transaction_context"), dict) else {}
+        resolved_transaction_id = str(
+            transaction_context.get("transaction_id")
+            or transaction_id
+            or ""
+        ).strip()
+        continuation_plan = self._build_runtime_continuation_plan_from_record(record)
+        replay_request = self._build_runtime_replay_request_from_plan(continuation_plan)
+        replay_recovery_summary = self._runtime_replay_recovery_summary(resolved_transaction_id or transaction_id)
+        replay_preflight = self._build_replay_execution_preflight(
+            replay_request,
+            available_evidence=replay_request.get("required_evidence"),
+            recovery_summary=replay_recovery_summary,
+        )
+        replay_decision = self.build_replay_execution_decision(replay_preflight)
+        return {
+            "transaction_id": resolved_transaction_id or "unknown_transaction",
+            "gate_state": record.get("gate_state") if record_found else "unknown",
+            "lifecycle_stage": record.get("lifecycle_stage") if record_found else "unknown",
+            "ownership": record.get("ownership") if isinstance(record.get("ownership"), dict) else {},
+            "execution_review": record.get("execution_review") if isinstance(record.get("execution_review"), dict) else {},
+            "can_commit": bool(record.get("can_commit")) if record_found else False,
+            "can_rollback": bool(record.get("can_rollback")) if record_found else False,
+            "continuation_action": continuation_plan.get("continuation_action"),
+            "continuation_plan": continuation_plan,
+            "replay_action": replay_request.get("replay_action"),
+            "replay_request": replay_request,
+            "replay_preflight": replay_preflight,
+            "replay_decision": replay_decision,
+            "can_execute": bool(replay_request.get("can_execute")),
+            "terminal": bool(continuation_plan.get("terminal")),
+            "blocked": bool(continuation_plan.get("blocked")),
+            "record_found": record_found,
+        }
+
+    def _runtime_transaction_recovery_summary(self, transaction_id: str) -> dict:
+        context = self._reconstruct_runtime_transaction_context(transaction_id)
+        gate_state = str(context.get("gate_state") or "unknown").strip().lower()
+        record_found = bool(context.get("record_found"))
+        can_commit = bool(context.get("can_commit"))
+        can_rollback = bool(context.get("can_rollback"))
+        continuation_plan = context.get("continuation_plan") if isinstance(context.get("continuation_plan"), dict) else {}
+        terminal = bool(context.get("terminal"))
+        blocked = bool(context.get("blocked"))
+        continuation_action = str(context.get("continuation_action") or "unknown")
+        replay_request = context.get("replay_request") if isinstance(context.get("replay_request"), dict) else {}
+        replay_preflight = context.get("replay_preflight") if isinstance(context.get("replay_preflight"), dict) else {}
+        replay_decision = context.get("replay_decision") if isinstance(context.get("replay_decision"), dict) else {}
+        return {
+            "transaction_id": context.get("transaction_id") or str(transaction_id or "unknown_transaction"),
+            "record_found": record_found,
+            "recoverable": bool(
+                record_found
+                and gate_state not in {"rejected", "rolled_back"}
+                and (can_commit or can_rollback)
+            ),
+            "gate_state": gate_state,
+            "lifecycle_stage": context.get("lifecycle_stage") or "unknown",
+            "can_commit": can_commit,
+            "can_rollback": can_rollback,
+            "continuation_action": continuation_action,
+            "continuation_plan": continuation_plan,
+            "replay_action": replay_request.get("replay_action") or "unknown",
+            "replay_request": replay_request,
+            "replay_preflight": replay_preflight,
+            "replay_decision": replay_decision,
+            "can_execute": bool(replay_request.get("can_execute")),
+            "terminal": terminal,
+            "blocked": blocked,
+        }
+
+    def _runtime_continuation_debug_context(self, transaction_id: str) -> dict:
+        record = self._read_runtime_transaction_record(transaction_id, default={})
+        continuation_plan = self._build_runtime_continuation_plan_from_record(record)
+        replay_request = self._build_runtime_replay_request_from_plan(continuation_plan)
+        replay_recovery_summary = self._runtime_replay_recovery_summary(transaction_id)
+        preflight = self._build_replay_execution_preflight(
+            replay_request,
+            available_evidence=replay_request.get("required_evidence"),
+            recovery_summary=replay_recovery_summary,
+        )
+        decision = self.build_replay_execution_decision(preflight)
+        return {
+            "transaction_id": str(transaction_id or "unknown_transaction"),
+            "record": record,
+            "continuation_plan": continuation_plan,
+            "replay_request": replay_request,
+            "replay_preflight": preflight,
+            "replay_decision": decision,
+            "recovery_summary": self._runtime_continuation_recovery_summary(transaction_id),
+        }
+
+    def _runtime_replay_debug_context(self, transaction_id: str) -> dict:
+        continuation_plan = self._runtime_continuation_plan(transaction_id)
+        replay_request = self._build_runtime_replay_request_from_plan(continuation_plan)
+        replay_recovery_summary = self._runtime_replay_recovery_summary(transaction_id)
+        preflight = self._build_replay_execution_preflight(
+            replay_request,
+            available_evidence=replay_request.get("required_evidence"),
+            recovery_summary=replay_recovery_summary,
+        )
+        decision = self.build_replay_execution_decision(preflight)
+        return {
+            "transaction_id": str(transaction_id or "unknown_transaction"),
+            "continuation_plan": continuation_plan,
+            "replay_request": replay_request,
+            "replay_preflight": preflight,
+            "replay_decision": decision,
+            "replay_recovery_summary": replay_recovery_summary,
+        }
+
+    def _maybe_persist_runtime_transaction_record(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> Optional[str]:
+        if self._runtime_write_scope(file_path) != "repo_source":
+            return None
+        if not self._is_governed_mutation_write(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        ):
+            return None
+        if not self._has_transaction_governance_context(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        ):
+            return None
+        record = self._build_runtime_transaction_record(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        return self._write_runtime_transaction_record(record)
+
+    def _raise_transaction_governance_error(
+        self,
+        file_path: str,
+        error_type: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> None:
+        context = self._build_governed_mutation_context(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        messages = {
+            "missing_governance_metadata": "repo source writes require governance metadata",
+            "missing_governed_mutation_classification": "repo source writes require governed mutation classification",
+            "missing_transaction_context": "repo source writes require transaction governance context",
+            "blocked_unknown_path": "TaskRuntime runtime write blocked for unknown persistence domain",
+            "invalid_repo_source_mutation_attempt": "invalid repo source mutation attempt",
+        }
+        message = messages.get(error_type, messages["invalid_repo_source_mutation_attempt"])
+        raise PermissionError(f"{message}: {context}")
+
+    def _raise_transaction_gate_state_error(
+        self,
+        file_path: str,
+        error_type: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> None:
+        summary = self._build_transaction_gate_summary(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        messages = {
+            "rejected_mutation": "rejected repo source mutation writes are blocked",
+            "rolled_back_mutation": "rolled-back repo source mutation writes are blocked",
+            "invalid_terminal_mutation_write": "invalid terminal repo source mutation write",
+        }
+        message = messages.get(error_type, messages["invalid_terminal_mutation_write"])
+        raise PermissionError(f"{message}: {summary}")
+
+    def _raise_transaction_lifecycle_error(
+        self,
+        file_path: str,
+        error_type: str,
+        *,
+        previous_state: Any = None,
+        next_state: Any = None,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> None:
+        summary = self._build_transaction_lifecycle_summary(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        if previous_state is not None:
+            summary["previous_gate_state"] = str(previous_state)
+            summary["previous_lifecycle_stage"] = self._transaction_lifecycle_stage(str(previous_state))
+        if next_state is not None:
+            summary["next_gate_state"] = str(next_state)
+            summary["next_lifecycle_stage"] = self._transaction_lifecycle_stage(str(next_state))
+        messages = {
+            "invalid_transition": "invalid transaction lifecycle transition",
+            "illegal_lifecycle_mutation": "illegal transaction lifecycle mutation",
+            "transition_from_terminal_state": "transaction lifecycle transition from terminal state is blocked",
+            "rejected_mutation": "rejected repo source mutation writes are blocked",
+            "rolled_back_mutation": "rolled-back repo source mutation writes are blocked",
+        }
+        message = messages.get(error_type, messages["illegal_lifecycle_mutation"])
+        raise PermissionError(f"{message}: {summary}")
+
+    def _raise_runtime_ownership_error(
+        self,
+        file_path: str,
+        error_type: str,
+        *,
+        gate_state: Any = None,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> None:
+        summary = self._build_runtime_ownership_summary(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        normalized_gate_state = str(gate_state or self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )).strip().lower()
+        ownership = summary.get("ownership") if isinstance(summary.get("ownership"), dict) else {}
+        summary["gate_state"] = normalized_gate_state
+        summary["ownership_validation"] = self._validate_runtime_ownership_for_state(
+            normalized_gate_state,
+            ownership,
+        )
+        messages = {
+            "missing_ownership": "repo source writes require runtime ownership metadata",
+            "missing_initiator": "repo source writes require runtime ownership initiator",
+            "missing_reviewer": "repo source writes require runtime ownership reviewer",
+            "missing_verifier": "repo source writes require runtime ownership verifier",
+            "missing_approver": "repo source writes require runtime ownership approver",
+            "missing_committer": "repo source writes require runtime ownership committer",
+            "missing_rollback_owner": "repo source writes require runtime ownership rollback owner",
+            "invalid_ownership_for_lifecycle_state": "invalid runtime ownership for lifecycle state",
+        }
+        message = messages.get(error_type, messages["invalid_ownership_for_lifecycle_state"])
+        raise PermissionError(f"{message}: {summary}")
+
+    def _raise_execution_review_error(
+        self,
+        file_path: str,
+        error_type: str,
+        *,
+        gate_state: Any = None,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> None:
+        summary = self._build_execution_review_summary(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+        normalized_gate_state = str(gate_state or self._normalize_transaction_gate_state(
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )).strip().lower()
+        review_context = summary.get("execution_review") if isinstance(summary.get("execution_review"), dict) else {}
+        summary["gate_state"] = normalized_gate_state
+        summary["execution_review_validation"] = self._validate_execution_review_for_state(
+            normalized_gate_state,
+            review_context,
+        )
+        messages = {
+            "missing_execution_review": "repo source writes require execution review metadata",
+            "missing_execution": "repo source writes require execution review execution",
+            "missing_verification": "repo source writes require execution review verification",
+            "missing_review": "repo source writes require execution review review",
+            "missing_approval": "repo source writes require execution review approval",
+            "missing_commit_readiness": "repo source writes require execution review commit readiness",
+            "missing_rollback_readiness": "repo source writes require execution review rollback readiness",
+            "invalid_execution_review_for_lifecycle_state": "invalid execution review for lifecycle state",
+        }
+        message = messages.get(error_type, messages["invalid_execution_review_for_lifecycle_state"])
+        raise PermissionError(f"{message}: {summary}")
+
+    def _raise_repo_source_governance_error(
+        self,
+        file_path: str,
+        error_type: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> None:
+        self._raise_transaction_governance_error(
+            file_path,
+            error_type,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+
+    def _build_runtime_write_audit_record(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        domain = self._classify_persistence_domain(file_path)
+        scope = self._runtime_write_scope(file_path)
+        return {
+            "path": str(file_path),
+            "domain": domain,
+            "scope": scope,
+            "reason": str(reason or "").strip(),
+            "has_lineage": isinstance(lineage, dict) and bool(lineage),
+            "has_provenance": isinstance(provenance, dict) and bool(provenance),
+        }
+
+    def _assert_runtime_write_allowed(
+        self,
+        file_path: str,
+        *,
+        reason: Any = None,
+        lineage: Any = None,
+        provenance: Any = None,
+    ) -> dict:
+        domain = self._classify_persistence_domain(file_path)
+        scope = self._runtime_write_scope(file_path)
+        if scope == "runtime":
+            return self._build_runtime_write_audit_record(
+                file_path,
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        if scope == "repo_source":
+            try:
+                self._validate_repo_source_write_metadata(
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            except PermissionError:
+                self._raise_repo_source_governance_error(
+                    file_path,
+                    "missing_governance_metadata",
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            if not self._is_governed_mutation_write(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ):
+                self._raise_repo_source_governance_error(
+                    file_path,
+                    "missing_governed_mutation_classification",
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            if not self._has_transaction_governance_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            ):
+                self._raise_transaction_governance_error(
+                    file_path,
+                    "missing_transaction_context",
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            gate_state = self._normalize_transaction_gate_state(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+            previous_gate_state = self._extract_previous_transaction_gate_state(
+                lineage=lineage,
+                provenance=provenance,
+            )
+            if previous_gate_state is not None and not self._transaction_lifecycle_transition_allowed(
+                previous_gate_state,
+                gate_state,
+            ):
+                error_type = "invalid_transition"
+                if previous_gate_state in {"committed", "rolled_back", "rejected"} and previous_gate_state != gate_state:
+                    error_type = "transition_from_terminal_state"
+                self._raise_transaction_lifecycle_error(
+                    file_path,
+                    error_type,
+                    previous_state=previous_gate_state,
+                    next_state=gate_state,
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            if gate_state == "rejected":
+                self._raise_transaction_lifecycle_error(
+                    file_path,
+                    "rejected_mutation",
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            if gate_state == "rolled_back":
+                self._raise_transaction_lifecycle_error(
+                    file_path,
+                    "rolled_back_mutation",
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            ownership = self._extract_runtime_ownership_chain(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+            ownership_validation = self._validate_runtime_ownership_for_state(gate_state, ownership)
+            if not bool(ownership_validation.get("valid")):
+                missing = list(ownership_validation.get("missing") or [])
+                ownership_flags = self._ownership_chain_flags(ownership)
+                if not ownership_flags.get("has_any_owner"):
+                    error_type = "missing_ownership"
+                elif "initiator" in missing:
+                    error_type = "missing_initiator"
+                elif len(missing) == 1:
+                    error_type = f"missing_{missing[0]}"
+                else:
+                    error_type = "invalid_ownership_for_lifecycle_state"
+                self._raise_runtime_ownership_error(
+                    file_path,
+                    error_type,
+                    gate_state=gate_state,
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            execution_review = self._extract_execution_review_context(
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+            execution_review_validation = self._validate_execution_review_for_state(gate_state, execution_review)
+            if not bool(execution_review_validation.get("valid")):
+                missing = list(execution_review_validation.get("missing") or [])
+                execution_review_flags = self._execution_review_flags(execution_review)
+                missing_error_types = {
+                    "executed": "missing_execution",
+                    "verified": "missing_verification",
+                    "reviewed": "missing_review",
+                    "approved": "missing_approval",
+                    "commit_ready": "missing_commit_readiness",
+                    "rollback_ready": "missing_rollback_readiness",
+                }
+                if not execution_review_flags.get("has_any_review_signal"):
+                    error_type = "missing_execution_review"
+                elif len(missing) == 1:
+                    error_type = missing_error_types.get(missing[0], "invalid_execution_review_for_lifecycle_state")
+                else:
+                    error_type = "invalid_execution_review_for_lifecycle_state"
+                self._raise_execution_review_error(
+                    file_path,
+                    error_type,
+                    gate_state=gate_state,
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            try:
+                self._maybe_persist_runtime_transaction_record(
+                    file_path,
+                    reason=reason,
+                    lineage=lineage,
+                    provenance=provenance,
+                )
+            except (PermissionError, RuntimeError):
+                raise
+            except Exception:
+                pass
+            return self._build_runtime_write_audit_record(
+                file_path,
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
+            )
+        self._raise_repo_source_governance_error(
+            file_path,
+            "blocked_unknown_path",
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
+
+    def _persistence_debug_context(self, file_path: str) -> dict:
+        domain = self._classify_persistence_domain(file_path)
+        policy = self._persistence_policy_for_domain(domain)
+        return {
+            "path": str(file_path),
+            "domain": domain,
+            "policy": policy,
+        }
+
     def _ensure_parent_dir(self, file_path: str) -> None:
         try:
             self._persistence_for_path(file_path).ensure_parent_dir(file_path)
@@ -3667,28 +6629,45 @@ class TaskRuntime:
         try:
             return self._persistence_for_path(file_path).read_json(file_path, default)
         except Exception:
-            try:
-                with open(file_path, "r", encoding="utf-8") as fh:
-                    return json.load(fh)
-            except Exception:
+            if not self._is_runtime_state_legacy_path(file_path):
                 return copy.deepcopy(default)
+            return self._read_json_legacy_runtime_state_fallback(file_path, default)
+
+    def _read_json_legacy_runtime_state_fallback(self, file_path: str, default: Any) -> Any:
+        try:
+            with open(file_path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return copy.deepcopy(default)
+
+    def _is_runtime_state_legacy_path(self, file_path: str) -> bool:
+        return self._classify_persistence_domain(file_path) == "runtime_state"
 
     def _write_json(self, file_path: str, data: Any) -> None:
+        reason = "task_runtime_write_json"
+        lineage = {
+            "source": "task_runtime",
+            "operation": "write_json",
+            "target_path": str(file_path),
+        }
+        provenance = {
+            "source": "task_runtime",
+            "operation": "write_json",
+            "target_path": str(file_path),
+        }
+        self._assert_runtime_write_allowed(
+            file_path,
+            reason=reason,
+            lineage=lineage,
+            provenance=provenance,
+        )
         try:
             self._persistence_for_path(file_path).write_json(
                 file_path,
                 data,
-                reason="task_runtime_write_json",
-                lineage={
-                    "source": "task_runtime",
-                    "operation": "write_json",
-                    "target_path": str(file_path),
-                },
-                provenance={
-                    "source": "task_runtime",
-                    "operation": "write_json",
-                    "target_path": str(file_path),
-                },
+                reason=reason,
+                lineage=lineage,
+                provenance=provenance,
                 metadata={
                     "task_runtime": True,
                     "runtime_state_persistence": True,
@@ -3696,20 +6675,28 @@ class TaskRuntime:
             )
             return
         except Exception:
-            if self._is_path_under_root(file_path, self.workspace_root):
+            domain = self._classify_persistence_domain(file_path)
+            policy = self._persistence_policy_for_domain(domain)
+            if not policy["allow_legacy_json_fallback"]:
                 raise
-            self._write_json_direct(file_path, data)
+            self._write_json_legacy_runtime_state_fallback(file_path, data)
 
-    def _write_json_direct(self, file_path: str, data: Any) -> None:
-        """Compatibility fallback for explicit external task artifact paths.
-
-        Some tests and legacy callers construct TaskRuntime with a workspace root
-        such as ``<tmp>/workspace`` while passing task_dir under sibling
-        ``<tmp>/tasks/...``.  The governed persistence path can reject those
-        artifacts when rollback/capability scopes are intentionally narrow.
-        This fallback is limited to paths outside the configured workspace root
-        and keeps the write atomic for runtime_state.json compatibility.
-        """
+    def _write_json_legacy_runtime_state_fallback(self, file_path: str, data: Any) -> None:
+        """Compatibility fallback for legacy runtime_state.json artifacts only."""
+        self._assert_runtime_write_allowed(
+            file_path,
+            reason="task_runtime_legacy_runtime_state_json_fallback",
+            lineage={
+                "source": "task_runtime",
+                "operation": "legacy_runtime_state_json_fallback",
+                "target_path": str(file_path),
+            },
+            provenance={
+                "source": "task_runtime",
+                "operation": "legacy_runtime_state_json_fallback",
+                "target_path": str(file_path),
+            },
+        )
         target = os.path.abspath(str(file_path))
         parent = os.path.dirname(target)
         if parent:
@@ -3718,6 +6705,25 @@ class TaskRuntime:
         with open(tmp_path, "w", encoding="utf-8") as fh:
             json.dump(data, fh, ensure_ascii=False, indent=2)
         os.replace(tmp_path, target)
+
+    def _write_json_direct(self, file_path: str, data: Any) -> None:
+        self._assert_runtime_write_allowed(
+            file_path,
+            reason="task_runtime_direct_legacy_json_write",
+            lineage={
+                "source": "task_runtime",
+                "operation": "direct_legacy_json_write",
+                "target_path": str(file_path),
+            },
+            provenance={
+                "source": "task_runtime",
+                "operation": "direct_legacy_json_write",
+                "target_path": str(file_path),
+            },
+        )
+        if not self._is_runtime_state_legacy_path(file_path):
+            raise RuntimeError("direct JSON fallback is limited to legacy runtime_state.json")
+        self._write_json_legacy_runtime_state_fallback(file_path, data)
 
     def _now(self) -> str:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -5399,3 +8405,303 @@ TaskRuntime.complete_engineering_action = _zero_v915_complete_engineering_action
 TaskRuntime.fail_engineering_action = _zero_v915_fail_engineering_action
 TaskRuntime.block_engineering_action = _zero_v915_block_engineering_action
 TaskRuntime.record_rollback_restore_action = _zero_v915_record_rollback_restore_action
+
+
+# ============================================================
+# AER Governance Core Seal v1
+# ============================================================
+
+def _zero_v916_build_governed_replay_aer_governance_core_seal(
+    self: TaskRuntime,
+    policy_resolution: Dict[str, Any],
+    *,
+    diff_verification: Optional[Dict[str, Any]] = None,
+    snapshot: Optional[Dict[str, Any]] = None,
+    journal_preview: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    policy_resolution = copy.deepcopy(policy_resolution if isinstance(policy_resolution, dict) else {})
+    diff_verification = copy.deepcopy(diff_verification if isinstance(diff_verification, dict) else {})
+    snapshot = copy.deepcopy(snapshot if isinstance(snapshot, dict) else {})
+    journal_preview = copy.deepcopy(journal_preview if isinstance(journal_preview, dict) else {})
+
+    replay_id = str(policy_resolution.get("replay_id") or "")
+    transaction_id = str(policy_resolution.get("transaction_id") or "")
+    action = str(policy_resolution.get("action") or "")
+
+    stage_order = [
+        "replay_request",
+        "preflight",
+        "decision",
+        "gateway_preview",
+        "approval_gate",
+        "controlled_dispatch_preview",
+        "dispatch_authorization",
+        "immutable_journal_preview",
+        "governance_state_snapshot",
+        "governance_diff_verification",
+        "governance_policy_resolution",
+        "aer_governance_core_seal",
+    ]
+
+    governance_flags = {
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "executor_dispatch_allowed": False,
+        "scheduler_dispatch_allowed": False,
+        "command_execution_allowed": False,
+        "authorization_granted": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+    }
+
+    integrity_checks = {
+        "capability_integrity_preserved": not bool(
+            diff_verification.get("capability_drift_detection", {}).get(
+                "unsafe_flag_escalation_detected",
+                False,
+            )
+        ),
+        "deterministic": bool(
+            diff_verification.get("deterministic_verification", {}).get(
+                "deterministic",
+                True,
+            )
+        ),
+        "reconstruction_consistent": bool(
+            diff_verification.get("reconstruction_consistency_check", {}).get(
+                "reconstruction_consistent",
+                True,
+            )
+        ),
+    }
+
+    governance_stable = all(integrity_checks.values())
+
+    seal_summary = {
+        "seal_type": "aer_governance_core_seal_preview",
+        "preview_only": True,
+        "governance_stable": governance_stable,
+        "stage_count": len(stage_order),
+        "final_stage": "aer_governance_core_seal",
+        "blocked_reason": str(policy_resolution.get("blocked_reason") or ""),
+        "risk_level": str(policy_resolution.get("risk_level") or "unknown"),
+    }
+
+    debug_context = {
+        "source": "governed_replay_aer_governance_core_seal_v1",
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "governance_stable": governance_stable,
+        "stage_count": len(stage_order),
+        "blocked_reason": str(policy_resolution.get("blocked_reason") or ""),
+        "risk_level": str(policy_resolution.get("risk_level") or "unknown"),
+        **governance_flags,
+    }
+
+    return {
+        "source": "governed_replay_aer_governance_core_seal_v1",
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "seal_status": "preview_only",
+        "governance_stable": governance_stable,
+        "stage_order": stage_order,
+        "governance_flags": governance_flags,
+        "integrity_checks": integrity_checks,
+        "seal_summary": seal_summary,
+        "policy_resolution": policy_resolution,
+        "diff_verification": diff_verification,
+        "snapshot": snapshot,
+        "journal_preview": journal_preview,
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "executor_dispatch_allowed": False,
+        "scheduler_dispatch_allowed": False,
+        "command_execution_allowed": False,
+        "authorization_granted": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+        "blocked_reason": str(policy_resolution.get("blocked_reason") or ""),
+        "risk_level": str(policy_resolution.get("risk_level") or "unknown"),
+        "debug_context": debug_context,
+    }
+
+
+TaskRuntime.build_governed_replay_aer_governance_core_seal = _zero_v916_build_governed_replay_aer_governance_core_seal
+
+
+# ============================================================
+# AER Governance Core Seal v1.1
+# ============================================================
+
+def _zero_v917_nested_unsafe_flag_escalation(diff_verification: Dict[str, Any]) -> bool:
+    if not isinstance(diff_verification, dict):
+        return False
+
+    snapshot_a = diff_verification.get("snapshot_a")
+    snapshot_b = diff_verification.get("snapshot_b")
+    if not isinstance(snapshot_a, dict) or not isinstance(snapshot_b, dict):
+        return False
+
+    flag_names = [
+        "execution_allowed",
+        "mutation_allowed",
+        "executor_dispatch_allowed",
+        "scheduler_dispatch_allowed",
+        "command_execution_allowed",
+        "authorization_granted",
+        "auto_commit",
+        "auto_rollback",
+    ]
+
+    for flag in flag_names:
+        a_value = bool(snapshot_a.get(flag, False))
+        b_value = bool(snapshot_b.get(flag, False))
+        if a_value is False and b_value is True:
+            return True
+
+    flags_a = snapshot_a.get("governance_flags")
+    flags_b = snapshot_b.get("governance_flags")
+    if isinstance(flags_a, dict) and isinstance(flags_b, dict):
+        for flag in flag_names:
+            a_value = bool(flags_a.get(flag, False))
+            b_value = bool(flags_b.get(flag, False))
+            if a_value is False and b_value is True:
+                return True
+
+    return False
+
+
+def _zero_v917_build_governed_replay_aer_governance_core_seal(
+    self: TaskRuntime,
+    policy_resolution: Dict[str, Any],
+    *,
+    diff_verification: Optional[Dict[str, Any]] = None,
+    snapshot: Optional[Dict[str, Any]] = None,
+    journal_preview: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    policy_resolution = copy.deepcopy(policy_resolution if isinstance(policy_resolution, dict) else {})
+    diff_verification = copy.deepcopy(diff_verification if isinstance(diff_verification, dict) else {})
+    snapshot = copy.deepcopy(snapshot if isinstance(snapshot, dict) else {})
+    journal_preview = copy.deepcopy(journal_preview if isinstance(journal_preview, dict) else {})
+
+    replay_id = str(policy_resolution.get("replay_id") or diff_verification.get("replay_id") or "")
+    transaction_id = str(policy_resolution.get("transaction_id") or diff_verification.get("transaction_id") or "")
+    action = str(policy_resolution.get("action") or diff_verification.get("action") or "")
+
+    stage_order = [
+        "replay_request",
+        "preflight",
+        "decision",
+        "gateway_preview",
+        "approval_gate",
+        "controlled_dispatch_preview",
+        "dispatch_authorization",
+        "immutable_journal_preview",
+        "governance_state_snapshot",
+        "governance_diff_verification",
+        "governance_policy_resolution",
+        "aer_governance_core_seal",
+    ]
+
+    governance_flags = {
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "executor_dispatch_allowed": False,
+        "scheduler_dispatch_allowed": False,
+        "command_execution_allowed": False,
+        "authorization_granted": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+    }
+
+    drift = diff_verification.get("capability_drift_detection")
+    if not isinstance(drift, dict):
+        drift = {}
+
+    deterministic = diff_verification.get("deterministic_verification")
+    if not isinstance(deterministic, dict):
+        deterministic = {}
+
+    reconstruction = diff_verification.get("reconstruction_consistency_check")
+    if not isinstance(reconstruction, dict):
+        reconstruction = {}
+
+    nested_unsafe_escalation = _zero_v917_nested_unsafe_flag_escalation(diff_verification)
+    unsafe_escalation = bool(
+        drift.get("unsafe_flag_escalation_detected", False)
+        or drift.get("drift_detected", False)
+        or nested_unsafe_escalation
+    )
+
+    integrity_checks = {
+        "capability_integrity_preserved": not unsafe_escalation,
+        "deterministic": bool(deterministic.get("deterministic", True)),
+        "reconstruction_consistent": bool(reconstruction.get("reconstruction_consistent", True)),
+        "nested_unsafe_flag_escalation_detected": nested_unsafe_escalation,
+    }
+
+    governance_stable = (
+        integrity_checks["capability_integrity_preserved"]
+        and integrity_checks["deterministic"]
+        and integrity_checks["reconstruction_consistent"]
+    )
+
+    blocked_reason = str(policy_resolution.get("blocked_reason") or diff_verification.get("blocked_reason") or "")
+    risk_level = str(policy_resolution.get("risk_level") or diff_verification.get("risk_level") or "unknown")
+
+    seal_summary = {
+        "seal_type": "aer_governance_core_seal_preview",
+        "preview_only": True,
+        "governance_stable": governance_stable,
+        "stage_count": len(stage_order),
+        "final_stage": "aer_governance_core_seal",
+        "blocked_reason": blocked_reason,
+        "risk_level": risk_level,
+    }
+
+    debug_context = {
+        "source": "governed_replay_aer_governance_core_seal_v1",
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "governance_stable": governance_stable,
+        "stage_count": len(stage_order),
+        "unsafe_flag_escalation_detected": unsafe_escalation,
+        "nested_unsafe_flag_escalation_detected": nested_unsafe_escalation,
+        "blocked_reason": blocked_reason,
+        "risk_level": risk_level,
+        **governance_flags,
+    }
+
+    return {
+        "source": "governed_replay_aer_governance_core_seal_v1",
+        "replay_id": replay_id,
+        "transaction_id": transaction_id,
+        "action": action,
+        "seal_status": "preview_only",
+        "governance_stable": governance_stable,
+        "stage_order": stage_order,
+        "governance_flags": governance_flags,
+        "integrity_checks": integrity_checks,
+        "seal_summary": seal_summary,
+        "policy_resolution": policy_resolution,
+        "diff_verification": diff_verification,
+        "snapshot": snapshot,
+        "journal_preview": journal_preview,
+        "execution_allowed": False,
+        "mutation_allowed": False,
+        "executor_dispatch_allowed": False,
+        "scheduler_dispatch_allowed": False,
+        "command_execution_allowed": False,
+        "authorization_granted": False,
+        "auto_commit": False,
+        "auto_rollback": False,
+        "blocked_reason": blocked_reason,
+        "risk_level": risk_level,
+        "debug_context": debug_context,
+    }
+
+
+TaskRuntime.build_governed_replay_aer_governance_core_seal = _zero_v917_build_governed_replay_aer_governance_core_seal
