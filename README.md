@@ -89,6 +89,7 @@ runtime-execution-result-globalization-abi-seal
 Latest status:
 
 ```text
+Verified mutation continuation now preserves verification, rollback, replay/recovery continuity, and constitutional re-entry metadata after governed repair transactions.
 Runtime enforcement decisions are now persisted as stable lifecycle metadata for replay, audit, and recovery visibility while default execution remains audit-only.
 Runtime replay/recovery paths now preserve constitutional continuity, enforcement visibility, and replay legality metadata.
 StepExecutor now carries an audit-first constitutional probe that adds execution-chain enforcement visibility without enabling global blocking.

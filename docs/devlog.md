@@ -1,3 +1,28 @@
+
+## 2026-05-22 - Verified Mutation Continuation Runtime Landing
+
+Verified Mutation Continuation Runtime Landing completed.
+
+Governed repair transaction results can now carry replay-safe, rollback-aware,
+verification-preserving continuation metadata for constitutional re-entry.
+
+The landing adds `verified_mutation_continuation.v1` summaries that preserve:
+
+- verification status
+- rollback snapshots
+- replay/recovery continuity snapshots
+- enforcement snapshots
+- continuation lineage
+- constitutional re-entry legality
+
+Scheduler and AgentLoop layers can preserve this post-mutation continuation
+state without opening hidden approval, direct AgentLoop mutation, UI/tool/app
+coupling, or system_boot wiring.
+
+Terminal constitutional repair boundaries, missing verification, missing rollback
+snapshots, missing replay continuity, and missing lineage deny constitutional
+re-entry and remain governed review/blocked boundaries.
+
 ## 2026-05-21 - Runtime Enforcement Evidence Persistence Landing
 
 Runtime Enforcement Evidence Persistence Landing completed.
