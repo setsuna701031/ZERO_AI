@@ -415,3 +415,356 @@ def _repair_authority_governance(transaction: Mapping[str, Any]) -> dict[str, An
         "scope_gate": scope_gate,
         "metadata_authority": _mapping_copy(metadata.get("authority")),
     }
+
+
+# ZERO v7.3.36 - Verified mutation continuation runtime
+# Bridges completed governed repair transactions back into replay-safe,
+# rollback-aware constitutional continuation metadata without opening hidden
+# approval or uncontrolled mutation authority.
+
+def _zero_v7336_result_metadata(result: Any) -> dict[str, Any]:
+    if isinstance(result, Mapping):
+        metadata = result.get("metadata")
+        return dict(metadata) if isinstance(metadata, Mapping) else dict(result)
+    metadata = getattr(result, "metadata", None)
+    return dict(metadata) if isinstance(metadata, Mapping) else {}
+
+
+def _zero_v7336_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "ok", "passed", "pass", "success", "succeeded", "verified"}
+
+
+def _zero_v7336_verification_passed(metadata: Mapping[str, Any], result: Any = None) -> bool:
+    for key in ("verified_mutation_verification_passed", "verification_passed", "verified"):
+        if key in metadata:
+            return _zero_v7336_bool(metadata.get(key))
+    verification = metadata.get("verification")
+    if isinstance(verification, Mapping):
+        for key in ("passed", "ok", "success", "verified", "verification_passed"):
+            if key in verification:
+                return _zero_v7336_bool(verification.get(key))
+        status = str(verification.get("status") or "").strip().lower()
+        if status:
+            return status in {"passed", "ok", "success", "succeeded", "verified"}
+    if result is not None:
+        for key in ("verification_passed", "verified", "ok"):
+            if hasattr(result, key):
+                try:
+                    return _zero_v7336_bool(getattr(result, key))
+                except Exception:
+                    pass
+    return False
+
+
+def _zero_v7336_mapping_from_metadata(metadata: Mapping[str, Any], *keys: str) -> dict[str, Any]:
+    for key in keys:
+        value = metadata.get(key)
+        if isinstance(value, Mapping) and value:
+            return dict(value)
+    return {}
+
+
+def build_verified_mutation_continuation_summary(
+    result: Any = None,
+    *,
+    bridge_request: Any = None,
+    transaction: Any = None,
+    metadata: Any = None,
+) -> dict[str, Any]:
+    result_metadata = _zero_v7336_result_metadata(result)
+    if isinstance(metadata, Mapping):
+        result_metadata.update(dict(metadata))
+
+    bridge = {}
+    if isinstance(bridge_request, Mapping):
+        bridge = dict(bridge_request)
+    elif isinstance(result_metadata.get("controlled_mutation_bridge"), Mapping):
+        bridge = dict(result_metadata.get("controlled_mutation_bridge"))
+
+    tx = dict(transaction) if isinstance(transaction, Mapping) else {}
+    lineage = {}
+    if isinstance(bridge.get("mutation_bridge_lineage"), Mapping):
+        lineage = dict(bridge.get("mutation_bridge_lineage"))
+    elif isinstance(result_metadata.get("lineage"), Mapping):
+        result_lineage = result_metadata.get("lineage")
+        controlled = result_lineage.get("controlled_mutation_bridge")
+        lineage = dict(controlled) if isinstance(controlled, Mapping) else dict(result_lineage)
+
+    enforcement_snapshot = {}
+    for candidate in (
+        bridge.get("mutation_bridge_enforcement_snapshot"),
+        result_metadata.get("verified_mutation_enforcement_snapshot"),
+        result_metadata.get("constitutional_enforcement_snapshot"),
+        result_metadata.get("runtime_enforcement_decision"),
+    ):
+        if isinstance(candidate, Mapping) and candidate:
+            enforcement_snapshot = dict(candidate)
+            break
+
+    replay_snapshot = {}
+    for candidate in (
+        bridge.get("mutation_bridge_replay_snapshot"),
+        result_metadata.get("verified_mutation_replay_snapshot"),
+        result_metadata.get("replay_continuity_summary"),
+        lineage.get("replay_continuity_summary") if isinstance(lineage, Mapping) else None,
+    ):
+        if isinstance(candidate, Mapping) and candidate:
+            replay_snapshot = dict(candidate)
+            break
+
+    recovery_snapshot = {}
+    for candidate in (
+        bridge.get("mutation_bridge_recovery_snapshot"),
+        result_metadata.get("verified_mutation_recovery_snapshot"),
+        result_metadata.get("recovery_continuity_summary"),
+        lineage.get("recovery_continuity_summary") if isinstance(lineage, Mapping) else None,
+    ):
+        if isinstance(candidate, Mapping) and candidate:
+            recovery_snapshot = dict(candidate)
+            break
+
+    rollback_snapshot = _zero_v7336_mapping_from_metadata(
+        result_metadata,
+        "verified_mutation_rollback_snapshot",
+        "rollback_snapshot",
+        "rollback_metadata",
+    )
+    if not rollback_snapshot and isinstance(tx.get("rollback_snapshot"), Mapping):
+        rollback_snapshot = dict(tx.get("rollback_snapshot"))
+
+    verification_passed = _zero_v7336_verification_passed(result_metadata, result)
+    terminal = bool(
+        bridge.get("bridge_terminality") == "terminal"
+        or bridge.get("mutation_bridge_blocked") is True
+        or result_metadata.get("terminal_constitutional_boundary") is True
+        or (
+            enforcement_snapshot.get("classification") == "block_recommended"
+            and enforcement_snapshot.get("safe_to_enforce") is True
+        )
+    )
+
+    lineage_present = bool(
+        lineage
+        and (lineage.get("continuation_cycle_id") or lineage.get("continuation_parent"))
+    )
+    replay_safe = bool(replay_snapshot)
+    recovery_safe = bool(recovery_snapshot)
+    rollback_safe = bool(rollback_snapshot)
+    bridge_present = bool(bridge.get("controlled_mutation_bridge") or bridge.get("mutation_bridge_state"))
+
+    reentry_allowed = bool(
+        bridge_present
+        and verification_passed
+        and rollback_safe
+        and lineage_present
+        and replay_safe
+        and not terminal
+    )
+
+    if not bridge_present:
+        state = "no_verified_mutation_continuation"
+        reason = "controlled mutation bridge metadata missing"
+    elif terminal:
+        state = "constitutional_reentry_blocked_terminal"
+        reason = "terminal constitutional boundary cannot re-enter continuation"
+    elif reentry_allowed:
+        state = "constitutional_reentry_allowed"
+        reason = "verified mutation is replay-safe and rollback-aware"
+    elif not verification_passed:
+        state = "constitutional_reentry_denied_missing_verification"
+        reason = "verification did not pass or is missing"
+    elif not rollback_safe:
+        state = "constitutional_reentry_denied_missing_rollback_snapshot"
+        reason = "rollback snapshot is missing"
+    elif not lineage_present:
+        state = "constitutional_reentry_denied_missing_lineage"
+        reason = "continuation lineage is missing"
+    elif not replay_safe:
+        state = "constitutional_reentry_denied_missing_replay_snapshot"
+        reason = "replay continuity snapshot is missing"
+    else:
+        state = "constitutional_reentry_denied"
+        reason = "verified mutation continuation requirements are incomplete"
+
+    chain = {
+        "transaction_id": _first_nonempty(tx.get("transaction_id"), result_metadata.get("transaction_id")),
+        "mutation_request_id": _first_nonempty(result_metadata.get("mutation_request_id")),
+        "replay_id": _first_nonempty(
+            replay_snapshot.get("replay_id") if isinstance(replay_snapshot, Mapping) else "",
+            result_metadata.get("replay_id"),
+        ),
+        "continuation_cycle_id": _first_nonempty(
+            lineage.get("continuation_cycle_id") if isinstance(lineage, Mapping) else "",
+        ),
+        "continuation_parent": _first_nonempty(
+            lineage.get("continuation_parent") if isinstance(lineage, Mapping) else "",
+        ),
+    }
+
+    summary = {
+        "schema": "verified_mutation_continuation.v1",
+        "verified_mutation_continuation": bridge_present,
+        "verified_mutation_state": state,
+        "verified_mutation_summary": {
+            "state": state,
+            "reason": reason,
+            "verification_passed": verification_passed,
+            "replay_safe": replay_safe,
+            "recovery_safe": recovery_safe,
+            "rollback_safe": rollback_safe,
+            "reentry_allowed": reentry_allowed,
+            "terminal": terminal,
+        },
+        "verified_mutation_reentry": {
+            "constitutional_reentry_allowed": reentry_allowed,
+            "reason": reason,
+            "state": state,
+        },
+        "constitutional_reentry_allowed": reentry_allowed,
+        "verified_mutation_replay_safe": replay_safe,
+        "verified_mutation_rollback_safe": rollback_safe,
+        "verified_mutation_verification_passed": verification_passed,
+        "verified_mutation_requires_review": bool(
+            bridge.get("mutation_bridge_requires_review")
+            or bridge.get("bridge_requires_review")
+            or not reentry_allowed
+        ),
+        "verified_mutation_terminality": "terminal" if terminal else "non_terminal",
+        "verified_mutation_chain": chain,
+        "verified_mutation_replay_snapshot": replay_snapshot,
+        "verified_mutation_recovery_snapshot": recovery_snapshot,
+        "verified_mutation_rollback_snapshot": rollback_snapshot,
+        "verified_mutation_enforcement_snapshot": enforcement_snapshot,
+        "verified_mutation_runtime_summary": {
+            "reentry_legality": "allowed" if reentry_allowed else "blocked" if terminal else "review_required",
+            "reentry_requires_review": bool(not reentry_allowed),
+            "reentry_terminality": "terminal" if terminal else "non_terminal",
+            "reentry_verification_status": "passed" if verification_passed else "missing_or_failed",
+            "reentry_replay_safe": replay_safe,
+            "reentry_rollback_safe": rollback_safe,
+        },
+        "reentry_legality": "allowed" if reentry_allowed else "blocked" if terminal else "review_required",
+        "reentry_requires_review": bool(not reentry_allowed),
+        "reentry_terminality": "terminal" if terminal else "non_terminal",
+        "reentry_verification_status": "passed" if verification_passed else "missing_or_failed",
+        "reentry_replay_safe": replay_safe,
+        "reentry_rollback_safe": rollback_safe,
+    }
+    return summary
+
+
+def attach_verified_mutation_continuation_metadata(
+    result: Any,
+    *,
+    bridge_request: Any = None,
+    transaction: Any = None,
+) -> Any:
+    summary = build_verified_mutation_continuation_summary(
+        result,
+        bridge_request=bridge_request,
+        transaction=transaction,
+    )
+    if not summary.get("verified_mutation_continuation"):
+        return result
+
+    if isinstance(result, Mapping):
+        target = dict(result)
+        metadata = dict(target.get("metadata")) if isinstance(target.get("metadata"), Mapping) else {}
+        metadata.update(summary)
+        target["metadata"] = metadata
+        target.update(summary)
+        return target
+
+    metadata = _zero_v7336_result_metadata(result)
+    metadata.update(summary)
+    try:
+        object.__setattr__(result, "metadata", metadata)
+    except Exception:
+        try:
+            result.metadata = metadata
+        except Exception:
+            pass
+    return result
+
+
+_ZERO_V7336_ORIGINAL_EXECUTE_COMMITTED_RUNTIME_REPAIR_TRANSACTION = execute_committed_runtime_repair_transaction
+
+
+def execute_committed_runtime_repair_transaction(
+    transaction: Any,
+    *,
+    workspace_root: str | Path,
+    sandbox_source_root: str | Path,
+    rollback_root: str | Path,
+    report_root: str | Path,
+    allowed_roots: list[str] | tuple[str, ...],
+    approval_mode: MutationApprovalMode = MutationApprovalMode.REVIEW_REQUIRED,
+    verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
+    risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
+    dry_run: bool | None = None,
+    gate_hook: GovernedRepairGateHook | None = None,
+    use_runtime_recovery_gate: bool = False,
+    controlled_mutation_bridge: Any = None,
+) -> MutationRuntimePipelineResult:
+    result = _ZERO_V7336_ORIGINAL_EXECUTE_COMMITTED_RUNTIME_REPAIR_TRANSACTION(
+        transaction,
+        workspace_root=workspace_root,
+        sandbox_source_root=sandbox_source_root,
+        rollback_root=rollback_root,
+        report_root=report_root,
+        allowed_roots=allowed_roots,
+        approval_mode=approval_mode,
+        verification=verification,
+        risk_level=risk_level,
+        dry_run=dry_run,
+        gate_hook=gate_hook,
+        use_runtime_recovery_gate=use_runtime_recovery_gate,
+        controlled_mutation_bridge=controlled_mutation_bridge,
+    )
+    bridge_request = build_controlled_mutation_bridge_request(controlled_mutation_bridge)
+    return attach_verified_mutation_continuation_metadata(
+        result,
+        bridge_request=bridge_request,
+        transaction=transaction,
+    )
+
+
+_ZERO_V7336_ORIGINAL_EXECUTE_COMMITTED_RUNTIME_REPAIR_TRANSACTION_MAINLINE = execute_committed_runtime_repair_transaction_mainline
+
+
+def execute_committed_runtime_repair_transaction_mainline(
+    transaction: Any,
+    *,
+    workspace_root: str | Path,
+    sandbox_source_root: str | Path,
+    rollback_root: str | Path,
+    report_root: str | Path,
+    allowed_roots: list[str] | tuple[str, ...],
+    approval_mode: MutationApprovalMode = MutationApprovalMode.REVIEW_REQUIRED,
+    verification: MutationVerificationRequirement = MutationVerificationRequirement.TARGETED_TESTS,
+    risk_level: MutationRiskLevel = MutationRiskLevel.MEDIUM,
+    dry_run: bool | None = None,
+    controlled_mutation_bridge: Any = None,
+):
+    result = _ZERO_V7336_ORIGINAL_EXECUTE_COMMITTED_RUNTIME_REPAIR_TRANSACTION_MAINLINE(
+        transaction,
+        workspace_root=workspace_root,
+        sandbox_source_root=sandbox_source_root,
+        rollback_root=rollback_root,
+        report_root=report_root,
+        allowed_roots=allowed_roots,
+        approval_mode=approval_mode,
+        verification=verification,
+        risk_level=risk_level,
+        dry_run=dry_run,
+        controlled_mutation_bridge=controlled_mutation_bridge,
+    )
+    bridge_request = build_controlled_mutation_bridge_request(controlled_mutation_bridge)
+    return attach_verified_mutation_continuation_metadata(
+        result,
+        bridge_request=bridge_request,
+        transaction=transaction,
+    )

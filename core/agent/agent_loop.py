@@ -6110,3 +6110,129 @@ def _zero_v7335_agent_build_task_loop_execution(
 
 
 AgentLoop._build_task_loop_execution = _zero_v7335_agent_build_task_loop_execution
+
+
+# ZERO v7.3.36 - Verified mutation continuation propagation
+# Keeps post-mutation constitutional re-entry metadata visible to the
+# autonomous loop without granting hidden mutation authority.
+
+def _zero_v7336_agent_verified_mutation_summary(payload: Any) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {
+            "verified_mutation_continuation": False,
+            "verified_mutation_state": "no_verified_mutation_continuation",
+            "constitutional_reentry_allowed": False,
+        }
+
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    source: Dict[str, Any] = {}
+    for candidate in (
+        payload.get("verified_mutation_continuation"),
+        metadata.get("verified_mutation_continuation"),
+        payload,
+        metadata,
+    ):
+        if isinstance(candidate, dict) and (
+            "verified_mutation_state" in candidate
+            or "constitutional_reentry_allowed" in candidate
+            or "verified_mutation_runtime_summary" in candidate
+        ):
+            source = copy.deepcopy(candidate)
+            break
+
+    if not source:
+        return {
+            "verified_mutation_continuation": False,
+            "verified_mutation_state": "no_verified_mutation_continuation",
+            "constitutional_reentry_allowed": False,
+        }
+
+    runtime_summary = source.get("verified_mutation_runtime_summary")
+    if not isinstance(runtime_summary, dict):
+        runtime_summary = {}
+    reentry_allowed = bool(
+        source.get("constitutional_reentry_allowed")
+        or (
+            isinstance(source.get("verified_mutation_reentry"), dict)
+            and source["verified_mutation_reentry"].get("constitutional_reentry_allowed") is True
+        )
+    )
+    terminal = bool(
+        source.get("verified_mutation_terminality") == "terminal"
+        or runtime_summary.get("reentry_terminality") == "terminal"
+    )
+    return {
+        "verified_mutation_continuation": True,
+        "verified_mutation_state": str(source.get("verified_mutation_state") or "verified_mutation_continuation"),
+        "constitutional_reentry_allowed": reentry_allowed,
+        "verified_mutation_replay_safe": bool(source.get("verified_mutation_replay_safe") or runtime_summary.get("reentry_replay_safe")),
+        "verified_mutation_rollback_safe": bool(source.get("verified_mutation_rollback_safe") or runtime_summary.get("reentry_rollback_safe")),
+        "verified_mutation_verification_passed": bool(source.get("verified_mutation_verification_passed") or runtime_summary.get("reentry_verification_status") == "passed"),
+        "verified_mutation_requires_review": bool(source.get("verified_mutation_requires_review") or not reentry_allowed),
+        "verified_mutation_terminality": "terminal" if terminal else "non_terminal",
+        "verified_mutation_chain": copy.deepcopy(source.get("verified_mutation_chain", {})),
+        "verified_mutation_replay_snapshot": copy.deepcopy(source.get("verified_mutation_replay_snapshot", {})),
+        "verified_mutation_recovery_snapshot": copy.deepcopy(source.get("verified_mutation_recovery_snapshot", {})),
+        "verified_mutation_rollback_snapshot": copy.deepcopy(source.get("verified_mutation_rollback_snapshot", {})),
+        "verified_mutation_enforcement_snapshot": copy.deepcopy(source.get("verified_mutation_enforcement_snapshot", {})),
+        "verified_mutation_runtime_summary": copy.deepcopy(runtime_summary),
+        "reentry_legality": str(source.get("reentry_legality") or runtime_summary.get("reentry_legality") or ("allowed" if reentry_allowed else "blocked" if terminal else "review_required")),
+        "reentry_requires_review": bool(source.get("reentry_requires_review") if "reentry_requires_review" in source else not reentry_allowed),
+        "reentry_terminality": "terminal" if terminal else "non_terminal",
+        "reentry_verification_status": str(source.get("reentry_verification_status") or runtime_summary.get("reentry_verification_status") or "unknown"),
+        "reentry_replay_safe": bool(source.get("reentry_replay_safe") or runtime_summary.get("reentry_replay_safe")),
+        "reentry_rollback_safe": bool(source.get("reentry_rollback_safe") or runtime_summary.get("reentry_rollback_safe")),
+    }
+
+
+def _zero_v7336_agent_attach_verified_mutation(execution: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(execution, dict):
+        return execution
+    summary = _zero_v7336_agent_verified_mutation_summary(execution)
+    if not summary.get("verified_mutation_continuation"):
+        return execution
+    execution["verified_mutation_continuation"] = copy.deepcopy(summary)
+    for key, value in summary.items():
+        execution[key] = copy.deepcopy(value)
+    if summary.get("reentry_terminality") == "terminal" or not summary.get("constitutional_reentry_allowed"):
+        execution["retryable"] = False
+        execution.setdefault("governed_boundary", True)
+        execution.setdefault("continuation_state", "verified_mutation_reentry_review_required")
+    return execution
+
+
+_ZERO_V7336_ORIGINAL_AGENT_NORMALIZE_EXECUTION_RESULT = AgentLoop._normalize_execution_result
+
+
+def _zero_v7336_agent_normalize_execution_result(self, result: Any) -> Dict[str, Any]:
+    execution = _ZERO_V7336_ORIGINAL_AGENT_NORMALIZE_EXECUTION_RESULT(self, result)
+    if isinstance(execution, dict):
+        _zero_v7336_agent_attach_verified_mutation(execution)
+    return execution
+
+
+AgentLoop._normalize_execution_result = _zero_v7336_agent_normalize_execution_result
+
+_ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION = AgentLoop._build_task_loop_execution
+
+
+def _zero_v7336_agent_build_task_loop_execution(self, scheduler_result: Any) -> Dict[str, Any]:
+    execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(self, scheduler_result)
+    if isinstance(execution, dict):
+        if isinstance(scheduler_result, dict):
+            for source in (
+                scheduler_result,
+                scheduler_result.get("execution"),
+                scheduler_result.get("result"),
+                scheduler_result.get("runtime_state"),
+            ):
+                if isinstance(source, dict):
+                    summary = _zero_v7336_agent_verified_mutation_summary(source)
+                    if summary.get("verified_mutation_continuation"):
+                        execution.update(copy.deepcopy(summary))
+                        break
+        _zero_v7336_agent_attach_verified_mutation(execution)
+    return execution
+
+
+AgentLoop._build_task_loop_execution = _zero_v7336_agent_build_task_loop_execution
