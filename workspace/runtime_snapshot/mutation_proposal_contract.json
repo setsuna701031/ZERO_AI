@@ -1,0 +1,50 @@
+{
+  "proposal_type": "governed_mutation_proposal",
+  "proposal_stage": "proposal_only",
+  "mutation_allowed": false,
+  "mutation_scope": "unknown",
+  "mutation_risk_level": "unknown",
+  "proposal_requirements": {
+    "governance_evaluation_required": true,
+    "replay_validation_required": true,
+    "runtime_health_required": true,
+    "verification_confidence_required": true,
+    "lineage_traceability_required": true
+  },
+  "verification_requirements": {
+    "compile_validation_required": true,
+    "replay_validation_required": true,
+    "deterministic_replay_required": true,
+    "runtime_health_required": true,
+    "governance_review_required": true
+  },
+  "rollback_boundary_requirements": {
+    "snapshot_required": true,
+    "rollback_strategy": "sandbox_only",
+    "rollback_allowed": false
+  },
+  "governance_rules": [
+    "governance_before_mutation",
+    "readonly_before_mutation",
+    "mutation_requires_replay_validation",
+    "mutation_requires_runtime_health",
+    "mutation_requires_verification_confidence"
+  ],
+  "blocked_capabilities": [
+    "direct_repo_mutation",
+    "patch_apply",
+    "git_commit",
+    "git_push",
+    "network_install",
+    "unrestricted_shell",
+    "recursive_self_mutation"
+  ],
+  "future_pipeline": [
+    "mutation_proposal",
+    "sandbox_transaction",
+    "replay_validation",
+    "rollback_boundary",
+    "governed_apply",
+    "mutation_commit_gate"
+  ]
+}

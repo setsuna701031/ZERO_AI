@@ -1,0 +1,60 @@
+{
+  "transition_stage": "governed_mutation_proposal_layer",
+  "current_runtime_stage": "governed_readonly_runtime",
+  "mutation_runtime_enabled": false,
+  "governed_mutation_transaction_enabled": false,
+  "sandbox_mutation_enabled": false,
+  "direct_repo_mutation_enabled": false,
+  "auto_commit_enabled": false,
+  "rollback_runtime_enabled": false,
+  "current_focus": [
+    "mutation_proposal_contract",
+    "mutation_governance_linkage",
+    "mutation_verification_requirements",
+    "rollback_boundary_contract",
+    "runtime_transaction_safety"
+  ],
+  "proposal_requirements": [
+    "governance_evaluation_required",
+    "replay_validation_required",
+    "runtime_health_required",
+    "verification_confidence_required",
+    "lineage_traceability_required"
+  ],
+  "proposal_outputs": [
+    "proposal_id",
+    "mutation_scope",
+    "mutation_targets",
+    "mutation_risk_level",
+    "verification_requirements",
+    "rollback_requirements",
+    "governance_requirements"
+  ],
+  "blocked_capabilities": [
+    "direct_repo_write",
+    "patch_apply",
+    "git_commit",
+    "git_push",
+    "network_install",
+    "unrestricted_shell",
+    "auto_rollback",
+    "recursive_self_mutation"
+  ],
+  "runtime_direction": {
+    "previous_stage": [
+      "execution_governance",
+      "replay_validation",
+      "runtime_lineage",
+      "runtime_governance_evaluation"
+    ],
+    "current_stage": [
+      "governed_mutation_proposal"
+    ],
+    "future_stage": [
+      "sandbox_transaction",
+      "governed_apply",
+      "rollback_boundary",
+      "mutation_commit_gate"
+    ]
+  }
+}
