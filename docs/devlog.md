@@ -1,4 +1,128 @@
 
+
+## 2026-05-23 - AER Runtime Sovereignty Core Seal
+
+AER Runtime Sovereignty Core sealing completed.
+
+ZERO now includes a connected runtime sovereignty chain across replay,
+recovery, governance, legality, freeze authority, seal authority, self
+protection, unlock authority, and controlled execution restoration.
+
+### Completed runtime sovereignty chain
+
+```text
+Replay
+-> Recovery
+-> Governance
+-> Legality
+-> Execution interception
+-> Rollback verification
+-> Freeze authority
+-> Mutation sovereignty
+-> Session lockdown
+-> Seal authority
+-> Self protection
+-> Unlock authority
+-> Controlled runtime reopen
+-> Execution restoration
+-> executed=True
+```
+
+### Runtime sovereignty states normalized
+
+Canonical runtime sovereignty states now include:
+
+```text
+runtime_frozen
+sovereign_locked
+unlock_approved
+execution_restored
+executed=True
+```
+
+### Validation confirmed
+
+Confirmed integrated runtime sovereignty validation:
+
+```text
+70 passed
+```
+
+Confirmed focused validation groups:
+
+```text
+runtime freeze authority
+runtime seal authority
+runtime unlock authority
+runtime execution restoration
+step executor legality interception
+governed execution session lockdown
+rollback verification gate
+mutation runtime sovereignty
+```
+
+### Boundaries preserved
+
+This checkpoint intentionally does not add:
+
+```text
+NO unrestricted execution
+NO hidden mutation authority
+NO scheduler rewrite
+NO agent_loop rewrite
+NO uncontrolled runtime reopen
+NO hidden autonomous execution
+```
+
+### Why this matters
+
+This checkpoint moves ZERO beyond isolated runtime governance modules into a
+runtime sovereignty architecture where runtime interruption, legality,
+execution blocking, seal authority, unlock approval, and execution restoration
+share one constitutional execution path.
+
+The important result is not another runtime feature. The important result is
+that execution continuity now has a governed sovereignty lifecycle:
+
+```text
+freeze
+-> lockdown
+-> seal
+-> unlock approval
+-> execution restoration
+-> executed=True
+```
+
+### Stable checkpoint after this pass
+
+* runtime sovereignty chain: working
+* freeze authority: working
+* seal authority: working
+* self protection: working
+* unlock authority: working
+* execution restoration: working
+* legality interception: working
+* rollback verification: working
+* replay/recovery continuity: preserved
+* controlled runtime reopen: working
+
+### Recommended next stage
+
+```text
+Runtime Core Finalization
+```
+
+Expected focus:
+
+```text
+runtime state naming normalization
+duplicate authority cleanup
+runtime topology cleanup
+README/devlog seal synchronization
+integration smoke chain
+```
+
+
 ## 2026-05-22 - Verified Mutation Continuation Runtime Landing
 
 Verified Mutation Continuation Runtime Landing completed.

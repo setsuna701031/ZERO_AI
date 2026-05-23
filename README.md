@@ -427,6 +427,86 @@ Current validation checkpoint:
 
 This moves ZERO from reviewable repair transactions toward a controlled autonomous engineering runtime where operator approval, runtime continuation, mutation landing, verification failure, rollback recovery, and evidence persistence are all part of one inspectable execution chain.
 
+
+
+------------------------------------------------------------------------
+
+## AER Runtime Sovereignty Core (Latest)
+
+Current engineering checkpoint:
+
+```text
+seal-aer-runtime-sovereignty-core
+```
+
+ZERO now includes a sealed runtime sovereignty chain across replay, recovery,
+governance, legality, freeze authority, seal authority, self protection,
+unlock authority, and controlled execution restoration.
+
+Completed runtime sovereignty chain:
+
+```text
+Replay
+-> Recovery
+-> Governance
+-> Legality
+-> Execution interception
+-> Rollback verification
+-> Freeze authority
+-> Mutation sovereignty
+-> Session lockdown
+-> Seal authority
+-> Self protection
+-> Unlock authority
+-> Controlled runtime reopen
+-> Execution restoration
+-> executed=True
+```
+
+Validated checkpoint:
+
+```text
+70 passed
+```
+
+Key runtime sovereignty surfaces:
+
+```text
+runtime_frozen
+sovereign_locked
+unlock_approved
+execution_restored
+executed=True
+```
+
+Completed authority/runtime layers:
+
+- runtime freeze authority
+- governed execution session lockdown
+- runtime seal authority
+- runtime self protection
+- runtime unlock authority
+- execution restoration chain
+- legality interception
+- rollback verification gate
+- mutation sovereignty enforcement
+
+Important boundaries:
+
+```text
+freeze != execution authority
+seal != mutation permission
+unlock != unrestricted execution
+execution restoration != scheduler rewrite
+runtime sovereignty != hidden autonomy
+```
+
+This checkpoint moves ZERO beyond a governed repair runtime into a runtime
+sovereignty architecture where execution continuity, interruption, sealing,
+unlock approval, and controlled restoration all share one inspectable runtime
+constitution path.
+
+
 ------------------------------------------------------------------------
 
 ## Runtime Aggregate Convergence / Evidence Kernel
