@@ -573,3 +573,153 @@ def _stable_hash(value: Any) -> str:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def build_governed_runtime_lockdown_session_report(
+    *,
+    freeze_decision: Any | None = None,
+    freeze_state: Any | None = None,
+    previous_session_state: str | None = None,
+    source_execution_id: str = "",
+    source_gateway_id: str = "",
+    source_boundary_id: str = "",
+    reason: str = "",
+    metadata: Any | None = None,
+) -> Dict[str, Any]:
+    """Escalate a runtime freeze into a terminal governed execution session.
+
+    This is the persistence bridge between execution-level freeze denial and
+    runtime-wide lockdown state.  A frozen runtime must become SESSION_BLOCKED
+    and its continuation contract must be closed.
+    """
+
+    freeze_payload = _mapping(freeze_decision) or _mapping(freeze_state)
+    frozen = bool(
+        freeze_payload.get("runtime_frozen")
+        or freeze_payload.get("denied")
+        or freeze_payload.get("frozen")
+        or freeze_payload.get("is_frozen")
+    )
+
+    resolved_reason = (
+        _text(reason)
+        or _text(freeze_payload.get("reason"))
+        or "runtime freeze escalated to governed session lockdown"
+    )
+
+    event = build_governed_runtime_execution_event(
+        event_type="runtime_freeze_escalated",
+        event_state=SESSION_BLOCKED if frozen else SESSION_RUNNING,
+        source_ref=_text(source_execution_id) or _text(freeze_payload.get("freeze_id")),
+        sequence=0,
+        payload={
+            "runtime_frozen": frozen,
+            "freeze_decision": copy.deepcopy(freeze_payload),
+            "reason": resolved_reason,
+            "metadata": copy.deepcopy(metadata) if metadata is not None else {},
+        },
+    )
+
+    checkpoint = build_governed_runtime_execution_checkpoint(
+        checkpoint_type="runtime_lockdown",
+        checkpoint_state="blocked" if frozen else "open",
+        source_event_id=event["event_id"],
+        runtime_state_ref=_text(freeze_payload.get("freeze_id")),
+        sequence=0,
+        payload={
+            "runtime_frozen": frozen,
+            "reason": resolved_reason,
+        },
+    )
+
+    blocking_issues: List[Dict[str, Any]] = []
+    if frozen:
+        blocking_issues.append(
+            {
+                "kind": "runtime_freeze_lockdown",
+                "reason": resolved_reason,
+                "freeze_id": _text(freeze_payload.get("freeze_id")),
+            }
+        )
+
+    session_state = SESSION_BLOCKED if frozen else SESSION_RUNNING
+    continuation_contract = {
+        "continuation_id": "runtime-execution-continuation-" + _stable_hash(
+            {
+                "session_state": session_state,
+                "runtime_frozen": frozen,
+                "freeze_payload": freeze_payload,
+                "reason": resolved_reason,
+            }
+        )[:16],
+        "can_continue": not frozen,
+        "continuation_state": "closed" if frozen else "available",
+        "next_event_sequence": 1,
+        "latest_checkpoint_id": checkpoint["checkpoint_id"],
+        "context": {
+            "runtime_frozen": frozen,
+            "freeze_id": _text(freeze_payload.get("freeze_id")),
+            "reason": resolved_reason,
+            "metadata": copy.deepcopy(metadata) if metadata is not None else {},
+        },
+    }
+
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "execution_session_id": "",
+        "session_state": session_state,
+        "previous_session_state": _text(previous_session_state),
+        "transition_valid": _session_transition_valid(_text(previous_session_state), session_state),
+        "source_execution_id": _text(source_execution_id),
+        "source_gateway_id": _text(source_gateway_id),
+        "source_boundary_id": _text(source_boundary_id),
+        "event_timeline": [event],
+        "checkpoint_snapshots": [checkpoint],
+        "replay_order_valid": True,
+        "rollback_eligible": False,
+        "seal_handoff_ready": False,
+        "continuation_contract": continuation_contract,
+        "blocking_issues": blocking_issues,
+        "reason_codes": _sorted_unique(
+            [
+                "runtime_freeze_lockdown" if frozen else "",
+                *_reason_codes_from_issues(blocking_issues),
+            ]
+        ),
+        "session_summary": {
+            "event_count": 1,
+            "checkpoint_count": 1,
+            "session_state": session_state,
+            "source_execution_state": "blocked" if frozen else "running",
+            "replay_order_valid": True,
+            "rollback_eligible": False,
+            "seal_handoff_ready": False,
+            "runtime_frozen": frozen,
+        },
+    }
+    report["execution_session_id"] = _session_id(report)
+    return report
+
+
+def escalate_runtime_freeze_to_governed_session(
+    *,
+    freeze_decision: Any | None = None,
+    freeze_state: Any | None = None,
+    previous_session_state: str | None = None,
+    source_execution_id: str = "",
+    source_gateway_id: str = "",
+    source_boundary_id: str = "",
+    reason: str = "",
+    metadata: Any | None = None,
+) -> Dict[str, Any]:
+    return build_governed_runtime_lockdown_session_report(
+        freeze_decision=freeze_decision,
+        freeze_state=freeze_state,
+        previous_session_state=previous_session_state,
+        source_execution_id=source_execution_id,
+        source_gateway_id=source_gateway_id,
+        source_boundary_id=source_boundary_id,
+        reason=reason,
+        metadata=metadata,
+    )
+

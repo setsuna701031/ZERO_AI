@@ -349,3 +349,145 @@ class RollbackVerificationVerifier:
             )
 
         return value
+
+
+class RollbackVerificationGateRejected(RuntimeError):
+    pass
+
+
+class RollbackVerificationGateResult:
+    def __init__(
+        self,
+        ok: bool,
+        allowed_to_continue: bool,
+        runtime_frozen: bool,
+        reason: str,
+        verification_result: str,
+        rollback_id: str,
+        mismatches: list[dict[str, Any]] | None = None,
+        record: RollbackVerificationRecord | None = None,
+        metadata: Any = None,
+    ) -> None:
+        self.ok = bool(ok)
+        self.allowed_to_continue = bool(allowed_to_continue)
+        self.runtime_frozen = bool(runtime_frozen)
+        self.reason = str(reason or "")
+        self.verification_result = str(verification_result or "")
+        self.rollback_id = str(rollback_id or "")
+        self.mismatches = copy.deepcopy(list(mismatches or []))
+        self.record = record
+        self.metadata = copy.deepcopy(metadata)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "allowed_to_continue": self.allowed_to_continue,
+            "runtime_frozen": self.runtime_frozen,
+            "reason": self.reason,
+            "verification_result": self.verification_result,
+            "rollback_id": self.rollback_id,
+            "mismatches": copy.deepcopy(self.mismatches),
+            "record": self.record_to_dict(),
+            "metadata": copy.deepcopy(self.metadata),
+        }
+
+    def record_to_dict(self) -> dict[str, Any] | None:
+        if self.record is None:
+            return None
+        return {
+            "rollback_id": self.record.rollback_id,
+            "snapshot_id": self.record.snapshot_id,
+            "plan_id": self.record.plan_id,
+            "execution_order": self.record.execution_order,
+            "rollback_order": self.record.rollback_order,
+            "verification_result": self.record.verification_result,
+            "mismatches": self.record.mismatches,
+            "snapshot_fingerprint": self.record.snapshot_fingerprint,
+            "aggregate_status": self.record.aggregate_status,
+            "operation_fingerprints": self.record.operation_fingerprints,
+            "metadata": self.record.metadata,
+            "runtime_args": self.record.runtime_args,
+            "created_at": self.record.created_at,
+            "fingerprint": self.record.fingerprint,
+        }
+
+
+class RollbackVerificationGate:
+    def __init__(self, *, freeze_on_mismatch: bool = True) -> None:
+        self.freeze_on_mismatch = bool(freeze_on_mismatch)
+
+    def evaluate_record(
+        self,
+        record: RollbackVerificationRecord,
+        *,
+        metadata: Any = None,
+    ) -> RollbackVerificationGateResult:
+        if record.verification_result == RollbackVerificationVerifier.VERIFIED:
+            return RollbackVerificationGateResult(
+                ok=True,
+                allowed_to_continue=True,
+                runtime_frozen=False,
+                reason="rollback verification passed",
+                verification_result=record.verification_result,
+                rollback_id=record.rollback_id,
+                mismatches=[],
+                record=record,
+                metadata=metadata,
+            )
+
+        return RollbackVerificationGateResult(
+            ok=False,
+            allowed_to_continue=False,
+            runtime_frozen=self.freeze_on_mismatch,
+            reason="rollback verification mismatch; runtime continuation denied",
+            verification_result=record.verification_result,
+            rollback_id=record.rollback_id,
+            mismatches=record.mismatches,
+            record=record,
+            metadata=metadata,
+        )
+
+    def enforce_record(
+        self,
+        record: RollbackVerificationRecord,
+        *,
+        metadata: Any = None,
+    ) -> RollbackVerificationGateResult:
+        result = self.evaluate_record(record, metadata=metadata)
+        if not result.allowed_to_continue:
+            raise RollbackVerificationGateRejected(result.reason)
+        return result
+
+
+def evaluate_rollback_verification_gate(
+    record: RollbackVerificationRecord,
+    *,
+    freeze_on_mismatch: bool = True,
+    metadata: Any = None,
+) -> RollbackVerificationGateResult:
+    return RollbackVerificationGate(
+        freeze_on_mismatch=freeze_on_mismatch,
+    ).evaluate_record(record, metadata=metadata)
+
+
+def enforce_rollback_verification_gate(
+    record: RollbackVerificationRecord,
+    *,
+    freeze_on_mismatch: bool = True,
+    metadata: Any = None,
+) -> RollbackVerificationGateResult:
+    return RollbackVerificationGate(
+        freeze_on_mismatch=freeze_on_mismatch,
+    ).enforce_record(record, metadata=metadata)
+
+
+__all__ = [
+    "RollbackVerificationRejected",
+    "RollbackVerificationRecord",
+    "RollbackVerificationVerifier",
+    "RollbackVerificationGateRejected",
+    "RollbackVerificationGateResult",
+    "RollbackVerificationGate",
+    "evaluate_rollback_verification_gate",
+    "enforce_rollback_verification_gate",
+]

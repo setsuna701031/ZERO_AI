@@ -41,6 +41,16 @@ from core.runtime.runtime_evidence_chain import (
     validate_runtime_evidence_record,
 )
 
+try:
+    from core.runtime.runtime_freeze import RuntimeFreezeAuthority
+except Exception:  # pragma: no cover - compatibility while runtime surface is evolving
+    RuntimeFreezeAuthority = None  # type: ignore[assignment]
+
+try:
+    from core.runtime.runtime_legality import RuntimeLegalityEngine
+except Exception:  # pragma: no cover - compatibility while runtime surface is evolving
+    RuntimeLegalityEngine = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class MutationRuntimePipelineResult:
@@ -71,6 +81,116 @@ class MutationRuntimePipelineResult:
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
 
 
+
+def _risk_level_text(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    if raw is None:
+        return "unknown"
+    text = str(raw).strip().lower()
+    return text or "unknown"
+
+
+def _decision_to_dict(decision: Any) -> dict[str, Any]:
+    if decision is None:
+        return {}
+
+    to_dict = getattr(decision, "to_dict", None)
+    if callable(to_dict):
+        payload = to_dict()
+        if isinstance(payload, dict):
+            return dict(payload)
+
+    payload: dict[str, Any] = {}
+    for key in (
+        "allowed",
+        "requires_review",
+        "blocked",
+        "decision",
+        "reason",
+        "violated_rules",
+        "action_type",
+        "risk_level",
+        "governance_id",
+        "constitution_version",
+    ):
+        if hasattr(decision, key):
+            payload[key] = getattr(decision, key)
+
+    if "decision" not in payload:
+        if bool(payload.get("blocked")):
+            payload["decision"] = "BLOCK"
+        elif bool(payload.get("requires_review")):
+            payload["decision"] = "REVIEW"
+        elif bool(payload.get("allowed")):
+            payload["decision"] = "ALLOW"
+        else:
+            payload["decision"] = "UNKNOWN"
+
+    return payload
+
+
+def _enforce_mutation_pipeline_freeze(
+    *,
+    freeze_state: Any,
+    action_type: str,
+) -> None:
+    if RuntimeFreezeAuthority is None:
+        return
+
+    decision = RuntimeFreezeAuthority().evaluate(
+        freeze_state=freeze_state,
+        action_type=action_type,
+    )
+
+    if not bool(getattr(decision, "denied", False)):
+        return
+
+    payload = decision.to_dict() if hasattr(decision, "to_dict") else {}
+    raise PermissionError(
+        "mutation_runtime_pipeline_frozen: "
+        + str(payload.get("reason") or "runtime is frozen; mutation pipeline denied")
+    )
+
+
+def _enforce_mutation_pipeline_legality(
+    *,
+    action_type: str,
+    risk_level: str,
+    governance_snapshot: Any,
+    constitution: Any,
+) -> None:
+    if constitution is None or RuntimeLegalityEngine is None:
+        return
+
+    decision = RuntimeLegalityEngine().evaluate_action(
+        action_type=action_type,
+        risk_level=risk_level,
+        governance_snapshot=governance_snapshot,
+        constitution=constitution,
+    )
+
+    if not (
+        bool(getattr(decision, "blocked", False))
+        or bool(getattr(decision, "requires_review", False))
+    ):
+        return
+
+    payload = _decision_to_dict(decision)
+    decision_name = str(payload.get("decision") or "UNKNOWN").upper()
+
+    if decision_name == "BLOCK":
+        raise PermissionError(
+            "mutation_runtime_pipeline_blocked: "
+            + str(payload.get("reason") or "runtime constitution blocked mutation pipeline")
+        )
+
+    raise PermissionError(
+        "mutation_runtime_pipeline_requires_review: "
+        + str(payload.get("reason") or "runtime constitution requires review for mutation pipeline")
+    )
+
+
+
 def run_mutation_runtime_pipeline(
     *,
     session: MutationSession,
@@ -85,6 +205,12 @@ def run_mutation_runtime_pipeline(
     approval_decisions: list[MutationApprovalDecision] | None = None,
     dry_run: bool = False,
     metadata: dict[str, Any] | None = None,
+    freeze_state: Any = None,
+    governance_snapshot: Any = None,
+    constitution: Any = None,
+    enforce_freeze: bool = True,
+    enforce_legality: bool = True,
+    legality_action_type: str = "mutation_runtime_pipeline",
 ) -> MutationRuntimePipelineResult:
     """
     Run one governed mutation transaction.
@@ -97,10 +223,42 @@ def run_mutation_runtime_pipeline(
     Only after those gates does controlled apply run.
     """
 
+    pipeline_metadata = dict(metadata or {})
+    resolved_freeze_state = (
+        freeze_state
+        if freeze_state is not None
+        else pipeline_metadata.get("runtime_freeze")
+        or pipeline_metadata.get("freeze_state")
+        or pipeline_metadata.get("runtime_frozen")
+    )
+    resolved_governance_snapshot = (
+        governance_snapshot
+        if governance_snapshot is not None
+        else pipeline_metadata.get("governance_snapshot")
+    )
+    resolved_constitution = (
+        constitution
+        if constitution is not None
+        else pipeline_metadata.get("constitution")
+    )
+
+    if enforce_freeze:
+        _enforce_mutation_pipeline_freeze(
+            freeze_state=resolved_freeze_state,
+            action_type=legality_action_type,
+        )
+
+    if enforce_legality:
+        _enforce_mutation_pipeline_legality(
+            action_type=legality_action_type,
+            risk_level=_risk_level_text(getattr(session, "risk_level", None)),
+            governance_snapshot=resolved_governance_snapshot,
+            constitution=resolved_constitution,
+        )
+
     reports = Path(report_root)
     reports.mkdir(parents=True, exist_ok=True)
 
-    pipeline_metadata = dict(metadata or {})
     evidence_record = build_runtime_evidence_record(
         transaction_id=session.session_id,
         execution_intent=session.intent,

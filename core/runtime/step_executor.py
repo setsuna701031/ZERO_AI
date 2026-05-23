@@ -15,6 +15,16 @@ from core.runtime.execution_gateway import safe_subprocess_run
 from core.runtime.runtime_file_service import RuntimeFileService
 from core.runtime.runtime_execution_result import RuntimeExecutionResult
 
+try:
+    from core.runtime.runtime_legality import RuntimeLegalityEngine
+except Exception:
+    RuntimeLegalityEngine = None
+
+try:
+    from core.runtime.runtime_freeze import RuntimeFreezeAuthority
+except Exception:
+    RuntimeFreezeAuthority = None
+
 from core.tasks.task_paths import TaskPathManager
 from core.runtime.step_handlers import (
     ToolStepHandler,
@@ -171,6 +181,89 @@ class StepExecutor:
         normalized_task = self._normalize_task(task)
         normalized_context = copy.deepcopy(context) if isinstance(context, dict) else {}
 
+        freeze_state = (
+            kwargs.get("runtime_freeze")
+            or kwargs.get("freeze_state")
+            or kwargs.get("runtime_frozen")
+            or normalized_context.get("runtime_freeze")
+            or normalized_context.get("freeze_state")
+            or normalized_context.get("runtime_frozen")
+            or (
+                normalized_task.get("runtime_freeze")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+            or (
+                normalized_task.get("freeze_state")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+            or (
+                normalized_task.get("runtime_frozen")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+        )
+
+        enforce_freeze = bool(
+            kwargs.get(
+                "enforce_freeze",
+                normalized_context.get("enforce_freeze", True),
+            )
+        )
+
+        if enforce_freeze and RuntimeFreezeAuthority is not None:
+            freeze_decision = RuntimeFreezeAuthority().evaluate(
+                freeze_state=freeze_state,
+                action_type=str(raw_step.get("type") or raw_step.get("action") or "unknown"),
+            )
+
+            if bool(getattr(freeze_decision, "denied", False)):
+                freeze_payload = freeze_decision.to_dict()
+                freeze_reason = str(
+                    freeze_payload.get("reason") or "runtime execution frozen"
+                )
+
+                freeze_result = {
+                    "ok": False,
+                    "step_type": str(raw_step.get("type") or raw_step.get("action") or "unknown").strip().lower(),
+                    "step_index": step_index,
+                    "step_count": step_count,
+                    "task_id": self._extract_task_id(normalized_task),
+                    "runtime_mode": "execute",
+                    "step": copy.deepcopy(raw_step or {}),
+                    "result": {
+                        "ok": False,
+                        "action": "runtime_execution_frozen",
+                        "runtime_freeze_decision": freeze_payload,
+                        "execution_intercepted": True,
+                    },
+                    "message": freeze_reason,
+                    "final_answer": freeze_reason,
+                    "error": {
+                        "type": "runtime_execution_frozen",
+                        "message": freeze_reason,
+                        "retryable": False,
+                        "details": {
+                            "runtime_freeze_decision": freeze_payload,
+                        },
+                    },
+                }
+
+                traced_result = self._attach_execution_trace(
+                    raw_step,
+                    freeze_result,
+                )
+
+                self._emit_evidence_after_result(
+                    step=raw_step,
+                    task=normalized_task,
+                    step_type=str(raw_step.get("type") or raw_step.get("action") or "unknown").strip().lower(),
+                    result=traced_result,
+                )
+
+                return traced_result
+
         step_payload = self._merge_execution_context(
             step=raw_step,
             task=normalized_task,
@@ -195,6 +288,109 @@ class StepExecutor:
             task=normalized_task,
             step_type=step_type,
         )
+
+
+        governance_snapshot = (
+            kwargs.get("governance_snapshot")
+            or normalized_context.get("governance_snapshot")
+            or (
+                normalized_task.get("governance_snapshot")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+        )
+
+        constitution = (
+            kwargs.get("constitution")
+            or normalized_context.get("constitution")
+            or (
+                normalized_task.get("constitution")
+                if isinstance(normalized_task, dict)
+                else None
+            )
+        )
+
+        enforce_legality = bool(
+            kwargs.get(
+                "enforce_legality",
+                normalized_context.get("enforce_legality", True),
+            )
+        )
+
+        if (
+            enforce_legality
+            and constitution is not None
+            and RuntimeLegalityEngine is not None
+        ):
+            legality_decision = RuntimeLegalityEngine().evaluate_action(
+                action_type=step_type,
+                risk_level=str(
+                    step_payload.get("risk_level")
+                    or step_payload.get("risk")
+                    or "unknown"
+                ).lower(),
+                governance_snapshot=governance_snapshot,
+                constitution=constitution,
+            )
+
+            if bool(getattr(legality_decision, "blocked", False)) or bool(
+                getattr(legality_decision, "requires_review", False)
+            ):
+                decision_payload = legality_decision.to_dict()
+
+                legality_error = (
+                    "execution_step_blocked"
+                    if bool(getattr(legality_decision, "blocked", False))
+                    else "execution_step_requires_review"
+                )
+
+                legality_result = {
+                    "ok": False,
+                    "step_type": step_type,
+                    "step_index": step_payload.get("step_index"),
+                    "step_count": step_payload.get("step_count"),
+                    "task_id": self._extract_task_id(normalized_task),
+                    "runtime_mode": self._normalize_runtime_mode(
+                        step_payload.get("runtime_mode") or "execute"
+                    ),
+                    "step": copy.deepcopy(raw_step or {}),
+                    "result": {
+                        "ok": False,
+                        "action": legality_error,
+                        "runtime_legality_decision": decision_payload,
+                        "execution_intercepted": True,
+                    },
+                    "message": str(
+                        decision_payload.get("reason") or legality_error
+                    ),
+                    "final_answer": str(
+                        decision_payload.get("reason") or legality_error
+                    ),
+                    "error": {
+                        "type": legality_error,
+                        "message": str(
+                            decision_payload.get("reason") or legality_error
+                        ),
+                        "retryable": False,
+                        "details": {
+                            "runtime_legality_decision": decision_payload,
+                        },
+                    },
+                }
+
+                traced_result = self._attach_execution_trace(
+                    raw_step,
+                    legality_result,
+                )
+
+                self._emit_evidence_after_result(
+                    step=step_payload,
+                    task=normalized_task,
+                    step_type=step_type,
+                    result=traced_result,
+                )
+
+                return traced_result
 
         handler = self.handlers.get(step_type)
         if handler is None:
