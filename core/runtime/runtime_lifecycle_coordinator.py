@@ -23,6 +23,25 @@ from core.runtime.runtime_enforcement_readiness import (
 from core.runtime.runtime_status import status_from_lifecycle_phase
 from core.runtime.runtime_status_transition import runtime_status_transition_payload
 
+try:
+    from core.runtime.runtime_transition_guard import guard_runtime_transition
+    from core.runtime.runtime_state_names import (
+        SESSION_BLOCKED,
+        SESSION_FAILED,
+        SESSION_RESTORED,
+        SESSION_ROLLED_BACK,
+        SESSION_RUNNING,
+        SESSION_SEALED,
+    )
+except Exception:  # pragma: no cover - compatibility during staged runtime imports
+    guard_runtime_transition = None  # type: ignore[assignment]
+    SESSION_RUNNING = "SESSION_RUNNING"  # type: ignore[assignment]
+    SESSION_BLOCKED = "SESSION_BLOCKED"  # type: ignore[assignment]
+    SESSION_SEALED = "SESSION_SEALED"  # type: ignore[assignment]
+    SESSION_FAILED = "SESSION_FAILED"  # type: ignore[assignment]
+    SESSION_ROLLED_BACK = "SESSION_ROLLED_BACK"  # type: ignore[assignment]
+    SESSION_RESTORED = "SESSION_RESTORED"  # type: ignore[assignment]
+
 
 RUNTIME_LIFECYCLE_STATES = {
     "created",
@@ -132,6 +151,89 @@ def _transition_audit_fields(transition: dict[str, Any]) -> dict[str, Any]:
         "blocked": transition.get("blocked"),
         "would_block": transition.get("would_block"),
     }
+
+
+
+def _sovereign_state_from_lifecycle(state: Any) -> str:
+    normalized = _clean_text(state).lower()
+    mapping = {
+        "created": SESSION_RUNNING,
+        "active": SESSION_RUNNING,
+        "verifying": SESSION_RUNNING,
+        "verified": SESSION_RUNNING,
+        "committed": SESSION_RESTORED,
+        "rollback_required": SESSION_ROLLED_BACK,
+        "rolling_back": SESSION_ROLLED_BACK,
+        "rolled_back": SESSION_ROLLED_BACK,
+        "sealed": SESSION_SEALED,
+        "failed": SESSION_FAILED,
+        "blocked": SESSION_BLOCKED,
+    }
+    return mapping.get(normalized, SESSION_RUNNING)
+
+
+def _guard_lifecycle_transition(
+    from_state: str,
+    to_state: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if guard_runtime_transition is None:
+        return {
+            "ok": True,
+            "transition_guarded": False,
+            "from_state": from_state,
+            "to_state": to_state,
+            "reason": "runtime_transition_guard_unavailable",
+        }
+
+    from_sovereign = _sovereign_state_from_lifecycle(from_state)
+    to_sovereign = _sovereign_state_from_lifecycle(to_state)
+
+    if from_sovereign == to_sovereign:
+        return {
+            "ok": True,
+            "transition_guarded": True,
+            "from_state": from_sovereign,
+            "to_state": to_sovereign,
+            "reason": "sovereign_state_unchanged",
+            "metadata": dict(metadata or {}),
+        }
+
+    guard_metadata = {
+        **dict(metadata or {}),
+        "lifecycle_from_state": from_state,
+        "lifecycle_to_state": to_state,
+    }
+    try:
+        result = guard_runtime_transition(
+            from_sovereign,
+            to_sovereign,
+            metadata=guard_metadata,
+        )
+    except Exception as exc:  # pragma: no cover - defensive bridge for staged guards
+        return {
+            "ok": False,
+            "transition_guarded": True,
+            "from_state": from_sovereign,
+            "to_state": to_sovereign,
+            "lifecycle_from_state": from_state,
+            "lifecycle_to_state": to_state,
+            "sovereign_from_state": from_sovereign,
+            "sovereign_to_state": to_sovereign,
+            "reason": "runtime_transition_guard_rejected",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "metadata": guard_metadata,
+        }
+    return {
+        **result,
+        "lifecycle_from_state": from_state,
+        "lifecycle_to_state": to_state,
+        "sovereign_from_state": from_sovereign,
+        "sovereign_to_state": to_sovereign,
+    }
+
 
 
 def _transition_persistence_fields(transition: dict[str, Any]) -> dict[str, Any]:
@@ -420,7 +522,19 @@ class RuntimeLifecycleCoordinator:
         enforcement_mode: RuntimeEnforcementMode | str = RuntimeEnforcementMode.AUDIT_ONLY,
     ) -> RuntimeLifecycleResult:
         record = self.get_record(lifecycle_id)
-        decision = self.policy.evaluate(record=record, to_state=to_state, metadata=metadata)
+        target = _normalize_state(to_state)
+        transition_guard_result = {
+            "ok": True,
+            "transition_guarded": False,
+            "from_state": record.state,
+            "to_state": target,
+            "lifecycle_from_state": record.state,
+            "lifecycle_to_state": target,
+            "reason": "guard_not_evaluated",
+            "metadata": dict(metadata or {}),
+        }
+
+        decision = self.policy.evaluate(record=record, to_state=target, metadata=metadata)
         transition = _transition_validation(
             decision.from_state,
             decision.to_state,
@@ -437,11 +551,16 @@ class RuntimeLifecycleCoordinator:
                     "action": "transition_blocked",
                     "canonical_status": status_from_lifecycle_phase("blocked"),
                     **_transition_audit_fields(transition),
+                    "runtime_transition_guard": copy.deepcopy(transition_guard_result),
                     **dict(metadata or {}),
                 },
             )
 
-        target = _normalize_state(to_state)
+        transition_guard_result = _guard_lifecycle_transition(
+            record.state,
+            target,
+            metadata=metadata,
+        )
         if target == record.state:
             return RuntimeLifecycleResult(
                 record=record,
@@ -452,6 +571,7 @@ class RuntimeLifecycleCoordinator:
                     "action": "transition_unchanged",
                     "canonical_status": status_from_lifecycle_phase(target),
                     **_transition_audit_fields(transition),
+                    "runtime_transition_guard": copy.deepcopy(transition_guard_result),
                     **dict(metadata or {}),
                 },
             )
@@ -462,7 +582,11 @@ class RuntimeLifecycleCoordinator:
             "to_state": target,
             "reason": decision.reason,
             "timestamp": utc_timestamp(),
-            "metadata": {**persistence_fields, **dict(metadata or {})},
+            "metadata": {
+                **persistence_fields,
+                "runtime_transition_guard": copy.deepcopy(transition_guard_result),
+                **dict(metadata or {}),
+            },
             "enforcement_decision": persistence_fields["enforcement_decision"],
             "enforcement_decision_schema": persistence_fields["enforcement_decision_schema"],
             "enforcement_mode": persistence_fields["enforcement_mode"],
@@ -498,6 +622,7 @@ class RuntimeLifecycleCoordinator:
                 "action": "transition",
                 "canonical_status": status_from_lifecycle_phase(target),
                 **_transition_audit_fields(transition),
+                "runtime_transition_guard": copy.deepcopy(transition_guard_result),
                 **dict(metadata or {}),
             },
         )
