@@ -1,0 +1,56 @@
+{
+  "runtime_stage": "governed_readonly_runtime",
+  "runtime_identity": "governed_autonomous_engineering_runtime",
+  "execution_governance": true,
+  "readonly_execution": true,
+  "controlled_execution_bridge": true,
+  "execution_replay_engine": true,
+  "execution_digest_validation": true,
+  "runtime_evidence_registry": true,
+  "execution_lineage_graph": true,
+  "runtime_governance_evaluation": true,
+  "runtime_health_evaluation": true,
+  "mutation_readiness_evaluation": true,
+  "mutation_runtime_enabled": false,
+  "direct_repo_mutation": false,
+  "governed_apply_enabled": false,
+  "rollback_runtime_enabled": false,
+  "network_install_enabled": false,
+  "unrestricted_shell_enabled": false,
+  "mainline_runtime_pipeline": [
+    "execute",
+    "evidence",
+    "replay",
+    "validation",
+    "lineage",
+    "governance",
+    "mutation_readiness"
+  ],
+  "allowed_readonly_commands": [
+    "pwd",
+    "dir",
+    "ls",
+    "git status",
+    "python -m compileall",
+    "pytest --collect-only"
+  ],
+  "blocked_capabilities": [
+    "git push",
+    "git commit",
+    "repo mutation",
+    "patch apply",
+    "network install",
+    "shell chaining",
+    "shell redirect",
+    "arbitrary subprocess",
+    "auto rollback",
+    "direct file overwrite"
+  ],
+  "governance_rules": [
+    "governance_before_capability_unlock",
+    "readonly_before_mutation",
+    "replay_validation_required_before_mutation",
+    "deterministic_validation_required",
+    "mutation_requires_governance_decision"
+  ]
+}
