@@ -5691,10 +5691,12 @@ AgentLoop._apply_loop_decision_to_task = _zero_v7332_agent_apply_loop_decision_t
 # constitutional boundaries without retry/replan recursion.
 
 def _zero_v7333_agent_continuation_summary(payload: Any) -> Dict[str, Any]:
-    from core.tasks import scheduler as scheduler_module
-
     try:
-        summary = scheduler_module._zero_v7333_governed_continuation_summary(payload)
+        from core.tasks.scheduler_runtime_contract import (
+            governed_continuation_summary as _governed_continuation_summary,
+        )
+
+        summary = _governed_continuation_summary(payload)
     except Exception:
         summary = {}
     return copy.deepcopy(summary) if isinstance(summary, dict) else {}
@@ -5823,10 +5825,12 @@ AgentLoop._sync_task_from_runner_result = _zero_v7333_agent_sync_task_from_runne
 # ZERO v7.3.34 - AgentLoop governed self-repair continuation classification
 
 def _zero_v7334_agent_self_repair_summary(payload: Any) -> Dict[str, Any]:
-    from core.tasks import scheduler as scheduler_module
-
     try:
-        summary = scheduler_module._zero_v7334_governed_self_repair_summary(payload)
+        from core.tasks.scheduler_runtime_contract import (
+            governed_self_repair_summary as _governed_self_repair_summary,
+        )
+
+        summary = _governed_self_repair_summary(payload)
     except Exception:
         summary = {}
     return copy.deepcopy(summary) if isinstance(summary, dict) else {}
@@ -5964,10 +5968,12 @@ AgentLoop._build_task_loop_execution = _zero_v7334_agent_build_task_loop_executi
 # executing repair, approving mutation, or bypassing guarded bridge contracts.
 
 def _zero_v7335_agent_bridge_summary(payload: Any) -> Dict[str, Any]:
-    from core.tasks import scheduler as scheduler_module
-
     try:
-        summary = scheduler_module._zero_v7335_controlled_mutation_bridge_summary(payload)
+        from core.tasks.scheduler_runtime_contract import (
+            controlled_mutation_bridge_summary as _controlled_mutation_bridge_summary,
+        )
+
+        summary = _controlled_mutation_bridge_summary(payload)
     except Exception:
         summary = {}
     return copy.deepcopy(summary) if isinstance(summary, dict) else {}
