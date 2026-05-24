@@ -6216,21 +6216,94 @@ AgentLoop._normalize_execution_result = _zero_v7336_agent_normalize_execution_re
 _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION = AgentLoop._build_task_loop_execution
 
 
-def _zero_v7336_agent_build_task_loop_execution(self, scheduler_result: Any) -> Dict[str, Any]:
-    execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(self, scheduler_result)
-    if isinstance(execution, dict):
-        if isinstance(scheduler_result, dict):
-            for source in (
+def _zero_v7336_agent_build_task_loop_execution(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    """Build task-loop execution while preserving AgentLoop runner-result ABI.
+
+    v7.3.36 originally wrapped ``_build_task_loop_execution`` with a
+    positional ``scheduler_result`` signature.  The task-loop path already
+    calls this hook with keyword-only ``runner_result`` and ``effective_task``;
+    narrowing the signature broke the constitutional continuation tests before
+    execution metadata could be normalized.
+
+    This compatibility wrapper accepts both call styles and forwards to the
+    previous wrapper using the most precise contract available.  It does not
+    introduce a new runtime layer, does not mutate scheduler behavior, and only
+    preserves verified-mutation metadata after the existing execution builder
+    has produced its payload.
+    """
+    runner_result = kwargs.get("runner_result")
+    effective_task = kwargs.get("effective_task")
+    scheduler_result = kwargs.get("scheduler_result")
+
+    if runner_result is None:
+        if scheduler_result is not None:
+            runner_result = scheduler_result
+        elif args:
+            runner_result = args[0]
+
+    if scheduler_result is None:
+        scheduler_result = runner_result
+
+    try:
+        if effective_task is not None:
+            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
+                self,
+                runner_result=runner_result,
+                effective_task=effective_task,
+            )
+        else:
+            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
+                self,
                 scheduler_result,
-                scheduler_result.get("execution"),
-                scheduler_result.get("result"),
-                scheduler_result.get("runtime_state"),
-            ):
-                if isinstance(source, dict):
-                    summary = _zero_v7336_agent_verified_mutation_summary(source)
-                    if summary.get("verified_mutation_continuation"):
-                        execution.update(copy.deepcopy(summary))
-                        break
+            )
+    except TypeError:
+        try:
+            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
+                self,
+                runner_result=runner_result,
+                effective_task=effective_task,
+            )
+        except TypeError:
+            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
+                self,
+                scheduler_result,
+            )
+
+    if isinstance(execution, dict):
+        sources = []
+        for candidate in (
+            effective_task,
+            runner_result,
+            scheduler_result,
+            execution,
+        ):
+            if isinstance(candidate, dict):
+                sources.append(candidate)
+                for nested_key in (
+                    "execution",
+                    "result",
+                    "runtime_state",
+                    "last_step_result",
+                    "last_result",
+                    "runtime_execution_result",
+                    "metadata",
+                ):
+                    nested = candidate.get(nested_key)
+                    if isinstance(nested, dict):
+                        sources.append(nested)
+                        nested_runtime_result = nested.get("runtime_execution_result")
+                        if isinstance(nested_runtime_result, dict):
+                            sources.append(nested_runtime_result)
+                        nested_metadata = nested.get("metadata")
+                        if isinstance(nested_metadata, dict):
+                            sources.append(nested_metadata)
+
+        for source in sources:
+            summary = _zero_v7336_agent_verified_mutation_summary(source)
+            if summary.get("verified_mutation_continuation"):
+                execution.update(copy.deepcopy(summary))
+                break
+
         _zero_v7336_agent_attach_verified_mutation(execution)
     return execution
 
