@@ -7,6 +7,9 @@ from core.runtime.runtime_lifecycle_pipeline import (
     RuntimeLifecyclePipeline,
     RuntimeLifecycleRecord,
 )
+from core.runtime.runtime_consistency import build_runtime_state_consistency
+from core.runtime.runtime_closure import build_runtime_closure_fields
+from core.runtime.runtime_recovery_readiness import build_runtime_recovery_readiness_fields
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,12 @@ class RuntimeExecutionSession:
     metadata: Any
     sequence: int
     lifecycle_records: list[RuntimeLifecycleRecord]
+    execution_evidence: dict[str, Any] = None  # type: ignore[assignment]
+    authority_metadata: dict[str, Any] = None  # type: ignore[assignment]
+    consistency_metadata: dict[str, Any] = None  # type: ignore[assignment]
+    closure_metadata: dict[str, Any] = None  # type: ignore[assignment]
+    recovery_metadata: dict[str, Any] = None  # type: ignore[assignment]
+    replay_metadata: dict[str, Any] = None  # type: ignore[assignment]
 
 
 class RuntimeExecutionSessionRejected(RuntimeError):
@@ -90,6 +99,43 @@ class RuntimeExecutionSessionManager:
             metadata=metadata,
             sequence=self._sequence,
             lifecycle_records=self.lifecycle_pipeline.get_records(lifecycle_id),
+            execution_evidence=self._session_execution_evidence(
+                session_id=session_id,
+                lifecycle_id=lifecycle_id,
+                source=source,
+                metadata=metadata,
+            ),
+            authority_metadata=self._session_authority_metadata(
+                source=source,
+                metadata=metadata,
+            ),
+            consistency_metadata=self._session_consistency_metadata(
+                session_id=session_id,
+                lifecycle_id=lifecycle_id,
+                source=source,
+                metadata=metadata,
+            ),
+            closure_metadata=self._session_closure_metadata(
+                session_id=session_id,
+                lifecycle_id=lifecycle_id,
+                source=source,
+                metadata=metadata,
+                lifecycle_status="queued",
+            ),
+            recovery_metadata=self._session_recovery_metadata(
+                session_id=session_id,
+                lifecycle_id=lifecycle_id,
+                source=source,
+                metadata=metadata,
+                lifecycle_status="queued",
+            ),
+            replay_metadata=self._session_replay_metadata(
+                session_id=session_id,
+                lifecycle_id=lifecycle_id,
+                source=source,
+                metadata=metadata,
+                lifecycle_status="queued",
+            ),
         )
         self._sessions[session_id] = session
         return self._copy_session(session)
@@ -242,10 +288,37 @@ class RuntimeExecutionSessionManager:
 
     def _refresh_session(self, session_id: str) -> RuntimeExecutionSession:
         session = self._get_existing_session(session_id)
+        records = self.lifecycle_pipeline.get_records(session.lifecycle_id)
         refreshed = replace(
             session,
-            lifecycle_records=self.lifecycle_pipeline.get_records(
-                session.lifecycle_id
+            lifecycle_records=records,
+            consistency_metadata=self._session_consistency_metadata(
+                session_id=session.session_id,
+                lifecycle_id=session.lifecycle_id,
+                source=session.source,
+                metadata=session.metadata,
+                lifecycle_status=records[-1].phase if records else "queued",
+            ),
+            closure_metadata=self._session_closure_metadata(
+                session_id=session.session_id,
+                lifecycle_id=session.lifecycle_id,
+                source=session.source,
+                metadata=session.metadata,
+                lifecycle_status=records[-1].phase if records else "queued",
+            ),
+            recovery_metadata=self._session_recovery_metadata(
+                session_id=session.session_id,
+                lifecycle_id=session.lifecycle_id,
+                source=session.source,
+                metadata=session.metadata,
+                lifecycle_status=records[-1].phase if records else "queued",
+            ),
+            replay_metadata=self._session_replay_metadata(
+                session_id=session.session_id,
+                lifecycle_id=session.lifecycle_id,
+                source=session.source,
+                metadata=session.metadata,
+                lifecycle_status=records[-1].phase if records else "queued",
             ),
         )
         self._sessions[session_id] = refreshed
@@ -265,7 +338,16 @@ class RuntimeExecutionSessionManager:
         self,
         session: RuntimeExecutionSession,
     ) -> RuntimeExecutionSession:
-        return replace(session, lifecycle_records=list(session.lifecycle_records))
+        return replace(
+            session,
+            lifecycle_records=list(session.lifecycle_records),
+            execution_evidence=dict(session.execution_evidence or {}),
+            authority_metadata=dict(session.authority_metadata or {}),
+            consistency_metadata=dict(session.consistency_metadata or {}),
+            closure_metadata=dict(session.closure_metadata or {}),
+            recovery_metadata=dict(session.recovery_metadata or {}),
+            replay_metadata=dict(session.replay_metadata or {}),
+        )
 
     def _validate_session_id(self, session_id: str) -> str:
         if not str(session_id or "").strip():
@@ -282,3 +364,173 @@ class RuntimeExecutionSessionManager:
             )
 
         return lifecycle_id
+
+    def _session_execution_evidence(
+        self,
+        *,
+        session_id: str,
+        lifecycle_id: str,
+        source: str,
+        metadata: Any,
+    ) -> dict[str, Any]:
+        metadata_mapping = metadata if isinstance(metadata, dict) else {}
+        evidence = metadata_mapping.get("execution_evidence")
+        if isinstance(evidence, dict):
+            payload = dict(evidence)
+        else:
+            payload = {}
+        payload.setdefault("execution_id", lifecycle_id)
+        payload.setdefault("execution_source", str(source or "runtime_execution_session"))
+        payload.setdefault("execution_status", "queued")
+        payload.setdefault("execution_legality", "not_executed")
+        payload.setdefault("timestamp", "")
+        payload.setdefault("runtime_session_id", session_id)
+        return payload
+
+    def _session_authority_metadata(
+        self,
+        *,
+        source: str,
+        metadata: Any,
+    ) -> dict[str, Any]:
+        metadata_mapping = metadata if isinstance(metadata, dict) else {}
+        authority = metadata_mapping.get("authority_seal")
+        if isinstance(authority, dict):
+            payload = dict(authority)
+        else:
+            payload = {}
+        payload.setdefault("authority_source", str(source or "runtime_execution_session"))
+        payload.setdefault("authority_scope", "runtime_execution_session")
+        payload.setdefault("authority_status", "allowed")
+        payload.setdefault("authority_reason", "runtime_execution_session_authorized")
+        payload.setdefault("ownership_source", "core.runtime.runtime_execution_session")
+        payload.setdefault("ownership_scope", "runtime_execution_session")
+        return payload
+
+    def _session_consistency_metadata(
+        self,
+        *,
+        session_id: str,
+        lifecycle_id: str,
+        source: str,
+        metadata: Any,
+        lifecycle_status: str = "queued",
+    ) -> dict[str, Any]:
+        metadata_mapping = metadata if isinstance(metadata, dict) else {}
+        consistency = metadata_mapping.get("consistency_seal")
+        if isinstance(consistency, dict):
+            return dict(consistency)
+        return build_runtime_state_consistency(
+            {
+                **metadata_mapping,
+                "runtime_session_id": session_id,
+                "lifecycle_status": lifecycle_status,
+                "execution_evidence": self._session_execution_evidence(
+                    session_id=session_id,
+                    lifecycle_id=lifecycle_id,
+                    source=source,
+                    metadata=metadata,
+                ),
+                "authority_seal": self._session_authority_metadata(
+                    source=source,
+                    metadata=metadata,
+                ),
+            }
+        )
+
+    def _session_closure_metadata(
+        self,
+        *,
+        session_id: str,
+        lifecycle_id: str,
+        source: str,
+        metadata: Any,
+        lifecycle_status: str,
+    ) -> dict[str, Any]:
+        metadata_mapping = metadata if isinstance(metadata, dict) else {}
+        return build_runtime_closure_fields(
+            {
+                **metadata_mapping,
+                "lifecycle_status": lifecycle_status,
+                "execution_status": lifecycle_status,
+                "source": source or "runtime_execution_session",
+            },
+            artifact_type="runtime_execution_session",
+            artifact_id=session_id or lifecycle_id,
+            finalized_by=source or "runtime_execution_session",
+        )
+
+    def _session_recovery_metadata(
+        self,
+        *,
+        session_id: str,
+        lifecycle_id: str,
+        source: str,
+        metadata: Any,
+        lifecycle_status: str,
+    ) -> dict[str, Any]:
+        metadata_mapping = metadata if isinstance(metadata, dict) else {}
+        execution_evidence = self._session_execution_evidence(
+            session_id=session_id,
+            lifecycle_id=lifecycle_id,
+            source=source,
+            metadata=metadata,
+        )
+        authority = self._session_authority_metadata(source=source, metadata=metadata)
+        consistency = self._session_consistency_metadata(
+            session_id=session_id,
+            lifecycle_id=lifecycle_id,
+            source=source,
+            metadata=metadata,
+            lifecycle_status=lifecycle_status,
+        )
+        closure = self._session_closure_metadata(
+            session_id=session_id,
+            lifecycle_id=lifecycle_id,
+            source=source,
+            metadata=metadata,
+            lifecycle_status=lifecycle_status,
+        )
+        return build_runtime_recovery_readiness_fields(
+            {
+                **metadata_mapping,
+                "runtime_session_id": session_id,
+                "lifecycle_status": lifecycle_status,
+                "execution_evidence": execution_evidence,
+                "authority_seal": authority,
+                "consistency_seal": consistency,
+                "runtime_closure": closure,
+                "closure_evidence": closure.get("closure_evidence"),
+            },
+            artifact_type="runtime_execution_session",
+            artifact_id=session_id or lifecycle_id,
+        )
+
+    def _session_replay_metadata(
+        self,
+        *,
+        session_id: str,
+        lifecycle_id: str,
+        source: str,
+        metadata: Any,
+        lifecycle_status: str,
+    ) -> dict[str, Any]:
+        recovery = self._session_recovery_metadata(
+            session_id=session_id,
+            lifecycle_id=lifecycle_id,
+            source=source,
+            metadata=metadata,
+            lifecycle_status=lifecycle_status,
+        )
+        return {
+            key: recovery[key]
+            for key in (
+                "replay_admissible",
+                "deterministic_replay",
+                "replay_block_reason",
+                "replay_evidence",
+                "replay_state_hash",
+                "replay_snapshot",
+            )
+            if key in recovery
+        }

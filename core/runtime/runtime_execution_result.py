@@ -684,6 +684,9 @@ def build_runtime_execution_result(
     }
     canonical = _canonical_payload(base)
     canonical["ok"] = bool(base["ok"])
+    if canonical.get("consistency_status") == "mismatch":
+        canonical["ok"] = False
+        canonical["executed"] = False
     canonical["success"] = bool(canonical["ok"])
     canonical["status"] = _status_from_payload(
         canonical,

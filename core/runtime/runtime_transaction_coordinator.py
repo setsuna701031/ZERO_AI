@@ -18,6 +18,10 @@ from core.runtime.runtime_seal import attach_runtime_seal
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
 from core.runtime.runtime_event_bus import RuntimeEventBus
 from core.runtime.runtime_execution_result_fields import normalize_runtime_execution_fields
+from core.runtime.runtime_authority import build_authority_metadata
+from core.runtime.runtime_closure import build_runtime_closure_fields
+from core.runtime.runtime_consistency import build_runtime_state_consistency
+from core.runtime.runtime_recovery_readiness import build_runtime_recovery_readiness_fields
 from core.runtime.runtime_events import (
     RUNTIME_EVENT_CHANNEL,
     RuntimeEvent,
@@ -62,6 +66,20 @@ def _append_unique(values: tuple[str, ...], value: str) -> tuple[str, ...]:
 
 def _normalize_execution_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
     data = dict(metadata or {})
+    if any(
+        key in data
+        for key in (
+            "authority_source",
+            "authority_scope",
+            "authority_status",
+            "authority_reason",
+            "ownership_source",
+            "ownership_scope",
+            "authority_seal",
+            "runtime_authority",
+        )
+    ):
+        data["authority_seal"] = build_authority_metadata(data)
 
     for key in ("runtime_execution_result", "execution_result"):
         if isinstance(data.get(key), dict):
@@ -88,15 +106,38 @@ def _normalize_execution_metadata(metadata: dict[str, Any] | None) -> dict[str, 
             "mutations",
         )
     ):
-        return normalize_runtime_execution_fields(
-            data,
-            metadata=data.get("metadata"),
-            evidence=data.get("evidence"),
+        return _attach_consistency_metadata(
+            normalize_runtime_execution_fields(
+                data,
+                metadata=data.get("metadata"),
+                evidence=data.get("evidence"),
+            )
         )
 
     if any(key in data for key in ("status", "phase", "state", "result")):
-        return canonical_runtime_status_payload(data)
+        return _attach_consistency_metadata(canonical_runtime_status_payload(data))
 
+    return _attach_consistency_metadata(data)
+
+
+def _attach_consistency_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    data = dict(metadata or {})
+    if any(
+        key in data
+        for key in (
+            "lifecycle_status",
+            "lifecycle_state",
+            "execution_status",
+            "execution_evidence",
+            "transaction_status",
+            "transaction_boundary",
+            "authority_status",
+            "authority_seal",
+            "ownership_source",
+            "runtime_consistency",
+        )
+    ):
+        data["consistency_seal"] = build_runtime_state_consistency(data)
     return data
 
 
@@ -166,10 +207,39 @@ class RuntimeTransactionScope:
         return self.status in CLOSED_STATUSES or self.sealed
 
     def to_metadata(self) -> dict[str, Any]:
+        closure = build_runtime_closure_fields(
+            {
+                **self.metadata,
+                "transaction_status": self.status,
+                "finished_at": self.finished_at,
+                "source": "runtime_transaction_coordinator",
+            },
+            artifact_type="transaction",
+            artifact_id=self.transaction_id,
+            closure_reason=self.metadata.get("closure_reason") or self.metadata.get("last_action"),
+            finalized_by="runtime_transaction_coordinator",
+        )
         transition = _transaction_transition_flags(
             self.metadata.get("previous_status", "unknown"),
             self.status,
             self.metadata,
+        )
+        normalized_metadata = _normalize_execution_metadata(self.metadata)
+        recovery = build_runtime_recovery_readiness_fields(
+            {
+                **normalized_metadata,
+                **self.metadata,
+                "transaction_boundary": {
+                    "transaction_id": self.transaction_id,
+                    "transaction_status": self.status,
+                    "transaction_legality": "legal",
+                },
+                "authority_seal": self.authority_metadata,
+                "runtime_closure": closure,
+                "closure_evidence": closure.get("closure_evidence"),
+            },
+            artifact_type="transaction",
+            artifact_id=self.transaction_id,
         )
         return {
             "transaction_id": self.transaction_id,
@@ -182,6 +252,8 @@ class RuntimeTransactionScope:
             "rollback_required": self.rollback_required,
             "verified": self.verified,
             "sealed": self.sealed,
+            **closure,
+            **recovery,
             "lineage": dict(self.lineage),
             "authority": dict(self.authority_metadata),
             "provenance": dict(self.provenance),
@@ -191,7 +263,7 @@ class RuntimeTransactionScope:
             "snapshot_ids": list(self.snapshot_ids),
             "replay_ids": list(self.replay_ids),
             "side_effect_ids": list(self.side_effect_ids),
-            "metadata": _normalize_execution_metadata(self.metadata),
+            "metadata": {**normalized_metadata, **recovery},
         }
 
 
@@ -233,10 +305,37 @@ class RuntimeTransactionResult:
         return self.status in {"active", "committed", "sealed", "rolled_back"}
 
     def to_metadata(self) -> dict[str, Any]:
+        closure = build_runtime_closure_fields(
+            {
+                **self.metadata,
+                "transaction_status": self.status,
+                "source": "runtime_transaction_coordinator",
+            },
+            artifact_type="transaction",
+            artifact_id=self.scope.transaction_id,
+            finalized_by="runtime_transaction_coordinator",
+        )
         transition = _transaction_transition_flags(
             self.metadata.get("previous_status", self.scope.metadata.get("previous_status", "unknown")),
             self.status,
             self.metadata,
+        )
+        normalized_metadata = _normalize_execution_metadata(self.metadata)
+        recovery = build_runtime_recovery_readiness_fields(
+            {
+                **normalized_metadata,
+                **self.metadata,
+                "transaction_boundary": {
+                    "transaction_id": self.scope.transaction_id,
+                    "transaction_status": self.status,
+                    "transaction_legality": "legal",
+                },
+                "authority_seal": self.scope.authority_metadata,
+                "runtime_closure": closure,
+                "closure_evidence": closure.get("closure_evidence"),
+            },
+            artifact_type="transaction",
+            artifact_id=self.scope.transaction_id,
         )
         return {
             "transaction": self.scope.to_metadata(),
@@ -248,7 +347,9 @@ class RuntimeTransactionResult:
             "sealed": self.sealed,
             "verified": self.verified,
             "rollback_required": self.rollback_required,
-            "metadata": _normalize_execution_metadata(self.metadata),
+            **closure,
+            **recovery,
+            "metadata": {**normalized_metadata, **recovery},
         }
 
 
@@ -518,11 +619,37 @@ class RuntimeTransactionCoordinator:
     ) -> RuntimeTransactionResult:
         scope = self.get_scope(transaction_id)
         if scope.sealed:
-            return self._result(
+            duplicate_closure = build_runtime_closure_fields(
+                {
+                    **scope.metadata,
+                    **dict(metadata or {}),
+                    "transaction_status": scope.status,
+                    "runtime_closure": scope.to_metadata(),
+                },
+                artifact_type="transaction",
+                artifact_id=scope.transaction_id,
+                closure_status="sealed",
+                closure_reason="duplicate_transaction_closure",
+                finalized_by="runtime_transaction_coordinator",
+            )
+            updated = replace(
                 scope,
+                metadata=_merge_metadata(
+                    scope.metadata,
+                    {
+                        "last_action": "seal_already_sealed",
+                        "closure_evidence": duplicate_closure["closure_evidence"],
+                        "runtime_closure": duplicate_closure,
+                        **dict(metadata or {}),
+                    },
+                ),
+            )
+            self._scopes[updated.transaction_id] = updated
+            return self._result(
+                updated,
                 sealed=True,
-                committed=scope.status == "committed",
-                rolled_back=scope.status == "rolled_back",
+                committed=updated.status == "committed",
+                rolled_back=updated.status == "rolled_back",
                 metadata={"action": "seal_already_sealed", **dict(metadata or {})},
             )
         updated = replace(
@@ -579,6 +706,31 @@ class RuntimeTransactionCoordinator:
     def _require_open(self, transaction_id: str) -> RuntimeTransactionScope:
         scope = self.get_scope(transaction_id)
         if scope.is_closed:
+            closure = build_runtime_closure_fields(
+                {
+                    **scope.metadata,
+                    "transaction_status": scope.status,
+                    "reopen_attempt": True,
+                    "requested_status": "open",
+                    "source": "runtime_transaction_coordinator",
+                },
+                artifact_type="transaction",
+                artifact_id=scope.transaction_id,
+                closure_reason="committed_transaction_cannot_reopen",
+                finalized_by="runtime_transaction_coordinator",
+            )
+            updated = replace(
+                scope,
+                metadata=_merge_metadata(
+                    scope.metadata,
+                    {
+                        "last_action": "closed_transaction_reopen_rejected",
+                        "closure_evidence": closure["closure_evidence"],
+                        "runtime_closure": closure,
+                    },
+                ),
+            )
+            self._scopes[updated.transaction_id] = updated
             raise RuntimeError(f"transaction is closed: {transaction_id}")
         return scope
 
@@ -631,38 +783,3 @@ class RuntimeTransactionCoordinator:
         }
         return attach_runtime_seal(payload, artifact_type="runtime_transaction_coordinator")
 
-# ZERO v7.3.15 - Runtime committed rollback idempotent contract
-# Test/mainline recovery may request rollback after commit.
-# Treat committed rollback as an idempotent no-op instead of raising.
-
-
-_ZERO_V7315_PREVIOUS_ROLLBACK = RuntimeTransactionCoordinator.rollback
-
-
-def _zero_v7315_rollback_idempotent_committed(self, transaction_id, *args, **kwargs):
-    try:
-        return _ZERO_V7315_PREVIOUS_ROLLBACK(self, transaction_id, *args, **kwargs)
-    except RuntimeError as exc:
-        message = str(exc)
-        if "cannot rollback committed transaction" not in message:
-            raise
-
-        scope = None
-        try:
-            scope = self._scopes.get(transaction_id)
-        except Exception:
-            scope = None
-
-        return {
-            "ok": True,
-            "transaction_id": str(transaction_id or ""),
-            "status": "committed",
-            "canonical_status": status_from_transaction_state("committed"),
-            "rollback_status": "skipped",
-            "reason": "transaction_already_committed",
-            "message": message,
-            "scope_status": getattr(scope, "status", "committed"),
-        }
-
-
-RuntimeTransactionCoordinator.rollback = _zero_v7315_rollback_idempotent_committed

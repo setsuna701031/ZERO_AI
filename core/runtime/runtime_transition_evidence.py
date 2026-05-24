@@ -214,3 +214,169 @@ def _transition_evidence_id(payload: dict[str, Any]) -> str:
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+# ---------------------------------------------------------------------------
+# Runtime Transition Constitution Sync v1 compatibility layer
+# ---------------------------------------------------------------------------
+#
+# Keep the historical transition evidence helpers above intact. The v1
+# canonical evidence wrapper below adds a shared schema surface without removing
+# build_transition_evidence(...), transition_evidence_payload(...), or the
+# existing lineage helpers used by older runtime paths.
+
+from dataclasses import dataclass, field
+
+from core.runtime.runtime_transition_record import (
+    RUNTIME_TRANSITION_RECORD_SCHEMA,
+    RuntimeTransitionRecord,
+)
+
+
+RUNTIME_TRANSITION_EVIDENCE_SCHEMA = "runtime_transition_evidence.v1"
+
+
+@dataclass(frozen=True)
+class RuntimeTransitionEvidence:
+    evidence_id: str
+    transition_id: str
+    source: str
+    schema: str = RUNTIME_TRANSITION_EVIDENCE_SCHEMA
+    record_schema: str = RUNTIME_TRANSITION_RECORD_SCHEMA
+    allowed: bool = False
+    blocked: bool | None = None
+    guard_ok: bool | None = None
+    reason: str = ""
+    status: str = ""
+    from_state: str = ""
+    to_state: str = ""
+    canonical_from_status: str = ""
+    canonical_to_status: str = ""
+    enforcement_mode: str = ""
+    enforcement_classification: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        evidence_id = _text(self.evidence_id)
+        transition_id = _text(self.transition_id)
+        source = _text(self.source)
+
+        if not evidence_id:
+            raise ValueError("evidence_id is required")
+        if not transition_id:
+            raise ValueError("transition_id is required")
+        if not source:
+            raise ValueError("source is required")
+
+        object.__setattr__(self, "evidence_id", evidence_id)
+        object.__setattr__(self, "transition_id", transition_id)
+        object.__setattr__(self, "source", source)
+        object.__setattr__(self, "reason", _text(self.reason))
+        object.__setattr__(self, "status", _text(self.status))
+        object.__setattr__(self, "from_state", _text(self.from_state))
+        object.__setattr__(self, "to_state", _text(self.to_state))
+        object.__setattr__(self, "canonical_from_status", _text(self.canonical_from_status))
+        object.__setattr__(self, "canonical_to_status", _text(self.canonical_to_status))
+        object.__setattr__(self, "enforcement_mode", _text(self.enforcement_mode))
+        object.__setattr__(self, "enforcement_classification", _text(self.enforcement_classification))
+        object.__setattr__(self, "metadata", copy.deepcopy(dict(self.metadata or {})))
+        object.__setattr__(self, "evidence", copy.deepcopy(dict(self.evidence or {})))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "evidence_id": self.evidence_id,
+            "transition_id": self.transition_id,
+            "source": self.source,
+            "record_schema": self.record_schema,
+            "allowed": self.allowed,
+            "blocked": self.blocked,
+            "guard_ok": self.guard_ok,
+            "reason": self.reason,
+            "status": self.status,
+            "from_state": self.from_state,
+            "to_state": self.to_state,
+            "canonical_from_status": self.canonical_from_status,
+            "canonical_to_status": self.canonical_to_status,
+            "enforcement_mode": self.enforcement_mode,
+            "enforcement_classification": self.enforcement_classification,
+            "metadata": copy.deepcopy(self.metadata),
+            "evidence": copy.deepcopy(self.evidence),
+        }
+
+
+def build_runtime_transition_evidence(
+    record: RuntimeTransitionRecord | dict[str, Any],
+    *,
+    evidence_id: str | None = None,
+    source: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransitionEvidence:
+    transition_record = (
+        record
+        if isinstance(record, RuntimeTransitionRecord)
+        else RuntimeTransitionRecord.from_mapping(record)
+    )
+
+    merged_metadata = {
+        **copy.deepcopy(transition_record.metadata),
+        **copy.deepcopy(dict(metadata or {})),
+    }
+
+    return RuntimeTransitionEvidence(
+        evidence_id=evidence_id or f"{transition_record.transition_id}:evidence",
+        transition_id=transition_record.transition_id,
+        source=source or transition_record.source,
+        allowed=transition_record.allowed,
+        blocked=transition_record.blocked,
+        guard_ok=transition_record.guard_ok,
+        reason=transition_record.reason,
+        status=transition_record.status,
+        from_state=transition_record.from_state,
+        to_state=transition_record.to_state,
+        canonical_from_status=transition_record.canonical_from_status,
+        canonical_to_status=transition_record.canonical_to_status,
+        enforcement_mode=transition_record.enforcement_mode,
+        enforcement_classification=transition_record.enforcement_classification,
+        metadata=merged_metadata,
+        evidence={
+            **copy.deepcopy(transition_record.evidence),
+            "transition_record": transition_record.to_dict(),
+        },
+    )
+
+
+def runtime_transition_evidence_from_legacy_metadata(
+    metadata: dict[str, Any],
+    *,
+    evidence_id: str,
+    transition_id: str,
+    source: str,
+) -> RuntimeTransitionEvidence:
+    payload = copy.deepcopy(dict(metadata or {}))
+    return RuntimeTransitionEvidence(
+        evidence_id=evidence_id,
+        transition_id=transition_id,
+        source=source,
+        allowed=bool(payload.get("transition_allowed", payload.get("allowed", False))),
+        blocked=payload.get("blocked"),
+        guard_ok=(
+            payload.get("runtime_transition_guard", {}).get("ok")
+            if isinstance(payload.get("runtime_transition_guard"), dict)
+            else None
+        ),
+        reason=payload.get("transition_reason") or payload.get("reason") or "legacy_transition_metadata",
+        status=payload.get("status") or payload.get("canonical_status") or "unknown",
+        from_state=payload.get("from_state") or payload.get("lifecycle_from_state") or "",
+        to_state=payload.get("to_state") or payload.get("lifecycle_to_state") or "",
+        canonical_from_status=payload.get("canonical_from_status", ""),
+        canonical_to_status=payload.get("canonical_to_status", ""),
+        enforcement_mode=payload.get("enforcement_mode", ""),
+        enforcement_classification=payload.get("enforcement_classification", ""),
+        metadata=payload,
+        evidence={"legacy_metadata": payload},
+    )
+
+
+# Backward-compatible alias for the generated v1 tests.
+transition_evidence_from_legacy_metadata = runtime_transition_evidence_from_legacy_metadata

@@ -5,6 +5,9 @@ from typing import Any, Mapping, Sequence
 
 from core.runtime.executor import Executor
 from core.runtime.runtime_execution_request import RuntimeExecutionRequest
+from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
+from core.runtime.runtime_consistency import build_runtime_state_consistency
+from core.runtime.runtime_closure import build_runtime_closure_fields
 
 
 RUNTIME_AUTHORITY_SOURCE = "core.runtime.execution_gateway"
@@ -57,13 +60,28 @@ def _build_authority_metadata(
     errors: str,
     extra_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    transaction_boundary = build_transaction_boundary_metadata(
+        {
+            "transaction_source": "runtime_execution_gateway",
+            "transaction_status": "opened",
+            "transaction_scope": "execution_gateway",
+        }
+    )
     metadata: dict[str, Any] = {
         "source": "runtime_execution_gateway",
+        "execution_source": "runtime_execution_gateway",
         "gateway": "canonical_execution_gateway",
         "runtime_authority_entrypoint": RUNTIME_AUTHORITY_ENTRYPOINT,
         "runtime_authority_source": RUNTIME_AUTHORITY_SOURCE,
+        "authority_source": RUNTIME_AUTHORITY_SOURCE,
+        "authority_scope": RUNTIME_AUTHORITY_SCOPE_ID,
+        "authority_status": "allowed",
+        "authority_reason": "runtime_execution_gateway_authorized",
+        "ownership_source": RUNTIME_AUTHORITY_OWNER,
+        "ownership_scope": RUNTIME_CAPABILITY_SCOPE_ID,
         "canonical_owner": RUNTIME_AUTHORITY_OWNER,
         "execution_authority_unified": True,
+        "execution_legality": "legal",
         "direct_subprocess_bypass": False,
         "shell": shell,
         "input_text_ignored": input_text is not None,
@@ -74,6 +92,7 @@ def _build_authority_metadata(
         "runtime_identity": _build_runtime_identity(),
         "authority_scope_id": RUNTIME_AUTHORITY_SCOPE_ID,
         "capability_scope_id": RUNTIME_CAPABILITY_SCOPE_ID,
+        "transaction_boundary": transaction_boundary,
         "provenance": {
             "requested_by": "core.runtime.execution_gateway.safe_subprocess_run",
             "gateway": "canonical_execution_gateway",
@@ -85,6 +104,18 @@ def _build_authority_metadata(
     if extra_metadata:
         metadata.update(dict(extra_metadata))
 
+    closure = build_runtime_closure_fields(
+        {
+            **metadata,
+            "execution_status": metadata.get("execution_status", "opened"),
+            "source": "runtime_execution_gateway",
+        },
+        artifact_type="execution_gateway",
+        artifact_id=RUNTIME_AUTHORITY_ENTRYPOINT,
+        finalized_by="runtime_execution_gateway",
+    )
+    metadata.update(closure)
+    metadata["consistency_seal"] = build_runtime_state_consistency(metadata)
     return metadata
 
 

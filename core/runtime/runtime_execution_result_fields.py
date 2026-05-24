@@ -4,6 +4,10 @@ import copy
 from typing import Any
 
 from core.runtime.runtime_status import status_from_execution_result
+from core.runtime.runtime_authority import authority_allows_execution, build_authority_metadata
+from core.runtime.runtime_consistency import build_runtime_state_consistency
+from core.runtime.runtime_closure import build_runtime_closure_fields, closure_has_mismatch
+from core.runtime.runtime_recovery_readiness import build_runtime_recovery_readiness_fields
 
 
 _BLOCKED_ERROR_TYPES = {"blocked", "denied", "rejected", "policy_blocked"}
@@ -27,6 +31,19 @@ _FAILURE_STATUSES = {
     "denied",
     "rejected",
     "exception",
+}
+_LEGAL_EXECUTION_SOURCES = {
+    "legacy_runtime_execution_result",
+    "runtime_execution_result",
+    "runtime_execution_gateway",
+    "canonical_execution_gateway",
+    "step_executor",
+    "runtime_step_executor",
+    "executor",
+    "runtime_executor",
+    "runtime_execution_session",
+    "governed_mutation",
+    "repair_transaction_execution_bridge",
 }
 
 
@@ -62,6 +79,191 @@ def _error_type(payload: dict[str, Any]) -> str:
     if error is not None:
         return str(error)
     return str(payload.get("error_type") or "")
+
+
+def _status(payload: dict[str, Any], metadata: dict[str, Any] | None = None) -> str:
+    metadata_mapping = _mapping(metadata)
+    return str(payload.get("status") or metadata_mapping.get("status") or "").strip().lower()
+
+
+def _execution_source(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
+    source = str(
+        payload.get("execution_source")
+        or metadata.get("execution_source")
+        or metadata.get("source")
+        or payload.get("source")
+        or ""
+    ).strip()
+    return source or "legacy_runtime_execution_result"
+
+
+def _execution_id(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return str(
+        payload.get("execution_id")
+        or metadata.get("execution_id")
+        or payload.get("execution_start_id")
+        or metadata.get("execution_start_id")
+        or ""
+    ).strip()
+
+
+def _runtime_session_id(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return str(
+        payload.get("runtime_session_id")
+        or metadata.get("runtime_session_id")
+        or payload.get("session_id")
+        or metadata.get("session_id")
+        or ""
+    ).strip()
+
+
+def _timestamp(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return str(payload.get("timestamp") or metadata.get("timestamp") or "").strip()
+
+
+def _denial_reason(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
+    error = payload.get("error")
+    if isinstance(error, dict):
+        reason = error.get("reason") or error.get("message") or error.get("type")
+        if reason:
+            return str(reason)
+    for key in ("denial_reason", "blocked_reason", "error_type"):
+        value = payload.get(key)
+        if value:
+            return str(value)
+        value = metadata.get(key)
+        if value:
+            return str(value)
+    if error:
+        return str(error)
+    return ""
+
+
+def _failure_evidence(payload: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+    evidence: dict[str, Any] = {}
+    for key in ("error_type", "message", "final_answer", "status"):
+        value = payload.get(key)
+        if value:
+            evidence[key] = copy.deepcopy(value)
+    error = payload.get("error")
+    if error:
+        evidence["error"] = copy.deepcopy(error)
+    metadata_error = metadata.get("error")
+    if metadata_error and "error" not in evidence:
+        evidence["error"] = copy.deepcopy(metadata_error)
+    return evidence
+
+
+def _has_blocked_signal(payload: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    if bool(payload.get("blocked", False)) or bool(metadata.get("blocked", False)):
+        return True
+    if _error_type(payload).strip().lower() in _BLOCKED_ERROR_TYPES:
+        return True
+    return _status(payload, metadata) in {"blocked", "denied", "rejected"}
+
+
+def _has_failed_signal(payload: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    if bool(payload.get("failed", False)) or bool(metadata.get("failed", False)):
+        return True
+    if payload.get("error") or payload.get("error_type"):
+        return True
+    return _status(payload, metadata) in _FAILURE_STATUSES
+
+
+def _authority_payload(payload: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
+    authority = build_authority_metadata({**metadata, **payload})
+    return authority
+
+
+def _has_denied_authority(payload: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    return not authority_allows_execution({**metadata, **payload})
+
+
+def _duplicate_execution_propagation(payload: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    return isinstance(payload.get("runtime_execution_result"), dict) or isinstance(
+        metadata.get("runtime_execution_result"),
+        dict,
+    )
+
+
+def _execution_legality_metadata(
+    payload: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    executed: bool,
+    blocked: bool,
+    failed: bool,
+) -> dict[str, Any]:
+    source = _execution_source(payload, metadata)
+    status = _status(payload, metadata)
+    duplicate = _duplicate_execution_propagation(payload, metadata)
+    denial_reason = _denial_reason(payload, metadata)
+
+    legal_source = source in _LEGAL_EXECUTION_SOURCES
+    if duplicate:
+        legality = "duplicate"
+        denial_reason = denial_reason or "duplicate_execution_propagation"
+    elif blocked:
+        legality = "denied"
+        denial_reason = denial_reason or "execution_blocked"
+    elif failed:
+        legality = "failed"
+        denial_reason = denial_reason or "execution_failed"
+    elif executed and legal_source:
+        legality = "legal"
+    elif executed:
+        legality = "denied"
+        denial_reason = denial_reason or f"illegal_execution_source:{source}"
+    else:
+        legality = "not_executed"
+
+    result = {
+        "execution_source": source,
+        "execution_status": status or ("executed" if executed else "not_executed"),
+        "execution_legality": legality,
+        "duplicate_execution_propagation": duplicate,
+    }
+    if denial_reason:
+        result["denial_reason"] = denial_reason
+    return result
+
+
+def _canonical_execution_evidence(
+    payload: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    legality: dict[str, Any],
+    timestamp: str,
+    failed: bool,
+) -> dict[str, Any]:
+    evidence = {
+        "execution_id": _execution_id(payload, metadata),
+        "execution_source": legality["execution_source"],
+        "execution_status": legality["execution_status"],
+        "execution_legality": legality["execution_legality"],
+        "timestamp": timestamp,
+    }
+    denial_reason = legality.get("denial_reason")
+    if denial_reason:
+        evidence["denial_reason"] = denial_reason
+    runtime_session_id = _runtime_session_id(payload, metadata)
+    if runtime_session_id:
+        evidence["runtime_session_id"] = runtime_session_id
+    if failed:
+        failure = _failure_evidence(payload, metadata)
+        if failure:
+            evidence["failure_evidence"] = failure
+    if legality.get("duplicate_execution_propagation"):
+        nested = payload.get("runtime_execution_result") or metadata.get("runtime_execution_result")
+        evidence["duplicate_execution_propagation"] = True
+        if isinstance(nested, dict):
+            evidence["duplicate_execution_evidence"] = {
+                "execution_id": str(nested.get("execution_id") or ""),
+                "execution_source": str(nested.get("execution_source") or ""),
+                "execution_status": str(nested.get("execution_status") or nested.get("status") or ""),
+                "execution_legality": str(nested.get("execution_legality") or ""),
+            }
+    return evidence
 
 
 def _bool_from_mapping(mapping: dict[str, Any], keys: tuple[str, ...]) -> bool | None:
@@ -190,6 +392,17 @@ def resolve_executed(
     payload_mapping = _mapping(payload)
     metadata_mapping = _metadata(payload_mapping, metadata)
 
+    if _duplicate_execution_propagation(payload_mapping, metadata_mapping):
+        return False
+    if _has_blocked_signal(payload_mapping, metadata_mapping):
+        return False
+    if _has_failed_signal(payload_mapping, metadata_mapping):
+        return False
+    if _has_denied_authority(payload_mapping, metadata_mapping):
+        return False
+    if build_runtime_state_consistency({**metadata_mapping, **payload_mapping}).get("consistency_status") == "mismatch":
+        return False
+
     explicit = _bool_from_mapping(payload_mapping, ("ok", "executed", "success"))
     if explicit is not None:
         return explicit
@@ -207,7 +420,7 @@ def resolve_executed(
     if explicit is not None:
         return explicit
 
-    status = str(payload_mapping.get("status") or "").strip().lower()
+    status = _status(payload_mapping, metadata_mapping)
     if status:
         return status in _SUCCESS_STATUSES
 
@@ -235,8 +448,7 @@ def resolve_blocked(
     if error_type in _BLOCKED_ERROR_TYPES:
         return True
 
-    status = str(payload_mapping.get("status") or metadata_mapping.get("status") or "").strip().lower()
-    return status in {"blocked", "denied", "rejected"}
+    return _status(payload_mapping, metadata_mapping) in {"blocked", "denied", "rejected"}
 
 
 def resolve_failed(
@@ -252,8 +464,7 @@ def resolve_failed(
     if bool(payload_mapping.get("failed", False)) or bool(metadata_mapping.get("failed", False)):
         return True
 
-    status = str(payload_mapping.get("status") or metadata_mapping.get("status") or "").strip().lower()
-    if status in _FAILURE_STATUSES:
+    if _status(payload_mapping, metadata_mapping) in _FAILURE_STATUSES:
         return True
 
     return not resolve_executed(payload_mapping, metadata_mapping, evidence)
@@ -418,5 +629,125 @@ def normalize_runtime_execution_fields(
         evidence_mapping,
     )
     normalized["canonical_status"] = status_from_execution_result(normalized)
+    authority = _authority_payload(payload_mapping, metadata_mapping)
+    legality = _execution_legality_metadata(
+        payload_mapping,
+        metadata_mapping,
+        executed=bool(normalized["executed"]),
+        blocked=bool(normalized["blocked"]),
+        failed=bool(normalized["failed"]),
+    )
+    if legality["execution_legality"] in {"denied", "duplicate", "failed"}:
+        normalized["executed"] = False
+        normalized["ok"] = False
+        if legality["execution_legality"] == "failed":
+            normalized["failed"] = True
+        normalized["canonical_status"] = status_from_execution_result(normalized)
+    if authority["authority_status"] in {
+        "denied",
+        "blocked",
+        "rejected",
+        "restricted",
+        "requires_confirmation",
+        "missing_ownership",
+        "mismatch",
+        "duplicate",
+        "closed_transaction_boundary",
+    }:
+        normalized["executed"] = False
+        normalized["ok"] = False
+        normalized["canonical_status"] = status_from_execution_result(normalized)
+    consistency = build_runtime_state_consistency(
+        {
+            **metadata_mapping,
+            **payload_mapping,
+            **legality,
+            **authority,
+            "executed": payload_mapping.get("executed", normalized["executed"]),
+            "ok": payload_mapping.get("ok", normalized["ok"]),
+        }
+    )
+    if consistency["consistency_status"] == "mismatch":
+        normalized["executed"] = False
+        normalized["ok"] = False
+        normalized["canonical_status"] = status_from_execution_result(normalized)
+    closure = build_runtime_closure_fields(
+        {
+            **metadata_mapping,
+            **payload_mapping,
+            "allow_existing_closure": True,
+            "execution_status": legality.get("execution_status"),
+            "status": normalized.get("status"),
+            "timestamp": _timestamp(normalized, metadata_mapping),
+        },
+        artifact_type="execution",
+        artifact_id=_execution_id(payload_mapping, metadata_mapping),
+        finalized_by=legality.get("execution_source") or _execution_source(payload_mapping, metadata_mapping),
+    )
+    if closure_has_mismatch(closure):
+        normalized["executed"] = False
+        normalized["ok"] = False
+        normalized["canonical_status"] = status_from_execution_result(normalized)
+    execution_evidence = _canonical_execution_evidence(
+        payload_mapping,
+        metadata_mapping,
+        legality=legality,
+        timestamp=_timestamp(normalized, metadata_mapping),
+        failed=bool(normalized["failed"]),
+    )
+    recovery = build_runtime_recovery_readiness_fields(
+        {
+            **metadata_mapping,
+            **payload_mapping,
+            **legality,
+            **authority,
+            **consistency,
+            **closure,
+            "execution_evidence": execution_evidence,
+            "authority_seal": authority,
+            "consistency_seal": consistency,
+            "runtime_closure": closure,
+        },
+        artifact_type="execution",
+        artifact_id=_execution_id(payload_mapping, metadata_mapping),
+    )
+    normalized.update(legality)
+    normalized.update(authority)
+    normalized.update(consistency)
+    normalized.update(closure)
+    normalized.update(recovery)
+    normalized["execution_evidence"] = copy.deepcopy(execution_evidence)
+    normalized["evidence"] = {
+        **copy.deepcopy(normalized["evidence"]),
+        "execution_evidence": copy.deepcopy(execution_evidence),
+        "consistency_seal": copy.deepcopy(consistency),
+        "closure_evidence": copy.deepcopy(closure["closure_evidence"]),
+        "recovery_evidence": copy.deepcopy(recovery["recovery_evidence"]),
+        "replay_evidence": copy.deepcopy(recovery["replay_evidence"]),
+    }
+    normalized["metadata"] = {
+        **copy.deepcopy(normalized["metadata"]),
+        **copy.deepcopy(legality),
+        **copy.deepcopy(authority),
+        **copy.deepcopy(consistency),
+        **copy.deepcopy(closure),
+        **copy.deepcopy(recovery),
+        "authority_seal": copy.deepcopy(authority),
+        "consistency_seal": copy.deepcopy(consistency),
+        "execution_evidence": copy.deepcopy(execution_evidence),
+        "runtime_closure": copy.deepcopy(closure),
+        "recovery_readiness_seal": copy.deepcopy(recovery),
+        "replay_readiness_seal": {
+            key: copy.deepcopy(recovery[key])
+            for key in (
+                "replay_admissible",
+                "deterministic_replay",
+                "replay_block_reason",
+                "replay_evidence",
+                "replay_state_hash",
+                "replay_snapshot",
+            )
+        },
+    }
 
     return normalized

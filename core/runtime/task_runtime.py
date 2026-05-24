@@ -9468,55 +9468,55 @@ def _zero_v920_run_readonly_command_execution_gate(
 
     try:
         argv = list(argv_plan["argv"])
-        completed = subprocess.run(
+        from core.runtime.execution_gateway import safe_subprocess_run
+
+        completed = safe_subprocess_run(
             argv,
-            shell=False,
-            capture_output=True,
-            text=True,
             timeout=timeout_seconds,
             cwd=run_cwd,
         )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-        if not stderr:
-            stderr = f"readonly command timeout after {timeout_seconds} seconds"
-        return _zero_v920_readonly_result_from_gate(
-            gate,
-            status="timeout",
-            stdout=stdout,
-            stderr=stderr,
-            returncode=None,
-            duration_seconds=time.monotonic() - start,
-            timeout_seconds=timeout_seconds,
-            executed=True,
-            deny_reason="readonly command timeout",
-            argv=list(argv_plan.get("argv") or []),
-            cwd=run_cwd,
-            started_at=started_at,
-            finished_at=_zero_readonly_now(),
-        )
+        stdout = str(completed.get("stdout") or "")
+        stderr = str(completed.get("stderr") or "")
+        returncode = completed.get("returncode")
+        if returncode is None and completed.get("error"):
+            if not stderr:
+                stderr = str(completed.get("error") or f"readonly command timeout after {timeout_seconds} seconds")
+            return _zero_v920_readonly_result_from_gate(
+                gate,
+                status="timeout",
+                stdout=stdout,
+                stderr=stderr,
+                returncode=None,
+                duration_seconds=time.monotonic() - start,
+                timeout_seconds=timeout_seconds,
+                executed=True,
+                deny_reason="readonly command timeout",
+                argv=list(argv_plan.get("argv") or []),
+                cwd=run_cwd,
+                started_at=started_at,
+                finished_at=_zero_readonly_now(),
+            )
     except Exception as exc:
         return _zero_v920_readonly_result_from_gate(
             gate,
             status="failed",
-            stderr=str(exc),
+            stderr=f"{type(exc).__name__}: {exc}",
             returncode=None,
             duration_seconds=time.monotonic() - start,
             timeout_seconds=timeout_seconds,
-            executed=True,
+            executed=False,
+            deny_reason="readonly command execution failed",
             argv=list(argv_plan.get("argv") or []),
             cwd=run_cwd,
             started_at=started_at,
             finished_at=_zero_readonly_now(),
         )
-
     return _zero_v920_readonly_result_from_gate(
         gate,
-        status="executed" if completed.returncode == 0 else "failed",
-        stdout=completed.stdout,
-        stderr=completed.stderr,
-        returncode=completed.returncode,
+        status="executed" if returncode == 0 else "failed",
+        stdout=stdout,
+        stderr=stderr,
+        returncode=returncode,
         duration_seconds=time.monotonic() - start,
         timeout_seconds=timeout_seconds,
         executed=True,
@@ -10432,57 +10432,58 @@ def replay_readonly_execution_from_registry(
         )
 
     try:
-        completed = subprocess.run(
+        from core.runtime.execution_gateway import safe_subprocess_run
+
+        completed = safe_subprocess_run(
             argv,
-            shell=False,
-            capture_output=True,
-            text=True,
             timeout=timeout_seconds,
             cwd=replay_cwd or None,
         )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-        if not stderr:
-            stderr = f"readonly replay timeout after {timeout_seconds} seconds"
-        return _zero_v922_replay_report(
-            evidence_id=str(evidence_id or ""),
-            replayable=True,
-            replay_executed=True,
-            replay_command=replay_command,
-            replay_normalized_command=replay_normalized_command,
-            replay_argv=argv,
-            replay_cwd=replay_cwd,
-            status="timeout",
-            returncode=None,
-            stdout=stdout,
-            stderr=stderr,
-            expected_returncode=expected_returncode,
-            expected_stdout_digest=expected_stdout_digest,
-            expected_stderr_digest=expected_stderr_digest,
-            deny_reason="readonly replay timeout",
-            duration_seconds=time.monotonic() - start,
-            timeout_seconds=timeout_seconds,
-        )
+        stdout = str(completed.get("stdout") or "")
+        stderr = str(completed.get("stderr") or "")
+        returncode = completed.get("returncode")
+        if returncode is None and completed.get("error"):
+            if not stderr:
+                stderr = str(completed.get("error") or f"readonly replay timeout after {timeout_seconds} seconds")
+            return _zero_v922_replay_report(
+                evidence_id=str(evidence_id or ""),
+                replayable=True,
+                replay_executed=True,
+                replay_command=replay_command,
+                replay_normalized_command=replay_normalized_command,
+                replay_argv=argv,
+                replay_cwd=replay_cwd,
+                status="timeout",
+                returncode=None,
+                stdout=stdout,
+                stderr=stderr,
+                expected_returncode=expected_returncode,
+                expected_stdout_digest=expected_stdout_digest,
+                expected_stderr_digest=expected_stderr_digest,
+                deny_reason="readonly replay timeout",
+                duration_seconds=time.monotonic() - start,
+                timeout_seconds=timeout_seconds,
+            )
     except Exception as exc:
         return _zero_v922_replay_report(
             evidence_id=str(evidence_id or ""),
             replayable=True,
-            replay_executed=True,
+            replay_executed=False,
             replay_command=replay_command,
             replay_normalized_command=replay_normalized_command,
             replay_argv=argv,
             replay_cwd=replay_cwd,
             status="failed",
             returncode=None,
-            stderr=str(exc),
+            stdout="",
+            stderr=f"{type(exc).__name__}: {exc}",
             expected_returncode=expected_returncode,
             expected_stdout_digest=expected_stdout_digest,
             expected_stderr_digest=expected_stderr_digest,
+            deny_reason="readonly replay execution failed",
             duration_seconds=time.monotonic() - start,
             timeout_seconds=timeout_seconds,
         )
-
     return _zero_v922_replay_report(
         evidence_id=str(evidence_id or ""),
         replayable=True,
@@ -10491,10 +10492,10 @@ def replay_readonly_execution_from_registry(
         replay_normalized_command=replay_normalized_command,
         replay_argv=argv,
         replay_cwd=replay_cwd,
-        status="executed" if completed.returncode == 0 else "failed",
-        returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        status="executed" if returncode == 0 else "failed",
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
         expected_returncode=expected_returncode,
         expected_stdout_digest=expected_stdout_digest,
         expected_stderr_digest=expected_stderr_digest,

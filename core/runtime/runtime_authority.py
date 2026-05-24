@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from core.runtime.runtime_closure import build_runtime_closure_fields
+
 
 IDENTITY_TYPES = frozenset(
     {
@@ -37,6 +39,152 @@ RISK_ORDER = {
     "IRREVERSIBLE": 3,
     "EXTERNAL": 4,
 }
+
+AUTHORITY_DENIED_STATUSES = {
+    "denied",
+    "blocked",
+    "rejected",
+    "restricted",
+    "requires_confirmation",
+    "missing_ownership",
+    "mismatch",
+    "duplicate",
+    "closed_transaction_boundary",
+    "closed_authority_boundary",
+}
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def build_authority_metadata(payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    data = dict(payload or {})
+    nested = data.get("authority_seal")
+    if isinstance(nested, Mapping):
+        data = {**dict(nested), **data}
+
+    authority_source = (
+        _text(data.get("authority_source"))
+        or _text(data.get("runtime_authority_source"))
+        or _text(data.get("source"))
+        or "legacy_runtime_authority"
+    )
+    authority_scope = (
+        _text(data.get("authority_scope"))
+        or _text(data.get("authority_scope_id"))
+        or _text(data.get("scope_id"))
+        or "legacy"
+    )
+    ownership_source = (
+        _text(data.get("ownership_source"))
+        or _text(data.get("canonical_owner"))
+        or _text(data.get("owner"))
+    )
+    ownership_scope = (
+        _text(data.get("ownership_scope"))
+        or _text(data.get("capability_scope_id"))
+        or _text(data.get("ownership_scope_id"))
+    )
+    explicit_status = _text(data.get("authority_status") or data.get("authority_state")).lower()
+    reason = _text(data.get("authority_reason") or data.get("reason"))
+    duplicate = isinstance(data.get("runtime_authority"), Mapping)
+    transaction_boundary = data.get("transaction_boundary")
+    tx_status = ""
+    if isinstance(transaction_boundary, Mapping):
+        tx_status = _text(transaction_boundary.get("transaction_status")).lower()
+    closed_boundary = tx_status in {"committed", "rolled_back", "denied", "failed"}
+    closure_status = _text(data.get("authority_closure_status") or data.get("closure_status")).lower()
+    authority_closed = closure_status in {"closed", "sealed"} or bool(data.get("authority_immutable_state"))
+    authority_signal_present = any(
+        key in data
+        for key in (
+            "authority_source",
+            "runtime_authority_source",
+            "authority_scope",
+            "authority_scope_id",
+            "authority_status",
+            "authority_state",
+            "ownership_source",
+            "ownership_scope",
+            "canonical_owner",
+            "owner",
+        )
+    )
+
+    expected_owner = _text(data.get("expected_ownership_source"))
+    mismatch = bool(expected_owner and ownership_source and expected_owner != ownership_source)
+
+    if duplicate:
+        status = "duplicate"
+        reason = reason or "duplicate_authority_propagation"
+    elif authority_closed and explicit_status in {"", "allowed", "opened", "active"}:
+        status = "closed_authority_boundary"
+        reason = reason or "closed_authority_boundary_cannot_reacquire_authority"
+    elif closed_boundary and explicit_status in {"", "allowed", "opened", "active"}:
+        status = "closed_transaction_boundary"
+        reason = reason or "closed_transaction_boundary_cannot_reacquire_authority"
+    elif explicit_status in AUTHORITY_DENIED_STATUSES:
+        status = explicit_status
+        reason = reason or f"authority_{explicit_status}"
+    elif mismatch:
+        status = "mismatch"
+        reason = reason or "authority_ownership_mismatch"
+    elif authority_signal_present and not ownership_source:
+        status = "missing_ownership"
+        reason = reason or "ownership_source_missing"
+    else:
+        status = explicit_status or "allowed"
+        reason = reason or "authority_ownership_allowed"
+
+    metadata = {
+        "authority_source": authority_source,
+        "authority_scope": authority_scope,
+        "authority_status": status,
+        "authority_reason": reason,
+        "ownership_source": ownership_source or "legacy_runtime_ownership",
+        "ownership_scope": ownership_scope or authority_scope,
+    }
+    if duplicate:
+        nested_authority = data.get("runtime_authority") if isinstance(data.get("runtime_authority"), Mapping) else {}
+        metadata["duplicate_authority_propagation"] = True
+        metadata["duplicate_authority_evidence"] = {
+            "authority_source": _text(nested_authority.get("authority_source")),
+            "authority_scope": _text(nested_authority.get("authority_scope")),
+            "authority_status": _text(nested_authority.get("authority_status")),
+            "ownership_source": _text(nested_authority.get("ownership_source")),
+            "ownership_scope": _text(nested_authority.get("ownership_scope")),
+        }
+    if mismatch:
+        metadata["authority_mismatch_evidence"] = {
+            "expected_ownership_source": expected_owner,
+            "actual_ownership_source": ownership_source,
+        }
+    if closed_boundary:
+        metadata["closed_transaction_boundary"] = True
+        metadata["transaction_boundary"] = dict(transaction_boundary)
+    closure = build_runtime_closure_fields(
+        {
+            **data,
+            **metadata,
+            "allow_existing_closure": True,
+            "source": authority_source,
+        },
+        artifact_type="authority",
+        artifact_id=authority_scope,
+        finalized_by=authority_source,
+    )
+    if status == "closed_authority_boundary":
+        closure["closure_evidence"].setdefault("mismatch_evidence", []).append(
+            {"kind": "authority_reacquire_attempt", "authority_scope": authority_scope}
+        )
+    metadata.update(closure)
+    return metadata
+
+
+def authority_allows_execution(metadata: Mapping[str, Any] | None = None) -> bool:
+    authority = build_authority_metadata(metadata)
+    return _text(authority.get("authority_status")).lower() not in AUTHORITY_DENIED_STATUSES
 
 
 @dataclass(frozen=True)

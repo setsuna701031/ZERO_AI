@@ -11,6 +11,16 @@ try:
 except Exception:  # pragma: no cover - keeps older test surfaces importable
     RuntimeLegalityEngine = None  # type: ignore[assignment]
 
+try:
+    from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
+except Exception:  # pragma: no cover - compatibility during staged imports
+    build_transaction_boundary_metadata = None  # type: ignore[assignment]
+
+try:
+    from core.runtime.runtime_consistency import build_runtime_state_consistency
+except Exception:  # pragma: no cover - compatibility during staged imports
+    build_runtime_state_consistency = None  # type: ignore[assignment]
+
 
 @dataclass(frozen=True)
 class SchedulerExecutionGatewayResult:
@@ -34,9 +44,57 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _transaction_boundary(source: str, status: str = "opened") -> Dict[str, Any]:
+    if build_transaction_boundary_metadata is None:
+        return {
+            "transaction_id": "",
+            "transaction_source": source,
+            "transaction_status": status,
+            "transaction_legality": "legal",
+            "transaction_scope": "execution_gateway",
+            "transaction_timestamp": "",
+        }
+    return build_transaction_boundary_metadata(
+        {
+            "transaction_source": source,
+            "transaction_status": status,
+            "transaction_scope": "execution_gateway",
+        }
+    )
+
+
+def _consistency_seal(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    if build_runtime_state_consistency is None:
+        return {
+            "consistency_status": "consistent",
+            "consistency_reason": "runtime_state_consistent",
+            "mismatch_evidence": [],
+            "runtime_state_snapshot": {},
+        }
+    return build_runtime_state_consistency(metadata)
+
+
 def _normalize_step(step: Any) -> Dict[str, Any]:
     if isinstance(step, dict):
-        return copy.deepcopy(step)
+        normalized = copy.deepcopy(step)
+        action = str(normalized.get("action") or normalized.get("type") or "").strip()
+        lowered = action.lower()
+        if lowered == "verify_file":
+            normalized["type"] = "verify"
+        elif lowered == "append":
+            normalized["type"] = "append_file"
+        elif action and "type" not in normalized:
+            normalized["type"] = action
+
+        path = (
+            normalized.get("target_path")
+            or normalized.get("path")
+            or normalized.get("file_path")
+            or normalized.get("target")
+        )
+        if isinstance(path, str) and path.strip():
+            normalized["target_path"] = path.strip()
+        return normalized
     if step is None:
         return {"type": "noop", "action": "noop"}
     return {"type": "noop", "action": "noop", "raw_step": copy.deepcopy(step)}
@@ -63,16 +121,16 @@ def _step_action(step: Any, fallback: str = "noop") -> str:
 
 def _canonical_action_from_payload(payload: Any, fallback: str = "noop") -> str:
     if isinstance(payload, dict):
+        for key in ("action", "type", "step_type"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
+                return value.strip()
+
         step = payload.get("step")
         if isinstance(step, dict):
             action = _step_action(step, fallback="")
             if action:
                 return action
-
-        for key in ("step_type", "action", "type"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
-                return value.strip()
 
     return fallback
 
@@ -178,6 +236,20 @@ def build_noop_execution_result(
     step_type = _step_type(normalized_step)
     final_message = message or f"{final_action}: {step_type}"
 
+    metadata_payload = {
+        "source": source,
+        "execution_source": source,
+        "authority_source": source,
+        "authority_scope": "scheduler_execution_gateway",
+        "authority_status": "allowed" if ok else "denied",
+        "authority_reason": "scheduler_execution_gateway_noop" if ok else "scheduler_execution_gateway_denied",
+        "ownership_source": "core.tasks.execution_gateway",
+        "ownership_scope": "scheduler_execution_gateway",
+        "transaction_boundary": _transaction_boundary(source, "opened" if ok else "denied"),
+        "noop": True,
+        "step_type": step_type,
+    }
+    metadata_payload["consistency_seal"] = _consistency_seal(metadata_payload)
     result: Dict[str, Any] = {
         "ok": bool(ok),
         "action": final_action,
@@ -193,6 +265,8 @@ def build_noop_execution_result(
         "scheduler_execution_gateway_source": source,
         "scheduler_execution_runtime_ok": bool(ok),
         "scheduler_execution_runtime_error": None,
+        "execution_gateway_ok": bool(ok),
+        "execution_gateway_invoked": False,
         "execution_trace": [
             {
                 "source": source,
@@ -203,12 +277,10 @@ def build_noop_execution_result(
                 "timestamp_ms": _now_ms(),
             }
         ],
-        "metadata": {
-            "source": source,
-            "noop": True,
-            "step_type": step_type,
-        },
+        "metadata": metadata_payload,
     }
+    result["step"]["execution_gateway_ok"] = bool(ok)
+    result["step"]["execution_gateway_invoked"] = False
 
     if metadata:
         result["metadata"].update(copy.deepcopy(metadata))
@@ -248,7 +320,7 @@ def normalize_execution_result(
     result.setdefault("ok", bool(result.get("success", result.get("executed", False))))
     result["action"] = action
     result["type"] = action
-    result["step_type"] = action
+    result["step_type"] = str(result.get("step_type") or action)
     result.setdefault("step", copy.deepcopy(normalized_step))
     result.setdefault("message", str(result.get("final_answer") or result.get("summary") or action))
     result.setdefault("final_answer", str(result.get("message") or action))
@@ -256,6 +328,9 @@ def normalize_execution_result(
 
     result["scheduler_execution_gateway_returned"] = True
     result.setdefault("scheduler_execution_gateway_source", source)
+    result.setdefault("execution_source", source)
+    result["execution_gateway_ok"] = bool(result.get("ok"))
+    result.setdefault("execution_gateway_invoked", False)
 
     if not isinstance(result.get("execution_trace"), list):
         result["execution_trace"] = []
@@ -297,6 +372,10 @@ def build_gateway_result(
     normalized_result["scheduler_execution_legacy_fallback_used"] = bool(used_legacy_fallback)
     normalized_result["scheduler_execution_runtime_ok"] = bool(normalized_result.get("ok")) and final_gateway_error is None
     normalized_result["scheduler_execution_runtime_error"] = final_gateway_error
+    normalized_result["execution_gateway_ok"] = bool(normalized_result.get("ok")) and final_gateway_error is None
+    normalized_result["execution_gateway_invoked"] = bool(used_gateway)
+    normalized_step["execution_gateway_ok"] = bool(normalized_result["execution_gateway_ok"])
+    normalized_step["execution_gateway_invoked"] = bool(used_gateway)
 
     if error_list:
         normalized_result["scheduler_execution_gateway_errors"] = copy.deepcopy(error_list)
@@ -306,6 +385,36 @@ def build_gateway_result(
         normalized_result.setdefault("metadata", {})
         if isinstance(normalized_result["metadata"], dict):
             normalized_result["metadata"].update(copy.deepcopy(metadata))
+    normalized_result.setdefault("metadata", {})
+    if isinstance(normalized_result["metadata"], dict):
+        normalized_result["metadata"].setdefault("execution_source", source)
+        normalized_result["metadata"].setdefault("authority_source", source)
+        normalized_result["metadata"].setdefault("authority_scope", "scheduler_execution_gateway")
+        normalized_result["metadata"].setdefault(
+            "authority_status",
+            "allowed" if normalized_result.get("ok") else "denied",
+        )
+        normalized_result["metadata"].setdefault(
+            "authority_reason",
+            "scheduler_execution_gateway_authorized" if normalized_result.get("ok") else "scheduler_execution_gateway_denied",
+        )
+        normalized_result["metadata"].setdefault("ownership_source", "core.tasks.execution_gateway")
+        normalized_result["metadata"].setdefault("ownership_scope", "scheduler_execution_gateway")
+        normalized_result["metadata"].setdefault(
+            "transaction_boundary",
+            _transaction_boundary(source, "opened" if normalized_result.get("ok") else "failed"),
+        )
+        normalized_result["metadata"].setdefault(
+            "consistency_seal",
+            _consistency_seal(
+                {
+                    **normalized_result["metadata"],
+                    "executed": normalized_result.get("executed"),
+                    "ok": normalized_result.get("ok"),
+                    "status": normalized_result.get("status"),
+                }
+            ),
+        )
 
     return SchedulerExecutionGatewayResult(
         ok=bool(normalized_result.get("ok")) and final_gateway_error is None,
@@ -412,7 +521,7 @@ def run_scheduler_execution_gateway(
             fallback = build_noop_execution_result(
                 normalized_step,
                 ok=False,
-                action=_step_action(normalized_step, fallback="invalid_step"),
+                action="execution_step_rejected",
                 message=validation_errors[0],
                 source=source,
             )
@@ -463,7 +572,7 @@ def run_scheduler_execution_gateway(
                 fallback = build_noop_execution_result(
                     normalized_step,
                     ok=False,
-                    action=_step_action(normalized_step, fallback="gateway_exception_fallback"),
+                    action="execution_invocation_failed",
                     message=error_text,
                     source=source,
                 )

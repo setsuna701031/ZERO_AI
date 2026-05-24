@@ -17,6 +17,8 @@ from core.runtime.runtime_lifecycle_coordinator import (
     RuntimeLifecycleCoordinator,
     RuntimeLifecycleResult,
 )
+from core.runtime.runtime_status import BLOCKED, EXECUTED, FAILED, QUEUED, RUNNING, normalize_runtime_status
+from core.runtime.runtime_closure import closure_status_is_closed, build_runtime_closure_fields
 from core.runtime.runtime_transaction_context import (
     get_current_transaction,
     merge_current_transaction_metadata,
@@ -28,9 +30,77 @@ _CURRENT_LIFECYCLE_COORDINATOR: ContextVar[RuntimeLifecycleCoordinator | None] =
     default=None,
 )
 
+LIFECYCLE_PROPAGATION_ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    QUEUED: {RUNNING},
+    RUNNING: {EXECUTED, FAILED},
+}
+
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def validate_lifecycle_status_propagation(
+    current_status: Any,
+    propagated_status: Any,
+) -> dict[str, Any]:
+    source = normalize_runtime_status(current_status)
+    target = normalize_runtime_status(propagated_status)
+
+    if closure_status_is_closed(current_status) and target in {EXECUTED, RUNNING}:
+        allowed = False
+        reason = "finalized_lifecycle_cannot_propagate_new_success_state"
+    elif source == BLOCKED:
+        allowed = False
+        reason = "blocked_status_is_not_overwritten_by_lifecycle_propagation"
+    elif source == target:
+        allowed = True
+        reason = "lifecycle_propagation_status_unchanged"
+    elif target in LIFECYCLE_PROPAGATION_ALLOWED_STATUS_TRANSITIONS.get(source, set()):
+        allowed = True
+        reason = "lifecycle_propagation_transition_allowed"
+    else:
+        allowed = False
+        reason = f"illegal_lifecycle_propagation_transition:{source}->{target}"
+
+    closure = build_runtime_closure_fields(
+        {
+            "closure_status": current_status,
+            "lifecycle_status": source,
+            "requested_status": target,
+            "reopen_attempt": closure_status_is_closed(current_status) and target in {EXECUTED, RUNNING},
+        },
+        artifact_type="lifecycle",
+        artifact_id="lifecycle_status_propagation",
+        finalized_by="runtime_lifecycle_context",
+    )
+    return {
+        "from_status": source,
+        "to_status": target,
+        "allowed": allowed,
+        "reason": reason,
+        **closure,
+    }
+
+
+def propagate_lifecycle_status(
+    current_status: Any,
+    propagated_status: Any,
+) -> dict[str, Any]:
+    validation = validate_lifecycle_status_propagation(current_status, propagated_status)
+    if validation["allowed"]:
+        status = _clean_text(propagated_status) or validation["to_status"]
+        transitioned = validation["from_status"] != validation["to_status"]
+    else:
+        status = _clean_text(current_status) or validation["from_status"]
+        transitioned = False
+
+    return {
+        **validation,
+        "status": status,
+        "canonical_status": normalize_runtime_status(status),
+        "transitioned": transitioned,
+    }
 
 
 def get_current_lifecycle_coordinator() -> RuntimeLifecycleCoordinator | None:
