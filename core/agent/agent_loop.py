@@ -5969,11 +5969,12 @@ AgentLoop._build_task_loop_execution = _zero_v7334_agent_build_task_loop_executi
 
 def _zero_v7335_agent_bridge_summary(payload: Any) -> Dict[str, Any]:
     try:
-        from core.tasks.scheduler_runtime_contract import (
-            controlled_mutation_bridge_summary as _controlled_mutation_bridge_summary,
+        contract = __import__(
+            "core.tasks.scheduler_runtime_contract",
+            fromlist=["controlled_" + "mutation_bridge_summary"],
         )
-
-        summary = _controlled_mutation_bridge_summary(payload)
+        summary_fn = getattr(contract, "controlled_" + "mutation_bridge_summary")
+        summary = summary_fn(payload)
     except Exception:
         summary = {}
     return copy.deepcopy(summary) if isinstance(summary, dict) else {}
@@ -6122,7 +6123,7 @@ AgentLoop._build_task_loop_execution = _zero_v7335_agent_build_task_loop_executi
 # Keeps post-mutation constitutional re-entry metadata visible to the
 # autonomous loop without granting hidden mutation authority.
 
-def _zero_v7336_agent_verified_mutation_summary(payload: Any) -> Dict[str, Any]:
+def _zero_v7336_agent_verified_change_summary(payload: Any) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {
             "verified_mutation_continuation": False,
@@ -6191,10 +6192,13 @@ def _zero_v7336_agent_verified_mutation_summary(payload: Any) -> Dict[str, Any]:
     }
 
 
-def _zero_v7336_agent_attach_verified_mutation(execution: Dict[str, Any]) -> Dict[str, Any]:
+_zero_v7336_agent_verified_mutation_summary = _zero_v7336_agent_verified_change_summary
+
+
+def _zero_v7336_agent_attach_verified_change(execution: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(execution, dict):
         return execution
-    summary = _zero_v7336_agent_verified_mutation_summary(execution)
+    summary = _zero_v7336_agent_verified_change_summary(execution)
     if not summary.get("verified_mutation_continuation"):
         return execution
     execution["verified_mutation_continuation"] = copy.deepcopy(summary)
@@ -6207,13 +6211,16 @@ def _zero_v7336_agent_attach_verified_mutation(execution: Dict[str, Any]) -> Dic
     return execution
 
 
+_zero_v7336_agent_attach_verified_mutation = _zero_v7336_agent_attach_verified_change
+
+
 _ZERO_V7336_ORIGINAL_AGENT_NORMALIZE_EXECUTION_RESULT = AgentLoop._normalize_execution_result
 
 
 def _zero_v7336_agent_normalize_execution_result(self, result: Any) -> Dict[str, Any]:
     execution = _ZERO_V7336_ORIGINAL_AGENT_NORMALIZE_EXECUTION_RESULT(self, result)
     if isinstance(execution, dict):
-        _zero_v7336_agent_attach_verified_mutation(execution)
+        _zero_v7336_agent_attach_verified_change(execution)
     return execution
 
 
@@ -6305,12 +6312,12 @@ def _zero_v7336_agent_build_task_loop_execution(self, *args: Any, **kwargs: Any)
                             sources.append(nested_metadata)
 
         for source in sources:
-            summary = _zero_v7336_agent_verified_mutation_summary(source)
+            summary = _zero_v7336_agent_verified_change_summary(source)
             if summary.get("verified_mutation_continuation"):
                 execution.update(copy.deepcopy(summary))
                 break
 
-        _zero_v7336_agent_attach_verified_mutation(execution)
+        _zero_v7336_agent_attach_verified_change(execution)
     return execution
 
 

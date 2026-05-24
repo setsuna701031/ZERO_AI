@@ -7148,3 +7148,106 @@ def _zero_v7331_execute_step_selective_activation(
 
 
 StepExecutor.execute_step = _zero_v7331_execute_step_selective_activation
+
+
+# ZERO v7.3.32 - Public runtime output sanitizer
+# Evidence hooks remain private/observational. The public StepExecutor return
+# value must not leak evidence trees or hook/adapter/boundary implementation
+# internals. This final wrapper is deliberately after replay/recovery/scheduler
+# wrappers and only sanitizes the outward payload.
+_ZERO_V7332_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_v7332_sanitize_public_runtime_output(result):
+    try:
+        from core.runtime.runtime_execution_result import sanitize_runtime_public_output
+
+        return sanitize_runtime_public_output(result)
+    except Exception:
+        if not isinstance(result, dict):
+            return result
+        forbidden = {
+            "evidence",
+            "evidence_adapter",
+            "evidence_events",
+            "boundary",
+            "boundary_fingerprint",
+            "adapter_fingerprint",
+            "hook",
+            "hook_fingerprint",
+        }
+
+        def _clean(value):
+            if isinstance(value, dict):
+                return {k: _clean(v) for k, v in value.items() if k not in forbidden}
+            if isinstance(value, list):
+                return [_clean(v) for v in value]
+            if isinstance(value, tuple):
+                return tuple(_clean(v) for v in value)
+            return copy.deepcopy(value)
+
+        return _clean(result)
+
+
+def _zero_v7332_execute_step_public_output_sanitizer(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    result = _ZERO_V7332_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+    return _zero_v7332_sanitize_public_runtime_output(result)
+
+
+StepExecutor.execute_step = _zero_v7332_execute_step_public_output_sanitizer
+
+# ZERO v7.3.33 - Public StepExecutor evidence-key seal
+# RuntimeExecutionResult.to_dict() may still expose canonical execution evidence for
+# legacy gateway contracts.  StepExecutor's direct public step output, however,
+# must not expose evidence adapter/hook/boundary internals at the top level.
+# Keep replay/recovery/scheduler internals untouched and sanitize only the final
+# outward execute_step mapping.
+_ZERO_V7333_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_v7333_strip_public_step_internal_keys(result):
+    return _zero_v7332_sanitize_public_runtime_output(result)
+
+
+def _zero_v7333_execute_step_public_step_evidence_key_seal(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    result = _ZERO_V7333_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+    return _zero_v7333_strip_public_step_internal_keys(result)
+
+
+StepExecutor.execute_step = _zero_v7333_execute_step_public_step_evidence_key_seal

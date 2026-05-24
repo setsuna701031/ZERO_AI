@@ -751,3 +751,24 @@ def normalize_runtime_execution_fields(
     }
 
     return normalized
+
+
+# ZERO v7.3.32 - Public runtime output sanitizer field policy
+# These names belong to observation/evidence internals. They may be retained by
+# private hooks/boundaries, but public runtime outputs must not expose them.
+ZERO_V7332_PUBLIC_OUTPUT_INTERNAL_KEYS = frozenset(
+    {
+        "evidence",
+        "evidence_adapter",
+        "evidence_events",
+        "boundary",
+        "boundary_fingerprint",
+        "adapter_fingerprint",
+        "hook",
+        "hook_fingerprint",
+    }
+)
+
+
+def public_runtime_output_internal_keys() -> frozenset[str]:
+    return ZERO_V7332_PUBLIC_OUTPUT_INTERNAL_KEYS

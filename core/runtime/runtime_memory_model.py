@@ -3,8 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -15,8 +16,73 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_VOLATILE_FINGERPRINT_KEYS = {
+    "created_at",
+    "generated_at",
+    "updated_at",
+    "timestamp",
+    "runtime_timestamp",
+    "fingerprint",
+    "object_id",
+    "memory_address",
+}
+
+
+def _canonicalize_for_fingerprint(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _canonicalize_for_fingerprint(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            if str(key) not in _VOLATILE_FINGERPRINT_KEYS
+        }
+    if isinstance(value, list | tuple):
+        return [_canonicalize_for_fingerprint(item) for item in value]
+    if isinstance(value, set):
+        canonical_items = [_canonicalize_for_fingerprint(item) for item in value]
+        return sorted(
+            canonical_items,
+            key=lambda item: json.dumps(item, sort_keys=True, default=str, separators=(",", ":")),
+        )
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, Path):
+        return value.as_posix()
+    if is_dataclass(value) and not isinstance(value, type):
+        return _canonicalize_for_fingerprint(asdict(value))
+    if isinstance(value, bytes):
+        return {"__bytes__": value.hex()}
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    if hasattr(value, "to_dict") and callable(value.to_dict):
+        try:
+            converted = value.to_dict()
+        except Exception:
+            converted = None
+        if converted is not None:
+            return _canonicalize_for_fingerprint(converted)
+    attrs = getattr(value, "__dict__", None)
+    if isinstance(attrs, dict):
+        public_attrs = {
+            key: item
+            for key, item in attrs.items()
+            if not str(key).startswith("_")
+        }
+        return {
+            "__type__": f"{value.__class__.__module__}.{value.__class__.__qualname__}",
+            "attrs": _canonicalize_for_fingerprint(public_attrs),
+        }
+    return {
+        "__type__": f"{value.__class__.__module__}.{value.__class__.__qualname__}",
+        "value": str(value),
+    }
+
+
 def _stable_hash(value: Any) -> str:
-    payload = json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
+    payload = json.dumps(
+        _canonicalize_for_fingerprint(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -61,9 +127,13 @@ class RuntimeMemorySnapshot:
         object.__setattr__(self, "intent", _freeze(self.intent or {}))
         object.__setattr__(self, "scheduler", _freeze(self.scheduler or {}))
         if not self.snapshot_id:
-            object.__setattr__(self, "snapshot_id", "runtime-memory-" + _stable_hash(self.to_dict(False))[:16])
+            object.__setattr__(
+                self,
+                "snapshot_id",
+                "runtime-memory-" + _stable_hash(self._fingerprint_payload())[:16],
+            )
         if not self.fingerprint:
-            object.__setattr__(self, "fingerprint", _stable_hash(self.to_dict(False)))
+            object.__setattr__(self, "fingerprint", _stable_hash(self._fingerprint_payload()))
 
     def view(self) -> "RuntimeMemoryView":
         return RuntimeMemoryView(snapshot=self)
@@ -87,6 +157,21 @@ class RuntimeMemorySnapshot:
         if include_fingerprint:
             payload["fingerprint"] = self.fingerprint
         return payload
+
+    def _fingerprint_payload(self) -> dict[str, Any]:
+        return {
+            "runtime_version": RUNTIME_KERNEL_VERSION,
+            "abi_version": RUNTIME_ABI_VERSION,
+            "artifact_type": "runtime_memory_snapshot",
+            "checkpoint_id": self.checkpoint_id,
+            "state": _thaw(self.state),
+            "transactions": _thaw(self.transactions),
+            "replay": _thaw(self.replay),
+            "recovery": _thaw(self.recovery),
+            "capabilities": _thaw(self.capabilities),
+            "intent": _thaw(self.intent),
+            "scheduler": _thaw(self.scheduler),
+        }
 
 
 @dataclass(frozen=True)

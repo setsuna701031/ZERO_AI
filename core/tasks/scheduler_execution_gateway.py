@@ -6,6 +6,8 @@ import traceback
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from core.tasks import execution_gateway_runtime as execution_gateway_runtime
+
 
 @dataclass(frozen=True)
 class SchedulerExecutionGatewayResult:

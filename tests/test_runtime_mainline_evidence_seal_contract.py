@@ -377,6 +377,17 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
         self.assertTrue(forbidden.isdisjoint(flow["results"]["step"]))
         self.assertTrue(forbidden.isdisjoint(flow["results"]["finished"]))
 
+        runtime_execution_result = flow["results"]["step"].get("runtime_execution_result")
+        self.assertIsInstance(runtime_execution_result, dict)
+        self.assertTrue(forbidden.isdisjoint(runtime_execution_result))
+
+        adapter_payload = flow["results"]["step"].get("adapter_payload")
+        if isinstance(adapter_payload, dict) and isinstance(adapter_payload.get("raw"), dict):
+            self.assertTrue(forbidden.isdisjoint(adapter_payload["raw"]))
+            nested_runtime_result = adapter_payload["raw"].get("runtime_execution_result")
+            if isinstance(nested_runtime_result, dict):
+                self.assertTrue(forbidden.isdisjoint(nested_runtime_result))
+
     def test_hooks_and_adapters_are_observational_only(self) -> None:
         from core.runtime.task_runtime import TaskRuntime
 

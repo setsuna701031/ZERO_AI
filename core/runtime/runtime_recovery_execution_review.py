@@ -11,6 +11,9 @@ from core.runtime.runtime_recovery_execution_contract import (
     CONTRACT_STATUS_DEFERRED,
     RuntimeRecoveryExecutionContractReport,
 )
+from core.runtime.runtime_recovery_approval import (
+    canonicalize_runtime_recovery_approval_reason,
+)
 from core.runtime.runtime_recovery_operator_summary import (
     build_runtime_recovery_operator_summary,
 )
@@ -147,7 +150,7 @@ class RuntimeRecoveryExecutionReviewer:
                 "status": status,
                 "review_state": self._review_state_for_status(status),
                 "approval_state": self._safe_text(contract.get("approval_state")),
-                "approval_reason": self._safe_text(contract.get("approval_reason")),
+                "approval_reason": self._approval_reason(contract.get("approval_reason")),
                 "executable": bool(contract.get("executable", False)),
                 "requires_confirmation": bool(contract.get("requires_confirmation", False)),
                 "risk_profile": self._safe_text(self._safe_mapping(contract.get("risk")).get("risk_profile")),
@@ -287,7 +290,7 @@ class RuntimeRecoveryExecutionReviewer:
             {
                 "gate": self._safe_text(reason.get("gate")),
                 "state": self._safe_text(reason.get("state")),
-                "reason": self._safe_text(reason.get("reason")),
+                "reason": self._approval_reason(reason.get("reason"), gate=reason.get("gate")),
             }
             for reason in reasons
             if isinstance(reason, dict)
@@ -295,7 +298,7 @@ class RuntimeRecoveryExecutionReviewer:
         result = {
             "review": "policy_reasons",
             "approval_state": self._safe_text(approval_snapshot.get("approval_state")),
-            "approval_reason": self._safe_text(approval_snapshot.get("approval_reason")),
+            "approval_reason": self._approval_reason(approval_snapshot.get("approval_reason")),
             "reason_count": len(safe_reasons),
             "reasons": safe_reasons,
             "action": "none",
@@ -315,7 +318,7 @@ class RuntimeRecoveryExecutionReviewer:
             {
                 "contract_id": self._safe_text(review.get("contract_id")),
                 "state": self._safe_text(review.get("review_state")),
-                "reason": self._safe_text(review.get("approval_reason")),
+                "reason": self._approval_reason(review.get("approval_reason")),
             }
             for review in reviews
             if self._safe_text(review.get("review_state")) in {REVIEW_BLOCKED, REVIEW_DEFERRED}
@@ -462,6 +465,12 @@ class RuntimeRecoveryExecutionReviewer:
         if value is None:
             return ""
         return str(value)
+
+    def _approval_reason(self, value: Any, *, gate: Any = "") -> str:
+        return canonicalize_runtime_recovery_approval_reason(
+            self._safe_text(value),
+            gate=self._safe_text(gate),
+        )
 
     def _safe_int(self, value: Any, default: int = 0) -> int:
         try:

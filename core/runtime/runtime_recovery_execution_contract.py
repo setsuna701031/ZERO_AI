@@ -12,6 +12,7 @@ from core.runtime.runtime_recovery_approval import (
     APPROVAL_REJECT,
     RuntimeRecoveryApprovalEvaluator,
     RuntimeRecoveryApprovalReport,
+    canonicalize_runtime_recovery_approval_reason,
 )
 from core.runtime.runtime_recovery_plan import (
     RuntimeRecoveryPlanReport,
@@ -86,6 +87,9 @@ class RuntimeRecoveryPlanReportView:
         return self._fingerprint
 
     def replay_reconstruction_plans(self) -> list[dict[str, Any]]:
+        direct = self._payload.get("replay_reconstruction_plans")
+        if isinstance(direct, list):
+            return [copy.deepcopy(item) for item in direct if isinstance(item, dict)]
         if not bool(self._payload.get("replay_required", False)):
             return []
         plan = self._plan_payload()
@@ -103,6 +107,9 @@ class RuntimeRecoveryPlanReportView:
         ]
 
     def rollback_plans(self) -> list[dict[str, Any]]:
+        direct = self._payload.get("rollback_plans")
+        if isinstance(direct, list):
+            return [copy.deepcopy(item) for item in direct if isinstance(item, dict)]
         if not bool(self._payload.get("rollback_required", False)):
             return []
         plan = self._plan_payload()
@@ -121,6 +128,9 @@ class RuntimeRecoveryPlanReportView:
         ]
 
     def failed_execution_plans(self) -> list[dict[str, Any]]:
+        direct = self._payload.get("failed_execution_plans")
+        if isinstance(direct, list):
+            return [copy.deepcopy(item) for item in direct if isinstance(item, dict)]
         plan = self._plan_payload()
         failure = plan.get("source_failure") if isinstance(plan.get("source_failure"), dict) else {}
         status = self._text(failure.get("status") or "")
@@ -194,10 +204,10 @@ class RuntimeRecoveryApprovalReportView:
     def failed_execution_approval(self) -> dict[str, Any]:
         return self._gate("failed_execution")
 
-    def approval_reasons(self) -> list[str]:
+    def approval_reasons(self) -> list[Any]:
         values = self._payload.get("approval_reasons")
         if isinstance(values, list):
-            return [str(item) for item in values if item is not None]
+            return [self._canonical_approval_reason_entry(item) for item in values if item is not None]
         approval = self._approval_payload()
         reason = self._text(
             approval.get("reason")
@@ -215,13 +225,17 @@ class RuntimeRecoveryApprovalReportView:
             payload.setdefault("gate", gate)
             payload.setdefault("state", self._state())
             payload.setdefault("reason", self._reason(gate))
+            payload["reason"] = canonicalize_runtime_recovery_approval_reason(
+                payload.get("reason"),
+                gate=gate,
+            )
             payload.setdefault("approval_can_be_granted", self._can_grant())
             return payload
         approval = self._approval_payload()
         return {
             "gate": gate,
             "state": self._state(),
-            "reason": self._reason(gate),
+            "reason": canonicalize_runtime_recovery_approval_reason(self._reason(gate), gate=gate),
             "approval_can_be_granted": self._can_grant(),
             "approved": bool(approval.get("approved", self._payload.get("approved", False))),
             "approval_required": bool(approval.get("approval_required", self._payload.get("approval_required", False))),
@@ -250,12 +264,27 @@ class RuntimeRecoveryApprovalReportView:
 
     def _reason(self, gate: str) -> str:
         approval = self._approval_payload()
-        return self._text(
+        return canonicalize_runtime_recovery_approval_reason(
+            self._text(
             approval.get("reason")
             or approval.get("approval_reason")
             or self._payload.get("reason")
             or f"{gate} contract approval"
+            ),
+            gate=gate,
         )
+
+    def _canonical_approval_reason_entry(self, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return canonicalize_runtime_recovery_approval_reason(value)
+        entry = copy.deepcopy(value)
+        gate = self._text(entry.get("gate"))
+        if "reason" in entry:
+            entry["reason"] = canonicalize_runtime_recovery_approval_reason(
+                entry.get("reason"),
+                gate=gate,
+            )
+        return entry
 
     def _can_grant(self) -> bool:
         approval = self._approval_payload()
@@ -514,6 +543,19 @@ class RuntimeRecoveryExecutionContractBuilder:
             }
             contract["fingerprint"] = self._fingerprint(contract)
             contracts.append(contract)
+        if contract_type == "rollback":
+            def _rollback_contract_order(item: dict[str, Any]) -> tuple[int, str, str]:
+                metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+                return (
+                    self._safe_int(metadata.get("replay_order"), 10**9),
+                    self._safe_text(metadata.get("execution_id")),
+                    self._safe_text(item.get("contract_id")),
+                )
+
+            return sorted(
+                contracts,
+                key=_rollback_contract_order,
+            )
         return sorted(contracts, key=lambda item: self._safe_text(item.get("contract_id")))
 
     def _contract_metadata(self, contract_type: str, plan: dict[str, Any]) -> dict[str, Any]:
