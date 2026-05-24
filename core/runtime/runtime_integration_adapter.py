@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from core.runtime.runtime_boundary import RuntimeBoundary, RuntimeBoundaryRequest
 from core.runtime.runtime_event_bus import RuntimeBusEvent, RuntimeEventBus
@@ -34,6 +34,15 @@ class RuntimeAdapterRejected(RuntimeError):
 
 
 class RuntimeIntegrationAdapter:
+    """Read-only mirror adapter for runtime integration surfaces.
+
+    Contract notes:
+    - payload and metadata object identity must be preserved.
+    - adapter must not inject canonical/runtime fields into caller payload.
+    - boundary / registry / bus receive the exact same payload and metadata
+      objects that the caller passed in.
+    """
+
     def __init__(
         self,
         registry: RuntimeStateRegistry | None = None,
@@ -52,7 +61,6 @@ class RuntimeIntegrationAdapter:
             source="scheduler",
             owner=RuntimeOwner.SCHEDULER,
             operation="scheduler_queue_transition",
-            boundary_request=self.boundary.request_queue_transition,
             registry_resource=RuntimeResource.QUEUE_STATE,
             registry_action=RuntimeAction.TRANSITION,
             payload=payload,
@@ -68,7 +76,6 @@ class RuntimeIntegrationAdapter:
             source="step_executor",
             owner=RuntimeOwner.STEP_EXECUTOR,
             operation="executor_result_write",
-            boundary_request=self.boundary.request_execution_result_write,
             registry_resource=RuntimeResource.EXECUTION_RESULT,
             registry_action=RuntimeAction.WRITE,
             payload=payload,
@@ -84,7 +91,6 @@ class RuntimeIntegrationAdapter:
             source="orchestrator",
             owner=RuntimeOwner.ORCHESTRATOR,
             operation="orchestrator_dispatch",
-            boundary_request=self.boundary.request_orchestration_dispatch,
             registry_resource=RuntimeResource.ORCHESTRATION_STATE,
             registry_action=RuntimeAction.DISPATCH,
             payload=payload,
@@ -100,7 +106,6 @@ class RuntimeIntegrationAdapter:
             source="monitor",
             owner=RuntimeOwner.MONITOR,
             operation="monitor_snapshot",
-            boundary_request=self.boundary.request_runtime_snapshot,
             registry_resource=RuntimeResource.RUNTIME_SNAPSHOT,
             registry_action=RuntimeAction.SNAPSHOT,
             payload=payload,
@@ -116,7 +121,6 @@ class RuntimeIntegrationAdapter:
             source="repair_chain",
             owner=RuntimeOwner.REPAIR_CHAIN,
             operation="repair_incident",
-            boundary_request=self.boundary.emit_runtime_incident,
             registry_resource=RuntimeResource.RUNTIME_INCIDENT,
             registry_action=RuntimeAction.EMIT,
             payload=payload,
@@ -132,24 +136,31 @@ class RuntimeIntegrationAdapter:
             source="repair_chain",
             owner=RuntimeOwner.REPAIR_CHAIN,
             operation="repair_state_write",
-            boundary_request=self._request_repair_state_write,
             registry_resource=RuntimeResource.REPAIR_STATE,
             registry_action=RuntimeAction.WRITE,
             payload=payload,
             metadata=metadata,
         )
 
-    def _request_repair_state_write(
+    def _make_boundary_request(
         self,
+        *,
         owner: RuntimeOwner,
-        payload: Any = None,
-        metadata: Any = None,
+        operation: str,
+        resource: RuntimeResource,
+        action: RuntimeAction,
+        payload: Any,
+        metadata: Any,
     ) -> RuntimeBoundaryRequest:
-        return self.boundary._request(
+        request_fn = getattr(self.boundary, "_request", None)
+        if not callable(request_fn):
+            raise RuntimeError("runtime boundary does not expose _request")
+
+        return request_fn(
             owner=owner,
-            operation="repair_state_write",
-            resource=RuntimeResource.REPAIR_STATE,
-            action=RuntimeAction.WRITE,
+            operation=operation,
+            resource=resource,
+            action=action,
             payload=payload,
             metadata=metadata,
         )
@@ -159,14 +170,21 @@ class RuntimeIntegrationAdapter:
         source: str,
         owner: RuntimeOwner,
         operation: str,
-        boundary_request: Callable[..., RuntimeBoundaryRequest],
         registry_resource: RuntimeResource,
         registry_action: RuntimeAction,
         payload: Any,
         metadata: Any,
     ) -> RuntimeAdapterResult:
         try:
-            request = boundary_request(owner, payload=payload, metadata=metadata)
+            request = self._make_boundary_request(
+                owner=owner,
+                operation=operation,
+                resource=registry_resource,
+                action=registry_action,
+                payload=payload,
+                metadata=metadata,
+            )
+
             entry = self.registry.record(
                 owner=owner,
                 operation=operation,
@@ -175,12 +193,14 @@ class RuntimeIntegrationAdapter:
                 payload=payload,
                 metadata=metadata,
             )
+
             event = self.event_bus.publish(
                 RUNTIME_INTEGRATION_CHANNEL,
                 operation,
                 payload=payload,
                 metadata=metadata,
             )
+
         except Exception as exc:
             raise RuntimeAdapterRejected(
                 "runtime integration adapter rejected mirror operation",

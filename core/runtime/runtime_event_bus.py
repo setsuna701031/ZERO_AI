@@ -73,13 +73,30 @@ class RuntimeEventBus:
         self._validate_channel(channel)
         self._validate_event_type(event_type)
 
-        payload = _normalize_execution_payload(event_type, payload, metadata)
+        # Contract boundary:
+        # publish() must preserve the caller-provided payload object exactly.
+        # Earlier versions normalized execution/status payloads in-place by
+        # assigning the normalized value back to event.payload. That broke the
+        # runtime integration adapter contract, which requires:
+        #
+        #     bus_event.payload is payload
+        #
+        # Normalization is still computed for callers that inspect metadata, but
+        # it is stored as derived metadata only. The original payload and the
+        # original metadata object are left untouched whenever possible.
+        normalized_payload = _normalize_execution_payload(event_type, payload, metadata)
+        event_metadata = _attach_normalized_payload_metadata(
+            metadata,
+            normalized_payload=normalized_payload,
+            original_payload=payload,
+        )
+
         self._sequence += 1
         event = RuntimeBusEvent(
             channel=channel,
             event_type=event_type,
             payload=payload,
-            metadata=metadata,
+            metadata=event_metadata,
             sequence=self._sequence,
             timestamp=self._now_iso(),
         )
@@ -104,24 +121,26 @@ class RuntimeEventBus:
 
         self._sequence += 1
         sequenced = event.with_sequence(self._sequence)
+        effective_metadata = metadata if metadata is not None else sequenced.metadata
         normalized_payload = _normalize_execution_payload(
             sequenced.event_type,
             sequenced.payload,
-            metadata if metadata is not None else sequenced.metadata,
+            effective_metadata,
         )
-        if normalized_payload is not sequenced.payload:
-            sequenced = RuntimeEvent(
-                event_type=sequenced.event_type,
-                payload=normalized_payload,
-                metadata=sequenced.metadata,
-                sequence=sequenced.sequence,
-                timestamp=sequenced.timestamp,
-            )
+        event_metadata = _attach_normalized_payload_metadata(
+            effective_metadata,
+            normalized_payload=normalized_payload,
+            original_payload=sequenced.payload,
+        )
+
+        # Preserve the RuntimeEvent object as the bus payload. This keeps event
+        # object identity stable for subscribers while still making normalized
+        # derived data available through metadata.
         bus_event = RuntimeBusEvent(
             channel=channel,
             event_type=sequenced.event_type,
             payload=sequenced,
-            metadata=metadata if metadata is not None else sequenced.metadata,
+            metadata=event_metadata,
             sequence=self._sequence,
             timestamp=sequenced.timestamp,
         )
@@ -182,6 +201,34 @@ class RuntimeEventBus:
 
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
+
+
+def _attach_normalized_payload_metadata(
+    metadata: Any,
+    *,
+    normalized_payload: Any,
+    original_payload: Any,
+) -> Any:
+    """Attach derived normalized payload without mutating caller metadata.
+
+    If normalization returns the same object as the original payload, no metadata
+    wrapping is needed. When normalization produced a different payload, the
+    normalized copy is exposed under a derived key while preserving the caller's
+    metadata object when no derived data exists.
+    """
+
+    if normalized_payload is original_payload:
+        return metadata
+
+    if isinstance(metadata, dict):
+        merged = dict(metadata)
+    elif metadata is None:
+        merged = {}
+    else:
+        merged = {"metadata": metadata}
+
+    merged["normalized_payload"] = normalized_payload
+    return merged
 
 
 def _looks_like_execution_payload(event_type: str, payload: Any) -> bool:
