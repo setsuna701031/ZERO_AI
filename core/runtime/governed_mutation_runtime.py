@@ -156,6 +156,25 @@ class GovernedMutationRuntimeResult:
     def completed(self) -> bool:
         return not self.truth.blocked and not self.truth.failed
 
+    def _runtime_execution_result_payload(self) -> dict[str, Any] | None:
+        if self.execution_result is None:
+            return None
+
+        payload = self.execution_result.to_dict()
+        if not isinstance(payload, dict):
+            return None
+
+        # v7.3.3 governed runtime rollback propagation compatibility:
+        # The governed runtime truth model is the canonical source for rollback
+        # and recovery outcome.  RuntimeExecutionResult is a normalized nested
+        # surface consumed by legacy recovery/replay tests, so mirror the truth
+        # fields here instead of allowing nested metadata to silently omit them.
+        payload["rolled_back"] = bool(self.truth.rolled_back)
+        payload["recovered"] = bool(self.truth.recovered)
+        payload["rollback_snapshot"] = dict(self.truth.rollback_snapshot)
+        payload["governed_runtime_truth"] = self.truth.to_dict()
+        return payload
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -168,9 +187,7 @@ class GovernedMutationRuntimeResult:
             "approval": self.approval.to_dict() if self.approval else None,
             "audit_record": self.audit_record.to_dict() if self.audit_record else None,
             "artifact_paths": dict(self.artifact_paths),
-            "runtime_execution_result": (
-                self.execution_result.to_dict() if self.execution_result else None
-            ),
+            "runtime_execution_result": self._runtime_execution_result_payload(),
             "runtime_evidence_bundle": (
                 self.evidence_bundle.to_dict() if self.evidence_bundle else None
             ),
