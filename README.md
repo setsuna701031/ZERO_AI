@@ -551,3 +551,49 @@ Expected result:
 ```text
 15 passed
 ```
+
+---
+
+## AER Runtime Constitutional Preservation / Catastrophic Recovery v1
+
+ZERO now preserves constitutional self-preservation, catastrophic failure
+recovery, constitutional rollback arbitration, adaptive constitutional
+stabilization, and survivability continuity inside the engineering runtime
+graph.
+
+The workflow runtime session can record and validate:
+
+```text
+constitutional preservation records
+-> self-preservation decisions
+-> catastrophic failure records
+-> catastrophic recovery lineage
+-> constitutional rollback arbitration
+-> adaptive constitutional stabilization
+-> survivability continuity
+-> deterministic replay references for preservation lineage
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. The constitutional
+preservation records serialize as dictionaries in the workflow lineage and do
+not execute commands, move execution ownership into Scheduler, create hidden
+mutation shortcuts, change UI behavior, or add tools. Continuity validation now
+reports `ok=False` for preservation records without active
+constitution/governance parents, self-preservation decisions without
+observability or authority lineage, catastrophic recoveries without failure
+parents, constitutional rollback arbitration without consensus/quorum lineage,
+constitutional stabilization without recovery parents, survivability records
+without preservation/recovery/stabilization lineage, and replay graphs that
+reference stale constitutional preservation lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+16 passed
+```

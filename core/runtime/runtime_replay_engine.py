@@ -698,6 +698,7 @@ def workflow_replay_graph_summary(
     actor_graph = source_lineage.get("actor_worker_graph") if isinstance(source_lineage.get("actor_worker_graph"), dict) else {}
     consensus_graph = source_lineage.get("federated_consensus_graph") if isinstance(source_lineage.get("federated_consensus_graph"), dict) else {}
     self_healing_graph = source_lineage.get("self_healing_governance_graph") if isinstance(source_lineage.get("self_healing_governance_graph"), dict) else {}
+    preservation_graph = source_lineage.get("constitutional_preservation_graph") if isinstance(source_lineage.get("constitutional_preservation_graph"), dict) else {}
 
     mutation_ids = [
         str(item.get("mutation_transaction_id") or "").strip()
@@ -762,6 +763,14 @@ def workflow_replay_graph_summary(
     if self_healing_recovery_ids and not isinstance(replay.get("self_healing_recovery_ids"), list):
         replay["self_healing_recovery_ids"] = self_healing_recovery_ids[-20:]
 
+    preservation_ids = [
+        str(item.get("preservation_id") or "").strip()
+        for item in (preservation_graph.get("preservations") if isinstance(preservation_graph.get("preservations"), list) else [])
+        if isinstance(item, dict) and str(item.get("preservation_id") or "").strip()
+    ]
+    if preservation_ids and not isinstance(replay.get("preservation_ids"), list):
+        replay["preservation_ids"] = preservation_ids[-20:]
+
     return {
         "schema": "zero.workflow_runtime_session.replay_graph_summary.v1",
         "ok": True,
@@ -773,4 +782,5 @@ def workflow_replay_graph_summary(
         "distributed_execution_ids": copy.deepcopy(replay.get("distributed_execution_ids") if isinstance(replay.get("distributed_execution_ids"), list) else []),
         "consensus_ids": copy.deepcopy(replay.get("consensus_ids") if isinstance(replay.get("consensus_ids"), list) else []),
         "self_healing_recovery_ids": copy.deepcopy(replay.get("self_healing_recovery_ids") if isinstance(replay.get("self_healing_recovery_ids"), list) else []),
+        "preservation_ids": copy.deepcopy(replay.get("preservation_ids") if isinstance(replay.get("preservation_ids"), list) else []),
     }

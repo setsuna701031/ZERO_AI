@@ -1843,3 +1843,282 @@ def test_workflow_runtime_self_observability_self_healing_governance_continuity(
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_stale_self_healing_lineage" in broken_replay_summary["breaks"]
+
+
+def test_workflow_runtime_constitutional_preservation_catastrophic_recovery_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-preservation", "steps": []}
+    state = {"task_id": "wf-preservation", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent={"task_id": "wf-preservation", "goal": "preserve constitution"}, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    for tick, node in (
+        (2, {"node_id": "preserve-root", "branch_id": "main"}),
+        (3, {"node_id": "constitution-node", "branch_id": "main", "parent_node_id": "preserve-root"}),
+        (4, {"node_id": "mutation-node", "branch_id": "main", "parent_node_id": "constitution-node"}),
+        (5, {"node_id": "verify-node", "branch_id": "main", "parent_node_id": "mutation-node", "phase": "verify"}),
+        (6, {"node_id": "rollback-node", "branch_id": "main", "parent_node_id": "verify-node", "phase": "rollback_retry"}),
+        (7, {"node_id": "recovery-node", "branch_id": "main", "parent_node_id": "rollback-node", "phase": "rollback_retry"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "preserve-policy", "target_node_id": "constitution-node", "branch_id": "main", "allowed": False, "decision": "preserve"},
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"authority_id": "preserve-authority", "target_node_id": "constitution-node", "branch_id": "main", "execution_owner": "TaskRunner"},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_review_required_record(
+        task=task,
+        state=state,
+        review={"review_id": "preserve-review", "policy_decision_id": "preserve-policy", "target_node_id": "constitution-node", "branch_id": "main"},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_approval_record(
+        task=task,
+        state=state,
+        approval={"approval_id": "preserve-approval", "review_id": "preserve-review", "policy_decision_id": "preserve-policy", "target_node_id": "constitution-node", "branch_id": "main"},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitution_enforcement_record(
+        task=task,
+        state=state,
+        enforcement={"enforcement_id": "constitution-enforcement", "target_node_id": "constitution-node", "branch_id": "main", "rule_id": "runtime_constitution"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_mutation_transaction(
+        task=task,
+        state=state,
+        mutation={"mutation_transaction_id": "constitutional-change", "node_id": "mutation-node", "branch_id": "main", "mutation_type": "constitutional_change"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_mutation_verify_record(
+        task=task,
+        state=state,
+        verify={"mutation_verify_id": "constitutional-change-verify", "mutation_transaction_id": "constitutional-change", "verify_node_id": "verify-node", "branch_id": "main", "ok": False},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_rollback_graph_node(
+        task=task,
+        state=state,
+        rollback={"rollback_id": "constitutional-rollback", "rollback_node_id": "rollback-node", "mutation_transaction_id": "constitutional-change", "mutation_verify_id": "constitutional-change-verify", "branch_id": "main", "retry_node_id": "recovery-node"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_recovery_dependency(
+        task=task,
+        state=state,
+        dependency={"recovery_dependency_id": "constitutional-recovery-dependency", "source_node_id": "rollback-node", "target_node_id": "recovery-node", "branch_id": "main"},
+        current_tick=16,
+    )
+    state["workflow_runtime_session"] = session
+
+    for tick, worker in (
+        (17, {"worker_id": "preserve-worker-a", "actor_id": "preserve-a", "authority_scope": "governance"}),
+        (18, {"worker_id": "preserve-worker-b", "actor_id": "preserve-b", "authority_scope": "governance"}),
+    ):
+        session = manager.attach_actor_worker_record(task=task, state=state, worker=worker, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_worker_federation_record(
+        task=task,
+        state=state,
+        federation={"federation_id": "preserve-federation", "worker_ids": ["preserve-worker-a", "preserve-worker-b"], "coordinator_worker_id": "preserve-worker-a"},
+        current_tick=19,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "preserve-decision-a", "worker_id": "preserve-worker-a", "federation_id": "preserve-federation", "target_node_id": "constitution-node", "decision": "rollback"},
+        current_tick=20,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "preserve-decision-b", "worker_id": "preserve-worker-b", "federation_id": "preserve-federation", "target_node_id": "constitution-node", "decision": "hold"},
+        current_tick=21,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_arbitration_decision_record(
+        task=task,
+        state=state,
+        arbitration={"arbitration_id": "preserve-arbitration", "conflicting_decision_ids": ["preserve-decision-a", "preserve-decision-b"], "worker_ids": ["preserve-worker-a", "preserve-worker-b"], "federation_id": "preserve-federation", "target_node_id": "constitution-node", "decision": "rollback"},
+        current_tick=22,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_quorum_record(
+        task=task,
+        state=state,
+        quorum={"quorum_id": "preserve-quorum", "authority_worker_ids": ["preserve-worker-a", "preserve-worker-b"], "federation_id": "preserve-federation", "threshold": 2},
+        current_tick=23,
+    )
+    state["workflow_runtime_session"] = session
+    for tick, vote in (
+        (24, {"vote_id": "preserve-vote-a", "quorum_id": "preserve-quorum", "worker_id": "preserve-worker-a", "federation_id": "preserve-federation", "vote": "accept"}),
+        (25, {"vote_id": "preserve-vote-b", "quorum_id": "preserve-quorum", "worker_id": "preserve-worker-b", "federation_id": "preserve-federation", "vote": "accept"}),
+    ):
+        session = manager.attach_consensus_vote_record(task=task, state=state, vote=vote, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_federated_consensus_record(
+        task=task,
+        state=state,
+        consensus={"consensus_id": "preserve-consensus", "arbitration_id": "preserve-arbitration", "quorum_id": "preserve-quorum", "vote_ids": ["preserve-vote-a", "preserve-vote-b"], "required_vote_ids": ["preserve-vote-a", "preserve-vote-b"], "worker_ids": ["preserve-worker-a", "preserve-worker-b"], "federation_id": "preserve-federation", "decision": "rollback"},
+        current_tick=26,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_runtime_self_observability_record(
+        task=task,
+        state=state,
+        observability={"observability_id": "preserve-observe", "target_node_id": "constitution-node", "signal": "catastrophic_constitution_drift", "severity": "critical"},
+        current_tick=27,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_preservation_record(
+        task=task,
+        state=state,
+        preservation={"preservation_id": "preservation-record", "constitution_node_id": "constitution-node", "governance_record_id": "constitution-enforcement", "enforcement_id": "constitution-enforcement", "policy_decision_id": "preserve-policy"},
+        current_tick=28,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_self_preservation_decision_record(
+        task=task,
+        state=state,
+        decision={"self_preservation_decision_id": "self-preservation", "preservation_id": "preservation-record", "observability_id": "preserve-observe", "policy_decision_id": "preserve-policy", "authority_id": "preserve-authority", "decision": "preserve"},
+        current_tick=29,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_catastrophic_failure_record(
+        task=task,
+        state=state,
+        failure={"catastrophic_failure_id": "catastrophic-failure", "failure_node_id": "constitution-node", "governance_record_id": "constitution-enforcement", "failure_classification": "constitutional_corruption"},
+        current_tick=30,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_catastrophic_recovery_lineage_record(
+        task=task,
+        state=state,
+        recovery={"catastrophic_recovery_id": "catastrophic-recovery", "catastrophic_failure_id": "catastrophic-failure", "rollback_id": "constitutional-rollback", "recovery_dependency_id": "constitutional-recovery-dependency", "recovery_node_id": "recovery-node"},
+        current_tick=31,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_rollback_arbitration_record(
+        task=task,
+        state=state,
+        arbitration={"constitutional_rollback_arbitration_id": "constitutional-rollback-arbitration", "consensus_id": "preserve-consensus", "quorum_id": "preserve-quorum", "failed_constitutional_change_id": "preservation-record", "rollback_id": "constitutional-rollback", "decision": "rollback"},
+        current_tick=32,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_adaptive_constitutional_stabilization_record(
+        task=task,
+        state=state,
+        stabilization={"constitutional_stabilization_id": "constitutional-stabilization", "catastrophic_recovery_id": "catastrophic-recovery", "preservation_id": "preservation-record", "stabilization": "constitution_stable"},
+        current_tick=33,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_survivability_continuity_record(
+        task=task,
+        state=state,
+        survivability={"survivability_id": "survivability-record", "preservation_id": "preservation-record", "catastrophic_recovery_id": "catastrophic-recovery", "constitutional_stabilization_id": "constitutional-stabilization", "status": "survivable"},
+        current_tick=34,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["constitutional_preservation_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["catastrophic_failure_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["catastrophic_recovery_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["survivability_count"] == 1
+    json.dumps(session, sort_keys=True, default=str)
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "main",
+        "continued_branch_id": "main",
+        "preservation_ids": ["preservation-record"],
+        "consensus_ids": ["preserve-consensus"],
+    }
+    replay = build_replayable_workflow_runtime_session(task=task, runtime_state={**state, "workflow_runtime_session": session})
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    assert replay_session["lineage"]["replay_continuation"]["preservation_ids"] == ["preservation-record"]
+
+    broken_preservation = dict(session)
+    broken_preservation["lineage"] = dict(session["lineage"])
+    broken_preservation["lineage"]["constitutional_preservation_graph"] = dict(session["lineage"]["constitutional_preservation_graph"])
+    broken_preservation["lineage"]["constitutional_preservation_graph"]["preservations"] = [dict(item) for item in session["lineage"]["constitutional_preservation_graph"]["preservations"]]
+    broken_preservation["lineage"]["constitutional_preservation_graph"]["preservations"][0]["constitution_node_id"] = "missing-node"
+    broken_preservation_summary = manager.continuity_summary(broken_preservation)
+    assert broken_preservation_summary["ok"] is False
+    assert "preservation_without_constitution_parent" in broken_preservation_summary["breaks"]
+
+    broken_self_preservation = dict(session)
+    broken_self_preservation["lineage"] = dict(session["lineage"])
+    broken_self_preservation["lineage"]["constitutional_preservation_graph"] = dict(session["lineage"]["constitutional_preservation_graph"])
+    broken_self_preservation["lineage"]["constitutional_preservation_graph"]["self_preservation_decisions"] = [dict(item) for item in session["lineage"]["constitutional_preservation_graph"]["self_preservation_decisions"]]
+    broken_self_preservation["lineage"]["constitutional_preservation_graph"]["self_preservation_decisions"][0]["authority_id"] = "missing-authority"
+    broken_self_preservation_summary = manager.continuity_summary(broken_self_preservation)
+    assert broken_self_preservation_summary["ok"] is False
+    assert "self_preservation_missing_observability_authority" in broken_self_preservation_summary["breaks"]
+
+    broken_recovery = dict(session)
+    broken_recovery["lineage"] = dict(session["lineage"])
+    broken_recovery["lineage"]["constitutional_preservation_graph"] = dict(session["lineage"]["constitutional_preservation_graph"])
+    broken_recovery["lineage"]["constitutional_preservation_graph"]["catastrophic_recoveries"] = [dict(item) for item in session["lineage"]["constitutional_preservation_graph"]["catastrophic_recoveries"]]
+    broken_recovery["lineage"]["constitutional_preservation_graph"]["catastrophic_recoveries"][0]["catastrophic_failure_id"] = "missing-failure"
+    broken_recovery_summary = manager.continuity_summary(broken_recovery)
+    assert broken_recovery_summary["ok"] is False
+    assert "catastrophic_recovery_without_failure_parent" in broken_recovery_summary["breaks"]
+
+    broken_arbitration = dict(session)
+    broken_arbitration["lineage"] = dict(session["lineage"])
+    broken_arbitration["lineage"]["constitutional_preservation_graph"] = dict(session["lineage"]["constitutional_preservation_graph"])
+    broken_arbitration["lineage"]["constitutional_preservation_graph"]["rollback_arbitrations"] = [dict(item) for item in session["lineage"]["constitutional_preservation_graph"]["rollback_arbitrations"]]
+    broken_arbitration["lineage"]["constitutional_preservation_graph"]["rollback_arbitrations"][0]["quorum_id"] = "missing-quorum"
+    broken_arbitration_summary = manager.continuity_summary(broken_arbitration)
+    assert broken_arbitration_summary["ok"] is False
+    assert "constitutional_rollback_arbitration_missing_consensus_quorum" in broken_arbitration_summary["breaks"]
+
+    broken_stabilization = dict(session)
+    broken_stabilization["lineage"] = dict(session["lineage"])
+    broken_stabilization["lineage"]["constitutional_preservation_graph"] = dict(session["lineage"]["constitutional_preservation_graph"])
+    broken_stabilization["lineage"]["constitutional_preservation_graph"]["stabilizations"] = [dict(item) for item in session["lineage"]["constitutional_preservation_graph"]["stabilizations"]]
+    broken_stabilization["lineage"]["constitutional_preservation_graph"]["stabilizations"][0]["catastrophic_recovery_id"] = "missing-recovery"
+    broken_stabilization_summary = manager.continuity_summary(broken_stabilization)
+    assert broken_stabilization_summary["ok"] is False
+    assert "constitutional_stabilization_without_recovery_parent" in broken_stabilization_summary["breaks"]
+
+    broken_survivability = dict(session)
+    broken_survivability["lineage"] = dict(session["lineage"])
+    broken_survivability["lineage"]["constitutional_preservation_graph"] = dict(session["lineage"]["constitutional_preservation_graph"])
+    broken_survivability["lineage"]["constitutional_preservation_graph"]["survivability"] = [dict(item) for item in session["lineage"]["constitutional_preservation_graph"]["survivability"]]
+    broken_survivability["lineage"]["constitutional_preservation_graph"]["survivability"][0]["constitutional_stabilization_id"] = "missing-stabilization"
+    broken_survivability_summary = manager.continuity_summary(broken_survivability)
+    assert broken_survivability_summary["ok"] is False
+    assert "survivability_without_preservation_recovery_stabilization" in broken_survivability_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["preservation_ids"] = ["stale-preservation"]
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_stale_constitutional_preservation_lineage" in broken_replay_summary["breaks"]

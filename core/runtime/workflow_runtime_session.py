@@ -2511,6 +2511,353 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_constitutional_preservation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        preservation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitutional_preservation_record(task=task, state=state, preservation=preservation, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitutional_preservation",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_constitutional_preservation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        preservation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(preservation if isinstance(preservation, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "constitution_node_id": safe_text(payload.get("constitution_node_id") or payload.get("target_node_id")),
+            "governance_record_id": safe_text(payload.get("governance_record_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitutional_preservation.v1",
+            "preservation_id": safe_text(payload.get("preservation_id")) or "wfcpr_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "constitution_node_id": safe_text(payload.get("constitution_node_id") or payload.get("target_node_id")),
+            "governance_record_id": safe_text(payload.get("governance_record_id")),
+            "enforcement_id": safe_text(payload.get("enforcement_id")),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "preservation_scope": safe_text(payload.get("preservation_scope")) or "runtime_constitution",
+            "created_at": utc_now(),
+        }
+
+    def attach_self_preservation_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        decision: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_self_preservation_decision_record(task=task, state=state, decision=decision, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="self_preservation_decision",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_self_preservation_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        decision: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(decision if isinstance(decision, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "authority_id": safe_text(payload.get("authority_id")),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.self_preservation_decision.v1",
+            "self_preservation_decision_id": safe_text(payload.get("self_preservation_decision_id")) or "wfspd_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "authority_id": safe_text(payload.get("authority_id")),
+            "decision": safe_text(payload.get("decision")) or "preserve",
+            "created_at": utc_now(),
+        }
+
+    def attach_catastrophic_failure_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        failure: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_catastrophic_failure_record(task=task, state=state, failure=failure, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="catastrophic_failure",
+            record=record,
+            current_tick=current_tick,
+            ok=False,
+        )
+
+    def build_catastrophic_failure_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        failure: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(failure if isinstance(failure, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "failure_node_id": safe_text(payload.get("failure_node_id") or payload.get("target_node_id")),
+            "governance_record_id": safe_text(payload.get("governance_record_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.catastrophic_failure.v1",
+            "catastrophic_failure_id": safe_text(payload.get("catastrophic_failure_id")) or "wfcf_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "failure_node_id": safe_text(payload.get("failure_node_id") or payload.get("target_node_id")),
+            "governance_record_id": safe_text(payload.get("governance_record_id")),
+            "failure_classification": safe_text(payload.get("failure_classification")) or "catastrophic_runtime_failure",
+            "created_at": utc_now(),
+        }
+
+    def attach_catastrophic_recovery_lineage_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_catastrophic_recovery_lineage_record(task=task, state=state, recovery=recovery, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="catastrophic_recovery_lineage",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_catastrophic_recovery_lineage_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(recovery if isinstance(recovery, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "catastrophic_failure_id": safe_text(payload.get("catastrophic_failure_id")),
+            "rollback_id": safe_text(payload.get("rollback_id")),
+            "recovery_dependency_id": safe_text(payload.get("recovery_dependency_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.catastrophic_recovery_lineage.v1",
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")) or "wfcr_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "catastrophic_failure_id": safe_text(payload.get("catastrophic_failure_id")),
+            "rollback_id": safe_text(payload.get("rollback_id")),
+            "recovery_dependency_id": safe_text(payload.get("recovery_dependency_id")),
+            "recovery_node_id": safe_text(payload.get("recovery_node_id")),
+            "created_at": utc_now(),
+        }
+
+    def attach_constitutional_rollback_arbitration_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        arbitration: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitutional_rollback_arbitration_record(task=task, state=state, arbitration=arbitration, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitutional_rollback_arbitration",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_constitutional_rollback_arbitration_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        arbitration: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(arbitration if isinstance(arbitration, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "quorum_id": safe_text(payload.get("quorum_id")),
+            "failed_change_id": safe_text(payload.get("failed_constitutional_change_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitutional_rollback_arbitration.v1",
+            "constitutional_rollback_arbitration_id": safe_text(payload.get("constitutional_rollback_arbitration_id")) or "wfcra_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "quorum_id": safe_text(payload.get("quorum_id")),
+            "failed_constitutional_change_id": safe_text(payload.get("failed_constitutional_change_id")),
+            "rollback_id": safe_text(payload.get("rollback_id")),
+            "decision": safe_text(payload.get("decision")) or "rollback",
+            "created_at": utc_now(),
+        }
+
+    def attach_adaptive_constitutional_stabilization_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        stabilization: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_adaptive_constitutional_stabilization_record(task=task, state=state, stabilization=stabilization, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="adaptive_constitutional_stabilization",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_adaptive_constitutional_stabilization_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        stabilization: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(stabilization if isinstance(stabilization, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.adaptive_constitutional_stabilization.v1",
+            "constitutional_stabilization_id": safe_text(payload.get("constitutional_stabilization_id")) or "wfacst_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "stabilization": safe_text(payload.get("stabilization")) or "constitutional_stabilized",
+            "created_at": utc_now(),
+        }
+
+    def attach_survivability_continuity_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        survivability: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_survivability_continuity_record(task=task, state=state, survivability=survivability, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="survivability_continuity",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_survivability_continuity_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        survivability: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(survivability if isinstance(survivability, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")),
+            "constitutional_stabilization_id": safe_text(payload.get("constitutional_stabilization_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.survivability_continuity.v1",
+            "survivability_id": safe_text(payload.get("survivability_id")) or "wfsurv_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")),
+            "constitutional_stabilization_id": safe_text(payload.get("constitutional_stabilization_id")),
+            "status": safe_text(payload.get("status")) or "survivable",
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -3318,6 +3665,77 @@ class WorkflowRuntimeSessionManager:
                 "self_repair_id": safe_text(step_result.get("self_repair_id")),
                 "stabilization": safe_text(step_result.get("stabilization")),
             }
+        if action == "constitutional_preservation":
+            lineage["constitutional_preservation"] = {
+                "preservation_id": safe_text(step_result.get("preservation_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "constitution_node_id": safe_text(step_result.get("constitution_node_id")),
+                "governance_record_id": safe_text(step_result.get("governance_record_id")),
+                "enforcement_id": safe_text(step_result.get("enforcement_id")),
+                "policy_decision_id": safe_text(step_result.get("policy_decision_id")),
+                "preservation_scope": safe_text(step_result.get("preservation_scope")),
+            }
+        if action == "self_preservation_decision":
+            lineage["self_preservation_decision"] = {
+                "self_preservation_decision_id": safe_text(step_result.get("self_preservation_decision_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "preservation_id": safe_text(step_result.get("preservation_id")),
+                "observability_id": safe_text(step_result.get("observability_id")),
+                "policy_decision_id": safe_text(step_result.get("policy_decision_id")),
+                "authority_id": safe_text(step_result.get("authority_id")),
+                "decision": safe_text(step_result.get("decision")),
+            }
+        if action == "catastrophic_failure":
+            lineage["catastrophic_failure"] = {
+                "catastrophic_failure_id": safe_text(step_result.get("catastrophic_failure_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "failure_node_id": safe_text(step_result.get("failure_node_id")),
+                "governance_record_id": safe_text(step_result.get("governance_record_id")),
+                "failure_classification": safe_text(step_result.get("failure_classification")),
+            }
+        if action == "catastrophic_recovery_lineage":
+            lineage["catastrophic_recovery_lineage"] = {
+                "catastrophic_recovery_id": safe_text(step_result.get("catastrophic_recovery_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "catastrophic_failure_id": safe_text(step_result.get("catastrophic_failure_id")),
+                "rollback_id": safe_text(step_result.get("rollback_id")),
+                "recovery_dependency_id": safe_text(step_result.get("recovery_dependency_id")),
+                "recovery_node_id": safe_text(step_result.get("recovery_node_id")),
+            }
+        if action == "constitutional_rollback_arbitration":
+            lineage["constitutional_rollback_arbitration"] = {
+                "constitutional_rollback_arbitration_id": safe_text(step_result.get("constitutional_rollback_arbitration_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "consensus_id": safe_text(step_result.get("consensus_id")),
+                "quorum_id": safe_text(step_result.get("quorum_id")),
+                "failed_constitutional_change_id": safe_text(step_result.get("failed_constitutional_change_id")),
+                "rollback_id": safe_text(step_result.get("rollback_id")),
+                "decision": safe_text(step_result.get("decision")),
+            }
+        if action == "adaptive_constitutional_stabilization":
+            lineage["adaptive_constitutional_stabilization"] = {
+                "constitutional_stabilization_id": safe_text(step_result.get("constitutional_stabilization_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "catastrophic_recovery_id": safe_text(step_result.get("catastrophic_recovery_id")),
+                "preservation_id": safe_text(step_result.get("preservation_id")),
+                "stabilization": safe_text(step_result.get("stabilization")),
+            }
+        if action == "survivability_continuity":
+            lineage["survivability_continuity"] = {
+                "survivability_id": safe_text(step_result.get("survivability_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "preservation_id": safe_text(step_result.get("preservation_id")),
+                "catastrophic_recovery_id": safe_text(step_result.get("catastrophic_recovery_id")),
+                "constitutional_stabilization_id": safe_text(step_result.get("constitutional_stabilization_id")),
+                "status": safe_text(step_result.get("status")),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -3348,6 +3766,7 @@ class WorkflowRuntimeSessionManager:
                 "distributed_execution_ids": copy.deepcopy(replay_input.get("distributed_execution_ids") if isinstance(replay_input.get("distributed_execution_ids"), list) else []),
                 "consensus_ids": copy.deepcopy(replay_input.get("consensus_ids") if isinstance(replay_input.get("consensus_ids"), list) else []),
                 "self_healing_recovery_ids": copy.deepcopy(replay_input.get("self_healing_recovery_ids") if isinstance(replay_input.get("self_healing_recovery_ids"), list) else []),
+                "preservation_ids": copy.deepcopy(replay_input.get("preservation_ids") if isinstance(replay_input.get("preservation_ids"), list) else []),
             }
         return lineage
 
@@ -3586,6 +4005,41 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("adaptive_governance_stabilization"), dict)
         ]
+        constitutional_preservations = [
+            copy.deepcopy(event.lineage.get("constitutional_preservation"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitutional_preservation"), dict)
+        ]
+        self_preservation_decisions = [
+            copy.deepcopy(event.lineage.get("self_preservation_decision"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("self_preservation_decision"), dict)
+        ]
+        catastrophic_failures = [
+            copy.deepcopy(event.lineage.get("catastrophic_failure"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("catastrophic_failure"), dict)
+        ]
+        catastrophic_recoveries = [
+            copy.deepcopy(event.lineage.get("catastrophic_recovery_lineage"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("catastrophic_recovery_lineage"), dict)
+        ]
+        constitutional_rollback_arbitrations = [
+            copy.deepcopy(event.lineage.get("constitutional_rollback_arbitration"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitutional_rollback_arbitration"), dict)
+        ]
+        adaptive_constitutional_stabilizations = [
+            copy.deepcopy(event.lineage.get("adaptive_constitutional_stabilization"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("adaptive_constitutional_stabilization"), dict)
+        ]
+        survivability_records = [
+            copy.deepcopy(event.lineage.get("survivability_continuity"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("survivability_continuity"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -3665,6 +4119,16 @@ class WorkflowRuntimeSessionManager:
                 "recoveries": self_healing_recoveries[-100:],
                 "stabilizations": adaptive_stabilizations[-100:],
             },
+            "constitutional_preservation_graph": {
+                "schema": "zero.workflow_runtime_session.constitutional_preservation_graph.v1",
+                "preservations": constitutional_preservations[-100:],
+                "self_preservation_decisions": self_preservation_decisions[-100:],
+                "catastrophic_failures": catastrophic_failures[-100:],
+                "catastrophic_recoveries": catastrophic_recoveries[-100:],
+                "rollback_arbitrations": constitutional_rollback_arbitrations[-100:],
+                "stabilizations": adaptive_constitutional_stabilizations[-100:],
+                "survivability": survivability_records[-100:],
+            },
         }
         if source_session_id:
             replay_input = self._replay_continuation_input(task=task, state=state, result=result)
@@ -3737,6 +4201,17 @@ class WorkflowRuntimeSessionManager:
                     for item in self_healing_recoveries[-20:]
                     if isinstance(item, dict) and safe_text(item.get("self_healing_recovery_id"))
                 ]
+            replay_preservation_ids = [
+                safe_text(item)
+                for item in (replay_input.get("preservation_ids") if isinstance(replay_input.get("preservation_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_preservation_ids:
+                replay_preservation_ids = [
+                    safe_text(item.get("preservation_id"))
+                    for item in constitutional_preservations[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("preservation_id"))
+                ]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -3757,6 +4232,7 @@ class WorkflowRuntimeSessionManager:
                 "distributed_execution_ids": replay_execution_ids,
                 "consensus_ids": replay_consensus_ids,
                 "self_healing_recovery_ids": replay_self_healing_recovery_ids,
+                "preservation_ids": replay_preservation_ids,
             }
         return lineage
 
@@ -4153,6 +4629,13 @@ class WorkflowRuntimeSessionManager:
         self_repair_governance: List[Dict[str, Any]] = []
         self_healing_recoveries: List[Dict[str, Any]] = []
         adaptive_stabilizations: List[Dict[str, Any]] = []
+        constitutional_preservations: List[Dict[str, Any]] = []
+        self_preservation_decisions: List[Dict[str, Any]] = []
+        catastrophic_failures: List[Dict[str, Any]] = []
+        catastrophic_recoveries: List[Dict[str, Any]] = []
+        constitutional_rollback_arbitrations: List[Dict[str, Any]] = []
+        adaptive_constitutional_stabilizations: List[Dict[str, Any]] = []
+        survivability_records: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -4365,6 +4848,27 @@ class WorkflowRuntimeSessionManager:
             stabilization = event_lineage.get("adaptive_governance_stabilization") if isinstance(event_lineage.get("adaptive_governance_stabilization"), dict) else {}
             if stabilization:
                 adaptive_stabilizations.append(copy.deepcopy(stabilization))
+            preservation = event_lineage.get("constitutional_preservation") if isinstance(event_lineage.get("constitutional_preservation"), dict) else {}
+            if preservation:
+                constitutional_preservations.append(copy.deepcopy(preservation))
+            self_preservation = event_lineage.get("self_preservation_decision") if isinstance(event_lineage.get("self_preservation_decision"), dict) else {}
+            if self_preservation:
+                self_preservation_decisions.append(copy.deepcopy(self_preservation))
+            catastrophic_failure = event_lineage.get("catastrophic_failure") if isinstance(event_lineage.get("catastrophic_failure"), dict) else {}
+            if catastrophic_failure:
+                catastrophic_failures.append(copy.deepcopy(catastrophic_failure))
+            catastrophic_recovery = event_lineage.get("catastrophic_recovery_lineage") if isinstance(event_lineage.get("catastrophic_recovery_lineage"), dict) else {}
+            if catastrophic_recovery:
+                catastrophic_recoveries.append(copy.deepcopy(catastrophic_recovery))
+            rollback_arbitration = event_lineage.get("constitutional_rollback_arbitration") if isinstance(event_lineage.get("constitutional_rollback_arbitration"), dict) else {}
+            if rollback_arbitration:
+                constitutional_rollback_arbitrations.append(copy.deepcopy(rollback_arbitration))
+            constitutional_stabilization = event_lineage.get("adaptive_constitutional_stabilization") if isinstance(event_lineage.get("adaptive_constitutional_stabilization"), dict) else {}
+            if constitutional_stabilization:
+                adaptive_constitutional_stabilizations.append(copy.deepcopy(constitutional_stabilization))
+            survivability = event_lineage.get("survivability_continuity") if isinstance(event_lineage.get("survivability_continuity"), dict) else {}
+            if survivability:
+                survivability_records.append(copy.deepcopy(survivability))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -4487,6 +4991,28 @@ class WorkflowRuntimeSessionManager:
         for stabilization in self_healing_graph.get("stabilizations") if isinstance(self_healing_graph.get("stabilizations"), list) else []:
             if isinstance(stabilization, dict) and stabilization not in adaptive_stabilizations:
                 adaptive_stabilizations.append(copy.deepcopy(stabilization))
+        preservation_graph = lineage.get("constitutional_preservation_graph") if isinstance(lineage.get("constitutional_preservation_graph"), dict) else {}
+        for preservation in preservation_graph.get("preservations") if isinstance(preservation_graph.get("preservations"), list) else []:
+            if isinstance(preservation, dict) and preservation not in constitutional_preservations:
+                constitutional_preservations.append(copy.deepcopy(preservation))
+        for decision in preservation_graph.get("self_preservation_decisions") if isinstance(preservation_graph.get("self_preservation_decisions"), list) else []:
+            if isinstance(decision, dict) and decision not in self_preservation_decisions:
+                self_preservation_decisions.append(copy.deepcopy(decision))
+        for failure in preservation_graph.get("catastrophic_failures") if isinstance(preservation_graph.get("catastrophic_failures"), list) else []:
+            if isinstance(failure, dict) and failure not in catastrophic_failures:
+                catastrophic_failures.append(copy.deepcopy(failure))
+        for recovery in preservation_graph.get("catastrophic_recoveries") if isinstance(preservation_graph.get("catastrophic_recoveries"), list) else []:
+            if isinstance(recovery, dict) and recovery not in catastrophic_recoveries:
+                catastrophic_recoveries.append(copy.deepcopy(recovery))
+        for arbitration in preservation_graph.get("rollback_arbitrations") if isinstance(preservation_graph.get("rollback_arbitrations"), list) else []:
+            if isinstance(arbitration, dict) and arbitration not in constitutional_rollback_arbitrations:
+                constitutional_rollback_arbitrations.append(copy.deepcopy(arbitration))
+        for stabilization in preservation_graph.get("stabilizations") if isinstance(preservation_graph.get("stabilizations"), list) else []:
+            if isinstance(stabilization, dict) and stabilization not in adaptive_constitutional_stabilizations:
+                adaptive_constitutional_stabilizations.append(copy.deepcopy(stabilization))
+        for survivability in preservation_graph.get("survivability") if isinstance(preservation_graph.get("survivability"), list) else []:
+            if isinstance(survivability, dict) and survivability not in survivability_records:
+                survivability_records.append(copy.deepcopy(survivability))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -5039,6 +5565,131 @@ class WorkflowRuntimeSessionManager:
             if repair_id and repair_id not in self_repair_ids:
                 breaks.append("stabilization_without_recovery_parent")
 
+        preservation_ids = {
+            safe_text(preservation.get("preservation_id"))
+            for preservation in constitutional_preservations
+            if safe_text(preservation.get("preservation_id"))
+        }
+        catastrophic_failure_ids = {
+            safe_text(failure.get("catastrophic_failure_id"))
+            for failure in catastrophic_failures
+            if safe_text(failure.get("catastrophic_failure_id"))
+        }
+        catastrophic_recovery_ids = {
+            safe_text(recovery.get("catastrophic_recovery_id"))
+            for recovery in catastrophic_recoveries
+            if safe_text(recovery.get("catastrophic_recovery_id"))
+        }
+        constitutional_stabilization_ids = {
+            safe_text(stabilization.get("constitutional_stabilization_id"))
+            for stabilization in adaptive_constitutional_stabilizations
+            if safe_text(stabilization.get("constitutional_stabilization_id"))
+        }
+        recovery_dependency_ids = {
+            safe_text(dependency.get("recovery_dependency_id"))
+            for dependency in recovery_dependencies
+            if safe_text(dependency.get("recovery_dependency_id"))
+        }
+        enforcement_ids = {
+            safe_text(enforcement.get("enforcement_id"))
+            for enforcement in constitution_enforcements
+            if safe_text(enforcement.get("enforcement_id"))
+        }
+
+        for preservation in constitutional_preservations:
+            if safe_text(preservation.get("workflow_id")) != workflow_id or safe_text(preservation.get("session_id")) != session_id:
+                breaks.append("preservation_without_constitution_parent")
+            constitution_node_id = safe_text(preservation.get("constitution_node_id"))
+            governance_record_id = safe_text(preservation.get("governance_record_id"))
+            enforcement_id = safe_text(preservation.get("enforcement_id"))
+            policy_id = safe_text(preservation.get("policy_decision_id"))
+            node_ok = bool(constitution_node_id and constitution_node_id in graph_node_ids)
+            governance_ok = bool(governance_record_id and governance_record_id in governance_ids)
+            enforcement_ok = bool(enforcement_id and enforcement_id in enforcement_ids)
+            policy_ok = bool(policy_id and policy_id in policy_ids)
+            if not node_ok or not (governance_ok or enforcement_ok or policy_ok):
+                breaks.append("preservation_without_constitution_parent")
+
+        for decision in self_preservation_decisions:
+            if safe_text(decision.get("workflow_id")) != workflow_id or safe_text(decision.get("session_id")) != session_id:
+                breaks.append("self_preservation_missing_observability_authority")
+            if safe_text(decision.get("preservation_id")) and safe_text(decision.get("preservation_id")) not in preservation_ids:
+                breaks.append("self_preservation_missing_observability_authority")
+            observability_id = safe_text(decision.get("observability_id"))
+            authority_id = safe_text(decision.get("authority_id"))
+            policy_id = safe_text(decision.get("policy_decision_id"))
+            if not observability_id or observability_id not in observability_ids:
+                breaks.append("self_preservation_missing_observability_authority")
+            if not authority_id or authority_id not in governance_ids:
+                breaks.append("self_preservation_missing_observability_authority")
+            if policy_id and policy_id not in policy_ids:
+                breaks.append("self_preservation_missing_observability_authority")
+
+        for failure in catastrophic_failures:
+            if safe_text(failure.get("workflow_id")) != workflow_id or safe_text(failure.get("session_id")) != session_id:
+                breaks.append("catastrophic_failure_lineage_mismatch")
+            failure_node_id = safe_text(failure.get("failure_node_id"))
+            governance_record_id = safe_text(failure.get("governance_record_id"))
+            if failure_node_id and failure_node_id not in graph_node_ids:
+                breaks.append("catastrophic_failure_lineage_mismatch")
+            if governance_record_id and governance_record_id not in governance_ids:
+                breaks.append("catastrophic_failure_lineage_mismatch")
+
+        for recovery in catastrophic_recoveries:
+            if safe_text(recovery.get("workflow_id")) != workflow_id or safe_text(recovery.get("session_id")) != session_id:
+                breaks.append("catastrophic_recovery_without_failure_parent")
+            failure_id = safe_text(recovery.get("catastrophic_failure_id"))
+            rollback_id = safe_text(recovery.get("rollback_id"))
+            recovery_dependency_id = safe_text(recovery.get("recovery_dependency_id"))
+            recovery_node_id = safe_text(recovery.get("recovery_node_id"))
+            if not failure_id or failure_id not in catastrophic_failure_ids:
+                breaks.append("catastrophic_recovery_without_failure_parent")
+            if rollback_id and rollback_id not in rollback_ids:
+                breaks.append("catastrophic_recovery_without_failure_parent")
+            if recovery_dependency_id and recovery_dependency_id not in recovery_dependency_ids:
+                breaks.append("catastrophic_recovery_without_failure_parent")
+            if recovery_node_id and recovery_node_id not in graph_node_ids:
+                breaks.append("catastrophic_recovery_without_failure_parent")
+
+        for arbitration in constitutional_rollback_arbitrations:
+            if safe_text(arbitration.get("workflow_id")) != workflow_id or safe_text(arbitration.get("session_id")) != session_id:
+                breaks.append("constitutional_rollback_arbitration_missing_consensus_quorum")
+            consensus_id = safe_text(arbitration.get("consensus_id"))
+            quorum_id = safe_text(arbitration.get("quorum_id"))
+            rollback_id = safe_text(arbitration.get("rollback_id"))
+            failed_change_id = safe_text(arbitration.get("failed_constitutional_change_id"))
+            if not consensus_id or consensus_id not in consensus_ids:
+                breaks.append("constitutional_rollback_arbitration_missing_consensus_quorum")
+            if not quorum_id or quorum_id not in quorum_ids:
+                breaks.append("constitutional_rollback_arbitration_missing_consensus_quorum")
+            if rollback_id and rollback_id not in rollback_ids:
+                breaks.append("constitutional_rollback_arbitration_missing_consensus_quorum")
+            if failed_change_id and failed_change_id not in preservation_ids and failed_change_id not in governance_ids:
+                breaks.append("constitutional_rollback_arbitration_missing_consensus_quorum")
+
+        for stabilization in adaptive_constitutional_stabilizations:
+            if safe_text(stabilization.get("workflow_id")) != workflow_id or safe_text(stabilization.get("session_id")) != session_id:
+                breaks.append("constitutional_stabilization_without_recovery_parent")
+            recovery_id = safe_text(stabilization.get("catastrophic_recovery_id"))
+            preservation_id = safe_text(stabilization.get("preservation_id"))
+            if not recovery_id or recovery_id not in catastrophic_recovery_ids:
+                breaks.append("constitutional_stabilization_without_recovery_parent")
+            if preservation_id and preservation_id not in preservation_ids:
+                breaks.append("constitutional_stabilization_without_recovery_parent")
+
+        for survivability in survivability_records:
+            if safe_text(survivability.get("workflow_id")) != workflow_id or safe_text(survivability.get("session_id")) != session_id:
+                breaks.append("survivability_without_preservation_recovery_stabilization")
+            preservation_id = safe_text(survivability.get("preservation_id"))
+            recovery_id = safe_text(survivability.get("catastrophic_recovery_id"))
+            stabilization_id = safe_text(survivability.get("constitutional_stabilization_id"))
+            if not preservation_id or preservation_id not in preservation_ids:
+                breaks.append("survivability_without_preservation_recovery_stabilization")
+            if not recovery_id or recovery_id not in catastrophic_recovery_ids:
+                breaks.append("survivability_without_preservation_recovery_stabilization")
+            if not stabilization_id or stabilization_id not in constitutional_stabilization_ids:
+                breaks.append("survivability_without_preservation_recovery_stabilization")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -5096,6 +5747,13 @@ class WorkflowRuntimeSessionManager:
         ]
         if any(recovery_id not in self_healing_recovery_ids for recovery_id in replay_self_healing_recovery_ids):
             breaks.append("replay_stale_self_healing_lineage")
+        replay_preservation_ids = [
+            safe_text(item)
+            for item in (replay.get("preservation_ids") if isinstance(replay.get("preservation_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(preservation_id not in preservation_ids for preservation_id in replay_preservation_ids):
+            breaks.append("replay_stale_constitutional_preservation_lineage")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -5159,6 +5817,14 @@ class WorkflowRuntimeSessionManager:
                         "self_healing_recovery_without_repair_parent",
                         "stabilization_without_recovery_parent",
                         "replay_stale_self_healing_lineage",
+                        "preservation_without_constitution_parent",
+                        "self_preservation_missing_observability_authority",
+                        "catastrophic_failure_lineage_mismatch",
+                        "catastrophic_recovery_without_failure_parent",
+                        "constitutional_rollback_arbitration_missing_consensus_quorum",
+                        "constitutional_stabilization_without_recovery_parent",
+                        "survivability_without_preservation_recovery_stabilization",
+                        "replay_stale_constitutional_preservation_lineage",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -5193,6 +5859,13 @@ class WorkflowRuntimeSessionManager:
                 "self_repair_governance_count": len(self_repair_ids),
                 "self_healing_recovery_count": len(self_healing_recovery_ids),
                 "adaptive_stabilization_count": len(adaptive_stabilizations),
+                "constitutional_preservation_count": len(preservation_ids),
+                "self_preservation_decision_count": len(self_preservation_decisions),
+                "catastrophic_failure_count": len(catastrophic_failure_ids),
+                "catastrophic_recovery_count": len(catastrophic_recovery_ids),
+                "constitutional_rollback_arbitration_count": len(constitutional_rollback_arbitrations),
+                "adaptive_constitutional_stabilization_count": len(adaptive_constitutional_stabilizations),
+                "survivability_count": len(survivability_records),
             },
         }
 
