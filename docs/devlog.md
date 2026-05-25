@@ -435,3 +435,43 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 13 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Arbitration / Federated Governance Consensus v1
+
+Added arbitration and federated governance consensus continuity to the workflow
+runtime session contract.
+
+ZERO now preserves arbitration, quorum, consensus votes, federated governance
+decisions, replay reconciliation, and cross-worker authority lineage inside the
+engineering runtime graph:
+
+```text
+workflow session
+-> worker / federation graph
+-> conflicting worker decisions
+-> arbitration decision linked to the conflicts
+-> authority quorum linked to eligible authority workers
+-> consensus votes linked to the quorum
+-> federated consensus linked to arbitration and votes
+-> replay reconciliation linked to consensus lineage
+-> federated governance decision linked to worker lineage
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Runtime replay only
+summarizes deterministic consensus references for replay continuation; it does
+not execute actions, add tools, create mutation shortcuts, or take ownership
+from Scheduler. Continuity summary now detects arbitration records without
+conflicting decision parents, quorums with missing authority workers, votes not
+linked to a quorum, consensus decisions missing arbitration parents or required
+votes, replay reconciliation records with stale consensus lineage, and
+federated governance decisions referencing unrelated worker lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 14 passed
+```

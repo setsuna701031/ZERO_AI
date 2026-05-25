@@ -1824,6 +1824,397 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_worker_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        decision: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_worker_decision_record(task=task, state=state, decision=decision, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="worker_decision",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_worker_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        decision: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(decision if isinstance(decision, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "decision": safe_text(payload.get("decision")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.worker_decision.v1",
+            "worker_decision_id": safe_text(payload.get("worker_decision_id")) or safe_text(payload.get("decision_id")) or "wfwd_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "federation_id": safe_text(payload.get("federation_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "decision": safe_text(payload.get("decision")),
+            "decision_value": _json_safe(payload.get("decision_value", payload.get("decision"))),
+            "created_at": utc_now(),
+        }
+
+    def attach_arbitration_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        arbitration: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_arbitration_decision_record(task=task, state=state, arbitration=arbitration, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="arbitration_decision",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_arbitration_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        arbitration: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(arbitration if isinstance(arbitration, dict) else {})
+        conflicting_decision_ids = [
+            safe_text(item)
+            for item in (payload.get("conflicting_decision_ids") if isinstance(payload.get("conflicting_decision_ids"), list) else [])
+            if safe_text(item)
+        ]
+        worker_ids = [
+            safe_text(item)
+            for item in (payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "conflicting_decision_ids": conflicting_decision_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.arbitration_decision.v1",
+            "arbitration_id": safe_text(payload.get("arbitration_id")) or "wfarb_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "conflicting_decision_ids": conflicting_decision_ids,
+            "worker_ids": worker_ids,
+            "federation_id": safe_text(payload.get("federation_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "decision": safe_text(payload.get("decision")),
+            "created_at": utc_now(),
+        }
+
+    def attach_authority_quorum_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        quorum: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_authority_quorum_record(task=task, state=state, quorum=quorum, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="authority_quorum",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_authority_quorum_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        quorum: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(quorum if isinstance(quorum, dict) else {})
+        authority_worker_ids = [
+            safe_text(item)
+            for item in (payload.get("authority_worker_ids") if isinstance(payload.get("authority_worker_ids"), list) else payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        threshold = safe_int(payload.get("threshold"), len(authority_worker_ids))
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "authority_worker_ids": authority_worker_ids,
+            "threshold": threshold,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.authority_quorum.v1",
+            "quorum_id": safe_text(payload.get("quorum_id")) or "wfqrm_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "authority_worker_ids": authority_worker_ids,
+            "federation_id": safe_text(payload.get("federation_id")),
+            "threshold": threshold,
+            "created_at": utc_now(),
+        }
+
+    def attach_consensus_vote_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        vote: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_consensus_vote_record(task=task, state=state, vote=vote, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="consensus_vote",
+            record=record,
+            current_tick=current_tick,
+            ok=bool(record.get("accepted", True)),
+        )
+
+    def build_consensus_vote_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        vote: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(vote if isinstance(vote, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "quorum_id": safe_text(payload.get("quorum_id")),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.consensus_vote.v1",
+            "vote_id": safe_text(payload.get("vote_id")) or "wfvote_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "quorum_id": safe_text(payload.get("quorum_id")),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "federation_id": safe_text(payload.get("federation_id")),
+            "vote": safe_text(payload.get("vote")) or safe_text(payload.get("decision")),
+            "accepted": bool(payload.get("accepted", True)),
+            "created_at": utc_now(),
+        }
+
+    def attach_federated_consensus_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        consensus: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_federated_consensus_record(task=task, state=state, consensus=consensus, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="federated_consensus",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_federated_consensus_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        consensus: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(consensus if isinstance(consensus, dict) else {})
+        vote_ids = [
+            safe_text(item)
+            for item in (payload.get("vote_ids") if isinstance(payload.get("vote_ids"), list) else [])
+            if safe_text(item)
+        ]
+        required_vote_ids = [
+            safe_text(item)
+            for item in (payload.get("required_vote_ids") if isinstance(payload.get("required_vote_ids"), list) else vote_ids)
+            if safe_text(item)
+        ]
+        worker_ids = [
+            safe_text(item)
+            for item in (payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "arbitration_id": safe_text(payload.get("arbitration_id")),
+            "required_vote_ids": required_vote_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.federated_consensus.v1",
+            "consensus_id": safe_text(payload.get("consensus_id")) or "wfcon_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "arbitration_id": safe_text(payload.get("arbitration_id")),
+            "quorum_id": safe_text(payload.get("quorum_id")),
+            "vote_ids": vote_ids,
+            "required_vote_ids": required_vote_ids,
+            "worker_ids": worker_ids,
+            "federation_id": safe_text(payload.get("federation_id")),
+            "decision": safe_text(payload.get("decision")),
+            "created_at": utc_now(),
+        }
+
+    def attach_replay_reconciliation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        reconciliation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_replay_reconciliation_record(task=task, state=state, reconciliation=reconciliation, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="replay_reconciliation",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_replay_reconciliation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        reconciliation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(reconciliation if isinstance(reconciliation, dict) else {})
+        consensus_id = safe_text(payload.get("consensus_id"))
+        consensus_hash = safe_text(payload.get("consensus_lineage_hash"))
+        if consensus_id and not consensus_hash:
+            for item in session.get("lineage", {}).get("federated_consensus_graph", {}).get("consensus", []):
+                if isinstance(item, dict) and safe_text(item.get("consensus_id")) == consensus_id:
+                    consensus_hash = stable_hash(item)
+                    break
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "consensus_id": consensus_id,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.replay_reconciliation.v1",
+            "replay_reconciliation_id": safe_text(payload.get("replay_reconciliation_id")) or "wfrrec_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "consensus_id": consensus_id,
+            "consensus_lineage_hash": consensus_hash,
+            "arbitration_id": safe_text(payload.get("arbitration_id")),
+            "vote_ids": copy.deepcopy(payload.get("vote_ids") if isinstance(payload.get("vote_ids"), list) else []),
+            "created_at": utc_now(),
+        }
+
+    def attach_federated_governance_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        governance: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_federated_governance_decision_record(task=task, state=state, governance=governance, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="federated_governance_decision",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_federated_governance_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        governance: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(governance if isinstance(governance, dict) else {})
+        worker_ids = [
+            safe_text(item)
+            for item in (payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "worker_ids": worker_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.federated_governance_decision.v1",
+            "governance_decision_id": safe_text(payload.get("governance_decision_id")) or "wfgovd_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "arbitration_id": safe_text(payload.get("arbitration_id")),
+            "worker_ids": worker_ids,
+            "federation_id": safe_text(payload.get("federation_id")),
+            "decision": safe_text(payload.get("decision")),
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -2493,6 +2884,82 @@ class WorkflowRuntimeSessionManager:
                 "governance_record_ids": copy.deepcopy(step_result.get("governance_record_ids") if isinstance(step_result.get("governance_record_ids"), list) else []),
                 "federation_id": safe_text(step_result.get("federation_id")),
             }
+        if action == "worker_decision":
+            lineage["worker_decision"] = {
+                "worker_decision_id": safe_text(step_result.get("worker_decision_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "worker_id": safe_text(step_result.get("worker_id")),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "decision": safe_text(step_result.get("decision")),
+                "decision_value": _json_safe(step_result.get("decision_value")),
+            }
+        if action == "arbitration_decision":
+            lineage["arbitration_decision"] = {
+                "arbitration_id": safe_text(step_result.get("arbitration_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "conflicting_decision_ids": copy.deepcopy(step_result.get("conflicting_decision_ids") if isinstance(step_result.get("conflicting_decision_ids"), list) else []),
+                "worker_ids": copy.deepcopy(step_result.get("worker_ids") if isinstance(step_result.get("worker_ids"), list) else []),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "decision": safe_text(step_result.get("decision")),
+            }
+        if action == "authority_quorum":
+            lineage["authority_quorum"] = {
+                "quorum_id": safe_text(step_result.get("quorum_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "authority_worker_ids": copy.deepcopy(step_result.get("authority_worker_ids") if isinstance(step_result.get("authority_worker_ids"), list) else []),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "threshold": safe_int(step_result.get("threshold"), 0),
+            }
+        if action == "consensus_vote":
+            lineage["consensus_vote"] = {
+                "vote_id": safe_text(step_result.get("vote_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "quorum_id": safe_text(step_result.get("quorum_id")),
+                "worker_id": safe_text(step_result.get("worker_id")),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "vote": safe_text(step_result.get("vote")),
+                "accepted": bool(step_result.get("accepted", True)),
+            }
+        if action == "federated_consensus":
+            lineage["federated_consensus"] = {
+                "consensus_id": safe_text(step_result.get("consensus_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "arbitration_id": safe_text(step_result.get("arbitration_id")),
+                "quorum_id": safe_text(step_result.get("quorum_id")),
+                "vote_ids": copy.deepcopy(step_result.get("vote_ids") if isinstance(step_result.get("vote_ids"), list) else []),
+                "required_vote_ids": copy.deepcopy(step_result.get("required_vote_ids") if isinstance(step_result.get("required_vote_ids"), list) else []),
+                "worker_ids": copy.deepcopy(step_result.get("worker_ids") if isinstance(step_result.get("worker_ids"), list) else []),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "decision": safe_text(step_result.get("decision")),
+            }
+        if action == "replay_reconciliation":
+            lineage["replay_reconciliation"] = {
+                "replay_reconciliation_id": safe_text(step_result.get("replay_reconciliation_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "consensus_id": safe_text(step_result.get("consensus_id")),
+                "consensus_lineage_hash": safe_text(step_result.get("consensus_lineage_hash")),
+                "arbitration_id": safe_text(step_result.get("arbitration_id")),
+                "vote_ids": copy.deepcopy(step_result.get("vote_ids") if isinstance(step_result.get("vote_ids"), list) else []),
+            }
+        if action == "federated_governance_decision":
+            lineage["federated_governance_decision"] = {
+                "governance_decision_id": safe_text(step_result.get("governance_decision_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "consensus_id": safe_text(step_result.get("consensus_id")),
+                "arbitration_id": safe_text(step_result.get("arbitration_id")),
+                "worker_ids": copy.deepcopy(step_result.get("worker_ids") if isinstance(step_result.get("worker_ids"), list) else []),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "decision": safe_text(step_result.get("decision")),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -2521,6 +2988,7 @@ class WorkflowRuntimeSessionManager:
                 "governance_record_ids": copy.deepcopy(replay_input.get("governance_record_ids") if isinstance(replay_input.get("governance_record_ids"), list) else []),
                 "worker_ids": copy.deepcopy(replay_input.get("worker_ids") if isinstance(replay_input.get("worker_ids"), list) else []),
                 "distributed_execution_ids": copy.deepcopy(replay_input.get("distributed_execution_ids") if isinstance(replay_input.get("distributed_execution_ids"), list) else []),
+                "consensus_ids": copy.deepcopy(replay_input.get("consensus_ids") if isinstance(replay_input.get("consensus_ids"), list) else []),
             }
         return lineage
 
@@ -2694,6 +3162,41 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("distributed_governance"), dict)
         ]
+        worker_decisions = [
+            copy.deepcopy(event.lineage.get("worker_decision"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("worker_decision"), dict)
+        ]
+        arbitration_decisions = [
+            copy.deepcopy(event.lineage.get("arbitration_decision"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("arbitration_decision"), dict)
+        ]
+        authority_quorums = [
+            copy.deepcopy(event.lineage.get("authority_quorum"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("authority_quorum"), dict)
+        ]
+        consensus_votes = [
+            copy.deepcopy(event.lineage.get("consensus_vote"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("consensus_vote"), dict)
+        ]
+        federated_consensus = [
+            copy.deepcopy(event.lineage.get("federated_consensus"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("federated_consensus"), dict)
+        ]
+        replay_reconciliations = [
+            copy.deepcopy(event.lineage.get("replay_reconciliation"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("replay_reconciliation"), dict)
+        ]
+        federated_governance_decisions = [
+            copy.deepcopy(event.lineage.get("federated_governance_decision"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("federated_governance_decision"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -2753,6 +3256,16 @@ class WorkflowRuntimeSessionManager:
                 "distributed_recoveries": distributed_recoveries[-100:],
                 "federated_authority": federated_authorities[-100:],
                 "distributed_governance": distributed_governance[-100:],
+                "worker_decisions": worker_decisions[-200:],
+            },
+            "federated_consensus_graph": {
+                "schema": "zero.workflow_runtime_session.federated_consensus_graph.v1",
+                "arbitrations": arbitration_decisions[-100:],
+                "quorums": authority_quorums[-100:],
+                "votes": consensus_votes[-200:],
+                "consensus": federated_consensus[-100:],
+                "replay_reconciliations": replay_reconciliations[-100:],
+                "governance_decisions": federated_governance_decisions[-100:],
             },
         }
         if source_session_id:
@@ -2804,6 +3317,17 @@ class WorkflowRuntimeSessionManager:
                     for item in distributed_executions[-20:]
                     if isinstance(item, dict) and safe_text(item.get("distributed_execution_id"))
                 ]
+            replay_consensus_ids = [
+                safe_text(item)
+                for item in (replay_input.get("consensus_ids") if isinstance(replay_input.get("consensus_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_consensus_ids:
+                replay_consensus_ids = [
+                    safe_text(item.get("consensus_id"))
+                    for item in federated_consensus[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("consensus_id"))
+                ]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -2822,6 +3346,7 @@ class WorkflowRuntimeSessionManager:
                 "governance_record_ids": replay_governance_ids,
                 "worker_ids": replay_worker_ids,
                 "distributed_execution_ids": replay_execution_ids,
+                "consensus_ids": replay_consensus_ids,
             }
         return lineage
 
@@ -3205,6 +3730,13 @@ class WorkflowRuntimeSessionManager:
         distributed_recoveries: List[Dict[str, Any]] = []
         federated_authorities: List[Dict[str, Any]] = []
         distributed_governance: List[Dict[str, Any]] = []
+        worker_decisions: List[Dict[str, Any]] = []
+        arbitration_decisions: List[Dict[str, Any]] = []
+        authority_quorums: List[Dict[str, Any]] = []
+        consensus_votes: List[Dict[str, Any]] = []
+        federated_consensus: List[Dict[str, Any]] = []
+        replay_reconciliations: List[Dict[str, Any]] = []
+        federated_governance_decisions: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -3378,6 +3910,27 @@ class WorkflowRuntimeSessionManager:
             distributed_governance_record = event_lineage.get("distributed_governance") if isinstance(event_lineage.get("distributed_governance"), dict) else {}
             if distributed_governance_record:
                 distributed_governance.append(copy.deepcopy(distributed_governance_record))
+            worker_decision = event_lineage.get("worker_decision") if isinstance(event_lineage.get("worker_decision"), dict) else {}
+            if worker_decision:
+                worker_decisions.append(copy.deepcopy(worker_decision))
+            arbitration_decision = event_lineage.get("arbitration_decision") if isinstance(event_lineage.get("arbitration_decision"), dict) else {}
+            if arbitration_decision:
+                arbitration_decisions.append(copy.deepcopy(arbitration_decision))
+            authority_quorum = event_lineage.get("authority_quorum") if isinstance(event_lineage.get("authority_quorum"), dict) else {}
+            if authority_quorum:
+                authority_quorums.append(copy.deepcopy(authority_quorum))
+            consensus_vote = event_lineage.get("consensus_vote") if isinstance(event_lineage.get("consensus_vote"), dict) else {}
+            if consensus_vote:
+                consensus_votes.append(copy.deepcopy(consensus_vote))
+            consensus_record = event_lineage.get("federated_consensus") if isinstance(event_lineage.get("federated_consensus"), dict) else {}
+            if consensus_record:
+                federated_consensus.append(copy.deepcopy(consensus_record))
+            replay_reconciliation = event_lineage.get("replay_reconciliation") if isinstance(event_lineage.get("replay_reconciliation"), dict) else {}
+            if replay_reconciliation:
+                replay_reconciliations.append(copy.deepcopy(replay_reconciliation))
+            governance_decision = event_lineage.get("federated_governance_decision") if isinstance(event_lineage.get("federated_governance_decision"), dict) else {}
+            if governance_decision:
+                federated_governance_decisions.append(copy.deepcopy(governance_decision))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -3459,6 +4012,28 @@ class WorkflowRuntimeSessionManager:
         for governance_item in actor_graph.get("distributed_governance") if isinstance(actor_graph.get("distributed_governance"), list) else []:
             if isinstance(governance_item, dict) and governance_item not in distributed_governance:
                 distributed_governance.append(copy.deepcopy(governance_item))
+        for decision in actor_graph.get("worker_decisions") if isinstance(actor_graph.get("worker_decisions"), list) else []:
+            if isinstance(decision, dict) and decision not in worker_decisions:
+                worker_decisions.append(copy.deepcopy(decision))
+        consensus_graph = lineage.get("federated_consensus_graph") if isinstance(lineage.get("federated_consensus_graph"), dict) else {}
+        for arbitration in consensus_graph.get("arbitrations") if isinstance(consensus_graph.get("arbitrations"), list) else []:
+            if isinstance(arbitration, dict) and arbitration not in arbitration_decisions:
+                arbitration_decisions.append(copy.deepcopy(arbitration))
+        for quorum in consensus_graph.get("quorums") if isinstance(consensus_graph.get("quorums"), list) else []:
+            if isinstance(quorum, dict) and quorum not in authority_quorums:
+                authority_quorums.append(copy.deepcopy(quorum))
+        for vote in consensus_graph.get("votes") if isinstance(consensus_graph.get("votes"), list) else []:
+            if isinstance(vote, dict) and vote not in consensus_votes:
+                consensus_votes.append(copy.deepcopy(vote))
+        for consensus_record in consensus_graph.get("consensus") if isinstance(consensus_graph.get("consensus"), list) else []:
+            if isinstance(consensus_record, dict) and consensus_record not in federated_consensus:
+                federated_consensus.append(copy.deepcopy(consensus_record))
+        for reconciliation in consensus_graph.get("replay_reconciliations") if isinstance(consensus_graph.get("replay_reconciliations"), list) else []:
+            if isinstance(reconciliation, dict) and reconciliation not in replay_reconciliations:
+                replay_reconciliations.append(copy.deepcopy(reconciliation))
+        for governance_decision in consensus_graph.get("governance_decisions") if isinstance(consensus_graph.get("governance_decisions"), list) else []:
+            if isinstance(governance_decision, dict) and governance_decision not in federated_governance_decisions:
+                federated_governance_decisions.append(copy.deepcopy(governance_decision))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -3777,6 +4352,148 @@ class WorkflowRuntimeSessionManager:
             if safe_text(governance_item.get("federation_id")) and safe_text(governance_item.get("federation_id")) not in federation_ids:
                 breaks.append("distributed_governance_stale_worker")
 
+        worker_decision_ids = {
+            safe_text(decision.get("worker_decision_id"))
+            for decision in worker_decisions
+            if safe_text(decision.get("worker_decision_id"))
+        }
+        arbitration_ids = {
+            safe_text(arbitration.get("arbitration_id"))
+            for arbitration in arbitration_decisions
+            if safe_text(arbitration.get("arbitration_id"))
+        }
+        quorum_ids = {
+            safe_text(quorum.get("quorum_id"))
+            for quorum in authority_quorums
+            if safe_text(quorum.get("quorum_id"))
+        }
+        vote_ids = {
+            safe_text(vote.get("vote_id"))
+            for vote in consensus_votes
+            if safe_text(vote.get("vote_id"))
+        }
+        consensus_by_id = {
+            safe_text(consensus_record.get("consensus_id")): consensus_record
+            for consensus_record in federated_consensus
+            if safe_text(consensus_record.get("consensus_id"))
+        }
+        consensus_ids = set(consensus_by_id.keys())
+
+        for decision in worker_decisions:
+            if safe_text(decision.get("workflow_id")) != workflow_id or safe_text(decision.get("session_id")) != session_id:
+                breaks.append("worker_lineage_mismatch")
+            if safe_text(decision.get("worker_id")) not in worker_ids:
+                breaks.append("worker_lineage_mismatch")
+            if safe_text(decision.get("federation_id")) and safe_text(decision.get("federation_id")) not in federation_ids:
+                breaks.append("worker_lineage_mismatch")
+            target_node_id = safe_text(decision.get("target_node_id"))
+            if target_node_id and target_node_id not in graph_node_ids:
+                breaks.append("worker_lineage_mismatch")
+
+        for arbitration in arbitration_decisions:
+            if safe_text(arbitration.get("workflow_id")) != workflow_id or safe_text(arbitration.get("session_id")) != session_id:
+                breaks.append("arbitration_without_conflicting_decision_parents")
+            conflicting_decision_ids = [
+                safe_text(item)
+                for item in (arbitration.get("conflicting_decision_ids") if isinstance(arbitration.get("conflicting_decision_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if len(conflicting_decision_ids) < 2 or any(decision_id not in worker_decision_ids for decision_id in conflicting_decision_ids):
+                breaks.append("arbitration_without_conflicting_decision_parents")
+            conflict_values = {
+                safe_text(decision.get("decision"))
+                for decision in worker_decisions
+                if safe_text(decision.get("worker_decision_id")) in conflicting_decision_ids and safe_text(decision.get("decision"))
+            }
+            if len(conflict_values) < 2:
+                breaks.append("arbitration_without_conflicting_decision_parents")
+            for worker_id in arbitration.get("worker_ids") if isinstance(arbitration.get("worker_ids"), list) else []:
+                if safe_text(worker_id) not in worker_ids:
+                    breaks.append("arbitration_without_conflicting_decision_parents")
+            if safe_text(arbitration.get("federation_id")) and safe_text(arbitration.get("federation_id")) not in federation_ids:
+                breaks.append("arbitration_without_conflicting_decision_parents")
+
+        for quorum in authority_quorums:
+            if safe_text(quorum.get("workflow_id")) != workflow_id or safe_text(quorum.get("session_id")) != session_id:
+                breaks.append("quorum_missing_authority_worker")
+            authority_worker_ids = [
+                safe_text(item)
+                for item in (quorum.get("authority_worker_ids") if isinstance(quorum.get("authority_worker_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not authority_worker_ids or any(worker_id not in worker_ids for worker_id in authority_worker_ids):
+                breaks.append("quorum_missing_authority_worker")
+            if safe_text(quorum.get("federation_id")) and safe_text(quorum.get("federation_id")) not in federation_ids:
+                breaks.append("quorum_missing_authority_worker")
+
+        for vote in consensus_votes:
+            quorum_id = safe_text(vote.get("quorum_id"))
+            worker_id = safe_text(vote.get("worker_id"))
+            if safe_text(vote.get("workflow_id")) != workflow_id or safe_text(vote.get("session_id")) != session_id:
+                breaks.append("vote_not_linked_to_quorum")
+            if not quorum_id or quorum_id not in quorum_ids:
+                breaks.append("vote_not_linked_to_quorum")
+            if worker_id not in worker_ids:
+                breaks.append("vote_not_linked_to_quorum")
+            matching_quorum = next((item for item in authority_quorums if safe_text(item.get("quorum_id")) == quorum_id), {})
+            quorum_worker_ids = matching_quorum.get("authority_worker_ids") if isinstance(matching_quorum.get("authority_worker_ids"), list) else []
+            if quorum_worker_ids and worker_id not in {safe_text(item) for item in quorum_worker_ids}:
+                breaks.append("vote_not_linked_to_quorum")
+
+        for consensus_record in federated_consensus:
+            arbitration_id = safe_text(consensus_record.get("arbitration_id"))
+            quorum_id = safe_text(consensus_record.get("quorum_id"))
+            if safe_text(consensus_record.get("workflow_id")) != workflow_id or safe_text(consensus_record.get("session_id")) != session_id:
+                breaks.append("consensus_missing_arbitration_parent")
+            if not arbitration_id or arbitration_id not in arbitration_ids:
+                breaks.append("consensus_missing_arbitration_parent")
+            if quorum_id and quorum_id not in quorum_ids:
+                breaks.append("consensus_missing_required_vote")
+            required_vote_ids = [
+                safe_text(item)
+                for item in (consensus_record.get("required_vote_ids") if isinstance(consensus_record.get("required_vote_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not required_vote_ids or any(vote_id not in vote_ids for vote_id in required_vote_ids):
+                breaks.append("consensus_missing_required_vote")
+            for vote_id in consensus_record.get("vote_ids") if isinstance(consensus_record.get("vote_ids"), list) else []:
+                if safe_text(vote_id) not in vote_ids:
+                    breaks.append("consensus_missing_required_vote")
+            for worker_id in consensus_record.get("worker_ids") if isinstance(consensus_record.get("worker_ids"), list) else []:
+                if safe_text(worker_id) not in worker_ids:
+                    breaks.append("consensus_missing_required_vote")
+
+        for reconciliation in replay_reconciliations:
+            consensus_id = safe_text(reconciliation.get("consensus_id"))
+            if safe_text(reconciliation.get("workflow_id")) != workflow_id or safe_text(reconciliation.get("session_id")) != session_id:
+                breaks.append("replay_reconciliation_stale_consensus_lineage")
+            if not consensus_id or consensus_id not in consensus_ids:
+                breaks.append("replay_reconciliation_stale_consensus_lineage")
+                continue
+            if safe_text(reconciliation.get("consensus_lineage_hash")) != stable_hash(consensus_by_id[consensus_id]):
+                breaks.append("replay_reconciliation_stale_consensus_lineage")
+            arbitration_id = safe_text(reconciliation.get("arbitration_id"))
+            if arbitration_id and arbitration_id not in arbitration_ids:
+                breaks.append("replay_reconciliation_stale_consensus_lineage")
+            for vote_id in reconciliation.get("vote_ids") if isinstance(reconciliation.get("vote_ids"), list) else []:
+                if safe_text(vote_id) not in vote_ids:
+                    breaks.append("replay_reconciliation_stale_consensus_lineage")
+
+        for governance_decision in federated_governance_decisions:
+            consensus_id = safe_text(governance_decision.get("consensus_id"))
+            arbitration_id = safe_text(governance_decision.get("arbitration_id"))
+            if safe_text(governance_decision.get("workflow_id")) != workflow_id or safe_text(governance_decision.get("session_id")) != session_id:
+                breaks.append("governance_decision_unrelated_worker_lineage")
+            if consensus_id and consensus_id not in consensus_ids:
+                breaks.append("governance_decision_unrelated_worker_lineage")
+            if arbitration_id and arbitration_id not in arbitration_ids:
+                breaks.append("governance_decision_unrelated_worker_lineage")
+            for worker_id in governance_decision.get("worker_ids") if isinstance(governance_decision.get("worker_ids"), list) else []:
+                if safe_text(worker_id) not in worker_ids:
+                    breaks.append("governance_decision_unrelated_worker_lineage")
+            if safe_text(governance_decision.get("federation_id")) and safe_text(governance_decision.get("federation_id")) not in federation_ids:
+                breaks.append("governance_decision_unrelated_worker_lineage")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -3820,6 +4537,13 @@ class WorkflowRuntimeSessionManager:
         ]
         if any(execution_id not in distributed_execution_ids for execution_id in replay_execution_ids):
             breaks.append("replay_worker_lineage_mismatch")
+        replay_consensus_ids = [
+            safe_text(item)
+            for item in (replay.get("consensus_ids") if isinstance(replay.get("consensus_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(consensus_id not in consensus_ids for consensus_id in replay_consensus_ids):
+            breaks.append("replay_stale_consensus_lineage")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -3868,6 +4592,14 @@ class WorkflowRuntimeSessionManager:
                         "federated_authority_mismatch",
                         "distributed_recovery_unrelated_execution",
                         "distributed_governance_stale_worker",
+                        "arbitration_without_conflicting_decision_parents",
+                        "quorum_missing_authority_worker",
+                        "vote_not_linked_to_quorum",
+                        "consensus_missing_arbitration_parent",
+                        "consensus_missing_required_vote",
+                        "replay_reconciliation_stale_consensus_lineage",
+                        "governance_decision_unrelated_worker_lineage",
+                        "replay_stale_consensus_lineage",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -3889,6 +4621,13 @@ class WorkflowRuntimeSessionManager:
                 "federation_count": len(federation_ids),
                 "distributed_execution_count": len(distributed_execution_ids),
                 "distributed_recovery_count": len(distributed_recoveries),
+                "worker_decision_count": len(worker_decision_ids),
+                "arbitration_count": len(arbitration_ids),
+                "authority_quorum_count": len(quorum_ids),
+                "consensus_vote_count": len(vote_ids),
+                "federated_consensus_count": len(consensus_ids),
+                "replay_reconciliation_count": len(replay_reconciliations),
+                "federated_governance_decision_count": len(federated_governance_decisions),
             },
         }
 

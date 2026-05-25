@@ -696,6 +696,7 @@ def workflow_replay_graph_summary(
     rollback_graph = source_lineage.get("rollback_graph") if isinstance(source_lineage.get("rollback_graph"), dict) else {}
     governance_graph = source_lineage.get("governance_state_graph") if isinstance(source_lineage.get("governance_state_graph"), dict) else {}
     actor_graph = source_lineage.get("actor_worker_graph") if isinstance(source_lineage.get("actor_worker_graph"), dict) else {}
+    consensus_graph = source_lineage.get("federated_consensus_graph") if isinstance(source_lineage.get("federated_consensus_graph"), dict) else {}
 
     mutation_ids = [
         str(item.get("mutation_transaction_id") or "").strip()
@@ -744,6 +745,14 @@ def workflow_replay_graph_summary(
     if execution_ids and not isinstance(replay.get("distributed_execution_ids"), list):
         replay["distributed_execution_ids"] = execution_ids[-20:]
 
+    consensus_ids = [
+        str(item.get("consensus_id") or "").strip()
+        for item in (consensus_graph.get("consensus") if isinstance(consensus_graph.get("consensus"), list) else [])
+        if isinstance(item, dict) and str(item.get("consensus_id") or "").strip()
+    ]
+    if consensus_ids and not isinstance(replay.get("consensus_ids"), list):
+        replay["consensus_ids"] = consensus_ids[-20:]
+
     return {
         "schema": "zero.workflow_runtime_session.replay_graph_summary.v1",
         "ok": True,
@@ -753,4 +762,5 @@ def workflow_replay_graph_summary(
         "governance_record_ids": copy.deepcopy(replay.get("governance_record_ids") if isinstance(replay.get("governance_record_ids"), list) else []),
         "worker_ids": copy.deepcopy(replay.get("worker_ids") if isinstance(replay.get("worker_ids"), list) else []),
         "distributed_execution_ids": copy.deepcopy(replay.get("distributed_execution_ids") if isinstance(replay.get("distributed_execution_ids"), list) else []),
+        "consensus_ids": copy.deepcopy(replay.get("consensus_ids") if isinstance(replay.get("consensus_ids"), list) else []),
     }

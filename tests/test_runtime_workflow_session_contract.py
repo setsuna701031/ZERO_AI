@@ -1447,3 +1447,181 @@ def test_workflow_runtime_multi_actor_federation_continuity() -> None:
     broken_governance_summary = manager.continuity_summary(broken_governance)
     assert broken_governance_summary["ok"] is False
     assert "distributed_governance_stale_worker" in broken_governance_summary["breaks"]
+
+
+def test_workflow_runtime_arbitration_federated_governance_consensus_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-arbitration", "steps": []}
+    state = {"task_id": "wf-arbitration", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent={"task_id": "wf-arbitration", "goal": "arbitrate workers"}, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    for tick, node in (
+        (2, {"node_id": "arb-root", "branch_id": "main"}),
+        (3, {"node_id": "arb-target", "branch_id": "main", "parent_node_id": "arb-root"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    for tick, worker in (
+        (4, {"worker_id": "authority-a", "actor_id": "actor-a", "authority_scope": "governance"}),
+        (5, {"worker_id": "authority-b", "actor_id": "actor-b", "authority_scope": "governance"}),
+    ):
+        session = manager.attach_actor_worker_record(task=task, state=state, worker=worker, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    session = manager.attach_worker_federation_record(
+        task=task,
+        state=state,
+        federation={"federation_id": "federation-arb", "worker_ids": ["authority-a", "authority-b"], "coordinator_worker_id": "authority-a"},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "decision-a", "worker_id": "authority-a", "federation_id": "federation-arb", "target_node_id": "arb-target", "decision": "allow"},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "decision-b", "worker_id": "authority-b", "federation_id": "federation-arb", "target_node_id": "arb-target", "decision": "block"},
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_arbitration_decision_record(
+        task=task,
+        state=state,
+        arbitration={"arbitration_id": "arbitration-ab", "conflicting_decision_ids": ["decision-a", "decision-b"], "worker_ids": ["authority-a", "authority-b"], "federation_id": "federation-arb", "target_node_id": "arb-target", "decision": "review"},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_quorum_record(
+        task=task,
+        state=state,
+        quorum={"quorum_id": "quorum-ab", "authority_worker_ids": ["authority-a", "authority-b"], "federation_id": "federation-arb", "threshold": 2},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_consensus_vote_record(
+        task=task,
+        state=state,
+        vote={"vote_id": "vote-a", "quorum_id": "quorum-ab", "worker_id": "authority-a", "federation_id": "federation-arb", "vote": "accept", "accepted": True},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_consensus_vote_record(
+        task=task,
+        state=state,
+        vote={"vote_id": "vote-b", "quorum_id": "quorum-ab", "worker_id": "authority-b", "federation_id": "federation-arb", "vote": "accept", "accepted": True},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_federated_consensus_record(
+        task=task,
+        state=state,
+        consensus={"consensus_id": "consensus-ab", "arbitration_id": "arbitration-ab", "quorum_id": "quorum-ab", "vote_ids": ["vote-a", "vote-b"], "required_vote_ids": ["vote-a", "vote-b"], "worker_ids": ["authority-a", "authority-b"], "federation_id": "federation-arb", "decision": "accepted"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_replay_reconciliation_record(
+        task=task,
+        state=state,
+        reconciliation={"replay_reconciliation_id": "replay-rec-ab", "consensus_id": "consensus-ab", "arbitration_id": "arbitration-ab", "vote_ids": ["vote-a", "vote-b"]},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_federated_governance_decision_record(
+        task=task,
+        state=state,
+        governance={"governance_decision_id": "gov-decision-ab", "consensus_id": "consensus-ab", "arbitration_id": "arbitration-ab", "worker_ids": ["authority-a", "authority-b"], "federation_id": "federation-arb", "decision": "resume"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["arbitration_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["authority_quorum_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["consensus_vote_count"] == 2
+    assert session["continuity_summary"]["graph_continuity"]["federated_consensus_count"] == 1
+    assert session["lineage"]["federated_consensus_graph"]["consensus"]
+    json.dumps(session, sort_keys=True, default=str)
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "main",
+        "continued_branch_id": "main",
+        "worker_ids": ["authority-a", "authority-b"],
+        "consensus_ids": ["consensus-ab"],
+    }
+    replay = build_replayable_workflow_runtime_session(task=task, runtime_state={**state, "workflow_runtime_session": session})
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    assert replay_session["lineage"]["replay_continuation"]["consensus_ids"] == ["consensus-ab"]
+
+    broken_arbitration = dict(session)
+    broken_arbitration["lineage"] = dict(session["lineage"])
+    broken_arbitration["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_arbitration["lineage"]["federated_consensus_graph"]["arbitrations"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["arbitrations"]]
+    broken_arbitration["lineage"]["federated_consensus_graph"]["arbitrations"][0]["conflicting_decision_ids"] = ["decision-a"]
+    broken_arbitration_summary = manager.continuity_summary(broken_arbitration)
+    assert broken_arbitration_summary["ok"] is False
+    assert "arbitration_without_conflicting_decision_parents" in broken_arbitration_summary["breaks"]
+
+    broken_quorum = dict(session)
+    broken_quorum["lineage"] = dict(session["lineage"])
+    broken_quorum["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_quorum["lineage"]["federated_consensus_graph"]["quorums"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["quorums"]]
+    broken_quorum["lineage"]["federated_consensus_graph"]["quorums"][0]["authority_worker_ids"] = ["authority-a", "missing-worker"]
+    broken_quorum_summary = manager.continuity_summary(broken_quorum)
+    assert broken_quorum_summary["ok"] is False
+    assert "quorum_missing_authority_worker" in broken_quorum_summary["breaks"]
+
+    broken_vote = dict(session)
+    broken_vote["lineage"] = dict(session["lineage"])
+    broken_vote["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_vote["lineage"]["federated_consensus_graph"]["votes"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["votes"]]
+    broken_vote["lineage"]["federated_consensus_graph"]["votes"][0]["quorum_id"] = "missing-quorum"
+    broken_vote_summary = manager.continuity_summary(broken_vote)
+    assert broken_vote_summary["ok"] is False
+    assert "vote_not_linked_to_quorum" in broken_vote_summary["breaks"]
+
+    broken_consensus_parent = dict(session)
+    broken_consensus_parent["lineage"] = dict(session["lineage"])
+    broken_consensus_parent["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_consensus_parent["lineage"]["federated_consensus_graph"]["consensus"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["consensus"]]
+    broken_consensus_parent["lineage"]["federated_consensus_graph"]["consensus"][0]["arbitration_id"] = "missing-arbitration"
+    broken_consensus_parent_summary = manager.continuity_summary(broken_consensus_parent)
+    assert broken_consensus_parent_summary["ok"] is False
+    assert "consensus_missing_arbitration_parent" in broken_consensus_parent_summary["breaks"]
+
+    broken_consensus_vote = dict(session)
+    broken_consensus_vote["lineage"] = dict(session["lineage"])
+    broken_consensus_vote["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_consensus_vote["lineage"]["federated_consensus_graph"]["consensus"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["consensus"]]
+    broken_consensus_vote["lineage"]["federated_consensus_graph"]["consensus"][0]["required_vote_ids"] = ["vote-a", "missing-vote"]
+    broken_consensus_vote_summary = manager.continuity_summary(broken_consensus_vote)
+    assert broken_consensus_vote_summary["ok"] is False
+    assert "consensus_missing_required_vote" in broken_consensus_vote_summary["breaks"]
+
+    broken_reconciliation = dict(session)
+    broken_reconciliation["lineage"] = dict(session["lineage"])
+    broken_reconciliation["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_reconciliation["lineage"]["federated_consensus_graph"]["replay_reconciliations"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["replay_reconciliations"]]
+    broken_reconciliation["lineage"]["federated_consensus_graph"]["replay_reconciliations"][0]["consensus_lineage_hash"] = "stale"
+    broken_reconciliation_summary = manager.continuity_summary(broken_reconciliation)
+    assert broken_reconciliation_summary["ok"] is False
+    assert "replay_reconciliation_stale_consensus_lineage" in broken_reconciliation_summary["breaks"]
+
+    broken_governance = dict(session)
+    broken_governance["lineage"] = dict(session["lineage"])
+    broken_governance["lineage"]["federated_consensus_graph"] = dict(session["lineage"]["federated_consensus_graph"])
+    broken_governance["lineage"]["federated_consensus_graph"]["governance_decisions"] = [dict(item) for item in session["lineage"]["federated_consensus_graph"]["governance_decisions"]]
+    broken_governance["lineage"]["federated_consensus_graph"]["governance_decisions"][0]["worker_ids"] = ["unrelated-worker"]
+    broken_governance_summary = manager.continuity_summary(broken_governance)
+    assert broken_governance_summary["ok"] is False
+    assert "governance_decision_unrelated_worker_lineage" in broken_governance_summary["breaks"]
