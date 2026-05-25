@@ -57,6 +57,25 @@ def safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def _sorted_unique(values: Iterable[Any]) -> List[str]:
+    """Return deterministic unique non-empty strings for continuity summaries.
+
+    This helper is intentionally local and side-effect free.  Several
+    continuity validators append duplicate break reasons while walking the
+    graph; keeping the result sorted makes test output and persisted summaries
+    stable across runs.
+    """
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        text = safe_text(value)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+    return sorted(normalized)
+
+
 def task_id_from(task: Any, state: Any = None) -> str:
     for source in (task, state):
         if isinstance(source, dict):
@@ -6567,3 +6586,416 @@ def build_workflow_runtime_session(*, task: Dict[str, Any], state: Dict[str, Any
 
 def attach_workflow_runtime_session(*, task: Dict[str, Any], state: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
     return _default_manager.finalize_public_result(task=task, state=state, result=result)
+
+
+# ---------------------------------------------------------------------------
+# AER Runtime Constitutional Self-Amendment / Mutation Safety v1
+# ---------------------------------------------------------------------------
+# This layer is intentionally added as focused WorkflowRuntimeSessionManager
+# helpers.  It records and validates constitutional mutation continuity only;
+# it does not execute mutations, approve policy by itself, or move authority
+# away from TaskRunner / StepExecutor.
+
+
+def _zero_v1_record_payload(record: Dict[str, Any]) -> Dict[str, Any]:
+    return copy.deepcopy(record if isinstance(record, dict) else {})
+
+
+def _zero_v1_schema_short_id(prefix: str, payload: Dict[str, Any]) -> str:
+    return prefix + stable_hash(payload)[:16]
+
+
+def _zero_v1_collect_records_by_event_type(session: Dict[str, Any], event_type: str) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for event in session.get("events") if isinstance(session.get("events"), list) else []:
+        if not isinstance(event, dict):
+            continue
+        if safe_text(event.get("event_type")) != event_type:
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        record = payload.get("record") if isinstance(payload.get("record"), dict) else {}
+        if record:
+            records.append(copy.deepcopy(record))
+    return records
+
+
+def _zero_v1_known_governance_ids(session: Dict[str, Any]) -> Dict[str, set[str]]:
+    lineage = session.get("lineage") if isinstance(session.get("lineage"), dict) else {}
+    governance = lineage.get("governance_state_graph") if isinstance(lineage.get("governance_state_graph"), dict) else {}
+    consensus = lineage.get("federated_consensus_graph") if isinstance(lineage.get("federated_consensus_graph"), dict) else {}
+    preservation = lineage.get("constitutional_preservation_graph") if isinstance(lineage.get("constitutional_preservation_graph"), dict) else {}
+    evolution = lineage.get("constitutional_evolution_graph") if isinstance(lineage.get("constitutional_evolution_graph"), dict) else {}
+    return {
+        "policy_ids": {safe_text(item.get("policy_decision_id")) for item in governance.get("policy_decisions", []) if isinstance(item, dict) and safe_text(item.get("policy_decision_id"))},
+        "authority_ids": {safe_text(item.get("authority_id")) for item in governance.get("authority", []) if isinstance(item, dict) and safe_text(item.get("authority_id"))},
+        "approval_ids": {safe_text(item.get("approval_id")) for item in governance.get("approvals", []) if isinstance(item, dict) and safe_text(item.get("approval_id"))},
+        "review_ids": {safe_text(item.get("review_id")) for item in governance.get("reviews", []) if isinstance(item, dict) and safe_text(item.get("review_id"))},
+        "quorum_ids": {safe_text(item.get("quorum_id")) for item in consensus.get("quorums", []) if isinstance(item, dict) and safe_text(item.get("quorum_id"))},
+        "consensus_ids": {safe_text(item.get("consensus_id")) for item in consensus.get("consensus", []) if isinstance(item, dict) and safe_text(item.get("consensus_id"))},
+        "arbitration_ids": {safe_text(item.get("arbitration_id")) for item in consensus.get("arbitrations", []) if isinstance(item, dict) and safe_text(item.get("arbitration_id"))},
+        "preservation_ids": {safe_text(item.get("preservation_id")) for item in preservation.get("preservations", []) if isinstance(item, dict) and safe_text(item.get("preservation_id"))},
+        "evolution_ids": {safe_text(item.get("constitutional_evolution_id")) for item in evolution.get("evolutions", []) if isinstance(item, dict) and safe_text(item.get("constitutional_evolution_id"))},
+        "fork_ids": {safe_text(item.get("constitutional_fork_id")) for item in evolution.get("forks", []) if isinstance(item, dict) and safe_text(item.get("constitutional_fork_id"))},
+        "merge_ids": {safe_text(item.get("constitutional_merge_id")) for item in evolution.get("merges", []) if isinstance(item, dict) and safe_text(item.get("constitutional_merge_id"))},
+    }
+
+
+def _zero_build_constitutional_mutation_proposal_record(self, *, task: Dict[str, Any], state: Dict[str, Any], proposal: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(proposal)
+    seed = {
+        "workflow_id": session.get("workflow_id"),
+        "session_id": session.get("session_id"),
+        "target_constitution_id": safe_text(payload.get("target_constitution_id")),
+        "preservation_id": safe_text(payload.get("preservation_id")),
+        "current_tick": current_tick,
+    }
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_mutation_proposal.v1",
+        "proposal_id": safe_text(payload.get("proposal_id")) or _zero_v1_schema_short_id("wfcmp_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "target_constitution_id": safe_text(payload.get("target_constitution_id")),
+        "preservation_id": safe_text(payload.get("preservation_id")),
+        "evolution_id": safe_text(payload.get("evolution_id") or payload.get("constitutional_evolution_id")),
+        "mutation_scope": safe_text(payload.get("mutation_scope")) or "runtime_constitution",
+        "proposal": safe_text(payload.get("proposal")) or "constitutional_mutation",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_mutation_proposal_record(self, *, task: Dict[str, Any], state: Dict[str, Any], proposal: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_mutation_proposal_record(task=task, state=state, proposal=proposal, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_mutation_proposal", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_mutation_approval_record(self, *, task: Dict[str, Any], state: Dict[str, Any], approval: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(approval)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "proposal_id": safe_text(payload.get("proposal_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_mutation_approval.v1",
+        "mutation_approval_id": safe_text(payload.get("mutation_approval_id")) or _zero_v1_schema_short_id("wfcmapp_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "proposal_id": safe_text(payload.get("proposal_id")),
+        "authority_id": safe_text(payload.get("authority_id")),
+        "approval_id": safe_text(payload.get("approval_id")),
+        "consensus_id": safe_text(payload.get("consensus_id")),
+        "quorum_id": safe_text(payload.get("quorum_id")),
+        "decision": safe_text(payload.get("decision")) or "approved",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_mutation_approval_record(self, *, task: Dict[str, Any], state: Dict[str, Any], approval: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_mutation_approval_record(task=task, state=state, approval=approval, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_mutation_approval", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_self_amendment_record(self, *, task: Dict[str, Any], state: Dict[str, Any], amendment: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(amendment)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "proposal_id": safe_text(payload.get("proposal_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_self_amendment.v1",
+        "amendment_id": safe_text(payload.get("amendment_id")) or _zero_v1_schema_short_id("wfcsa_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "proposal_id": safe_text(payload.get("proposal_id")),
+        "mutation_approval_id": safe_text(payload.get("mutation_approval_id")),
+        "authority_id": safe_text(payload.get("authority_id")),
+        "approval_id": safe_text(payload.get("approval_id")),
+        "consensus_id": safe_text(payload.get("consensus_id")),
+        "target_constitution_id": safe_text(payload.get("target_constitution_id")),
+        "amendment_status": safe_text(payload.get("amendment_status")) or "applied",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_self_amendment_record(self, *, task: Dict[str, Any], state: Dict[str, Any], amendment: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_self_amendment_record(task=task, state=state, amendment=amendment, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_self_amendment", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_policy_replacement_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replacement: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(replacement)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "amendment_id": safe_text(payload.get("amendment_id")), "policy_id": safe_text(payload.get("new_policy_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_policy_replacement.v1",
+        "policy_replacement_id": safe_text(payload.get("policy_replacement_id")) or _zero_v1_schema_short_id("wfcprp_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "amendment_id": safe_text(payload.get("amendment_id")),
+        "proposal_id": safe_text(payload.get("proposal_id")),
+        "old_policy_id": safe_text(payload.get("old_policy_id")),
+        "new_policy_id": safe_text(payload.get("new_policy_id")),
+        "approval_id": safe_text(payload.get("approval_id")),
+        "consensus_id": safe_text(payload.get("consensus_id")),
+        "replacement_status": safe_text(payload.get("replacement_status")) or "active",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_policy_replacement_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replacement: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_policy_replacement_record(task=task, state=state, replacement=replacement, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_policy_replacement", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_amendment_rollback_record(self, *, task: Dict[str, Any], state: Dict[str, Any], rollback: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(rollback)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "failed_amendment_id": safe_text(payload.get("failed_amendment_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_amendment_rollback.v1",
+        "amendment_rollback_id": safe_text(payload.get("amendment_rollback_id")) or _zero_v1_schema_short_id("wfcar_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "failed_amendment_id": safe_text(payload.get("failed_amendment_id")),
+        "policy_replacement_id": safe_text(payload.get("policy_replacement_id")),
+        "rollback_arbitration_id": safe_text(payload.get("rollback_arbitration_id") or payload.get("arbitration_id")),
+        "recovery_id": safe_text(payload.get("recovery_id")),
+        "rollback_status": safe_text(payload.get("rollback_status")) or "rolled_back",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_amendment_rollback_record(self, *, task: Dict[str, Any], state: Dict[str, Any], rollback: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_amendment_rollback_record(task=task, state=state, rollback=rollback, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_amendment_rollback", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_governance_conflict_arbitration_record(self, *, task: Dict[str, Any], state: Dict[str, Any], arbitration: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(arbitration)
+    branch_ids = [safe_text(item) for item in payload.get("branch_ids", []) if safe_text(item)] if isinstance(payload.get("branch_ids"), list) else []
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "branch_ids": branch_ids, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_governance_conflict_arbitration.v1",
+        "governance_conflict_arbitration_id": safe_text(payload.get("governance_conflict_arbitration_id")) or _zero_v1_schema_short_id("wfgca_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "branch_ids": branch_ids,
+        "conflict_ids": [safe_text(item) for item in payload.get("conflict_ids", []) if safe_text(item)] if isinstance(payload.get("conflict_ids"), list) else [],
+        "arbitration_id": safe_text(payload.get("arbitration_id")),
+        "quorum_id": safe_text(payload.get("quorum_id")),
+        "consensus_id": safe_text(payload.get("consensus_id")),
+        "decision": safe_text(payload.get("decision")) or "resolved",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_governance_conflict_arbitration_record(self, *, task: Dict[str, Any], state: Dict[str, Any], arbitration: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_governance_conflict_arbitration_record(task=task, state=state, arbitration=arbitration, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_governance_conflict_arbitration", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_self_amendment_replay_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(replay)
+    amendment_ids = [safe_text(item) for item in payload.get("amendment_ids", []) if safe_text(item)] if isinstance(payload.get("amendment_ids"), list) else []
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "amendment_ids": amendment_ids, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_self_amendment_replay.v1",
+        "self_amendment_replay_id": safe_text(payload.get("self_amendment_replay_id")) or _zero_v1_schema_short_id("wfcsar_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "amendment_ids": amendment_ids,
+        "proposal_ids": [safe_text(item) for item in payload.get("proposal_ids", []) if safe_text(item)] if isinstance(payload.get("proposal_ids"), list) else [],
+        "policy_replacement_ids": [safe_text(item) for item in payload.get("policy_replacement_ids", []) if safe_text(item)] if isinstance(payload.get("policy_replacement_ids"), list) else [],
+        "replay_status": safe_text(payload.get("replay_status")) or "validated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_self_amendment_replay_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_self_amendment_replay_record(task=task, state=state, replay=replay, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_self_amendment_replay", record=record, current_tick=current_tick, ok=True)
+
+
+WorkflowRuntimeSessionManager.build_constitutional_mutation_proposal_record = _zero_build_constitutional_mutation_proposal_record
+WorkflowRuntimeSessionManager.attach_constitutional_mutation_proposal_record = _zero_attach_constitutional_mutation_proposal_record
+WorkflowRuntimeSessionManager.build_constitutional_mutation_approval_record = _zero_build_constitutional_mutation_approval_record
+WorkflowRuntimeSessionManager.attach_constitutional_mutation_approval_record = _zero_attach_constitutional_mutation_approval_record
+WorkflowRuntimeSessionManager.build_constitutional_self_amendment_record = _zero_build_constitutional_self_amendment_record
+WorkflowRuntimeSessionManager.attach_constitutional_self_amendment_record = _zero_attach_constitutional_self_amendment_record
+WorkflowRuntimeSessionManager.build_constitutional_policy_replacement_record = _zero_build_constitutional_policy_replacement_record
+WorkflowRuntimeSessionManager.attach_constitutional_policy_replacement_record = _zero_attach_constitutional_policy_replacement_record
+WorkflowRuntimeSessionManager.build_constitutional_amendment_rollback_record = _zero_build_constitutional_amendment_rollback_record
+WorkflowRuntimeSessionManager.attach_constitutional_amendment_rollback_record = _zero_attach_constitutional_amendment_rollback_record
+WorkflowRuntimeSessionManager.build_constitutional_governance_conflict_arbitration_record = _zero_build_constitutional_governance_conflict_arbitration_record
+WorkflowRuntimeSessionManager.attach_constitutional_governance_conflict_arbitration_record = _zero_attach_constitutional_governance_conflict_arbitration_record
+WorkflowRuntimeSessionManager.build_constitutional_self_amendment_replay_record = _zero_build_constitutional_self_amendment_replay_record
+WorkflowRuntimeSessionManager.attach_constitutional_self_amendment_replay_record = _zero_attach_constitutional_self_amendment_replay_record
+
+
+_ZERO_ORIGINAL_CONTINUITY_SUMMARY = WorkflowRuntimeSessionManager.continuity_summary
+
+
+def _zero_continuity_summary_with_self_amendment(self, session: Dict[str, Any]) -> Dict[str, Any]:
+    summary = _ZERO_ORIGINAL_CONTINUITY_SUMMARY(self, session)
+    if not isinstance(summary, dict):
+        summary = {"ok": False, "breaks": ["invalid_continuity_summary"]}
+    breaks = list(summary.get("breaks") if isinstance(summary.get("breaks"), list) else [])
+    workflow_id = safe_text(session.get("workflow_id")) if isinstance(session, dict) else ""
+    session_id = safe_text(session.get("session_id")) if isinstance(session, dict) else ""
+    known = _zero_v1_known_governance_ids(session if isinstance(session, dict) else {})
+
+    proposals = _zero_v1_collect_records_by_event_type(session, "constitutional_mutation_proposal")
+    approvals = _zero_v1_collect_records_by_event_type(session, "constitutional_mutation_approval")
+    amendments = _zero_v1_collect_records_by_event_type(session, "constitutional_self_amendment")
+    replacements = _zero_v1_collect_records_by_event_type(session, "constitutional_policy_replacement")
+    rollbacks = _zero_v1_collect_records_by_event_type(session, "constitutional_amendment_rollback")
+    conflict_arbitrations = _zero_v1_collect_records_by_event_type(session, "constitutional_governance_conflict_arbitration")
+    replays = _zero_v1_collect_records_by_event_type(session, "constitutional_self_amendment_replay")
+
+    proposal_ids = {safe_text(item.get("proposal_id")) for item in proposals if safe_text(item.get("proposal_id"))}
+    approval_record_ids = {safe_text(item.get("mutation_approval_id")) for item in approvals if safe_text(item.get("mutation_approval_id"))}
+    amendment_ids = {safe_text(item.get("amendment_id")) for item in amendments if safe_text(item.get("amendment_id"))}
+    replacement_ids = {safe_text(item.get("policy_replacement_id")) for item in replacements if safe_text(item.get("policy_replacement_id"))}
+    conflict_arbitration_ids = {safe_text(item.get("governance_conflict_arbitration_id")) for item in conflict_arbitrations if safe_text(item.get("governance_conflict_arbitration_id"))}
+
+    for collection, name in ((proposals, "proposal"), (approvals, "approval"), (amendments, "amendment"), (replacements, "replacement"), (rollbacks, "rollback"), (conflict_arbitrations, "conflict_arbitration"), (replays, "replay")):
+        for record in collection:
+            if safe_text(record.get("workflow_id")) != workflow_id or safe_text(record.get("session_id")) != session_id:
+                breaks.append(f"constitutional_self_amendment_{name}_lineage_mismatch")
+
+    for proposal in proposals:
+        preservation_id = safe_text(proposal.get("preservation_id"))
+        evolution_id = safe_text(proposal.get("evolution_id"))
+        if preservation_id and preservation_id not in known["preservation_ids"]:
+            breaks.append("constitutional_mutation_proposal_missing_active_constitution")
+        if evolution_id and evolution_id not in known["evolution_ids"]:
+            breaks.append("constitutional_mutation_proposal_missing_active_constitution")
+        if not preservation_id and not evolution_id and not safe_text(proposal.get("target_constitution_id")):
+            breaks.append("constitutional_mutation_proposal_missing_active_constitution")
+
+    for approval in approvals:
+        if safe_text(approval.get("proposal_id")) not in proposal_ids:
+            breaks.append("constitutional_mutation_approval_without_proposal")
+        authority_id = safe_text(approval.get("authority_id"))
+        approval_id = safe_text(approval.get("approval_id"))
+        consensus_id = safe_text(approval.get("consensus_id"))
+        quorum_id = safe_text(approval.get("quorum_id"))
+        if authority_id and authority_id not in known["authority_ids"]:
+            breaks.append("constitutional_mutation_approval_missing_authority")
+        if approval_id and approval_id not in known["approval_ids"]:
+            breaks.append("constitutional_mutation_approval_missing_authority")
+        if consensus_id and consensus_id not in known["consensus_ids"]:
+            breaks.append("constitutional_mutation_approval_missing_authority")
+        if quorum_id and quorum_id not in known["quorum_ids"]:
+            breaks.append("constitutional_mutation_approval_missing_authority")
+        if not any([authority_id, approval_id, consensus_id]):
+            breaks.append("constitutional_mutation_approval_missing_authority")
+
+    for amendment in amendments:
+        if safe_text(amendment.get("proposal_id")) not in proposal_ids:
+            breaks.append("constitutional_self_amendment_without_proposal")
+        mutation_approval_id = safe_text(amendment.get("mutation_approval_id"))
+        if mutation_approval_id and mutation_approval_id not in approval_record_ids:
+            breaks.append("constitutional_self_amendment_without_approval")
+        if not mutation_approval_id and not any([safe_text(amendment.get("approval_id")), safe_text(amendment.get("authority_id")), safe_text(amendment.get("consensus_id"))]):
+            breaks.append("constitutional_self_amendment_without_approval")
+
+    for replacement in replacements:
+        if safe_text(replacement.get("amendment_id")) not in amendment_ids:
+            breaks.append("constitutional_policy_replacement_without_amendment")
+        if not safe_text(replacement.get("new_policy_id")):
+            breaks.append("constitutional_policy_replacement_without_amendment")
+        approval_id = safe_text(replacement.get("approval_id"))
+        consensus_id = safe_text(replacement.get("consensus_id"))
+        if approval_id and approval_id not in known["approval_ids"]:
+            breaks.append("constitutional_policy_replacement_missing_approval")
+        if consensus_id and consensus_id not in known["consensus_ids"]:
+            breaks.append("constitutional_policy_replacement_missing_approval")
+        if not approval_id and not consensus_id:
+            breaks.append("constitutional_policy_replacement_missing_approval")
+
+    for rollback in rollbacks:
+        if safe_text(rollback.get("failed_amendment_id")) not in amendment_ids:
+            breaks.append("constitutional_amendment_rollback_without_failed_amendment")
+        replacement_id = safe_text(rollback.get("policy_replacement_id"))
+        if replacement_id and replacement_id not in replacement_ids:
+            breaks.append("constitutional_amendment_rollback_without_failed_amendment")
+
+    for arbitration in conflict_arbitrations:
+        branch_ids = [safe_text(item) for item in arbitration.get("branch_ids", []) if safe_text(item)] if isinstance(arbitration.get("branch_ids"), list) else []
+        if len(set(branch_ids)) < 2:
+            breaks.append("constitutional_governance_conflict_arbitration_missing_branch_conflict")
+        arbitration_id = safe_text(arbitration.get("arbitration_id"))
+        quorum_id = safe_text(arbitration.get("quorum_id"))
+        consensus_id = safe_text(arbitration.get("consensus_id"))
+
+        # Self-amendment rollback arbitration may be local to the
+        # constitutional self-amendment record itself.  In that case the
+        # record's own arbitration_id plus a real branch conflict is the
+        # authority anchor.  Do not require it to also appear in the broader
+        # federated consensus arbitration set.
+        has_local_conflict_authority = bool(arbitration_id and len(set(branch_ids)) >= 2)
+
+        if arbitration_id and arbitration_id not in known["arbitration_ids"] and not has_local_conflict_authority:
+            breaks.append("constitutional_governance_conflict_arbitration_missing_authority")
+        if quorum_id and quorum_id not in known["quorum_ids"]:
+            breaks.append("constitutional_governance_conflict_arbitration_missing_authority")
+        if consensus_id and consensus_id not in known["consensus_ids"]:
+            breaks.append("constitutional_governance_conflict_arbitration_missing_authority")
+        if not any([arbitration_id, quorum_id, consensus_id]):
+            breaks.append("constitutional_governance_conflict_arbitration_missing_authority")
+
+    for replay in replays:
+        for amendment_id in replay.get("amendment_ids", []) if isinstance(replay.get("amendment_ids"), list) else []:
+            if safe_text(amendment_id) not in amendment_ids:
+                breaks.append("constitutional_self_amendment_replay_stale_lineage")
+        for proposal_id in replay.get("proposal_ids", []) if isinstance(replay.get("proposal_ids"), list) else []:
+            if safe_text(proposal_id) not in proposal_ids:
+                breaks.append("constitutional_self_amendment_replay_stale_lineage")
+        for replacement_id in replay.get("policy_replacement_ids", []) if isinstance(replay.get("policy_replacement_ids"), list) else []:
+            if safe_text(replacement_id) not in replacement_ids:
+                breaks.append("constitutional_self_amendment_replay_stale_lineage")
+
+    summary["breaks"] = _sorted_unique(breaks)
+    summary["ok"] = bool(summary.get("ok", True)) and not summary["breaks"]
+    summary.setdefault("counts", {})
+    if isinstance(summary["counts"], dict):
+        summary["counts"].update({
+            "constitutional_mutation_proposal_count": len(proposal_ids),
+            "constitutional_mutation_approval_count": len(approval_record_ids),
+            "constitutional_self_amendment_count": len(amendment_ids),
+            "constitutional_policy_replacement_count": len(replacement_ids),
+            "constitutional_governance_conflict_arbitration_count": len(conflict_arbitration_ids),
+        })
+    return summary
+
+
+WorkflowRuntimeSessionManager.continuity_summary = _zero_continuity_summary_with_self_amendment
+
+
+# ZERO v1 compatibility alias:
+# Older/newer contract tests call attach_execution_graph_node_record(), while
+# the runtime manager's canonical helper is create_execution_graph_node().
+# Keep this as a pure read/write session-record wrapper; it does not execute.
+def _zero_attach_execution_graph_node_record(
+    self,
+    *,
+    task: Dict[str, Any],
+    state: Dict[str, Any],
+    node: Dict[str, Any],
+    current_tick: int = 0,
+) -> Dict[str, Any]:
+    return self.create_execution_graph_node(
+        task=task,
+        state=state,
+        node=node,
+        current_tick=current_tick,
+    )
+
+
+WorkflowRuntimeSessionManager.attach_execution_graph_node_record = _zero_attach_execution_graph_node_record

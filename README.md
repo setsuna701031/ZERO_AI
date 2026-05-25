@@ -642,3 +642,41 @@ Expected result:
 ```text
 17 passed
 ```
+
+---
+
+## AER Runtime Constitutional Self-Amendment / Mutation Safety v1
+
+ZERO now preserves constitutional self-amendment and mutation-safety lineage
+inside the engineering runtime graph.
+
+The new contract records:
+
+```text
+constitutional mutation proposal
+-> mutation approval / authority lineage
+-> constitutional self-amendment
+-> policy replacement
+-> governance conflict arbitration
+-> rollback availability
+-> deterministic self-amendment replay validation
+```
+
+`WorkflowRuntimeSession` remains the continuity authority only. This layer does
+not execute mutations, replace policy by itself, move execution ownership into
+Scheduler, or bypass review/approval/consensus lineage. It only records and
+validates whether a runtime constitutional amendment can be traced back to an
+active constitution/preservation lineage, approval/authority lineage, rollback
+path, and replay-safe amendment lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+18 passed
+```

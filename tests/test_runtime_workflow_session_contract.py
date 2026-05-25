@@ -2434,3 +2434,145 @@ def test_workflow_runtime_autonomous_constitutional_evolution_fork_merge_governa
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_stale_constitutional_evolution_lineage" in broken_replay_summary["breaks"]
+
+
+def test_runtime_constitutional_self_amendment_mutation_safety_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-self-amend", "steps": []}
+    state = {"task_id": "wf-self-amend", "status": "running", "steps": []}
+
+    session = manager.start_from_intent(
+        intent={"task_id": "wf-self-amend", "goal": "safely amend runtime constitution"},
+        task=task,
+        state=state,
+        current_tick=1,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_execution_graph_node_record(
+        task=task,
+        state=state,
+        node={"node_id": "constitution-node", "label": "active constitution", "node_type": "constitution"},
+        current_tick=2,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"target_node_id": "constitution-node", "policy_id": "runtime-constitution-policy", "allowed": True, "decision": "allow"},
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+    policy_id = session["lineage"]["governance_state_graph"]["policy_decisions"][-1]["policy_decision_id"]
+
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"target_node_id": "constitution-node", "execution_owner": "TaskRunner", "authority_source": "runtime_governance", "allowed": True},
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+    authority_id = session["lineage"]["governance_state_graph"]["authority"][-1]["authority_id"]
+
+    session = manager.attach_review_required_record(
+        task=task,
+        state=state,
+        review={"policy_decision_id": policy_id, "target_node_id": "constitution-node", "reason": "constitutional self-amendment requires review"},
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+    review_id = session["lineage"]["governance_state_graph"]["reviews"][-1]["review_id"]
+
+    session = manager.attach_approval_record(
+        task=task,
+        state=state,
+        approval={"review_id": review_id, "policy_decision_id": policy_id, "target_node_id": "constitution-node", "approver": "runtime_governance", "approved": True},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    approval_id = session["lineage"]["governance_state_graph"]["approvals"][-1]["approval_id"]
+
+    session = manager.attach_constitutional_preservation_record(
+        task=task,
+        state=state,
+        preservation={"constitution_node_id": "constitution-node", "policy_decision_id": policy_id, "preservation_scope": "self_amendment_guard"},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+    preservation_id = session["lineage"]["constitutional_preservation_graph"]["preservations"][-1]["preservation_id"]
+
+    session = manager.attach_constitutional_mutation_proposal_record(
+        task=task,
+        state=state,
+        proposal={"target_constitution_id": "constitution-node", "preservation_id": preservation_id, "proposal": "tighten self-amendment guard"},
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    proposal_id = session["events"][-1]["payload"]["record"]["proposal_id"]
+
+    session = manager.attach_constitutional_mutation_approval_record(
+        task=task,
+        state=state,
+        approval={"proposal_id": proposal_id, "authority_id": authority_id, "approval_id": approval_id, "decision": "approved"},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    mutation_approval_id = session["events"][-1]["payload"]["record"]["mutation_approval_id"]
+
+    session = manager.attach_constitutional_self_amendment_record(
+        task=task,
+        state=state,
+        amendment={"proposal_id": proposal_id, "mutation_approval_id": mutation_approval_id, "authority_id": authority_id, "approval_id": approval_id, "target_constitution_id": "constitution-node"},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    amendment_id = session["events"][-1]["payload"]["record"]["amendment_id"]
+
+    session = manager.attach_constitutional_policy_replacement_record(
+        task=task,
+        state=state,
+        replacement={"amendment_id": amendment_id, "proposal_id": proposal_id, "old_policy_id": "runtime-constitution-policy", "new_policy_id": "runtime-constitution-policy-v2", "approval_id": approval_id},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    replacement_id = session["events"][-1]["payload"]["record"]["policy_replacement_id"]
+
+    session = manager.attach_constitutional_governance_conflict_arbitration_record(
+        task=task,
+        state=state,
+        arbitration={"branch_ids": ["constitution-main", "constitution-candidate"], "arbitration_id": "arb-self-amend", "decision": "prefer-approved-amendment"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_constitutional_amendment_rollback_record(
+        task=task,
+        state=state,
+        rollback={"failed_amendment_id": amendment_id, "policy_replacement_id": replacement_id, "rollback_arbitration_id": "arb-self-amend", "rollback_status": "available"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_constitutional_self_amendment_replay_record(
+        task=task,
+        state=state,
+        replay={"amendment_ids": [amendment_id], "proposal_ids": [proposal_id], "policy_replacement_ids": [replacement_id], "replay_status": "validated"},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+
+    summary = manager.continuity_summary(session)
+    assert summary["ok"] is True
+    assert summary["counts"]["constitutional_self_amendment_count"] == 1
+    json.dumps(session, sort_keys=True, default=str)
+
+    broken = dict(session)
+    broken["events"] = [dict(event) for event in session["events"]]
+    replay_event = [event for event in broken["events"] if event["event_type"] == "constitutional_self_amendment_replay"][-1]
+    replay_event["payload"] = dict(replay_event["payload"])
+    replay_event["payload"]["record"] = dict(replay_event["payload"]["record"])
+    replay_event["payload"]["record"]["amendment_ids"] = ["stale-amendment"]
+    broken_summary = manager.continuity_summary(broken)
+    assert broken_summary["ok"] is False
+    assert "constitutional_self_amendment_replay_stale_lineage" in broken_summary["breaks"]

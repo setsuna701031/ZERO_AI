@@ -605,3 +605,39 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 17 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Constitutional Self-Amendment / Mutation Safety v1
+
+Added constitutional self-amendment and mutation-safety continuity to the
+workflow runtime session contract.
+
+ZERO can now preserve and validate:
+
+```text
+constitutional mutation proposal
+-> authority / approval lineage
+-> constitutional self-amendment
+-> policy replacement
+-> governance conflict arbitration
+-> rollback availability
+-> deterministic self-amendment replay validation
+```
+
+Boundary decision:
+
+```text
+WorkflowRuntimeSession records and validates amendment lineage only.
+It does not execute constitutional mutations.
+It does not replace policy by itself.
+It does not move execution authority into Scheduler.
+It does not bypass review, approval, authority, or consensus lineage.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 18 passed
+```

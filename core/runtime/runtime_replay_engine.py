@@ -794,3 +794,27 @@ def workflow_replay_graph_summary(
         "preservation_ids": copy.deepcopy(replay.get("preservation_ids") if isinstance(replay.get("preservation_ids"), list) else []),
         "evolution_ids": copy.deepcopy(replay.get("evolution_ids") if isinstance(replay.get("evolution_ids"), list) else []),
     }
+
+
+def build_constitutional_self_amendment_replay_validation(
+    *,
+    workflow_runtime_session: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate constitutional self-amendment replay continuity without side effects."""
+    try:
+        from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager
+
+        summary = WorkflowRuntimeSessionManager().continuity_summary(workflow_runtime_session)
+    except Exception as exc:  # pragma: no cover - defensive bridge helper
+        return {
+            "ok": False,
+            "schema": "zero.runtime_replay.constitutional_self_amendment_validation.v1",
+            "error": str(exc),
+        }
+    return {
+        "ok": bool(summary.get("ok", False)),
+        "schema": "zero.runtime_replay.constitutional_self_amendment_validation.v1",
+        "workflow_id": str(workflow_runtime_session.get("workflow_id") or ""),
+        "session_id": str(workflow_runtime_session.get("session_id") or ""),
+        "continuity_summary": summary,
+    }
