@@ -45,6 +45,20 @@ _LEGAL_EXECUTION_SOURCES = {
     "governed_mutation",
     "repair_transaction_execution_bridge",
 }
+_EXECUTION_SOURCE_PRODUCER_LAYERS = {
+    "legacy_runtime_execution_result": "runtime",
+    "runtime_execution_result": "runtime",
+    "runtime_execution_gateway": "governed_execution",
+    "canonical_execution_gateway": "governed_execution",
+    "step_executor": "step_executor",
+    "runtime_step_executor": "step_executor",
+    "executor": "step_executor",
+    "runtime_executor": "step_executor",
+    "runtime_execution_session": "governed_execution",
+    "governed_mutation": "governed_execution",
+    "repair_transaction_execution_bridge": "governed_execution",
+}
+_TRUSTED_EXECUTION_PRODUCER_LAYERS = {"runtime", "governed_execution", "step_executor"}
 
 
 def _mapping(value: Any) -> dict[str, Any]:
@@ -95,6 +109,27 @@ def _execution_source(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
         or ""
     ).strip()
     return source or "legacy_runtime_execution_result"
+
+
+def _producer_layer(source: str) -> str:
+    normalized = str(source or "").strip()
+    if normalized in _EXECUTION_SOURCE_PRODUCER_LAYERS:
+        return _EXECUTION_SOURCE_PRODUCER_LAYERS[normalized]
+    if normalized.startswith("scheduler"):
+        return "scheduler"
+    if normalized.startswith("agent_loop") or normalized == "agentloop":
+        return "agent_loop"
+    if "code_chain" in normalized:
+        return "output_artifact"
+    return "external"
+
+
+def _declared_producer_layer(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return str(
+        payload.get("producer_layer")
+        or metadata.get("producer_layer")
+        or ""
+    ).strip()
 
 
 def _execution_id(payload: dict[str, Any], metadata: dict[str, Any]) -> str:
@@ -200,6 +235,15 @@ def _execution_legality_metadata(
     denial_reason = _denial_reason(payload, metadata)
 
     legal_source = source in _LEGAL_EXECUTION_SOURCES
+    expected_producer_layer = _producer_layer(source)
+    declared_producer_layer = _declared_producer_layer(payload, metadata)
+    producer_layer = declared_producer_layer or expected_producer_layer
+    producer_mismatch = bool(
+        declared_producer_layer
+        and expected_producer_layer in _TRUSTED_EXECUTION_PRODUCER_LAYERS
+        and declared_producer_layer != expected_producer_layer
+    )
+    untrusted_producer = producer_layer not in _TRUSTED_EXECUTION_PRODUCER_LAYERS
     if duplicate:
         legality = "duplicate"
         denial_reason = denial_reason or "duplicate_execution_propagation"
@@ -209,6 +253,12 @@ def _execution_legality_metadata(
     elif failed:
         legality = "failed"
         denial_reason = denial_reason or "execution_failed"
+    elif executed and legal_source and producer_mismatch:
+        legality = "denied"
+        denial_reason = denial_reason or f"producer_layer_mismatch:{producer_layer}"
+    elif executed and legal_source and untrusted_producer:
+        legality = "denied"
+        denial_reason = denial_reason or f"untrusted_producer_layer:{producer_layer}"
     elif executed and legal_source:
         legality = "legal"
     elif executed:
@@ -219,6 +269,7 @@ def _execution_legality_metadata(
 
     result = {
         "execution_source": source,
+        "producer_layer": producer_layer,
         "execution_status": status or ("executed" if executed else "not_executed"),
         "execution_legality": legality,
         "duplicate_execution_propagation": duplicate,
@@ -239,6 +290,7 @@ def _canonical_execution_evidence(
     evidence = {
         "execution_id": _execution_id(payload, metadata),
         "execution_source": legality["execution_source"],
+        "producer_layer": legality.get("producer_layer") or _producer_layer(legality["execution_source"]),
         "execution_status": legality["execution_status"],
         "execution_legality": legality["execution_legality"],
         "timestamp": timestamp,

@@ -7327,6 +7327,90 @@ def _zero_v7334_public_authority_decision(decision):
     }
 
 
+def _zero_v7334_authority_context(context):
+    if not isinstance(context, dict):
+        return {}
+    for key in ("authority_context", "runtime_authority_context"):
+        value = context.get(key)
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+    return {}
+
+
+def _zero_v7334_authority_contract_required(context):
+    if not isinstance(context, dict):
+        return False
+    if bool(context.get("authority_propagation_required")):
+        return True
+    if bool(context.get("authority_contract_required")):
+        return True
+    authority_context = _zero_v7334_authority_context(context)
+    return bool(authority_context.get("authority_propagation_required"))
+
+
+def _zero_v7334_execution_authority_from_context(context):
+    authority_context = _zero_v7334_authority_context(context)
+    value = authority_context.get("execution_authority")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    received = authority_context.get("received_authority")
+    if isinstance(received, dict):
+        value = received.get("execution_authority")
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+    return {}
+
+
+def _zero_v7334_execution_authority_validation(context, action_type):
+    authority = _zero_v7334_execution_authority_from_context(context)
+    if not authority:
+        return {
+            "ok": False,
+            "reason": "missing_execution_authority",
+            "authority_source": _ZERO_V7334_AUTHORITY_POLICY,
+        }
+
+    source = str(authority.get("authority_source") or authority.get("source") or "").strip()
+    status = str(authority.get("authority_status") or authority.get("status") or "").strip().lower()
+    endpoint = str(
+        authority.get("execution_authority_endpoint")
+        or authority.get("authority_endpoint")
+        or ""
+    ).strip().lower()
+    authority_action = str(authority.get("action_type") or authority.get("authority_action") or "").strip().lower()
+
+    if source in {"scheduler", "task_runner", "scheduler_dispatch", "taskrunner_propagation"}:
+        return {
+            "ok": False,
+            "reason": "orchestration_layer_cannot_grant_execution_authority",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+    if status not in {"allowed", "allow", "approved"}:
+        return {
+            "ok": False,
+            "reason": "execution_authority_not_allowed",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+    if endpoint not in {"step_executor", "runtime_step_executor"}:
+        return {
+            "ok": False,
+            "reason": "execution_authority_endpoint_mismatch",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+    if authority_action and authority_action not in {str(action_type or "").strip().lower(), "execute_or_mutation", "runtime_execution"}:
+        return {
+            "ok": False,
+            "reason": "execution_authority_action_mismatch",
+            "authority_source": source or _ZERO_V7334_AUTHORITY_POLICY,
+        }
+
+    return {
+        "ok": True,
+        "reason": "explicit_step_executor_authority",
+        "authority_source": source or "explicit_runtime_authority",
+    }
+
+
 def _zero_v7334_classify_step_authority_requirement(self, step_type, step=None):
     normalized_step_type = _zero_v7334_normalize_step_type(step_type, step)
 
@@ -7377,21 +7461,111 @@ def _zero_v7334_build_pre_execution_authority_decision(
     task=None,
     context=None,
 ):
-    del task, context
+    del task
     classification = self._classify_step_authority_requirement(step_type, step)
     authority_required = bool(classification.get("authority_required", False))
-    decision = "allowed_with_legacy_policy" if authority_required else "read_only"
+    contract_required = _zero_v7334_authority_contract_required(context)
+    validation = {"ok": False, "reason": "", "authority_source": ""}
+    if authority_required and contract_required:
+        validation = _zero_v7334_execution_authority_validation(
+            context,
+            classification.get("action_type"),
+        )
+        decision = "allowed" if validation.get("ok") else "denied"
+    else:
+        decision = "allowed_with_legacy_policy" if authority_required else "read_only"
 
     return {
         **copy.deepcopy(classification),
         "authority_phase": "pre_execution",
         "authority_source": str(
-            classification.get("authority_policy") or _ZERO_V7334_AUTHORITY_POLICY
+            validation.get("authority_source")
+            or classification.get("authority_policy")
+            or _ZERO_V7334_AUTHORITY_POLICY
         ),
         "authority_policy": str(
             classification.get("authority_policy") or _ZERO_V7334_AUTHORITY_POLICY
         ),
         "decision": decision,
+        "reason": str(validation.get("reason") or classification.get("reason") or ""),
+    }
+
+
+def _zero_v7334_authority_denied_result(step, task, context, step_index, step_count, decision):
+    del context
+    step_type = _zero_v7334_normalize_step_type("", step if isinstance(step, dict) else {})
+    task_id = ""
+    if isinstance(task, dict):
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
+    reason = str(decision.get("reason") or "execution_authority_denied")
+    runtime_payload = {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "task_id": task_id,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "runtime_mode": "execute",
+        "message": reason,
+        "final_answer": reason,
+        "error_type": "execution_authority_denied",
+        "metadata": {
+            "authority_decision": _zero_v7334_public_authority_decision(decision),
+            "pre_execution_authority": _zero_v7334_public_authority_decision(decision),
+        },
+        "changed_files": [],
+        "impacted_files": [],
+        "rollback_metadata": {},
+        "rollback_snapshot": {},
+    }
+    return {
+        "ok": False,
+        "success": False,
+        "executed": False,
+        "blocked": True,
+        "failed": False,
+        "verification_passed": False,
+        "step_type": step_type,
+        "step_index": step_index,
+        "step_count": step_count,
+        "task_id": task_id,
+        "runtime_mode": "execute",
+        "step": copy.deepcopy(step) if isinstance(step, dict) else {},
+        "result": {
+            "ok": False,
+            "action": "execution_authority_denied",
+            "execution_intercepted": True,
+        },
+        "message": reason,
+        "final_answer": reason,
+        "error": {
+            "type": "execution_authority_denied",
+            "message": reason,
+            "retryable": False,
+        },
+        "error_type": "execution_authority_denied",
+        "runtime_execution_result": runtime_payload,
+        "impacted_files": [],
+        "rollback_snapshot": {},
+        "execution_trace": [
+            {
+                "step_index": step_index,
+                "step_type": step_type,
+                "runtime_mode": "execute",
+                "ok": False,
+                "message": reason,
+                "final_answer": reason,
+                "error_type": "execution_authority_denied",
+                "classification": None,
+                "attempts": 0,
+                "max_attempts": 0,
+                "retry_used": False,
+            }
+        ],
     }
 
 
@@ -7440,6 +7614,17 @@ def _zero_v7334_execute_step_with_pre_authority(
         task if isinstance(task, dict) else {},
         context if isinstance(context, dict) else {},
     )
+
+    if decision.get("decision") == "denied":
+        result = _zero_v7334_authority_denied_result(
+            step if isinstance(step, dict) else {},
+            task if isinstance(task, dict) else {},
+            context if isinstance(context, dict) else {},
+            step_index,
+            step_count,
+            decision,
+        )
+        return self._attach_pre_execution_authority(result, decision)
 
     result = _ZERO_V7334_PREVIOUS_EXECUTE_STEP(
         self,

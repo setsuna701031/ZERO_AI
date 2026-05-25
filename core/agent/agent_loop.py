@@ -1206,22 +1206,30 @@ class AgentLoop:
         return self._code_chain_persistence().write_text(
             path,
             str(text),
+            operation_type="generated_artifact_write",
             reason=reason,
             lineage={
                 "caller": "agent_loop",
                 "surface": "code_chain_patch",
                 "artifact_type": artifact_type,
+                "artifact_class": "output_artifact",
+                "sealed_execution_evidence": False,
                 "patch_target_path": str(target_path or ""),
             },
             provenance={
                 "caller": "agent_loop",
                 "surface": "code_chain_patch",
                 "artifact_type": artifact_type,
+                "artifact_class": "output_artifact",
+                "producer_layer": "agent_loop",
             },
             metadata={
                 "caller": "agent_loop",
                 "runtime_seal_pass": "active_mutation_closure_v1",
                 "artifact_type": artifact_type,
+                "artifact_class": "output_artifact",
+                "producer_layer": "agent_loop",
+                "sealed_execution_evidence": False,
                 "patch_target_path": str(target_path or ""),
                 **dict(metadata or {}),
             },
@@ -1384,17 +1392,24 @@ class AgentLoop:
                     "caller": "agent_loop",
                     "surface": "code_chain_patch",
                     "artifact_type": "patch_audit",
+                    "artifact_class": "output_artifact",
+                    "sealed_execution_evidence": False,
                     "patch_target_path": normalized_target,
                 },
                 provenance={
                     "caller": "agent_loop",
                     "surface": "code_chain_patch",
                     "artifact_type": "patch_audit",
+                    "artifact_class": "output_artifact",
+                    "producer_layer": "agent_loop",
                 },
                 metadata={
                     "caller": "agent_loop",
                     "runtime_seal_pass": "active_mutation_closure_v1",
                     "artifact_type": "patch_audit",
+                    "artifact_class": "output_artifact",
+                    "producer_layer": "agent_loop",
+                    "sealed_execution_evidence": False,
                     "patch_target_path": normalized_target,
                 },
             )
@@ -6322,3 +6337,141 @@ def _zero_v7336_agent_build_task_loop_execution(self, *args: Any, **kwargs: Any)
 
 
 AgentLoop._build_task_loop_execution = _zero_v7336_agent_build_task_loop_execution
+
+# ZERO v7.3.37 - AgentLoop mutation bridge intent seal
+# Forced repo-edit / Code Chain surfaces are allowed to create execution intent
+# only.  They must not call repo_edit_tool or mutate files from AgentLoop.
+_ZERO_V7337_ORIGINAL_AGENT_TRY_FORCE_REPO_EDIT_ROUTE = AgentLoop._try_force_repo_edit_route
+
+
+def _zero_v7337_agent_repo_edit_intent_candidate(text: str) -> bool:
+    lowered = str(text or "").strip().lower().replace("\\", "/")
+    if not lowered:
+        return False
+    has_target = "workspace/" in lowered or "core/" in lowered or ".py" in lowered
+    has_edit = any(
+        marker in lowered
+        for marker in (
+            "replace",
+            " with ",
+            "fix",
+            "repair",
+            "correct",
+            "patch",
+            "edit",
+            "modify",
+            "code_chain",
+            "repo edit",
+            "repo-edit",
+        )
+    )
+    return bool(has_target and has_edit)
+
+
+def _zero_v7337_agent_extract_target_path(text: str) -> str:
+    match = re.search(
+        r"(workspace[/\\][A-Za-z0-9_. /\\\\-]+?\\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip().strip("'\"`.,;:").replace("\\", "/")
+    return ""
+
+
+def _zero_v7337_agent_forced_repo_edit_intent_response(self, text: str) -> Dict[str, Any]:
+    target_path = _zero_v7337_agent_extract_target_path(text)
+    forced = {
+        "handled": True,
+        "forced_route": True,
+        "tool_name": "repo_edit_tool",
+        "status": "intent_only",
+        "execution_intent_only": True,
+        "mutation_executed": False,
+        "scheduler_required": True,
+        "taskrunner_required": True,
+        "step_executor_required": True,
+        "governed_execution_required": True,
+        "task_text": str(text or ""),
+        "target_path": target_path,
+        "reason": "agent_loop_create_task_mutation_bridge_intent_only",
+    }
+    step = {
+        "type": "code_chain_repair",
+        "task_text": str(text or ""),
+        "target_path": target_path,
+        "agent_loop_mutation_bridge_intent": True,
+        "authority_propagation_required": True,
+    }
+    final_answer = "repo edit intent created; execution requires Scheduler -> TaskRunner -> StepExecutor"
+    execution = {
+        "ok": True,
+        "steps_executed": 0,
+        "execution_intent_only": True,
+        "mutation_executed": False,
+        "results": [],
+        "execution_log": [
+            {
+                "type": "forced_repo_edit_intent",
+                "tool": "repo_edit_tool",
+                "ok": True,
+                "mutation_executed": False,
+                "data": copy.deepcopy(forced),
+            }
+        ],
+        "execution_trace": [
+            {
+                "type": "forced_repo_edit_intent",
+                "ok": True,
+                "execution_endpoint": "step_executor",
+                "mutation_executed": False,
+            }
+        ],
+        "last_result": copy.deepcopy(forced),
+        "final_answer": final_answer,
+        "error": None,
+    }
+    return self._make_agent_response(
+        ok=True,
+        mode="forced_repo_edit_intent",
+        context={},
+        route={
+            "mode": "forced_repo_edit_intent",
+            "task": True,
+            "tool": "repo_edit_tool",
+            "forced_route": True,
+            "execution_intent_only": True,
+        },
+        plan={
+            "ok": True,
+            "planner_mode": "agent_loop_forced_repo_edit_intent_v7_3_37",
+            "intent": "repo_edit_execution_intent",
+            "final_answer": final_answer,
+            "steps": [step],
+            "meta": {
+                "forced_route": True,
+                "execution_intent_only": True,
+                "mutation_executed": False,
+                "authority_path": "AgentLoop/CreateTask -> Scheduler -> TaskRunner -> StepExecutor",
+            },
+            "forced_repo_edit": copy.deepcopy(forced),
+        },
+        execution=execution,
+        final_answer=final_answer,
+        error=None,
+        extra={
+            "forced_repo_edit": copy.deepcopy(forced),
+            "tool_name": "repo_edit_tool",
+            "execution_intent_only": True,
+        },
+    )
+
+
+def _zero_v7337_agent_try_force_repo_edit_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+    text = str(user_input or "").strip()
+    if _zero_v7337_agent_repo_edit_intent_candidate(text):
+        return _zero_v7337_agent_forced_repo_edit_intent_response(self, text)
+    return _ZERO_V7337_ORIGINAL_AGENT_TRY_FORCE_REPO_EDIT_ROUTE(self, user_input)
+
+
+AgentLoop._try_force_repo_edit_route = _zero_v7337_agent_try_force_repo_edit_route

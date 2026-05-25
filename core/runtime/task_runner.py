@@ -1254,6 +1254,71 @@ class TaskRunner:
             "target_routing_enabled": bool(target_repo_root),
         }
 
+    def _build_taskrunner_authority_context(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        upstream_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Carry authority downward without granting stronger authority."""
+        candidates: List[Any] = []
+        for payload in (upstream_context, task, state):
+            if not isinstance(payload, dict):
+                continue
+            for key in ("authority_context", "runtime_authority_context"):
+                if isinstance(payload.get(key), dict):
+                    candidates.append(payload.get(key))
+            if isinstance(payload.get("execution_authority"), dict):
+                candidates.append({"execution_authority": payload.get("execution_authority")})
+
+        received = copy.deepcopy(candidates[0]) if candidates else {}
+        execution_authority: Dict[str, Any] = {}
+        if isinstance(received, dict):
+            if isinstance(received.get("execution_authority"), dict):
+                execution_authority = copy.deepcopy(received["execution_authority"])
+            elif (
+                isinstance(received.get("received_authority"), dict)
+                and isinstance(received["received_authority"].get("execution_authority"), dict)
+            ):
+                execution_authority = copy.deepcopy(received["received_authority"]["execution_authority"])
+
+        chain: List[Dict[str, Any]] = []
+        if isinstance(received, dict) and isinstance(received.get("authority_chain"), list):
+            chain = copy.deepcopy(received["authority_chain"])
+        chain.append(
+            {
+                "layer": "task_runner",
+                "authority_role": "propagation",
+                "execution_authority_granted": False,
+                "can_execute_privileged_step": False,
+            }
+        )
+
+        step_type = str(step.get("type") or step.get("action") or "").strip().lower() if isinstance(step, dict) else ""
+        propagation_required = bool(
+            (isinstance(received, dict) and received.get("authority_propagation_required"))
+            or task.get("authority_propagation_required")
+            or state.get("authority_propagation_required")
+        )
+
+        return {
+            "authority_phase": "taskrunner_propagation",
+            "authority_layer": "task_runner",
+            "authority_role": "propagation",
+            "authority_source": "taskrunner_propagation",
+            "authority_policy": "non_escalating_authority_propagation",
+            "authority_propagation_required": propagation_required,
+            "execution_authority_granted": False,
+            "can_execute_privileged_step": False,
+            "escalated": False,
+            "step_type": step_type,
+            "received_authority": copy.deepcopy(received),
+            "execution_authority": copy.deepcopy(execution_authority),
+            "authority_chain": chain,
+        }
+
     def _make_json_safe(self, value: Any) -> Any:
         if isinstance(value, dict):
             return {str(key): self._make_json_safe(item) for key, item in value.items()}
@@ -1680,12 +1745,25 @@ class TaskRunner:
             source="policy_layer",
         )
 
+        target_context = self._target_routed_context(task=task, state=state, step=step)
+        authority_context = self._build_taskrunner_authority_context(
+            task=task,
+            state=state,
+            step=step,
+            upstream_context=target_context,
+        )
+
         result = self.step_executor.execute_step(
             task=task,
             step=step,
             context={
-                **self._target_routed_context(task=task, state=state, step=step),
+                **target_context,
                 "runtime_mode": runtime_mode,
+                "authority_context": authority_context,
+                "runtime_authority_context": authority_context,
+                "authority_propagation_required": bool(
+                    authority_context.get("authority_propagation_required")
+                ),
             },
             previous_result=self._get_previous_result(state),
             step_index=idx,

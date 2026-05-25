@@ -594,6 +594,56 @@ class Scheduler(RuntimeTaskScheduler):
             "active_blocker_count": 0,
         }
 
+    def _build_scheduler_authority_context(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Return scheduler orchestration authority without execution grant."""
+        source = copy.deepcopy(task) if isinstance(task, dict) else {}
+        received: Dict[str, Any] = {}
+        for key in ("authority_context", "runtime_authority_context"):
+            if isinstance(source.get(key), dict):
+                received = copy.deepcopy(source[key])
+                break
+        if not received and isinstance(source.get("execution_authority"), dict):
+            received = {"execution_authority": copy.deepcopy(source["execution_authority"])}
+
+        execution_authority: Dict[str, Any] = {}
+        if isinstance(received.get("execution_authority"), dict):
+            execution_authority = copy.deepcopy(received["execution_authority"])
+        elif (
+            isinstance(received.get("received_authority"), dict)
+            and isinstance(received["received_authority"].get("execution_authority"), dict)
+        ):
+            execution_authority = copy.deepcopy(received["received_authority"]["execution_authority"])
+
+        chain: List[Dict[str, Any]] = []
+        if isinstance(received.get("authority_chain"), list):
+            chain = copy.deepcopy(received["authority_chain"])
+        chain.append(
+            {
+                "layer": "scheduler",
+                "authority_role": "orchestration",
+                "execution_authority_granted": False,
+                "can_execute_privileged_step": False,
+            }
+        )
+
+        return {
+            "authority_phase": "scheduler_dispatch",
+            "authority_layer": "scheduler",
+            "authority_role": "orchestration",
+            "authority_source": "scheduler_dispatch",
+            "authority_policy": "scheduler_orchestration_only",
+            "authority_propagation_required": bool(
+                source.get("authority_propagation_required")
+                or (isinstance(received, dict) and received.get("authority_propagation_required"))
+            ),
+            "execution_authority_granted": False,
+            "can_execute_privileged_step": False,
+            "escalated": False,
+            "received_authority": copy.deepcopy(received),
+            "execution_authority": copy.deepcopy(execution_authority),
+            "authority_chain": chain,
+        }
+
     def _cancel_ready_queue_task(self, task_id: str) -> None:
         try:
             self.scheduler_queue.cancel(task_id)
@@ -1895,10 +1945,21 @@ class Scheduler(RuntimeTaskScheduler):
         if not bool(guard_result.get("ok")) and not apply_patch_guard_fallthrough:
             raise PermissionError(str(guard_result.get("error") or "guard blocked execution"))
 
-        if step_type in {"apply_patch", "apply_unified_diff"}:
+        if step_type in {
+            "write_file",
+            "append_file",
+            "workspace_append",
+            "run_python",
+            "command",
+            "shell",
+            "apply_patch",
+            "apply_unified_diff",
+        }:
             step_executor = getattr(self, "step_executor", None)
             if step_executor is None:
-                raise RuntimeError("step_executor unavailable for apply_patch")
+                raise RuntimeError("step_executor unavailable for side-effect step")
+
+            scheduler_authority = self._build_scheduler_authority_context(task)
 
             executor_result = step_executor.execute_step(
                 step=step,
@@ -1908,13 +1969,18 @@ class Scheduler(RuntimeTaskScheduler):
                     "step_scope": step_scope,
                     "guard_result": guard_result,
                     "guard_fallthrough_bridge": apply_patch_guard_fallthrough,
+                    "authority_context": scheduler_authority,
+                    "runtime_authority_context": scheduler_authority,
+                    "authority_propagation_required": bool(
+                        scheduler_authority.get("authority_propagation_required")
+                    ),
                 },
             )
 
             self._record_execution_gateway_side_check(
                 step=step,
                 legacy_result=executor_result,
-                source="scheduler_apply_patch_bridge",
+                source="scheduler_side_effect_step_executor_bridge",
             )
 
             return executor_result
@@ -5410,9 +5476,9 @@ class Scheduler(RuntimeTaskScheduler):
             raise ValueError("multi_code_edit step requires non-empty edits")
 
         task_dir = self._resolve_task_dir(task)
-        session = AtomicEditSession(backup_suffix=f"v5_7_0_{self._extract_task_id(task) or int(time.time())}")
         planned_results: List[Dict[str, Any]] = []
         changed_files: List[str] = []
+        patches: List[Dict[str, Any]] = []
 
         try:
             for index, raw_edit in enumerate(edits):
@@ -5460,10 +5526,16 @@ class Scheduler(RuntimeTaskScheduler):
                 if bool(edit.get("strip_markdown_fences", step.get("strip_markdown_fences", True))) and path.lower().endswith(".py"):
                     after = self._strip_markdown_code_fences(after)
 
-                session.add_write(target_path, before, after)
                 changed = before != after
                 if changed:
                     changed_files.append(path)
+                    patches.append(
+                        {
+                            "target_path": path,
+                            "old_text": before,
+                            "new_text": after,
+                        }
+                    )
                 planned_results.append(
                     {
                         "index": index,
@@ -5475,49 +5547,60 @@ class Scheduler(RuntimeTaskScheduler):
                     }
                 )
 
-            commit_result = session.commit()
-            if not bool(commit_result.get("ok")):
+            if not patches:
                 return {
-                    "ok": False,
-                    "action": "multi_code_edit_failed",
+                    "ok": True,
+                    "action": "multi_code_edit_no_change",
                     "atomic": True,
-                    "rollback_applied": bool(commit_result.get("rollback_applied")),
-                    "failed_file": commit_result.get("failed_file", ""),
-                    "failed_reason": commit_result.get("failed_reason", "commit failed"),
-                    "changed_files": changed_files,
-                    "backup_files": commit_result.get("backup_files", []),
+                    "changed": False,
+                    "changed_files": [],
+                    "edit_count": len(edits),
                     "edits": planned_results,
-                    "commit_result": commit_result,
+                    "delegated_to": "none",
+                    "scheduler_direct_mutation": False,
                 }
 
+            delegated = self._delegate_code_edit_patch_to_step_executor(
+                task=task,
+                original_step=step,
+                patch_step={
+                    "type": "apply_patch",
+                    "patches": patches,
+                    "edit_payload": {
+                        "operation": "multi_code_edit",
+                        "patches": patches,
+                    },
+                    "scheduler_code_edit_bridge": True,
+                    "scope": step.get("scope"),
+                },
+                task_dir=task_dir,
+            )
+
             return {
-                "ok": True,
-                "action": "multi_code_edit",
+                "ok": bool(delegated.get("ok", False)),
+                "action": "multi_code_edit_delegated",
                 "atomic": True,
-                "rollback_applied": False,
-                "changed": bool(commit_result.get("changed_files")),
+                "rollback_applied": bool(delegated.get("rollback_applied", False)),
+                "changed": bool(changed_files),
                 "changed_files": changed_files,
-                "written_files": commit_result.get("changed_files", []),
-                "backup_files": commit_result.get("backup_files", []),
                 "edit_count": len(edits),
                 "edits": planned_results,
-                "commit_result": commit_result,
+                "delegated_to": "step_executor",
+                "scheduler_direct_mutation": False,
+                "step_executor_result": delegated,
             }
         except Exception as exc:
-            session_state = session.describe()
-            rollback = session.rollback()
-            staged_changes_discarded = bool(session_state.get("changed_count", 0))
             return {
                 "ok": False,
                 "action": "multi_code_edit_failed",
                 "atomic": True,
-                "rollback_applied": bool(rollback.get("rollback_applied") or staged_changes_discarded),
-                "staged_changes_discarded": staged_changes_discarded,
+                "rollback_applied": False,
+                "staged_changes_discarded": False,
                 "failed_reason": str(exc),
                 "changed_files": changed_files,
-                "backup_files": session.describe().get("backup_files", []),
                 "edits": planned_results,
-                "rollback": rollback,
+                "delegated_to": "step_executor",
+                "scheduler_direct_mutation": False,
             }
 
     def _execute_code_edit_step(self, task: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
@@ -5580,26 +5663,69 @@ class Scheduler(RuntimeTaskScheduler):
                 "message": "function already appears fixed or no deterministic edit was needed",
             }
 
-        backup_path = f"{target_path}.bak_v5_6_9"
-        try:
-            if not os.path.exists(backup_path):
-                self._write_text_file(backup_path, before)
-        except Exception:
-            # Backup is best-effort here; the file write below remains the
-            # primary operation and still happens only after guard approval.
-            backup_path = ""
-
-        self._write_text_file(target_path, after)
+        delegated = self._delegate_code_edit_patch_to_step_executor(
+            task=task,
+            original_step=step,
+            patch_step={
+                "type": "apply_patch",
+                "target_path": path,
+                "old_text": before,
+                "new_text": after,
+                "edit_payload": {
+                    "operation": "replace_text",
+                    "target_path": path,
+                    "old_text": before,
+                    "new_text": after,
+                },
+                "scheduler_code_edit_bridge": True,
+                "scope": scope,
+            },
+            task_dir=task_dir,
+        )
         return {
-            "ok": True,
-            "action": "code_edit",
+            "ok": bool(delegated.get("ok", False)),
+            "action": "code_edit_delegated",
             "path": path,
             "abs_path": target_path,
             "function": function_name,
             "changed": True,
-            "backup_path": backup_path,
             "edit_mode": edit_mode,
+            "delegated_to": "step_executor",
+            "scheduler_direct_mutation": False,
+            "step_executor_result": delegated,
         }
+
+    def _delegate_code_edit_patch_to_step_executor(
+        self,
+        *,
+        task: Dict[str, Any],
+        original_step: Dict[str, Any],
+        patch_step: Dict[str, Any],
+        task_dir: str,
+    ) -> Dict[str, Any]:
+        step_executor = getattr(self, "step_executor", None)
+        if step_executor is None:
+            raise RuntimeError("step_executor unavailable for code_edit delegation")
+
+        scheduler_authority = self._build_scheduler_authority_context(task)
+        execute_step = getattr(step_executor, "execute_step", None)
+        if not callable(execute_step):
+            raise RuntimeError("step executor missing execute_step")
+
+        return execute_step(
+            step=patch_step,
+            task=task,
+            context={
+                "task_dir": task_dir,
+                "scheduler_code_edit_bridge": True,
+                "original_step": copy.deepcopy(original_step),
+                "authority_context": scheduler_authority,
+                "runtime_authority_context": scheduler_authority,
+                "authority_propagation_required": bool(
+                    scheduler_authority.get("authority_propagation_required")
+                ),
+            },
+        )
 
     def _strip_markdown_code_fences(self, *args, **kwargs):
         return _scheduler_path_parser_helper_strip_markdown_code_fences(*args, **kwargs)
@@ -6780,10 +6906,19 @@ def _zero_v702_scheduler_execute_simple_step(self, task: Dict[str, Any], step: D
             execute_step = getattr(executor, "execute_step", None)
             if not callable(execute_step):
                 raise RuntimeError("step executor missing execute_step")
+            scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
             return execute_step(
                 step=copy.deepcopy(step),
                 task=copy.deepcopy(task) if isinstance(task, dict) else {},
-                context={"cwd": self.workspace_dir, "repair_step_preserved": True},
+                context={
+                    "cwd": self.workspace_dir,
+                    "repair_step_preserved": True,
+                    "authority_context": scheduler_authority,
+                    "runtime_authority_context": scheduler_authority,
+                    "authority_propagation_required": bool(
+                        scheduler_authority.get("authority_propagation_required")
+                    ),
+                },
                 previous_result=None,
                 step_index=self._safe_int(task.get("current_step_index", 0), 0) if isinstance(task, dict) else 0,
                 step_count=len(task.get("steps", [])) if isinstance(task, dict) and isinstance(task.get("steps"), list) else 1,
@@ -6820,6 +6955,50 @@ def _zero_v702_scheduler_execute_simple_step(self, task: Dict[str, Any], step: D
 
 Scheduler._plan_goal = _zero_v702_scheduler_plan_goal
 Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step
+
+# ZERO v7.3.35 - Scheduler no-direct-mutation code-chain dispatch seal
+# Keep code-chain repair compatibility, but ensure it delegates through the
+# StepExecutor boundary with scheduler marked as orchestration-only.
+_ZERO_V7335_PREVIOUS_SCHEDULER_EXECUTE_SIMPLE_STEP = Scheduler._execute_simple_step
+
+
+def _zero_v7335_scheduler_execute_simple_step_no_direct_mutation(self, task: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    if step_type in {"code_chain_repair", "autonomous_code_repair"}:
+        executor = getattr(self, "step_executor", None)
+        if executor is None:
+            executor = StepExecutor(
+                workspace_root=getattr(self, "workspace_dir", "workspace"),
+                debug=bool(getattr(self, "debug", False)),
+            )
+        execute_step = getattr(executor, "execute_step", None)
+        if not callable(execute_step):
+            raise RuntimeError("step executor missing execute_step")
+        scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
+        try:
+            step_index = int(task.get("current_step_index", 0)) if isinstance(task, dict) else 0
+        except Exception:
+            step_index = 0
+        return execute_step(
+            step=copy.deepcopy(step),
+            task=copy.deepcopy(task) if isinstance(task, dict) else {},
+            context={
+                "cwd": self.workspace_dir,
+                "repair_step_preserved": True,
+                "authority_context": scheduler_authority,
+                "runtime_authority_context": scheduler_authority,
+                "authority_propagation_required": bool(
+                    scheduler_authority.get("authority_propagation_required")
+                ),
+            },
+            previous_result=None,
+            step_index=step_index,
+            step_count=len(task.get("steps", [])) if isinstance(task, dict) and isinstance(task.get("steps"), list) else 1,
+        )
+    return _ZERO_V7335_PREVIOUS_SCHEDULER_EXECUTE_SIMPLE_STEP(self, task=task, step=step)
+
+
+Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation
 Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_2_PRE_ENQUEUE_REPAIR_FINGERPRINT_GATE"
 SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 
@@ -9209,3 +9388,143 @@ def _zero_v7336_is_repairable_failure(self, task: Dict[str, Any]) -> Tuple[bool,
 
 
 Scheduler._is_repairable_failure = _zero_v7336_is_repairable_failure
+
+# ZERO v7.3.37 - Scheduler create-task mutation bridge intent seal
+# Create-task compatibility paths must create execution intent only.  Actual
+# mutation remains behind Scheduler -> TaskRunner -> StepExecutor.
+_ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK = Scheduler._try_force_repo_edit_at_create_task
+_ZERO_V7337_ORIGINAL_SCHEDULER_CREATE_TASK_RECORD = Scheduler._create_task_record
+
+
+def _zero_v7337_scheduler_repo_edit_intent_candidate(text: str) -> bool:
+    lowered = str(text or "").strip().lower().replace("\\", "/")
+    if not lowered:
+        return False
+    has_target = "workspace/" in lowered or "core/" in lowered or ".py" in lowered
+    has_edit = any(
+        marker in lowered
+        for marker in (
+            "replace",
+            " with ",
+            "fix",
+            "repair",
+            "correct",
+            "patch",
+            "edit",
+            "modify",
+            "code_chain",
+            "repo edit",
+            "repo-edit",
+        )
+    )
+    return bool(has_target and has_edit)
+
+
+def _zero_v7337_scheduler_extract_target_path(text: str) -> str:
+    match = re.search(
+        r"(workspace[/\\][A-Za-z0-9_. /\\\\-]+?\\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
+        str(text or ""),
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip().strip("'\"`.,;:").replace("\\", "/")
+    return ""
+
+
+def _zero_v7337_scheduler_forced_repo_edit_intent(goal: str) -> Dict[str, Any]:
+    text = str(goal or "").strip()
+    target_path = _zero_v7337_scheduler_extract_target_path(text)
+    forced = {
+        "handled": True,
+        "forced_route": True,
+        "tool_name": "repo_edit_tool",
+        "status": "intent_only",
+        "execution_intent_only": True,
+        "mutation_executed": False,
+        "scheduler_required": True,
+        "taskrunner_required": True,
+        "step_executor_required": True,
+        "governed_execution_required": True,
+        "task_text": text,
+        "target_path": target_path,
+        "reason": "scheduler_create_task_mutation_bridge_intent_only",
+    }
+    step = {
+        "type": "code_chain_repair",
+        "task_text": text,
+        "target_path": target_path,
+        "scheduler_create_task_mutation_bridge_intent": True,
+        "authority_propagation_required": True,
+    }
+    final_answer = "repo edit intent queued; execution requires Scheduler -> TaskRunner -> StepExecutor"
+    return {
+        "ok": True,
+        "status": STATUS_QUEUED,
+        "forced": copy.deepcopy(forced),
+        "final_answer": final_answer,
+        "error": None,
+        "execution_intent_only": True,
+        "mutation_executed": False,
+        "planner_result": {
+            "ok": True,
+            "planner_mode": "scheduler_forced_repo_edit_intent_v7_3_37",
+            "intent": "repo_edit_execution_intent",
+            "final_answer": final_answer,
+            "steps": [step],
+            "error": None,
+            "meta": {
+                "forced_route": True,
+                "execution_intent_only": True,
+                "mutation_executed": False,
+                "authority_path": "AgentLoop/CreateTask -> Scheduler -> TaskRunner -> StepExecutor",
+            },
+            "forced_repo_edit": copy.deepcopy(forced),
+        },
+        "results": [],
+        "execution_log": [
+            {
+                "type": "forced_repo_edit_intent",
+                "tool": "repo_edit_tool",
+                "status": "intent_only",
+                "ok": True,
+                "mutation_executed": False,
+                "data": copy.deepcopy(forced),
+            }
+        ],
+    }
+
+
+def _zero_v7337_scheduler_try_force_repo_edit_at_create_task(self, goal: str) -> Optional[Dict[str, Any]]:
+    text = str(goal or "").strip()
+    if _zero_v7337_scheduler_repo_edit_intent_candidate(text):
+        return _zero_v7337_scheduler_forced_repo_edit_intent(text)
+    return _ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK(self, goal)
+
+
+def _zero_v7337_scheduler_create_task_record(self, *args, **kwargs) -> Dict[str, Any]:
+    task = _ZERO_V7337_ORIGINAL_SCHEDULER_CREATE_TASK_RECORD(self, *args, **kwargs)
+    if not isinstance(task, dict):
+        return task
+    forced = task.get("last_step_result")
+    planner = task.get("planner_result")
+    if isinstance(planner, dict) and isinstance(planner.get("forced_repo_edit"), dict):
+        forced = planner.get("forced_repo_edit")
+    if isinstance(forced, dict) and forced.get("execution_intent_only"):
+        task["status"] = STATUS_QUEUED
+        task["current_step_index"] = 0
+        task["finished_tick"] = None
+        task["final_answer"] = ""
+        task["results"] = []
+        task["step_results"] = []
+        task["last_step_result"] = None
+        task["execution_intent_only"] = True
+        task["mutation_executed"] = False
+        task["authority_context"] = self._build_scheduler_authority_context(task)
+        if isinstance(task.get("planner_result"), dict):
+            task["planner_result"]["execution_intent_only"] = True
+            task["planner_result"]["mutation_executed"] = False
+    return task
+
+
+Scheduler._try_force_repo_edit_at_create_task = _zero_v7337_scheduler_try_force_repo_edit_at_create_task
+Scheduler._create_task_record = _zero_v7337_scheduler_create_task_record
