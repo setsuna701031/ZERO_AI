@@ -259,3 +259,48 @@ Expected result:
 ```text
 8 passed
 ```
+
+---
+
+## AER Runtime Execution Memory / Recovery Resume v1
+
+ZERO can now preserve execution memory, execution cursor continuity, recovery
+resume points, and replay continuity across resumed engineering workflow
+sessions.
+
+The contract-proven recovery path is:
+
+```text
+intent/task
+-> plan
+-> execute step
+-> verify failure
+-> repair plan
+-> injected repair
+-> checkpoint
+-> restore
+-> execution cursor
+-> execution memory journal
+-> recovery resume point
+-> resumed continuation
+-> replay continuation
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. It now records
+persistent execution cursors, journaled execution memory entries, recovery
+resume points, and recovery resume records as JSON-serializable dictionaries.
+The continuity summary reports `ok=False` when cursor lineage, recovery resume
+lineage, or replay recovery references are broken.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+9 passed
+```

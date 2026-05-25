@@ -435,6 +435,212 @@ class WorkflowRuntimeSessionManager:
             current_tick=current_tick,
         )
 
+    def persist_execution_cursor(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        cursor: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        cursor_record = self.build_execution_cursor_record(
+            task=task,
+            state=state,
+            cursor=cursor,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="execution_cursor",
+            record=cursor_record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_execution_cursor_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        cursor: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        events = session.get("events") if isinstance(session.get("events"), list) else []
+        checkpoint_id = self._latest_checkpoint_id(self._events_from_any(events))
+        restore_event_id = self._latest_event_id(self._events_from_any(events), event_type="restore")
+        step_index = safe_int(cursor.get("step_index") if isinstance(cursor, dict) else state.get("current_step_index"), 0)
+        cursor_seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "step_index": step_index,
+            "current_tick": current_tick,
+            "checkpoint_id": checkpoint_id,
+            "restore_event_id": restore_event_id,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.execution_cursor.v1",
+            "cursor_id": "wfcur_" + stable_hash(cursor_seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "step_index": step_index,
+            "step_id": safe_text(cursor.get("step_id") if isinstance(cursor, dict) else ""),
+            "phase": safe_text(cursor.get("phase") if isinstance(cursor, dict) else "") or "execution",
+            "checkpoint_id": safe_text(cursor.get("checkpoint_id") if isinstance(cursor, dict) else "") or checkpoint_id,
+            "restore_event_id": safe_text(cursor.get("restore_event_id") if isinstance(cursor, dict) else "") or restore_event_id,
+            "parent_event_id": self._latest_event_id(self._events_from_any(events), event_type="restore") or (safe_text(events[-1].get("event_id")) if events and isinstance(events[-1], dict) else ""),
+            "created_at": utc_now(),
+        }
+
+    def append_execution_memory(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        memory: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        memory_record = self.build_execution_memory_record(
+            task=task,
+            state=state,
+            memory=memory,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="execution_memory",
+            record=memory_record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_execution_memory_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        memory: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        cursor = self._latest_lineage_item(session, "execution_cursors")
+        memory_payload = copy.deepcopy(memory if isinstance(memory, dict) else {})
+        memory_seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "cursor_id": cursor.get("cursor_id") if isinstance(cursor, dict) else "",
+            "memory": memory_payload,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.execution_memory.v1",
+            "memory_id": "wfmem_" + stable_hash(memory_seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "cursor_id": safe_text(cursor.get("cursor_id") if isinstance(cursor, dict) else ""),
+            "checkpoint_id": safe_text(cursor.get("checkpoint_id") if isinstance(cursor, dict) else ""),
+            "entry_type": safe_text(memory_payload.get("entry_type")) or "execution_memory",
+            "payload": _json_safe(memory_payload.get("payload") if "payload" in memory_payload else memory_payload),
+            "payload_hash": stable_hash(memory_payload),
+            "created_at": utc_now(),
+        }
+
+    def create_recovery_resume_point(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        resume_point: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        resume_record = self.build_recovery_resume_point_record(
+            task=task,
+            state=state,
+            resume_point=resume_point,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="recovery_resume_point",
+            record=resume_record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_recovery_resume_point_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        resume_point: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        cursor = self._latest_lineage_item(session, "execution_cursors")
+        memory = self._latest_lineage_item(session, "execution_memory")
+        recovery_seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "cursor_id": cursor.get("cursor_id") if isinstance(cursor, dict) else "",
+            "memory_id": memory.get("memory_id") if isinstance(memory, dict) else "",
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.recovery_resume_point.v1",
+            "recovery_resume_id": "wfrr_" + stable_hash(recovery_seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "cursor_id": safe_text(resume_point.get("cursor_id") if isinstance(resume_point, dict) else "") or safe_text(cursor.get("cursor_id") if isinstance(cursor, dict) else ""),
+            "memory_id": safe_text(resume_point.get("memory_id") if isinstance(resume_point, dict) else "") or safe_text(memory.get("memory_id") if isinstance(memory, dict) else ""),
+            "checkpoint_id": safe_text(resume_point.get("checkpoint_id") if isinstance(resume_point, dict) else "") or safe_text(cursor.get("checkpoint_id") if isinstance(cursor, dict) else ""),
+            "restore_event_id": safe_text(resume_point.get("restore_event_id") if isinstance(resume_point, dict) else "") or safe_text(cursor.get("restore_event_id") if isinstance(cursor, dict) else ""),
+            "step_index": safe_int(resume_point.get("step_index") if isinstance(resume_point, dict) else cursor.get("step_index") if isinstance(cursor, dict) else 0, 0),
+            "reason": safe_text(resume_point.get("reason") if isinstance(resume_point, dict) else ""),
+            "created_at": utc_now(),
+        }
+
+    def resume_from_recovery_point(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery_resume_point: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        point = copy.deepcopy(recovery_resume_point if isinstance(recovery_resume_point, dict) else {})
+        record = {
+            "schema": "zero.workflow_runtime_session.recovery_resume.v1",
+            "recovery_resume_id": safe_text(point.get("recovery_resume_id")),
+            "cursor_id": safe_text(point.get("cursor_id")),
+            "memory_id": safe_text(point.get("memory_id")),
+            "checkpoint_id": safe_text(point.get("checkpoint_id")),
+            "restore_event_id": safe_text(point.get("restore_event_id")),
+            "workflow_id": self.workflow_id_for(task, state),
+            "session_id": self.session_id_for(task, state),
+            "source_workflow_id": safe_text(point.get("workflow_id")),
+            "source_session_id": safe_text(point.get("session_id")),
+            "step_index": safe_int(point.get("step_index"), 0),
+            "resumed_at": utc_now(),
+        }
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="recovery_resume",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
     def append_workflow_record(
         self,
         *,
@@ -831,6 +1037,49 @@ class WorkflowRuntimeSessionManager:
                 "restore_event_id": self._latest_event_id(events, event_type="restore"),
                 "checkpoint_id": self._latest_checkpoint_id(events),
             }
+        if action == "execution_cursor":
+            lineage["execution_cursor"] = {
+                "cursor_id": safe_text(step_result.get("cursor_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "checkpoint_id": safe_text(step_result.get("checkpoint_id")),
+                "restore_event_id": safe_text(step_result.get("restore_event_id")),
+                "parent_event_id": safe_text(step_result.get("parent_event_id")) or (parent_event.event_id if parent_event else ""),
+                "step_index": safe_int(step_result.get("step_index"), 0),
+            }
+        if action == "execution_memory":
+            lineage["execution_memory"] = {
+                "memory_id": safe_text(step_result.get("memory_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "cursor_id": safe_text(step_result.get("cursor_id")),
+                "checkpoint_id": safe_text(step_result.get("checkpoint_id")),
+                "payload_hash": safe_text(step_result.get("payload_hash")),
+            }
+        if action == "recovery_resume_point":
+            lineage["recovery_resume_point"] = {
+                "recovery_resume_id": safe_text(step_result.get("recovery_resume_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "cursor_id": safe_text(step_result.get("cursor_id")),
+                "memory_id": safe_text(step_result.get("memory_id")),
+                "checkpoint_id": safe_text(step_result.get("checkpoint_id")),
+                "restore_event_id": safe_text(step_result.get("restore_event_id")),
+                "step_index": safe_int(step_result.get("step_index"), 0),
+            }
+        if action == "recovery_resume":
+            lineage["recovery_resume"] = {
+                "recovery_resume_id": safe_text(step_result.get("recovery_resume_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "source_workflow_id": safe_text(step_result.get("source_workflow_id")),
+                "source_session_id": safe_text(step_result.get("source_session_id")),
+                "cursor_id": safe_text(step_result.get("cursor_id")),
+                "memory_id": safe_text(step_result.get("memory_id")),
+                "checkpoint_id": safe_text(step_result.get("checkpoint_id")),
+                "restore_event_id": safe_text(step_result.get("restore_event_id")),
+                "step_index": safe_int(step_result.get("step_index"), 0),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -894,6 +1143,26 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("resume_continue"), dict)
         ]
+        cursor_events = [
+            copy.deepcopy(event.lineage.get("execution_cursor"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("execution_cursor"), dict)
+        ]
+        memory_events = [
+            copy.deepcopy(event.lineage.get("execution_memory"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("execution_memory"), dict)
+        ]
+        recovery_points = [
+            copy.deepcopy(event.lineage.get("recovery_resume_point"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("recovery_resume_point"), dict)
+        ]
+        recovery_resumes = [
+            copy.deepcopy(event.lineage.get("recovery_resume"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("recovery_resume"), dict)
+        ]
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
             "workflow_id": workflow_id,
@@ -908,6 +1177,10 @@ class WorkflowRuntimeSessionManager:
             "checkpoints": checkpoint_events[-20:],
             "restores": restore_events[-20:],
             "resume_continuations": resume_events[-20:],
+            "execution_cursors": cursor_events[-20:],
+            "execution_memory": memory_events[-20:],
+            "recovery_resume_points": recovery_points[-20:],
+            "recovery_resumes": recovery_resumes[-20:],
         }
         if source_session_id:
             lineage["replay_continuation"] = {
@@ -915,6 +1188,8 @@ class WorkflowRuntimeSessionManager:
                 "continued_session_id": session_id,
                 "workflow_id": workflow_id,
                 "event_count": len(events),
+                "recovery_resume_id": safe_text(recovery_resumes[-1].get("recovery_resume_id")) if recovery_resumes else "",
+                "cursor_id": safe_text(recovery_resumes[-1].get("cursor_id")) if recovery_resumes else "",
             }
         return lineage
 
@@ -1046,6 +1321,13 @@ class WorkflowRuntimeSessionManager:
                     return value
         return ""
 
+    def _latest_lineage_item(self, session: Dict[str, Any], key: str) -> Dict[str, Any]:
+        lineage = session.get("lineage") if isinstance(session, dict) and isinstance(session.get("lineage"), dict) else {}
+        items = lineage.get(key)
+        if isinstance(items, list) and items and isinstance(items[-1], dict):
+            return copy.deepcopy(items[-1])
+        return {}
+
     def _source_session_id(
         self,
         *,
@@ -1146,6 +1428,9 @@ class WorkflowRuntimeSessionManager:
 
         event_ids = set()
         checkpoint_ids = set()
+        cursor_ids = set()
+        memory_ids = set()
+        recovery_resume_ids = set()
         for event in events:
             if not isinstance(event, dict):
                 continue
@@ -1190,11 +1475,65 @@ class WorkflowRuntimeSessionManager:
             resume = event_lineage.get("resume_continue") if isinstance(event_lineage.get("resume_continue"), dict) else {}
             if resume and safe_text(resume.get("checkpoint_id")) and safe_text(resume.get("checkpoint_id")) not in checkpoint_ids:
                 breaks.append("resume_checkpoint_id_mismatch")
+            cursor = event_lineage.get("execution_cursor") if isinstance(event_lineage.get("execution_cursor"), dict) else {}
+            cursor_id = safe_text(cursor.get("cursor_id"))
+            if cursor_id:
+                if safe_text(cursor.get("workflow_id")) and safe_text(cursor.get("workflow_id")) != workflow_id:
+                    breaks.append("cursor_workflow_id_mismatch")
+                if safe_text(cursor.get("session_id")) and safe_text(cursor.get("session_id")) != session_id:
+                    breaks.append("cursor_session_id_mismatch")
+                if safe_text(cursor.get("checkpoint_id")) and safe_text(cursor.get("checkpoint_id")) not in checkpoint_ids:
+                    breaks.append("cursor_checkpoint_id_mismatch")
+                restore_event_id = safe_text(cursor.get("restore_event_id"))
+                if restore_event_id and restore_event_id not in event_ids:
+                    breaks.append("cursor_restore_event_id_mismatch")
+                cursor_ids.add(cursor_id)
+            memory = event_lineage.get("execution_memory") if isinstance(event_lineage.get("execution_memory"), dict) else {}
+            memory_id = safe_text(memory.get("memory_id"))
+            if memory_id:
+                if safe_text(memory.get("workflow_id")) and safe_text(memory.get("workflow_id")) != workflow_id:
+                    breaks.append("memory_workflow_id_mismatch")
+                if safe_text(memory.get("session_id")) and safe_text(memory.get("session_id")) != session_id:
+                    breaks.append("memory_session_id_mismatch")
+                if safe_text(memory.get("cursor_id")) and safe_text(memory.get("cursor_id")) not in cursor_ids:
+                    breaks.append("memory_cursor_id_mismatch")
+                memory_ids.add(memory_id)
+            recovery_point = event_lineage.get("recovery_resume_point") if isinstance(event_lineage.get("recovery_resume_point"), dict) else {}
+            recovery_resume_id = safe_text(recovery_point.get("recovery_resume_id"))
+            if recovery_resume_id:
+                if safe_text(recovery_point.get("workflow_id")) and safe_text(recovery_point.get("workflow_id")) != workflow_id:
+                    breaks.append("recovery_resume_point_workflow_id_mismatch")
+                if safe_text(recovery_point.get("session_id")) and safe_text(recovery_point.get("session_id")) != session_id:
+                    breaks.append("recovery_resume_point_session_id_mismatch")
+                if safe_text(recovery_point.get("cursor_id")) and safe_text(recovery_point.get("cursor_id")) not in cursor_ids:
+                    breaks.append("recovery_resume_point_cursor_id_mismatch")
+                if safe_text(recovery_point.get("memory_id")) and safe_text(recovery_point.get("memory_id")) not in memory_ids:
+                    breaks.append("recovery_resume_point_memory_id_mismatch")
+                recovery_resume_ids.add(recovery_resume_id)
+            recovery_resume = event_lineage.get("recovery_resume") if isinstance(event_lineage.get("recovery_resume"), dict) else {}
+            if recovery_resume:
+                resume_id = safe_text(recovery_resume.get("recovery_resume_id"))
+                if not resume_id or resume_id not in recovery_resume_ids:
+                    breaks.append("recovery_resume_point_missing")
+                if safe_text(recovery_resume.get("workflow_id")) and safe_text(recovery_resume.get("workflow_id")) != workflow_id:
+                    breaks.append("recovery_resume_workflow_id_mismatch")
+                if safe_text(recovery_resume.get("session_id")) and safe_text(recovery_resume.get("session_id")) != session_id:
+                    breaks.append("recovery_resume_session_id_mismatch")
+                if safe_text(recovery_resume.get("source_workflow_id")) and safe_text(recovery_resume.get("source_workflow_id")) != workflow_id:
+                    breaks.append("recovery_resume_source_workflow_id_mismatch")
+                if safe_text(recovery_resume.get("source_session_id")) and safe_text(recovery_resume.get("source_session_id")) != session_id:
+                    breaks.append("recovery_resume_source_session_id_mismatch")
+                if safe_text(recovery_resume.get("cursor_id")) and safe_text(recovery_resume.get("cursor_id")) not in cursor_ids:
+                    breaks.append("recovery_resume_cursor_id_mismatch")
 
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
             breaks.append("broken_source_session_id")
+        if replay and safe_text(replay.get("recovery_resume_id")) and safe_text(replay.get("recovery_resume_id")) not in recovery_resume_ids:
+            breaks.append("replay_recovery_resume_id_mismatch")
+        if replay and safe_text(replay.get("cursor_id")) and safe_text(replay.get("cursor_id")) not in cursor_ids:
+            breaks.append("replay_cursor_id_mismatch")
         parent_session_id = safe_text(lineage.get("parent_session_id"))
         if parent_session_id and parent_session_id == session_id:
             breaks.append("self_parent_session_id")

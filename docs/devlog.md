@@ -242,3 +242,43 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 8 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Execution Memory / Recovery Resume v1
+
+Added persistent execution memory and recovery resume continuity to the workflow
+runtime session contract.
+
+ZERO can now preserve execution memory, execution cursor continuity, recovery
+resume points, and replay continuity across resumed engineering workflow
+sessions:
+
+```text
+intent/task
+-> plan
+-> execute step
+-> verify failure
+-> repair plan
+-> injected repair
+-> checkpoint
+-> restore
+-> execution cursor
+-> execution memory journal
+-> recovery resume point
+-> resumed continuation
+-> replay continuation
+-> continuity summary
+```
+
+The new records remain persistence-ready dictionaries and do not execute
+anything. `WorkflowRuntimeSession` validates cursor lineage, execution memory
+journal linkage, recovery resume point linkage, and replay continuation
+references back to the resumed runtime lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 9 passed
+```
