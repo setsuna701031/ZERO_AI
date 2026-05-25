@@ -641,6 +641,279 @@ class WorkflowRuntimeSessionManager:
             ok=True,
         )
 
+    def create_execution_graph_node(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        node: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_execution_graph_node_record(
+            task=task,
+            state=state,
+            node=node,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase=safe_text(record.get("phase")) or "execution",
+            event_type="execution_graph_node",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_execution_graph_node_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        node: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(node if isinstance(node, dict) else {})
+        branch_id = safe_text(payload.get("branch_id")) or self._current_branch_id(session, state)
+        phase = safe_text(payload.get("phase")) or "execution"
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "branch_id": branch_id,
+            "step_index": safe_int(payload.get("step_index"), 0),
+            "label": safe_text(payload.get("label") or payload.get("step_id")),
+            "current_tick": current_tick,
+        }
+        node_id = safe_text(payload.get("node_id")) or "wfgn_" + stable_hash(seed)[:16]
+        return {
+            "schema": "zero.workflow_runtime_session.execution_graph_node.v1",
+            "node_id": node_id,
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "branch_id": branch_id,
+            "parent_node_id": safe_text(payload.get("parent_node_id")),
+            "step_index": safe_int(payload.get("step_index"), 0),
+            "phase": phase if phase in WORKFLOW_SESSION_PHASES else "execution",
+            "node_type": safe_text(payload.get("node_type")) or "execution",
+            "label": safe_text(payload.get("label") or payload.get("step_id")),
+            "payload": _json_safe(payload.get("payload") if "payload" in payload else {}),
+            "payload_hash": stable_hash(payload),
+            "created_at": utc_now(),
+        }
+
+    def connect_graph_edge(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        edge: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_graph_edge_record(task=task, state=state, edge=edge, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="graph_edge",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_graph_edge_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        edge: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(edge if isinstance(edge, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "from_node_id": safe_text(payload.get("from_node_id")),
+            "to_node_id": safe_text(payload.get("to_node_id")),
+            "edge_type": safe_text(payload.get("edge_type")) or "continuation",
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.graph_edge.v1",
+            "edge_id": safe_text(payload.get("edge_id")) or "wfge_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "from_node_id": safe_text(payload.get("from_node_id")),
+            "to_node_id": safe_text(payload.get("to_node_id")),
+            "edge_type": safe_text(payload.get("edge_type")) or "continuation",
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "created_at": utc_now(),
+        }
+
+    def create_branch_fork(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        branch: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_branch_fork_record(task=task, state=state, branch=branch, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="branch_fork",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_branch_fork_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        branch: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(branch if isinstance(branch, dict) else {})
+        parent_branch_id = safe_text(payload.get("parent_branch_id")) or self._current_branch_id(session, state)
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "parent_branch_id": parent_branch_id,
+            "fork_node_id": safe_text(payload.get("fork_node_id")),
+            "name": safe_text(payload.get("name")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.branch_fork.v1",
+            "branch_id": safe_text(payload.get("branch_id")) or "wfbr_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "parent_branch_id": parent_branch_id,
+            "fork_node_id": safe_text(payload.get("fork_node_id")),
+            "name": safe_text(payload.get("name")),
+            "created_at": utc_now(),
+        }
+
+    def create_join_merge(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        join: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_join_merge_record(task=task, state=state, join=join, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="join_merge",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_join_merge_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        join: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(join if isinstance(join, dict) else {})
+        source_branch_ids = [
+            safe_text(item)
+            for item in (payload.get("source_branch_ids") if isinstance(payload.get("source_branch_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "source_branch_ids": source_branch_ids,
+            "target_branch_id": safe_text(payload.get("target_branch_id")),
+            "join_node_id": safe_text(payload.get("join_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.join_merge.v1",
+            "join_id": safe_text(payload.get("join_id")) or "wfj_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "source_branch_ids": source_branch_ids,
+            "target_branch_id": safe_text(payload.get("target_branch_id")) or self._current_branch_id(session, state),
+            "join_node_id": safe_text(payload.get("join_node_id")),
+            "strategy": safe_text(payload.get("strategy")) or "merge",
+            "created_at": utc_now(),
+        }
+
+    def attach_recovery_dependency(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        dependency: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_recovery_dependency_record(
+            task=task,
+            state=state,
+            dependency=dependency,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="recovery_dependency",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_recovery_dependency_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        dependency: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(dependency if isinstance(dependency, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "source_node_id": safe_text(payload.get("source_node_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "dependency_type": safe_text(payload.get("dependency_type")) or "recovery",
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.recovery_dependency.v1",
+            "recovery_dependency_id": safe_text(payload.get("recovery_dependency_id")) or "wfrd_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "source_node_id": safe_text(payload.get("source_node_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "dependency_type": safe_text(payload.get("dependency_type")) or "recovery",
+            "required": bool(payload.get("required", True)),
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -1080,6 +1353,56 @@ class WorkflowRuntimeSessionManager:
                 "restore_event_id": safe_text(step_result.get("restore_event_id")),
                 "step_index": safe_int(step_result.get("step_index"), 0),
             }
+        if action == "execution_graph_node":
+            lineage["execution_graph_node"] = {
+                "node_id": safe_text(step_result.get("node_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "parent_node_id": safe_text(step_result.get("parent_node_id")),
+                "phase": safe_text(step_result.get("phase")) or phase,
+                "step_index": safe_int(step_result.get("step_index"), 0),
+            }
+        if action == "graph_edge":
+            lineage["graph_edge"] = {
+                "edge_id": safe_text(step_result.get("edge_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "from_node_id": safe_text(step_result.get("from_node_id")),
+                "to_node_id": safe_text(step_result.get("to_node_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "edge_type": safe_text(step_result.get("edge_type")) or "continuation",
+            }
+        if action == "branch_fork":
+            lineage["branch_fork"] = {
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "parent_branch_id": safe_text(step_result.get("parent_branch_id")),
+                "fork_node_id": safe_text(step_result.get("fork_node_id")),
+                "name": safe_text(step_result.get("name")),
+            }
+        if action == "join_merge":
+            lineage["join_merge"] = {
+                "join_id": safe_text(step_result.get("join_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "source_branch_ids": copy.deepcopy(step_result.get("source_branch_ids") if isinstance(step_result.get("source_branch_ids"), list) else []),
+                "target_branch_id": safe_text(step_result.get("target_branch_id")),
+                "join_node_id": safe_text(step_result.get("join_node_id")),
+                "strategy": safe_text(step_result.get("strategy")) or "merge",
+            }
+        if action == "recovery_dependency":
+            lineage["recovery_dependency"] = {
+                "recovery_dependency_id": safe_text(step_result.get("recovery_dependency_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "source_node_id": safe_text(step_result.get("source_node_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "dependency_type": safe_text(step_result.get("dependency_type")) or "recovery",
+                "required": bool(step_result.get("required", True)),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -1096,10 +1419,13 @@ class WorkflowRuntimeSessionManager:
                 events=events,
             )
         if source_session_id:
+            replay_input = self._replay_continuation_input(task=task, state=state, result=step_result)
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
                 "workflow_id": workflow_id,
+                "source_branch_id": safe_text(replay_input.get("source_branch_id")),
+                "continued_branch_id": safe_text(replay_input.get("continued_branch_id")),
             }
         return lineage
 
@@ -1163,6 +1489,32 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("recovery_resume"), dict)
         ]
+        graph_nodes = [
+            copy.deepcopy(event.lineage.get("execution_graph_node"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("execution_graph_node"), dict)
+        ]
+        graph_edges = [
+            copy.deepcopy(event.lineage.get("graph_edge"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("graph_edge"), dict)
+        ]
+        branch_forks = [
+            copy.deepcopy(event.lineage.get("branch_fork"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("branch_fork"), dict)
+        ]
+        join_merges = [
+            copy.deepcopy(event.lineage.get("join_merge"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("join_merge"), dict)
+        ]
+        recovery_dependencies = [
+            copy.deepcopy(event.lineage.get("recovery_dependency"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("recovery_dependency"), dict)
+        ]
+        current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
             "workflow_id": workflow_id,
@@ -1171,6 +1523,7 @@ class WorkflowRuntimeSessionManager:
             "source_session_id": source_session_id,
             "parent_session_id": parent_session_id,
             "root_session_id": parent_session_id or source_session_id or session_id,
+            "current_branch_id": current_branch_id,
             "event_ids_by_phase": event_ids_by_phase,
             "repair_ancestry": repair_events[-20:],
             "retry_chain": retry_events[-20:],
@@ -1181,8 +1534,20 @@ class WorkflowRuntimeSessionManager:
             "execution_memory": memory_events[-20:],
             "recovery_resume_points": recovery_points[-20:],
             "recovery_resumes": recovery_resumes[-20:],
+            "execution_graph": {
+                "schema": "zero.workflow_runtime_session.execution_graph.v1",
+                "nodes": graph_nodes[-200:],
+                "edges": graph_edges[-200:],
+                "branches": branch_forks[-100:],
+                "joins": join_merges[-100:],
+            },
+            "recovery_dependency_graph": {
+                "schema": "zero.workflow_runtime_session.recovery_dependency_graph.v1",
+                "dependencies": recovery_dependencies[-200:],
+            },
         }
         if source_session_id:
+            replay_input = self._replay_continuation_input(task=task, state=state, result=result)
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -1190,6 +1555,8 @@ class WorkflowRuntimeSessionManager:
                 "event_count": len(events),
                 "recovery_resume_id": safe_text(recovery_resumes[-1].get("recovery_resume_id")) if recovery_resumes else "",
                 "cursor_id": safe_text(recovery_resumes[-1].get("cursor_id")) if recovery_resumes else "",
+                "source_branch_id": safe_text(replay_input.get("source_branch_id")),
+                "continued_branch_id": safe_text(replay_input.get("continued_branch_id")) or current_branch_id,
             }
         return lineage
 
@@ -1328,6 +1695,100 @@ class WorkflowRuntimeSessionManager:
             return copy.deepcopy(items[-1])
         return {}
 
+    def _current_branch_id(self, session: Dict[str, Any], state: Dict[str, Any]) -> str:
+        lineage = session.get("lineage") if isinstance(session, dict) and isinstance(session.get("lineage"), dict) else {}
+        value = safe_text(state.get("current_branch_id") if isinstance(state, dict) else "")
+        if value:
+            return value
+        value = safe_text(lineage.get("current_branch_id"))
+        if value:
+            return value
+        graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
+        nodes = graph.get("nodes") if isinstance(graph.get("nodes"), list) else []
+        for node in reversed(nodes):
+            if isinstance(node, dict) and safe_text(node.get("branch_id")):
+                return safe_text(node.get("branch_id"))
+        branches = graph.get("branches") if isinstance(graph.get("branches"), list) else []
+        for branch in reversed(branches):
+            if isinstance(branch, dict) and safe_text(branch.get("branch_id")):
+                return safe_text(branch.get("branch_id"))
+        return "main"
+
+    def _current_branch_id_from_records(
+        self,
+        nodes: List[Dict[str, Any]],
+        branches: List[Dict[str, Any]],
+        state: Dict[str, Any],
+    ) -> str:
+        value = safe_text(state.get("current_branch_id") if isinstance(state, dict) else "")
+        if value:
+            return value
+        for node in reversed(nodes):
+            if isinstance(node, dict) and safe_text(node.get("branch_id")):
+                return safe_text(node.get("branch_id"))
+        for branch in reversed(branches):
+            if isinstance(branch, dict) and safe_text(branch.get("branch_id")):
+                return safe_text(branch.get("branch_id"))
+        return ""
+
+    def _replay_continuation_input(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        result: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        for source in (result, state, task):
+            if not isinstance(source, dict):
+                continue
+            replay = source.get("replay_continuation")
+            if isinstance(replay, dict):
+                return copy.deepcopy(replay)
+        return {}
+
+    def _branches_related(
+        self,
+        source_branch_id: str,
+        target_branch_id: str,
+        branch_parent: Dict[str, str],
+        joins: List[Dict[str, Any]],
+    ) -> bool:
+        source = safe_text(source_branch_id)
+        target = safe_text(target_branch_id)
+        if not source or not target:
+            return False
+        if source == target:
+            return True
+        if source in self._branch_ancestors(target, branch_parent):
+            return True
+        if target in self._branch_ancestors(source, branch_parent):
+            return True
+        for join in joins:
+            join_target = safe_text(join.get("target_branch_id"))
+            join_sources = {
+                safe_text(item)
+                for item in (join.get("source_branch_ids") if isinstance(join.get("source_branch_ids"), list) else [])
+                if safe_text(item)
+            }
+            if target == join_target and source in join_sources:
+                return True
+            if source == join_target and target in join_sources:
+                return True
+            if source in join_sources and target in join_sources:
+                return True
+        return False
+
+    def _branch_ancestors(self, branch_id: str, branch_parent: Dict[str, str]) -> set[str]:
+        ancestors: set[str] = set()
+        current = safe_text(branch_id)
+        while current and current in branch_parent:
+            parent = safe_text(branch_parent.get(current))
+            if not parent or parent in ancestors:
+                break
+            ancestors.add(parent)
+            current = parent
+        return ancestors
+
     def _source_session_id(
         self,
         *,
@@ -1431,6 +1892,13 @@ class WorkflowRuntimeSessionManager:
         cursor_ids = set()
         memory_ids = set()
         recovery_resume_ids = set()
+        graph_node_ids = set()
+        branch_ids = {"main"}
+        graph_edges: List[Dict[str, Any]] = []
+        branch_forks: List[Dict[str, Any]] = []
+        join_merges: List[Dict[str, Any]] = []
+        recovery_dependencies: List[Dict[str, Any]] = []
+        node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
                 continue
@@ -1525,6 +1993,114 @@ class WorkflowRuntimeSessionManager:
                     breaks.append("recovery_resume_source_session_id_mismatch")
                 if safe_text(recovery_resume.get("cursor_id")) and safe_text(recovery_resume.get("cursor_id")) not in cursor_ids:
                     breaks.append("recovery_resume_cursor_id_mismatch")
+            graph_node = event_lineage.get("execution_graph_node") if isinstance(event_lineage.get("execution_graph_node"), dict) else {}
+            node_id = safe_text(graph_node.get("node_id"))
+            if node_id:
+                if safe_text(graph_node.get("workflow_id")) and safe_text(graph_node.get("workflow_id")) != workflow_id:
+                    breaks.append("graph_node_workflow_id_mismatch")
+                if safe_text(graph_node.get("session_id")) and safe_text(graph_node.get("session_id")) != session_id:
+                    breaks.append("graph_node_session_id_mismatch")
+                graph_node_ids.add(node_id)
+                branch_id = safe_text(graph_node.get("branch_id"))
+                if branch_id:
+                    branch_ids.add(branch_id)
+                    node_branch[node_id] = branch_id
+            graph_edge = event_lineage.get("graph_edge") if isinstance(event_lineage.get("graph_edge"), dict) else {}
+            if graph_edge:
+                graph_edges.append(copy.deepcopy(graph_edge))
+            branch_fork = event_lineage.get("branch_fork") if isinstance(event_lineage.get("branch_fork"), dict) else {}
+            if branch_fork:
+                branch_forks.append(copy.deepcopy(branch_fork))
+                branch_id = safe_text(branch_fork.get("branch_id"))
+                if branch_id:
+                    branch_ids.add(branch_id)
+            join_merge = event_lineage.get("join_merge") if isinstance(event_lineage.get("join_merge"), dict) else {}
+            if join_merge:
+                join_merges.append(copy.deepcopy(join_merge))
+            recovery_dependency = event_lineage.get("recovery_dependency") if isinstance(event_lineage.get("recovery_dependency"), dict) else {}
+            if recovery_dependency:
+                recovery_dependencies.append(copy.deepcopy(recovery_dependency))
+
+        graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
+        for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
+            if not isinstance(node, dict):
+                continue
+            node_id = safe_text(node.get("node_id"))
+            if node_id:
+                graph_node_ids.add(node_id)
+                if safe_text(node.get("branch_id")):
+                    branch_ids.add(safe_text(node.get("branch_id")))
+                    node_branch.setdefault(node_id, safe_text(node.get("branch_id")))
+        for branch in graph.get("branches") if isinstance(graph.get("branches"), list) else []:
+            if isinstance(branch, dict) and safe_text(branch.get("branch_id")):
+                branch_ids.add(safe_text(branch.get("branch_id")))
+                if branch not in branch_forks:
+                    branch_forks.append(copy.deepcopy(branch))
+        for edge in graph.get("edges") if isinstance(graph.get("edges"), list) else []:
+            if isinstance(edge, dict) and edge not in graph_edges:
+                graph_edges.append(copy.deepcopy(edge))
+        for join in graph.get("joins") if isinstance(graph.get("joins"), list) else []:
+            if isinstance(join, dict) and join not in join_merges:
+                join_merges.append(copy.deepcopy(join))
+        recovery_graph = lineage.get("recovery_dependency_graph") if isinstance(lineage.get("recovery_dependency_graph"), dict) else {}
+        for dependency in recovery_graph.get("dependencies") if isinstance(recovery_graph.get("dependencies"), list) else []:
+            if isinstance(dependency, dict) and dependency not in recovery_dependencies:
+                recovery_dependencies.append(copy.deepcopy(dependency))
+
+        branch_parent: Dict[str, str] = {}
+        for branch in branch_forks:
+            branch_id = safe_text(branch.get("branch_id"))
+            parent_branch_id = safe_text(branch.get("parent_branch_id"))
+            if not branch_id:
+                breaks.append("missing_branch_id")
+                continue
+            branch_parent[branch_id] = parent_branch_id
+            if parent_branch_id and parent_branch_id not in branch_ids:
+                breaks.append("broken_branch_parent")
+            fork_node_id = safe_text(branch.get("fork_node_id"))
+            if fork_node_id and fork_node_id not in graph_node_ids:
+                breaks.append("branch_fork_node_missing")
+
+        for edge in graph_edges:
+            if safe_text(edge.get("workflow_id")) and safe_text(edge.get("workflow_id")) != workflow_id:
+                breaks.append("graph_edge_workflow_id_mismatch")
+            if safe_text(edge.get("session_id")) and safe_text(edge.get("session_id")) != session_id:
+                breaks.append("graph_edge_session_id_mismatch")
+            if safe_text(edge.get("from_node_id")) not in graph_node_ids or safe_text(edge.get("to_node_id")) not in graph_node_ids:
+                breaks.append("orphan_graph_edge")
+            if safe_text(edge.get("branch_id")) and safe_text(edge.get("branch_id")) not in branch_ids:
+                breaks.append("graph_edge_branch_missing")
+
+        for join in join_merges:
+            source_branch_ids = [
+                safe_text(item)
+                for item in (join.get("source_branch_ids") if isinstance(join.get("source_branch_ids"), list) else [])
+                if safe_text(item)
+            ]
+            target_branch_id = safe_text(join.get("target_branch_id"))
+            join_node_id = safe_text(join.get("join_node_id"))
+            if not source_branch_ids or not target_branch_id or not join_node_id:
+                breaks.append("invalid_join_lineage")
+                continue
+            if target_branch_id not in branch_ids or any(branch_id not in branch_ids for branch_id in source_branch_ids):
+                breaks.append("invalid_join_lineage")
+            if join_node_id not in graph_node_ids:
+                breaks.append("invalid_join_lineage")
+            if any(not self._branches_related(source, target_branch_id, branch_parent, join_merges) for source in source_branch_ids):
+                breaks.append("invalid_join_lineage")
+
+        for dependency in recovery_dependencies:
+            source_node_id = safe_text(dependency.get("source_node_id"))
+            target_node_id = safe_text(dependency.get("target_node_id"))
+            branch_id = safe_text(dependency.get("branch_id"))
+            if source_node_id not in graph_node_ids or target_node_id not in graph_node_ids:
+                breaks.append("recovery_dependency_graph_node_missing")
+            if branch_id and branch_id not in branch_ids:
+                breaks.append("recovery_dependency_branch_missing")
+            source_branch = node_branch.get(source_node_id, "")
+            target_branch = node_branch.get(target_node_id, "")
+            if source_branch and target_branch and not self._branches_related(source_branch, target_branch, branch_parent, join_merges):
+                breaks.append("recovery_dependency_graph_discontinuity")
 
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
@@ -1534,6 +2110,13 @@ class WorkflowRuntimeSessionManager:
             breaks.append("replay_recovery_resume_id_mismatch")
         if replay and safe_text(replay.get("cursor_id")) and safe_text(replay.get("cursor_id")) not in cursor_ids:
             breaks.append("replay_cursor_id_mismatch")
+        source_branch_id = safe_text(replay.get("source_branch_id"))
+        continued_branch_id = safe_text(replay.get("continued_branch_id"))
+        if replay and source_branch_id and continued_branch_id:
+            if source_branch_id not in branch_ids or continued_branch_id not in branch_ids:
+                breaks.append("replay_branch_lineage_mismatch")
+            elif not self._branches_related(source_branch_id, continued_branch_id, branch_parent, join_merges):
+                breaks.append("replay_branch_lineage_mismatch")
         parent_session_id = safe_text(lineage.get("parent_session_id"))
         if parent_session_id and parent_session_id == session_id:
             breaks.append("self_parent_session_id")
@@ -1549,6 +2132,24 @@ class WorkflowRuntimeSessionManager:
             "lineage_intact": not breaks,
             "source_session_id": source_session_id,
             "parent_session_id": parent_session_id,
+            "graph_continuity": {
+                "ok": not any(
+                    item in breaks
+                    for item in (
+                        "orphan_graph_edge",
+                        "broken_branch_parent",
+                        "invalid_join_lineage",
+                        "replay_branch_lineage_mismatch",
+                        "recovery_dependency_graph_node_missing",
+                        "recovery_dependency_graph_discontinuity",
+                    )
+                ),
+                "node_count": len(graph_node_ids),
+                "edge_count": len(graph_edges),
+                "branch_count": len(branch_ids),
+                "join_count": len(join_merges),
+                "recovery_dependency_count": len(recovery_dependencies),
+            },
         }
 
     def _phase_summary(self, *, state: Dict[str, Any], events: List[WorkflowRuntimeEvent]) -> Dict[str, Dict[str, Any]]:

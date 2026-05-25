@@ -304,3 +304,42 @@ Expected result:
 ```text
 9 passed
 ```
+
+---
+
+## AER Runtime Execution Graph / Recovery Graph v1
+
+ZERO now supports graph-based engineering runtime continuity inside
+`WorkflowRuntimeSession`.
+
+The runtime session can record and validate:
+
+```text
+execution graph nodes
+-> graph edges
+-> branch/fork lineage
+-> independent branch continuation
+-> join/merge continuity
+-> recovery dependency graph
+-> replay continuation across branch lineage
+-> graph continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. The graph records are
+JSON-serializable dictionaries attached to the workflow session lineage; they do
+not execute commands, migrate ownership into Scheduler, change UI behavior, or
+add new tools. Continuity validation now reports `ok=False` for orphan graph
+edges, broken branch parents, invalid join lineage, replay continuation across
+unrelated branches, and broken recovery dependency graph edges.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+10 passed
+```

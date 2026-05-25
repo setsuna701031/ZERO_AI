@@ -638,12 +638,30 @@ def build_replayable_workflow_runtime_session(
         existing = state.get("workflow_runtime_session")
         if isinstance(existing, dict):
             source_id = str(existing.get("session_id") or "").strip()
+    replay_continuation = copy.deepcopy(state.get("replay_continuation")) if isinstance(state.get("replay_continuation"), dict) else {}
+    existing = state.get("workflow_runtime_session")
+    if isinstance(existing, dict):
+        lineage = existing.get("lineage") if isinstance(existing.get("lineage"), dict) else {}
+        if not replay_continuation and isinstance(lineage.get("replay_continuation"), dict):
+            replay_continuation = copy.deepcopy(lineage.get("replay_continuation"))
+        source_branch_id = str(replay_continuation.get("source_branch_id") or lineage.get("current_branch_id") or "").strip()
+        if source_branch_id:
+            replay_continuation["source_branch_id"] = source_branch_id
+    else:
+        lineage = {}
     if source_id:
+        replay_continuation["source_session_id"] = source_id
+        replay_continuation["continued_by"] = "runtime_replay_engine"
+        continued_branch_id = str(
+            state.get("current_branch_id")
+            or replay_continuation.get("continued_branch_id")
+            or replay_continuation.get("source_branch_id")
+            or ""
+        ).strip()
+        if continued_branch_id:
+            replay_continuation["continued_branch_id"] = continued_branch_id
         state["source_session_id"] = source_id
-        state["replay_continuation"] = {
-            "source_session_id": source_id,
-            "continued_by": "runtime_replay_engine",
-        }
+        state["replay_continuation"] = replay_continuation
 
     session = build_workflow_runtime_session(
         task=task if isinstance(task, dict) else {},

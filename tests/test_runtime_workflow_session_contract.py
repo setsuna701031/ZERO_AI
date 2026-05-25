@@ -674,3 +674,229 @@ def test_workflow_runtime_execution_memory_recovery_resume_continuity() -> None:
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_recovery_resume_id_mismatch" in broken_replay_summary["breaks"]
+
+
+def test_workflow_runtime_execution_graph_recovery_graph_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    intent = {"task_id": "wf-graph", "goal": "continue across branch graph lineage"}
+    task = {"task_id": "wf-graph", "goal": intent["goal"], "steps": []}
+    state = {"task_id": "wf-graph", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent=intent, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    workflow_id = session["workflow_id"]
+    session_id = session["session_id"]
+
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "node-root", "branch_id": "main", "label": "root", "step_index": 0},
+        current_tick=2,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.create_branch_fork(
+        task=task,
+        state=state,
+        branch={"branch_id": "branch-a", "parent_branch_id": "main", "fork_node_id": "node-root", "name": "repair path"},
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.create_branch_fork(
+        task=task,
+        state=state,
+        branch={"branch_id": "branch-b", "parent_branch_id": "main", "fork_node_id": "node-root", "name": "alternate path"},
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+
+    state["current_branch_id"] = "branch-a"
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "node-a1", "branch_id": "branch-a", "parent_node_id": "node-root", "label": "branch a execute", "step_index": 1},
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.connect_graph_edge(
+        task=task,
+        state=state,
+        edge={"edge_id": "edge-root-a1", "from_node_id": "node-root", "to_node_id": "node-a1", "branch_id": "branch-a"},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+
+    failed_step = {"id": "verify-a", "type": "verify_python_syntax", "path": "bad.py"}
+    failed_result = {"ok": False, "step_index": 2, "error": {"message": "SyntaxError"}}
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "node-a-verify", "branch_id": "branch-a", "parent_node_id": "node-a1", "label": "verify failure", "phase": "verify", "step_index": 2},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_verify_record(
+        task=task,
+        state=state,
+        verify_step=failed_step,
+        verify_result=failed_result,
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    state["repair_context"] = {
+        "original_failed_step": failed_step,
+        "original_failed_result": failed_result,
+    }
+    repair_plan = {
+        "ok": True,
+        "classification": "python_syntax_error",
+        "summary": "repair branch syntax failure",
+        "actions": [{"type": "write_file", "path": "bad.py", "content": "def f():\n    return 1\n"}],
+    }
+    injection = build_repair_injection(
+        repair_plan=repair_plan,
+        task=task,
+        failed_step=failed_step,
+        failed_result=failed_result,
+    )
+    repair_step = injection["steps"][0]
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "node-a-repair", "branch_id": "branch-a", "parent_node_id": "node-a-verify", "label": "repair", "phase": "repair", "step_index": 3},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_repair_record(
+        task=task,
+        state=state,
+        repair_step=repair_step,
+        repair_result={"ok": True, "step_index": 3, "repair_ancestry": repair_step["repair_ancestry"]},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_recovery_dependency(
+        task=task,
+        state=state,
+        dependency={
+            "recovery_dependency_id": "dep-verify-repair",
+            "source_node_id": "node-a-verify",
+            "target_node_id": "node-a-repair",
+            "branch_id": "branch-a",
+            "dependency_type": "verify_failure_repair",
+        },
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+
+    state["current_branch_id"] = "branch-b"
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "node-b1", "branch_id": "branch-b", "parent_node_id": "node-root", "label": "branch b execute", "step_index": 1},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.connect_graph_edge(
+        task=task,
+        state=state,
+        edge={"edge_id": "edge-root-b1", "from_node_id": "node-root", "to_node_id": "node-b1", "branch_id": "branch-b"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+
+    state["current_branch_id"] = "main"
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "node-join", "branch_id": "main", "parent_node_id": "node-root", "label": "join", "step_index": 4},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.connect_graph_edge(
+        task=task,
+        state=state,
+        edge={"edge_id": "edge-a-repair-join", "from_node_id": "node-a-repair", "to_node_id": "node-join", "branch_id": "main", "edge_type": "merge"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.connect_graph_edge(
+        task=task,
+        state=state,
+        edge={"edge_id": "edge-b1-join", "from_node_id": "node-b1", "to_node_id": "node-join", "branch_id": "main", "edge_type": "merge"},
+        current_tick=16,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.create_join_merge(
+        task=task,
+        state=state,
+        join={
+            "join_id": "join-ab-main",
+            "source_branch_ids": ["branch-a", "branch-b"],
+            "target_branch_id": "main",
+            "join_node_id": "node-join",
+        },
+        current_tick=17,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["workflow_id"] == workflow_id
+    assert session["session_id"] == session_id
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["ok"] is True
+    assert session["lineage"]["execution_graph"]["nodes"]
+    assert session["lineage"]["execution_graph"]["edges"]
+    assert session["lineage"]["execution_graph"]["branches"]
+    assert session["lineage"]["execution_graph"]["joins"]
+    assert session["lineage"]["recovery_dependency_graph"]["dependencies"]
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "branch-a",
+        "continued_branch_id": "main",
+    }
+    replay = build_replayable_workflow_runtime_session(
+        task=task,
+        runtime_state={**state, "workflow_runtime_session": session},
+    )
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["lineage"]["replay_continuation"]["source_branch_id"] == "branch-a"
+    assert replay_session["lineage"]["replay_continuation"]["continued_branch_id"] == "main"
+    assert replay_session["continuity_summary"]["ok"] is True
+
+    json.dumps(replay_session, sort_keys=True, default=str)
+
+    broken_edge = dict(session)
+    broken_edge["lineage"] = dict(session["lineage"])
+    broken_edge["lineage"]["execution_graph"] = dict(session["lineage"]["execution_graph"])
+    broken_edge["lineage"]["execution_graph"]["edges"] = [dict(item) for item in session["lineage"]["execution_graph"]["edges"]]
+    broken_edge["lineage"]["execution_graph"]["edges"][0]["from_node_id"] = "missing-node"
+    broken_edge_summary = manager.continuity_summary(broken_edge)
+    assert broken_edge_summary["ok"] is False
+    assert "orphan_graph_edge" in broken_edge_summary["breaks"]
+
+    broken_branch = dict(session)
+    broken_branch["lineage"] = dict(session["lineage"])
+    broken_branch["lineage"]["execution_graph"] = dict(session["lineage"]["execution_graph"])
+    broken_branch["lineage"]["execution_graph"]["branches"] = [dict(item) for item in session["lineage"]["execution_graph"]["branches"]]
+    broken_branch["lineage"]["execution_graph"]["branches"][0]["parent_branch_id"] = "missing-branch"
+    broken_branch_summary = manager.continuity_summary(broken_branch)
+    assert broken_branch_summary["ok"] is False
+    assert "broken_branch_parent" in broken_branch_summary["breaks"]
+
+    broken_join = dict(session)
+    broken_join["lineage"] = dict(session["lineage"])
+    broken_join["lineage"]["execution_graph"] = dict(session["lineage"]["execution_graph"])
+    broken_join["lineage"]["execution_graph"]["joins"] = [dict(item) for item in session["lineage"]["execution_graph"]["joins"]]
+    broken_join["lineage"]["execution_graph"]["joins"][0]["join_node_id"] = "missing-join-node"
+    broken_join_summary = manager.continuity_summary(broken_join)
+    assert broken_join_summary["ok"] is False
+    assert "invalid_join_lineage" in broken_join_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["continued_branch_id"] = "unrelated-branch"
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_branch_lineage_mismatch" in broken_replay_summary["breaks"]

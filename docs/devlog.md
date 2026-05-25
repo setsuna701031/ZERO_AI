@@ -282,3 +282,41 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 9 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Execution Graph / Recovery Graph v1
+
+Added graph-based engineering execution continuity to the workflow runtime
+session contract.
+
+ZERO can now preserve execution transaction graph continuity, recovery
+dependency graph continuity, branch/fork lineage, join/merge continuity, replay
+continuation across branch lineage, and graph lineage integrity validation:
+
+```text
+intent/task
+-> execution graph nodes
+-> graph edges
+-> branch/fork lineage
+-> independent branch continuation
+-> verify failure / repair lineage on one branch
+-> recovery dependency graph edge
+-> join/merge back to workflow lineage
+-> replay continuation across branch lineage
+-> graph continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Graph records are
+persistence-ready dictionaries and do not execute actions, move execution
+ownership into Scheduler, change UI behavior, or introduce tools. Continuity
+summary now detects orphan graph edges, broken branch parents, invalid joins,
+unrelated replay branch continuation, and broken recovery dependency graph
+references.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 10 passed
+```
