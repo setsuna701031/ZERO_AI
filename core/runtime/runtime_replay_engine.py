@@ -605,3 +605,59 @@ def _source_runtime_state_refs(records: list[RuntimeReplayRecord]) -> list[dict[
 
 def _sorted_unique(values: list[str]) -> list[str]:
     return sorted({str(value) for value in values if str(value or "").strip()})
+
+
+# ============================================================
+# AER Workflow Runtime Session replay bridge v1
+# ============================================================
+def build_replayable_workflow_runtime_session(
+    *,
+    task: dict[str, Any] | None = None,
+    runtime_state: dict[str, Any] | None = None,
+    result: dict[str, Any] | None = None,
+    source_session_id: str = "",
+) -> dict[str, Any]:
+    """Return the canonical replayable workflow session envelope.
+
+    This is a read-only replay bridge: it summarizes the runtime execution log
+    into the planner -> execution -> verify -> repair -> rollback/retry ->
+    replayable session shape without executing recovery or mutation actions.
+    """
+    try:
+        from core.runtime.workflow_runtime_session import build_workflow_runtime_session
+    except Exception as exc:  # pragma: no cover - compatibility guard
+        return {
+            "ok": False,
+            "error": "workflow_runtime_session_unavailable",
+            "message": str(exc),
+        }
+
+    state = copy.deepcopy(runtime_state if isinstance(runtime_state, dict) else {})
+    source_id = str(source_session_id or state.get("source_session_id") or "").strip()
+    if not source_id:
+        existing = state.get("workflow_runtime_session")
+        if isinstance(existing, dict):
+            source_id = str(existing.get("session_id") or "").strip()
+    if source_id:
+        state["source_session_id"] = source_id
+        state["replay_continuation"] = {
+            "source_session_id": source_id,
+            "continued_by": "runtime_replay_engine",
+        }
+
+    session = build_workflow_runtime_session(
+        task=task if isinstance(task, dict) else {},
+        state=state,
+        result=result if isinstance(result, dict) else None,
+    )
+    return {
+        "ok": True,
+        "workflow_runtime_session": session,
+        "replayable": bool(session.get("replayable")),
+        "session_id": session.get("session_id"),
+        "workflow_id": session.get("workflow_id"),
+        "source_session_id": source_id,
+        "replay_continuation": copy.deepcopy(session.get("lineage", {}).get("replay_continuation", {})),
+        "continuity_summary": copy.deepcopy(session.get("continuity_summary", {})),
+        "status": session.get("status"),
+    }

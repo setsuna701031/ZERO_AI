@@ -114,3 +114,51 @@ production worker lifecycle management
 ```
 
 These are not blockers for the local AER runtime kernel freeze candidate.
+
+---
+
+## 2026-05-25 - AER Runtime Session Continuity v1
+
+Added the AER runtime session continuity layer.
+
+Purpose:
+
+```text
+planner
+-> execution
+-> verify
+-> repair
+-> rollback/retry
+-> replayable runtime session
+-> continuity summary
+```
+
+ZERO now preserves workflow identity across execution, verify, repair,
+rollback/retry, and replay continuation. Runtime session records carry stable
+`session_id` / `workflow_id` values, session lineage, repair ancestry, retry
+chain continuity, replay source-session references, and a persistence-ready
+dictionary contract.
+
+Files added / updated:
+
+```text
+tests/test_runtime_workflow_session_contract.py
+core/runtime/workflow_runtime_session.py
+core/runtime/task_runner.py
+core/runtime/runtime_replay_engine.py
+README.md
+docs/devlog.md
+```
+
+Boundary decision:
+
+```text
+workflow_runtime_session records and summarizes runtime state only.
+TaskRunner remains authority propagation.
+StepExecutor remains governed execution endpoint.
+Scheduler remains orchestration.
+Replay bridge remains read-only.
+```
+
+This is the first explicit package turning the existing AER runtime pieces into a
+single replayable Autonomous Engineering Workflow Runtime session envelope.

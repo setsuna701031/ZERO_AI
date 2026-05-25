@@ -4373,3 +4373,102 @@ def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict
 
 
 TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result
+
+
+# ============================================================
+# AER Workflow Runtime Session v1
+# ============================================================
+try:
+    from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager as _ZERO_WORKFLOW_SESSION_MANAGER
+except Exception:  # pragma: no cover - staged rollout compatibility
+    _ZERO_WORKFLOW_SESSION_MANAGER = None
+
+
+_ZERO_V810_ORIGINAL_TASKRUNNER_INIT = TaskRunner.__init__
+_ZERO_V810_ORIGINAL_PERSIST_STEP_RESULT = TaskRunner._persist_step_result_to_runtime_state
+_ZERO_V810_ORIGINAL_FINALIZE_PUBLIC_RESULT = TaskRunner._finalize_public_result
+
+
+def _zero_v810_taskrunner_init(self: TaskRunner, *args: Any, **kwargs: Any) -> None:
+    _ZERO_V810_ORIGINAL_TASKRUNNER_INIT(self, *args, **kwargs)
+    if _ZERO_WORKFLOW_SESSION_MANAGER is not None:
+        try:
+            self.workflow_session_manager = _ZERO_WORKFLOW_SESSION_MANAGER()
+        except Exception:
+            self.workflow_session_manager = None
+    else:
+        self.workflow_session_manager = None
+
+
+def _zero_v810_persist_step_result_to_runtime_state(
+    self: TaskRunner,
+    *,
+    task: Dict[str, Any],
+    state: Dict[str, Any],
+    step: Optional[Dict[str, Any]],
+    step_result: Dict[str, Any],
+    current_tick: int,
+) -> Dict[str, Any]:
+    manager = getattr(self, "workflow_session_manager", None)
+    if manager is not None and isinstance(state, dict):
+        try:
+            state["workflow_runtime_session"] = manager.append_step_result(
+                task=task if isinstance(task, dict) else {},
+                state=state,
+                step=step if isinstance(step, dict) else None,
+                step_result=step_result if isinstance(step_result, dict) else {},
+                current_tick=current_tick,
+            )
+        except Exception:
+            pass
+
+    saved_state = _ZERO_V810_ORIGINAL_PERSIST_STEP_RESULT(
+        self,
+        task=task,
+        state=state,
+        step=step,
+        step_result=step_result,
+        current_tick=current_tick,
+    )
+
+    manager = getattr(self, "workflow_session_manager", None)
+    if manager is not None and isinstance(saved_state, dict):
+        try:
+            saved_state["workflow_runtime_session"] = manager.build_session(
+                task=task if isinstance(task, dict) else {},
+                state=saved_state,
+            ).to_dict()
+            try:
+                saved_state = self.runtime.save_runtime_state(task, saved_state)
+                self._sync_runtime_state_back_to_task(task, saved_state)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    return saved_state
+
+
+def _zero_v810_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:
+    public_result = _ZERO_V810_ORIGINAL_FINALIZE_PUBLIC_RESULT(self, result)
+    manager = getattr(self, "workflow_session_manager", None)
+    if manager is None or not isinstance(public_result, dict):
+        return public_result
+
+    try:
+        task = public_result.get("task") if isinstance(public_result.get("task"), dict) else {}
+        state = public_result.get("runtime_state") if isinstance(public_result.get("runtime_state"), dict) else {}
+        if not state and isinstance(result, dict) and isinstance(result.get("runtime_state"), dict):
+            state = result.get("runtime_state")
+        return manager.finalize_public_result(
+            task=task,
+            state=state if isinstance(state, dict) else {},
+            result=public_result,
+        )
+    except Exception:
+        return public_result
+
+
+TaskRunner.__init__ = _zero_v810_taskrunner_init
+TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state
+TaskRunner._finalize_public_result = _zero_v810_finalize_public_result

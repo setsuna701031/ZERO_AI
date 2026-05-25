@@ -119,3 +119,64 @@ production worker lifecycle management
 
 These are production distributed-runtime infrastructure items, not blockers for
 the local AER runtime kernel freeze candidate.
+
+---
+
+## AER Runtime Session Continuity v1
+
+Current workflow-runtime branch:
+
+```text
+aer-workflow-runtime-session-v1
+```
+
+ZERO now preserves one workflow identity across the engineering runtime path:
+
+```text
+planner
+-> execution
+-> verify
+-> repair
+-> rollback/retry
+-> replayable runtime session
+-> continuity summary
+```
+
+The session contract carries stable `session_id` and `workflow_id` fields,
+session lineage, repair ancestry, retry chain continuity, replay continuation
+back to the source session, and a persistence-ready dictionary shape for runtime
+state storage.
+
+New runtime surface:
+
+```text
+core/runtime/workflow_runtime_session.py
+```
+
+Connected bridge points:
+
+```text
+TaskRunner._persist_step_result_to_runtime_state
+TaskRunner._finalize_public_result
+RuntimeReplayEngine.build_replayable_workflow_runtime_session
+```
+
+Contract:
+
+```text
+workflow_runtime_session is read-only over execution authority.
+It records and summarizes TaskRunner / StepExecutor results.
+It does not execute commands, apply mutations, bypass policy, or impersonate StepExecutor.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+6 passed
+```

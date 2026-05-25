@@ -28,6 +28,7 @@ REQUIRED_SMOKES = [
 OPTIONAL_SMOKES = [
     ("agent loop smoke", "run_agent_loop_smoke.py"),
     ("executor smoke", "run_executor_smoke.py"),
+    ("AER workflow runtime session contract", "test_runtime_workflow_session_contract.py"),
 ]
 
 
