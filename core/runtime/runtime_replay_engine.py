@@ -699,6 +699,7 @@ def workflow_replay_graph_summary(
     consensus_graph = source_lineage.get("federated_consensus_graph") if isinstance(source_lineage.get("federated_consensus_graph"), dict) else {}
     self_healing_graph = source_lineage.get("self_healing_governance_graph") if isinstance(source_lineage.get("self_healing_governance_graph"), dict) else {}
     preservation_graph = source_lineage.get("constitutional_preservation_graph") if isinstance(source_lineage.get("constitutional_preservation_graph"), dict) else {}
+    evolution_graph = source_lineage.get("constitutional_evolution_graph") if isinstance(source_lineage.get("constitutional_evolution_graph"), dict) else {}
 
     mutation_ids = [
         str(item.get("mutation_transaction_id") or "").strip()
@@ -771,6 +772,14 @@ def workflow_replay_graph_summary(
     if preservation_ids and not isinstance(replay.get("preservation_ids"), list):
         replay["preservation_ids"] = preservation_ids[-20:]
 
+    evolution_ids = [
+        str(item.get("evolution_id") or "").strip()
+        for item in (evolution_graph.get("evolutions") if isinstance(evolution_graph.get("evolutions"), list) else [])
+        if isinstance(item, dict) and str(item.get("evolution_id") or "").strip()
+    ]
+    if evolution_ids and not isinstance(replay.get("evolution_ids"), list):
+        replay["evolution_ids"] = evolution_ids[-20:]
+
     return {
         "schema": "zero.workflow_runtime_session.replay_graph_summary.v1",
         "ok": True,
@@ -783,4 +792,5 @@ def workflow_replay_graph_summary(
         "consensus_ids": copy.deepcopy(replay.get("consensus_ids") if isinstance(replay.get("consensus_ids"), list) else []),
         "self_healing_recovery_ids": copy.deepcopy(replay.get("self_healing_recovery_ids") if isinstance(replay.get("self_healing_recovery_ids"), list) else []),
         "preservation_ids": copy.deepcopy(replay.get("preservation_ids") if isinstance(replay.get("preservation_ids"), list) else []),
+        "evolution_ids": copy.deepcopy(replay.get("evolution_ids") if isinstance(replay.get("evolution_ids"), list) else []),
     }

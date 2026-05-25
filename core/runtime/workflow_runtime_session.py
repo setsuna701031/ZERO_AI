@@ -2858,6 +2858,320 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_autonomous_constitutional_evolution_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        evolution: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_autonomous_constitutional_evolution_record(task=task, state=state, evolution=evolution, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="autonomous_constitutional_evolution",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_autonomous_constitutional_evolution_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        evolution: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(evolution if isinstance(evolution, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.autonomous_constitutional_evolution.v1",
+            "evolution_id": safe_text(payload.get("evolution_id")) or "wface_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "constitution_node_id": safe_text(payload.get("constitution_node_id")),
+            "proposal": safe_text(payload.get("proposal")) or "autonomous_constitutional_evolution",
+            "created_at": utc_now(),
+        }
+
+    def attach_constitutional_fork_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        fork: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitutional_fork_record(task=task, state=state, fork=fork, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitutional_fork",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_constitutional_fork_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        fork: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(fork if isinstance(fork, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "evolution_id": safe_text(payload.get("evolution_id")),
+            "branch_id": safe_text(payload.get("branch_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitutional_fork.v1",
+            "constitutional_fork_id": safe_text(payload.get("constitutional_fork_id")) or "wfcfk_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "evolution_id": safe_text(payload.get("evolution_id")),
+            "preservation_id": safe_text(payload.get("preservation_id")),
+            "constitution_node_id": safe_text(payload.get("constitution_node_id")),
+            "branch_id": safe_text(payload.get("branch_id")),
+            "parent_branch_id": safe_text(payload.get("parent_branch_id")),
+            "fork_node_id": safe_text(payload.get("fork_node_id")),
+            "created_at": utc_now(),
+        }
+
+    def attach_constitutional_merge_arbitration_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        arbitration: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitutional_merge_arbitration_record(task=task, state=state, arbitration=arbitration, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitutional_merge_arbitration",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_constitutional_merge_arbitration_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        arbitration: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(arbitration if isinstance(arbitration, dict) else {})
+        source_branch_ids = [
+            safe_text(item)
+            for item in (payload.get("source_branch_ids") if isinstance(payload.get("source_branch_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "source_branch_ids": source_branch_ids,
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitutional_merge_arbitration.v1",
+            "merge_arbitration_id": safe_text(payload.get("merge_arbitration_id")) or "wfcma_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "source_branch_ids": source_branch_ids,
+            "target_branch_id": safe_text(payload.get("target_branch_id")),
+            "quorum_id": safe_text(payload.get("quorum_id")),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "decision": safe_text(payload.get("decision")) or "merge",
+            "created_at": utc_now(),
+        }
+
+    def attach_constitutional_merge_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        merge: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitutional_merge_record(task=task, state=state, merge=merge, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitutional_merge",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_constitutional_merge_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        merge: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(merge if isinstance(merge, dict) else {})
+        source_branch_ids = [
+            safe_text(item)
+            for item in (payload.get("source_branch_ids") if isinstance(payload.get("source_branch_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "merge_arbitration_id": safe_text(payload.get("merge_arbitration_id")),
+            "source_branch_ids": source_branch_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitutional_merge.v1",
+            "constitutional_merge_id": safe_text(payload.get("constitutional_merge_id")) or "wfcmg_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "merge_arbitration_id": safe_text(payload.get("merge_arbitration_id")),
+            "source_branch_ids": source_branch_ids,
+            "target_branch_id": safe_text(payload.get("target_branch_id")),
+            "merged_preservation_id": safe_text(payload.get("merged_preservation_id")),
+            "created_at": utc_now(),
+        }
+
+    def attach_survivability_federation_continuity_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        survivability: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_survivability_federation_continuity_record(task=task, state=state, survivability=survivability, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="survivability_federation_continuity",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_survivability_federation_continuity_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        survivability: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(survivability if isinstance(survivability, dict) else {})
+        worker_ids = [
+            safe_text(item)
+            for item in (payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "constitutional_merge_id": safe_text(payload.get("constitutional_merge_id")),
+            "federation_id": safe_text(payload.get("federation_id")),
+            "worker_ids": worker_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.survivability_federation_continuity.v1",
+            "survivability_federation_id": safe_text(payload.get("survivability_federation_id")) or "wfsfed_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "constitutional_merge_id": safe_text(payload.get("constitutional_merge_id")),
+            "federation_id": safe_text(payload.get("federation_id")),
+            "worker_ids": worker_ids,
+            "status": safe_text(payload.get("status")) or "federated_survivability_continuous",
+            "created_at": utc_now(),
+        }
+
+    def attach_autonomous_governance_stabilization_loop_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        loop: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_autonomous_governance_stabilization_loop_record(task=task, state=state, loop=loop, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="autonomous_governance_stabilization_loop",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_autonomous_governance_stabilization_loop_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        loop: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(loop if isinstance(loop, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "constitutional_merge_id": safe_text(payload.get("constitutional_merge_id")),
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")),
+            "constitutional_stabilization_id": safe_text(payload.get("constitutional_stabilization_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.autonomous_governance_stabilization_loop.v1",
+            "stabilization_loop_id": safe_text(payload.get("stabilization_loop_id")) or "wfagsl_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "constitutional_merge_id": safe_text(payload.get("constitutional_merge_id")),
+            "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id")),
+            "constitutional_stabilization_id": safe_text(payload.get("constitutional_stabilization_id")),
+            "loop_status": safe_text(payload.get("loop_status")) or "stabilized",
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -3736,6 +4050,69 @@ class WorkflowRuntimeSessionManager:
                 "constitutional_stabilization_id": safe_text(step_result.get("constitutional_stabilization_id")),
                 "status": safe_text(step_result.get("status")),
             }
+        if action == "autonomous_constitutional_evolution":
+            lineage["autonomous_constitutional_evolution"] = {
+                "evolution_id": safe_text(step_result.get("evolution_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "policy_decision_id": safe_text(step_result.get("policy_decision_id")),
+                "preservation_id": safe_text(step_result.get("preservation_id")),
+                "constitution_node_id": safe_text(step_result.get("constitution_node_id")),
+                "proposal": safe_text(step_result.get("proposal")),
+            }
+        if action == "constitutional_fork":
+            lineage["constitutional_fork"] = {
+                "constitutional_fork_id": safe_text(step_result.get("constitutional_fork_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "evolution_id": safe_text(step_result.get("evolution_id")),
+                "preservation_id": safe_text(step_result.get("preservation_id")),
+                "constitution_node_id": safe_text(step_result.get("constitution_node_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "parent_branch_id": safe_text(step_result.get("parent_branch_id")),
+                "fork_node_id": safe_text(step_result.get("fork_node_id")),
+            }
+        if action == "constitutional_merge_arbitration":
+            lineage["constitutional_merge_arbitration"] = {
+                "merge_arbitration_id": safe_text(step_result.get("merge_arbitration_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "source_branch_ids": copy.deepcopy(step_result.get("source_branch_ids") if isinstance(step_result.get("source_branch_ids"), list) else []),
+                "target_branch_id": safe_text(step_result.get("target_branch_id")),
+                "quorum_id": safe_text(step_result.get("quorum_id")),
+                "consensus_id": safe_text(step_result.get("consensus_id")),
+                "decision": safe_text(step_result.get("decision")),
+            }
+        if action == "constitutional_merge":
+            lineage["constitutional_merge"] = {
+                "constitutional_merge_id": safe_text(step_result.get("constitutional_merge_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "merge_arbitration_id": safe_text(step_result.get("merge_arbitration_id")),
+                "source_branch_ids": copy.deepcopy(step_result.get("source_branch_ids") if isinstance(step_result.get("source_branch_ids"), list) else []),
+                "target_branch_id": safe_text(step_result.get("target_branch_id")),
+                "merged_preservation_id": safe_text(step_result.get("merged_preservation_id")),
+            }
+        if action == "survivability_federation_continuity":
+            lineage["survivability_federation_continuity"] = {
+                "survivability_federation_id": safe_text(step_result.get("survivability_federation_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "constitutional_merge_id": safe_text(step_result.get("constitutional_merge_id")),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "worker_ids": copy.deepcopy(step_result.get("worker_ids") if isinstance(step_result.get("worker_ids"), list) else []),
+                "status": safe_text(step_result.get("status")),
+            }
+        if action == "autonomous_governance_stabilization_loop":
+            lineage["autonomous_governance_stabilization_loop"] = {
+                "stabilization_loop_id": safe_text(step_result.get("stabilization_loop_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "constitutional_merge_id": safe_text(step_result.get("constitutional_merge_id")),
+                "catastrophic_recovery_id": safe_text(step_result.get("catastrophic_recovery_id")),
+                "constitutional_stabilization_id": safe_text(step_result.get("constitutional_stabilization_id")),
+                "loop_status": safe_text(step_result.get("loop_status")),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -3767,6 +4144,7 @@ class WorkflowRuntimeSessionManager:
                 "consensus_ids": copy.deepcopy(replay_input.get("consensus_ids") if isinstance(replay_input.get("consensus_ids"), list) else []),
                 "self_healing_recovery_ids": copy.deepcopy(replay_input.get("self_healing_recovery_ids") if isinstance(replay_input.get("self_healing_recovery_ids"), list) else []),
                 "preservation_ids": copy.deepcopy(replay_input.get("preservation_ids") if isinstance(replay_input.get("preservation_ids"), list) else []),
+                "evolution_ids": copy.deepcopy(replay_input.get("evolution_ids") if isinstance(replay_input.get("evolution_ids"), list) else []),
             }
         return lineage
 
@@ -4040,6 +4418,36 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("survivability_continuity"), dict)
         ]
+        constitutional_evolutions = [
+            copy.deepcopy(event.lineage.get("autonomous_constitutional_evolution"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("autonomous_constitutional_evolution"), dict)
+        ]
+        constitutional_forks = [
+            copy.deepcopy(event.lineage.get("constitutional_fork"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitutional_fork"), dict)
+        ]
+        constitutional_merge_arbitrations = [
+            copy.deepcopy(event.lineage.get("constitutional_merge_arbitration"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitutional_merge_arbitration"), dict)
+        ]
+        constitutional_merges = [
+            copy.deepcopy(event.lineage.get("constitutional_merge"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitutional_merge"), dict)
+        ]
+        survivability_federations = [
+            copy.deepcopy(event.lineage.get("survivability_federation_continuity"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("survivability_federation_continuity"), dict)
+        ]
+        governance_stabilization_loops = [
+            copy.deepcopy(event.lineage.get("autonomous_governance_stabilization_loop"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("autonomous_governance_stabilization_loop"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -4129,6 +4537,15 @@ class WorkflowRuntimeSessionManager:
                 "stabilizations": adaptive_constitutional_stabilizations[-100:],
                 "survivability": survivability_records[-100:],
             },
+            "constitutional_evolution_graph": {
+                "schema": "zero.workflow_runtime_session.constitutional_evolution_graph.v1",
+                "evolutions": constitutional_evolutions[-100:],
+                "forks": constitutional_forks[-100:],
+                "merge_arbitrations": constitutional_merge_arbitrations[-100:],
+                "merges": constitutional_merges[-100:],
+                "survivability_federations": survivability_federations[-100:],
+                "stabilization_loops": governance_stabilization_loops[-100:],
+            },
         }
         if source_session_id:
             replay_input = self._replay_continuation_input(task=task, state=state, result=result)
@@ -4212,6 +4629,17 @@ class WorkflowRuntimeSessionManager:
                     for item in constitutional_preservations[-20:]
                     if isinstance(item, dict) and safe_text(item.get("preservation_id"))
                 ]
+            replay_evolution_ids = [
+                safe_text(item)
+                for item in (replay_input.get("evolution_ids") if isinstance(replay_input.get("evolution_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_evolution_ids:
+                replay_evolution_ids = [
+                    safe_text(item.get("evolution_id"))
+                    for item in constitutional_evolutions[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("evolution_id"))
+                ]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -4233,6 +4661,7 @@ class WorkflowRuntimeSessionManager:
                 "consensus_ids": replay_consensus_ids,
                 "self_healing_recovery_ids": replay_self_healing_recovery_ids,
                 "preservation_ids": replay_preservation_ids,
+                "evolution_ids": replay_evolution_ids,
             }
         return lineage
 
@@ -4636,6 +5065,12 @@ class WorkflowRuntimeSessionManager:
         constitutional_rollback_arbitrations: List[Dict[str, Any]] = []
         adaptive_constitutional_stabilizations: List[Dict[str, Any]] = []
         survivability_records: List[Dict[str, Any]] = []
+        constitutional_evolutions: List[Dict[str, Any]] = []
+        constitutional_forks: List[Dict[str, Any]] = []
+        constitutional_merge_arbitrations: List[Dict[str, Any]] = []
+        constitutional_merges: List[Dict[str, Any]] = []
+        survivability_federations: List[Dict[str, Any]] = []
+        governance_stabilization_loops: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -4869,6 +5304,24 @@ class WorkflowRuntimeSessionManager:
             survivability = event_lineage.get("survivability_continuity") if isinstance(event_lineage.get("survivability_continuity"), dict) else {}
             if survivability:
                 survivability_records.append(copy.deepcopy(survivability))
+            evolution = event_lineage.get("autonomous_constitutional_evolution") if isinstance(event_lineage.get("autonomous_constitutional_evolution"), dict) else {}
+            if evolution:
+                constitutional_evolutions.append(copy.deepcopy(evolution))
+            constitutional_fork = event_lineage.get("constitutional_fork") if isinstance(event_lineage.get("constitutional_fork"), dict) else {}
+            if constitutional_fork:
+                constitutional_forks.append(copy.deepcopy(constitutional_fork))
+            merge_arbitration = event_lineage.get("constitutional_merge_arbitration") if isinstance(event_lineage.get("constitutional_merge_arbitration"), dict) else {}
+            if merge_arbitration:
+                constitutional_merge_arbitrations.append(copy.deepcopy(merge_arbitration))
+            constitutional_merge = event_lineage.get("constitutional_merge") if isinstance(event_lineage.get("constitutional_merge"), dict) else {}
+            if constitutional_merge:
+                constitutional_merges.append(copy.deepcopy(constitutional_merge))
+            survivability_federation = event_lineage.get("survivability_federation_continuity") if isinstance(event_lineage.get("survivability_federation_continuity"), dict) else {}
+            if survivability_federation:
+                survivability_federations.append(copy.deepcopy(survivability_federation))
+            stabilization_loop = event_lineage.get("autonomous_governance_stabilization_loop") if isinstance(event_lineage.get("autonomous_governance_stabilization_loop"), dict) else {}
+            if stabilization_loop:
+                governance_stabilization_loops.append(copy.deepcopy(stabilization_loop))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -5013,6 +5466,25 @@ class WorkflowRuntimeSessionManager:
         for survivability in preservation_graph.get("survivability") if isinstance(preservation_graph.get("survivability"), list) else []:
             if isinstance(survivability, dict) and survivability not in survivability_records:
                 survivability_records.append(copy.deepcopy(survivability))
+        evolution_graph = lineage.get("constitutional_evolution_graph") if isinstance(lineage.get("constitutional_evolution_graph"), dict) else {}
+        for evolution in evolution_graph.get("evolutions") if isinstance(evolution_graph.get("evolutions"), list) else []:
+            if isinstance(evolution, dict) and evolution not in constitutional_evolutions:
+                constitutional_evolutions.append(copy.deepcopy(evolution))
+        for constitutional_fork in evolution_graph.get("forks") if isinstance(evolution_graph.get("forks"), list) else []:
+            if isinstance(constitutional_fork, dict) and constitutional_fork not in constitutional_forks:
+                constitutional_forks.append(copy.deepcopy(constitutional_fork))
+        for arbitration in evolution_graph.get("merge_arbitrations") if isinstance(evolution_graph.get("merge_arbitrations"), list) else []:
+            if isinstance(arbitration, dict) and arbitration not in constitutional_merge_arbitrations:
+                constitutional_merge_arbitrations.append(copy.deepcopy(arbitration))
+        for merge in evolution_graph.get("merges") if isinstance(evolution_graph.get("merges"), list) else []:
+            if isinstance(merge, dict) and merge not in constitutional_merges:
+                constitutional_merges.append(copy.deepcopy(merge))
+        for survivability_federation in evolution_graph.get("survivability_federations") if isinstance(evolution_graph.get("survivability_federations"), list) else []:
+            if isinstance(survivability_federation, dict) and survivability_federation not in survivability_federations:
+                survivability_federations.append(copy.deepcopy(survivability_federation))
+        for stabilization_loop in evolution_graph.get("stabilization_loops") if isinstance(evolution_graph.get("stabilization_loops"), list) else []:
+            if isinstance(stabilization_loop, dict) and stabilization_loop not in governance_stabilization_loops:
+                governance_stabilization_loops.append(copy.deepcopy(stabilization_loop))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -5690,6 +6162,133 @@ class WorkflowRuntimeSessionManager:
             if not stabilization_id or stabilization_id not in constitutional_stabilization_ids:
                 breaks.append("survivability_without_preservation_recovery_stabilization")
 
+        evolution_ids = {
+            safe_text(evolution.get("evolution_id"))
+            for evolution in constitutional_evolutions
+            if safe_text(evolution.get("evolution_id"))
+        }
+        constitutional_fork_ids = {
+            safe_text(fork.get("constitutional_fork_id"))
+            for fork in constitutional_forks
+            if safe_text(fork.get("constitutional_fork_id"))
+        }
+        constitutional_fork_branch_ids = {
+            safe_text(fork.get("branch_id"))
+            for fork in constitutional_forks
+            if safe_text(fork.get("branch_id"))
+        }
+        merge_arbitration_ids = {
+            safe_text(arbitration.get("merge_arbitration_id"))
+            for arbitration in constitutional_merge_arbitrations
+            if safe_text(arbitration.get("merge_arbitration_id"))
+        }
+        constitutional_merge_ids = {
+            safe_text(merge.get("constitutional_merge_id"))
+            for merge in constitutional_merges
+            if safe_text(merge.get("constitutional_merge_id"))
+        }
+
+        for evolution in constitutional_evolutions:
+            if safe_text(evolution.get("workflow_id")) != workflow_id or safe_text(evolution.get("session_id")) != session_id:
+                breaks.append("constitutional_evolution_missing_policy_preservation_lineage")
+            policy_id = safe_text(evolution.get("policy_decision_id"))
+            preservation_id = safe_text(evolution.get("preservation_id"))
+            constitution_node_id = safe_text(evolution.get("constitution_node_id"))
+            if not policy_id or policy_id not in policy_ids:
+                breaks.append("constitutional_evolution_missing_policy_preservation_lineage")
+            if not preservation_id or preservation_id not in preservation_ids:
+                breaks.append("constitutional_evolution_missing_policy_preservation_lineage")
+            if constitution_node_id and constitution_node_id not in graph_node_ids:
+                breaks.append("constitutional_evolution_missing_policy_preservation_lineage")
+
+        for fork in constitutional_forks:
+            if safe_text(fork.get("workflow_id")) != workflow_id or safe_text(fork.get("session_id")) != session_id:
+                breaks.append("constitutional_fork_without_active_parent")
+            evolution_id = safe_text(fork.get("evolution_id"))
+            preservation_id = safe_text(fork.get("preservation_id"))
+            constitution_node_id = safe_text(fork.get("constitution_node_id"))
+            branch_id = safe_text(fork.get("branch_id"))
+            parent_branch_id = safe_text(fork.get("parent_branch_id"))
+            fork_node_id = safe_text(fork.get("fork_node_id"))
+            if evolution_id and evolution_id not in evolution_ids:
+                breaks.append("constitutional_fork_without_active_parent")
+            if not preservation_id or preservation_id not in preservation_ids:
+                breaks.append("constitutional_fork_without_active_parent")
+            if not constitution_node_id or constitution_node_id not in graph_node_ids:
+                breaks.append("constitutional_fork_without_active_parent")
+            if not branch_id or branch_id not in branch_ids:
+                breaks.append("constitutional_fork_without_active_parent")
+            if parent_branch_id and parent_branch_id not in branch_ids:
+                breaks.append("constitutional_fork_without_active_parent")
+            if fork_node_id and fork_node_id not in graph_node_ids:
+                breaks.append("constitutional_fork_without_active_parent")
+
+        for arbitration in constitutional_merge_arbitrations:
+            if safe_text(arbitration.get("workflow_id")) != workflow_id or safe_text(arbitration.get("session_id")) != session_id:
+                breaks.append("constitutional_merge_arbitration_missing_fork_branches")
+            source_branch_ids = [
+                safe_text(item)
+                for item in (arbitration.get("source_branch_ids") if isinstance(arbitration.get("source_branch_ids"), list) else [])
+                if safe_text(item)
+            ]
+            target_branch_id = safe_text(arbitration.get("target_branch_id"))
+            quorum_id = safe_text(arbitration.get("quorum_id"))
+            consensus_id = safe_text(arbitration.get("consensus_id"))
+            if len(source_branch_ids) < 2 or any(branch_id not in constitutional_fork_branch_ids for branch_id in source_branch_ids):
+                breaks.append("constitutional_merge_arbitration_missing_fork_branches")
+            if target_branch_id and target_branch_id not in branch_ids:
+                breaks.append("constitutional_merge_arbitration_missing_fork_branches")
+            if not quorum_id or quorum_id not in quorum_ids:
+                breaks.append("constitutional_merge_arbitration_missing_fork_branches")
+            if not consensus_id or consensus_id not in consensus_ids:
+                breaks.append("constitutional_merge_arbitration_missing_fork_branches")
+
+        for merge in constitutional_merges:
+            if safe_text(merge.get("workflow_id")) != workflow_id or safe_text(merge.get("session_id")) != session_id:
+                breaks.append("constitutional_merge_without_arbitration_parent")
+            merge_arbitration_id = safe_text(merge.get("merge_arbitration_id"))
+            source_branch_ids = [
+                safe_text(item)
+                for item in (merge.get("source_branch_ids") if isinstance(merge.get("source_branch_ids"), list) else [])
+                if safe_text(item)
+            ]
+            target_branch_id = safe_text(merge.get("target_branch_id"))
+            preservation_id = safe_text(merge.get("merged_preservation_id"))
+            if not merge_arbitration_id or merge_arbitration_id not in merge_arbitration_ids:
+                breaks.append("constitutional_merge_without_arbitration_parent")
+            if len(source_branch_ids) < 2 or any(branch_id not in constitutional_fork_branch_ids for branch_id in source_branch_ids):
+                breaks.append("constitutional_merge_without_arbitration_parent")
+            if target_branch_id and target_branch_id not in branch_ids:
+                breaks.append("constitutional_merge_without_arbitration_parent")
+            if preservation_id and preservation_id not in preservation_ids:
+                breaks.append("constitutional_merge_without_arbitration_parent")
+
+        for federation_record in survivability_federations:
+            if safe_text(federation_record.get("workflow_id")) != workflow_id or safe_text(federation_record.get("session_id")) != session_id:
+                breaks.append("survivability_federation_stale_worker_lineage")
+            merge_id = safe_text(federation_record.get("constitutional_merge_id"))
+            federation_id = safe_text(federation_record.get("federation_id"))
+            if not merge_id or merge_id not in constitutional_merge_ids:
+                breaks.append("survivability_federation_stale_worker_lineage")
+            if not federation_id or federation_id not in federation_ids:
+                breaks.append("survivability_federation_stale_worker_lineage")
+            for worker_id in federation_record.get("worker_ids") if isinstance(federation_record.get("worker_ids"), list) else []:
+                if safe_text(worker_id) not in worker_ids:
+                    breaks.append("survivability_federation_stale_worker_lineage")
+
+        for loop in governance_stabilization_loops:
+            if safe_text(loop.get("workflow_id")) != workflow_id or safe_text(loop.get("session_id")) != session_id:
+                breaks.append("stabilization_loop_without_merge_recovery_lineage")
+            merge_id = safe_text(loop.get("constitutional_merge_id"))
+            recovery_id = safe_text(loop.get("catastrophic_recovery_id"))
+            stabilization_id = safe_text(loop.get("constitutional_stabilization_id"))
+            if not merge_id or merge_id not in constitutional_merge_ids:
+                breaks.append("stabilization_loop_without_merge_recovery_lineage")
+            if not recovery_id or recovery_id not in catastrophic_recovery_ids:
+                breaks.append("stabilization_loop_without_merge_recovery_lineage")
+            if not stabilization_id or stabilization_id not in constitutional_stabilization_ids:
+                breaks.append("stabilization_loop_without_merge_recovery_lineage")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -5754,6 +6353,13 @@ class WorkflowRuntimeSessionManager:
         ]
         if any(preservation_id not in preservation_ids for preservation_id in replay_preservation_ids):
             breaks.append("replay_stale_constitutional_preservation_lineage")
+        replay_evolution_ids = [
+            safe_text(item)
+            for item in (replay.get("evolution_ids") if isinstance(replay.get("evolution_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(evolution_id not in evolution_ids for evolution_id in replay_evolution_ids):
+            breaks.append("replay_stale_constitutional_evolution_lineage")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -5825,6 +6431,13 @@ class WorkflowRuntimeSessionManager:
                         "constitutional_stabilization_without_recovery_parent",
                         "survivability_without_preservation_recovery_stabilization",
                         "replay_stale_constitutional_preservation_lineage",
+                        "constitutional_evolution_missing_policy_preservation_lineage",
+                        "constitutional_fork_without_active_parent",
+                        "constitutional_merge_arbitration_missing_fork_branches",
+                        "constitutional_merge_without_arbitration_parent",
+                        "survivability_federation_stale_worker_lineage",
+                        "stabilization_loop_without_merge_recovery_lineage",
+                        "replay_stale_constitutional_evolution_lineage",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -5866,6 +6479,12 @@ class WorkflowRuntimeSessionManager:
                 "constitutional_rollback_arbitration_count": len(constitutional_rollback_arbitrations),
                 "adaptive_constitutional_stabilization_count": len(adaptive_constitutional_stabilizations),
                 "survivability_count": len(survivability_records),
+                "constitutional_evolution_count": len(evolution_ids),
+                "constitutional_fork_count": len(constitutional_fork_ids),
+                "constitutional_merge_arbitration_count": len(merge_arbitration_ids),
+                "constitutional_merge_count": len(constitutional_merge_ids),
+                "survivability_federation_count": len(survivability_federations),
+                "governance_stabilization_loop_count": len(governance_stabilization_loops),
             },
         }
 

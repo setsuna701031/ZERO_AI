@@ -561,3 +561,47 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 16 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Autonomous Constitutional Evolution / Fork-Merge Governance v1
+
+Added autonomous constitutional evolution and fork/merge governance continuity
+to the workflow runtime session contract.
+
+ZERO now preserves autonomous constitutional evolution, constitutional
+fork/merge governance, merge arbitration, survivability federation continuity,
+and autonomous governance stabilization loop lineage inside the engineering
+runtime graph:
+
+```text
+workflow session
+-> constitutional preservation / governance graph
+-> autonomous constitutional evolution
+-> constitutional forks from active constitution lineage
+-> independent governance decisions on fork branches
+-> merge arbitration through quorum / consensus
+-> constitutional merge
+-> survivability federation continuity
+-> autonomous governance stabilization loop
+-> deterministic replay validation
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Runtime replay only
+summarizes deterministic constitutional evolution references for replay
+continuation; it does not execute actions, add tools, create mutation
+shortcuts, or take ownership from Scheduler. Continuity summary now detects
+constitutional evolution without policy/preservation lineage, forks without
+active constitution parents, merge arbitration without both fork branches,
+merge records without arbitration parents, survivability federation records
+with stale worker/federation lineage, stabilization loops without
+merge/recovery lineage, and replay graphs that reference stale constitutional
+evolution lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 17 passed
+```

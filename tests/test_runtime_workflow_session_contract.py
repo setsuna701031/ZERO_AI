@@ -2122,3 +2122,315 @@ def test_workflow_runtime_constitutional_preservation_catastrophic_recovery_cont
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_stale_constitutional_preservation_lineage" in broken_replay_summary["breaks"]
+
+
+def test_workflow_runtime_autonomous_constitutional_evolution_fork_merge_governance_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-evolution", "steps": []}
+    state = {"task_id": "wf-evolution", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent={"task_id": "wf-evolution", "goal": "evolve constitution"}, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    for tick, node in (
+        (2, {"node_id": "evo-root", "branch_id": "main"}),
+        (3, {"node_id": "evo-constitution", "branch_id": "main", "parent_node_id": "evo-root"}),
+        (4, {"node_id": "evo-rollback", "branch_id": "main", "parent_node_id": "evo-constitution", "phase": "rollback_retry"}),
+        (5, {"node_id": "evo-recovery", "branch_id": "main", "parent_node_id": "evo-rollback", "phase": "rollback_retry"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "evo-policy", "target_node_id": "evo-constitution", "branch_id": "main", "allowed": True, "decision": "evolve"},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"authority_id": "evo-authority", "target_node_id": "evo-constitution", "branch_id": "main", "execution_owner": "TaskRunner"},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitution_enforcement_record(
+        task=task,
+        state=state,
+        enforcement={"enforcement_id": "evo-enforcement", "target_node_id": "evo-constitution", "branch_id": "main", "rule_id": "runtime_constitution"},
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_preservation_record(
+        task=task,
+        state=state,
+        preservation={"preservation_id": "evo-preservation", "constitution_node_id": "evo-constitution", "governance_record_id": "evo-enforcement", "enforcement_id": "evo-enforcement", "policy_decision_id": "evo-policy"},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_mutation_transaction(
+        task=task,
+        state=state,
+        mutation={"mutation_transaction_id": "evo-mutation", "node_id": "evo-constitution", "branch_id": "main", "mutation_type": "constitutional_evolution"},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_mutation_verify_record(
+        task=task,
+        state=state,
+        verify={"mutation_verify_id": "evo-verify", "mutation_transaction_id": "evo-mutation", "verify_node_id": "evo-constitution", "branch_id": "main", "ok": False},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_rollback_graph_node(
+        task=task,
+        state=state,
+        rollback={"rollback_id": "evo-rollback-id", "rollback_node_id": "evo-rollback", "mutation_transaction_id": "evo-mutation", "mutation_verify_id": "evo-verify", "branch_id": "main", "retry_node_id": "evo-recovery"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_recovery_dependency(
+        task=task,
+        state=state,
+        dependency={"recovery_dependency_id": "evo-recovery-dependency", "source_node_id": "evo-rollback", "target_node_id": "evo-recovery", "branch_id": "main"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_catastrophic_failure_record(
+        task=task,
+        state=state,
+        failure={"catastrophic_failure_id": "evo-failure", "failure_node_id": "evo-constitution", "governance_record_id": "evo-enforcement"},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_catastrophic_recovery_lineage_record(
+        task=task,
+        state=state,
+        recovery={"catastrophic_recovery_id": "evo-recovery-record", "catastrophic_failure_id": "evo-failure", "rollback_id": "evo-rollback-id", "recovery_dependency_id": "evo-recovery-dependency", "recovery_node_id": "evo-recovery"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_adaptive_constitutional_stabilization_record(
+        task=task,
+        state=state,
+        stabilization={"constitutional_stabilization_id": "evo-constitutional-stabilization", "catastrophic_recovery_id": "evo-recovery-record", "preservation_id": "evo-preservation"},
+        current_tick=16,
+    )
+    state["workflow_runtime_session"] = session
+
+    for tick, worker in (
+        (17, {"worker_id": "evo-worker-a", "actor_id": "evo-a", "authority_scope": "governance"}),
+        (18, {"worker_id": "evo-worker-b", "actor_id": "evo-b", "authority_scope": "governance"}),
+    ):
+        session = manager.attach_actor_worker_record(task=task, state=state, worker=worker, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_worker_federation_record(
+        task=task,
+        state=state,
+        federation={"federation_id": "evo-federation", "worker_ids": ["evo-worker-a", "evo-worker-b"], "coordinator_worker_id": "evo-worker-a"},
+        current_tick=19,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "evo-decision-a", "worker_id": "evo-worker-a", "federation_id": "evo-federation", "target_node_id": "evo-constitution", "decision": "merge"},
+        current_tick=20,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "evo-decision-b", "worker_id": "evo-worker-b", "federation_id": "evo-federation", "target_node_id": "evo-constitution", "decision": "review"},
+        current_tick=21,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_arbitration_decision_record(
+        task=task,
+        state=state,
+        arbitration={"arbitration_id": "evo-arbitration", "conflicting_decision_ids": ["evo-decision-a", "evo-decision-b"], "worker_ids": ["evo-worker-a", "evo-worker-b"], "federation_id": "evo-federation", "target_node_id": "evo-constitution", "decision": "merge"},
+        current_tick=22,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_quorum_record(
+        task=task,
+        state=state,
+        quorum={"quorum_id": "evo-quorum", "authority_worker_ids": ["evo-worker-a", "evo-worker-b"], "federation_id": "evo-federation", "threshold": 2},
+        current_tick=23,
+    )
+    state["workflow_runtime_session"] = session
+    for tick, vote in (
+        (24, {"vote_id": "evo-vote-a", "quorum_id": "evo-quorum", "worker_id": "evo-worker-a", "federation_id": "evo-federation", "vote": "accept"}),
+        (25, {"vote_id": "evo-vote-b", "quorum_id": "evo-quorum", "worker_id": "evo-worker-b", "federation_id": "evo-federation", "vote": "accept"}),
+    ):
+        session = manager.attach_consensus_vote_record(task=task, state=state, vote=vote, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_federated_consensus_record(
+        task=task,
+        state=state,
+        consensus={"consensus_id": "evo-consensus", "arbitration_id": "evo-arbitration", "quorum_id": "evo-quorum", "vote_ids": ["evo-vote-a", "evo-vote-b"], "required_vote_ids": ["evo-vote-a", "evo-vote-b"], "worker_ids": ["evo-worker-a", "evo-worker-b"], "federation_id": "evo-federation", "decision": "merge"},
+        current_tick=26,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_autonomous_constitutional_evolution_record(
+        task=task,
+        state=state,
+        evolution={"evolution_id": "evo-record", "policy_decision_id": "evo-policy", "preservation_id": "evo-preservation", "constitution_node_id": "evo-constitution", "proposal": "fork_and_merge"},
+        current_tick=27,
+    )
+    state["workflow_runtime_session"] = session
+    for tick, branch in (
+        (28, {"branch_id": "evo-branch-a", "parent_branch_id": "main", "fork_node_id": "evo-constitution"}),
+        (29, {"branch_id": "evo-branch-b", "parent_branch_id": "main", "fork_node_id": "evo-constitution"}),
+    ):
+        session = manager.create_branch_fork(task=task, state=state, branch=branch, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    for tick, node in (
+        (30, {"node_id": "evo-a-node", "branch_id": "evo-branch-a", "parent_node_id": "evo-constitution"}),
+        (31, {"node_id": "evo-b-node", "branch_id": "evo-branch-b", "parent_node_id": "evo-constitution"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_fork_record(
+        task=task,
+        state=state,
+        fork={"constitutional_fork_id": "evo-fork-a", "evolution_id": "evo-record", "preservation_id": "evo-preservation", "constitution_node_id": "evo-constitution", "branch_id": "evo-branch-a", "parent_branch_id": "main", "fork_node_id": "evo-constitution"},
+        current_tick=32,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_fork_record(
+        task=task,
+        state=state,
+        fork={"constitutional_fork_id": "evo-fork-b", "evolution_id": "evo-record", "preservation_id": "evo-preservation", "constitution_node_id": "evo-constitution", "branch_id": "evo-branch-b", "parent_branch_id": "main", "fork_node_id": "evo-constitution"},
+        current_tick=33,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "evo-policy-a", "target_node_id": "evo-a-node", "branch_id": "evo-branch-a", "allowed": True, "decision": "accept_fork_a"},
+        current_tick=34,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "evo-policy-b", "target_node_id": "evo-b-node", "branch_id": "evo-branch-b", "allowed": True, "decision": "accept_fork_b"},
+        current_tick=35,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_merge_arbitration_record(
+        task=task,
+        state=state,
+        arbitration={"merge_arbitration_id": "evo-merge-arbitration", "source_branch_ids": ["evo-branch-a", "evo-branch-b"], "target_branch_id": "main", "quorum_id": "evo-quorum", "consensus_id": "evo-consensus", "decision": "merge"},
+        current_tick=36,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_merge_record(
+        task=task,
+        state=state,
+        merge={"constitutional_merge_id": "evo-merge", "merge_arbitration_id": "evo-merge-arbitration", "source_branch_ids": ["evo-branch-a", "evo-branch-b"], "target_branch_id": "main", "merged_preservation_id": "evo-preservation"},
+        current_tick=37,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_survivability_federation_continuity_record(
+        task=task,
+        state=state,
+        survivability={"survivability_federation_id": "evo-survivability-federation", "constitutional_merge_id": "evo-merge", "federation_id": "evo-federation", "worker_ids": ["evo-worker-a", "evo-worker-b"]},
+        current_tick=38,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_autonomous_governance_stabilization_loop_record(
+        task=task,
+        state=state,
+        loop={"stabilization_loop_id": "evo-loop", "constitutional_merge_id": "evo-merge", "catastrophic_recovery_id": "evo-recovery-record", "constitutional_stabilization_id": "evo-constitutional-stabilization"},
+        current_tick=39,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["constitutional_evolution_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["constitutional_fork_count"] == 2
+    assert session["continuity_summary"]["graph_continuity"]["constitutional_merge_arbitration_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["constitutional_merge_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["survivability_federation_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["governance_stabilization_loop_count"] == 1
+    json.dumps(session, sort_keys=True, default=str)
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "main",
+        "continued_branch_id": "main",
+        "evolution_ids": ["evo-record"],
+        "preservation_ids": ["evo-preservation"],
+    }
+    replay = build_replayable_workflow_runtime_session(task=task, runtime_state={**state, "workflow_runtime_session": session})
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    assert replay_session["lineage"]["replay_continuation"]["evolution_ids"] == ["evo-record"]
+
+    broken_evolution = dict(session)
+    broken_evolution["lineage"] = dict(session["lineage"])
+    broken_evolution["lineage"]["constitutional_evolution_graph"] = dict(session["lineage"]["constitutional_evolution_graph"])
+    broken_evolution["lineage"]["constitutional_evolution_graph"]["evolutions"] = [dict(item) for item in session["lineage"]["constitutional_evolution_graph"]["evolutions"]]
+    broken_evolution["lineage"]["constitutional_evolution_graph"]["evolutions"][0]["preservation_id"] = "missing-preservation"
+    broken_evolution_summary = manager.continuity_summary(broken_evolution)
+    assert broken_evolution_summary["ok"] is False
+    assert "constitutional_evolution_missing_policy_preservation_lineage" in broken_evolution_summary["breaks"]
+
+    broken_fork = dict(session)
+    broken_fork["lineage"] = dict(session["lineage"])
+    broken_fork["lineage"]["constitutional_evolution_graph"] = dict(session["lineage"]["constitutional_evolution_graph"])
+    broken_fork["lineage"]["constitutional_evolution_graph"]["forks"] = [dict(item) for item in session["lineage"]["constitutional_evolution_graph"]["forks"]]
+    broken_fork["lineage"]["constitutional_evolution_graph"]["forks"][0]["constitution_node_id"] = "missing-node"
+    broken_fork_summary = manager.continuity_summary(broken_fork)
+    assert broken_fork_summary["ok"] is False
+    assert "constitutional_fork_without_active_parent" in broken_fork_summary["breaks"]
+
+    broken_merge_arbitration = dict(session)
+    broken_merge_arbitration["lineage"] = dict(session["lineage"])
+    broken_merge_arbitration["lineage"]["constitutional_evolution_graph"] = dict(session["lineage"]["constitutional_evolution_graph"])
+    broken_merge_arbitration["lineage"]["constitutional_evolution_graph"]["merge_arbitrations"] = [dict(item) for item in session["lineage"]["constitutional_evolution_graph"]["merge_arbitrations"]]
+    broken_merge_arbitration["lineage"]["constitutional_evolution_graph"]["merge_arbitrations"][0]["source_branch_ids"] = ["evo-branch-a"]
+    broken_merge_arbitration_summary = manager.continuity_summary(broken_merge_arbitration)
+    assert broken_merge_arbitration_summary["ok"] is False
+    assert "constitutional_merge_arbitration_missing_fork_branches" in broken_merge_arbitration_summary["breaks"]
+
+    broken_merge = dict(session)
+    broken_merge["lineage"] = dict(session["lineage"])
+    broken_merge["lineage"]["constitutional_evolution_graph"] = dict(session["lineage"]["constitutional_evolution_graph"])
+    broken_merge["lineage"]["constitutional_evolution_graph"]["merges"] = [dict(item) for item in session["lineage"]["constitutional_evolution_graph"]["merges"]]
+    broken_merge["lineage"]["constitutional_evolution_graph"]["merges"][0]["merge_arbitration_id"] = "missing-arbitration"
+    broken_merge_summary = manager.continuity_summary(broken_merge)
+    assert broken_merge_summary["ok"] is False
+    assert "constitutional_merge_without_arbitration_parent" in broken_merge_summary["breaks"]
+
+    broken_survivability = dict(session)
+    broken_survivability["lineage"] = dict(session["lineage"])
+    broken_survivability["lineage"]["constitutional_evolution_graph"] = dict(session["lineage"]["constitutional_evolution_graph"])
+    broken_survivability["lineage"]["constitutional_evolution_graph"]["survivability_federations"] = [dict(item) for item in session["lineage"]["constitutional_evolution_graph"]["survivability_federations"]]
+    broken_survivability["lineage"]["constitutional_evolution_graph"]["survivability_federations"][0]["worker_ids"] = ["missing-worker"]
+    broken_survivability_summary = manager.continuity_summary(broken_survivability)
+    assert broken_survivability_summary["ok"] is False
+    assert "survivability_federation_stale_worker_lineage" in broken_survivability_summary["breaks"]
+
+    broken_loop = dict(session)
+    broken_loop["lineage"] = dict(session["lineage"])
+    broken_loop["lineage"]["constitutional_evolution_graph"] = dict(session["lineage"]["constitutional_evolution_graph"])
+    broken_loop["lineage"]["constitutional_evolution_graph"]["stabilization_loops"] = [dict(item) for item in session["lineage"]["constitutional_evolution_graph"]["stabilization_loops"]]
+    broken_loop["lineage"]["constitutional_evolution_graph"]["stabilization_loops"][0]["constitutional_merge_id"] = "missing-merge"
+    broken_loop_summary = manager.continuity_summary(broken_loop)
+    assert broken_loop_summary["ok"] is False
+    assert "stabilization_loop_without_merge_recovery_lineage" in broken_loop_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["evolution_ids"] = ["stale-evolution"]
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_stale_constitutional_evolution_lineage" in broken_replay_summary["breaks"]
