@@ -7993,3 +7993,296 @@ def _zero_continuity_summary_with_kernel_consolidation(self, session: Dict[str, 
 
 
 WorkflowRuntimeSessionManager.continuity_summary = _zero_continuity_summary_with_kernel_consolidation
+
+
+
+# ---------------------------------------------------------------------------
+# ZERO AER Runtime Governance Query / Storage Lifecycle v1
+# ---------------------------------------------------------------------------
+
+def _zero_v1_known_governance_storage_ids(session: Dict[str, Any]) -> Dict[str, set[str]]:
+    known = _zero_v1_known_kernel_consolidation_ids(session if isinstance(session, dict) else {})
+    known.update({
+        "governance_query_index_ids": {
+            safe_text(record.get("governance_query_index_id"))
+            for record in _zero_v1_collect_records_by_event_type(session, "runtime_governance_query_index")
+            if safe_text(record.get("governance_query_index_id"))
+        },
+        "replay_window_ids": {
+            safe_text(record.get("replay_window_id"))
+            for record in _zero_v1_collect_records_by_event_type(session, "runtime_replay_window")
+            if safe_text(record.get("replay_window_id"))
+        },
+        "lineage_pruning_ids": {
+            safe_text(record.get("lineage_pruning_id"))
+            for record in _zero_v1_collect_records_by_event_type(session, "runtime_lineage_pruning")
+            if safe_text(record.get("lineage_pruning_id"))
+        },
+        "sovereign_archive_reconstruction_ids": {
+            safe_text(record.get("sovereign_archive_reconstruction_id"))
+            for record in _zero_v1_collect_records_by_event_type(session, "runtime_sovereign_archive_reconstruction")
+            if safe_text(record.get("sovereign_archive_reconstruction_id"))
+        },
+        "continuity_storage_lifecycle_ids": {
+            safe_text(record.get("continuity_storage_lifecycle_id"))
+            for record in _zero_v1_collect_records_by_event_type(session, "runtime_continuity_storage_lifecycle")
+            if safe_text(record.get("continuity_storage_lifecycle_id"))
+        },
+    })
+    return known
+
+
+def _zero_build_runtime_governance_query_index_record(self, *, task: Dict[str, Any], state: Dict[str, Any], query_index: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = copy.deepcopy(query_index if isinstance(query_index, dict) else {})
+    latest_index = self._latest_lineage_item(session, "runtime_continuity_indexes")
+    latest_consolidation = self._latest_lineage_item(session, "runtime_governance_kernel_consolidations")
+    continuity_index_id = safe_text(payload.get("continuity_index_id")) or safe_text(latest_index.get("continuity_index_id") if isinstance(latest_index, dict) else "")
+    kernel_consolidation_id = safe_text(payload.get("kernel_consolidation_id")) or safe_text(latest_consolidation.get("kernel_consolidation_id") if isinstance(latest_consolidation, dict) else "")
+    query_keys = [safe_text(item) for item in (payload.get("query_keys") if isinstance(payload.get("query_keys"), list) else []) if safe_text(item)]
+    if not query_keys:
+        query_keys = ["workflow_id", "session_id", "event_type", "phase", "lineage_ref"]
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "continuity_index_id": continuity_index_id, "kernel_consolidation_id": kernel_consolidation_id, "query_keys": query_keys, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.runtime_governance_query_index.v1",
+        "governance_query_index_id": safe_text(payload.get("governance_query_index_id")) or "wfgqi_" + stable_hash(seed)[:16],
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "continuity_index_id": continuity_index_id,
+        "kernel_consolidation_id": kernel_consolidation_id,
+        "query_keys": query_keys,
+        "query_index_hash": stable_hash(seed),
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_runtime_governance_query_index_record(self, *, task: Dict[str, Any], state: Dict[str, Any], query_index: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_runtime_governance_query_index_record(task=task, state=state, query_index=query_index, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="runtime_governance_query_index", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_runtime_replay_window_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay_window: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = copy.deepcopy(replay_window if isinstance(replay_window, dict) else {})
+    latest_replay_index = self._latest_lineage_item(session, "runtime_replay_acceleration_indexes")
+    latest_snapshot = self._latest_lineage_item(session, "runtime_constitutional_snapshots")
+    replay_acceleration_index_id = safe_text(payload.get("replay_acceleration_index_id")) or safe_text(latest_replay_index.get("replay_acceleration_index_id") if isinstance(latest_replay_index, dict) else "")
+    constitutional_snapshot_id = safe_text(payload.get("constitutional_snapshot_id")) or safe_text(latest_snapshot.get("constitutional_snapshot_id") if isinstance(latest_snapshot, dict) else "")
+    start_tick = safe_int(payload.get("start_tick"), 0)
+    end_tick = safe_int(payload.get("end_tick"), current_tick)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "replay_acceleration_index_id": replay_acceleration_index_id, "constitutional_snapshot_id": constitutional_snapshot_id, "start_tick": start_tick, "end_tick": end_tick, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.runtime_replay_window.v1",
+        "replay_window_id": safe_text(payload.get("replay_window_id")) or "wfrw_" + stable_hash(seed)[:16],
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "replay_acceleration_index_id": replay_acceleration_index_id,
+        "constitutional_snapshot_id": constitutional_snapshot_id,
+        "start_tick": start_tick,
+        "end_tick": end_tick,
+        "window_hash": stable_hash(seed),
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_runtime_replay_window_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay_window: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_runtime_replay_window_record(task=task, state=state, replay_window=replay_window, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="runtime_replay_window", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_runtime_lineage_pruning_record(self, *, task: Dict[str, Any], state: Dict[str, Any], pruning: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = copy.deepcopy(pruning if isinstance(pruning, dict) else {})
+    latest_compaction = self._latest_lineage_item(session, "runtime_lineage_compactions")
+    latest_index = self._latest_lineage_item(session, "runtime_continuity_indexes")
+    lineage_compaction_id = safe_text(payload.get("lineage_compaction_id")) or safe_text(latest_compaction.get("lineage_compaction_id") if isinstance(latest_compaction, dict) else "")
+    continuity_index_id = safe_text(payload.get("continuity_index_id")) or safe_text(latest_index.get("continuity_index_id") if isinstance(latest_index, dict) else "")
+    preserved_event_ids = [safe_text(item) for item in (payload.get("preserved_event_ids") if isinstance(payload.get("preserved_event_ids"), list) else []) if safe_text(item)]
+    if not preserved_event_ids:
+        preserved_event_ids = [safe_text(event.get("event_id")) for event in (session.get("events") if isinstance(session.get("events"), list) else []) if isinstance(event, dict) and safe_text(event.get("event_id"))]
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "lineage_compaction_id": lineage_compaction_id, "continuity_index_id": continuity_index_id, "preserved_event_ids": preserved_event_ids, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.runtime_lineage_pruning.v1",
+        "lineage_pruning_id": safe_text(payload.get("lineage_pruning_id")) or "wflp_" + stable_hash(seed)[:16],
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "lineage_compaction_id": lineage_compaction_id,
+        "continuity_index_id": continuity_index_id,
+        "preserved_event_ids": preserved_event_ids,
+        "pruning_strategy": safe_text(payload.get("pruning_strategy")) or "retain_replayable_constitutional_lineage",
+        "pruning_hash": stable_hash(seed),
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_runtime_lineage_pruning_record(self, *, task: Dict[str, Any], state: Dict[str, Any], pruning: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_runtime_lineage_pruning_record(task=task, state=state, pruning=pruning, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="runtime_lineage_pruning", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_runtime_sovereign_archive_reconstruction_record(self, *, task: Dict[str, Any], state: Dict[str, Any], reconstruction: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = copy.deepcopy(reconstruction if isinstance(reconstruction, dict) else {})
+    latest_layer = self._latest_lineage_item(session, "runtime_governance_archive_layers")
+    latest_snapshot = self._latest_lineage_item(session, "runtime_constitutional_snapshots")
+    latest_query = self._latest_lineage_item(session, "runtime_governance_query_indexes")
+    governance_archive_layer_id = safe_text(payload.get("governance_archive_layer_id")) or safe_text(latest_layer.get("governance_archive_layer_id") if isinstance(latest_layer, dict) else "")
+    constitutional_snapshot_id = safe_text(payload.get("constitutional_snapshot_id")) or safe_text(latest_snapshot.get("constitutional_snapshot_id") if isinstance(latest_snapshot, dict) else "")
+    governance_query_index_id = safe_text(payload.get("governance_query_index_id")) or safe_text(latest_query.get("governance_query_index_id") if isinstance(latest_query, dict) else "")
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "governance_archive_layer_id": governance_archive_layer_id, "constitutional_snapshot_id": constitutional_snapshot_id, "governance_query_index_id": governance_query_index_id, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.runtime_sovereign_archive_reconstruction.v1",
+        "sovereign_archive_reconstruction_id": safe_text(payload.get("sovereign_archive_reconstruction_id")) or "wfsar_" + stable_hash(seed)[:16],
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "governance_archive_layer_id": governance_archive_layer_id,
+        "constitutional_snapshot_id": constitutional_snapshot_id,
+        "governance_query_index_id": governance_query_index_id,
+        "reconstruction_status": safe_text(payload.get("reconstruction_status")) or "reconstructable",
+        "reconstruction_hash": stable_hash(seed),
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_runtime_sovereign_archive_reconstruction_record(self, *, task: Dict[str, Any], state: Dict[str, Any], reconstruction: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_runtime_sovereign_archive_reconstruction_record(task=task, state=state, reconstruction=reconstruction, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="runtime_sovereign_archive_reconstruction", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_runtime_continuity_storage_lifecycle_record(self, *, task: Dict[str, Any], state: Dict[str, Any], lifecycle: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = copy.deepcopy(lifecycle if isinstance(lifecycle, dict) else {})
+    latest_query = self._latest_lineage_item(session, "runtime_governance_query_indexes")
+    latest_window = self._latest_lineage_item(session, "runtime_replay_windows")
+    latest_pruning = self._latest_lineage_item(session, "runtime_lineage_prunings")
+    latest_reconstruction = self._latest_lineage_item(session, "runtime_sovereign_archive_reconstructions")
+    latest_consolidation = self._latest_lineage_item(session, "runtime_governance_kernel_consolidations")
+    governance_query_index_id = safe_text(payload.get("governance_query_index_id")) or safe_text(latest_query.get("governance_query_index_id") if isinstance(latest_query, dict) else "")
+    replay_window_id = safe_text(payload.get("replay_window_id")) or safe_text(latest_window.get("replay_window_id") if isinstance(latest_window, dict) else "")
+    lineage_pruning_id = safe_text(payload.get("lineage_pruning_id")) or safe_text(latest_pruning.get("lineage_pruning_id") if isinstance(latest_pruning, dict) else "")
+    sovereign_archive_reconstruction_id = safe_text(payload.get("sovereign_archive_reconstruction_id")) or safe_text(latest_reconstruction.get("sovereign_archive_reconstruction_id") if isinstance(latest_reconstruction, dict) else "")
+    kernel_consolidation_id = safe_text(payload.get("kernel_consolidation_id")) or safe_text(latest_consolidation.get("kernel_consolidation_id") if isinstance(latest_consolidation, dict) else "")
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "governance_query_index_id": governance_query_index_id, "replay_window_id": replay_window_id, "lineage_pruning_id": lineage_pruning_id, "sovereign_archive_reconstruction_id": sovereign_archive_reconstruction_id, "kernel_consolidation_id": kernel_consolidation_id, "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.runtime_continuity_storage_lifecycle.v1",
+        "continuity_storage_lifecycle_id": safe_text(payload.get("continuity_storage_lifecycle_id")) or "wfcsl_" + stable_hash(seed)[:16],
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "governance_query_index_id": governance_query_index_id,
+        "replay_window_id": replay_window_id,
+        "lineage_pruning_id": lineage_pruning_id,
+        "sovereign_archive_reconstruction_id": sovereign_archive_reconstruction_id,
+        "kernel_consolidation_id": kernel_consolidation_id,
+        "lifecycle_status": safe_text(payload.get("lifecycle_status")) or "active",
+        "lifecycle_hash": stable_hash(seed),
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_runtime_continuity_storage_lifecycle_record(self, *, task: Dict[str, Any], state: Dict[str, Any], lifecycle: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_runtime_continuity_storage_lifecycle_record(task=task, state=state, lifecycle=lifecycle, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="runtime_continuity_storage_lifecycle", record=record, current_tick=current_tick, ok=True)
+
+
+WorkflowRuntimeSessionManager.build_runtime_governance_query_index_record = _zero_build_runtime_governance_query_index_record
+WorkflowRuntimeSessionManager.attach_runtime_governance_query_index_record = _zero_attach_runtime_governance_query_index_record
+WorkflowRuntimeSessionManager.build_runtime_replay_window_record = _zero_build_runtime_replay_window_record
+WorkflowRuntimeSessionManager.attach_runtime_replay_window_record = _zero_attach_runtime_replay_window_record
+WorkflowRuntimeSessionManager.build_runtime_lineage_pruning_record = _zero_build_runtime_lineage_pruning_record
+WorkflowRuntimeSessionManager.attach_runtime_lineage_pruning_record = _zero_attach_runtime_lineage_pruning_record
+WorkflowRuntimeSessionManager.build_runtime_sovereign_archive_reconstruction_record = _zero_build_runtime_sovereign_archive_reconstruction_record
+WorkflowRuntimeSessionManager.attach_runtime_sovereign_archive_reconstruction_record = _zero_attach_runtime_sovereign_archive_reconstruction_record
+WorkflowRuntimeSessionManager.build_runtime_continuity_storage_lifecycle_record = _zero_build_runtime_continuity_storage_lifecycle_record
+WorkflowRuntimeSessionManager.attach_runtime_continuity_storage_lifecycle_record = _zero_attach_runtime_continuity_storage_lifecycle_record
+
+
+_ZERO_PRE_GOVERNANCE_STORAGE_LIFECYCLE_CONTINUITY_SUMMARY = WorkflowRuntimeSessionManager.continuity_summary
+
+
+def _zero_continuity_summary_with_governance_storage_lifecycle(self, session: Dict[str, Any]) -> Dict[str, Any]:
+    summary = _ZERO_PRE_GOVERNANCE_STORAGE_LIFECYCLE_CONTINUITY_SUMMARY(self, session)
+    if not isinstance(summary, dict):
+        summary = {"ok": False, "breaks": ["invalid_continuity_summary"]}
+    breaks = list(summary.get("breaks") if isinstance(summary.get("breaks"), list) else [])
+    workflow_id = safe_text(session.get("workflow_id")) if isinstance(session, dict) else ""
+    session_id = safe_text(session.get("session_id")) if isinstance(session, dict) else ""
+    known = _zero_v1_known_governance_storage_ids(session if isinstance(session, dict) else {})
+
+    query_indexes = _zero_v1_collect_records_by_event_type(session, "runtime_governance_query_index")
+    replay_windows = _zero_v1_collect_records_by_event_type(session, "runtime_replay_window")
+    prunings = _zero_v1_collect_records_by_event_type(session, "runtime_lineage_pruning")
+    reconstructions = _zero_v1_collect_records_by_event_type(session, "runtime_sovereign_archive_reconstruction")
+    lifecycles = _zero_v1_collect_records_by_event_type(session, "runtime_continuity_storage_lifecycle")
+
+    for collection, name in ((query_indexes, "governance_query_index"), (replay_windows, "replay_window"), (prunings, "lineage_pruning"), (reconstructions, "sovereign_archive_reconstruction"), (lifecycles, "continuity_storage_lifecycle")):
+        for record in collection:
+            if safe_text(record.get("workflow_id")) != workflow_id or safe_text(record.get("session_id")) != session_id:
+                breaks.append(f"storage_lifecycle_{name}_lineage_mismatch")
+
+    for query_index in query_indexes:
+        if safe_text(query_index.get("continuity_index_id")) not in known["continuity_index_ids"]:
+            breaks.append("governance_query_index_without_continuity_index")
+        if safe_text(query_index.get("kernel_consolidation_id")) not in known["kernel_consolidation_ids"]:
+            breaks.append("governance_query_index_without_kernel_consolidation")
+        if not (query_index.get("query_keys") if isinstance(query_index.get("query_keys"), list) else []):
+            breaks.append("governance_query_index_without_query_keys")
+
+    for replay_window in replay_windows:
+        if safe_text(replay_window.get("replay_acceleration_index_id")) not in known["replay_acceleration_index_ids"]:
+            breaks.append("replay_window_without_replay_index")
+        if safe_text(replay_window.get("constitutional_snapshot_id")) not in known["constitutional_snapshot_ids"]:
+            breaks.append("replay_window_without_snapshot")
+        if safe_int(replay_window.get("end_tick"), 0) < safe_int(replay_window.get("start_tick"), 0):
+            breaks.append("replay_window_invalid_tick_range")
+
+    for pruning in prunings:
+        if safe_text(pruning.get("lineage_compaction_id")) not in known["lineage_compaction_ids"]:
+            breaks.append("lineage_pruning_without_compaction")
+        if safe_text(pruning.get("continuity_index_id")) not in known["continuity_index_ids"]:
+            breaks.append("lineage_pruning_without_index")
+        preserved = [safe_text(item) for item in (pruning.get("preserved_event_ids") if isinstance(pruning.get("preserved_event_ids"), list) else []) if safe_text(item)]
+        if not preserved:
+            breaks.append("lineage_pruning_without_preserved_events")
+        if any(item not in known["event_ids"] for item in preserved):
+            breaks.append("lineage_pruning_references_missing_event")
+
+    for reconstruction in reconstructions:
+        if safe_text(reconstruction.get("governance_archive_layer_id")) not in known["governance_archive_layer_ids"]:
+            breaks.append("sovereign_archive_reconstruction_without_archive_layer")
+        if safe_text(reconstruction.get("constitutional_snapshot_id")) not in known["constitutional_snapshot_ids"]:
+            breaks.append("sovereign_archive_reconstruction_without_snapshot")
+        if safe_text(reconstruction.get("governance_query_index_id")) not in known["governance_query_index_ids"]:
+            breaks.append("sovereign_archive_reconstruction_without_query_index")
+
+    for lifecycle in lifecycles:
+        if safe_text(lifecycle.get("governance_query_index_id")) not in known["governance_query_index_ids"]:
+            breaks.append("storage_lifecycle_without_query_index")
+        if safe_text(lifecycle.get("replay_window_id")) not in known["replay_window_ids"]:
+            breaks.append("storage_lifecycle_without_replay_window")
+        if safe_text(lifecycle.get("lineage_pruning_id")) not in known["lineage_pruning_ids"]:
+            breaks.append("storage_lifecycle_without_lineage_pruning")
+        if safe_text(lifecycle.get("sovereign_archive_reconstruction_id")) not in known["sovereign_archive_reconstruction_ids"]:
+            breaks.append("storage_lifecycle_without_archive_reconstruction")
+        if safe_text(lifecycle.get("kernel_consolidation_id")) not in known["kernel_consolidation_ids"]:
+            breaks.append("storage_lifecycle_without_kernel_consolidation")
+
+    summary["breaks"] = _sorted_unique(breaks)
+    summary["ok"] = bool(summary.get("ok", True)) and not summary["breaks"]
+    summary.setdefault("counts", {})
+    if isinstance(summary["counts"], dict):
+        summary["counts"].update({
+            "runtime_governance_query_index_count": len(known["governance_query_index_ids"]),
+            "runtime_replay_window_count": len(known["replay_window_ids"]),
+            "runtime_lineage_pruning_count": len(known["lineage_pruning_ids"]),
+            "runtime_sovereign_archive_reconstruction_count": len(known["sovereign_archive_reconstruction_ids"]),
+            "runtime_continuity_storage_lifecycle_count": len(known["continuity_storage_lifecycle_ids"]),
+        })
+    return summary
+
+
+WorkflowRuntimeSessionManager.continuity_summary = _zero_continuity_summary_with_governance_storage_lifecycle

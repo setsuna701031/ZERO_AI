@@ -795,3 +795,39 @@ Expected result:
 ```text
 21 passed
 ```
+
+---
+
+## AER Runtime Governance Query / Storage Lifecycle v1
+
+ZERO now preserves queryable long-horizon governance continuity for the runtime
+constitution graph.
+
+This checkpoint consolidates the runtime governance kernel into storage-ready
+surfaces:
+
+```text
+runtime governance query index
+-> constitutional replay window
+-> lineage pruning record
+-> sovereign archive reconstruction
+-> continuity storage lifecycle
+-> replay validation
+```
+
+The new records remain persistence-ready dictionaries. They do not execute
+commands, mutate repository state, approve governance actions, or move execution
+authority into Scheduler. `WorkflowRuntimeSession` remains the continuity
+authority and `RuntimeReplayEngine` only exposes read-only validation helpers.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+22 passed
+```

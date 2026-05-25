@@ -740,3 +740,40 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 21 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Governance Query / Storage Lifecycle v1
+
+Added queryable storage-lifecycle continuity for the runtime governance kernel.
+
+ZERO can now preserve:
+
+```text
+runtime governance query index
+constitutional replay window
+lineage pruning record
+sovereign archive reconstruction
+continuity storage lifecycle
+```
+
+This package shifts the workflow runtime session from event accumulation toward
+queryable long-horizon runtime governance storage. The continuity summary now
+validates query index linkage, replay window linkage, pruning lineage,
+sovereign archive reconstruction linkage, and storage lifecycle linkage.
+
+Boundary decision:
+
+```text
+WorkflowRuntimeSession remains continuity authority.
+RuntimeReplayEngine remains read-only validation.
+Scheduler remains orchestration only.
+No execution authority moves into query/storage lifecycle records.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 22 passed
+```

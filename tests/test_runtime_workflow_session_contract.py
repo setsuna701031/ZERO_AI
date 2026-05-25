@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager, build_workflow_runtime_session
-from core.runtime.runtime_replay_engine import build_replayable_workflow_runtime_session, build_governance_kernel_consolidation_replay_validation
+from core.runtime.runtime_replay_engine import build_replayable_workflow_runtime_session, build_governance_storage_lifecycle_replay_validation, build_governance_kernel_consolidation_replay_validation
 from core.runtime.repair_step_injector import build_repair_injection
 from core.runtime.repair_planner import plan_repair
 
@@ -2987,3 +2987,185 @@ def test_runtime_governance_kernel_consolidation_continuity() -> None:
     broken_summary = manager.continuity_summary(broken)
     assert broken_summary["ok"] is False
     assert "kernel_consolidation_without_snapshot" in broken_summary["breaks"]
+
+
+
+def test_runtime_governance_query_storage_lifecycle_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-storage-lifecycle", "steps": []}
+    state = {"task_id": "wf-storage-lifecycle", "status": "running", "steps": []}
+
+    session = manager.start_from_intent(
+        intent={"task_id": "wf-storage-lifecycle", "goal": "query and preserve long horizon governance continuity"},
+        task=task,
+        state=state,
+        current_tick=1,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_plan_record(
+        task=task,
+        state=state,
+        plan={"ok": True, "steps": [{"id": "index", "type": "inspect"}]},
+        current_tick=2,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_runtime_continuity_index_record(
+        task=task,
+        state=state,
+        index={"index_scope": "governance_storage_lifecycle"},
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+    continuity_index_id = session["events"][-1]["payload"]["record"]["continuity_index_id"]
+
+    session = manager.attach_runtime_lineage_compaction_record(
+        task=task,
+        state=state,
+        compaction={"continuity_index_id": continuity_index_id, "compaction_strategy": "queryable_replay_window"},
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+    lineage_compaction_id = session["events"][-1]["payload"]["record"]["lineage_compaction_id"]
+
+    session = manager.attach_runtime_constitutional_snapshot_record(
+        task=task,
+        state=state,
+        snapshot={
+            "continuity_index_id": continuity_index_id,
+            "lineage_compaction_id": lineage_compaction_id,
+            "snapshot": {"kernel_boundary": "continuity_only", "archive": "queryable"},
+        },
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+    constitutional_snapshot_id = session["events"][-1]["payload"]["record"]["constitutional_snapshot_id"]
+
+    session = manager.attach_runtime_replay_acceleration_index_record(
+        task=task,
+        state=state,
+        replay_index={
+            "constitutional_snapshot_id": constitutional_snapshot_id,
+            "lineage_compaction_id": lineage_compaction_id,
+        },
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    replay_acceleration_index_id = session["events"][-1]["payload"]["record"]["replay_acceleration_index_id"]
+
+    session = manager.attach_runtime_governance_archive_layer_record(
+        task=task,
+        state=state,
+        archive_layer={
+            "constitutional_snapshot_id": constitutional_snapshot_id,
+            "continuity_index_id": continuity_index_id,
+            "archive_layer": "runtime_governance_kernel",
+        },
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+    governance_archive_layer_id = session["events"][-1]["payload"]["record"]["governance_archive_layer_id"]
+
+    session = manager.attach_runtime_governance_kernel_consolidation_record(
+        task=task,
+        state=state,
+        consolidation={
+            "continuity_index_id": continuity_index_id,
+            "lineage_compaction_id": lineage_compaction_id,
+            "constitutional_snapshot_id": constitutional_snapshot_id,
+            "replay_acceleration_index_id": replay_acceleration_index_id,
+            "governance_archive_layer_id": governance_archive_layer_id,
+        },
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    kernel_consolidation_id = session["events"][-1]["payload"]["record"]["kernel_consolidation_id"]
+
+    session = manager.attach_runtime_governance_query_index_record(
+        task=task,
+        state=state,
+        query_index={
+            "continuity_index_id": continuity_index_id,
+            "kernel_consolidation_id": kernel_consolidation_id,
+            "query_keys": ["workflow_id", "session_id", "event_type", "lineage_ref"],
+        },
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    governance_query_index_id = session["events"][-1]["payload"]["record"]["governance_query_index_id"]
+
+    session = manager.attach_runtime_replay_window_record(
+        task=task,
+        state=state,
+        replay_window={
+            "replay_acceleration_index_id": replay_acceleration_index_id,
+            "constitutional_snapshot_id": constitutional_snapshot_id,
+            "start_tick": 1,
+            "end_tick": 9,
+        },
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    replay_window_id = session["events"][-1]["payload"]["record"]["replay_window_id"]
+
+    session = manager.attach_runtime_lineage_pruning_record(
+        task=task,
+        state=state,
+        pruning={
+            "lineage_compaction_id": lineage_compaction_id,
+            "continuity_index_id": continuity_index_id,
+            "pruning_strategy": "retain_queryable_constitutional_window",
+        },
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    lineage_pruning_id = session["events"][-1]["payload"]["record"]["lineage_pruning_id"]
+
+    session = manager.attach_runtime_sovereign_archive_reconstruction_record(
+        task=task,
+        state=state,
+        reconstruction={
+            "governance_archive_layer_id": governance_archive_layer_id,
+            "constitutional_snapshot_id": constitutional_snapshot_id,
+            "governance_query_index_id": governance_query_index_id,
+        },
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    sovereign_archive_reconstruction_id = session["events"][-1]["payload"]["record"]["sovereign_archive_reconstruction_id"]
+
+    session = manager.attach_runtime_continuity_storage_lifecycle_record(
+        task=task,
+        state=state,
+        lifecycle={
+            "governance_query_index_id": governance_query_index_id,
+            "replay_window_id": replay_window_id,
+            "lineage_pruning_id": lineage_pruning_id,
+            "sovereign_archive_reconstruction_id": sovereign_archive_reconstruction_id,
+            "kernel_consolidation_id": kernel_consolidation_id,
+        },
+        current_tick=13,
+    )
+
+    summary = manager.continuity_summary(session)
+    assert summary["ok"] is True
+    assert summary["counts"]["runtime_continuity_storage_lifecycle_count"] == 1
+
+    replay_validation = build_governance_storage_lifecycle_replay_validation(workflow_runtime_session=session)
+    assert replay_validation["ok"] is True
+    assert replay_validation["schema"] == "zero.runtime_replay.governance_storage_lifecycle_validation.v1"
+
+    json.dumps(session, sort_keys=True, default=str)
+
+    broken = dict(session)
+    broken["events"] = [dict(event) for event in session["events"]]
+    for event in broken["events"]:
+        if event.get("event_type") == "runtime_continuity_storage_lifecycle":
+            event["payload"] = dict(event["payload"])
+            event["payload"]["record"] = dict(event["payload"]["record"])
+            event["payload"]["record"]["sovereign_archive_reconstruction_id"] = "stale-reconstruction"
+            break
+    broken_summary = manager.continuity_summary(broken)
+    assert broken_summary["ok"] is False
+    assert "storage_lifecycle_without_archive_reconstruction" in broken_summary["breaks"]
