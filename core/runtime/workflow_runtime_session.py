@@ -1514,6 +1514,316 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_actor_worker_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        worker: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_actor_worker_record(task=task, state=state, worker=worker, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="actor_worker",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_actor_worker_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        worker: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(worker if isinstance(worker, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "actor_id": safe_text(payload.get("actor_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.actor_worker.v1",
+            "worker_id": safe_text(payload.get("worker_id")) or "wfwrk_" + stable_hash(seed)[:16],
+            "actor_id": safe_text(payload.get("actor_id")) or safe_text(payload.get("worker_id")),
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "worker_type": safe_text(payload.get("worker_type")) or "runtime_worker",
+            "authority_scope": safe_text(payload.get("authority_scope")) or "execution",
+            "created_at": utc_now(),
+        }
+
+    def attach_worker_federation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        federation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_worker_federation_record(task=task, state=state, federation=federation, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="worker_federation",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_worker_federation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        federation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(federation if isinstance(federation, dict) else {})
+        worker_ids = [
+            safe_text(item)
+            for item in (payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "worker_ids": worker_ids,
+            "coordinator_worker_id": safe_text(payload.get("coordinator_worker_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.worker_federation.v1",
+            "federation_id": safe_text(payload.get("federation_id")) or "wffed_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "worker_ids": worker_ids,
+            "coordinator_worker_id": safe_text(payload.get("coordinator_worker_id")),
+            "created_at": utc_now(),
+        }
+
+    def attach_distributed_execution_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        execution: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_distributed_execution_record(task=task, state=state, execution=execution, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="distributed_execution",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_distributed_execution_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        execution: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(execution if isinstance(execution, dict) else {})
+        parent_worker_ids = [
+            safe_text(item)
+            for item in (payload.get("parent_worker_ids") if isinstance(payload.get("parent_worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.distributed_execution.v1",
+            "distributed_execution_id": safe_text(payload.get("distributed_execution_id")) or "wfdx_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "parent_worker_ids": parent_worker_ids,
+            "federation_id": safe_text(payload.get("federation_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "created_at": utc_now(),
+        }
+
+    def attach_distributed_recovery_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_distributed_recovery_record(task=task, state=state, recovery=recovery, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="distributed_recovery",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_distributed_recovery_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(recovery if isinstance(recovery, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "source_execution_id": safe_text(payload.get("source_execution_id")),
+            "recovery_worker_id": safe_text(payload.get("recovery_worker_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.distributed_recovery.v1",
+            "distributed_recovery_id": safe_text(payload.get("distributed_recovery_id")) or "wfdr_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "source_execution_id": safe_text(payload.get("source_execution_id")),
+            "recovery_worker_id": safe_text(payload.get("recovery_worker_id")),
+            "recovery_node_id": safe_text(payload.get("recovery_node_id")),
+            "created_at": utc_now(),
+        }
+
+    def attach_federated_authority_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        authority: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_federated_authority_record(task=task, state=state, authority=authority, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="federated_authority",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_federated_authority_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        authority: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(authority if isinstance(authority, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "authority_id": safe_text(payload.get("authority_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.federated_authority.v1",
+            "federated_authority_id": safe_text(payload.get("federated_authority_id")) or "wffauth_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(payload.get("workflow_id")) or safe_text(session.get("workflow_id")),
+            "session_id": safe_text(payload.get("session_id")) or safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "worker_id": safe_text(payload.get("worker_id")),
+            "authority_id": safe_text(payload.get("authority_id")),
+            "federation_id": safe_text(payload.get("federation_id")),
+            "allowed": bool(payload.get("allowed", True)),
+            "created_at": utc_now(),
+        }
+
+    def attach_distributed_governance_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        governance: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_distributed_governance_record(task=task, state=state, governance=governance, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="distributed_governance",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_distributed_governance_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        governance: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(governance if isinstance(governance, dict) else {})
+        governance_record_ids = [
+            safe_text(item)
+            for item in (payload.get("governance_record_ids") if isinstance(payload.get("governance_record_ids"), list) else [])
+            if safe_text(item)
+        ]
+        worker_ids = [
+            safe_text(item)
+            for item in (payload.get("worker_ids") if isinstance(payload.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "worker_ids": worker_ids,
+            "governance_record_ids": governance_record_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.distributed_governance.v1",
+            "distributed_governance_id": safe_text(payload.get("distributed_governance_id")) or "wfdg_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "worker_ids": worker_ids,
+            "governance_record_ids": governance_record_ids,
+            "federation_id": safe_text(payload.get("federation_id")),
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -2127,6 +2437,62 @@ class WorkflowRuntimeSessionManager:
                 "rule_id": safe_text(step_result.get("rule_id")),
                 "enforced": bool(step_result.get("enforced", True)),
             }
+        if action == "actor_worker":
+            lineage["actor_worker"] = {
+                "worker_id": safe_text(step_result.get("worker_id")),
+                "actor_id": safe_text(step_result.get("actor_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "worker_type": safe_text(step_result.get("worker_type")),
+                "authority_scope": safe_text(step_result.get("authority_scope")),
+            }
+        if action == "worker_federation":
+            lineage["worker_federation"] = {
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "worker_ids": copy.deepcopy(step_result.get("worker_ids") if isinstance(step_result.get("worker_ids"), list) else []),
+                "coordinator_worker_id": safe_text(step_result.get("coordinator_worker_id")),
+            }
+        if action == "distributed_execution":
+            lineage["distributed_execution"] = {
+                "distributed_execution_id": safe_text(step_result.get("distributed_execution_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "worker_id": safe_text(step_result.get("worker_id")),
+                "parent_worker_ids": copy.deepcopy(step_result.get("parent_worker_ids") if isinstance(step_result.get("parent_worker_ids"), list) else []),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+            }
+        if action == "distributed_recovery":
+            lineage["distributed_recovery"] = {
+                "distributed_recovery_id": safe_text(step_result.get("distributed_recovery_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "source_execution_id": safe_text(step_result.get("source_execution_id")),
+                "recovery_worker_id": safe_text(step_result.get("recovery_worker_id")),
+                "recovery_node_id": safe_text(step_result.get("recovery_node_id")),
+            }
+        if action == "federated_authority":
+            lineage["federated_authority"] = {
+                "federated_authority_id": safe_text(step_result.get("federated_authority_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")),
+                "session_id": safe_text(step_result.get("session_id")),
+                "worker_id": safe_text(step_result.get("worker_id")),
+                "authority_id": safe_text(step_result.get("authority_id")),
+                "federation_id": safe_text(step_result.get("federation_id")),
+                "allowed": bool(step_result.get("allowed", True)),
+            }
+        if action == "distributed_governance":
+            lineage["distributed_governance"] = {
+                "distributed_governance_id": safe_text(step_result.get("distributed_governance_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "worker_ids": copy.deepcopy(step_result.get("worker_ids") if isinstance(step_result.get("worker_ids"), list) else []),
+                "governance_record_ids": copy.deepcopy(step_result.get("governance_record_ids") if isinstance(step_result.get("governance_record_ids"), list) else []),
+                "federation_id": safe_text(step_result.get("federation_id")),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -2153,6 +2519,8 @@ class WorkflowRuntimeSessionManager:
                 "mutation_transaction_ids": copy.deepcopy(replay_input.get("mutation_transaction_ids") if isinstance(replay_input.get("mutation_transaction_ids"), list) else []),
                 "rollback_ids": copy.deepcopy(replay_input.get("rollback_ids") if isinstance(replay_input.get("rollback_ids"), list) else []),
                 "governance_record_ids": copy.deepcopy(replay_input.get("governance_record_ids") if isinstance(replay_input.get("governance_record_ids"), list) else []),
+                "worker_ids": copy.deepcopy(replay_input.get("worker_ids") if isinstance(replay_input.get("worker_ids"), list) else []),
+                "distributed_execution_ids": copy.deepcopy(replay_input.get("distributed_execution_ids") if isinstance(replay_input.get("distributed_execution_ids"), list) else []),
             }
         return lineage
 
@@ -2296,6 +2664,36 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitution_enforcement"), dict)
         ]
+        actor_workers = [
+            copy.deepcopy(event.lineage.get("actor_worker"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("actor_worker"), dict)
+        ]
+        worker_federations = [
+            copy.deepcopy(event.lineage.get("worker_federation"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("worker_federation"), dict)
+        ]
+        distributed_executions = [
+            copy.deepcopy(event.lineage.get("distributed_execution"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("distributed_execution"), dict)
+        ]
+        distributed_recoveries = [
+            copy.deepcopy(event.lineage.get("distributed_recovery"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("distributed_recovery"), dict)
+        ]
+        federated_authorities = [
+            copy.deepcopy(event.lineage.get("federated_authority"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("federated_authority"), dict)
+        ]
+        distributed_governance = [
+            copy.deepcopy(event.lineage.get("distributed_governance"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("distributed_governance"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -2347,6 +2745,15 @@ class WorkflowRuntimeSessionManager:
                 "resumes": governance_resumes[-100:],
                 "constitution_enforcements": constitution_enforcements[-200:],
             },
+            "actor_worker_graph": {
+                "schema": "zero.workflow_runtime_session.actor_worker_graph.v1",
+                "workers": actor_workers[-200:],
+                "federations": worker_federations[-100:],
+                "distributed_executions": distributed_executions[-200:],
+                "distributed_recoveries": distributed_recoveries[-100:],
+                "federated_authority": federated_authorities[-100:],
+                "distributed_governance": distributed_governance[-100:],
+            },
         }
         if source_session_id:
             replay_input = self._replay_continuation_input(task=task, state=state, result=result)
@@ -2375,6 +2782,28 @@ class WorkflowRuntimeSessionManager:
                     governance_resumes=governance_resumes,
                     constitution_enforcements=constitution_enforcements,
                 )[-20:]
+            replay_worker_ids = [
+                safe_text(item)
+                for item in (replay_input.get("worker_ids") if isinstance(replay_input.get("worker_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_worker_ids:
+                replay_worker_ids = [
+                    safe_text(item.get("worker_id"))
+                    for item in actor_workers[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("worker_id"))
+                ]
+            replay_execution_ids = [
+                safe_text(item)
+                for item in (replay_input.get("distributed_execution_ids") if isinstance(replay_input.get("distributed_execution_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_execution_ids:
+                replay_execution_ids = [
+                    safe_text(item.get("distributed_execution_id"))
+                    for item in distributed_executions[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("distributed_execution_id"))
+                ]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -2391,6 +2820,8 @@ class WorkflowRuntimeSessionManager:
                     if safe_text(item)
                 ],
                 "governance_record_ids": replay_governance_ids,
+                "worker_ids": replay_worker_ids,
+                "distributed_execution_ids": replay_execution_ids,
             }
         return lineage
 
@@ -2768,6 +3199,12 @@ class WorkflowRuntimeSessionManager:
         approval_records: List[Dict[str, Any]] = []
         governance_resumes: List[Dict[str, Any]] = []
         constitution_enforcements: List[Dict[str, Any]] = []
+        actor_workers: List[Dict[str, Any]] = []
+        worker_federations: List[Dict[str, Any]] = []
+        distributed_executions: List[Dict[str, Any]] = []
+        distributed_recoveries: List[Dict[str, Any]] = []
+        federated_authorities: List[Dict[str, Any]] = []
+        distributed_governance: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -2923,6 +3360,24 @@ class WorkflowRuntimeSessionManager:
             constitution_enforcement = event_lineage.get("constitution_enforcement") if isinstance(event_lineage.get("constitution_enforcement"), dict) else {}
             if constitution_enforcement:
                 constitution_enforcements.append(copy.deepcopy(constitution_enforcement))
+            actor_worker = event_lineage.get("actor_worker") if isinstance(event_lineage.get("actor_worker"), dict) else {}
+            if actor_worker:
+                actor_workers.append(copy.deepcopy(actor_worker))
+            worker_federation = event_lineage.get("worker_federation") if isinstance(event_lineage.get("worker_federation"), dict) else {}
+            if worker_federation:
+                worker_federations.append(copy.deepcopy(worker_federation))
+            distributed_execution = event_lineage.get("distributed_execution") if isinstance(event_lineage.get("distributed_execution"), dict) else {}
+            if distributed_execution:
+                distributed_executions.append(copy.deepcopy(distributed_execution))
+            distributed_recovery = event_lineage.get("distributed_recovery") if isinstance(event_lineage.get("distributed_recovery"), dict) else {}
+            if distributed_recovery:
+                distributed_recoveries.append(copy.deepcopy(distributed_recovery))
+            federated_authority = event_lineage.get("federated_authority") if isinstance(event_lineage.get("federated_authority"), dict) else {}
+            if federated_authority:
+                federated_authorities.append(copy.deepcopy(federated_authority))
+            distributed_governance_record = event_lineage.get("distributed_governance") if isinstance(event_lineage.get("distributed_governance"), dict) else {}
+            if distributed_governance_record:
+                distributed_governance.append(copy.deepcopy(distributed_governance_record))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -2985,6 +3440,25 @@ class WorkflowRuntimeSessionManager:
         for enforcement in governance_graph.get("constitution_enforcements") if isinstance(governance_graph.get("constitution_enforcements"), list) else []:
             if isinstance(enforcement, dict) and enforcement not in constitution_enforcements:
                 constitution_enforcements.append(copy.deepcopy(enforcement))
+        actor_graph = lineage.get("actor_worker_graph") if isinstance(lineage.get("actor_worker_graph"), dict) else {}
+        for worker in actor_graph.get("workers") if isinstance(actor_graph.get("workers"), list) else []:
+            if isinstance(worker, dict) and worker not in actor_workers:
+                actor_workers.append(copy.deepcopy(worker))
+        for federation in actor_graph.get("federations") if isinstance(actor_graph.get("federations"), list) else []:
+            if isinstance(federation, dict) and federation not in worker_federations:
+                worker_federations.append(copy.deepcopy(federation))
+        for execution in actor_graph.get("distributed_executions") if isinstance(actor_graph.get("distributed_executions"), list) else []:
+            if isinstance(execution, dict) and execution not in distributed_executions:
+                distributed_executions.append(copy.deepcopy(execution))
+        for recovery in actor_graph.get("distributed_recoveries") if isinstance(actor_graph.get("distributed_recoveries"), list) else []:
+            if isinstance(recovery, dict) and recovery not in distributed_recoveries:
+                distributed_recoveries.append(copy.deepcopy(recovery))
+        for authority in actor_graph.get("federated_authority") if isinstance(actor_graph.get("federated_authority"), list) else []:
+            if isinstance(authority, dict) and authority not in federated_authorities:
+                federated_authorities.append(copy.deepcopy(authority))
+        for governance_item in actor_graph.get("distributed_governance") if isinstance(actor_graph.get("distributed_governance"), list) else []:
+            if isinstance(governance_item, dict) and governance_item not in distributed_governance:
+                distributed_governance.append(copy.deepcopy(governance_item))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -3227,6 +3701,82 @@ class WorkflowRuntimeSessionManager:
             if not target_ok and not mutation_ok:
                 breaks.append("constitution_enforcement_unrelated_target")
 
+        worker_ids = {
+            safe_text(worker.get("worker_id"))
+            for worker in actor_workers
+            if safe_text(worker.get("worker_id"))
+        }
+        federation_ids = {
+            safe_text(federation.get("federation_id"))
+            for federation in worker_federations
+            if safe_text(federation.get("federation_id"))
+        }
+        distributed_execution_ids = {
+            safe_text(execution.get("distributed_execution_id"))
+            for execution in distributed_executions
+            if safe_text(execution.get("distributed_execution_id"))
+        }
+        for worker in actor_workers:
+            if safe_text(worker.get("workflow_id")) != workflow_id or safe_text(worker.get("session_id")) != session_id:
+                breaks.append("worker_lineage_mismatch")
+
+        for federation in worker_federations:
+            federation_worker_ids = [
+                safe_text(item)
+                for item in (federation.get("worker_ids") if isinstance(federation.get("worker_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if any(worker_id not in worker_ids for worker_id in federation_worker_ids):
+                breaks.append("worker_lineage_mismatch")
+            coordinator = safe_text(federation.get("coordinator_worker_id"))
+            if coordinator and coordinator not in worker_ids:
+                breaks.append("worker_lineage_mismatch")
+
+        for execution in distributed_executions:
+            worker_id = safe_text(execution.get("worker_id"))
+            if worker_id not in worker_ids:
+                breaks.append("worker_lineage_mismatch")
+            for parent_worker_id in execution.get("parent_worker_ids") if isinstance(execution.get("parent_worker_ids"), list) else []:
+                if safe_text(parent_worker_id) not in worker_ids:
+                    breaks.append("worker_lineage_mismatch")
+            federation_id = safe_text(execution.get("federation_id"))
+            if federation_id and federation_id not in federation_ids:
+                breaks.append("worker_lineage_mismatch")
+            target_node_id = safe_text(execution.get("target_node_id"))
+            if target_node_id and target_node_id not in graph_node_ids:
+                breaks.append("worker_lineage_mismatch")
+
+        for recovery in distributed_recoveries:
+            source_execution_id = safe_text(recovery.get("source_execution_id"))
+            recovery_worker_id = safe_text(recovery.get("recovery_worker_id"))
+            recovery_node_id = safe_text(recovery.get("recovery_node_id"))
+            if source_execution_id not in distributed_execution_ids:
+                breaks.append("distributed_recovery_unrelated_execution")
+            if recovery_worker_id not in worker_ids:
+                breaks.append("distributed_recovery_unrelated_execution")
+            if recovery_node_id and recovery_node_id not in graph_node_ids:
+                breaks.append("distributed_recovery_unrelated_execution")
+
+        for authority in federated_authorities:
+            if safe_text(authority.get("workflow_id")) != workflow_id or safe_text(authority.get("session_id")) != session_id:
+                breaks.append("federated_authority_mismatch")
+            if safe_text(authority.get("worker_id")) not in worker_ids:
+                breaks.append("federated_authority_mismatch")
+            if safe_text(authority.get("authority_id")) and safe_text(authority.get("authority_id")) not in governance_ids:
+                breaks.append("federated_authority_mismatch")
+            if safe_text(authority.get("federation_id")) and safe_text(authority.get("federation_id")) not in federation_ids:
+                breaks.append("federated_authority_mismatch")
+
+        for governance_item in distributed_governance:
+            for worker_id in governance_item.get("worker_ids") if isinstance(governance_item.get("worker_ids"), list) else []:
+                if safe_text(worker_id) not in worker_ids:
+                    breaks.append("distributed_governance_stale_worker")
+            for governance_id in governance_item.get("governance_record_ids") if isinstance(governance_item.get("governance_record_ids"), list) else []:
+                if safe_text(governance_id) not in governance_ids:
+                    breaks.append("distributed_governance_stale_worker")
+            if safe_text(governance_item.get("federation_id")) and safe_text(governance_item.get("federation_id")) not in federation_ids:
+                breaks.append("distributed_governance_stale_worker")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -3256,6 +3806,20 @@ class WorkflowRuntimeSessionManager:
         ]
         if any(governance_id not in governance_ids for governance_id in replay_governance_ids):
             breaks.append("replay_stale_governance_lineage")
+        replay_worker_ids = [
+            safe_text(item)
+            for item in (replay.get("worker_ids") if isinstance(replay.get("worker_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(worker_id not in worker_ids for worker_id in replay_worker_ids):
+            breaks.append("replay_worker_lineage_mismatch")
+        replay_execution_ids = [
+            safe_text(item)
+            for item in (replay.get("distributed_execution_ids") if isinstance(replay.get("distributed_execution_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(execution_id not in distributed_execution_ids for execution_id in replay_execution_ids):
+            breaks.append("replay_worker_lineage_mismatch")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -3299,6 +3863,11 @@ class WorkflowRuntimeSessionManager:
                         "resume_without_approval_parent",
                         "constitution_enforcement_unrelated_target",
                         "replay_stale_governance_lineage",
+                        "worker_lineage_mismatch",
+                        "replay_worker_lineage_mismatch",
+                        "federated_authority_mismatch",
+                        "distributed_recovery_unrelated_execution",
+                        "distributed_governance_stale_worker",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -3316,6 +3885,10 @@ class WorkflowRuntimeSessionManager:
                 "review_count": len(review_ids),
                 "approval_count": len(approval_ids),
                 "constitution_enforcement_count": len(constitution_enforcements),
+                "worker_count": len(worker_ids),
+                "federation_count": len(federation_ids),
+                "distributed_execution_count": len(distributed_execution_ids),
+                "distributed_recovery_count": len(distributed_recoveries),
             },
         }
 

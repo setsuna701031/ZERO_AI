@@ -397,3 +397,41 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 12 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Multi-Actor Coordination / Federation Continuity v1
+
+Added multi-actor coordination and federation continuity records to the
+workflow runtime session contract.
+
+ZERO now preserves distributed execution, replay, governance, authority, and
+recovery lineage across federated engineering runtime workers:
+
+```text
+workflow session
+-> execution / recovery / governance graph
+-> actor and worker records
+-> worker federation record
+-> distributed execution lineage
+-> cross-worker replay continuity
+-> distributed recovery lineage
+-> federated authority lineage
+-> distributed governance lineage
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Runtime replay only
+summarizes deterministic worker and distributed execution references for replay
+continuation; it does not execute actions, create mutation shortcuts, or take
+ownership from Scheduler. Continuity summary now detects worker lineage
+mismatches, replay across unrelated worker lineage, federated authority
+mismatches, distributed recovery records pointing to unrelated execution
+lineage, and distributed governance records referencing stale worker lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 13 passed
+```

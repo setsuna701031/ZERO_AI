@@ -1303,3 +1303,147 @@ def test_workflow_runtime_governance_state_authority_continuity() -> None:
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_stale_governance_lineage" in broken_replay_summary["breaks"]
+
+
+def test_workflow_runtime_multi_actor_federation_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-federation", "steps": []}
+    state = {"task_id": "wf-federation", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent={"task_id": "wf-federation", "goal": "coordinate workers"}, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    for tick, node in (
+        (2, {"node_id": "fed-root", "branch_id": "main"}),
+        (3, {"node_id": "fed-exec-a", "branch_id": "main", "parent_node_id": "fed-root"}),
+        (4, {"node_id": "fed-exec-b", "branch_id": "main", "parent_node_id": "fed-exec-a"}),
+        (5, {"node_id": "fed-recovery", "branch_id": "main", "parent_node_id": "fed-exec-b"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "fed-policy", "target_node_id": "fed-exec-a", "branch_id": "main", "allowed": True},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"authority_id": "fed-authority-local", "target_node_id": "fed-exec-a", "branch_id": "main", "execution_owner": "TaskRunner"},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_actor_worker_record(task=task, state=state, worker={"worker_id": "worker-a", "actor_id": "actor-a"}, current_tick=8)
+    state["workflow_runtime_session"] = session
+    session = manager.attach_actor_worker_record(task=task, state=state, worker={"worker_id": "worker-b", "actor_id": "actor-b"}, current_tick=9)
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_federation_record(
+        task=task,
+        state=state,
+        federation={"federation_id": "federation-ab", "worker_ids": ["worker-a", "worker-b"], "coordinator_worker_id": "worker-a"},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_distributed_execution_record(
+        task=task,
+        state=state,
+        execution={"distributed_execution_id": "dx-a", "worker_id": "worker-a", "federation_id": "federation-ab", "target_node_id": "fed-exec-a"},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_distributed_execution_record(
+        task=task,
+        state=state,
+        execution={"distributed_execution_id": "dx-b", "worker_id": "worker-b", "parent_worker_ids": ["worker-a"], "federation_id": "federation-ab", "target_node_id": "fed-exec-b"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_distributed_recovery_record(
+        task=task,
+        state=state,
+        recovery={"distributed_recovery_id": "dr-b", "source_execution_id": "dx-b", "recovery_worker_id": "worker-a", "recovery_node_id": "fed-recovery"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_federated_authority_record(
+        task=task,
+        state=state,
+        authority={"federated_authority_id": "fa-a", "worker_id": "worker-a", "authority_id": "fed-authority-local", "federation_id": "federation-ab"},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_distributed_governance_record(
+        task=task,
+        state=state,
+        governance={"distributed_governance_id": "dg-ab", "worker_ids": ["worker-a", "worker-b"], "governance_record_ids": ["fed-policy", "fed-authority-local"], "federation_id": "federation-ab"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["worker_count"] == 2
+    assert session["continuity_summary"]["graph_continuity"]["distributed_execution_count"] == 2
+    assert session["lineage"]["actor_worker_graph"]["workers"]
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "main",
+        "continued_branch_id": "main",
+        "governance_record_ids": ["fed-policy", "fed-authority-local"],
+        "worker_ids": ["worker-a", "worker-b"],
+        "distributed_execution_ids": ["dx-a", "dx-b"],
+    }
+    replay = build_replayable_workflow_runtime_session(task=task, runtime_state={**state, "workflow_runtime_session": session})
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    assert replay_session["lineage"]["replay_continuation"]["worker_ids"] == ["worker-a", "worker-b"]
+    json.dumps(replay_session, sort_keys=True, default=str)
+
+    broken_worker = dict(session)
+    broken_worker["lineage"] = dict(session["lineage"])
+    broken_worker["lineage"]["actor_worker_graph"] = dict(session["lineage"]["actor_worker_graph"])
+    broken_worker["lineage"]["actor_worker_graph"]["distributed_executions"] = [dict(item) for item in session["lineage"]["actor_worker_graph"]["distributed_executions"]]
+    broken_worker["lineage"]["actor_worker_graph"]["distributed_executions"][0]["worker_id"] = "missing-worker"
+    broken_worker_summary = manager.continuity_summary(broken_worker)
+    assert broken_worker_summary["ok"] is False
+    assert "worker_lineage_mismatch" in broken_worker_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["worker_ids"] = ["unrelated-worker"]
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_worker_lineage_mismatch" in broken_replay_summary["breaks"]
+
+    broken_authority = dict(session)
+    broken_authority["lineage"] = dict(session["lineage"])
+    broken_authority["lineage"]["actor_worker_graph"] = dict(session["lineage"]["actor_worker_graph"])
+    broken_authority["lineage"]["actor_worker_graph"]["federated_authority"] = [dict(item) for item in session["lineage"]["actor_worker_graph"]["federated_authority"]]
+    broken_authority["lineage"]["actor_worker_graph"]["federated_authority"][0]["worker_id"] = "missing-worker"
+    broken_authority_summary = manager.continuity_summary(broken_authority)
+    assert broken_authority_summary["ok"] is False
+    assert "federated_authority_mismatch" in broken_authority_summary["breaks"]
+
+    broken_recovery = dict(session)
+    broken_recovery["lineage"] = dict(session["lineage"])
+    broken_recovery["lineage"]["actor_worker_graph"] = dict(session["lineage"]["actor_worker_graph"])
+    broken_recovery["lineage"]["actor_worker_graph"]["distributed_recoveries"] = [dict(item) for item in session["lineage"]["actor_worker_graph"]["distributed_recoveries"]]
+    broken_recovery["lineage"]["actor_worker_graph"]["distributed_recoveries"][0]["source_execution_id"] = "missing-execution"
+    broken_recovery_summary = manager.continuity_summary(broken_recovery)
+    assert broken_recovery_summary["ok"] is False
+    assert "distributed_recovery_unrelated_execution" in broken_recovery_summary["breaks"]
+
+    broken_governance = dict(session)
+    broken_governance["lineage"] = dict(session["lineage"])
+    broken_governance["lineage"]["actor_worker_graph"] = dict(session["lineage"]["actor_worker_graph"])
+    broken_governance["lineage"]["actor_worker_graph"]["distributed_governance"] = [dict(item) for item in session["lineage"]["actor_worker_graph"]["distributed_governance"]]
+    broken_governance["lineage"]["actor_worker_graph"]["distributed_governance"][0]["worker_ids"] = ["stale-worker"]
+    broken_governance_summary = manager.continuity_summary(broken_governance)
+    assert broken_governance_summary["ok"] is False
+    assert "distributed_governance_stale_worker" in broken_governance_summary["breaks"]

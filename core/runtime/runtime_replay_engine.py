@@ -695,6 +695,7 @@ def workflow_replay_graph_summary(
     mutation_graph = source_lineage.get("mutation_transaction_graph") if isinstance(source_lineage.get("mutation_transaction_graph"), dict) else {}
     rollback_graph = source_lineage.get("rollback_graph") if isinstance(source_lineage.get("rollback_graph"), dict) else {}
     governance_graph = source_lineage.get("governance_state_graph") if isinstance(source_lineage.get("governance_state_graph"), dict) else {}
+    actor_graph = source_lineage.get("actor_worker_graph") if isinstance(source_lineage.get("actor_worker_graph"), dict) else {}
 
     mutation_ids = [
         str(item.get("mutation_transaction_id") or "").strip()
@@ -728,6 +729,21 @@ def workflow_replay_graph_summary(
     if governance_ids and not isinstance(replay.get("governance_record_ids"), list):
         replay["governance_record_ids"] = governance_ids[-20:]
 
+    worker_ids = [
+        str(item.get("worker_id") or "").strip()
+        for item in (actor_graph.get("workers") if isinstance(actor_graph.get("workers"), list) else [])
+        if isinstance(item, dict) and str(item.get("worker_id") or "").strip()
+    ]
+    execution_ids = [
+        str(item.get("distributed_execution_id") or "").strip()
+        for item in (actor_graph.get("distributed_executions") if isinstance(actor_graph.get("distributed_executions"), list) else [])
+        if isinstance(item, dict) and str(item.get("distributed_execution_id") or "").strip()
+    ]
+    if worker_ids and not isinstance(replay.get("worker_ids"), list):
+        replay["worker_ids"] = worker_ids[-20:]
+    if execution_ids and not isinstance(replay.get("distributed_execution_ids"), list):
+        replay["distributed_execution_ids"] = execution_ids[-20:]
+
     return {
         "schema": "zero.workflow_runtime_session.replay_graph_summary.v1",
         "ok": True,
@@ -735,4 +751,6 @@ def workflow_replay_graph_summary(
         "mutation_transaction_ids": copy.deepcopy(replay.get("mutation_transaction_ids") if isinstance(replay.get("mutation_transaction_ids"), list) else []),
         "rollback_ids": copy.deepcopy(replay.get("rollback_ids") if isinstance(replay.get("rollback_ids"), list) else []),
         "governance_record_ids": copy.deepcopy(replay.get("governance_record_ids") if isinstance(replay.get("governance_record_ids"), list) else []),
+        "worker_ids": copy.deepcopy(replay.get("worker_ids") if isinstance(replay.get("worker_ids"), list) else []),
+        "distributed_execution_ids": copy.deepcopy(replay.get("distributed_execution_ids") if isinstance(replay.get("distributed_execution_ids"), list) else []),
     }
