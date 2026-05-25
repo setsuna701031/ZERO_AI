@@ -719,3 +719,40 @@ Expected result:
 ```text
 19 passed
 ```
+
+---
+
+## AER Runtime Sovereign Archive / Constitutional Resurrection v1
+
+ZERO now preserves long-horizon constitutional archive and resurrection
+continuity inside the engineering runtime graph.
+
+The contract-proven path is:
+
+```text
+constitutional archive
+-> long-horizon governance replay
+-> sovereign continuity
+-> constitutional resurrection
+-> resurrection validation
+-> archive replay continuity
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Archive,
+resurrection, sovereign-continuity, and replay records are persistence-ready
+JSON dictionaries and do not execute commands, mutate policy, approve governance,
+or move execution ownership into Scheduler. `RuntimeReplayEngine` exposes a
+read-only validation bridge for sovereign archive replay continuity.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+20 passed
+```

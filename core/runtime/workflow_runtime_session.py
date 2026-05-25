@@ -7342,3 +7342,319 @@ def _zero_continuity_summary_with_epoch_migration(self, session: Dict[str, Any])
 
 
 WorkflowRuntimeSessionManager.continuity_summary = _zero_continuity_summary_with_epoch_migration
+
+
+# ---------------------------------------------------------------------------
+# AER Runtime Sovereign Archive / Constitutional Resurrection v1
+# ---------------------------------------------------------------------------
+
+def _zero_v1_known_sovereign_archive_ids(session: Dict[str, Any]) -> Dict[str, set[str]]:
+    epoch_known = _zero_v1_known_epoch_migration_ids(session if isinstance(session, dict) else {})
+    memories = _zero_v1_collect_records_by_event_type(session, "constitutional_memory")
+    inheritances = _zero_v1_collect_records_by_event_type(session, "constitutional_inheritance")
+    epochs = _zero_v1_collect_records_by_event_type(session, "governance_epoch_transition")
+    migrations = _zero_v1_collect_records_by_event_type(session, "constitutional_migration")
+    validations = _zero_v1_collect_records_by_event_type(session, "migration_validation")
+    sovereigns = _zero_v1_collect_records_by_event_type(session, "sovereign_stabilization")
+    archives = _zero_v1_collect_records_by_event_type(session, "constitutional_archive")
+    horizon_replays = _zero_v1_collect_records_by_event_type(session, "long_horizon_governance_replay")
+    sovereign_continuities = _zero_v1_collect_records_by_event_type(session, "sovereign_continuity")
+    resurrections = _zero_v1_collect_records_by_event_type(session, "constitutional_resurrection")
+    resurrection_validations = _zero_v1_collect_records_by_event_type(session, "constitutional_resurrection_validation")
+    archive_replays = _zero_v1_collect_records_by_event_type(session, "constitutional_archive_replay_continuity")
+    return {
+        **epoch_known,
+        "memory_ids": {safe_text(item.get("constitutional_memory_id")) for item in memories if safe_text(item.get("constitutional_memory_id"))},
+        "inheritance_ids": {safe_text(item.get("constitutional_inheritance_id")) for item in inheritances if safe_text(item.get("constitutional_inheritance_id"))},
+        "epoch_ids": {safe_text(item.get("governance_epoch_transition_id")) for item in epochs if safe_text(item.get("governance_epoch_transition_id"))},
+        "migration_ids": {safe_text(item.get("constitutional_migration_id")) for item in migrations if safe_text(item.get("constitutional_migration_id"))},
+        "migration_validation_ids": {safe_text(item.get("migration_validation_id")) for item in validations if safe_text(item.get("migration_validation_id"))},
+        "sovereign_stabilization_ids": {safe_text(item.get("sovereign_stabilization_id")) for item in sovereigns if safe_text(item.get("sovereign_stabilization_id"))},
+        "archive_ids": {safe_text(item.get("constitutional_archive_id")) for item in archives if safe_text(item.get("constitutional_archive_id"))},
+        "long_horizon_replay_ids": {safe_text(item.get("long_horizon_replay_id")) for item in horizon_replays if safe_text(item.get("long_horizon_replay_id"))},
+        "sovereign_continuity_ids": {safe_text(item.get("sovereign_continuity_id")) for item in sovereign_continuities if safe_text(item.get("sovereign_continuity_id"))},
+        "constitutional_resurrection_ids": {safe_text(item.get("constitutional_resurrection_id")) for item in resurrections if safe_text(item.get("constitutional_resurrection_id"))},
+        "resurrection_validation_ids": {safe_text(item.get("resurrection_validation_id")) for item in resurrection_validations if safe_text(item.get("resurrection_validation_id"))},
+        "archive_replay_continuity_ids": {safe_text(item.get("archive_replay_continuity_id")) for item in archive_replays if safe_text(item.get("archive_replay_continuity_id"))},
+    }
+
+
+def _zero_build_constitutional_archive_record(self, *, task: Dict[str, Any], state: Dict[str, Any], archive: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(archive)
+    seed = {
+        "workflow_id": session.get("workflow_id"),
+        "session_id": session.get("session_id"),
+        "memory_id": safe_text(payload.get("constitutional_memory_id")),
+        "epoch_id": safe_text(payload.get("governance_epoch_transition_id")),
+        "current_tick": current_tick,
+    }
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_archive.v1",
+        "constitutional_archive_id": safe_text(payload.get("constitutional_archive_id")) or _zero_v1_schema_short_id("wfca_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "active_constitution_id": safe_text(payload.get("active_constitution_id")),
+        "constitutional_memory_id": safe_text(payload.get("constitutional_memory_id")),
+        "constitutional_inheritance_id": safe_text(payload.get("constitutional_inheritance_id")),
+        "governance_epoch_transition_id": safe_text(payload.get("governance_epoch_transition_id")),
+        "constitutional_migration_id": safe_text(payload.get("constitutional_migration_id")),
+        "migration_validation_id": safe_text(payload.get("migration_validation_id")),
+        "archive_scope": safe_text(payload.get("archive_scope")) or "sovereign_constitutional_archive",
+        "archive_status": safe_text(payload.get("archive_status")) or "sealed",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_archive_record(self, *, task: Dict[str, Any], state: Dict[str, Any], archive: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_archive_record(task=task, state=state, archive=archive, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_archive", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_long_horizon_governance_replay_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(replay)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "archive_id": safe_text(payload.get("constitutional_archive_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.long_horizon_governance_replay.v1",
+        "long_horizon_replay_id": safe_text(payload.get("long_horizon_replay_id")) or _zero_v1_schema_short_id("wflhr_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_archive_id": safe_text(payload.get("constitutional_archive_id")),
+        "governance_epoch_transition_id": safe_text(payload.get("governance_epoch_transition_id")),
+        "constitutional_migration_id": safe_text(payload.get("constitutional_migration_id")),
+        "migration_validation_id": safe_text(payload.get("migration_validation_id")),
+        "replay_status": safe_text(payload.get("replay_status")) or "validated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_long_horizon_governance_replay_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_long_horizon_governance_replay_record(task=task, state=state, replay=replay, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="long_horizon_governance_replay", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_sovereign_continuity_record(self, *, task: Dict[str, Any], state: Dict[str, Any], continuity: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(continuity)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "archive_id": safe_text(payload.get("constitutional_archive_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.sovereign_continuity.v1",
+        "sovereign_continuity_id": safe_text(payload.get("sovereign_continuity_id")) or _zero_v1_schema_short_id("wfsc_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_archive_id": safe_text(payload.get("constitutional_archive_id")),
+        "sovereign_stabilization_id": safe_text(payload.get("sovereign_stabilization_id")),
+        "survivability_id": safe_text(payload.get("survivability_id")),
+        "continuity_status": safe_text(payload.get("continuity_status")) or "continuous",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_sovereign_continuity_record(self, *, task: Dict[str, Any], state: Dict[str, Any], continuity: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_sovereign_continuity_record(task=task, state=state, continuity=continuity, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="sovereign_continuity", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_resurrection_record(self, *, task: Dict[str, Any], state: Dict[str, Any], resurrection: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(resurrection)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "archive_id": safe_text(payload.get("constitutional_archive_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_resurrection.v1",
+        "constitutional_resurrection_id": safe_text(payload.get("constitutional_resurrection_id")) or _zero_v1_schema_short_id("wfcr_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_archive_id": safe_text(payload.get("constitutional_archive_id")),
+        "governance_epoch_transition_id": safe_text(payload.get("governance_epoch_transition_id")),
+        "catastrophic_failure_id": safe_text(payload.get("catastrophic_failure_id")),
+        "catastrophic_recovery_id": safe_text(payload.get("catastrophic_recovery_id") or payload.get("recovery_id")),
+        "resurrection_status": safe_text(payload.get("resurrection_status")) or "available",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_resurrection_record(self, *, task: Dict[str, Any], state: Dict[str, Any], resurrection: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_resurrection_record(task=task, state=state, resurrection=resurrection, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_resurrection", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_resurrection_validation_record(self, *, task: Dict[str, Any], state: Dict[str, Any], validation: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(validation)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "resurrection_id": safe_text(payload.get("constitutional_resurrection_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_resurrection_validation.v1",
+        "resurrection_validation_id": safe_text(payload.get("resurrection_validation_id")) or _zero_v1_schema_short_id("wfcrv_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_resurrection_id": safe_text(payload.get("constitutional_resurrection_id")),
+        "long_horizon_replay_id": safe_text(payload.get("long_horizon_replay_id")),
+        "replay_id": safe_text(payload.get("replay_id")),
+        "verification_id": safe_text(payload.get("verification_id")),
+        "validation_status": safe_text(payload.get("validation_status")) or "validated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_resurrection_validation_record(self, *, task: Dict[str, Any], state: Dict[str, Any], validation: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_resurrection_validation_record(task=task, state=state, validation=validation, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_resurrection_validation", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_archive_replay_continuity_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(replay)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "archive_id": safe_text(payload.get("constitutional_archive_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_archive_replay_continuity.v1",
+        "archive_replay_continuity_id": safe_text(payload.get("archive_replay_continuity_id")) or _zero_v1_schema_short_id("wfarc_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_archive_id": safe_text(payload.get("constitutional_archive_id")),
+        "long_horizon_replay_id": safe_text(payload.get("long_horizon_replay_id")),
+        "resurrection_validation_id": safe_text(payload.get("resurrection_validation_id")),
+        "replay_status": safe_text(payload.get("replay_status")) or "validated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_archive_replay_continuity_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_archive_replay_continuity_record(task=task, state=state, replay=replay, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_archive_replay_continuity", record=record, current_tick=current_tick, ok=True)
+
+
+WorkflowRuntimeSessionManager.build_constitutional_archive_record = _zero_build_constitutional_archive_record
+WorkflowRuntimeSessionManager.attach_constitutional_archive_record = _zero_attach_constitutional_archive_record
+WorkflowRuntimeSessionManager.build_long_horizon_governance_replay_record = _zero_build_long_horizon_governance_replay_record
+WorkflowRuntimeSessionManager.attach_long_horizon_governance_replay_record = _zero_attach_long_horizon_governance_replay_record
+WorkflowRuntimeSessionManager.build_sovereign_continuity_record = _zero_build_sovereign_continuity_record
+WorkflowRuntimeSessionManager.attach_sovereign_continuity_record = _zero_attach_sovereign_continuity_record
+WorkflowRuntimeSessionManager.build_constitutional_resurrection_record = _zero_build_constitutional_resurrection_record
+WorkflowRuntimeSessionManager.attach_constitutional_resurrection_record = _zero_attach_constitutional_resurrection_record
+WorkflowRuntimeSessionManager.build_constitutional_resurrection_validation_record = _zero_build_constitutional_resurrection_validation_record
+WorkflowRuntimeSessionManager.attach_constitutional_resurrection_validation_record = _zero_attach_constitutional_resurrection_validation_record
+WorkflowRuntimeSessionManager.build_constitutional_archive_replay_continuity_record = _zero_build_constitutional_archive_replay_continuity_record
+WorkflowRuntimeSessionManager.attach_constitutional_archive_replay_continuity_record = _zero_attach_constitutional_archive_replay_continuity_record
+
+
+_ZERO_PRE_SOVEREIGN_ARCHIVE_CONTINUITY_SUMMARY = WorkflowRuntimeSessionManager.continuity_summary
+
+
+def _zero_continuity_summary_with_sovereign_archive(self, session: Dict[str, Any]) -> Dict[str, Any]:
+    summary = _ZERO_PRE_SOVEREIGN_ARCHIVE_CONTINUITY_SUMMARY(self, session)
+    if not isinstance(summary, dict):
+        summary = {"ok": False, "breaks": ["invalid_continuity_summary"]}
+    breaks = list(summary.get("breaks") if isinstance(summary.get("breaks"), list) else [])
+    workflow_id = safe_text(session.get("workflow_id")) if isinstance(session, dict) else ""
+    session_id = safe_text(session.get("session_id")) if isinstance(session, dict) else ""
+    known = _zero_v1_known_sovereign_archive_ids(session if isinstance(session, dict) else {})
+
+    archives = _zero_v1_collect_records_by_event_type(session, "constitutional_archive")
+    horizon_replays = _zero_v1_collect_records_by_event_type(session, "long_horizon_governance_replay")
+    sovereign_continuities = _zero_v1_collect_records_by_event_type(session, "sovereign_continuity")
+    resurrections = _zero_v1_collect_records_by_event_type(session, "constitutional_resurrection")
+    resurrection_validations = _zero_v1_collect_records_by_event_type(session, "constitutional_resurrection_validation")
+    archive_replays = _zero_v1_collect_records_by_event_type(session, "constitutional_archive_replay_continuity")
+
+    for collection, name in ((archives, "archive"), (horizon_replays, "long_horizon_replay"), (sovereign_continuities, "sovereign_continuity"), (resurrections, "resurrection"), (resurrection_validations, "resurrection_validation"), (archive_replays, "archive_replay")):
+        for record in collection:
+            if safe_text(record.get("workflow_id")) != workflow_id or safe_text(record.get("session_id")) != session_id:
+                breaks.append(f"sovereign_archive_{name}_lineage_mismatch")
+
+    for archive in archives:
+        memory_id = safe_text(archive.get("constitutional_memory_id"))
+        inheritance_id = safe_text(archive.get("constitutional_inheritance_id"))
+        epoch_id = safe_text(archive.get("governance_epoch_transition_id"))
+        migration_id = safe_text(archive.get("constitutional_migration_id"))
+        validation_id = safe_text(archive.get("migration_validation_id"))
+        active_constitution_id = safe_text(archive.get("active_constitution_id"))
+        if memory_id and memory_id not in known["memory_ids"]:
+            breaks.append("constitutional_archive_without_memory_epoch_parent")
+        if inheritance_id and inheritance_id not in known["inheritance_ids"]:
+            breaks.append("constitutional_archive_without_memory_epoch_parent")
+        if epoch_id and epoch_id not in known["epoch_ids"]:
+            breaks.append("constitutional_archive_without_memory_epoch_parent")
+        if migration_id and migration_id not in known["migration_ids"]:
+            breaks.append("constitutional_archive_without_memory_epoch_parent")
+        if validation_id and validation_id not in known["migration_validation_ids"]:
+            breaks.append("constitutional_archive_without_memory_epoch_parent")
+        if not any([active_constitution_id, memory_id, inheritance_id, epoch_id, migration_id, validation_id]):
+            breaks.append("constitutional_archive_without_memory_epoch_parent")
+
+    for replay in horizon_replays:
+        if safe_text(replay.get("constitutional_archive_id")) not in known["archive_ids"]:
+            breaks.append("long_horizon_replay_without_archive")
+        epoch_id = safe_text(replay.get("governance_epoch_transition_id"))
+        migration_id = safe_text(replay.get("constitutional_migration_id"))
+        validation_id = safe_text(replay.get("migration_validation_id"))
+        if epoch_id and epoch_id not in known["epoch_ids"]:
+            breaks.append("long_horizon_replay_without_epoch_or_migration")
+        if migration_id and migration_id not in known["migration_ids"]:
+            breaks.append("long_horizon_replay_without_epoch_or_migration")
+        if validation_id and validation_id not in known["migration_validation_ids"]:
+            breaks.append("long_horizon_replay_without_epoch_or_migration")
+        # Long-horizon replay may be anchored directly by the sovereign archive.
+        # If epoch/migration links are provided they must be valid, but an archive-only
+        # replay is valid for compact resurrection fixtures.
+
+    for continuity in sovereign_continuities:
+        if safe_text(continuity.get("constitutional_archive_id")) not in known["archive_ids"]:
+            breaks.append("sovereign_continuity_without_archive")
+        sovereign_stabilization_id = safe_text(continuity.get("sovereign_stabilization_id"))
+        survivability_id = safe_text(continuity.get("survivability_id"))
+        if sovereign_stabilization_id and sovereign_stabilization_id not in known["sovereign_stabilization_ids"]:
+            breaks.append("sovereign_continuity_without_stabilization")
+        if not any([sovereign_stabilization_id, survivability_id]):
+            breaks.append("sovereign_continuity_without_stabilization")
+
+    for resurrection in resurrections:
+        if safe_text(resurrection.get("constitutional_archive_id")) not in known["archive_ids"]:
+            breaks.append("constitutional_resurrection_without_archive")
+        epoch_id = safe_text(resurrection.get("governance_epoch_transition_id"))
+        recovery_id = safe_text(resurrection.get("catastrophic_recovery_id"))
+        failure_id = safe_text(resurrection.get("catastrophic_failure_id"))
+        if epoch_id and epoch_id not in known["epoch_ids"]:
+            breaks.append("constitutional_resurrection_without_recovery_anchor")
+        if not any([epoch_id, recovery_id, failure_id]):
+            breaks.append("constitutional_resurrection_without_recovery_anchor")
+
+    for validation in resurrection_validations:
+        if safe_text(validation.get("constitutional_resurrection_id")) not in known["constitutional_resurrection_ids"]:
+            breaks.append("resurrection_validation_without_resurrection")
+        horizon_replay_id = safe_text(validation.get("long_horizon_replay_id"))
+        if horizon_replay_id and horizon_replay_id not in known["long_horizon_replay_ids"]:
+            breaks.append("resurrection_validation_without_replay")
+        if not any([horizon_replay_id, safe_text(validation.get("replay_id")), safe_text(validation.get("verification_id")), safe_text(validation.get("validation_status"))]):
+            breaks.append("resurrection_validation_without_replay")
+
+    for replay in archive_replays:
+        if safe_text(replay.get("constitutional_archive_id")) not in known["archive_ids"]:
+            breaks.append("archive_replay_continuity_stale_archive")
+        if safe_text(replay.get("long_horizon_replay_id")) not in known["long_horizon_replay_ids"]:
+            breaks.append("archive_replay_continuity_stale_long_horizon_replay")
+        if safe_text(replay.get("resurrection_validation_id")) not in known["resurrection_validation_ids"]:
+            breaks.append("archive_replay_continuity_stale_resurrection_validation")
+
+    summary["breaks"] = _sorted_unique(breaks)
+    summary["ok"] = bool(summary.get("ok", True)) and not summary["breaks"]
+    summary.setdefault("counts", {})
+    if isinstance(summary["counts"], dict):
+        summary["counts"].update({
+            "constitutional_archive_count": len(known["archive_ids"]),
+            "long_horizon_governance_replay_count": len(known["long_horizon_replay_ids"]),
+            "sovereign_continuity_count": len(known["sovereign_continuity_ids"]),
+            "constitutional_resurrection_count": len(known["constitutional_resurrection_ids"]),
+            "resurrection_validation_count": len(known["resurrection_validation_ids"]),
+            "archive_replay_continuity_count": len(known["archive_replay_continuity_ids"]),
+        })
+    return summary
+
+
+WorkflowRuntimeSessionManager.continuity_summary = _zero_continuity_summary_with_sovereign_archive

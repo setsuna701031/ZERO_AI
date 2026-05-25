@@ -2760,3 +2760,116 @@ def test_runtime_constitutional_memory_epoch_migration_continuity() -> None:
     broken_summary = manager.continuity_summary(broken)
     assert broken_summary["ok"] is False
     assert "epoch_replay_continuity_stale_epoch" in broken_summary["breaks"]
+
+
+def test_runtime_sovereign_archive_constitutional_resurrection_continuity() -> None:
+    from core.runtime.runtime_replay_engine import build_sovereign_archive_replay_validation
+
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-sovereign-archive", "steps": []}
+    state = {"task_id": "wf-sovereign-archive", "status": "running", "steps": []}
+
+    session = manager.start_from_intent(
+        intent={"task_id": "wf-sovereign-archive", "goal": "archive and resurrect runtime constitution"},
+        task=task,
+        state=state,
+        current_tick=1,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_constitutional_archive_record(
+        task=task,
+        state=state,
+        archive={
+            "active_constitution_id": "constitution-sovereign-v1",
+            "archive_scope": "long_horizon_governance",
+            "archive_status": "sealed",
+        },
+        current_tick=2,
+    )
+    state["workflow_runtime_session"] = session
+    archive_id = session["events"][-1]["payload"]["record"]["constitutional_archive_id"]
+
+    session = manager.attach_long_horizon_governance_replay_record(
+        task=task,
+        state=state,
+        replay={
+            "constitutional_archive_id": archive_id,
+            "replay_status": "validated",
+        },
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+    horizon_replay_id = session["events"][-1]["payload"]["record"]["long_horizon_replay_id"]
+
+    session = manager.attach_sovereign_continuity_record(
+        task=task,
+        state=state,
+        continuity={
+            "constitutional_archive_id": archive_id,
+            "survivability_id": "survivability-long-horizon",
+            "continuity_status": "continuous",
+        },
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_constitutional_resurrection_record(
+        task=task,
+        state=state,
+        resurrection={
+            "constitutional_archive_id": archive_id,
+            "catastrophic_failure_id": "catastrophic-archive-loss",
+            "catastrophic_recovery_id": "catastrophic-recovery-archive-loss",
+            "resurrection_status": "available",
+        },
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+    resurrection_id = session["events"][-1]["payload"]["record"]["constitutional_resurrection_id"]
+
+    session = manager.attach_constitutional_resurrection_validation_record(
+        task=task,
+        state=state,
+        validation={
+            "constitutional_resurrection_id": resurrection_id,
+            "long_horizon_replay_id": horizon_replay_id,
+            "replay_id": "resurrection-replay-1",
+            "verification_id": "resurrection-verify-1",
+            "validation_status": "validated",
+        },
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    validation_id = session["events"][-1]["payload"]["record"]["resurrection_validation_id"]
+
+    session = manager.attach_constitutional_archive_replay_continuity_record(
+        task=task,
+        state=state,
+        replay={
+            "constitutional_archive_id": archive_id,
+            "long_horizon_replay_id": horizon_replay_id,
+            "resurrection_validation_id": validation_id,
+            "replay_status": "validated",
+        },
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+
+    summary = manager.continuity_summary(session)
+    assert summary["ok"] is True
+    assert summary["counts"]["constitutional_archive_count"] == 1
+    assert summary["counts"]["constitutional_resurrection_count"] == 1
+    replay_validation = build_sovereign_archive_replay_validation(workflow_runtime_session=session)
+    assert replay_validation["ok"] is True
+    json.dumps(session, sort_keys=True, default=str)
+
+    broken = dict(session)
+    broken["events"] = [dict(event) for event in session["events"]]
+    archive_replay_event = [event for event in broken["events"] if event["event_type"] == "constitutional_archive_replay_continuity"][-1]
+    archive_replay_event["payload"] = dict(archive_replay_event["payload"])
+    archive_replay_event["payload"]["record"] = dict(archive_replay_event["payload"]["record"])
+    archive_replay_event["payload"]["record"]["constitutional_archive_id"] = "stale-archive"
+    broken_summary = manager.continuity_summary(broken)
+    assert broken_summary["ok"] is False
+    assert "archive_replay_continuity_stale_archive" in broken_summary["breaks"]

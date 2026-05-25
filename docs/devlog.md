@@ -672,3 +672,34 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 19 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Sovereign Archive / Constitutional Resurrection v1
+
+Added long-horizon constitutional archive and resurrection continuity to the
+workflow runtime session contract.
+
+ZERO can now preserve:
+
+```text
+constitutional archive records
+long-horizon governance replay records
+sovereign continuity records
+constitutional resurrection records
+resurrection validation records
+archive replay continuity records
+```
+
+This keeps constitutional archive, resurrection, survivability, and replay
+continuity inside `WorkflowRuntimeSession` without adding execution authority or
+side effects. Continuity validation now detects stale archive references,
+missing archive parents, missing resurrection parents, missing validation replay
+links, and stale archive replay continuity.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 20 passed
+```
