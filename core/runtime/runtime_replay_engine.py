@@ -694,6 +694,7 @@ def workflow_replay_graph_summary(
     replay = copy.deepcopy(replay_continuation if isinstance(replay_continuation, dict) else {})
     mutation_graph = source_lineage.get("mutation_transaction_graph") if isinstance(source_lineage.get("mutation_transaction_graph"), dict) else {}
     rollback_graph = source_lineage.get("rollback_graph") if isinstance(source_lineage.get("rollback_graph"), dict) else {}
+    governance_graph = source_lineage.get("governance_state_graph") if isinstance(source_lineage.get("governance_state_graph"), dict) else {}
 
     mutation_ids = [
         str(item.get("mutation_transaction_id") or "").strip()
@@ -711,10 +712,27 @@ def workflow_replay_graph_summary(
     if rollback_ids and not isinstance(replay.get("rollback_ids"), list):
         replay["rollback_ids"] = rollback_ids[-20:]
 
+    governance_ids = []
+    for key, field in (
+        ("policy_decision_id", "policy_decisions"),
+        ("authority_id", "authority"),
+        ("review_id", "reviews"),
+        ("approval_id", "approvals"),
+        ("governance_resume_id", "resumes"),
+        ("enforcement_id", "constitution_enforcements"),
+    ):
+        for item in governance_graph.get(field) if isinstance(governance_graph.get(field), list) else []:
+            value = str(item.get(key) or "").strip() if isinstance(item, dict) else ""
+            if value:
+                governance_ids.append(value)
+    if governance_ids and not isinstance(replay.get("governance_record_ids"), list):
+        replay["governance_record_ids"] = governance_ids[-20:]
+
     return {
         "schema": "zero.workflow_runtime_session.replay_graph_summary.v1",
         "ok": True,
         "replay_continuation": replay,
         "mutation_transaction_ids": copy.deepcopy(replay.get("mutation_transaction_ids") if isinstance(replay.get("mutation_transaction_ids"), list) else []),
         "rollback_ids": copy.deepcopy(replay.get("rollback_ids") if isinstance(replay.get("rollback_ids"), list) else []),
+        "governance_record_ids": copy.deepcopy(replay.get("governance_record_ids") if isinstance(replay.get("governance_record_ids"), list) else []),
     }

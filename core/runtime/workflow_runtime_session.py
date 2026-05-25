@@ -1199,6 +1199,321 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_policy_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        decision: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_policy_decision_record(task=task, state=state, decision=decision, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="policy_decision",
+            record=record,
+            current_tick=current_tick,
+            ok=bool(record.get("allowed", False)),
+        )
+
+    def build_policy_decision_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        decision: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(decision if isinstance(decision, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "decision": safe_text(payload.get("decision")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.policy_decision.v1",
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")) or "wfpol_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "policy_id": safe_text(payload.get("policy_id")),
+            "decision": safe_text(payload.get("decision")) or ("allow" if payload.get("allowed", False) else "review_required"),
+            "allowed": bool(payload.get("allowed", False)),
+            "reason": safe_text(payload.get("reason")),
+            "created_at": utc_now(),
+        }
+
+    def attach_authority_continuity_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        authority: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_authority_continuity_record(task=task, state=state, authority=authority, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="authority_continuity",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_authority_continuity_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        authority: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(authority if isinstance(authority, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "owner": safe_text(payload.get("execution_owner")),
+            "source": safe_text(payload.get("authority_source")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.authority_continuity.v1",
+            "authority_id": safe_text(payload.get("authority_id")) or "wfauth_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(payload.get("workflow_id")) or safe_text(session.get("workflow_id")),
+            "session_id": safe_text(payload.get("session_id")) or safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "execution_owner": safe_text(payload.get("execution_owner")) or "TaskRunner",
+            "authority_source": safe_text(payload.get("authority_source")) or "workflow_runtime_session",
+            "allowed": bool(payload.get("allowed", True)),
+            "created_at": utc_now(),
+        }
+
+    def attach_review_required_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        review: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_review_required_record(task=task, state=state, review=review, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="review_required",
+            record=record,
+            current_tick=current_tick,
+            ok=False,
+        )
+
+    def build_review_required_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        review: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(review if isinstance(review, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.review_required.v1",
+            "review_id": safe_text(payload.get("review_id")) or "wfrev_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "transition": "blocked",
+            "reason": safe_text(payload.get("reason")),
+            "created_at": utc_now(),
+        }
+
+    def attach_approval_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        approval: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_approval_record(task=task, state=state, approval=approval, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="approval",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_approval_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        approval: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(approval if isinstance(approval, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "review_id": safe_text(payload.get("review_id")),
+            "approver": safe_text(payload.get("approver")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.approval.v1",
+            "approval_id": safe_text(payload.get("approval_id")) or "wfapp_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "review_id": safe_text(payload.get("review_id")),
+            "policy_decision_id": safe_text(payload.get("policy_decision_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "approver": safe_text(payload.get("approver")) or "governance",
+            "approved": bool(payload.get("approved", True)),
+            "created_at": utc_now(),
+        }
+
+    def attach_governance_resume_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        resume: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_governance_resume_record(task=task, state=state, resume=resume, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="rollback_retry",
+            event_type="governance_resume",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_governance_resume_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        resume: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(resume if isinstance(resume, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "approval_id": safe_text(payload.get("approval_id")),
+            "resumed_node_id": safe_text(payload.get("resumed_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.governance_resume.v1",
+            "governance_resume_id": safe_text(payload.get("governance_resume_id")) or "wfgres_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "approval_id": safe_text(payload.get("approval_id")),
+            "review_id": safe_text(payload.get("review_id")),
+            "resumed_node_id": safe_text(payload.get("resumed_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "transition": "resumed",
+            "created_at": utc_now(),
+        }
+
+    def attach_constitution_enforcement_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        enforcement: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitution_enforcement_record(
+            task=task,
+            state=state,
+            enforcement=enforcement,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitution_enforcement",
+            record=record,
+            current_tick=current_tick,
+            ok=bool(record.get("enforced", True)),
+        )
+
+    def build_constitution_enforcement_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        enforcement: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(enforcement if isinstance(enforcement, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "rule_id": safe_text(payload.get("rule_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitution_enforcement.v1",
+            "enforcement_id": safe_text(payload.get("enforcement_id")) or "wfce_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "rule_id": safe_text(payload.get("rule_id")) or "execution_constitution",
+            "enforced": bool(payload.get("enforced", True)),
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -1742,6 +2057,76 @@ class WorkflowRuntimeSessionManager:
                 "target_branch_id": safe_text(step_result.get("target_branch_id")),
                 "strategy": safe_text(step_result.get("strategy")) or "rollback_retry_reconcile",
             }
+        if action == "policy_decision":
+            lineage["policy_decision"] = {
+                "policy_decision_id": safe_text(step_result.get("policy_decision_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "policy_id": safe_text(step_result.get("policy_id")),
+                "decision": safe_text(step_result.get("decision")),
+                "allowed": bool(step_result.get("allowed", False)),
+            }
+        if action == "authority_continuity":
+            lineage["authority_continuity"] = {
+                "authority_id": safe_text(step_result.get("authority_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")),
+                "session_id": safe_text(step_result.get("session_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "execution_owner": safe_text(step_result.get("execution_owner")),
+                "authority_source": safe_text(step_result.get("authority_source")),
+                "allowed": bool(step_result.get("allowed", True)),
+            }
+        if action == "review_required":
+            lineage["review_required"] = {
+                "review_id": safe_text(step_result.get("review_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "policy_decision_id": safe_text(step_result.get("policy_decision_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "transition": "blocked",
+            }
+        if action == "approval":
+            lineage["approval"] = {
+                "approval_id": safe_text(step_result.get("approval_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "review_id": safe_text(step_result.get("review_id")),
+                "policy_decision_id": safe_text(step_result.get("policy_decision_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "approved": bool(step_result.get("approved", True)),
+            }
+        if action == "governance_resume":
+            lineage["governance_resume"] = {
+                "governance_resume_id": safe_text(step_result.get("governance_resume_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "approval_id": safe_text(step_result.get("approval_id")),
+                "review_id": safe_text(step_result.get("review_id")),
+                "resumed_node_id": safe_text(step_result.get("resumed_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "transition": "resumed",
+            }
+        if action == "constitution_enforcement":
+            lineage["constitution_enforcement"] = {
+                "enforcement_id": safe_text(step_result.get("enforcement_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "rule_id": safe_text(step_result.get("rule_id")),
+                "enforced": bool(step_result.get("enforced", True)),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -1767,6 +2152,7 @@ class WorkflowRuntimeSessionManager:
                 "continued_branch_id": safe_text(replay_input.get("continued_branch_id")),
                 "mutation_transaction_ids": copy.deepcopy(replay_input.get("mutation_transaction_ids") if isinstance(replay_input.get("mutation_transaction_ids"), list) else []),
                 "rollback_ids": copy.deepcopy(replay_input.get("rollback_ids") if isinstance(replay_input.get("rollback_ids"), list) else []),
+                "governance_record_ids": copy.deepcopy(replay_input.get("governance_record_ids") if isinstance(replay_input.get("governance_record_ids"), list) else []),
             }
         return lineage
 
@@ -1880,6 +2266,36 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("graph_reconciliation"), dict)
         ]
+        policy_decisions = [
+            copy.deepcopy(event.lineage.get("policy_decision"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("policy_decision"), dict)
+        ]
+        authority_records = [
+            copy.deepcopy(event.lineage.get("authority_continuity"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("authority_continuity"), dict)
+        ]
+        review_records = [
+            copy.deepcopy(event.lineage.get("review_required"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("review_required"), dict)
+        ]
+        approval_records = [
+            copy.deepcopy(event.lineage.get("approval"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("approval"), dict)
+        ]
+        governance_resumes = [
+            copy.deepcopy(event.lineage.get("governance_resume"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("governance_resume"), dict)
+        ]
+        constitution_enforcements = [
+            copy.deepcopy(event.lineage.get("constitution_enforcement"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitution_enforcement"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -1922,6 +2338,15 @@ class WorkflowRuntimeSessionManager:
                 "schema": "zero.workflow_runtime_session.rollback_graph.v1",
                 "rollbacks": rollback_nodes[-200:],
             },
+            "governance_state_graph": {
+                "schema": "zero.workflow_runtime_session.governance_state_graph.v1",
+                "policy_decisions": policy_decisions[-200:],
+                "authority": authority_records[-200:],
+                "reviews": review_records[-100:],
+                "approvals": approval_records[-100:],
+                "resumes": governance_resumes[-100:],
+                "constitution_enforcements": constitution_enforcements[-200:],
+            },
         }
         if source_session_id:
             replay_input = self._replay_continuation_input(task=task, state=state, result=result)
@@ -1936,6 +2361,20 @@ class WorkflowRuntimeSessionManager:
                     for item in mutation_transactions[-20:]
                     if isinstance(item, dict) and safe_text(item.get("mutation_transaction_id"))
                 ]
+            replay_governance_ids = [
+                safe_text(item)
+                for item in (replay_input.get("governance_record_ids") if isinstance(replay_input.get("governance_record_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_governance_ids:
+                replay_governance_ids = self._governance_record_ids(
+                    policy_decisions=policy_decisions,
+                    authority_records=authority_records,
+                    review_records=review_records,
+                    approval_records=approval_records,
+                    governance_resumes=governance_resumes,
+                    constitution_enforcements=constitution_enforcements,
+                )[-20:]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -1951,6 +2390,7 @@ class WorkflowRuntimeSessionManager:
                     for item in (replay_input.get("rollback_ids") if isinstance(replay_input.get("rollback_ids"), list) else [])
                     if safe_text(item)
                 ],
+                "governance_record_ids": replay_governance_ids,
             }
         return lineage
 
@@ -2183,6 +2623,31 @@ class WorkflowRuntimeSessionManager:
             current = parent
         return ancestors
 
+    def _governance_record_ids(
+        self,
+        *,
+        policy_decisions: List[Dict[str, Any]],
+        authority_records: List[Dict[str, Any]],
+        review_records: List[Dict[str, Any]],
+        approval_records: List[Dict[str, Any]],
+        governance_resumes: List[Dict[str, Any]],
+        constitution_enforcements: List[Dict[str, Any]],
+    ) -> List[str]:
+        ids: List[str] = []
+        for key, records in (
+            ("policy_decision_id", policy_decisions),
+            ("authority_id", authority_records),
+            ("review_id", review_records),
+            ("approval_id", approval_records),
+            ("governance_resume_id", governance_resumes),
+            ("enforcement_id", constitution_enforcements),
+        ):
+            for record in records:
+                value = safe_text(record.get(key)) if isinstance(record, dict) else ""
+                if value:
+                    ids.append(value)
+        return ids
+
     def _source_session_id(
         self,
         *,
@@ -2297,6 +2762,12 @@ class WorkflowRuntimeSessionManager:
         rollback_nodes: List[Dict[str, Any]] = []
         branch_conflicts: List[Dict[str, Any]] = []
         graph_reconciliations: List[Dict[str, Any]] = []
+        policy_decisions: List[Dict[str, Any]] = []
+        authority_records: List[Dict[str, Any]] = []
+        review_records: List[Dict[str, Any]] = []
+        approval_records: List[Dict[str, Any]] = []
+        governance_resumes: List[Dict[str, Any]] = []
+        constitution_enforcements: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -2434,6 +2905,24 @@ class WorkflowRuntimeSessionManager:
             graph_reconciliation = event_lineage.get("graph_reconciliation") if isinstance(event_lineage.get("graph_reconciliation"), dict) else {}
             if graph_reconciliation:
                 graph_reconciliations.append(copy.deepcopy(graph_reconciliation))
+            policy_decision = event_lineage.get("policy_decision") if isinstance(event_lineage.get("policy_decision"), dict) else {}
+            if policy_decision:
+                policy_decisions.append(copy.deepcopy(policy_decision))
+            authority = event_lineage.get("authority_continuity") if isinstance(event_lineage.get("authority_continuity"), dict) else {}
+            if authority:
+                authority_records.append(copy.deepcopy(authority))
+            review = event_lineage.get("review_required") if isinstance(event_lineage.get("review_required"), dict) else {}
+            if review:
+                review_records.append(copy.deepcopy(review))
+            approval = event_lineage.get("approval") if isinstance(event_lineage.get("approval"), dict) else {}
+            if approval:
+                approval_records.append(copy.deepcopy(approval))
+            governance_resume = event_lineage.get("governance_resume") if isinstance(event_lineage.get("governance_resume"), dict) else {}
+            if governance_resume:
+                governance_resumes.append(copy.deepcopy(governance_resume))
+            constitution_enforcement = event_lineage.get("constitution_enforcement") if isinstance(event_lineage.get("constitution_enforcement"), dict) else {}
+            if constitution_enforcement:
+                constitution_enforcements.append(copy.deepcopy(constitution_enforcement))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -2477,6 +2966,25 @@ class WorkflowRuntimeSessionManager:
         for rollback in rollback_graph.get("rollbacks") if isinstance(rollback_graph.get("rollbacks"), list) else []:
             if isinstance(rollback, dict) and rollback not in rollback_nodes:
                 rollback_nodes.append(copy.deepcopy(rollback))
+        governance_graph = lineage.get("governance_state_graph") if isinstance(lineage.get("governance_state_graph"), dict) else {}
+        for decision in governance_graph.get("policy_decisions") if isinstance(governance_graph.get("policy_decisions"), list) else []:
+            if isinstance(decision, dict) and decision not in policy_decisions:
+                policy_decisions.append(copy.deepcopy(decision))
+        for authority in governance_graph.get("authority") if isinstance(governance_graph.get("authority"), list) else []:
+            if isinstance(authority, dict) and authority not in authority_records:
+                authority_records.append(copy.deepcopy(authority))
+        for review in governance_graph.get("reviews") if isinstance(governance_graph.get("reviews"), list) else []:
+            if isinstance(review, dict) and review not in review_records:
+                review_records.append(copy.deepcopy(review))
+        for approval in governance_graph.get("approvals") if isinstance(governance_graph.get("approvals"), list) else []:
+            if isinstance(approval, dict) and approval not in approval_records:
+                approval_records.append(copy.deepcopy(approval))
+        for resume_record in governance_graph.get("resumes") if isinstance(governance_graph.get("resumes"), list) else []:
+            if isinstance(resume_record, dict) and resume_record not in governance_resumes:
+                governance_resumes.append(copy.deepcopy(resume_record))
+        for enforcement in governance_graph.get("constitution_enforcements") if isinstance(governance_graph.get("constitution_enforcements"), list) else []:
+            if isinstance(enforcement, dict) and enforcement not in constitution_enforcements:
+                constitution_enforcements.append(copy.deepcopy(enforcement))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -2642,6 +3150,83 @@ class WorkflowRuntimeSessionManager:
             if not has_recovery_dependency:
                 breaks.append("reconciliation_missing_rollback_retry_link")
 
+        policy_ids = {
+            safe_text(decision.get("policy_decision_id"))
+            for decision in policy_decisions
+            if safe_text(decision.get("policy_decision_id"))
+        }
+        review_ids = {
+            safe_text(review.get("review_id"))
+            for review in review_records
+            if safe_text(review.get("review_id"))
+        }
+        approval_ids = {
+            safe_text(approval.get("approval_id"))
+            for approval in approval_records
+            if safe_text(approval.get("approval_id"))
+        }
+        governance_ids = set(
+            self._governance_record_ids(
+                policy_decisions=policy_decisions,
+                authority_records=authority_records,
+                review_records=review_records,
+                approval_records=approval_records,
+                governance_resumes=governance_resumes,
+                constitution_enforcements=constitution_enforcements,
+            )
+        )
+
+        for decision in policy_decisions:
+            target_node_id = safe_text(decision.get("target_node_id"))
+            mutation_id = safe_text(decision.get("mutation_transaction_id"))
+            if not target_node_id or target_node_id not in graph_node_ids:
+                breaks.append("policy_decision_target_missing")
+            if mutation_id and mutation_id not in mutation_ids:
+                breaks.append("policy_decision_target_missing")
+            if safe_text(decision.get("workflow_id")) and safe_text(decision.get("workflow_id")) != workflow_id:
+                breaks.append("policy_decision_workflow_id_mismatch")
+            if safe_text(decision.get("session_id")) and safe_text(decision.get("session_id")) != session_id:
+                breaks.append("policy_decision_session_id_mismatch")
+
+        for authority in authority_records:
+            if safe_text(authority.get("workflow_id")) != workflow_id or safe_text(authority.get("session_id")) != session_id:
+                breaks.append("authority_lineage_mismatch")
+            target_node_id = safe_text(authority.get("target_node_id"))
+            mutation_id = safe_text(authority.get("mutation_transaction_id"))
+            if target_node_id and target_node_id not in graph_node_ids:
+                breaks.append("authority_target_missing")
+            if mutation_id and mutation_id not in mutation_ids:
+                breaks.append("authority_target_missing")
+
+        for review in review_records:
+            policy_id = safe_text(review.get("policy_decision_id"))
+            target_node_id = safe_text(review.get("target_node_id"))
+            if policy_id and policy_id not in policy_ids:
+                breaks.append("review_policy_decision_missing")
+            if target_node_id and target_node_id not in graph_node_ids:
+                breaks.append("review_policy_decision_missing")
+
+        for approval in approval_records:
+            review_id = safe_text(approval.get("review_id"))
+            if not review_id or review_id not in review_ids:
+                breaks.append("approval_without_review_parent")
+
+        for resume_record in governance_resumes:
+            approval_id = safe_text(resume_record.get("approval_id"))
+            resumed_node_id = safe_text(resume_record.get("resumed_node_id"))
+            if not approval_id or approval_id not in approval_ids:
+                breaks.append("resume_without_approval_parent")
+            if resumed_node_id and resumed_node_id not in graph_node_ids:
+                breaks.append("resume_without_approval_parent")
+
+        for enforcement in constitution_enforcements:
+            target_node_id = safe_text(enforcement.get("target_node_id"))
+            mutation_id = safe_text(enforcement.get("mutation_transaction_id"))
+            target_ok = bool(target_node_id and target_node_id in graph_node_ids)
+            mutation_ok = bool(mutation_id and mutation_id in mutation_ids)
+            if not target_ok and not mutation_ok:
+                breaks.append("constitution_enforcement_unrelated_target")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -2664,6 +3249,13 @@ class WorkflowRuntimeSessionManager:
         ]
         if any(rollback_id not in rollback_ids for rollback_id in replay_rollback_ids):
             breaks.append("replay_stale_mutation_lineage")
+        replay_governance_ids = [
+            safe_text(item)
+            for item in (replay.get("governance_record_ids") if isinstance(replay.get("governance_record_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(governance_id not in governance_ids for governance_id in replay_governance_ids):
+            breaks.append("replay_stale_governance_lineage")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -2701,6 +3293,12 @@ class WorkflowRuntimeSessionManager:
                         "branch_conflict_unrelated_branches",
                         "reconciliation_missing_rollback_retry_link",
                         "replay_stale_mutation_lineage",
+                        "policy_decision_target_missing",
+                        "authority_lineage_mismatch",
+                        "approval_without_review_parent",
+                        "resume_without_approval_parent",
+                        "constitution_enforcement_unrelated_target",
+                        "replay_stale_governance_lineage",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -2713,6 +3311,11 @@ class WorkflowRuntimeSessionManager:
                 "rollback_count": len(rollback_ids),
                 "conflict_count": len(conflict_ids),
                 "reconciliation_count": len(graph_reconciliations),
+                "governance_record_count": len(governance_ids),
+                "policy_decision_count": len(policy_ids),
+                "review_count": len(review_ids),
+                "approval_count": len(approval_ids),
+                "constitution_enforcement_count": len(constitution_enforcements),
             },
         }
 

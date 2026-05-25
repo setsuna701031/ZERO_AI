@@ -1133,3 +1133,173 @@ def test_workflow_runtime_mutation_transaction_rollback_graph_continuity() -> No
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_stale_mutation_lineage" in broken_replay_summary["breaks"]
+
+
+def test_workflow_runtime_governance_state_authority_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-governance", "steps": []}
+    state = {"task_id": "wf-governance", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent={"task_id": "wf-governance", "goal": "govern mutation"}, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    session = manager.create_execution_graph_node(task=task, state=state, node={"node_id": "root-gov", "branch_id": "main"}, current_tick=2)
+    state["workflow_runtime_session"] = session
+    session = manager.create_branch_fork(task=task, state=state, branch={"branch_id": "branch-gov", "parent_branch_id": "main", "fork_node_id": "root-gov"}, current_tick=3)
+    state["workflow_runtime_session"] = session
+    state["current_branch_id"] = "branch-gov"
+    for tick, node in (
+        (4, {"node_id": "exec-gov", "branch_id": "branch-gov", "parent_node_id": "root-gov"}),
+        (5, {"node_id": "mut-gov", "branch_id": "branch-gov", "parent_node_id": "exec-gov"}),
+        (6, {"node_id": "verify-gov", "branch_id": "branch-gov", "parent_node_id": "mut-gov", "phase": "verify"}),
+        (7, {"node_id": "rollback-gov", "branch_id": "branch-gov", "parent_node_id": "verify-gov", "phase": "rollback_retry"}),
+        (8, {"node_id": "resume-gov", "branch_id": "branch-gov", "parent_node_id": "rollback-gov", "phase": "rollback_retry"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    session = manager.attach_mutation_transaction(
+        task=task,
+        state=state,
+        mutation={"mutation_transaction_id": "mutation-gov", "node_id": "mut-gov", "branch_id": "branch-gov", "payload": {"path": "guarded.py"}},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_mutation_verify_record(
+        task=task,
+        state=state,
+        verify={"mutation_verify_id": "verify-gov-mutation", "mutation_transaction_id": "mutation-gov", "verify_node_id": "verify-gov", "branch_id": "branch-gov", "ok": False},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_rollback_graph_node(
+        task=task,
+        state=state,
+        rollback={"rollback_id": "rollback-gov-mutation", "rollback_node_id": "rollback-gov", "mutation_transaction_id": "mutation-gov", "mutation_verify_id": "verify-gov-mutation", "branch_id": "branch-gov", "retry_node_id": "resume-gov"},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_recovery_dependency(
+        task=task,
+        state=state,
+        dependency={"recovery_dependency_id": "dep-gov-rollback", "source_node_id": "rollback-gov", "target_node_id": "resume-gov", "branch_id": "branch-gov"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "policy-gov", "target_node_id": "mut-gov", "mutation_transaction_id": "mutation-gov", "branch_id": "branch-gov", "policy_id": "mutation-policy", "allowed": False, "decision": "review_required"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"authority_id": "authority-gov", "target_node_id": "mut-gov", "mutation_transaction_id": "mutation-gov", "branch_id": "branch-gov", "execution_owner": "TaskRunner", "authority_source": "StepExecutor"},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_review_required_record(
+        task=task,
+        state=state,
+        review={"review_id": "review-gov", "policy_decision_id": "policy-gov", "target_node_id": "mut-gov", "mutation_transaction_id": "mutation-gov", "branch_id": "branch-gov"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_approval_record(
+        task=task,
+        state=state,
+        approval={"approval_id": "approval-gov", "review_id": "review-gov", "policy_decision_id": "policy-gov", "target_node_id": "mut-gov", "mutation_transaction_id": "mutation-gov", "branch_id": "branch-gov"},
+        current_tick=16,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_governance_resume_record(
+        task=task,
+        state=state,
+        resume={"governance_resume_id": "resume-gov-record", "approval_id": "approval-gov", "review_id": "review-gov", "resumed_node_id": "resume-gov", "mutation_transaction_id": "mutation-gov", "branch_id": "branch-gov"},
+        current_tick=17,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitution_enforcement_record(
+        task=task,
+        state=state,
+        enforcement={"enforcement_id": "enforcement-gov", "target_node_id": "mut-gov", "mutation_transaction_id": "mutation-gov", "branch_id": "branch-gov", "rule_id": "execution_constitution"},
+        current_tick=18,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["governance_record_count"] == 6
+    assert session["lineage"]["governance_state_graph"]["policy_decisions"]
+    assert session["lineage"]["governance_state_graph"]["authority"]
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "branch-gov",
+        "continued_branch_id": "branch-gov",
+        "mutation_transaction_ids": ["mutation-gov"],
+        "rollback_ids": ["rollback-gov-mutation"],
+        "governance_record_ids": ["policy-gov", "authority-gov", "review-gov", "approval-gov", "resume-gov-record", "enforcement-gov"],
+    }
+    replay = build_replayable_workflow_runtime_session(task=task, runtime_state={**state, "workflow_runtime_session": session})
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    assert replay_session["lineage"]["replay_continuation"]["governance_record_ids"][-1] == "enforcement-gov"
+    json.dumps(replay_session, sort_keys=True, default=str)
+
+    broken_policy = dict(session)
+    broken_policy["lineage"] = dict(session["lineage"])
+    broken_policy["lineage"]["governance_state_graph"] = dict(session["lineage"]["governance_state_graph"])
+    broken_policy["lineage"]["governance_state_graph"]["policy_decisions"] = [dict(item) for item in session["lineage"]["governance_state_graph"]["policy_decisions"]]
+    broken_policy["lineage"]["governance_state_graph"]["policy_decisions"][0]["target_node_id"] = "missing-node"
+    broken_policy_summary = manager.continuity_summary(broken_policy)
+    assert broken_policy_summary["ok"] is False
+    assert "policy_decision_target_missing" in broken_policy_summary["breaks"]
+
+    broken_authority = dict(session)
+    broken_authority["lineage"] = dict(session["lineage"])
+    broken_authority["lineage"]["governance_state_graph"] = dict(session["lineage"]["governance_state_graph"])
+    broken_authority["lineage"]["governance_state_graph"]["authority"] = [dict(item) for item in session["lineage"]["governance_state_graph"]["authority"]]
+    broken_authority["lineage"]["governance_state_graph"]["authority"][0]["session_id"] = "wrong-session"
+    broken_authority_summary = manager.continuity_summary(broken_authority)
+    assert broken_authority_summary["ok"] is False
+    assert "authority_lineage_mismatch" in broken_authority_summary["breaks"]
+
+    broken_approval = dict(session)
+    broken_approval["lineage"] = dict(session["lineage"])
+    broken_approval["lineage"]["governance_state_graph"] = dict(session["lineage"]["governance_state_graph"])
+    broken_approval["lineage"]["governance_state_graph"]["approvals"] = [dict(item) for item in session["lineage"]["governance_state_graph"]["approvals"]]
+    broken_approval["lineage"]["governance_state_graph"]["approvals"][0]["review_id"] = "missing-review"
+    broken_approval_summary = manager.continuity_summary(broken_approval)
+    assert broken_approval_summary["ok"] is False
+    assert "approval_without_review_parent" in broken_approval_summary["breaks"]
+
+    broken_resume = dict(session)
+    broken_resume["lineage"] = dict(session["lineage"])
+    broken_resume["lineage"]["governance_state_graph"] = dict(session["lineage"]["governance_state_graph"])
+    broken_resume["lineage"]["governance_state_graph"]["resumes"] = [dict(item) for item in session["lineage"]["governance_state_graph"]["resumes"]]
+    broken_resume["lineage"]["governance_state_graph"]["resumes"][0]["approval_id"] = "missing-approval"
+    broken_resume_summary = manager.continuity_summary(broken_resume)
+    assert broken_resume_summary["ok"] is False
+    assert "resume_without_approval_parent" in broken_resume_summary["breaks"]
+
+    broken_enforcement = dict(session)
+    broken_enforcement["lineage"] = dict(session["lineage"])
+    broken_enforcement["lineage"]["governance_state_graph"] = dict(session["lineage"]["governance_state_graph"])
+    broken_enforcement["lineage"]["governance_state_graph"]["constitution_enforcements"] = [dict(item) for item in session["lineage"]["governance_state_graph"]["constitution_enforcements"]]
+    broken_enforcement["lineage"]["governance_state_graph"]["constitution_enforcements"][0]["target_node_id"] = "missing-node"
+    broken_enforcement["lineage"]["governance_state_graph"]["constitution_enforcements"][0]["mutation_transaction_id"] = "missing-mutation"
+    broken_enforcement_summary = manager.continuity_summary(broken_enforcement)
+    assert broken_enforcement_summary["ok"] is False
+    assert "constitution_enforcement_unrelated_target" in broken_enforcement_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["governance_record_ids"] = ["stale-governance"]
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_stale_governance_lineage" in broken_replay_summary["breaks"]

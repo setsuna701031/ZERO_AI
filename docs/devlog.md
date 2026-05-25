@@ -357,3 +357,43 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 11 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Governance State Graph / Authority Continuity v1
+
+Added governance state graph and authority continuity records to the workflow
+runtime session contract.
+
+ZERO now preserves policy, authority, review, approval, blocked/resumed
+transition, and constitution enforcement lineage inside the engineering runtime
+graph:
+
+```text
+workflow session
+-> execution graph and mutation/rollback graph
+-> policy decision on execution/mutation target
+-> authority continuity record
+-> review-required blocked transition
+-> approval record
+-> resumed governance transition
+-> constitution enforcement record
+-> deterministic governance replay validation
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Runtime replay only
+summarizes deterministic governance references for replay continuation; it does
+not execute actions, create mutation shortcuts, or take ownership from
+Scheduler. Continuity summary now detects policy decisions without target nodes,
+authority workflow/session mismatches, approvals without review parents,
+resumes without approval parents, constitution enforcement records pointing to
+unrelated execution/mutation targets, and replay graphs that reference stale
+governance lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 12 passed
+```
