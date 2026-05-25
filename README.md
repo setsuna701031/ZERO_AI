@@ -180,3 +180,41 @@ Expected result:
 ```text
 6 passed
 ```
+
+---
+
+## AER Workflow Runtime Use Path v1
+
+ZERO now has a contract-proven practical engineering workflow use path:
+
+```text
+intent/task
+-> plan
+-> execute step
+-> verify result
+-> detect failure
+-> plan repair
+-> inject repair
+-> retry/continue
+-> replay/continuity summary
+```
+
+The use path is deterministic and contract-level. `WorkflowRuntimeSession`
+records the persistent workflow identity and lineage, `TaskRunner` remains the
+workflow coordination and authority-propagation layer, `StepExecutor` remains
+the governed execution endpoint, `RepairPlanner` only plans deterministic repair
+actions, `RepairStepInjector` only injects repair steps with parent ancestry,
+and `RuntimeReplayEngine` points replay continuation back to the original
+workflow session.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+7 passed
+```

@@ -187,6 +187,251 @@ class WorkflowRuntimeSessionManager:
         session = self.build_session(task=task, state=state)
         return session.to_dict()
 
+    def start_from_intent(
+        self,
+        *,
+        intent: Dict[str, Any],
+        task: Dict[str, Any] | None = None,
+        state: Dict[str, Any] | None = None,
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        resolved_task = copy.deepcopy(task if isinstance(task, dict) else {})
+        resolved_state = copy.deepcopy(state if isinstance(state, dict) else {})
+        if isinstance(intent, dict):
+            for key in ("task_id", "id", "goal", "name"):
+                if key in intent and key not in resolved_task:
+                    resolved_task[key] = copy.deepcopy(intent[key])
+        return self.append_workflow_record(
+            task=resolved_task,
+            state=resolved_state,
+            phase="planner",
+            event_type="intent",
+            record=intent if isinstance(intent, dict) else {"intent": intent},
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def attach_plan_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        plan: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="planner",
+            event_type="plan",
+            record=plan,
+            current_tick=current_tick,
+            ok=bool(plan.get("ok", True)) if isinstance(plan, dict) else True,
+        )
+
+    def attach_execution_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Dict[str, Any],
+        result: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        return self.append_step_result(
+            task=task,
+            state=state,
+            step=step,
+            step_result=result,
+            current_tick=current_tick,
+        )
+
+    def attach_verify_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        verify_step: Dict[str, Any],
+        verify_result: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        result = copy.deepcopy(verify_result if isinstance(verify_result, dict) else {})
+        result.setdefault("verification_classification", self.classify_verify_result(result))
+        return self.append_step_result(
+            task=task,
+            state=state,
+            step=verify_step,
+            step_result=result,
+            current_tick=current_tick,
+        )
+
+    def attach_repair_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        repair_step: Dict[str, Any],
+        repair_result: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        return self.append_step_result(
+            task=task,
+            state=state,
+            step=repair_step,
+            step_result=repair_result,
+            current_tick=current_tick,
+        )
+
+    def attach_retry_continuation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        retry_record: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = copy.deepcopy(retry_record if isinstance(retry_record, dict) else {})
+        step = record.get("step") if isinstance(record.get("step"), dict) else {"type": "retry"}
+        result = record.get("result") if isinstance(record.get("result"), dict) else record
+        result = copy.deepcopy(result)
+        result.setdefault("action", "retry")
+        result.setdefault("ok", True)
+        return self.append_step_result(
+            task=task,
+            state=state,
+            step=step,
+            step_result=result,
+            current_tick=current_tick,
+        )
+
+    def append_workflow_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        phase: str,
+        event_type: str,
+        record: Dict[str, Any],
+        current_tick: int = 0,
+        ok: bool = True,
+    ) -> Dict[str, Any]:
+        session_dict = self.initial_state(task=task, state=state)
+        events = self._events_from_any(session_dict.get("events", []))
+        event = self.event_from_workflow_record(
+            task=task,
+            state=state,
+            phase=phase,
+            event_type=event_type,
+            record=record,
+            current_tick=current_tick,
+            ok=ok,
+        )
+        existing_ids = {item.event_id for item in events}
+        existing_keys = {self._event_dedupe_key(item) for item in events}
+        if event.event_id not in existing_ids and self._event_dedupe_key(event) not in existing_keys:
+            events.append(event)
+        return self.build_session(task=task, state=state, events=events).to_dict()
+
+    def event_from_workflow_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        phase: str,
+        event_type: str,
+        record: Dict[str, Any],
+        current_tick: int,
+        ok: bool = True,
+    ) -> WorkflowRuntimeEvent:
+        workflow_id = self.workflow_id_for(task, state)
+        session_id = self.session_id_for(task, state)
+        resolved_phase = phase if phase in WORKFLOW_SESSION_PHASES else infer_phase(result=record, action=event_type)
+        status = "completed" if ok else "failed"
+        step_index = safe_int(record.get("step_index") if isinstance(record, dict) else 0, 0)
+        step = record.get("step") if isinstance(record, dict) and isinstance(record.get("step"), dict) else {"type": event_type}
+        result = record.get("result") if isinstance(record, dict) and isinstance(record.get("result"), dict) else record
+        result = copy.deepcopy(result if isinstance(result, dict) else {"value": result})
+        result.setdefault("ok", ok)
+        result.setdefault("step_index", step_index)
+        result.setdefault("action", event_type)
+        lineage = self._event_lineage(
+            workflow_id=workflow_id,
+            session_id=session_id,
+            task=task,
+            state=state,
+            step=step,
+            step_result=result,
+            phase=resolved_phase,
+            step_index=step_index,
+        )
+        payload = {
+            "task_id": task_id_from(task, state),
+            "record": _json_safe(record if isinstance(record, dict) else {}),
+            "step": _json_safe(step),
+            "result": _json_safe(result),
+            "lineage": copy.deepcopy(lineage),
+        }
+        payload_hash = stable_hash(payload)
+        event_id = "wfse_" + stable_hash(
+            {
+                "session": session_id,
+                "tick": current_tick,
+                "event_type": event_type,
+                "phase": resolved_phase,
+                "payload_hash": payload_hash,
+            }
+        )[:16]
+        lineage["event_id"] = event_id
+        return WorkflowRuntimeEvent(
+            event_id=event_id,
+            workflow_id=workflow_id,
+            session_id=session_id,
+            phase=resolved_phase,
+            event_type=event_type,
+            status=status,
+            tick=safe_int(current_tick, 0),
+            step_index=step_index,
+            step_type=step_type_from(step, result),
+            ok=ok,
+            message=safe_text(result.get("message") or result.get("summary") or event_type)[:500],
+            payload_hash=payload_hash,
+            payload=payload,
+            lineage=lineage,
+        )
+
+    def classify_verify_result(self, verify_result: Dict[str, Any]) -> Dict[str, Any]:
+        result = verify_result if isinstance(verify_result, dict) else {}
+        ok = bool(result.get("ok", False))
+        error = result.get("error")
+        text = " ".join(
+            str(value or "")
+            for value in (
+                result.get("message"),
+                error.get("message") if isinstance(error, dict) else error,
+                result.get("stderr"),
+                result.get("stdout"),
+                result.get("final_answer"),
+            )
+        ).lower()
+        if ok:
+            classification = "verify_passed"
+            repair_required = False
+        elif "syntaxerror" in text or "invalid syntax" in text or "py_compile" in text:
+            classification = "python_syntax_error"
+            repair_required = True
+        elif "assert" in text or "expected" in text or "mismatch" in text:
+            classification = "verification_mismatch"
+            repair_required = True
+        else:
+            classification = "verification_failed"
+            repair_required = True
+        return {
+            "schema": "zero.workflow_runtime_session.verify_classification.v1",
+            "ok": ok,
+            "classification": classification,
+            "repair_required": repair_required,
+        }
+
     def event_from_step_result(
         self,
         *,
@@ -442,6 +687,7 @@ class WorkflowRuntimeSessionManager:
                 step=step,
                 step_result=step_result,
                 parent_event=parent_event,
+                events=events,
             )
         if source_session_id:
             lineage["replay_continuation"] = {
@@ -554,6 +800,7 @@ class WorkflowRuntimeSessionManager:
         step: Dict[str, Any] | None,
         step_result: Dict[str, Any],
         parent_event: WorkflowRuntimeEvent | None,
+        events: List[WorkflowRuntimeEvent] | None = None,
     ) -> Dict[str, Any]:
         repair_context = state.get("repair_context") if isinstance(state, dict) else {}
         if not isinstance(repair_context, dict):
@@ -570,11 +817,20 @@ class WorkflowRuntimeSessionManager:
             "parent_event_id": parent_event.event_id if parent_event else "",
             "step": step,
         }
+        repair_ancestry = {}
+        for event in reversed(events or []):
+            if event.phase != "repair" or not isinstance(event.lineage, dict):
+                continue
+            candidate = event.lineage.get("repair_ancestry")
+            if isinstance(candidate, dict):
+                repair_ancestry = copy.deepcopy(candidate)
+                break
         return {
             "schema": "zero.workflow_runtime_session.retry_chain.v1",
             "retry_chain_id": "wfr_" + stable_hash(chain_seed)[:16],
             "retry_attempt": retry_count,
             "parent_event_id": parent_event.event_id if parent_event else "",
+            "repair_ancestry": repair_ancestry,
             "action": safe_text(step_result.get("action") if isinstance(step_result, dict) else ""),
         }
 

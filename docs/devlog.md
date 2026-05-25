@@ -162,3 +162,47 @@ Replay bridge remains read-only.
 
 This is the first explicit package turning the existing AER runtime pieces into a
 single replayable Autonomous Engineering Workflow Runtime session envelope.
+
+---
+
+## 2026-05-25 - AER Workflow Runtime Use Path v1
+
+Added a deterministic, contract-level practical engineering workflow use path:
+
+```text
+intent/task
+-> plan
+-> execute step
+-> verify result
+-> detect failure
+-> plan repair
+-> inject repair
+-> retry/continue
+-> replay/continuity summary
+```
+
+ZERO now proves this path without UI changes or tool expansion. The workflow
+session helpers attach intent, plan, execution, verify, repair, and
+retry/continuation records to the same stable `workflow_id` and `session_id`.
+Verify failures are classified, deterministic repair plans can be produced from
+the failed record, injected repair steps preserve parent failed step/result
+ancestry, and replay continuation points back to the original workflow session.
+
+Boundary decision:
+
+```text
+Scheduler remains orchestration only.
+TaskRunner remains workflow coordination and authority propagation.
+StepExecutor remains the governed execution endpoint.
+WorkflowRuntimeSession owns persistent identity and lineage records.
+RepairPlanner plans only.
+RepairStepInjector injects only.
+RuntimeReplayEngine preserves replay/session integrity.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 7 passed
+```

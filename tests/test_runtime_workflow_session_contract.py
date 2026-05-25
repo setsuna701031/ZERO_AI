@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+
 from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager, build_workflow_runtime_session
 from core.runtime.runtime_replay_engine import build_replayable_workflow_runtime_session
 from core.runtime.repair_step_injector import build_repair_injection
+from core.runtime.repair_planner import plan_repair
 
 
 def test_workflow_session_records_full_phase_chain_from_execution_log() -> None:
@@ -184,3 +187,161 @@ def test_continuity_summary_reports_broken_source_or_parent_linkage() -> None:
     broken_parent["events"][0]["lineage"] = dict(broken_parent["events"][0]["lineage"])
     broken_parent["events"][0]["lineage"]["parent_event_id"] = "missing-parent-event"
     assert manager.continuity_summary(broken_parent)["ok"] is False
+
+
+def test_workflow_runtime_use_path_intent_to_replay_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    intent = {
+        "task_id": "wf-use-path",
+        "goal": "repair a Python syntax failure",
+    }
+    task = {
+        "task_id": "wf-use-path",
+        "goal": intent["goal"],
+        "steps": [],
+    }
+    state = {
+        "task_id": "wf-use-path",
+        "status": "running",
+        "steps": [],
+    }
+
+    session = manager.start_from_intent(intent=intent, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    workflow_id = session["workflow_id"]
+    session_id = session["session_id"]
+
+    plan = {
+        "ok": True,
+        "steps": [
+            {"id": "execute", "type": "command", "command": "python -m py_compile bad.py"},
+            {"id": "verify", "type": "verify_python_syntax", "path": "bad.py"},
+        ],
+    }
+    task["steps"] = plan["steps"]
+    state["steps"] = plan["steps"]
+    session = manager.attach_plan_record(task=task, state=state, plan=plan, current_tick=2)
+    state["workflow_runtime_session"] = session
+
+    assert session["workflow_id"] == workflow_id
+    assert session["session_id"] == session_id
+    assert session["events"][-1]["event_type"] == "plan"
+
+    execute_step = plan["steps"][0]
+    execute_result = {
+        "ok": True,
+        "step_index": 0,
+        "message": "execution completed",
+    }
+    session = manager.attach_execution_record(
+        task=task,
+        state=state,
+        step=execute_step,
+        result=execute_result,
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["workflow_id"] == workflow_id
+    assert session["session_id"] == session_id
+    assert session["phases"]["execution"]["seen"] is True
+
+    verify_step = plan["steps"][1]
+    verify_result = {
+        "ok": False,
+        "step_index": 1,
+        "command": "python -m py_compile bad.py",
+        "stderr": "SyntaxError: invalid syntax",
+        "source_text": "def add(a, b):\n    return a +\n",
+        "error": {"message": "SyntaxError: invalid syntax"},
+    }
+    session = manager.attach_verify_record(
+        task=task,
+        state=state,
+        verify_step=verify_step,
+        verify_result=verify_result,
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+    state["repair_context"] = {
+        "original_failed_step": verify_step,
+        "original_failed_result": session["events"][-1]["payload"]["result"],
+    }
+
+    classification = session["events"][-1]["payload"]["result"]["verification_classification"]
+    assert classification["classification"] == "python_syntax_error"
+    assert classification["repair_required"] is True
+
+    repair_plan = plan_repair(
+        step_result=verify_result,
+        source_text=verify_result["source_text"],
+        source_path="bad.py",
+    )
+    assert repair_plan["ok"] is True
+    assert repair_plan["classification"] == "python_syntax_error"
+
+    injection = build_repair_injection(
+        repair_plan=repair_plan,
+        task=task,
+        failed_step=verify_step,
+        failed_result=verify_result,
+    )
+    assert injection["ok"] is True
+    repair_step = injection["steps"][0]
+    assert repair_step["repair_ancestry"]["parent_failed_step_ref"]
+    assert repair_step["repair_ancestry"]["parent_failed_result_ref"]
+
+    state["steps"] = [*state["steps"], *injection["steps"]]
+    task["steps"] = state["steps"]
+    session = manager.attach_repair_record(
+        task=task,
+        state=state,
+        repair_step=repair_step,
+        repair_result={
+            "ok": True,
+            "step_index": 2,
+            "repair_ancestry": repair_step["repair_ancestry"],
+        },
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+
+    repair_event = session["events"][-1]
+    assert repair_event["workflow_id"] == workflow_id
+    assert repair_event["session_id"] == session_id
+    assert repair_event["lineage"]["repair_ancestry"]["parent_failed_step_ref"]
+
+    session = manager.attach_retry_continuation_record(
+        task=task,
+        state=state,
+        retry_record={
+            "step": {"id": "retry", "type": "retry"},
+            "result": {"ok": True, "step_index": 3, "action": "retry", "retry_count": 1},
+        },
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+
+    retry_chain = session["lineage"]["retry_chain"][-1]
+    assert session["workflow_id"] == workflow_id
+    assert session["session_id"] == session_id
+    assert retry_chain["repair_ancestry"]["parent_failed_step_ref"]
+
+    replay = build_replayable_workflow_runtime_session(
+        task=task,
+        runtime_state={**state, "workflow_runtime_session": session},
+    )
+    assert replay["source_session_id"] == session_id
+    assert replay["replay_continuation"]["source_session_id"] == session_id
+    assert replay["workflow_id"] == workflow_id
+    assert replay["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["ok"] is True
+
+    json.dumps(session, sort_keys=True, default=str)
+
+    broken = dict(session)
+    broken["events"] = [dict(event) for event in session["events"]]
+    broken["events"][1]["workflow_id"] = "wrong-workflow"
+    broken_summary = manager.continuity_summary(broken)
+    assert broken_summary["ok"] is False
+    assert "event_workflow_id_mismatch" in broken_summary["breaks"]
