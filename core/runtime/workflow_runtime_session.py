@@ -2215,6 +2215,302 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_runtime_self_observability_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        observability: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_runtime_self_observability_record(task=task, state=state, observability=observability, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="runtime_self_observability",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_runtime_self_observability_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        observability: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(observability if isinstance(observability, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "signal": safe_text(payload.get("signal")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.runtime_self_observability.v1",
+            "observability_id": safe_text(payload.get("observability_id")) or "wfobs_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "signal": safe_text(payload.get("signal")),
+            "severity": safe_text(payload.get("severity")) or "info",
+            "payload_hash": safe_text(payload.get("payload_hash")) or stable_hash(payload.get("payload", {})),
+            "created_at": utc_now(),
+        }
+
+    def attach_constitutional_audit_lineage_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        audit: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_constitutional_audit_lineage_record(task=task, state=state, audit=audit, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="constitutional_audit_lineage",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_constitutional_audit_lineage_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        audit: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(audit if isinstance(audit, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "rule_id": safe_text(payload.get("rule_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.constitutional_audit_lineage.v1",
+            "audit_id": safe_text(payload.get("audit_id")) or "wfaud_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "rule_id": safe_text(payload.get("rule_id")) or "runtime_constitution",
+            "finding": safe_text(payload.get("finding")),
+            "created_at": utc_now(),
+        }
+
+    def attach_self_diagnosis_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        diagnosis: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_self_diagnosis_record(task=task, state=state, diagnosis=diagnosis, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="self_diagnosis",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_self_diagnosis_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        diagnosis: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(diagnosis if isinstance(diagnosis, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "audit_id": safe_text(payload.get("audit_id")),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.self_diagnosis.v1",
+            "diagnosis_id": safe_text(payload.get("diagnosis_id")) or "wfdiag_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "audit_id": safe_text(payload.get("audit_id")),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "target_node_id": safe_text(payload.get("target_node_id")),
+            "diagnosis": safe_text(payload.get("diagnosis")),
+            "created_at": utc_now(),
+        }
+
+    def attach_self_repair_governance_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        repair: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_self_repair_governance_record(task=task, state=state, repair=repair, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="self_repair_governance",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_self_repair_governance_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        repair: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(repair if isinstance(repair, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "diagnosis_id": safe_text(payload.get("diagnosis_id")),
+            "authority_id": safe_text(payload.get("authority_id")),
+            "approval_id": safe_text(payload.get("approval_id")),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.self_repair_governance.v1",
+            "self_repair_id": safe_text(payload.get("self_repair_id")) or "wfsrg_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "diagnosis_id": safe_text(payload.get("diagnosis_id")),
+            "audit_id": safe_text(payload.get("audit_id")),
+            "observability_id": safe_text(payload.get("observability_id")),
+            "authority_id": safe_text(payload.get("authority_id")),
+            "approval_id": safe_text(payload.get("approval_id")),
+            "consensus_id": safe_text(payload.get("consensus_id")),
+            "repair_action": safe_text(payload.get("repair_action")) or "governed_self_repair",
+            "created_at": utc_now(),
+        }
+
+    def attach_self_healing_replay_recovery_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_self_healing_replay_recovery_record(task=task, state=state, recovery=recovery, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="self_healing_replay_recovery",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_self_healing_replay_recovery_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        recovery: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(recovery if isinstance(recovery, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "self_repair_id": safe_text(payload.get("self_repair_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.self_healing_replay_recovery.v1",
+            "self_healing_recovery_id": safe_text(payload.get("self_healing_recovery_id")) or "wfshr_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "self_repair_id": safe_text(payload.get("self_repair_id")),
+            "diagnosis_id": safe_text(payload.get("diagnosis_id")),
+            "replay_reconciliation_id": safe_text(payload.get("replay_reconciliation_id")),
+            "recovery_action": safe_text(payload.get("recovery_action")) or "self_healing_replay_recovery",
+            "created_at": utc_now(),
+        }
+
+    def attach_adaptive_governance_stabilization_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        stabilization: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_adaptive_governance_stabilization_record(task=task, state=state, stabilization=stabilization, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="adaptive_governance_stabilization",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_adaptive_governance_stabilization_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        stabilization: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(stabilization if isinstance(stabilization, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "self_healing_recovery_id": safe_text(payload.get("self_healing_recovery_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.adaptive_governance_stabilization.v1",
+            "stabilization_id": safe_text(payload.get("stabilization_id")) or "wfags_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "self_healing_recovery_id": safe_text(payload.get("self_healing_recovery_id")),
+            "self_repair_id": safe_text(payload.get("self_repair_id")),
+            "stabilization": safe_text(payload.get("stabilization")) or "adaptive_governance_stabilized",
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -2960,6 +3256,68 @@ class WorkflowRuntimeSessionManager:
                 "federation_id": safe_text(step_result.get("federation_id")),
                 "decision": safe_text(step_result.get("decision")),
             }
+        if action == "runtime_self_observability":
+            lineage["runtime_self_observability"] = {
+                "observability_id": safe_text(step_result.get("observability_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "signal": safe_text(step_result.get("signal")),
+                "severity": safe_text(step_result.get("severity")),
+                "payload_hash": safe_text(step_result.get("payload_hash")),
+            }
+        if action == "constitutional_audit_lineage":
+            lineage["constitutional_audit_lineage"] = {
+                "audit_id": safe_text(step_result.get("audit_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "observability_id": safe_text(step_result.get("observability_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "rule_id": safe_text(step_result.get("rule_id")),
+                "finding": safe_text(step_result.get("finding")),
+            }
+        if action == "self_diagnosis":
+            lineage["self_diagnosis"] = {
+                "diagnosis_id": safe_text(step_result.get("diagnosis_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "audit_id": safe_text(step_result.get("audit_id")),
+                "observability_id": safe_text(step_result.get("observability_id")),
+                "target_node_id": safe_text(step_result.get("target_node_id")),
+                "diagnosis": safe_text(step_result.get("diagnosis")),
+            }
+        if action == "self_repair_governance":
+            lineage["self_repair_governance"] = {
+                "self_repair_id": safe_text(step_result.get("self_repair_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "diagnosis_id": safe_text(step_result.get("diagnosis_id")),
+                "audit_id": safe_text(step_result.get("audit_id")),
+                "observability_id": safe_text(step_result.get("observability_id")),
+                "authority_id": safe_text(step_result.get("authority_id")),
+                "approval_id": safe_text(step_result.get("approval_id")),
+                "consensus_id": safe_text(step_result.get("consensus_id")),
+                "repair_action": safe_text(step_result.get("repair_action")),
+            }
+        if action == "self_healing_replay_recovery":
+            lineage["self_healing_replay_recovery"] = {
+                "self_healing_recovery_id": safe_text(step_result.get("self_healing_recovery_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "self_repair_id": safe_text(step_result.get("self_repair_id")),
+                "diagnosis_id": safe_text(step_result.get("diagnosis_id")),
+                "replay_reconciliation_id": safe_text(step_result.get("replay_reconciliation_id")),
+                "recovery_action": safe_text(step_result.get("recovery_action")),
+            }
+        if action == "adaptive_governance_stabilization":
+            lineage["adaptive_governance_stabilization"] = {
+                "stabilization_id": safe_text(step_result.get("stabilization_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "self_healing_recovery_id": safe_text(step_result.get("self_healing_recovery_id")),
+                "self_repair_id": safe_text(step_result.get("self_repair_id")),
+                "stabilization": safe_text(step_result.get("stabilization")),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -2989,6 +3347,7 @@ class WorkflowRuntimeSessionManager:
                 "worker_ids": copy.deepcopy(replay_input.get("worker_ids") if isinstance(replay_input.get("worker_ids"), list) else []),
                 "distributed_execution_ids": copy.deepcopy(replay_input.get("distributed_execution_ids") if isinstance(replay_input.get("distributed_execution_ids"), list) else []),
                 "consensus_ids": copy.deepcopy(replay_input.get("consensus_ids") if isinstance(replay_input.get("consensus_ids"), list) else []),
+                "self_healing_recovery_ids": copy.deepcopy(replay_input.get("self_healing_recovery_ids") if isinstance(replay_input.get("self_healing_recovery_ids"), list) else []),
             }
         return lineage
 
@@ -3197,6 +3556,36 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("federated_governance_decision"), dict)
         ]
+        self_observability_records = [
+            copy.deepcopy(event.lineage.get("runtime_self_observability"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("runtime_self_observability"), dict)
+        ]
+        constitutional_audits = [
+            copy.deepcopy(event.lineage.get("constitutional_audit_lineage"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("constitutional_audit_lineage"), dict)
+        ]
+        self_diagnoses = [
+            copy.deepcopy(event.lineage.get("self_diagnosis"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("self_diagnosis"), dict)
+        ]
+        self_repair_governance = [
+            copy.deepcopy(event.lineage.get("self_repair_governance"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("self_repair_governance"), dict)
+        ]
+        self_healing_recoveries = [
+            copy.deepcopy(event.lineage.get("self_healing_replay_recovery"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("self_healing_replay_recovery"), dict)
+        ]
+        adaptive_stabilizations = [
+            copy.deepcopy(event.lineage.get("adaptive_governance_stabilization"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("adaptive_governance_stabilization"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -3267,6 +3656,15 @@ class WorkflowRuntimeSessionManager:
                 "replay_reconciliations": replay_reconciliations[-100:],
                 "governance_decisions": federated_governance_decisions[-100:],
             },
+            "self_healing_governance_graph": {
+                "schema": "zero.workflow_runtime_session.self_healing_governance_graph.v1",
+                "observability": self_observability_records[-100:],
+                "audits": constitutional_audits[-100:],
+                "diagnoses": self_diagnoses[-100:],
+                "self_repairs": self_repair_governance[-100:],
+                "recoveries": self_healing_recoveries[-100:],
+                "stabilizations": adaptive_stabilizations[-100:],
+            },
         }
         if source_session_id:
             replay_input = self._replay_continuation_input(task=task, state=state, result=result)
@@ -3328,6 +3726,17 @@ class WorkflowRuntimeSessionManager:
                     for item in federated_consensus[-20:]
                     if isinstance(item, dict) and safe_text(item.get("consensus_id"))
                 ]
+            replay_self_healing_recovery_ids = [
+                safe_text(item)
+                for item in (replay_input.get("self_healing_recovery_ids") if isinstance(replay_input.get("self_healing_recovery_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_self_healing_recovery_ids:
+                replay_self_healing_recovery_ids = [
+                    safe_text(item.get("self_healing_recovery_id"))
+                    for item in self_healing_recoveries[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("self_healing_recovery_id"))
+                ]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -3347,6 +3756,7 @@ class WorkflowRuntimeSessionManager:
                 "worker_ids": replay_worker_ids,
                 "distributed_execution_ids": replay_execution_ids,
                 "consensus_ids": replay_consensus_ids,
+                "self_healing_recovery_ids": replay_self_healing_recovery_ids,
             }
         return lineage
 
@@ -3737,6 +4147,12 @@ class WorkflowRuntimeSessionManager:
         federated_consensus: List[Dict[str, Any]] = []
         replay_reconciliations: List[Dict[str, Any]] = []
         federated_governance_decisions: List[Dict[str, Any]] = []
+        self_observability_records: List[Dict[str, Any]] = []
+        constitutional_audits: List[Dict[str, Any]] = []
+        self_diagnoses: List[Dict[str, Any]] = []
+        self_repair_governance: List[Dict[str, Any]] = []
+        self_healing_recoveries: List[Dict[str, Any]] = []
+        adaptive_stabilizations: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -3931,6 +4347,24 @@ class WorkflowRuntimeSessionManager:
             governance_decision = event_lineage.get("federated_governance_decision") if isinstance(event_lineage.get("federated_governance_decision"), dict) else {}
             if governance_decision:
                 federated_governance_decisions.append(copy.deepcopy(governance_decision))
+            observability = event_lineage.get("runtime_self_observability") if isinstance(event_lineage.get("runtime_self_observability"), dict) else {}
+            if observability:
+                self_observability_records.append(copy.deepcopy(observability))
+            audit = event_lineage.get("constitutional_audit_lineage") if isinstance(event_lineage.get("constitutional_audit_lineage"), dict) else {}
+            if audit:
+                constitutional_audits.append(copy.deepcopy(audit))
+            diagnosis = event_lineage.get("self_diagnosis") if isinstance(event_lineage.get("self_diagnosis"), dict) else {}
+            if diagnosis:
+                self_diagnoses.append(copy.deepcopy(diagnosis))
+            repair_governance = event_lineage.get("self_repair_governance") if isinstance(event_lineage.get("self_repair_governance"), dict) else {}
+            if repair_governance:
+                self_repair_governance.append(copy.deepcopy(repair_governance))
+            healing_recovery = event_lineage.get("self_healing_replay_recovery") if isinstance(event_lineage.get("self_healing_replay_recovery"), dict) else {}
+            if healing_recovery:
+                self_healing_recoveries.append(copy.deepcopy(healing_recovery))
+            stabilization = event_lineage.get("adaptive_governance_stabilization") if isinstance(event_lineage.get("adaptive_governance_stabilization"), dict) else {}
+            if stabilization:
+                adaptive_stabilizations.append(copy.deepcopy(stabilization))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -4034,6 +4468,25 @@ class WorkflowRuntimeSessionManager:
         for governance_decision in consensus_graph.get("governance_decisions") if isinstance(consensus_graph.get("governance_decisions"), list) else []:
             if isinstance(governance_decision, dict) and governance_decision not in federated_governance_decisions:
                 federated_governance_decisions.append(copy.deepcopy(governance_decision))
+        self_healing_graph = lineage.get("self_healing_governance_graph") if isinstance(lineage.get("self_healing_governance_graph"), dict) else {}
+        for observability in self_healing_graph.get("observability") if isinstance(self_healing_graph.get("observability"), list) else []:
+            if isinstance(observability, dict) and observability not in self_observability_records:
+                self_observability_records.append(copy.deepcopy(observability))
+        for audit in self_healing_graph.get("audits") if isinstance(self_healing_graph.get("audits"), list) else []:
+            if isinstance(audit, dict) and audit not in constitutional_audits:
+                constitutional_audits.append(copy.deepcopy(audit))
+        for diagnosis in self_healing_graph.get("diagnoses") if isinstance(self_healing_graph.get("diagnoses"), list) else []:
+            if isinstance(diagnosis, dict) and diagnosis not in self_diagnoses:
+                self_diagnoses.append(copy.deepcopy(diagnosis))
+        for repair_governance in self_healing_graph.get("self_repairs") if isinstance(self_healing_graph.get("self_repairs"), list) else []:
+            if isinstance(repair_governance, dict) and repair_governance not in self_repair_governance:
+                self_repair_governance.append(copy.deepcopy(repair_governance))
+        for recovery in self_healing_graph.get("recoveries") if isinstance(self_healing_graph.get("recoveries"), list) else []:
+            if isinstance(recovery, dict) and recovery not in self_healing_recoveries:
+                self_healing_recoveries.append(copy.deepcopy(recovery))
+        for stabilization in self_healing_graph.get("stabilizations") if isinstance(self_healing_graph.get("stabilizations"), list) else []:
+            if isinstance(stabilization, dict) and stabilization not in adaptive_stabilizations:
+                adaptive_stabilizations.append(copy.deepcopy(stabilization))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -4494,6 +4947,98 @@ class WorkflowRuntimeSessionManager:
             if safe_text(governance_decision.get("federation_id")) and safe_text(governance_decision.get("federation_id")) not in federation_ids:
                 breaks.append("governance_decision_unrelated_worker_lineage")
 
+        observability_ids = {
+            safe_text(observability.get("observability_id"))
+            for observability in self_observability_records
+            if safe_text(observability.get("observability_id"))
+        }
+        audit_ids = {
+            safe_text(audit.get("audit_id"))
+            for audit in constitutional_audits
+            if safe_text(audit.get("audit_id"))
+        }
+        diagnosis_ids = {
+            safe_text(diagnosis.get("diagnosis_id"))
+            for diagnosis in self_diagnoses
+            if safe_text(diagnosis.get("diagnosis_id"))
+        }
+        self_repair_ids = {
+            safe_text(repair_governance.get("self_repair_id"))
+            for repair_governance in self_repair_governance
+            if safe_text(repair_governance.get("self_repair_id"))
+        }
+        self_healing_recovery_ids = {
+            safe_text(recovery.get("self_healing_recovery_id"))
+            for recovery in self_healing_recoveries
+            if safe_text(recovery.get("self_healing_recovery_id"))
+        }
+
+        for observability in self_observability_records:
+            if safe_text(observability.get("workflow_id")) != workflow_id or safe_text(observability.get("session_id")) != session_id:
+                breaks.append("self_observability_lineage_mismatch")
+            target_node_id = safe_text(observability.get("target_node_id"))
+            if target_node_id and target_node_id not in graph_node_ids:
+                breaks.append("self_observability_lineage_mismatch")
+
+        for audit in constitutional_audits:
+            if safe_text(audit.get("workflow_id")) != workflow_id or safe_text(audit.get("session_id")) != session_id:
+                breaks.append("audit_without_observability_parent")
+            observability_id = safe_text(audit.get("observability_id"))
+            if not observability_id or observability_id not in observability_ids:
+                breaks.append("audit_without_observability_parent")
+
+        for diagnosis in self_diagnoses:
+            if safe_text(diagnosis.get("workflow_id")) != workflow_id or safe_text(diagnosis.get("session_id")) != session_id:
+                breaks.append("diagnosis_without_audit_observability_parent")
+            audit_id = safe_text(diagnosis.get("audit_id"))
+            observability_id = safe_text(diagnosis.get("observability_id"))
+            if not audit_id or audit_id not in audit_ids:
+                breaks.append("diagnosis_without_audit_observability_parent")
+            if not observability_id or observability_id not in observability_ids:
+                breaks.append("diagnosis_without_audit_observability_parent")
+
+        for repair_governance in self_repair_governance:
+            if safe_text(repair_governance.get("workflow_id")) != workflow_id or safe_text(repair_governance.get("session_id")) != session_id:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+            diagnosis_id = safe_text(repair_governance.get("diagnosis_id"))
+            audit_id = safe_text(repair_governance.get("audit_id"))
+            observability_id = safe_text(repair_governance.get("observability_id"))
+            authority_id = safe_text(repair_governance.get("authority_id"))
+            approval_id = safe_text(repair_governance.get("approval_id"))
+            consensus_id = safe_text(repair_governance.get("consensus_id"))
+            if not diagnosis_id or diagnosis_id not in diagnosis_ids:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+            if audit_id and audit_id not in audit_ids:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+            if observability_id and observability_id not in observability_ids:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+            if not authority_id or authority_id not in governance_ids:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+            if not approval_id or approval_id not in approval_ids:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+            if not consensus_id or consensus_id not in consensus_ids:
+                breaks.append("self_repair_governance_missing_authority_lineage")
+
+        for recovery in self_healing_recoveries:
+            if safe_text(recovery.get("workflow_id")) != workflow_id or safe_text(recovery.get("session_id")) != session_id:
+                breaks.append("self_healing_recovery_without_repair_parent")
+            self_repair_id = safe_text(recovery.get("self_repair_id"))
+            diagnosis_id = safe_text(recovery.get("diagnosis_id"))
+            if not self_repair_id or self_repair_id not in self_repair_ids:
+                breaks.append("self_healing_recovery_without_repair_parent")
+            if diagnosis_id and diagnosis_id not in diagnosis_ids:
+                breaks.append("self_healing_recovery_without_repair_parent")
+
+        for stabilization in adaptive_stabilizations:
+            if safe_text(stabilization.get("workflow_id")) != workflow_id or safe_text(stabilization.get("session_id")) != session_id:
+                breaks.append("stabilization_without_recovery_parent")
+            recovery_id = safe_text(stabilization.get("self_healing_recovery_id"))
+            repair_id = safe_text(stabilization.get("self_repair_id"))
+            if not recovery_id or recovery_id not in self_healing_recovery_ids:
+                breaks.append("stabilization_without_recovery_parent")
+            if repair_id and repair_id not in self_repair_ids:
+                breaks.append("stabilization_without_recovery_parent")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -4544,6 +5089,13 @@ class WorkflowRuntimeSessionManager:
         ]
         if any(consensus_id not in consensus_ids for consensus_id in replay_consensus_ids):
             breaks.append("replay_stale_consensus_lineage")
+        replay_self_healing_recovery_ids = [
+            safe_text(item)
+            for item in (replay.get("self_healing_recovery_ids") if isinstance(replay.get("self_healing_recovery_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(recovery_id not in self_healing_recovery_ids for recovery_id in replay_self_healing_recovery_ids):
+            breaks.append("replay_stale_self_healing_lineage")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -4600,6 +5152,13 @@ class WorkflowRuntimeSessionManager:
                         "replay_reconciliation_stale_consensus_lineage",
                         "governance_decision_unrelated_worker_lineage",
                         "replay_stale_consensus_lineage",
+                        "self_observability_lineage_mismatch",
+                        "audit_without_observability_parent",
+                        "diagnosis_without_audit_observability_parent",
+                        "self_repair_governance_missing_authority_lineage",
+                        "self_healing_recovery_without_repair_parent",
+                        "stabilization_without_recovery_parent",
+                        "replay_stale_self_healing_lineage",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -4628,6 +5187,12 @@ class WorkflowRuntimeSessionManager:
                 "federated_consensus_count": len(consensus_ids),
                 "replay_reconciliation_count": len(replay_reconciliations),
                 "federated_governance_decision_count": len(federated_governance_decisions),
+                "self_observability_count": len(observability_ids),
+                "constitutional_audit_count": len(audit_ids),
+                "self_diagnosis_count": len(diagnosis_ids),
+                "self_repair_governance_count": len(self_repair_ids),
+                "self_healing_recovery_count": len(self_healing_recovery_ids),
+                "adaptive_stabilization_count": len(adaptive_stabilizations),
             },
         }
 

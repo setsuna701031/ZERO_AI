@@ -1625,3 +1625,221 @@ def test_workflow_runtime_arbitration_federated_governance_consensus_continuity(
     broken_governance_summary = manager.continuity_summary(broken_governance)
     assert broken_governance_summary["ok"] is False
     assert "governance_decision_unrelated_worker_lineage" in broken_governance_summary["breaks"]
+
+
+def test_workflow_runtime_self_observability_self_healing_governance_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-self-healing", "steps": []}
+    state = {"task_id": "wf-self-healing", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent={"task_id": "wf-self-healing", "goal": "self heal governance"}, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    for tick, node in (
+        (2, {"node_id": "self-root", "branch_id": "main"}),
+        (3, {"node_id": "self-target", "branch_id": "main", "parent_node_id": "self-root"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"policy_decision_id": "self-policy", "target_node_id": "self-target", "branch_id": "main", "allowed": False, "decision": "review_required"},
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"authority_id": "self-authority", "target_node_id": "self-target", "branch_id": "main", "execution_owner": "TaskRunner"},
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_review_required_record(
+        task=task,
+        state=state,
+        review={"review_id": "self-review", "policy_decision_id": "self-policy", "target_node_id": "self-target", "branch_id": "main"},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_approval_record(
+        task=task,
+        state=state,
+        approval={"approval_id": "self-approval", "review_id": "self-review", "policy_decision_id": "self-policy", "target_node_id": "self-target", "branch_id": "main"},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+
+    for tick, worker in (
+        (8, {"worker_id": "self-worker-a", "actor_id": "self-a", "authority_scope": "governance"}),
+        (9, {"worker_id": "self-worker-b", "actor_id": "self-b", "authority_scope": "governance"}),
+    ):
+        session = manager.attach_actor_worker_record(task=task, state=state, worker=worker, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_worker_federation_record(
+        task=task,
+        state=state,
+        federation={"federation_id": "self-federation", "worker_ids": ["self-worker-a", "self-worker-b"], "coordinator_worker_id": "self-worker-a"},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "self-decision-a", "worker_id": "self-worker-a", "federation_id": "self-federation", "target_node_id": "self-target", "decision": "repair"},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_worker_decision_record(
+        task=task,
+        state=state,
+        decision={"worker_decision_id": "self-decision-b", "worker_id": "self-worker-b", "federation_id": "self-federation", "target_node_id": "self-target", "decision": "hold"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_arbitration_decision_record(
+        task=task,
+        state=state,
+        arbitration={"arbitration_id": "self-arbitration", "conflicting_decision_ids": ["self-decision-a", "self-decision-b"], "worker_ids": ["self-worker-a", "self-worker-b"], "federation_id": "self-federation", "target_node_id": "self-target", "decision": "repair"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_authority_quorum_record(
+        task=task,
+        state=state,
+        quorum={"quorum_id": "self-quorum", "authority_worker_ids": ["self-worker-a", "self-worker-b"], "federation_id": "self-federation", "threshold": 2},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    for tick, vote in (
+        (15, {"vote_id": "self-vote-a", "quorum_id": "self-quorum", "worker_id": "self-worker-a", "federation_id": "self-federation", "vote": "accept"}),
+        (16, {"vote_id": "self-vote-b", "quorum_id": "self-quorum", "worker_id": "self-worker-b", "federation_id": "self-federation", "vote": "accept"}),
+    ):
+        session = manager.attach_consensus_vote_record(task=task, state=state, vote=vote, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.attach_federated_consensus_record(
+        task=task,
+        state=state,
+        consensus={"consensus_id": "self-consensus", "arbitration_id": "self-arbitration", "quorum_id": "self-quorum", "vote_ids": ["self-vote-a", "self-vote-b"], "required_vote_ids": ["self-vote-a", "self-vote-b"], "worker_ids": ["self-worker-a", "self-worker-b"], "federation_id": "self-federation", "decision": "repair"},
+        current_tick=17,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_runtime_self_observability_record(
+        task=task,
+        state=state,
+        observability={"observability_id": "self-observe", "target_node_id": "self-target", "signal": "governance_drift", "severity": "warning"},
+        current_tick=18,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_constitutional_audit_lineage_record(
+        task=task,
+        state=state,
+        audit={"audit_id": "self-audit", "observability_id": "self-observe", "target_node_id": "self-target", "rule_id": "runtime_constitution", "finding": "drift_detected"},
+        current_tick=19,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_self_diagnosis_record(
+        task=task,
+        state=state,
+        diagnosis={"diagnosis_id": "self-diagnosis", "audit_id": "self-audit", "observability_id": "self-observe", "target_node_id": "self-target", "diagnosis": "authority_drift"},
+        current_tick=20,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_self_repair_governance_record(
+        task=task,
+        state=state,
+        repair={"self_repair_id": "self-repair", "diagnosis_id": "self-diagnosis", "audit_id": "self-audit", "observability_id": "self-observe", "authority_id": "self-authority", "approval_id": "self-approval", "consensus_id": "self-consensus", "repair_action": "stabilize_authority"},
+        current_tick=21,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_self_healing_replay_recovery_record(
+        task=task,
+        state=state,
+        recovery={"self_healing_recovery_id": "self-healing", "self_repair_id": "self-repair", "diagnosis_id": "self-diagnosis", "recovery_action": "replay_stabilized_lineage"},
+        current_tick=22,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_adaptive_governance_stabilization_record(
+        task=task,
+        state=state,
+        stabilization={"stabilization_id": "self-stabilization", "self_healing_recovery_id": "self-healing", "self_repair_id": "self-repair", "stabilization": "authority_stable"},
+        current_tick=23,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["self_observability_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["constitutional_audit_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["self_diagnosis_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["self_repair_governance_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["self_healing_recovery_count"] == 1
+    assert session["continuity_summary"]["graph_continuity"]["adaptive_stabilization_count"] == 1
+    json.dumps(session, sort_keys=True, default=str)
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "main",
+        "continued_branch_id": "main",
+        "consensus_ids": ["self-consensus"],
+        "self_healing_recovery_ids": ["self-healing"],
+    }
+    replay = build_replayable_workflow_runtime_session(task=task, runtime_state={**state, "workflow_runtime_session": session})
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    assert replay_session["lineage"]["replay_continuation"]["self_healing_recovery_ids"] == ["self-healing"]
+
+    broken_audit = dict(session)
+    broken_audit["lineage"] = dict(session["lineage"])
+    broken_audit["lineage"]["self_healing_governance_graph"] = dict(session["lineage"]["self_healing_governance_graph"])
+    broken_audit["lineage"]["self_healing_governance_graph"]["audits"] = [dict(item) for item in session["lineage"]["self_healing_governance_graph"]["audits"]]
+    broken_audit["lineage"]["self_healing_governance_graph"]["audits"][0]["observability_id"] = "missing-observe"
+    broken_audit_summary = manager.continuity_summary(broken_audit)
+    assert broken_audit_summary["ok"] is False
+    assert "audit_without_observability_parent" in broken_audit_summary["breaks"]
+
+    broken_diagnosis = dict(session)
+    broken_diagnosis["lineage"] = dict(session["lineage"])
+    broken_diagnosis["lineage"]["self_healing_governance_graph"] = dict(session["lineage"]["self_healing_governance_graph"])
+    broken_diagnosis["lineage"]["self_healing_governance_graph"]["diagnoses"] = [dict(item) for item in session["lineage"]["self_healing_governance_graph"]["diagnoses"]]
+    broken_diagnosis["lineage"]["self_healing_governance_graph"]["diagnoses"][0]["audit_id"] = "missing-audit"
+    broken_diagnosis_summary = manager.continuity_summary(broken_diagnosis)
+    assert broken_diagnosis_summary["ok"] is False
+    assert "diagnosis_without_audit_observability_parent" in broken_diagnosis_summary["breaks"]
+
+    broken_repair = dict(session)
+    broken_repair["lineage"] = dict(session["lineage"])
+    broken_repair["lineage"]["self_healing_governance_graph"] = dict(session["lineage"]["self_healing_governance_graph"])
+    broken_repair["lineage"]["self_healing_governance_graph"]["self_repairs"] = [dict(item) for item in session["lineage"]["self_healing_governance_graph"]["self_repairs"]]
+    broken_repair["lineage"]["self_healing_governance_graph"]["self_repairs"][0]["consensus_id"] = "missing-consensus"
+    broken_repair_summary = manager.continuity_summary(broken_repair)
+    assert broken_repair_summary["ok"] is False
+    assert "self_repair_governance_missing_authority_lineage" in broken_repair_summary["breaks"]
+
+    broken_recovery = dict(session)
+    broken_recovery["lineage"] = dict(session["lineage"])
+    broken_recovery["lineage"]["self_healing_governance_graph"] = dict(session["lineage"]["self_healing_governance_graph"])
+    broken_recovery["lineage"]["self_healing_governance_graph"]["recoveries"] = [dict(item) for item in session["lineage"]["self_healing_governance_graph"]["recoveries"]]
+    broken_recovery["lineage"]["self_healing_governance_graph"]["recoveries"][0]["self_repair_id"] = "missing-repair"
+    broken_recovery_summary = manager.continuity_summary(broken_recovery)
+    assert broken_recovery_summary["ok"] is False
+    assert "self_healing_recovery_without_repair_parent" in broken_recovery_summary["breaks"]
+
+    broken_stabilization = dict(session)
+    broken_stabilization["lineage"] = dict(session["lineage"])
+    broken_stabilization["lineage"]["self_healing_governance_graph"] = dict(session["lineage"]["self_healing_governance_graph"])
+    broken_stabilization["lineage"]["self_healing_governance_graph"]["stabilizations"] = [dict(item) for item in session["lineage"]["self_healing_governance_graph"]["stabilizations"]]
+    broken_stabilization["lineage"]["self_healing_governance_graph"]["stabilizations"][0]["self_healing_recovery_id"] = "missing-recovery"
+    broken_stabilization_summary = manager.continuity_summary(broken_stabilization)
+    assert broken_stabilization_summary["ok"] is False
+    assert "stabilization_without_recovery_parent" in broken_stabilization_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["self_healing_recovery_ids"] = ["stale-healing"]
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_stale_self_healing_lineage" in broken_replay_summary["breaks"]

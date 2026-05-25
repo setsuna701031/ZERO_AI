@@ -509,3 +509,45 @@ Expected result:
 ```text
 14 passed
 ```
+
+---
+
+## AER Runtime Self-Observability / Self-Healing Governance v1
+
+ZERO now preserves self-observability, audit, diagnosis, self-repair
+governance, self-healing replay recovery, and adaptive governance stabilization
+lineage inside the engineering runtime graph.
+
+The workflow runtime session can record and validate:
+
+```text
+runtime self-observability records
+-> constitutional audit lineage
+-> self-diagnosis records
+-> self-repair governance linked to authority / approval / consensus
+-> self-healing replay recovery
+-> adaptive governance stabilization
+-> deterministic replay references for self-healing lineage
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. The self-healing
+records serialize as dictionaries in the workflow lineage and do not execute
+commands, move execution ownership into Scheduler, create hidden mutation
+shortcuts, change UI behavior, or add tools. Continuity validation now reports
+`ok=False` for audits without observability parents, diagnoses without audit or
+observability parents, self-repair governance records missing authority,
+approval, or consensus lineage, self-healing recoveries without repair parents,
+stabilizations without recovery parents, and replay graphs that reference stale
+self-healing lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+15 passed
+```
