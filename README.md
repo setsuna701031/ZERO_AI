@@ -218,3 +218,44 @@ Expected result:
 ```text
 7 passed
 ```
+
+---
+
+## AER Runtime Resumability / Checkpoint v1
+
+ZERO can now preserve and continue an autonomous engineering workflow session
+across checkpoint, restore, retry, and replay continuation.
+
+The contract-proven path is:
+
+```text
+intent/task
+-> plan
+-> execute step
+-> verify failure
+-> repair plan
+-> injected repair
+-> checkpoint
+-> restore
+-> retry/continue
+-> replay continuation
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` records checkpoint, restore, and resume/continue
+records as persistence-ready dictionaries. Restore records must point back to a
+checkpoint in the same `workflow_id` / `session_id` lineage, and the continuity
+summary reports `ok=False` when that checkpoint/restore linkage is missing or
+mismatched.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+8 passed
+```

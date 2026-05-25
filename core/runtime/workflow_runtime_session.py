@@ -304,6 +304,137 @@ class WorkflowRuntimeSessionManager:
             current_tick=current_tick,
         )
 
+    def create_checkpoint(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        label: str = "",
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        checkpoint = self.build_checkpoint_record(
+            task=task,
+            state=state,
+            session=session,
+            label=label,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="checkpoint",
+            record=checkpoint,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_checkpoint_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        session: Dict[str, Any],
+        label: str = "",
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        events = session.get("events") if isinstance(session, dict) and isinstance(session.get("events"), list) else []
+        workflow_id = safe_text(session.get("workflow_id")) or self.workflow_id_for(task, state)
+        session_id = safe_text(session.get("session_id")) or self.session_id_for(task, state)
+        event_ids = [
+            safe_text(event.get("event_id"))
+            for event in events
+            if isinstance(event, dict) and safe_text(event.get("event_id"))
+        ]
+        repair_ancestry = {}
+        lineage = session.get("lineage") if isinstance(session.get("lineage"), dict) else {}
+        repair_items = lineage.get("repair_ancestry") if isinstance(lineage.get("repair_ancestry"), list) else []
+        if repair_items and isinstance(repair_items[-1], dict):
+            repair_ancestry = copy.deepcopy(repair_items[-1])
+        checkpoint_seed = {
+            "workflow_id": workflow_id,
+            "session_id": session_id,
+            "event_ids": event_ids,
+            "current_tick": current_tick,
+            "label": label,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.checkpoint.v1",
+            "checkpoint_id": "wfcp_" + stable_hash(checkpoint_seed)[:16],
+            "workflow_id": workflow_id,
+            "session_id": session_id,
+            "task_id": task_id_from(task, state),
+            "label": safe_text(label),
+            "event_count": len(event_ids),
+            "event_ids": event_ids,
+            "state_hash": stable_hash(
+                {
+                    "task_id": task_id_from(task, state),
+                    "status": state.get("status") if isinstance(state, dict) else "",
+                    "steps": state.get("steps") if isinstance(state, dict) else [],
+                    "repair_context": state.get("repair_context") if isinstance(state, dict) else {},
+                }
+            ),
+            "result_hash": safe_text(session.get("result_hash")),
+            "repair_ancestry": repair_ancestry,
+            "created_at": utc_now(),
+        }
+
+    def restore_from_checkpoint(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        checkpoint: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        checkpoint_record = copy.deepcopy(checkpoint if isinstance(checkpoint, dict) else {})
+        restore_record = {
+            "schema": "zero.workflow_runtime_session.restore.v1",
+            "checkpoint_id": safe_text(checkpoint_record.get("checkpoint_id")),
+            "source_checkpoint_id": safe_text(checkpoint_record.get("checkpoint_id")),
+            "source_workflow_id": safe_text(checkpoint_record.get("workflow_id")),
+            "source_session_id": safe_text(checkpoint_record.get("session_id")),
+            "workflow_id": self.workflow_id_for(task, state),
+            "session_id": self.session_id_for(task, state),
+            "event_count": safe_int(checkpoint_record.get("event_count"), 0),
+            "checkpoint_event_ids": copy.deepcopy(checkpoint_record.get("event_ids") if isinstance(checkpoint_record.get("event_ids"), list) else []),
+            "repair_ancestry": copy.deepcopy(checkpoint_record.get("repair_ancestry") if isinstance(checkpoint_record.get("repair_ancestry"), dict) else {}),
+            "restored_at": utc_now(),
+        }
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="replayable_session",
+            event_type="restore",
+            record=restore_record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def attach_resume_continue_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        resume_record: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = copy.deepcopy(resume_record if isinstance(resume_record, dict) else {})
+        step = record.get("step") if isinstance(record.get("step"), dict) else {"type": "retry"}
+        result = record.get("result") if isinstance(record.get("result"), dict) else record
+        result = copy.deepcopy(result)
+        result.setdefault("ok", True)
+        result.setdefault("action", "resume_continue")
+        return self.append_step_result(
+            task=task,
+            state=state,
+            step=step,
+            step_result=result,
+            current_tick=current_tick,
+        )
+
     def append_workflow_record(
         self,
         *,
@@ -674,6 +805,32 @@ class WorkflowRuntimeSessionManager:
             "step_index": int(step_index),
             "phase": phase,
         }
+        action = safe_text(step_result.get("action") if isinstance(step_result, dict) else "").lower()
+        if action == "checkpoint":
+            lineage["checkpoint"] = {
+                "checkpoint_id": safe_text(step_result.get("checkpoint_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "event_count": safe_int(step_result.get("event_count"), 0),
+                "event_ids": copy.deepcopy(step_result.get("event_ids") if isinstance(step_result.get("event_ids"), list) else []),
+            }
+        if action == "restore":
+            lineage["restore"] = {
+                "source_checkpoint_id": safe_text(step_result.get("source_checkpoint_id") or step_result.get("checkpoint_id")),
+                "source_workflow_id": safe_text(step_result.get("source_workflow_id")),
+                "source_session_id": safe_text(step_result.get("source_session_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "checkpoint_event_ids": copy.deepcopy(step_result.get("checkpoint_event_ids") if isinstance(step_result.get("checkpoint_event_ids"), list) else []),
+            }
+        if action in {"resume", "resume_continue", "continue"}:
+            lineage["resume_continue"] = {
+                "workflow_id": workflow_id,
+                "session_id": session_id,
+                "parent_event_id": parent_event.event_id if parent_event else "",
+                "restore_event_id": self._latest_event_id(events, event_type="restore"),
+                "checkpoint_id": self._latest_checkpoint_id(events),
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -722,6 +879,21 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("repair_ancestry"), dict)
         ]
+        checkpoint_events = [
+            copy.deepcopy(event.lineage.get("checkpoint"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("checkpoint"), dict)
+        ]
+        restore_events = [
+            copy.deepcopy(event.lineage.get("restore"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("restore"), dict)
+        ]
+        resume_events = [
+            copy.deepcopy(event.lineage.get("resume_continue"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("resume_continue"), dict)
+        ]
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
             "workflow_id": workflow_id,
@@ -733,6 +905,9 @@ class WorkflowRuntimeSessionManager:
             "event_ids_by_phase": event_ids_by_phase,
             "repair_ancestry": repair_events[-20:],
             "retry_chain": retry_events[-20:],
+            "checkpoints": checkpoint_events[-20:],
+            "restores": restore_events[-20:],
+            "resume_continuations": resume_events[-20:],
         }
         if source_session_id:
             lineage["replay_continuation"] = {
@@ -849,6 +1024,28 @@ class WorkflowRuntimeSessionManager:
                 return event
         return None
 
+    def _latest_event_id(
+        self,
+        events: List[WorkflowRuntimeEvent],
+        *,
+        event_type: str,
+    ) -> str:
+        for event in reversed(events):
+            if event.event_type == event_type:
+                return event.event_id
+        return ""
+
+    def _latest_checkpoint_id(self, events: List[WorkflowRuntimeEvent]) -> str:
+        for event in reversed(events):
+            if not isinstance(event.lineage, dict):
+                continue
+            checkpoint = event.lineage.get("checkpoint")
+            if isinstance(checkpoint, dict):
+                value = safe_text(checkpoint.get("checkpoint_id"))
+                if value:
+                    return value
+        return ""
+
     def _source_session_id(
         self,
         *,
@@ -948,6 +1145,7 @@ class WorkflowRuntimeSessionManager:
             breaks.append("missing_workflow_id")
 
         event_ids = set()
+        checkpoint_ids = set()
         for event in events:
             if not isinstance(event, dict):
                 continue
@@ -966,6 +1164,32 @@ class WorkflowRuntimeSessionManager:
                 ancestry = event_lineage.get("repair_ancestry") if isinstance(event_lineage.get("repair_ancestry"), dict) else {}
                 if not ancestry.get("parent_failed_step_ref") or not ancestry.get("parent_failed_result_ref"):
                     breaks.append("missing_repair_parent_reference")
+            checkpoint = event_lineage.get("checkpoint") if isinstance(event_lineage.get("checkpoint"), dict) else {}
+            checkpoint_id = safe_text(checkpoint.get("checkpoint_id"))
+            if checkpoint_id:
+                if safe_text(checkpoint.get("workflow_id")) and safe_text(checkpoint.get("workflow_id")) != workflow_id:
+                    breaks.append("checkpoint_workflow_id_mismatch")
+                if safe_text(checkpoint.get("session_id")) and safe_text(checkpoint.get("session_id")) != session_id:
+                    breaks.append("checkpoint_session_id_mismatch")
+                checkpoint_ids.add(checkpoint_id)
+            restore = event_lineage.get("restore") if isinstance(event_lineage.get("restore"), dict) else {}
+            if restore:
+                source_checkpoint_id = safe_text(restore.get("source_checkpoint_id"))
+                if not source_checkpoint_id:
+                    breaks.append("missing_restore_source_checkpoint")
+                elif source_checkpoint_id not in checkpoint_ids:
+                    breaks.append("missing_restore_source_checkpoint")
+                if safe_text(restore.get("source_workflow_id")) and safe_text(restore.get("source_workflow_id")) != workflow_id:
+                    breaks.append("restore_source_workflow_id_mismatch")
+                if safe_text(restore.get("source_session_id")) and safe_text(restore.get("source_session_id")) != session_id:
+                    breaks.append("restore_source_session_id_mismatch")
+                if safe_text(restore.get("workflow_id")) and safe_text(restore.get("workflow_id")) != workflow_id:
+                    breaks.append("restore_workflow_id_mismatch")
+                if safe_text(restore.get("session_id")) and safe_text(restore.get("session_id")) != session_id:
+                    breaks.append("restore_session_id_mismatch")
+            resume = event_lineage.get("resume_continue") if isinstance(event_lineage.get("resume_continue"), dict) else {}
+            if resume and safe_text(resume.get("checkpoint_id")) and safe_text(resume.get("checkpoint_id")) not in checkpoint_ids:
+                breaks.append("resume_checkpoint_id_mismatch")
 
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}

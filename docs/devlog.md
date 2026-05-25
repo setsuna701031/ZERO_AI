@@ -206,3 +206,39 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 7 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Resumability / Checkpoint v1
+
+Added checkpoint, restore, and resume/continue records to the workflow runtime
+session contract.
+
+ZERO can now preserve and continue an autonomous engineering workflow session
+across checkpoint, restore, retry, and replay continuation:
+
+```text
+intent/task
+-> plan
+-> execute step
+-> verify failure
+-> repair plan
+-> injected repair
+-> checkpoint
+-> restore
+-> retry/continue
+-> replay continuation
+-> continuity summary
+```
+
+The resumability contract keeps the same stable `workflow_id` and `session_id`
+through failed verify, repair, checkpoint, restore, resumed retry, and replay
+continuation. Continuity summary validation now detects broken restore lineage
+when a restore record points to a missing or mismatched source checkpoint.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 8 passed
+```

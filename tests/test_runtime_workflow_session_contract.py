@@ -345,3 +345,146 @@ def test_workflow_runtime_use_path_intent_to_replay_continuity() -> None:
     broken_summary = manager.continuity_summary(broken)
     assert broken_summary["ok"] is False
     assert "event_workflow_id_mismatch" in broken_summary["breaks"]
+
+
+def test_workflow_runtime_checkpoint_restore_resume_replay_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    intent = {"task_id": "wf-checkpoint", "goal": "continue after checkpoint"}
+    task = {"task_id": "wf-checkpoint", "goal": intent["goal"], "steps": []}
+    state = {"task_id": "wf-checkpoint", "status": "running", "steps": []}
+
+    session = manager.start_from_intent(intent=intent, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    workflow_id = session["workflow_id"]
+    session_id = session["session_id"]
+
+    plan = {
+        "ok": True,
+        "steps": [
+            {"id": "execute", "type": "command", "command": "python -m py_compile bad.py"},
+            {"id": "verify", "type": "verify_python_syntax", "path": "bad.py"},
+        ],
+    }
+    task["steps"] = plan["steps"]
+    state["steps"] = plan["steps"]
+    session = manager.attach_plan_record(task=task, state=state, plan=plan, current_tick=2)
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_execution_record(
+        task=task,
+        state=state,
+        step=plan["steps"][0],
+        result={"ok": True, "step_index": 0, "message": "executed"},
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+
+    verify_result = {
+        "ok": False,
+        "step_index": 1,
+        "command": "python -m py_compile bad.py",
+        "stderr": "SyntaxError: invalid syntax",
+        "source_text": "def add(a, b):\n    return a +\n",
+        "error": {"message": "SyntaxError: invalid syntax"},
+    }
+    session = manager.attach_verify_record(
+        task=task,
+        state=state,
+        verify_step=plan["steps"][1],
+        verify_result=verify_result,
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+    state["repair_context"] = {
+        "original_failed_step": plan["steps"][1],
+        "original_failed_result": session["events"][-1]["payload"]["result"],
+    }
+
+    repair_plan = plan_repair(
+        step_result=verify_result,
+        source_text=verify_result["source_text"],
+        source_path="bad.py",
+    )
+    injection = build_repair_injection(
+        repair_plan=repair_plan,
+        task=task,
+        failed_step=plan["steps"][1],
+        failed_result=verify_result,
+    )
+    repair_step = injection["steps"][0]
+    state["steps"] = [*state["steps"], *injection["steps"]]
+    task["steps"] = state["steps"]
+    session = manager.attach_repair_record(
+        task=task,
+        state=state,
+        repair_step=repair_step,
+        repair_result={"ok": True, "step_index": 2, "repair_ancestry": repair_step["repair_ancestry"]},
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.create_checkpoint(
+        task=task,
+        state=state,
+        label="after_repair_before_retry",
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    checkpoint_event = session["events"][-1]
+    checkpoint_record = checkpoint_event["payload"]["record"]
+
+    assert checkpoint_event["event_type"] == "checkpoint"
+    assert checkpoint_record["checkpoint_id"]
+    assert checkpoint_record["workflow_id"] == workflow_id
+    assert checkpoint_record["session_id"] == session_id
+
+    restored_state = {**state, "status": "running", "workflow_runtime_session": session}
+    restored_session = manager.restore_from_checkpoint(
+        task=task,
+        state=restored_state,
+        checkpoint=checkpoint_record,
+        current_tick=7,
+    )
+    restored_state["workflow_runtime_session"] = restored_session
+
+    restore_event = restored_session["events"][-1]
+    assert restore_event["event_type"] == "restore"
+    assert restore_event["lineage"]["restore"]["source_checkpoint_id"] == checkpoint_record["checkpoint_id"]
+    assert restored_session["workflow_id"] == workflow_id
+    assert restored_session["session_id"] == session_id
+
+    resumed_session = manager.attach_resume_continue_record(
+        task=task,
+        state=restored_state,
+        resume_record={
+            "step": {"id": "retry-after-restore", "type": "retry"},
+            "result": {"ok": True, "step_index": 3, "action": "resume_continue", "retry_count": 1},
+        },
+        current_tick=8,
+    )
+    restored_state["workflow_runtime_session"] = resumed_session
+
+    retry_chain = resumed_session["lineage"]["retry_chain"][-1]
+    resume_chain = resumed_session["lineage"]["resume_continuations"][-1]
+    assert retry_chain["repair_ancestry"]["parent_failed_step_ref"]
+    assert resume_chain["checkpoint_id"] == checkpoint_record["checkpoint_id"]
+    assert resumed_session["continuity_summary"]["ok"] is True
+
+    replay = build_replayable_workflow_runtime_session(
+        task=task,
+        runtime_state={**restored_state, "workflow_runtime_session": resumed_session},
+    )
+    assert replay["source_session_id"] == session_id
+    assert replay["workflow_id"] == workflow_id
+    assert replay["continuity_summary"]["ok"] is True
+
+    json.dumps(resumed_session, sort_keys=True, default=str)
+
+    broken = dict(resumed_session)
+    broken["events"] = [dict(event) for event in resumed_session["events"]]
+    broken["events"][-2]["lineage"] = dict(broken["events"][-2]["lineage"])
+    broken["events"][-2]["lineage"]["restore"] = dict(broken["events"][-2]["lineage"]["restore"])
+    broken["events"][-2]["lineage"]["restore"]["source_checkpoint_id"] = "missing-checkpoint"
+    broken_summary = manager.continuity_summary(broken)
+    assert broken_summary["ok"] is False
+    assert "missing_restore_source_checkpoint" in broken_summary["breaks"]
