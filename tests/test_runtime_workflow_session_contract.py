@@ -900,3 +900,236 @@ def test_workflow_runtime_execution_graph_recovery_graph_continuity() -> None:
     broken_replay_summary = manager.continuity_summary(broken_replay)
     assert broken_replay_summary["ok"] is False
     assert "replay_branch_lineage_mismatch" in broken_replay_summary["breaks"]
+
+
+def test_workflow_runtime_mutation_transaction_rollback_graph_continuity() -> None:
+    manager = WorkflowRuntimeSessionManager()
+    intent = {"task_id": "wf-mutation-graph", "goal": "rollback mutation branch safely"}
+    task = {"task_id": "wf-mutation-graph", "goal": intent["goal"], "steps": []}
+    state = {"task_id": "wf-mutation-graph", "status": "running", "steps": [], "current_branch_id": "main"}
+
+    session = manager.start_from_intent(intent=intent, task=task, state=state, current_tick=1)
+    state["workflow_runtime_session"] = session
+    session_id = session["session_id"]
+
+    for tick, branch in ((2, {"node_id": "root", "branch_id": "main", "label": "root"}),):
+        session = manager.create_execution_graph_node(task=task, state=state, node=branch, current_tick=tick)
+        state["workflow_runtime_session"] = session
+    session = manager.create_branch_fork(
+        task=task,
+        state=state,
+        branch={"branch_id": "branch-a", "parent_branch_id": "main", "fork_node_id": "root"},
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.create_branch_fork(
+        task=task,
+        state=state,
+        branch={"branch_id": "branch-b", "parent_branch_id": "main", "fork_node_id": "root"},
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+
+    state["current_branch_id"] = "branch-a"
+    for tick, node in (
+        (5, {"node_id": "mut-a", "branch_id": "branch-a", "parent_node_id": "root", "label": "mutation"}),
+        (6, {"node_id": "verify-a", "branch_id": "branch-a", "parent_node_id": "mut-a", "label": "verify", "phase": "verify"}),
+        (7, {"node_id": "rollback-a", "branch_id": "branch-a", "parent_node_id": "verify-a", "label": "rollback", "phase": "rollback_retry"}),
+        (8, {"node_id": "retry-a", "branch_id": "branch-a", "parent_node_id": "rollback-a", "label": "retry", "phase": "rollback_retry"}),
+    ):
+        session = manager.create_execution_graph_node(task=task, state=state, node=node, current_tick=tick)
+        state["workflow_runtime_session"] = session
+
+    mutation = {
+        "mutation_transaction_id": "mutation-a",
+        "node_id": "mut-a",
+        "branch_id": "branch-a",
+        "mutation_type": "write_file",
+        "payload": {"path": "bad.py", "content": "def f():\n    return +\n"},
+    }
+    session = manager.attach_mutation_transaction(task=task, state=state, mutation=mutation, current_tick=9)
+    state["workflow_runtime_session"] = session
+
+    verify = {
+        "mutation_verify_id": "verify-mutation-a",
+        "mutation_transaction_id": "mutation-a",
+        "verify_node_id": "verify-a",
+        "branch_id": "branch-a",
+        "ok": False,
+        "failure_classification": "python_syntax_error",
+    }
+    session = manager.attach_mutation_verify_record(task=task, state=state, verify=verify, current_tick=10)
+    state["workflow_runtime_session"] = session
+
+    rollback = {
+        "rollback_id": "rollback-mutation-a",
+        "rollback_node_id": "rollback-a",
+        "mutation_transaction_id": "mutation-a",
+        "mutation_verify_id": "verify-mutation-a",
+        "branch_id": "branch-a",
+        "retry_node_id": "retry-a",
+        "reason": "verify failed",
+    }
+    session = manager.attach_rollback_graph_node(task=task, state=state, rollback=rollback, current_tick=11)
+    state["workflow_runtime_session"] = session
+    session = manager.attach_recovery_dependency(
+        task=task,
+        state=state,
+        dependency={
+            "recovery_dependency_id": "dep-rollback-retry",
+            "source_node_id": "rollback-a",
+            "target_node_id": "retry-a",
+            "branch_id": "branch-a",
+            "dependency_type": "rollback_retry",
+        },
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+
+    state["current_branch_id"] = "branch-b"
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "branch-b-node", "branch_id": "branch-b", "parent_node_id": "root", "label": "alternate mutation"},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_mutation_transaction(
+        task=task,
+        state=state,
+        mutation={
+            "mutation_transaction_id": "mutation-b",
+            "node_id": "branch-b-node",
+            "branch_id": "branch-b",
+            "mutation_type": "write_file",
+            "payload": {"path": "bad.py", "content": "def f():\n    return 2\n"},
+        },
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_mutation_verify_record(
+        task=task,
+        state=state,
+        verify={
+            "mutation_verify_id": "verify-mutation-b",
+            "mutation_transaction_id": "mutation-b",
+            "verify_node_id": "branch-b-node",
+            "branch_id": "branch-b",
+            "ok": True,
+        },
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+
+    state["current_branch_id"] = "main"
+    session = manager.create_execution_graph_node(
+        task=task,
+        state=state,
+        node={"node_id": "join-mutation", "branch_id": "main", "parent_node_id": "root", "label": "join"},
+        current_tick=16,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.create_join_merge(
+        task=task,
+        state=state,
+        join={"join_id": "join-mutation-main", "source_branch_ids": ["branch-a", "branch-b"], "target_branch_id": "main", "join_node_id": "join-mutation"},
+        current_tick=17,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_branch_conflict_record(
+        task=task,
+        state=state,
+        conflict={
+            "conflict_id": "conflict-ab",
+            "source_branch_ids": ["branch-a", "branch-b"],
+            "target_branch_id": "main",
+            "conflict_node_id": "join-mutation",
+            "mutation_transaction_ids": ["mutation-a", "mutation-b"],
+        },
+        current_tick=18,
+    )
+    state["workflow_runtime_session"] = session
+    session = manager.attach_graph_reconciliation_record(
+        task=task,
+        state=state,
+        reconciliation={
+            "reconciliation_id": "reconcile-ab",
+            "conflict_id": "conflict-ab",
+            "rollback_id": "rollback-mutation-a",
+            "retry_node_id": "retry-a",
+            "source_branch_ids": ["branch-a", "branch-b"],
+            "target_branch_id": "main",
+        },
+        current_tick=19,
+    )
+    state["workflow_runtime_session"] = session
+
+    assert session["continuity_summary"]["ok"] is True
+    assert session["continuity_summary"]["graph_continuity"]["mutation_transaction_count"] == 2
+    assert session["continuity_summary"]["graph_continuity"]["rollback_count"] == 1
+    assert session["lineage"]["mutation_transaction_graph"]["mutations"]
+    assert session["lineage"]["rollback_graph"]["rollbacks"]
+
+    state["replay_continuation"] = {
+        "source_session_id": session_id,
+        "source_branch_id": "branch-a",
+        "continued_branch_id": "main",
+        "mutation_transaction_ids": ["mutation-a", "mutation-b"],
+        "rollback_ids": ["rollback-mutation-a"],
+    }
+    replay = build_replayable_workflow_runtime_session(
+        task=task,
+        runtime_state={**state, "workflow_runtime_session": session},
+    )
+    replay_session = replay["workflow_runtime_session"]
+    assert replay_session["lineage"]["replay_continuation"]["mutation_transaction_ids"] == ["mutation-a", "mutation-b"]
+    assert replay_session["lineage"]["replay_continuation"]["rollback_ids"] == ["rollback-mutation-a"]
+    assert replay_session["continuity_summary"]["ok"] is True
+    json.dumps(replay_session, sort_keys=True, default=str)
+
+    broken_rollback = dict(session)
+    broken_rollback["lineage"] = dict(session["lineage"])
+    broken_rollback["lineage"]["rollback_graph"] = dict(session["lineage"]["rollback_graph"])
+    broken_rollback["lineage"]["rollback_graph"]["rollbacks"] = [dict(item) for item in session["lineage"]["rollback_graph"]["rollbacks"]]
+    broken_rollback["lineage"]["rollback_graph"]["rollbacks"][0]["mutation_transaction_id"] = "missing-mutation"
+    broken_rollback_summary = manager.continuity_summary(broken_rollback)
+    assert broken_rollback_summary["ok"] is False
+    assert "rollback_without_mutation_parent" in broken_rollback_summary["breaks"]
+
+    broken_verify = dict(session)
+    broken_verify["events"] = [dict(event) for event in session["events"]]
+    for event in broken_verify["events"]:
+        event["lineage"] = dict(event["lineage"])
+        event["lineage"].pop("mutation_verify", None)
+    broken_verify["lineage"] = dict(session["lineage"])
+    broken_verify["lineage"]["mutation_transaction_graph"] = dict(session["lineage"]["mutation_transaction_graph"])
+    broken_verify["lineage"]["mutation_transaction_graph"]["verifies"] = []
+    broken_verify_summary = manager.continuity_summary(broken_verify)
+    assert broken_verify_summary["ok"] is False
+    assert "mutation_verify_record_missing" in broken_verify_summary["breaks"]
+
+    broken_conflict = dict(session)
+    broken_conflict["lineage"] = dict(session["lineage"])
+    broken_conflict["lineage"]["mutation_transaction_graph"] = dict(session["lineage"]["mutation_transaction_graph"])
+    broken_conflict["lineage"]["mutation_transaction_graph"]["conflicts"] = [dict(item) for item in session["lineage"]["mutation_transaction_graph"]["conflicts"]]
+    broken_conflict["lineage"]["mutation_transaction_graph"]["conflicts"][0]["source_branch_ids"] = ["branch-a", "unrelated-branch"]
+    broken_conflict_summary = manager.continuity_summary(broken_conflict)
+    assert broken_conflict_summary["ok"] is False
+    assert "branch_conflict_unrelated_branches" in broken_conflict_summary["breaks"]
+
+    broken_reconciliation = dict(session)
+    broken_reconciliation["lineage"] = dict(session["lineage"])
+    broken_reconciliation["lineage"]["mutation_transaction_graph"] = dict(session["lineage"]["mutation_transaction_graph"])
+    broken_reconciliation["lineage"]["mutation_transaction_graph"]["reconciliations"] = [dict(item) for item in session["lineage"]["mutation_transaction_graph"]["reconciliations"]]
+    broken_reconciliation["lineage"]["mutation_transaction_graph"]["reconciliations"][0]["retry_node_id"] = "missing-retry"
+    broken_reconciliation_summary = manager.continuity_summary(broken_reconciliation)
+    assert broken_reconciliation_summary["ok"] is False
+    assert "reconciliation_missing_rollback_retry_link" in broken_reconciliation_summary["breaks"]
+
+    broken_replay = dict(replay_session)
+    broken_replay["lineage"] = dict(replay_session["lineage"])
+    broken_replay["lineage"]["replay_continuation"] = dict(replay_session["lineage"]["replay_continuation"])
+    broken_replay["lineage"]["replay_continuation"]["mutation_transaction_ids"] = ["stale-mutation"]
+    broken_replay_summary = manager.continuity_summary(broken_replay)
+    assert broken_replay_summary["ok"] is False
+    assert "replay_stale_mutation_lineage" in broken_replay_summary["breaks"]

@@ -320,3 +320,40 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 10 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Mutation Transaction Graph / Rollback Graph v1
+
+Added mutation transaction graph and rollback graph continuity to the workflow
+runtime session contract.
+
+ZERO now preserves mutation, verify, rollback, conflict, reconciliation, retry,
+and deterministic replay lineage inside the engineering runtime graph:
+
+```text
+workflow session
+-> execution graph branch/fork/join
+-> mutation transaction node
+-> mutation verify failure
+-> rollback graph node
+-> recovery dependency to retry/continue
+-> branch conflict record
+-> graph reconciliation record
+-> deterministic replay graph validation
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. Runtime replay only
+summarizes deterministic graph references for replay continuation; it does not
+execute actions or take ownership from Scheduler. Continuity summary now detects
+rollback records without mutation parents, missing mutation verify records,
+unrelated branch conflict lineage, reconciliation records missing rollback/retry
+continuity, and replay graphs that reference stale mutation lineage.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 11 passed
+```

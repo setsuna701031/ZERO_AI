@@ -914,6 +914,291 @@ class WorkflowRuntimeSessionManager:
             "created_at": utc_now(),
         }
 
+    def attach_mutation_transaction(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        mutation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_mutation_transaction_record(
+            task=task,
+            state=state,
+            mutation=mutation,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="mutation_transaction",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_mutation_transaction_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        mutation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(mutation if isinstance(mutation, dict) else {})
+        branch_id = safe_text(payload.get("branch_id")) or self._current_branch_id(session, state)
+        mutation_payload = _json_safe(payload.get("payload") if "payload" in payload else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "node_id": safe_text(payload.get("node_id")),
+            "branch_id": branch_id,
+            "mutation": mutation_payload,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.mutation_transaction.v1",
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")) or "wfmt_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "node_id": safe_text(payload.get("node_id")),
+            "branch_id": branch_id,
+            "mutation_type": safe_text(payload.get("mutation_type")) or "mutation",
+            "payload": mutation_payload,
+            "payload_hash": stable_hash(payload),
+            "created_at": utc_now(),
+        }
+
+    def attach_mutation_verify_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        verify: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_mutation_verify_record(task=task, state=state, verify=verify, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="verify",
+            event_type="mutation_verify",
+            record=record,
+            current_tick=current_tick,
+            ok=bool(record.get("ok", False)),
+        )
+
+    def build_mutation_verify_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        verify: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(verify if isinstance(verify, dict) else {})
+        mutation_id = safe_text(payload.get("mutation_transaction_id"))
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "mutation_transaction_id": mutation_id,
+            "verify_node_id": safe_text(payload.get("verify_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.mutation_verify.v1",
+            "mutation_verify_id": safe_text(payload.get("mutation_verify_id")) or "wfmv_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "mutation_transaction_id": mutation_id,
+            "verify_node_id": safe_text(payload.get("verify_node_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "ok": bool(payload.get("ok", False)),
+            "failure_classification": safe_text(payload.get("failure_classification")),
+            "payload": _json_safe(payload.get("payload") if "payload" in payload else {}),
+            "payload_hash": stable_hash(payload),
+            "created_at": utc_now(),
+        }
+
+    def attach_rollback_graph_node(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        rollback: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_rollback_graph_record(task=task, state=state, rollback=rollback, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="rollback_retry",
+            event_type="rollback_graph_node",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_rollback_graph_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        rollback: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(rollback if isinstance(rollback, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "mutation_verify_id": safe_text(payload.get("mutation_verify_id")),
+            "rollback_node_id": safe_text(payload.get("rollback_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.rollback_graph_node.v1",
+            "rollback_id": safe_text(payload.get("rollback_id")) or "wfrb_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "rollback_node_id": safe_text(payload.get("rollback_node_id")),
+            "mutation_transaction_id": safe_text(payload.get("mutation_transaction_id")),
+            "mutation_verify_id": safe_text(payload.get("mutation_verify_id")),
+            "branch_id": safe_text(payload.get("branch_id")) or self._current_branch_id(session, state),
+            "retry_node_id": safe_text(payload.get("retry_node_id")),
+            "reason": safe_text(payload.get("reason")),
+            "created_at": utc_now(),
+        }
+
+    def attach_branch_conflict_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        conflict: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_branch_conflict_record(task=task, state=state, conflict=conflict, current_tick=current_tick)
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="execution",
+            event_type="branch_conflict",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_branch_conflict_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        conflict: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(conflict if isinstance(conflict, dict) else {})
+        source_branch_ids = [
+            safe_text(item)
+            for item in (payload.get("source_branch_ids") if isinstance(payload.get("source_branch_ids"), list) else [])
+            if safe_text(item)
+        ]
+        mutation_ids = [
+            safe_text(item)
+            for item in (payload.get("mutation_transaction_ids") if isinstance(payload.get("mutation_transaction_ids"), list) else [])
+            if safe_text(item)
+        ]
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "source_branch_ids": source_branch_ids,
+            "target_branch_id": safe_text(payload.get("target_branch_id")),
+            "mutation_transaction_ids": mutation_ids,
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.branch_conflict.v1",
+            "conflict_id": safe_text(payload.get("conflict_id")) or "wfcf_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "source_branch_ids": source_branch_ids,
+            "target_branch_id": safe_text(payload.get("target_branch_id")) or self._current_branch_id(session, state),
+            "conflict_node_id": safe_text(payload.get("conflict_node_id")),
+            "mutation_transaction_ids": mutation_ids,
+            "reason": safe_text(payload.get("reason")),
+            "created_at": utc_now(),
+        }
+
+    def attach_graph_reconciliation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        reconciliation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        record = self.build_graph_reconciliation_record(
+            task=task,
+            state=state,
+            reconciliation=reconciliation,
+            current_tick=current_tick,
+        )
+        return self.append_workflow_record(
+            task=task,
+            state=state,
+            phase="rollback_retry",
+            event_type="graph_reconciliation",
+            record=record,
+            current_tick=current_tick,
+            ok=True,
+        )
+
+    def build_graph_reconciliation_record(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        reconciliation: Dict[str, Any],
+        current_tick: int = 0,
+    ) -> Dict[str, Any]:
+        session = self.initial_state(task=task, state=state)
+        payload = copy.deepcopy(reconciliation if isinstance(reconciliation, dict) else {})
+        seed = {
+            "workflow_id": session.get("workflow_id"),
+            "session_id": session.get("session_id"),
+            "conflict_id": safe_text(payload.get("conflict_id")),
+            "rollback_id": safe_text(payload.get("rollback_id")),
+            "retry_node_id": safe_text(payload.get("retry_node_id")),
+            "current_tick": current_tick,
+        }
+        return {
+            "schema": "zero.workflow_runtime_session.graph_reconciliation.v1",
+            "reconciliation_id": safe_text(payload.get("reconciliation_id")) or "wfrc_" + stable_hash(seed)[:16],
+            "workflow_id": safe_text(session.get("workflow_id")),
+            "session_id": safe_text(session.get("session_id")),
+            "task_id": task_id_from(task, state),
+            "conflict_id": safe_text(payload.get("conflict_id")),
+            "rollback_id": safe_text(payload.get("rollback_id")),
+            "retry_node_id": safe_text(payload.get("retry_node_id")),
+            "source_branch_ids": [
+                safe_text(item)
+                for item in (payload.get("source_branch_ids") if isinstance(payload.get("source_branch_ids"), list) else [])
+                if safe_text(item)
+            ],
+            "target_branch_id": safe_text(payload.get("target_branch_id")) or self._current_branch_id(session, state),
+            "strategy": safe_text(payload.get("strategy")) or "rollback_retry_reconcile",
+            "created_at": utc_now(),
+        }
+
     def append_workflow_record(
         self,
         *,
@@ -1403,6 +1688,60 @@ class WorkflowRuntimeSessionManager:
                 "dependency_type": safe_text(step_result.get("dependency_type")) or "recovery",
                 "required": bool(step_result.get("required", True)),
             }
+        if action == "mutation_transaction":
+            lineage["mutation_transaction"] = {
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "node_id": safe_text(step_result.get("node_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "mutation_type": safe_text(step_result.get("mutation_type")) or "mutation",
+                "payload_hash": safe_text(step_result.get("payload_hash")),
+            }
+        if action == "mutation_verify":
+            lineage["mutation_verify"] = {
+                "mutation_verify_id": safe_text(step_result.get("mutation_verify_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "verify_node_id": safe_text(step_result.get("verify_node_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "ok": bool(step_result.get("ok", False)),
+                "failure_classification": safe_text(step_result.get("failure_classification")),
+            }
+        if action == "rollback_graph_node":
+            lineage["rollback_graph_node"] = {
+                "rollback_id": safe_text(step_result.get("rollback_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "rollback_node_id": safe_text(step_result.get("rollback_node_id")),
+                "mutation_transaction_id": safe_text(step_result.get("mutation_transaction_id")),
+                "mutation_verify_id": safe_text(step_result.get("mutation_verify_id")),
+                "branch_id": safe_text(step_result.get("branch_id")),
+                "retry_node_id": safe_text(step_result.get("retry_node_id")),
+            }
+        if action == "branch_conflict":
+            lineage["branch_conflict"] = {
+                "conflict_id": safe_text(step_result.get("conflict_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "source_branch_ids": copy.deepcopy(step_result.get("source_branch_ids") if isinstance(step_result.get("source_branch_ids"), list) else []),
+                "target_branch_id": safe_text(step_result.get("target_branch_id")),
+                "conflict_node_id": safe_text(step_result.get("conflict_node_id")),
+                "mutation_transaction_ids": copy.deepcopy(step_result.get("mutation_transaction_ids") if isinstance(step_result.get("mutation_transaction_ids"), list) else []),
+            }
+        if action == "graph_reconciliation":
+            lineage["graph_reconciliation"] = {
+                "reconciliation_id": safe_text(step_result.get("reconciliation_id")),
+                "workflow_id": safe_text(step_result.get("workflow_id")) or workflow_id,
+                "session_id": safe_text(step_result.get("session_id")) or session_id,
+                "conflict_id": safe_text(step_result.get("conflict_id")),
+                "rollback_id": safe_text(step_result.get("rollback_id")),
+                "retry_node_id": safe_text(step_result.get("retry_node_id")),
+                "source_branch_ids": copy.deepcopy(step_result.get("source_branch_ids") if isinstance(step_result.get("source_branch_ids"), list) else []),
+                "target_branch_id": safe_text(step_result.get("target_branch_id")),
+                "strategy": safe_text(step_result.get("strategy")) or "rollback_retry_reconcile",
+            }
         if phase == "repair":
             lineage["repair_ancestry"] = self._repair_ancestry(
                 state=state,
@@ -1426,6 +1765,8 @@ class WorkflowRuntimeSessionManager:
                 "workflow_id": workflow_id,
                 "source_branch_id": safe_text(replay_input.get("source_branch_id")),
                 "continued_branch_id": safe_text(replay_input.get("continued_branch_id")),
+                "mutation_transaction_ids": copy.deepcopy(replay_input.get("mutation_transaction_ids") if isinstance(replay_input.get("mutation_transaction_ids"), list) else []),
+                "rollback_ids": copy.deepcopy(replay_input.get("rollback_ids") if isinstance(replay_input.get("rollback_ids"), list) else []),
             }
         return lineage
 
@@ -1514,6 +1855,31 @@ class WorkflowRuntimeSessionManager:
             for event in events
             if isinstance(event.lineage, dict) and isinstance(event.lineage.get("recovery_dependency"), dict)
         ]
+        mutation_transactions = [
+            copy.deepcopy(event.lineage.get("mutation_transaction"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("mutation_transaction"), dict)
+        ]
+        mutation_verifies = [
+            copy.deepcopy(event.lineage.get("mutation_verify"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("mutation_verify"), dict)
+        ]
+        rollback_nodes = [
+            copy.deepcopy(event.lineage.get("rollback_graph_node"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("rollback_graph_node"), dict)
+        ]
+        branch_conflicts = [
+            copy.deepcopy(event.lineage.get("branch_conflict"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("branch_conflict"), dict)
+        ]
+        graph_reconciliations = [
+            copy.deepcopy(event.lineage.get("graph_reconciliation"))
+            for event in events
+            if isinstance(event.lineage, dict) and isinstance(event.lineage.get("graph_reconciliation"), dict)
+        ]
         current_branch_id = self._current_branch_id_from_records(graph_nodes, branch_forks, state)
         lineage = {
             "schema": "zero.workflow_runtime_session.lineage.v1",
@@ -1545,9 +1911,31 @@ class WorkflowRuntimeSessionManager:
                 "schema": "zero.workflow_runtime_session.recovery_dependency_graph.v1",
                 "dependencies": recovery_dependencies[-200:],
             },
+            "mutation_transaction_graph": {
+                "schema": "zero.workflow_runtime_session.mutation_transaction_graph.v1",
+                "mutations": mutation_transactions[-200:],
+                "verifies": mutation_verifies[-200:],
+                "conflicts": branch_conflicts[-100:],
+                "reconciliations": graph_reconciliations[-100:],
+            },
+            "rollback_graph": {
+                "schema": "zero.workflow_runtime_session.rollback_graph.v1",
+                "rollbacks": rollback_nodes[-200:],
+            },
         }
         if source_session_id:
             replay_input = self._replay_continuation_input(task=task, state=state, result=result)
+            replay_mutation_ids = [
+                safe_text(item)
+                for item in (replay_input.get("mutation_transaction_ids") if isinstance(replay_input.get("mutation_transaction_ids"), list) else [])
+                if safe_text(item)
+            ]
+            if not replay_mutation_ids:
+                replay_mutation_ids = [
+                    safe_text(item.get("mutation_transaction_id"))
+                    for item in mutation_transactions[-20:]
+                    if isinstance(item, dict) and safe_text(item.get("mutation_transaction_id"))
+                ]
             lineage["replay_continuation"] = {
                 "source_session_id": source_session_id,
                 "continued_session_id": session_id,
@@ -1557,6 +1945,12 @@ class WorkflowRuntimeSessionManager:
                 "cursor_id": safe_text(recovery_resumes[-1].get("cursor_id")) if recovery_resumes else "",
                 "source_branch_id": safe_text(replay_input.get("source_branch_id")),
                 "continued_branch_id": safe_text(replay_input.get("continued_branch_id")) or current_branch_id,
+                "mutation_transaction_ids": replay_mutation_ids,
+                "rollback_ids": [
+                    safe_text(item)
+                    for item in (replay_input.get("rollback_ids") if isinstance(replay_input.get("rollback_ids"), list) else [])
+                    if safe_text(item)
+                ],
             }
         return lineage
 
@@ -1898,6 +2292,11 @@ class WorkflowRuntimeSessionManager:
         branch_forks: List[Dict[str, Any]] = []
         join_merges: List[Dict[str, Any]] = []
         recovery_dependencies: List[Dict[str, Any]] = []
+        mutation_transactions: List[Dict[str, Any]] = []
+        mutation_verifies: List[Dict[str, Any]] = []
+        rollback_nodes: List[Dict[str, Any]] = []
+        branch_conflicts: List[Dict[str, Any]] = []
+        graph_reconciliations: List[Dict[str, Any]] = []
         node_branch: Dict[str, str] = {}
         for event in events:
             if not isinstance(event, dict):
@@ -2020,6 +2419,21 @@ class WorkflowRuntimeSessionManager:
             recovery_dependency = event_lineage.get("recovery_dependency") if isinstance(event_lineage.get("recovery_dependency"), dict) else {}
             if recovery_dependency:
                 recovery_dependencies.append(copy.deepcopy(recovery_dependency))
+            mutation_transaction = event_lineage.get("mutation_transaction") if isinstance(event_lineage.get("mutation_transaction"), dict) else {}
+            if mutation_transaction:
+                mutation_transactions.append(copy.deepcopy(mutation_transaction))
+            mutation_verify = event_lineage.get("mutation_verify") if isinstance(event_lineage.get("mutation_verify"), dict) else {}
+            if mutation_verify:
+                mutation_verifies.append(copy.deepcopy(mutation_verify))
+            rollback_node = event_lineage.get("rollback_graph_node") if isinstance(event_lineage.get("rollback_graph_node"), dict) else {}
+            if rollback_node:
+                rollback_nodes.append(copy.deepcopy(rollback_node))
+            branch_conflict = event_lineage.get("branch_conflict") if isinstance(event_lineage.get("branch_conflict"), dict) else {}
+            if branch_conflict:
+                branch_conflicts.append(copy.deepcopy(branch_conflict))
+            graph_reconciliation = event_lineage.get("graph_reconciliation") if isinstance(event_lineage.get("graph_reconciliation"), dict) else {}
+            if graph_reconciliation:
+                graph_reconciliations.append(copy.deepcopy(graph_reconciliation))
 
         graph = lineage.get("execution_graph") if isinstance(lineage.get("execution_graph"), dict) else {}
         for node in graph.get("nodes") if isinstance(graph.get("nodes"), list) else []:
@@ -2046,6 +2460,23 @@ class WorkflowRuntimeSessionManager:
         for dependency in recovery_graph.get("dependencies") if isinstance(recovery_graph.get("dependencies"), list) else []:
             if isinstance(dependency, dict) and dependency not in recovery_dependencies:
                 recovery_dependencies.append(copy.deepcopy(dependency))
+        mutation_graph = lineage.get("mutation_transaction_graph") if isinstance(lineage.get("mutation_transaction_graph"), dict) else {}
+        for mutation in mutation_graph.get("mutations") if isinstance(mutation_graph.get("mutations"), list) else []:
+            if isinstance(mutation, dict) and mutation not in mutation_transactions:
+                mutation_transactions.append(copy.deepcopy(mutation))
+        for verify in mutation_graph.get("verifies") if isinstance(mutation_graph.get("verifies"), list) else []:
+            if isinstance(verify, dict) and verify not in mutation_verifies:
+                mutation_verifies.append(copy.deepcopy(verify))
+        for conflict in mutation_graph.get("conflicts") if isinstance(mutation_graph.get("conflicts"), list) else []:
+            if isinstance(conflict, dict) and conflict not in branch_conflicts:
+                branch_conflicts.append(copy.deepcopy(conflict))
+        for reconciliation in mutation_graph.get("reconciliations") if isinstance(mutation_graph.get("reconciliations"), list) else []:
+            if isinstance(reconciliation, dict) and reconciliation not in graph_reconciliations:
+                graph_reconciliations.append(copy.deepcopy(reconciliation))
+        rollback_graph = lineage.get("rollback_graph") if isinstance(lineage.get("rollback_graph"), dict) else {}
+        for rollback in rollback_graph.get("rollbacks") if isinstance(rollback_graph.get("rollbacks"), list) else []:
+            if isinstance(rollback, dict) and rollback not in rollback_nodes:
+                rollback_nodes.append(copy.deepcopy(rollback))
 
         branch_parent: Dict[str, str] = {}
         for branch in branch_forks:
@@ -2102,6 +2533,115 @@ class WorkflowRuntimeSessionManager:
             if source_branch and target_branch and not self._branches_related(source_branch, target_branch, branch_parent, join_merges):
                 breaks.append("recovery_dependency_graph_discontinuity")
 
+        mutation_ids = {
+            safe_text(mutation.get("mutation_transaction_id"))
+            for mutation in mutation_transactions
+            if safe_text(mutation.get("mutation_transaction_id"))
+        }
+        mutation_node_ids = {
+            safe_text(mutation.get("node_id"))
+            for mutation in mutation_transactions
+            if safe_text(mutation.get("node_id"))
+        }
+        verify_ids = {
+            safe_text(verify.get("mutation_verify_id"))
+            for verify in mutation_verifies
+            if safe_text(verify.get("mutation_verify_id"))
+        }
+        rollback_ids = {
+            safe_text(rollback.get("rollback_id"))
+            for rollback in rollback_nodes
+            if safe_text(rollback.get("rollback_id"))
+        }
+        rollback_node_ids = {
+            safe_text(rollback.get("rollback_node_id"))
+            for rollback in rollback_nodes
+            if safe_text(rollback.get("rollback_node_id"))
+        }
+        retry_node_ids = {
+            safe_text(rollback.get("retry_node_id"))
+            for rollback in rollback_nodes
+            if safe_text(rollback.get("retry_node_id"))
+        }
+        conflict_ids = {
+            safe_text(conflict.get("conflict_id"))
+            for conflict in branch_conflicts
+            if safe_text(conflict.get("conflict_id"))
+        }
+
+        verifies_by_mutation: Dict[str, List[Dict[str, Any]]] = {}
+        for verify in mutation_verifies:
+            mutation_id = safe_text(verify.get("mutation_transaction_id"))
+            if mutation_id:
+                verifies_by_mutation.setdefault(mutation_id, []).append(verify)
+            if mutation_id and mutation_id not in mutation_ids:
+                breaks.append("mutation_verify_record_missing")
+            verify_node_id = safe_text(verify.get("verify_node_id"))
+            if verify_node_id and verify_node_id not in graph_node_ids:
+                breaks.append("mutation_verify_record_missing")
+
+        for mutation in mutation_transactions:
+            mutation_id = safe_text(mutation.get("mutation_transaction_id"))
+            if safe_text(mutation.get("node_id")) and safe_text(mutation.get("node_id")) not in graph_node_ids:
+                breaks.append("mutation_graph_node_missing")
+            if safe_text(mutation.get("branch_id")) and safe_text(mutation.get("branch_id")) not in branch_ids:
+                breaks.append("mutation_branch_missing")
+            if mutation_id and not verifies_by_mutation.get(mutation_id):
+                breaks.append("mutation_verify_record_missing")
+
+        for rollback in rollback_nodes:
+            mutation_id = safe_text(rollback.get("mutation_transaction_id"))
+            verify_id = safe_text(rollback.get("mutation_verify_id"))
+            rollback_node_id = safe_text(rollback.get("rollback_node_id"))
+            if not mutation_id or mutation_id not in mutation_ids:
+                breaks.append("rollback_without_mutation_parent")
+            if not verify_id or verify_id not in verify_ids:
+                breaks.append("mutation_verify_record_missing")
+            if rollback_node_id and rollback_node_id not in graph_node_ids:
+                breaks.append("rollback_graph_node_missing")
+            retry_node_id = safe_text(rollback.get("retry_node_id"))
+            if retry_node_id and retry_node_id not in graph_node_ids:
+                breaks.append("reconciliation_missing_rollback_retry_link")
+
+        for conflict in branch_conflicts:
+            source_branch_ids = [
+                safe_text(item)
+                for item in (conflict.get("source_branch_ids") if isinstance(conflict.get("source_branch_ids"), list) else [])
+                if safe_text(item)
+            ]
+            target_branch_id = safe_text(conflict.get("target_branch_id"))
+            if not source_branch_ids or not target_branch_id:
+                breaks.append("branch_conflict_unrelated_branches")
+            if target_branch_id and target_branch_id not in branch_ids:
+                breaks.append("branch_conflict_unrelated_branches")
+            if any(branch_id not in branch_ids for branch_id in source_branch_ids):
+                breaks.append("branch_conflict_unrelated_branches")
+            if any(not self._branches_related(source, target_branch_id, branch_parent, join_merges) for source in source_branch_ids):
+                breaks.append("branch_conflict_unrelated_branches")
+            for mutation_id in conflict.get("mutation_transaction_ids") if isinstance(conflict.get("mutation_transaction_ids"), list) else []:
+                if safe_text(mutation_id) not in mutation_ids:
+                    breaks.append("branch_conflict_stale_mutation")
+
+        for reconciliation in graph_reconciliations:
+            conflict_id = safe_text(reconciliation.get("conflict_id"))
+            rollback_id = safe_text(reconciliation.get("rollback_id"))
+            retry_node_id = safe_text(reconciliation.get("retry_node_id"))
+            if not conflict_id or conflict_id not in conflict_ids:
+                breaks.append("reconciliation_missing_rollback_retry_link")
+            if not rollback_id or rollback_id not in rollback_ids:
+                breaks.append("reconciliation_missing_rollback_retry_link")
+            if not retry_node_id or retry_node_id not in graph_node_ids:
+                breaks.append("reconciliation_missing_rollback_retry_link")
+            if retry_node_id and retry_node_id not in retry_node_ids:
+                breaks.append("reconciliation_missing_rollback_retry_link")
+            has_recovery_dependency = any(
+                safe_text(dependency.get("source_node_id")) in rollback_node_ids
+                and safe_text(dependency.get("target_node_id")) == retry_node_id
+                for dependency in recovery_dependencies
+            )
+            if not has_recovery_dependency:
+                breaks.append("reconciliation_missing_rollback_retry_link")
+
         source_session_id = safe_text(lineage.get("source_session_id"))
         replay = lineage.get("replay_continuation") if isinstance(lineage.get("replay_continuation"), dict) else {}
         if source_session_id and safe_text(replay.get("source_session_id")) != source_session_id:
@@ -2110,6 +2650,20 @@ class WorkflowRuntimeSessionManager:
             breaks.append("replay_recovery_resume_id_mismatch")
         if replay and safe_text(replay.get("cursor_id")) and safe_text(replay.get("cursor_id")) not in cursor_ids:
             breaks.append("replay_cursor_id_mismatch")
+        replay_mutation_ids = [
+            safe_text(item)
+            for item in (replay.get("mutation_transaction_ids") if isinstance(replay.get("mutation_transaction_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(mutation_id not in mutation_ids for mutation_id in replay_mutation_ids):
+            breaks.append("replay_stale_mutation_lineage")
+        replay_rollback_ids = [
+            safe_text(item)
+            for item in (replay.get("rollback_ids") if isinstance(replay.get("rollback_ids"), list) else [])
+            if safe_text(item)
+        ]
+        if any(rollback_id not in rollback_ids for rollback_id in replay_rollback_ids):
+            breaks.append("replay_stale_mutation_lineage")
         source_branch_id = safe_text(replay.get("source_branch_id"))
         continued_branch_id = safe_text(replay.get("continued_branch_id"))
         if replay and source_branch_id and continued_branch_id:
@@ -2142,6 +2696,11 @@ class WorkflowRuntimeSessionManager:
                         "replay_branch_lineage_mismatch",
                         "recovery_dependency_graph_node_missing",
                         "recovery_dependency_graph_discontinuity",
+                        "rollback_without_mutation_parent",
+                        "mutation_verify_record_missing",
+                        "branch_conflict_unrelated_branches",
+                        "reconciliation_missing_rollback_retry_link",
+                        "replay_stale_mutation_lineage",
                     )
                 ),
                 "node_count": len(graph_node_ids),
@@ -2149,6 +2708,11 @@ class WorkflowRuntimeSessionManager:
                 "branch_count": len(branch_ids),
                 "join_count": len(join_merges),
                 "recovery_dependency_count": len(recovery_dependencies),
+                "mutation_transaction_count": len(mutation_ids),
+                "mutation_verify_count": len(verify_ids),
+                "rollback_count": len(rollback_ids),
+                "conflict_count": len(conflict_ids),
+                "reconciliation_count": len(graph_reconciliations),
             },
         }
 

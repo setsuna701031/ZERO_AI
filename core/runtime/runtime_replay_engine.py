@@ -647,6 +647,8 @@ def build_replayable_workflow_runtime_session(
         source_branch_id = str(replay_continuation.get("source_branch_id") or lineage.get("current_branch_id") or "").strip()
         if source_branch_id:
             replay_continuation["source_branch_id"] = source_branch_id
+        replay_graph = workflow_replay_graph_summary(lineage=lineage, replay_continuation=replay_continuation)
+        replay_continuation = copy.deepcopy(replay_graph["replay_continuation"])
     else:
         lineage = {}
     if source_id:
@@ -678,4 +680,41 @@ def build_replayable_workflow_runtime_session(
         "replay_continuation": copy.deepcopy(session.get("lineage", {}).get("replay_continuation", {})),
         "continuity_summary": copy.deepcopy(session.get("continuity_summary", {})),
         "status": session.get("status"),
+    }
+
+
+def workflow_replay_graph_summary(
+    *,
+    lineage: dict[str, Any] | None = None,
+    replay_continuation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize deterministic workflow graph replay references without side effects."""
+
+    source_lineage = lineage if isinstance(lineage, dict) else {}
+    replay = copy.deepcopy(replay_continuation if isinstance(replay_continuation, dict) else {})
+    mutation_graph = source_lineage.get("mutation_transaction_graph") if isinstance(source_lineage.get("mutation_transaction_graph"), dict) else {}
+    rollback_graph = source_lineage.get("rollback_graph") if isinstance(source_lineage.get("rollback_graph"), dict) else {}
+
+    mutation_ids = [
+        str(item.get("mutation_transaction_id") or "").strip()
+        for item in (mutation_graph.get("mutations") if isinstance(mutation_graph.get("mutations"), list) else [])
+        if isinstance(item, dict) and str(item.get("mutation_transaction_id") or "").strip()
+    ]
+    rollback_ids = [
+        str(item.get("rollback_id") or "").strip()
+        for item in (rollback_graph.get("rollbacks") if isinstance(rollback_graph.get("rollbacks"), list) else [])
+        if isinstance(item, dict) and str(item.get("rollback_id") or "").strip()
+    ]
+
+    if mutation_ids and not isinstance(replay.get("mutation_transaction_ids"), list):
+        replay["mutation_transaction_ids"] = mutation_ids[-20:]
+    if rollback_ids and not isinstance(replay.get("rollback_ids"), list):
+        replay["rollback_ids"] = rollback_ids[-20:]
+
+    return {
+        "schema": "zero.workflow_runtime_session.replay_graph_summary.v1",
+        "ok": True,
+        "replay_continuation": replay,
+        "mutation_transaction_ids": copy.deepcopy(replay.get("mutation_transaction_ids") if isinstance(replay.get("mutation_transaction_ids"), list) else []),
+        "rollback_ids": copy.deepcopy(replay.get("rollback_ids") if isinstance(replay.get("rollback_ids"), list) else []),
     }
