@@ -756,3 +756,42 @@ Expected result:
 ```text
 20 passed
 ```
+
+---
+
+## AER Runtime Governance Kernel Consolidation / Continuity Index v1
+
+ZERO now consolidates the accumulated workflow, replay, governance,
+constitutional, archive, and resurrection continuity layers into a compact
+runtime-governance kernel surface.
+
+The new consolidation path records:
+
+```text
+runtime continuity index
+-> lineage compaction
+-> constitutional snapshot
+-> replay acceleration index
+-> governance archive layer
+-> governance kernel consolidation
+-> deterministic replay validation
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. The consolidation
+records are JSON-serializable dictionaries and do not execute commands, mutate
+files, approve policy, or move execution ownership into Scheduler. The goal is
+not to add another execution path; it is to make the runtime constitution easier
+to index, compact, snapshot, replay, and archive without breaking authority
+boundaries.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+21 passed
+```

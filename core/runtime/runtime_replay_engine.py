@@ -876,3 +876,32 @@ def build_sovereign_archive_replay_validation(
         "session_id": str(workflow_runtime_session.get("session_id") or ""),
         "continuity_summary": summary,
     }
+
+
+def build_governance_kernel_consolidation_replay_validation(
+    *,
+    workflow_runtime_session: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate runtime governance kernel consolidation replay continuity.
+
+    This bridge is read-only. It delegates continuity authority to
+    WorkflowRuntimeSessionManager and does not execute, mutate, approve, or
+    arbitrate anything.
+    """
+    try:
+        from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager
+
+        summary = WorkflowRuntimeSessionManager().continuity_summary(workflow_runtime_session)
+    except Exception as exc:  # pragma: no cover - defensive bridge helper
+        return {
+            "ok": False,
+            "schema": "zero.runtime_replay.governance_kernel_consolidation_validation.v1",
+            "error": str(exc),
+        }
+    return {
+        "ok": bool(summary.get("ok", False)),
+        "schema": "zero.runtime_replay.governance_kernel_consolidation_validation.v1",
+        "workflow_id": str(workflow_runtime_session.get("workflow_id") or ""),
+        "session_id": str(workflow_runtime_session.get("session_id") or ""),
+        "continuity_summary": summary,
+    }

@@ -703,3 +703,40 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 20 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Governance Kernel Consolidation / Continuity Index v1
+
+Added a consolidation layer for the AER workflow runtime graph.
+
+Purpose:
+
+```text
+runtime continuity index
+-> lineage compaction
+-> constitutional snapshot
+-> replay acceleration index
+-> governance archive layer
+-> governance kernel consolidation
+```
+
+This package stops expanding the runtime graph one record at a time and begins
+consolidating the existing governance / constitutional / replay continuity
+surface into an indexed, compacted, snapshot-ready kernel substrate.
+
+Boundary decision:
+
+```text
+WorkflowRuntimeSession remains continuity authority.
+RuntimeReplayEngine remains replay validation only.
+Scheduler remains orchestration only.
+No execution authority is added to the consolidation layer.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 21 passed
+```
