@@ -7251,3 +7251,211 @@ def _zero_v7333_execute_step_public_step_evidence_key_seal(
 
 
 StepExecutor.execute_step = _zero_v7333_execute_step_public_step_evidence_key_seal
+
+# ZERO v7.3.34 - StepExecutor side-effect pre-authority visibility
+# Inventory-only compatibility layer: classify side-effect steps and expose the
+# pre-execution authority decision without enforcing a new global authority gate.
+_ZERO_V7334_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+_ZERO_V7334_MUTATION_STEP_TYPES = frozenset(
+    {
+        "write_file",
+        "workspace_write",
+        "append_file",
+        "workspace_append",
+        "apply_patch",
+        "apply_unified_diff",
+    }
+)
+
+_ZERO_V7334_EXECUTE_STEP_TYPES = frozenset(
+    {
+        "command",
+        "run_python",
+        "shell",
+        "bash",
+        "powershell",
+        "cmd",
+    }
+)
+
+_ZERO_V7334_READ_STEP_TYPES = frozenset(
+    {
+        "read_file",
+        "workspace_read",
+        "verify",
+        "verify_file",
+        "verify_python_syntax",
+        "python_syntax_check",
+        "verify_unified_diff",
+        "verify_patch",
+    }
+)
+
+_ZERO_V7334_RESPOND_STEP_TYPES = frozenset({"respond", "final_answer"})
+_ZERO_V7334_GENERATE_STEP_TYPES = frozenset({"llm", "llm_generate"})
+_ZERO_V7334_AUTHORITY_POLICY = "legacy_step_executor_policy"
+
+
+def _zero_v7334_normalize_step_type(step_type, step=None):
+    value = str(step_type or "").strip().lower()
+    if not value and isinstance(step, dict):
+        value = str(step.get("type") or step.get("action") or "").strip().lower()
+    return value or "unknown"
+
+
+def _zero_v7334_public_authority_decision(decision):
+    if not isinstance(decision, dict):
+        return {}
+    allowed_keys = {
+        "authority_required",
+        "action_type",
+        "step_type",
+        "authority_phase",
+        "authority_source",
+        "authority_policy",
+        "decision",
+        "reason",
+        "sealed",
+        "status",
+    }
+    return {
+        key: copy.deepcopy(decision[key])
+        for key in allowed_keys
+        if key in decision
+    }
+
+
+def _zero_v7334_classify_step_authority_requirement(self, step_type, step=None):
+    normalized_step_type = _zero_v7334_normalize_step_type(step_type, step)
+
+    if normalized_step_type in _ZERO_V7334_MUTATION_STEP_TYPES:
+        return {
+            "authority_required": True,
+            "action_type": "mutation",
+            "step_type": normalized_step_type,
+            "authority_policy": _ZERO_V7334_AUTHORITY_POLICY,
+            "sealed": False,
+            "status": "authority_unsealed",
+            "reason": "legacy_step_executor_policy_unsealed",
+        }
+
+    if normalized_step_type in _ZERO_V7334_EXECUTE_STEP_TYPES:
+        return {
+            "authority_required": True,
+            "action_type": "execute",
+            "step_type": normalized_step_type,
+            "authority_policy": _ZERO_V7334_AUTHORITY_POLICY,
+            "sealed": False,
+            "status": "authority_unsealed",
+            "reason": "legacy_step_executor_policy_unsealed",
+        }
+
+    if normalized_step_type in _ZERO_V7334_RESPOND_STEP_TYPES:
+        action_type = "respond"
+    elif normalized_step_type in _ZERO_V7334_GENERATE_STEP_TYPES:
+        action_type = "generate"
+    else:
+        action_type = "read"
+
+    return {
+        "authority_required": False,
+        "action_type": action_type,
+        "step_type": normalized_step_type,
+        "authority_policy": "read_only_or_non_side_effect_step",
+        "sealed": False,
+        "status": "authority_not_required",
+        "reason": "read_only_or_non_side_effect_step",
+    }
+
+
+def _zero_v7334_build_pre_execution_authority_decision(
+    self,
+    step_type,
+    step=None,
+    task=None,
+    context=None,
+):
+    del task, context
+    classification = self._classify_step_authority_requirement(step_type, step)
+    authority_required = bool(classification.get("authority_required", False))
+    decision = "allowed_with_legacy_policy" if authority_required else "read_only"
+
+    return {
+        **copy.deepcopy(classification),
+        "authority_phase": "pre_execution",
+        "authority_source": str(
+            classification.get("authority_policy") or _ZERO_V7334_AUTHORITY_POLICY
+        ),
+        "authority_policy": str(
+            classification.get("authority_policy") or _ZERO_V7334_AUTHORITY_POLICY
+        ),
+        "decision": decision,
+    }
+
+
+def _zero_v7334_attach_pre_execution_authority(self, result, decision):
+    if not isinstance(result, dict):
+        return result
+
+    normalized = copy.deepcopy(result)
+    public_decision = _zero_v7334_public_authority_decision(decision)
+    if not public_decision:
+        return normalized
+
+    normalized["authority_decision"] = copy.deepcopy(public_decision)
+
+    runtime_payload = normalized.get("runtime_execution_result")
+    if isinstance(runtime_payload, dict):
+        runtime_payload = copy.deepcopy(runtime_payload)
+        metadata = runtime_payload.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata = {
+            **copy.deepcopy(metadata),
+            "authority_decision": copy.deepcopy(public_decision),
+            "pre_execution_authority": copy.deepcopy(public_decision),
+        }
+        runtime_payload["metadata"] = metadata
+        normalized["runtime_execution_result"] = runtime_payload
+
+    return normalized
+
+
+def _zero_v7334_execute_step_with_pre_authority(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    step_type = _zero_v7334_normalize_step_type("", step if isinstance(step, dict) else {})
+    decision = self._build_pre_execution_authority_decision(
+        step_type,
+        step if isinstance(step, dict) else {},
+        task if isinstance(task, dict) else {},
+        context if isinstance(context, dict) else {},
+    )
+
+    result = _ZERO_V7334_PREVIOUS_EXECUTE_STEP(
+        self,
+        step=step,
+        task=task,
+        context=context,
+        previous_result=previous_result,
+        step_index=step_index,
+        step_count=step_count,
+        **kwargs,
+    )
+
+    return self._attach_pre_execution_authority(result, decision)
+
+
+StepExecutor._classify_step_authority_requirement = _zero_v7334_classify_step_authority_requirement
+StepExecutor._build_pre_execution_authority_decision = _zero_v7334_build_pre_execution_authority_decision
+StepExecutor._attach_pre_execution_authority = _zero_v7334_attach_pre_execution_authority
+StepExecutor.execute_step = _zero_v7334_execute_step_with_pre_authority
