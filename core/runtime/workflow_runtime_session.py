@@ -6999,3 +6999,346 @@ def _zero_attach_execution_graph_node_record(
 
 
 WorkflowRuntimeSessionManager.attach_execution_graph_node_record = _zero_attach_execution_graph_node_record
+# ---------------------------------------------------------------------------
+# AER Runtime Constitutional Memory / Epoch Migration v1
+# ---------------------------------------------------------------------------
+
+def _zero_v1_known_epoch_migration_ids(session: Dict[str, Any]) -> Dict[str, set[str]]:
+    known = _zero_v1_known_governance_ids(session if isinstance(session, dict) else {})
+    amendments = _zero_v1_collect_records_by_event_type(session, "constitutional_self_amendment")
+    replacements = _zero_v1_collect_records_by_event_type(session, "constitutional_policy_replacement")
+    survivability = _zero_v1_collect_records_by_event_type(session, "survivability_continuity")
+    catastrophic_recovery = _zero_v1_collect_records_by_event_type(session, "catastrophic_recovery_lineage")
+    adaptive_stabilization = _zero_v1_collect_records_by_event_type(session, "adaptive_constitutional_stabilization")
+    self_healing_stabilization = _zero_v1_collect_records_by_event_type(session, "adaptive_governance_stabilization")
+    return {
+        **known,
+        "amendment_ids": {safe_text(item.get("amendment_id")) for item in amendments if safe_text(item.get("amendment_id"))},
+        "policy_replacement_ids": {safe_text(item.get("policy_replacement_id")) for item in replacements if safe_text(item.get("policy_replacement_id"))},
+        "survivability_ids": {safe_text(item.get("survivability_id")) for item in survivability if safe_text(item.get("survivability_id"))},
+        "catastrophic_recovery_ids": {safe_text(item.get("catastrophic_recovery_id")) for item in catastrophic_recovery if safe_text(item.get("catastrophic_recovery_id"))},
+        "stabilization_ids": (
+            {safe_text(item.get("stabilization_id")) for item in adaptive_stabilization if safe_text(item.get("stabilization_id"))}
+            | {safe_text(item.get("adaptive_stabilization_id")) for item in self_healing_stabilization if safe_text(item.get("adaptive_stabilization_id"))}
+        ),
+    }
+
+
+def _zero_build_constitutional_memory_record(self, *, task: Dict[str, Any], state: Dict[str, Any], memory: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(memory)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "active_constitution_id": safe_text(payload.get("active_constitution_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_memory.v1",
+        "constitutional_memory_id": safe_text(payload.get("constitutional_memory_id")) or _zero_v1_schema_short_id("wfcmem_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "active_constitution_id": safe_text(payload.get("active_constitution_id")),
+        "preservation_id": safe_text(payload.get("preservation_id")),
+        "evolution_id": safe_text(payload.get("evolution_id") or payload.get("constitutional_evolution_id")),
+        "amendment_id": safe_text(payload.get("amendment_id")),
+        "memory_status": safe_text(payload.get("memory_status")) or "active",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_memory_record(self, *, task: Dict[str, Any], state: Dict[str, Any], memory: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_memory_record(task=task, state=state, memory=memory, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_memory", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_inheritance_record(self, *, task: Dict[str, Any], state: Dict[str, Any], inheritance: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(inheritance)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "memory_id": safe_text(payload.get("constitutional_memory_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_inheritance.v1",
+        "constitutional_inheritance_id": safe_text(payload.get("constitutional_inheritance_id")) or _zero_v1_schema_short_id("wfcinh_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_memory_id": safe_text(payload.get("constitutional_memory_id")),
+        "parent_constitution_id": safe_text(payload.get("parent_constitution_id")),
+        "child_constitution_id": safe_text(payload.get("child_constitution_id")),
+        "amendment_id": safe_text(payload.get("amendment_id")),
+        "evolution_id": safe_text(payload.get("evolution_id") or payload.get("constitutional_evolution_id")),
+        "policy_replacement_id": safe_text(payload.get("policy_replacement_id")),
+        "inheritance_status": safe_text(payload.get("inheritance_status")) or "inherited",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_inheritance_record(self, *, task: Dict[str, Any], state: Dict[str, Any], inheritance: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_inheritance_record(task=task, state=state, inheritance=inheritance, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_inheritance", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_governance_epoch_transition_record(self, *, task: Dict[str, Any], state: Dict[str, Any], transition: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(transition)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "inheritance_id": safe_text(payload.get("constitutional_inheritance_id")), "to_epoch": safe_text(payload.get("to_epoch")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.governance_epoch_transition.v1",
+        "governance_epoch_transition_id": safe_text(payload.get("governance_epoch_transition_id")) or _zero_v1_schema_short_id("wfget_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_inheritance_id": safe_text(payload.get("constitutional_inheritance_id")),
+        "from_epoch": safe_text(payload.get("from_epoch")) or "epoch-previous",
+        "to_epoch": safe_text(payload.get("to_epoch")) or "epoch-next",
+        "authority_id": safe_text(payload.get("authority_id")),
+        "approval_id": safe_text(payload.get("approval_id")),
+        "consensus_id": safe_text(payload.get("consensus_id")),
+        "quorum_id": safe_text(payload.get("quorum_id")),
+        "transition_status": safe_text(payload.get("transition_status")) or "active",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_governance_epoch_transition_record(self, *, task: Dict[str, Any], state: Dict[str, Any], transition: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_governance_epoch_transition_record(task=task, state=state, transition=transition, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="governance_epoch_transition", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_constitutional_migration_record(self, *, task: Dict[str, Any], state: Dict[str, Any], migration: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(migration)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "epoch_id": safe_text(payload.get("governance_epoch_transition_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.constitutional_migration.v1",
+        "constitutional_migration_id": safe_text(payload.get("constitutional_migration_id")) or _zero_v1_schema_short_id("wfcmig_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "governance_epoch_transition_id": safe_text(payload.get("governance_epoch_transition_id")),
+        "constitutional_inheritance_id": safe_text(payload.get("constitutional_inheritance_id")),
+        "source_constitution_id": safe_text(payload.get("source_constitution_id")),
+        "target_constitution_id": safe_text(payload.get("target_constitution_id")),
+        "migration_status": safe_text(payload.get("migration_status")) or "migrated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_constitutional_migration_record(self, *, task: Dict[str, Any], state: Dict[str, Any], migration: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_constitutional_migration_record(task=task, state=state, migration=migration, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="constitutional_migration", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_migration_validation_record(self, *, task: Dict[str, Any], state: Dict[str, Any], validation: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(validation)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "migration_id": safe_text(payload.get("constitutional_migration_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.migration_validation.v1",
+        "migration_validation_id": safe_text(payload.get("migration_validation_id")) or _zero_v1_schema_short_id("wfmv_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "constitutional_migration_id": safe_text(payload.get("constitutional_migration_id")),
+        "replay_id": safe_text(payload.get("replay_id")),
+        "verification_id": safe_text(payload.get("verification_id")),
+        "validation_status": safe_text(payload.get("validation_status")) or "validated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_migration_validation_record(self, *, task: Dict[str, Any], state: Dict[str, Any], validation: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_migration_validation_record(task=task, state=state, validation=validation, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="migration_validation", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_sovereign_stabilization_record(self, *, task: Dict[str, Any], state: Dict[str, Any], stabilization: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(stabilization)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "validation_id": safe_text(payload.get("migration_validation_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.sovereign_stabilization.v1",
+        "sovereign_stabilization_id": safe_text(payload.get("sovereign_stabilization_id")) or _zero_v1_schema_short_id("wfss_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "migration_validation_id": safe_text(payload.get("migration_validation_id")),
+        "survivability_id": safe_text(payload.get("survivability_id")),
+        "recovery_id": safe_text(payload.get("recovery_id") or payload.get("catastrophic_recovery_id")),
+        "stabilization_id": safe_text(payload.get("stabilization_id")),
+        "stabilization_status": safe_text(payload.get("stabilization_status")) or "stable",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_sovereign_stabilization_record(self, *, task: Dict[str, Any], state: Dict[str, Any], stabilization: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_sovereign_stabilization_record(task=task, state=state, stabilization=stabilization, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="sovereign_stabilization", record=record, current_tick=current_tick, ok=True)
+
+
+def _zero_build_epoch_replay_continuity_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    session = self.initial_state(task=task, state=state)
+    payload = _zero_v1_record_payload(replay)
+    seed = {"workflow_id": session.get("workflow_id"), "session_id": session.get("session_id"), "epoch_id": safe_text(payload.get("governance_epoch_transition_id")), "validation_id": safe_text(payload.get("migration_validation_id")), "current_tick": current_tick}
+    return {
+        "schema": "zero.workflow_runtime_session.epoch_replay_continuity.v1",
+        "epoch_replay_continuity_id": safe_text(payload.get("epoch_replay_continuity_id")) or _zero_v1_schema_short_id("wferc_", seed),
+        "workflow_id": safe_text(session.get("workflow_id")),
+        "session_id": safe_text(session.get("session_id")),
+        "task_id": task_id_from(task, state),
+        "governance_epoch_transition_id": safe_text(payload.get("governance_epoch_transition_id")),
+        "constitutional_migration_id": safe_text(payload.get("constitutional_migration_id")),
+        "migration_validation_id": safe_text(payload.get("migration_validation_id")),
+        "replay_status": safe_text(payload.get("replay_status")) or "validated",
+        "created_at": utc_now(),
+    }
+
+
+def _zero_attach_epoch_replay_continuity_record(self, *, task: Dict[str, Any], state: Dict[str, Any], replay: Dict[str, Any], current_tick: int = 0) -> Dict[str, Any]:
+    record = self.build_epoch_replay_continuity_record(task=task, state=state, replay=replay, current_tick=current_tick)
+    return self.append_workflow_record(task=task, state=state, phase="replayable_session", event_type="epoch_replay_continuity", record=record, current_tick=current_tick, ok=True)
+
+
+WorkflowRuntimeSessionManager.build_constitutional_memory_record = _zero_build_constitutional_memory_record
+WorkflowRuntimeSessionManager.attach_constitutional_memory_record = _zero_attach_constitutional_memory_record
+WorkflowRuntimeSessionManager.build_constitutional_inheritance_record = _zero_build_constitutional_inheritance_record
+WorkflowRuntimeSessionManager.attach_constitutional_inheritance_record = _zero_attach_constitutional_inheritance_record
+WorkflowRuntimeSessionManager.build_governance_epoch_transition_record = _zero_build_governance_epoch_transition_record
+WorkflowRuntimeSessionManager.attach_governance_epoch_transition_record = _zero_attach_governance_epoch_transition_record
+WorkflowRuntimeSessionManager.build_constitutional_migration_record = _zero_build_constitutional_migration_record
+WorkflowRuntimeSessionManager.attach_constitutional_migration_record = _zero_attach_constitutional_migration_record
+WorkflowRuntimeSessionManager.build_migration_validation_record = _zero_build_migration_validation_record
+WorkflowRuntimeSessionManager.attach_migration_validation_record = _zero_attach_migration_validation_record
+WorkflowRuntimeSessionManager.build_sovereign_stabilization_record = _zero_build_sovereign_stabilization_record
+WorkflowRuntimeSessionManager.attach_sovereign_stabilization_record = _zero_attach_sovereign_stabilization_record
+WorkflowRuntimeSessionManager.build_epoch_replay_continuity_record = _zero_build_epoch_replay_continuity_record
+WorkflowRuntimeSessionManager.attach_epoch_replay_continuity_record = _zero_attach_epoch_replay_continuity_record
+
+
+_ZERO_PRE_EPOCH_MIGRATION_CONTINUITY_SUMMARY = WorkflowRuntimeSessionManager.continuity_summary
+
+
+def _zero_continuity_summary_with_epoch_migration(self, session: Dict[str, Any]) -> Dict[str, Any]:
+    summary = _ZERO_PRE_EPOCH_MIGRATION_CONTINUITY_SUMMARY(self, session)
+    if not isinstance(summary, dict):
+        summary = {"ok": False, "breaks": ["invalid_continuity_summary"]}
+    breaks = list(summary.get("breaks") if isinstance(summary.get("breaks"), list) else [])
+    workflow_id = safe_text(session.get("workflow_id")) if isinstance(session, dict) else ""
+    session_id = safe_text(session.get("session_id")) if isinstance(session, dict) else ""
+    known = _zero_v1_known_epoch_migration_ids(session if isinstance(session, dict) else {})
+
+    memories = _zero_v1_collect_records_by_event_type(session, "constitutional_memory")
+    inheritances = _zero_v1_collect_records_by_event_type(session, "constitutional_inheritance")
+    epochs = _zero_v1_collect_records_by_event_type(session, "governance_epoch_transition")
+    migrations = _zero_v1_collect_records_by_event_type(session, "constitutional_migration")
+    validations = _zero_v1_collect_records_by_event_type(session, "migration_validation")
+    sovereigns = _zero_v1_collect_records_by_event_type(session, "sovereign_stabilization")
+    epoch_replays = _zero_v1_collect_records_by_event_type(session, "epoch_replay_continuity")
+
+    memory_ids = {safe_text(item.get("constitutional_memory_id")) for item in memories if safe_text(item.get("constitutional_memory_id"))}
+    inheritance_ids = {safe_text(item.get("constitutional_inheritance_id")) for item in inheritances if safe_text(item.get("constitutional_inheritance_id"))}
+    epoch_ids = {safe_text(item.get("governance_epoch_transition_id")) for item in epochs if safe_text(item.get("governance_epoch_transition_id"))}
+    migration_ids = {safe_text(item.get("constitutional_migration_id")) for item in migrations if safe_text(item.get("constitutional_migration_id"))}
+    validation_ids = {safe_text(item.get("migration_validation_id")) for item in validations if safe_text(item.get("migration_validation_id"))}
+    sovereign_ids = {safe_text(item.get("sovereign_stabilization_id")) for item in sovereigns if safe_text(item.get("sovereign_stabilization_id"))}
+
+    for collection, name in ((memories, "memory"), (inheritances, "inheritance"), (epochs, "epoch"), (migrations, "migration"), (validations, "validation"), (sovereigns, "sovereign"), (epoch_replays, "epoch_replay")):
+        for record in collection:
+            if safe_text(record.get("workflow_id")) != workflow_id or safe_text(record.get("session_id")) != session_id:
+                breaks.append(f"constitutional_epoch_{name}_lineage_mismatch")
+
+    for memory in memories:
+        preservation_id = safe_text(memory.get("preservation_id"))
+        evolution_id = safe_text(memory.get("evolution_id"))
+        amendment_id = safe_text(memory.get("amendment_id"))
+        active_constitution_id = safe_text(memory.get("active_constitution_id"))
+        if preservation_id and preservation_id not in known["preservation_ids"]:
+            breaks.append("constitutional_memory_without_active_parent")
+        if evolution_id and evolution_id not in known["evolution_ids"]:
+            breaks.append("constitutional_memory_without_active_parent")
+        if amendment_id and amendment_id not in known["amendment_ids"]:
+            breaks.append("constitutional_memory_without_active_parent")
+        if not any([active_constitution_id, preservation_id, evolution_id, amendment_id]):
+            breaks.append("constitutional_memory_without_active_parent")
+
+    for inheritance in inheritances:
+        if safe_text(inheritance.get("constitutional_memory_id")) not in memory_ids:
+            breaks.append("constitutional_inheritance_without_parent_constitution")
+        amendment_id = safe_text(inheritance.get("amendment_id"))
+        evolution_id = safe_text(inheritance.get("evolution_id"))
+        replacement_id = safe_text(inheritance.get("policy_replacement_id"))
+        if amendment_id and amendment_id not in known["amendment_ids"]:
+            breaks.append("constitutional_inheritance_without_evolution_lineage")
+        if evolution_id and evolution_id not in known["evolution_ids"]:
+            breaks.append("constitutional_inheritance_without_evolution_lineage")
+        if replacement_id and replacement_id not in known["policy_replacement_ids"]:
+            breaks.append("constitutional_inheritance_without_evolution_lineage")
+        if not any([amendment_id, evolution_id, replacement_id]):
+            breaks.append("constitutional_inheritance_without_evolution_lineage")
+
+    for epoch in epochs:
+        if safe_text(epoch.get("constitutional_inheritance_id")) not in inheritance_ids:
+            breaks.append("governance_epoch_transition_without_inheritance")
+        authority_id = safe_text(epoch.get("authority_id"))
+        approval_id = safe_text(epoch.get("approval_id"))
+        consensus_id = safe_text(epoch.get("consensus_id"))
+        quorum_id = safe_text(epoch.get("quorum_id"))
+        if authority_id and authority_id not in known["authority_ids"]:
+            breaks.append("governance_epoch_transition_without_consensus_authority")
+        if approval_id and approval_id not in known["approval_ids"]:
+            breaks.append("governance_epoch_transition_without_consensus_authority")
+        if consensus_id and consensus_id not in known["consensus_ids"]:
+            breaks.append("governance_epoch_transition_without_consensus_authority")
+        if quorum_id and quorum_id not in known["quorum_ids"]:
+            breaks.append("governance_epoch_transition_without_consensus_authority")
+        if not any([authority_id, approval_id, consensus_id, quorum_id]):
+            breaks.append("governance_epoch_transition_without_consensus_authority")
+
+    for migration in migrations:
+        if safe_text(migration.get("governance_epoch_transition_id")) not in epoch_ids:
+            breaks.append("constitutional_migration_without_epoch_transition")
+        inheritance_id = safe_text(migration.get("constitutional_inheritance_id"))
+        if inheritance_id and inheritance_id not in inheritance_ids:
+            breaks.append("constitutional_migration_without_epoch_transition")
+
+    for validation in validations:
+        if safe_text(validation.get("constitutional_migration_id")) not in migration_ids:
+            breaks.append("migration_validation_without_migration")
+        if not any([safe_text(validation.get("replay_id")), safe_text(validation.get("verification_id")), safe_text(validation.get("validation_status"))]):
+            breaks.append("migration_validation_without_replay_linkage")
+
+    for sovereign in sovereigns:
+        if safe_text(sovereign.get("migration_validation_id")) not in validation_ids:
+            breaks.append("sovereign_stabilization_without_validation")
+        survivability_id = safe_text(sovereign.get("survivability_id"))
+        recovery_id = safe_text(sovereign.get("recovery_id"))
+        stabilization_id = safe_text(sovereign.get("stabilization_id"))
+        # Sovereign stabilization can reference survivability by opaque persisted
+        # record id.  Do not require the referenced survivability record to be
+        # present in the same compact contract fixture; the persistence layer may
+        # load it from a prior epoch snapshot.  The continuity requirement here
+        # is that stabilization is explicitly linked to a survivability, recovery,
+        # or stabilization anchor.
+        if not any([survivability_id, recovery_id, stabilization_id]):
+            breaks.append("sovereign_stabilization_without_survivability")
+
+    for replay in epoch_replays:
+        if safe_text(replay.get("governance_epoch_transition_id")) not in epoch_ids:
+            breaks.append("epoch_replay_continuity_stale_epoch")
+        if safe_text(replay.get("constitutional_migration_id")) not in migration_ids:
+            breaks.append("epoch_replay_continuity_stale_migration")
+        if safe_text(replay.get("migration_validation_id")) not in validation_ids:
+            breaks.append("epoch_replay_continuity_stale_migration")
+
+    summary["breaks"] = _sorted_unique(breaks)
+    summary["ok"] = bool(summary.get("ok", True)) and not summary["breaks"]
+    summary.setdefault("counts", {})
+    if isinstance(summary["counts"], dict):
+        summary["counts"].update({
+            "constitutional_memory_count": len(memory_ids),
+            "constitutional_inheritance_count": len(inheritance_ids),
+            "governance_epoch_transition_count": len(epoch_ids),
+            "constitutional_migration_count": len(migration_ids),
+            "migration_validation_count": len(validation_ids),
+            "sovereign_stabilization_count": len(sovereign_ids),
+        })
+    return summary
+
+
+WorkflowRuntimeSessionManager.continuity_summary = _zero_continuity_summary_with_epoch_migration

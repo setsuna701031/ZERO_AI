@@ -641,3 +641,34 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 18 passed
 ```
+
+---
+
+## 2026-05-25 - AER Runtime Constitutional Memory / Epoch Migration v1
+
+Added constitutional memory and governance epoch migration continuity to the
+workflow runtime session contract.
+
+ZERO now preserves:
+
+```text
+constitutional memory
+constitutional inheritance lineage
+governance epoch transitions
+constitutional migration
+migration validation
+sovereign stabilization
+epoch replay continuity
+```
+
+The new records extend the deterministic runtime governance graph without
+adding execution side effects. `WorkflowRuntimeSession` remains continuity
+authority, `RuntimeReplayEngine` only exposes read-only validation, Scheduler
+remains orchestration-only, and no hidden mutation shortcuts are introduced.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+-> 19 passed
+```

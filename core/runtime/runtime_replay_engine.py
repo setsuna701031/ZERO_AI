@@ -818,3 +818,32 @@ def build_constitutional_self_amendment_replay_validation(
         "session_id": str(workflow_runtime_session.get("session_id") or ""),
         "continuity_summary": summary,
     }
+
+
+def build_epoch_migration_replay_validation(
+    *,
+    workflow_runtime_session: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate constitutional memory / epoch migration replay continuity.
+
+    This is intentionally a read-only bridge.  It delegates continuity authority
+    to WorkflowRuntimeSessionManager and does not execute, mutate, or approve
+    anything.
+    """
+    try:
+        from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager
+
+        summary = WorkflowRuntimeSessionManager().continuity_summary(workflow_runtime_session)
+    except Exception as exc:  # pragma: no cover - defensive bridge helper
+        return {
+            "ok": False,
+            "schema": "zero.runtime_replay.epoch_migration_validation.v1",
+            "error": str(exc),
+        }
+    return {
+        "ok": bool(summary.get("ok", False)),
+        "schema": "zero.runtime_replay.epoch_migration_validation.v1",
+        "workflow_id": str(workflow_runtime_session.get("workflow_id") or ""),
+        "session_id": str(workflow_runtime_session.get("session_id") or ""),
+        "continuity_summary": summary,
+    }

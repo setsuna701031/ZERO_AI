@@ -2576,3 +2576,187 @@ def test_runtime_constitutional_self_amendment_mutation_safety_continuity() -> N
     broken_summary = manager.continuity_summary(broken)
     assert broken_summary["ok"] is False
     assert "constitutional_self_amendment_replay_stale_lineage" in broken_summary["breaks"]
+
+
+def test_runtime_constitutional_memory_epoch_migration_continuity() -> None:
+    from core.runtime.runtime_replay_engine import build_epoch_migration_replay_validation
+
+    manager = WorkflowRuntimeSessionManager()
+    task = {"task_id": "wf-epoch-migration", "steps": []}
+    state = {"task_id": "wf-epoch-migration", "status": "running", "steps": []}
+
+    session = manager.start_from_intent(
+        intent={"task_id": "wf-epoch-migration", "goal": "migrate runtime constitution epoch"},
+        task=task,
+        state=state,
+        current_tick=1,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_execution_graph_node_record(
+        task=task,
+        state=state,
+        node={"node_id": "constitution-node", "label": "active constitution", "node_type": "constitution"},
+        current_tick=2,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_policy_decision_record(
+        task=task,
+        state=state,
+        decision={"target_node_id": "constitution-node", "policy_id": "runtime-constitution-policy", "allowed": True, "decision": "allow"},
+        current_tick=3,
+    )
+    state["workflow_runtime_session"] = session
+    policy_id = session["lineage"]["governance_state_graph"]["policy_decisions"][-1]["policy_decision_id"]
+
+    session = manager.attach_authority_continuity_record(
+        task=task,
+        state=state,
+        authority={"target_node_id": "constitution-node", "execution_owner": "TaskRunner", "authority_source": "runtime_governance", "allowed": True},
+        current_tick=4,
+    )
+    state["workflow_runtime_session"] = session
+    authority_id = session["lineage"]["governance_state_graph"]["authority"][-1]["authority_id"]
+
+    session = manager.attach_review_required_record(
+        task=task,
+        state=state,
+        review={"policy_decision_id": policy_id, "target_node_id": "constitution-node", "reason": "epoch migration requires review"},
+        current_tick=5,
+    )
+    state["workflow_runtime_session"] = session
+    review_id = session["lineage"]["governance_state_graph"]["reviews"][-1]["review_id"]
+
+    session = manager.attach_approval_record(
+        task=task,
+        state=state,
+        approval={"review_id": review_id, "policy_decision_id": policy_id, "target_node_id": "constitution-node", "approver": "runtime_governance", "approved": True},
+        current_tick=6,
+    )
+    state["workflow_runtime_session"] = session
+    approval_id = session["lineage"]["governance_state_graph"]["approvals"][-1]["approval_id"]
+
+    session = manager.attach_constitutional_preservation_record(
+        task=task,
+        state=state,
+        preservation={"constitution_node_id": "constitution-node", "policy_decision_id": policy_id, "preservation_scope": "epoch_migration"},
+        current_tick=7,
+    )
+    state["workflow_runtime_session"] = session
+    preservation_id = session["lineage"]["constitutional_preservation_graph"]["preservations"][-1]["preservation_id"]
+
+    session = manager.attach_constitutional_mutation_proposal_record(
+        task=task,
+        state=state,
+        proposal={"target_constitution_id": "constitution-node", "preservation_id": preservation_id, "proposal": "prepare epoch migration"},
+        current_tick=8,
+    )
+    state["workflow_runtime_session"] = session
+    proposal_id = session["events"][-1]["payload"]["record"]["proposal_id"]
+
+    session = manager.attach_constitutional_mutation_approval_record(
+        task=task,
+        state=state,
+        approval={"proposal_id": proposal_id, "authority_id": authority_id, "approval_id": approval_id, "decision": "approved"},
+        current_tick=9,
+    )
+    state["workflow_runtime_session"] = session
+    mutation_approval_id = session["events"][-1]["payload"]["record"]["mutation_approval_id"]
+
+    session = manager.attach_constitutional_self_amendment_record(
+        task=task,
+        state=state,
+        amendment={"proposal_id": proposal_id, "mutation_approval_id": mutation_approval_id, "authority_id": authority_id, "approval_id": approval_id, "target_constitution_id": "constitution-node"},
+        current_tick=10,
+    )
+    state["workflow_runtime_session"] = session
+    amendment_id = session["events"][-1]["payload"]["record"]["amendment_id"]
+
+    session = manager.attach_constitutional_policy_replacement_record(
+        task=task,
+        state=state,
+        replacement={"amendment_id": amendment_id, "proposal_id": proposal_id, "old_policy_id": "runtime-constitution-policy", "new_policy_id": "runtime-constitution-policy-v3", "approval_id": approval_id},
+        current_tick=11,
+    )
+    state["workflow_runtime_session"] = session
+    replacement_id = session["events"][-1]["payload"]["record"]["policy_replacement_id"]
+
+    session = manager.attach_constitutional_memory_record(
+        task=task,
+        state=state,
+        memory={"active_constitution_id": "constitution-node", "preservation_id": preservation_id, "amendment_id": amendment_id, "memory_status": "active"},
+        current_tick=12,
+    )
+    state["workflow_runtime_session"] = session
+    memory_id = session["events"][-1]["payload"]["record"]["constitutional_memory_id"]
+
+    session = manager.attach_constitutional_inheritance_record(
+        task=task,
+        state=state,
+        inheritance={"constitutional_memory_id": memory_id, "parent_constitution_id": "constitution-node", "child_constitution_id": "constitution-node-v3", "amendment_id": amendment_id, "policy_replacement_id": replacement_id},
+        current_tick=13,
+    )
+    state["workflow_runtime_session"] = session
+    inheritance_id = session["events"][-1]["payload"]["record"]["constitutional_inheritance_id"]
+
+    session = manager.attach_governance_epoch_transition_record(
+        task=task,
+        state=state,
+        transition={"constitutional_inheritance_id": inheritance_id, "from_epoch": "epoch-1", "to_epoch": "epoch-2", "authority_id": authority_id, "approval_id": approval_id},
+        current_tick=14,
+    )
+    state["workflow_runtime_session"] = session
+    epoch_id = session["events"][-1]["payload"]["record"]["governance_epoch_transition_id"]
+
+    session = manager.attach_constitutional_migration_record(
+        task=task,
+        state=state,
+        migration={"governance_epoch_transition_id": epoch_id, "constitutional_inheritance_id": inheritance_id, "source_constitution_id": "constitution-node", "target_constitution_id": "constitution-node-v3"},
+        current_tick=15,
+    )
+    state["workflow_runtime_session"] = session
+    migration_id = session["events"][-1]["payload"]["record"]["constitutional_migration_id"]
+
+    session = manager.attach_migration_validation_record(
+        task=task,
+        state=state,
+        validation={"constitutional_migration_id": migration_id, "replay_id": "epoch-replay-1", "verification_id": "epoch-verify-1", "validation_status": "validated"},
+        current_tick=16,
+    )
+    state["workflow_runtime_session"] = session
+    validation_id = session["events"][-1]["payload"]["record"]["migration_validation_id"]
+
+    session = manager.attach_sovereign_stabilization_record(
+        task=task,
+        state=state,
+        stabilization={"migration_validation_id": validation_id, "survivability_id": "survivability-epoch", "stabilization_status": "stable"},
+        current_tick=17,
+    )
+    state["workflow_runtime_session"] = session
+
+    session = manager.attach_epoch_replay_continuity_record(
+        task=task,
+        state=state,
+        replay={"governance_epoch_transition_id": epoch_id, "constitutional_migration_id": migration_id, "migration_validation_id": validation_id, "replay_status": "validated"},
+        current_tick=18,
+    )
+    state["workflow_runtime_session"] = session
+
+    summary = manager.continuity_summary(session)
+    assert summary["ok"] is True
+    assert summary["counts"]["constitutional_memory_count"] == 1
+    assert summary["counts"]["governance_epoch_transition_count"] == 1
+    replay_validation = build_epoch_migration_replay_validation(workflow_runtime_session=session)
+    assert replay_validation["ok"] is True
+    json.dumps(session, sort_keys=True, default=str)
+
+    broken = dict(session)
+    broken["events"] = [dict(event) for event in session["events"]]
+    epoch_replay_event = [event for event in broken["events"] if event["event_type"] == "epoch_replay_continuity"][-1]
+    epoch_replay_event["payload"] = dict(epoch_replay_event["payload"])
+    epoch_replay_event["payload"]["record"] = dict(epoch_replay_event["payload"]["record"])
+    epoch_replay_event["payload"]["record"]["governance_epoch_transition_id"] = "stale-epoch"
+    broken_summary = manager.continuity_summary(broken)
+    assert broken_summary["ok"] is False
+    assert "epoch_replay_continuity_stale_epoch" in broken_summary["breaks"]

@@ -680,3 +680,42 @@ Expected result:
 ```text
 18 passed
 ```
+
+---
+
+## AER Runtime Constitutional Memory / Epoch Migration v1
+
+ZERO now preserves constitutional memory, inheritance lineage, governance epoch
+transitions, constitutional migration, migration validation, sovereign
+stabilization, and epoch replay continuity inside the engineering runtime graph.
+
+The contract-proven path is:
+
+```text
+constitutional self-amendment / preservation graph
+-> constitutional memory
+-> constitutional inheritance
+-> governance epoch transition
+-> constitutional migration
+-> migration validation
+-> sovereign stabilization
+-> epoch replay continuity
+-> continuity summary
+```
+
+`WorkflowRuntimeSession` remains the continuity authority. These records are
+persistence-ready dictionaries and do not execute commands, migrate execution
+ownership into Scheduler, or create hidden mutation shortcuts. Replay validation
+remains read-only through `RuntimeReplayEngine` helper surfaces.
+
+Validation:
+
+```text
+python -m pytest tests/test_runtime_workflow_session_contract.py -q
+```
+
+Expected result:
+
+```text
+19 passed
+```
