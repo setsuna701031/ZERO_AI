@@ -134,6 +134,11 @@ def normalize_authority_metadata(
         "replay_run_id",
         "source_trace_id",
         "source_transaction_ids",
+        "recovery_context",
+        "recovery_source",
+        "recovery_attempt_id",
+        "original_transaction_id",
+        "rollback_evidence",
     }
     has_explicit_authority = bool(
         payload.get("execution_authority")

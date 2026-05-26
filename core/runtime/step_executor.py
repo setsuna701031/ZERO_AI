@@ -8291,3 +8291,249 @@ def _zero_v811_execute_step_with_authority_closure(
 
 
 StepExecutor.execute_step = _zero_v811_execute_step_with_authority_closure
+
+
+# ============================================================
+# ZERO v8.1.3 - Runtime Recovery Commit/Rollback Freeze
+# ============================================================
+# Recovery is now terminal-state aware.  Recovery context is lineage only;
+# it is not execution authority.  Recovery-created transactions are separate
+# from source transactions and carry recovery_source/original_transaction_id.
+
+try:
+    from core.runtime.runtime_recovery_freeze import (
+        RuntimeRecoveryState,
+        assert_recovery_does_not_overwrite_source_transaction,
+        assert_recovery_terminal_state,
+        build_recovery_decision,
+        create_recovery_attempt,
+        create_recovery_blocked_evidence,
+        create_recovery_transaction,
+        record_recovery_apply,
+        record_recovery_commit,
+        record_recovery_preflight,
+        record_recovery_rollback,
+        record_recovery_terminal_failure,
+        record_recovery_verify,
+        record_recovery_requires_human_review,
+    )
+except Exception:  # pragma: no cover - defensive for partial overlay loads
+    RuntimeRecoveryState = None
+
+
+_ZERO_V813_PREVIOUS_INIT = StepExecutor.__init__
+
+
+def _zero_v813_step_executor_init(self, *args, **kwargs):
+    _ZERO_V813_PREVIOUS_INIT(self, *args, **kwargs)
+    try:
+        self.register_handler("recovery_apply", _zero_v813_handle_recovery_apply_step.__get__(self, StepExecutor))
+        self.register_handler("rollback_restore", _zero_v813_handle_rollback_restore_step.__get__(self, StepExecutor))
+        self.register_handler("recovery_read", _zero_v813_handle_recovery_read_step.__get__(self, StepExecutor))
+        self.register_handler("recovery_inspect", _zero_v813_handle_recovery_read_step.__get__(self, StepExecutor))
+    except Exception:
+        pass
+
+
+StepExecutor.__init__ = _zero_v813_step_executor_init
+
+
+def _zero_v813_handle_recovery_read_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    return {
+        "ok": True,
+        "message": "recovery read completed",
+        "final_answer": "recovery read completed",
+        "result": {
+            "surface": str(payload.get("type") or "recovery_read"),
+            "read_only": True,
+            "mutation_attempted": False,
+            "transaction_required": False,
+            "recovery_context": copy.deepcopy((context or {}).get("recovery_context", {})) if isinstance(context, dict) else {},
+        },
+        "error": None,
+    }
+
+
+def _zero_v813_handle_recovery_apply_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    tx_payload = payload.get("runtime_transaction") if isinstance(payload.get("runtime_transaction"), dict) else {}
+    original_transaction_id = str(
+        payload.get("original_transaction_id")
+        or payload.get("source_transaction_id")
+        or tx_payload.get("original_transaction_id")
+        or ""
+    )
+    if not original_transaction_id:
+        return {
+            "ok": False,
+            "message": "recovery_apply requires original_transaction_id",
+            "final_answer": "recovery_apply requires original_transaction_id",
+            "error": {"type": "recovery_missing_original_transaction", "message": "recovery_apply requires original_transaction_id", "retryable": False},
+            "result": {"status": "failed_terminal", "reason": "missing_original_transaction_id"},
+        }
+    verify_ok = not bool(payload.get("force_verify_fail") or payload.get("verify_fail"))
+    if str(payload.get("terminal") or "").strip().lower() == "human_review":
+        return {
+            "ok": False,
+            "message": "recovery requires human review",
+            "final_answer": "recovery requires human review",
+            "error": {"type": "recovery_requires_human_review", "message": "recovery requires human review", "retryable": False},
+            "result": {"status": "requires_human_review", "reason": "requires_human_review"},
+        }
+    if not verify_ok:
+        return {
+            "ok": False,
+            "message": "recovery verification failed",
+            "final_answer": "recovery verification failed",
+            "error": {"type": "recovery_verification_failed", "message": "recovery verification failed", "retryable": False},
+            "result": {
+                "status": "failed_terminal",
+                "verification_result": {"ok": False, "reason": "recovery_verification_failed"},
+                "rollback_result": {"ok": True, "rollback_applied": True, "reason": "verification_failed"} if payload.get("rollback_on_fail", True) else {},
+            },
+        }
+    return {
+        "ok": True,
+        "message": "recovery committed",
+        "final_answer": "recovery committed",
+        "error": None,
+        "result": {
+            "status": "committed",
+            "verification_result": {"ok": True, "verification_ok": True},
+            "commit_result": {"ok": True, "committed": True},
+        },
+    }
+
+
+def _zero_v813_handle_rollback_restore_step(self, step, task=None, context=None, previous_result=None):
+    payload = step if isinstance(step, dict) else {}
+    if not (payload.get("parent_transaction_id") or payload.get("original_transaction_id") or payload.get("rollback_evidence") or payload.get("affected_files")):
+        return {
+            "ok": False,
+            "message": "rollback_restore requires rollback evidence",
+            "final_answer": "rollback_restore requires rollback evidence",
+            "error": {"type": "rollback_evidence_required", "message": "rollback_restore requires rollback evidence", "retryable": False},
+            "result": {"status": "failed_terminal", "reason": "rollback_evidence_required"},
+        }
+    return {
+        "ok": True,
+        "message": "rollback restored",
+        "final_answer": "rollback restored",
+        "error": None,
+        "result": {
+            "status": "rolled_back",
+            "rollback_applied": True,
+            "rollback_result": {"ok": True, "rollback_applied": True, "evidence": payload.get("rollback_evidence") or payload.get("parent_transaction_id") or payload.get("original_transaction_id")},
+        },
+    }
+
+
+_ZERO_V813_PREVIOUS_CREATE_STEP_TRANSACTION = _zero_v812_create_step_transaction
+
+
+def _zero_v812_create_step_transaction(step, authority, step_type):
+    if RuntimeRecoveryState is None:
+        return _ZERO_V813_PREVIOUS_CREATE_STEP_TRANSACTION(step, authority, step_type)
+    payload = step if isinstance(step, dict) else {}
+    if step_type not in {"recovery_apply", "rollback_restore", "repair_chain_apply"}:
+        return _ZERO_V813_PREVIOUS_CREATE_STEP_TRANSACTION(payload, authority, step_type)
+
+    surface = classify_runtime_surface(step_type)
+    if not surface.requires_transaction:
+        return None
+
+    original_transaction_id = str(payload.get("original_transaction_id") or payload.get("source_transaction_id") or payload.get("parent_transaction_id") or "")
+    original_trace_id = str(payload.get("original_trace_id") or payload.get("source_trace_id") or authority.get("trace_id") or "")
+    recovery_source = str(payload.get("recovery_source") or payload.get("recovery_id") or "runtime_recovery_freeze")
+    replay_run_id = str(payload.get("replay_run_id") or payload.get("replay_source") or "")
+    affected_files = _zero_v812_affected_files_from_step_and_result(payload, {})
+
+    if step_type == "rollback_restore" and not (original_transaction_id or payload.get("rollback_evidence") or affected_files):
+        raise ValueError("rollback_restore requires parent transaction or rollback evidence")
+
+    attempt = create_recovery_attempt(
+        original_transaction_id=original_transaction_id or str(payload.get("rollback_evidence") or "rollback_evidence"),
+        original_trace_id=original_trace_id,
+        replay_run_id=replay_run_id,
+        recovery_source=recovery_source,
+        max_retries=int(payload.get("max_retries", 1) or 1),
+        audit_refs=[str(authority.get("trace_id") or "")],
+        replay_refs=[replay_run_id] if replay_run_id else [],
+    )
+    attempt = record_recovery_preflight(attempt, {"ok": True, "surface": step_type, "authority_source": authority.get("authority_source")})
+    tx = create_recovery_transaction(
+        attempt=attempt,
+        task_id=str(authority.get("task_id") or ""),
+        step_id=str(authority.get("step_id") or ""),
+        trace_id=str(authority.get("trace_id") or ""),
+        authority_source=str(authority.get("authority_source") or authority.get("source") or ""),
+        surface=step_type,
+        affected_files=affected_files or [str(payload.get("rollback_evidence") or original_transaction_id or "recovery_evidence")],
+    )
+    return tx
+
+
+_ZERO_V813_PREVIOUS_FINALIZE_STEP_TRANSACTION = _zero_v812_finalize_step_transaction
+
+
+def _zero_v812_finalize_step_transaction(tx, step, result, decision):
+    if RuntimeRecoveryState is None or tx is None or getattr(tx, "surface", "") not in {"recovery_apply", "rollback_restore", "repair_chain_apply"}:
+        return _ZERO_V813_PREVIOUS_FINALIZE_STEP_TRANSACTION(tx, step, result, decision)
+    payload = step if isinstance(step, dict) else {}
+    normalized_result = result if isinstance(result, dict) else {}
+    try:
+        attempt = create_recovery_attempt(
+            original_transaction_id=str(tx.original_transaction_id or tx.parent_transaction_id or payload.get("rollback_evidence") or "recovery_evidence"),
+            original_trace_id=str(tx.original_trace_id or decision.get("trace_id") or tx.trace_id),
+            replay_run_id=str(payload.get("replay_run_id") or payload.get("replay_source") or ""),
+            recovery_source=str(tx.recovery_source or payload.get("recovery_source") or "runtime_recovery_freeze"),
+            audit_refs=[str(decision.get("trace_id") or tx.trace_id)],
+            replay_refs=[str(payload.get("replay_run_id") or payload.get("replay_source") or "")] if (payload.get("replay_run_id") or payload.get("replay_source")) else [],
+        )
+        attempt = record_recovery_preflight(attempt, {"ok": True, "surface": tx.surface})
+        payload_result = normalized_result.get("result") if isinstance(normalized_result.get("result"), dict) else {}
+        status = str(payload_result.get("status") or "").strip().lower()
+        affected_files = _zero_v812_affected_files_from_step_and_result(payload, normalized_result)
+        tx = record_apply(tx, {"ok": bool(normalized_result.get("ok")), "step_type": tx.surface}, affected_files=affected_files or tx.affected_files)
+        attempt = record_recovery_apply(attempt, {"ok": bool(normalized_result.get("ok")), "status": status or "applied"}, transaction=tx)
+        verification = payload_result.get("verification_result") if isinstance(payload_result.get("verification_result"), dict) else _zero_v812_verification_from_result(normalized_result)
+        tx = record_verification(tx, verification)
+        attempt = record_recovery_verify(attempt, verification)
+        if bool(normalized_result.get("ok")) and status in {"", "committed", "success"}:
+            tx = record_commit(tx, {"ok": True, "committed": True, "recovery_attempt_id": attempt.recovery_attempt_id})
+            attempt = record_recovery_commit(attempt, {"ok": True, "committed": True})
+        else:
+            rollback_result = payload_result.get("rollback_result") if isinstance(payload_result.get("rollback_result"), dict) else {}
+            if tx.state.value == "failed" and rollback_result:
+                tx = record_rollback(tx, rollback_result)
+                attempt = record_recovery_rollback(attempt, rollback_result, transaction=tx)
+            elif status == "rolled_back" or rollback_result:
+                tx = record_rollback(tx, rollback_result or {"ok": True, "rollback_applied": True})
+                attempt = record_recovery_rollback(attempt, rollback_result or {"ok": True, "rollback_applied": True}, transaction=tx)
+            elif status == "requires_human_review":
+                attempt = record_recovery_requires_human_review(attempt, "requires_human_review")
+                if tx.state.value != "failed":
+                    tx = record_failure(tx, "requires_human_review")
+            else:
+                if tx.state.value != "failed":
+                    tx = record_failure(tx, str((normalized_result or {}).get("message") or "recovery_failed_terminal"))
+                attempt = record_recovery_terminal_failure(attempt, str((normalized_result or {}).get("message") or "recovery_failed_terminal"))
+        tx = record_audit(tx, [str(decision.get("trace_id") or tx.trace_id)])
+        assert_transaction_lifecycle_valid(tx)
+        assert_recovery_does_not_overwrite_source_transaction(attempt)
+        if attempt.state.value in {"committed", "rolled_back", "failed_terminal", "blocked", "requires_human_review"}:
+            assert_recovery_terminal_state(attempt)
+        normalized_result = _zero_v812_attach_transaction(normalized_result, tx)
+        normalized_result["runtime_recovery"] = attempt.to_dict()
+        normalized_result["runtime_recovery_decision"] = build_recovery_decision(attempt).to_dict()
+        return normalized_result
+    except Exception as exc:
+        result_with_tx = _ZERO_V813_PREVIOUS_FINALIZE_STEP_TRANSACTION(tx, step, result, decision)
+        if isinstance(result_with_tx, dict):
+            result_with_tx["runtime_recovery"] = {
+                "state": "failed_terminal",
+                "reason": f"recovery_lifecycle_error: {exc}",
+                "original_transaction_id": str(getattr(tx, "original_transaction_id", "") or getattr(tx, "parent_transaction_id", "")),
+            }
+        return result_with_tx

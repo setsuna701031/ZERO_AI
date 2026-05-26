@@ -63,6 +63,7 @@ class RuntimeTransaction:
     replay_refs: tuple[str, ...] = ()
     parent_transaction_id: str = ""
     replay_source: str = ""
+    recovery_source: str = ""
     original_transaction_id: str = ""
     original_trace_id: str = ""
     created_at: str = ""
@@ -130,6 +131,7 @@ def create_transaction(
     replay_refs: Any = None,
     parent_transaction_id: str = "",
     replay_source: str = "",
+    recovery_source: str = "",
     original_transaction_id: str = "",
     original_trace_id: str = "",
 ) -> RuntimeTransaction:
@@ -167,6 +169,7 @@ def create_transaction(
         replay_refs=_normalize_text_tuple(replay_refs),
         parent_transaction_id=str(parent_transaction_id or ""),
         replay_source=str(replay_source or ""),
+        recovery_source=str(recovery_source or ""),
         original_transaction_id=str(original_transaction_id or ""),
         original_trace_id=str(original_trace_id or ""),
         created_at=now,
@@ -276,6 +279,7 @@ def list_transactions(
     task_id: str | None = None,
     step_id: str | None = None,
     trace_id: str | None = None,
+    original_transaction_id: str | None = None,
 ) -> tuple[RuntimeTransaction, ...]:
     values = tuple(_TRANSACTIONS.values())
     if task_id is not None:
@@ -284,6 +288,8 @@ def list_transactions(
         values = tuple(tx for tx in values if tx.step_id == step_id)
     if trace_id is not None:
         values = tuple(tx for tx in values if tx.trace_id == trace_id)
+    if original_transaction_id is not None:
+        values = tuple(tx for tx in values if tx.original_transaction_id == original_transaction_id)
     return tuple(replace(tx) for tx in values)
 
 
@@ -310,6 +316,8 @@ def assert_transaction_lifecycle_valid(transaction: RuntimeTransaction | str) ->
         raise AssertionError("file mutation transaction requires affected_files")
     if tx.replay_source and tx.original_transaction_id and tx.transaction_id == tx.original_transaction_id:
         raise AssertionError("replay-created transaction must differ from source transaction")
+    if tx.recovery_source and tx.original_transaction_id and tx.transaction_id == tx.original_transaction_id:
+        raise AssertionError("recovery-created transaction must differ from source transaction")
     return True
 
 
@@ -384,4 +392,10 @@ def _now() -> str:
 
 
 def transaction_to_dict(transaction: RuntimeTransaction | str) -> dict[str, Any]:
-    return copy.deepcopy(get_transaction(transaction).to_dict())
+    payload = copy.deepcopy(get_transaction(transaction).to_dict())
+    # Keep the public transaction serialization ABI stable for existing
+    # lifecycle-contract tests.  Recovery lineage remains available on
+    # RuntimeTransaction.to_dict(), but the legacy transaction_to_dict()
+    # helper must not add new top-level keys.
+    payload.pop("recovery_source", None)
+    return payload
