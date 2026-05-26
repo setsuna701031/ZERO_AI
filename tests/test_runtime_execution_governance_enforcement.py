@@ -33,6 +33,21 @@ FORBIDDEN_DIRECT_CALLS = {
 }
 
 
+def _authority_metadata(action_type: str = "execute") -> dict[str, object]:
+    return {
+        "task_id": "test-runtime-execution",
+        "step_id": "test-runtime-execution-step",
+        "authority_source": "execution_gateway",
+        "runtime_session": "test-runtime-session",
+        "approval_state": "approved",
+        "policy_result": {"allowed": True, "decision": "allow"},
+        "trace_id": "test-runtime-trace",
+        "authority_status": "allowed",
+        "execution_authority_endpoint": "executor",
+        "action_type": action_type,
+    }
+
+
 def _python_files() -> list[Path]:
     files: list[Path] = []
     for root in SCAN_ROOTS:
@@ -121,6 +136,7 @@ def test_runtime_execution_request_result_registry_policy_and_risk_are_mandatory
         working_directory=str(tmp_path),
         timeout=20,
         metadata={
+            **_authority_metadata("execute"),
             "operation": "subprocess",
             "runtime_identity": {
                 "identity_id": "system:test",
@@ -188,6 +204,7 @@ def test_governed_runtime_action_boundary_blocks_raw_execute_flag(tmp_path):
         working_directory=str(tmp_path),
         timeout=20,
         metadata={
+            **_authority_metadata("execute"),
             "operation": "subprocess",
             "runtime_identity": {
                 "identity_id": "system:test",

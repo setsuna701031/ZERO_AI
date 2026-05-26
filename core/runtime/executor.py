@@ -7,6 +7,14 @@ import subprocess
 import time
 
 from core.runtime.runtime_execution_request import RuntimeExecutionRequest
+from core.runtime.execution_authority import ensure_authority_metadata
+from core.runtime.runtime_surface_registry import classify_runtime_surface
+from core.runtime.runtime_transaction_registry import (
+    create_transaction,
+    record_approval,
+    record_audit,
+    record_preflight,
+)
 from core.runtime.runtime_execution_policy import RuntimeExecutionPolicy
 from core.runtime.runtime_execution_result import RuntimeExecutionResult
 from core.runtime.runtime_side_effect_registry import RuntimeSideEffectRegistry
@@ -260,6 +268,113 @@ class Executor:
             or request.metadata.get("execution_start_id")
             or f"execution_start:{execution_id}"
         )
+        runtime_surface = classify_runtime_surface(request.execution_type)
+        normalized_metadata, authority_validation = ensure_authority_metadata(
+            request.metadata,
+            lineage=request.lineage,
+            authority_source=str(request.metadata.get("authority_source") or "execution_gateway"),
+            action_type="execute",
+            surface=runtime_surface.name,
+        )
+        if normalized_metadata != request.metadata:
+            request = RuntimeExecutionRequest(
+                execution_type=request.execution_type,
+                command=request.command,
+                working_directory=request.working_directory,
+                environment=request.environment,
+                timeout=request.timeout,
+                metadata=normalized_metadata,
+                lineage=dict(request.lineage),
+                replay_id=request.replay_id,
+                repair_session_id=request.repair_session_id,
+                dry_run=request.dry_run,
+            )
+        if not authority_validation.get("ok"):
+            finished_at = self._utc_timestamp()
+            reason = str(authority_validation.get("reason") or "authority_metadata_invalid")
+            blocked_transaction = self._blocked_transaction_evidence(
+                request=request,
+                reason=reason,
+                runtime_surface=runtime_surface,
+            )
+            effect = self.side_effect_registry.register(
+                effect_type="blocked_execution",
+                source_execution_id=execution_id,
+                verified=True,
+                rollbackable=False,
+                artifact_path=None,
+                risk_level="high",
+                rollback_metadata={"rollback_required": False},
+                metadata={
+                    "command": request.command,
+                    "execution_type": request.execution_type,
+                    "authority_validation": authority_validation,
+                    "blocked_reason": reason,
+                    "audit_event": {
+                        "event_type": "execution_blocked",
+                        "reason": reason,
+                        "source": "core.runtime.executor",
+                    },
+                    "evidence": {
+                        "blocked": True,
+                        "reason": reason,
+                        "authority_validation": authority_validation,
+                    },
+                    "replay_event": {
+                        "event_type": "execution_decision",
+                        "decision": "blocked",
+                        "reason": reason,
+                    },
+                    "runtime_transaction": blocked_transaction,
+                },
+            )
+            return RuntimeExecutionResult(
+                execution_id=execution_id,
+                execution_start_id=execution_start_id,
+                execution_type=request.execution_type,
+                status="blocked",
+                started_at=started_at,
+                finished_at=finished_at,
+                stdout="",
+                stderr=reason,
+                return_code=1,
+                side_effects=(effect,),
+                artifacts=(),
+                verified=False,
+                blocked=True,
+                rollback_required=False,
+                lineage=dict(request.lineage),
+                replay_id=request.replay_id or f"replay:{execution_id}",
+                repair_session_id=request.repair_session_id,
+                risk_level="high",
+                risk_metadata={"authority_validation": authority_validation},
+                metadata={
+                    **dict(request.metadata),
+                    "canonical_owner": "core.runtime.executor",
+                    "side_effect_registry_updated": True,
+                    "replay_tagged": True,
+                    "lineage_tagged": bool(request.lineage),
+                    "blocked": True,
+                    "blocked_reason": reason,
+                    "authority_validation": authority_validation,
+                    "audit_event": {
+                        "event_type": "execution_blocked",
+                        "reason": reason,
+                        "source": "core.runtime.executor",
+                    },
+                    "evidence": {
+                        "blocked": True,
+                        "reason": reason,
+                        "authority_validation": authority_validation,
+                    },
+                    "replay_event": {
+                        "event_type": "execution_decision",
+                        "decision": "blocked",
+                        "reason": reason,
+                    },
+                    "runtime_transaction": blocked_transaction,
+                },
+            )
         policy_result = self.execution_policy.evaluate(request)
         policy_metadata = policy_result.to_metadata()
 
@@ -367,6 +482,11 @@ class Executor:
 
         if not policy_result.allowed or policy_result.state == "requires_confirmation":
             finished_at = self._utc_timestamp()
+            runtime_transaction = self._blocked_transaction_evidence(
+                request=request,
+                reason=str(policy_result.decision.reason or "runtime_execution_policy_blocked"),
+                runtime_surface=runtime_surface,
+            )
             effect = self.side_effect_registry.register(
                 effect_type="blocked_execution",
                 source_execution_id=execution_id,
@@ -380,6 +500,7 @@ class Executor:
                     **self._evidence_effect_metadata(policy_metadata),
                     "command": request.command,
                     "execution_type": request.execution_type,
+                    "runtime_transaction": runtime_transaction,
                 },
             )
             return RuntimeExecutionResult(
@@ -409,6 +530,7 @@ class Executor:
                     "side_effect_registry_updated": True,
                     "replay_tagged": True,
                     "lineage_tagged": bool(request.lineage),
+                    "runtime_transaction": runtime_transaction,
                 },
             )
 
@@ -462,6 +584,11 @@ class Executor:
 
         if request.execution_type not in {"command", "subprocess"}:
             finished_at = self._utc_timestamp()
+            runtime_transaction = self._unsupported_mutation_transaction(
+                request=request,
+                runtime_surface=runtime_surface,
+                reason=f"unsupported execution_type: {request.execution_type}",
+            )
             return RuntimeExecutionResult(
                 execution_id=execution_id,
                 execution_start_id=execution_start_id,
@@ -487,6 +614,7 @@ class Executor:
                     **policy_metadata,
                     "canonical_owner": "core.runtime.executor",
                     "side_effect_registry_updated": False,
+                    "runtime_transaction": runtime_transaction,
                 },
             )
 
@@ -587,6 +715,64 @@ class Executor:
                 "lineage_tagged": bool(request.lineage),
                 "rollback_metadata": dict(effect.rollback_metadata),
             },
+            )
+
+    def _blocked_transaction_evidence(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        reason: str,
+        runtime_surface: Any,
+    ) -> dict[str, Any]:
+        if not bool(getattr(runtime_surface, "requires_transaction", False)):
+            return {}
+        seed = repr((request.execution_type, request.command, reason, request.lineage)).encode(
+            "utf-8",
+            errors="replace",
+        )
+        import hashlib
+
+        return {
+            "transaction_id": "blocked_tx:" + hashlib.sha256(seed).hexdigest()[:16],
+            "surface": getattr(runtime_surface, "name", request.execution_type),
+            "state": "blocked",
+            "requires_transaction": True,
+            "blocked_reason": reason,
+            "audit_refs": [str(request.metadata.get("trace_id") or "")],
+            "replay_refs": [str(request.replay_id or "")] if request.replay_id else [],
+        }
+
+    def _unsupported_mutation_transaction(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        runtime_surface: Any,
+        reason: str,
+    ) -> dict[str, Any]:
+        if not bool(getattr(runtime_surface, "requires_transaction", False)):
+            return {}
+        try:
+            tx = create_transaction(
+                task_id=str(request.metadata.get("task_id") or ""),
+                step_id=str(request.metadata.get("step_id") or ""),
+                trace_id=str(request.metadata.get("trace_id") or ""),
+                authority_source=str(request.metadata.get("authority_source") or ""),
+                surface=str(getattr(runtime_surface, "name", request.execution_type)),
+                affected_files=request.metadata.get("affected_files") or request.metadata.get("changed_files"),
+                replay_refs=[str(request.replay_id or "")] if request.replay_id else [],
+                replay_source=str(request.metadata.get("replay_source") or ""),
+                original_transaction_id=str(request.metadata.get("original_transaction_id") or ""),
+                original_trace_id=str(request.metadata.get("original_trace_id") or ""),
+            )
+            tx = record_preflight(tx, {"ok": True, "source": "core.runtime.executor"})
+            tx = record_approval(tx, {"ok": False, "allowed": False, "reason": reason})
+            tx = record_audit(tx, [str(request.metadata.get("trace_id") or "")])
+            return tx.to_dict()
+        except Exception:
+            return self._blocked_transaction_evidence(
+                request=request,
+                reason=reason,
+                runtime_surface=runtime_surface,
             )
 
     def _utc_timestamp(self) -> str:

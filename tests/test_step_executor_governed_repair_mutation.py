@@ -45,10 +45,24 @@ def test_step_executor_dispatches_governed_repair_mutation(tmp_path: Path) -> No
         task={
             "task_id": "task_001",
         },
-        context={},
+        context={
+            "execution_authority": {
+                "task_id": "task_001",
+                "step_id": "governed_repair_mutation_001",
+                "authority_source": "execution_gateway",
+                "runtime_session": "session-governed-repair",
+                "approval_state": "approved",
+                "policy_result": {"allowed": True, "decision": "allow"},
+                "trace_id": "trace-governed-repair",
+                "authority_status": "allowed",
+                "execution_authority_endpoint": "step_executor",
+                "action_type": "mutation",
+            }
+        },
     )
 
     assert result["ok"] is True
+    assert result["authority_decision"]["sealed"] is True
 
     result_payload = result.get("result")
     assert isinstance(result_payload, dict)

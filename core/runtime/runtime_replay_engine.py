@@ -358,6 +358,36 @@ class RuntimeReplayEngine:
         self._replays.clear()
         self._sequence = 0
 
+    def replay_read_only_freeze(
+        self,
+        *,
+        event_log: Any,
+        replay_source: str = "runtime_replay_engine",
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from core.runtime.runtime_replay_freeze import replay_read_only
+
+        return replay_read_only(
+            event_log,
+            replay_source=replay_source,
+            options=options,
+        )
+
+    def replay_verify_only_freeze(
+        self,
+        *,
+        event_log: Any,
+        replay_source: str = "runtime_replay_engine",
+        options: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        from core.runtime.runtime_replay_freeze import replay_verify_only
+
+        return replay_verify_only(
+            event_log,
+            replay_source=replay_source,
+            options=options,
+        )
+
     def _store_replay(
         self,
         replay_id: str,

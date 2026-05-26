@@ -90,12 +90,18 @@ def test_side_effect_public_result_keeps_pre_authority_summary(
         },
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["executed"] is False
     _assert_public_authority_decision(
         result,
         step_type="write_file",
         action_type="mutation",
+        expected_decision="denied",
+        sealed=False,
     )
+    assert result["authority_decision"]["reason"] == "missing_authority_metadata"
+    assert result["runtime_execution_result"]["metadata"]["blocked_reason"] == "missing_authority_metadata"
     _assert_no_public_internal_keys(result["authority_decision"])
 
 
@@ -122,6 +128,29 @@ def test_execute_authority_steps_are_legacy_unsealed_not_fake_sealed(
         assert "legacy" in decision["reason"]
 
 
+def test_side_effect_with_valid_authority_metadata_executes(tmp_path: Path) -> None:
+    executor = _make_step_executor(tmp_path)
+    result = executor.execute_step(
+        {
+            "type": "write_file",
+            "path": "workspace/shared/sealed.txt",
+            "content": "SEALED",
+        },
+        context={"execution_authority": _valid_authority("mutation")},
+    )
+
+    assert result["ok"] is True
+    target = Path(result["result"]["result"]["full_path"])
+    assert target.read_text(encoding="utf-8") == "SEALED"
+    _assert_public_authority_decision(
+        result,
+        step_type="write_file",
+        action_type="mutation",
+        expected_decision="allowed",
+        sealed=True,
+    )
+
+
 def test_attach_pre_execution_authority_preserves_public_shape(
     tmp_path: Path,
 ) -> None:
@@ -142,11 +171,13 @@ def test_attach_pre_execution_authority_preserves_public_shape(
         decision,
     )
 
-    _assert_public_authority_decision(
-        result,
-        step_type="append_file",
-        action_type="mutation",
-    )
+    attached = result.get("authority_decision")
+    assert isinstance(attached, dict)
+    assert attached["authority_phase"] == "pre_execution"
+    assert attached["authority_required"] is True
+    assert attached["action_type"] == "mutation"
+    assert attached["step_type"] == "append_file"
+    assert attached["decision"] == "allowed_with_legacy_policy"
     assert result["runtime_execution_result"]["metadata"]["authority_decision"] == (
         result["authority_decision"]
     )
@@ -180,25 +211,39 @@ def _assert_public_authority_decision(
     *,
     step_type: str,
     action_type: str,
+    expected_decision: str,
+    sealed: bool,
 ) -> None:
-    decision = result.get("authority_decision")
-    assert isinstance(decision, dict)
-    assert decision["authority_phase"] == "pre_execution"
-    assert decision["authority_required"] is True
-    assert decision["action_type"] == action_type
-    assert decision["step_type"] == step_type
-    assert decision["decision"] == "allowed_with_legacy_policy"
-    assert decision["authority_source"] == "legacy_step_executor_policy"
-    assert decision["authority_policy"] == "legacy_step_executor_policy"
-    assert decision["sealed"] is False
-    assert decision["status"] == "authority_unsealed"
-    assert decision["reason"] == "legacy_step_executor_policy_unsealed"
+    authority_decision = result.get("authority_decision")
+    assert isinstance(authority_decision, dict)
+    assert authority_decision["authority_phase"] == "pre_execution"
+    assert authority_decision["authority_required"] is True
+    assert authority_decision["action_type"] == action_type
+    assert authority_decision["step_type"] == step_type
+    assert authority_decision["decision"] == expected_decision
+    assert authority_decision["authority_policy"] == "execution_authority_closure"
+    assert authority_decision["sealed"] is sealed
 
     runtime_payload = result.get("runtime_execution_result")
     assert isinstance(runtime_payload, dict)
     runtime_metadata = runtime_payload.get("metadata")
     assert isinstance(runtime_metadata, dict)
-    assert runtime_metadata.get("authority_decision") == decision
+    assert runtime_metadata.get("authority_decision") == authority_decision
+
+
+def _valid_authority(action_type: str) -> dict[str, Any]:
+    return {
+        "task_id": "task-authority",
+        "step_id": "step-authority",
+        "authority_source": "execution_gateway",
+        "runtime_session": "session-authority",
+        "approval_state": "approved",
+        "policy_result": {"allowed": True, "decision": "allow"},
+        "trace_id": "trace-authority",
+        "authority_status": "allowed",
+        "execution_authority_endpoint": "step_executor",
+        "action_type": action_type,
+    }
 
 
 def _assert_no_public_internal_keys(value: Any) -> None:

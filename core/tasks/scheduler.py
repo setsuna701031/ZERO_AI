@@ -1956,34 +1956,32 @@ class Scheduler(RuntimeTaskScheduler):
             "apply_unified_diff",
         }:
             step_executor = getattr(self, "step_executor", None)
-            if step_executor is None:
-                raise RuntimeError("step_executor unavailable for side-effect step")
+            if step_executor is not None:
+                scheduler_authority = self._build_scheduler_authority_context(task)
 
-            scheduler_authority = self._build_scheduler_authority_context(task)
+                executor_result = step_executor.execute_step(
+                    step=step,
+                    task=task,
+                    context={
+                        "task_dir": task_dir,
+                        "step_scope": step_scope,
+                        "guard_result": guard_result,
+                        "guard_fallthrough_bridge": apply_patch_guard_fallthrough,
+                        "authority_context": scheduler_authority,
+                        "runtime_authority_context": scheduler_authority,
+                        "authority_propagation_required": bool(
+                            scheduler_authority.get("authority_propagation_required")
+                        ),
+                    },
+                )
 
-            executor_result = step_executor.execute_step(
-                step=step,
-                task=task,
-                context={
-                    "task_dir": task_dir,
-                    "step_scope": step_scope,
-                    "guard_result": guard_result,
-                    "guard_fallthrough_bridge": apply_patch_guard_fallthrough,
-                    "authority_context": scheduler_authority,
-                    "runtime_authority_context": scheduler_authority,
-                    "authority_propagation_required": bool(
-                        scheduler_authority.get("authority_propagation_required")
-                    ),
-                },
-            )
+                self._record_execution_gateway_side_check(
+                    step=step,
+                    legacy_result=executor_result,
+                    source="scheduler_side_effect_step_executor_bridge",
+                )
 
-            self._record_execution_gateway_side_check(
-                step=step,
-                legacy_result=executor_result,
-                source="scheduler_side_effect_step_executor_bridge",
-            )
-
-            return executor_result
+                return executor_result
 
         basic_result = execute_simple_basic_step(
             scheduler=self,

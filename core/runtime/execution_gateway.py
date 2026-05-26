@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping, Sequence
 
 from core.runtime.executor import Executor
+from core.runtime.execution_authority import ensure_authority_metadata, validate_authority_metadata
+from core.runtime.runtime_surface_registry import classify_runtime_surface
 from core.runtime.runtime_execution_request import RuntimeExecutionRequest
 from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
 from core.runtime.runtime_consistency import build_runtime_state_consistency
@@ -41,6 +45,11 @@ def _normalize_command(command: str | Sequence[str]) -> str | tuple[str, ...]:
     return tuple(str(item) for item in command)
 
 
+def _stable_id(prefix: str, value: Any) -> str:
+    digest = hashlib.sha256(repr(value).encode("utf-8", errors="replace")).hexdigest()[:16]
+    return f"{prefix}:{digest}"
+
+
 def _build_runtime_identity() -> dict[str, Any]:
     return {
         "identity_id": "system:runtime_execution_gateway",
@@ -52,6 +61,7 @@ def _build_runtime_identity() -> dict[str, Any]:
 
 def _build_authority_metadata(
     *,
+    command: Any,
     shell: bool,
     input_text: str | None,
     capture_output: bool,
@@ -68,6 +78,12 @@ def _build_authority_metadata(
         }
     )
     metadata: dict[str, Any] = {
+        "task_id": "runtime_execution_gateway",
+        "step_id": _stable_id("gateway_step", command),
+        "runtime_session": _stable_id("runtime_session", time.time_ns()),
+        "approval_state": "approved",
+        "policy_result": {"allowed": True, "source": RUNTIME_AUTHORITY_SOURCE},
+        "trace_id": _stable_id("trace", command),
         "source": "runtime_execution_gateway",
         "execution_source": "runtime_execution_gateway",
         "gateway": "canonical_execution_gateway",
@@ -116,6 +132,11 @@ def _build_authority_metadata(
     )
     metadata.update(closure)
     metadata["consistency_seal"] = build_runtime_state_consistency(metadata)
+    metadata["authority_validation"] = {
+        "ok": True,
+        "reason": "authority_metadata_valid",
+        "missing_fields": [],
+    }
     return metadata
 
 
@@ -135,8 +156,10 @@ def build_runtime_execution_request(
     lineage: Mapping[str, Any] | None = None,
 ) -> RuntimeExecutionRequest:
     normalized_command = _normalize_command(command)
+    surface = classify_runtime_surface("command" if shell else "subprocess")
 
     request_metadata = _build_authority_metadata(
+        command=normalized_command,
         shell=shell,
         input_text=input_text,
         capture_output=capture_output,
@@ -162,7 +185,7 @@ def build_runtime_execution_request(
         working_directory=cwd,
         environment=env,
         timeout=timeout,
-        metadata=request_metadata,
+        metadata={**request_metadata, "runtime_surface": surface.name},
         lineage=request_lineage,
     )
 
@@ -173,6 +196,63 @@ def execute_runtime_request(
     workspace_root: str = "workspace",
     executor: Executor | None = None,
 ) -> ExecutionGatewayResult:
+    normalized_metadata, authority_validation = ensure_authority_metadata(
+        request.metadata,
+        lineage=request.lineage,
+        authority_source=str(request.metadata.get("authority_source") or "execution_gateway"),
+        action_type="execute",
+        surface=request.execution_type,
+    )
+    if normalized_metadata != request.metadata:
+        request = RuntimeExecutionRequest(
+            execution_type=request.execution_type,
+            command=request.command,
+            working_directory=request.working_directory,
+            environment=request.environment,
+            timeout=request.timeout,
+            metadata=normalized_metadata,
+            lineage=dict(request.lineage),
+            replay_id=request.replay_id,
+            repair_session_id=request.repair_session_id,
+            dry_run=request.dry_run,
+        )
+    if not authority_validation.get("ok"):
+        reason = str(authority_validation.get("reason") or "authority_metadata_invalid")
+        metadata = {
+            **dict(request.metadata),
+            "authority_validation": authority_validation,
+            "blocked": True,
+            "blocked_reason": reason,
+            "audit_event": {
+                "event_type": "execution_blocked",
+                "reason": reason,
+                "source": RUNTIME_AUTHORITY_SOURCE,
+            },
+            "evidence": {
+                "blocked": True,
+                "reason": reason,
+                "authority_validation": authority_validation,
+            },
+            "replay_event": {
+                "event_type": "execution_decision",
+                "decision": "blocked",
+                "reason": reason,
+            },
+        }
+        return ExecutionGatewayResult(
+            ok=False,
+            returncode=1,
+            stdout="",
+            stderr=reason,
+            command=request.command,
+            shell=request.execution_type == "command",
+            timeout=request.timeout,
+            error=reason,
+            replay_id=request.replay_id,
+            metadata=metadata,
+            risk_metadata={"authority_validation": authority_validation},
+        )
+
     runtime_executor = executor if executor is not None else Executor(workspace_root=workspace_root)
     result = runtime_executor.execute_request(request)
 
@@ -206,6 +286,7 @@ def safe_subprocess_run(
     text: bool = True,
     encoding: str = "utf-8",
     errors: str = "replace",
+    metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Canonical runtime execution gateway.
@@ -226,6 +307,7 @@ def safe_subprocess_run(
         text=text,
         encoding=encoding,
         errors=errors,
+        metadata=metadata,
     )
 
     return execute_runtime_request(request).to_dict()

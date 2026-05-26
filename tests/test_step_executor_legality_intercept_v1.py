@@ -54,7 +54,7 @@ def test_step_executor_runtime_legality_blocks_execution() -> None:
     assert decision["action_type"] == "system_wipe"
 
 
-def test_step_executor_runtime_legality_requires_review() -> None:
+def test_step_executor_runtime_legality_review_step_requires_authority_first() -> None:
     executor = StepExecutor()
 
     result = executor.execute_step(
@@ -66,9 +66,6 @@ def test_step_executor_runtime_legality_requires_review() -> None:
     )
 
     assert result["ok"] is False
-    assert result["error"]["type"] == "execution_step_requires_review"
-
-    decision = result["result"]["runtime_legality_decision"]
-
-    assert decision["decision"] == "REVIEW"
-    assert decision["requires_review"] is True
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert result["authority_decision"]["decision"] == "denied"
+    assert result["authority_decision"]["reason"] == "missing_authority_metadata"

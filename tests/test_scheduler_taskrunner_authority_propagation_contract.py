@@ -129,8 +129,9 @@ def test_step_executor_is_execution_authority_endpoint_with_valid_authority(
     assert result["authority_decision"]["authority_phase"] == "pre_execution"
     assert result["authority_decision"]["decision"] == "allowed"
     assert result["authority_decision"]["authority_source"] == "human_review"
-    assert result["authority_decision"]["sealed"] is False
-    assert (tmp_path / "shared" / "endpoint.txt").read_text(encoding="utf-8") == (
+    assert result["authority_decision"]["sealed"] is True
+    endpoint_path = Path(result["result"]["result"]["full_path"])
+    assert endpoint_path.read_text(encoding="utf-8") == (
         "endpoint authority"
     )
 
@@ -199,6 +200,12 @@ def _execution_authority(*, action_type: str) -> dict[str, Any]:
         "action_type": action_type,
         "ownership_source": "human_review",
         "authority_scope": "step_executor_side_effect",
+        "task_id": "task-authority",
+        "step_id": "step-authority",
+        "runtime_session": "session-authority",
+        "approval_state": "approved",
+        "policy_result": {"allowed": True, "decision": "allow"},
+        "trace_id": "trace-authority",
     }
 
 
