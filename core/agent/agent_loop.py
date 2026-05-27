@@ -108,6 +108,29 @@ class AgentLoop:
         self.extra_kwargs = kwargs
         self.max_tool_cycles = int(kwargs.get("max_tool_cycles", 3) or 3)
         self.self_edit_policy_mode = str(kwargs.get("self_edit_policy_mode") or "conservative").strip().lower()
+        self.operator_session_bootstrap = kwargs.get("operator_session_bootstrap")
+        operator_bridge = kwargs.get("operator_bridge")
+        operator_runtime = kwargs.get("operator_runtime")
+        if operator_bridge is None and self.step_executor is not None:
+            operator_bridge = getattr(self.step_executor, "operator_bridge", None)
+        if self.operator_session_bootstrap is None and (operator_bridge is not None or operator_runtime is not None):
+            try:
+                from core.runtime.operator_session_bootstrap import OperatorSessionBootstrap
+
+                self.operator_session_bootstrap = OperatorSessionBootstrap(
+                    operator_bridge=operator_bridge,
+                    operator_runtime=operator_runtime,
+                )
+                operator_bridge = getattr(self.operator_session_bootstrap, "operator_bridge", operator_bridge)
+            except Exception:
+                self.operator_session_bootstrap = None
+        if operator_bridge is not None:
+            for runtime_obj in (self.step_executor, self.task_runtime):
+                if runtime_obj is not None and getattr(runtime_obj, "operator_bridge", None) is None:
+                    try:
+                        setattr(runtime_obj, "operator_bridge", operator_bridge)
+                    except Exception:
+                        pass
 
         self.task_runner = task_runner or TaskRunner(
             task_runtime=self.task_runtime,
@@ -4409,7 +4432,13 @@ class AgentLoop:
 
         if isinstance(route, dict):
             created_task["route"] = copy.deepcopy(route)
+            self._apply_route_execution_context_to_task(created_task, route)
             self._apply_capability_metadata_to_task(created_task, route)
+        self._ensure_operator_session_for_task(
+            task=created_task,
+            context=context,
+            plan=created_task["planner_result"],
+        )
         if isinstance(context, dict):
             created_task["context_snapshot"] = copy.deepcopy(context)
 
@@ -4495,6 +4524,11 @@ class AgentLoop:
         task["steps_total"] = len(task["steps"])
         task["final_answer"] = ""
         self._ensure_loop_state_defaults(task)
+        self._ensure_operator_session_for_task(
+            task=task,
+            context=context,
+            plan=task["planner_result"],
+        )
 
         if self.task_workspace is not None:
             try:
@@ -4543,6 +4577,30 @@ class AgentLoop:
         if self.debug:
             print("[AgentLoop] context =", context)
         return context
+
+    def _ensure_operator_session_for_task(
+        self,
+        *,
+        task: Dict[str, Any],
+        context: Dict[str, Any],
+        plan: Any = None,
+    ) -> Dict[str, Any]:
+        bootstrap = getattr(self, "operator_session_bootstrap", None)
+        if bootstrap is None:
+            return {"ok": True, "created": False, "operator_session_id": ""}
+        try:
+            steps = task.get("pending_steps") or task.get("steps") or self._extract_steps_from_plan(plan)
+            return bootstrap.ensure_session_for_task(
+                task,
+                context=context,
+                goal=str(task.get("goal") or task.get("description") or task.get("title") or ""),
+                pending_steps=steps,
+                metadata={"source": "agent_loop"},
+            )
+        except Exception as exc:
+            if self.debug:
+                print(f"[AgentLoop] operator session bootstrap ignored: {exc}")
+            return {"ok": False, "created": False, "operator_session_id": "", "error": str(exc)}
 
     def _looks_like_explicit_task_request(self, text: str) -> bool:
         return looks_like_explicit_task_request(text)
@@ -4633,6 +4691,20 @@ class AgentLoop:
             "reason": reason,
         }
 
+        return task
+
+    def _apply_route_execution_context_to_task(self, task: Dict[str, Any], route: Any) -> Dict[str, Any]:
+        if not isinstance(task, dict) or not isinstance(route, dict):
+            return task
+
+        if isinstance(route.get("execution_authority"), dict):
+            task["execution_authority"] = copy.deepcopy(route["execution_authority"])
+        if isinstance(route.get("authority_context"), dict):
+            task["authority_context"] = copy.deepcopy(route["authority_context"])
+        if isinstance(route.get("runtime_authority_context"), dict):
+            task["runtime_authority_context"] = copy.deepcopy(route["runtime_authority_context"])
+        if route.get("authority_propagation_required") is not None:
+            task["authority_propagation_required"] = bool(route.get("authority_propagation_required"))
         return task
 
     def _route_first_string(self, route: Any, *keys: str) -> str:
@@ -4744,6 +4816,7 @@ class AgentLoop:
 
         if isinstance(route, dict):
             task["route"] = copy.deepcopy(route)
+            self._apply_route_execution_context_to_task(task, route)
 
             if route.get("priority") is not None:
                 try:

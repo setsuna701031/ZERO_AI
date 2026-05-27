@@ -15,6 +15,7 @@ from core.runtime.runtime_transaction_registry import (
     record_audit,
     record_preflight,
 )
+from core.runtime.runtime_evidence_freeze import evidence_refs_for_payload
 from core.runtime.runtime_execution_policy import RuntimeExecutionPolicy
 from core.runtime.runtime_execution_result import RuntimeExecutionResult
 from core.runtime.runtime_side_effect_registry import RuntimeSideEffectRegistry
@@ -297,6 +298,12 @@ class Executor:
                 reason=reason,
                 runtime_surface=runtime_surface,
             )
+            canonical_evidence = self._canonical_evidence_for_request_result(
+                request=request,
+                reason=reason,
+                state="blocked",
+                runtime_transaction=blocked_transaction,
+            )
             effect = self.side_effect_registry.register(
                 effect_type="blocked_execution",
                 source_execution_id=execution_id,
@@ -326,6 +333,7 @@ class Executor:
                         "reason": reason,
                     },
                     "runtime_transaction": blocked_transaction,
+                    "canonical_evidence": canonical_evidence,
                 },
             )
             return RuntimeExecutionResult(
@@ -373,6 +381,7 @@ class Executor:
                         "reason": reason,
                     },
                     "runtime_transaction": blocked_transaction,
+                    "canonical_evidence": canonical_evidence,
                 },
             )
         policy_result = self.execution_policy.evaluate(request)
@@ -487,6 +496,12 @@ class Executor:
                 reason=str(policy_result.decision.reason or "runtime_execution_policy_blocked"),
                 runtime_surface=runtime_surface,
             )
+            canonical_evidence = self._canonical_evidence_for_request_result(
+                request=request,
+                reason=str(policy_result.decision.reason or "runtime_execution_policy_blocked"),
+                state="blocked",
+                runtime_transaction=runtime_transaction,
+            )
             effect = self.side_effect_registry.register(
                 effect_type="blocked_execution",
                 source_execution_id=execution_id,
@@ -501,6 +516,7 @@ class Executor:
                     "command": request.command,
                     "execution_type": request.execution_type,
                     "runtime_transaction": runtime_transaction,
+                    "canonical_evidence": canonical_evidence,
                 },
             )
             return RuntimeExecutionResult(
@@ -531,6 +547,7 @@ class Executor:
                     "replay_tagged": True,
                     "lineage_tagged": bool(request.lineage),
                     "runtime_transaction": runtime_transaction,
+                    "canonical_evidence": canonical_evidence,
                 },
             )
 
@@ -589,6 +606,12 @@ class Executor:
                 runtime_surface=runtime_surface,
                 reason=f"unsupported execution_type: {request.execution_type}",
             )
+            canonical_evidence = self._canonical_evidence_for_request_result(
+                request=request,
+                reason=f"unsupported execution_type: {request.execution_type}",
+                state="blocked",
+                runtime_transaction=runtime_transaction,
+            )
             return RuntimeExecutionResult(
                 execution_id=execution_id,
                 execution_start_id=execution_start_id,
@@ -615,6 +638,7 @@ class Executor:
                     "canonical_owner": "core.runtime.executor",
                     "side_effect_registry_updated": False,
                     "runtime_transaction": runtime_transaction,
+                    "canonical_evidence": canonical_evidence,
                 },
             )
 
@@ -686,6 +710,12 @@ class Executor:
         )
 
         rollback_required = policy_result.state == "rollback_required"
+        canonical_evidence = self._canonical_evidence_for_request_result(
+            request=request,
+            reason="authority_metadata_valid" if return_code == 0 else stderr,
+            state=status,
+            runtime_transaction={},
+        )
         return RuntimeExecutionResult(
             execution_id=execution_id,
             execution_start_id=execution_start_id,
@@ -714,8 +744,33 @@ class Executor:
                 "replay_tagged": True,
                 "lineage_tagged": bool(request.lineage),
                 "rollback_metadata": dict(effect.rollback_metadata),
+                "canonical_evidence": canonical_evidence,
             },
             )
+
+    def _canonical_evidence_for_request_result(
+        self,
+        *,
+        request: RuntimeExecutionRequest,
+        reason: str,
+        state: str,
+        runtime_transaction: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        authority_decision = {
+            "ok": state not in {"blocked", "failed"},
+            "task_id": request.metadata.get("task_id", ""),
+            "step_id": request.metadata.get("step_id", ""),
+            "trace_id": request.metadata.get("trace_id", ""),
+            "authority_source": request.metadata.get("authority_source", ""),
+            "surface": request.execution_type,
+            "reason": reason,
+        }
+        return evidence_refs_for_payload(
+            {
+                "authority_decision": authority_decision,
+                "runtime_transaction": dict(runtime_transaction or {}),
+            }
+        )
 
     def _blocked_transaction_evidence(
         self,

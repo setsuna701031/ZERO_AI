@@ -1246,13 +1246,38 @@ class TaskRunner:
     def _target_routed_context(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> Dict[str, Any]:
         target_repo_root = self._sync_target_repo_context(task=task, state=state)
         cwd = self._resolve_step_cwd(task=task, state=state, step=step)
-        return {
+        context = {
             "cwd": cwd,
             "task_dir": state.get("task_dir"),
             "workspace_root": state.get("workspace_root") or getattr(self.runtime, "workspace_root", "workspace"),
             "target_repo_root": target_repo_root,
             "target_routing_enabled": bool(target_repo_root),
         }
+        operator_session_id = self._operator_session_id_from_payloads(task, state)
+        if operator_session_id:
+            context["operator_session_id"] = operator_session_id
+        return context
+
+    def _operator_session_id_from_payloads(self, *payloads: Any) -> str:
+        for payload in payloads:
+            if not isinstance(payload, dict):
+                continue
+            for key in ("operator_session_id", "persistent_operator_session_id"):
+                value = str(payload.get(key) or "").strip()
+                if value:
+                    return value
+            metadata = payload.get("metadata")
+            if isinstance(metadata, dict):
+                for key in ("operator_session_id", "persistent_operator_session_id"):
+                    value = str(metadata.get(key) or "").strip()
+                    if value:
+                        return value
+            operator_state = payload.get("operator")
+            if isinstance(operator_state, dict):
+                value = str(operator_state.get("session_id") or "").strip()
+                if value:
+                    return value
+        return ""
 
     def _build_taskrunner_authority_context(
         self,

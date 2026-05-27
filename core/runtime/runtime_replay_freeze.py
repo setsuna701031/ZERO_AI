@@ -55,6 +55,7 @@ class RuntimeReplayRun:
     audit_refs: tuple[str, ...] = ()
     events: tuple[RuntimeReplayEvent, ...] = ()
     failure_reason: str = ""
+    evidence_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -101,7 +102,24 @@ def create_replay_run(
         result_state = "failed"
         failure_reason = "mutation_intent_not_allowed_in_read_only_replay"
     now = _now()
-    return RuntimeReplayRun(
+    evidence_id = ""
+    try:
+        from core.runtime.runtime_evidence_freeze import create_evidence_record, RuntimeEvidenceKind
+
+        evidence_id = create_evidence_record(
+            kind=RuntimeEvidenceKind.REPLAY,
+            trace_id=str(source_trace_id or _first_trace_id(normalized)),
+            transaction_id=",".join(source_transaction_ids),
+            replay_run_id=replay_run_id,
+            decision=replay_mode.value,
+            state=result_state,
+            reason=failure_reason,
+            refs=audit_refs,
+        ).evidence_id
+    except Exception:
+        evidence_id = ""
+
+    run = RuntimeReplayRun(
         replay_run_id=replay_run_id,
         mode=replay_mode,
         source_trace_id=str(source_trace_id or _first_trace_id(normalized)),
@@ -120,7 +138,15 @@ def create_replay_run(
         audit_refs=audit_refs,
         events=events,
         failure_reason=failure_reason,
+        evidence_id=evidence_id,
     )
+    try:
+        from core.runtime.runtime_memory_engine import append_runtime_memory, memory_record_for_replay
+
+        append_runtime_memory(memory_record_for_replay(run))
+    except Exception:
+        pass
+    return run
 
 
 def normalize_replay_input(
@@ -172,6 +198,11 @@ def assert_replay_is_deterministic(first: Any, second: Any) -> bool:
     first_digest = _digest(normalize_replay_output(first) if isinstance(first, RuntimeReplayRun) else first)
     second_digest = _digest(normalize_replay_output(second) if isinstance(second, RuntimeReplayRun) else second)
     if first_digest != second_digest:
+        _record_invariant_violation(
+            "replay.deterministic_digest_stable",
+            "replay output is not deterministic",
+            {"first_digest": first_digest, "second_digest": second_digest},
+        )
         raise AssertionError("replay output is not deterministic")
     return True
 
@@ -179,10 +210,20 @@ def assert_replay_is_deterministic(first: Any, second: Any) -> bool:
 def assert_replay_does_not_mutate(replay_run: RuntimeReplayRun | Mapping[str, Any]) -> bool:
     payload = replay_run.to_dict() if isinstance(replay_run, RuntimeReplayRun) else dict(replay_run)
     if payload.get("mutation_allowed") or payload.get("transaction_required"):
+        _record_invariant_violation(
+            "replay.replay_read_cannot_mutate",
+            "read-only replay cannot mutate",
+            payload,
+        )
         raise AssertionError("read-only replay cannot mutate")
     before = payload.get("transaction_count", 0)
     after = len(list_transactions())
     if after < int(before or 0):
+        _record_invariant_violation(
+            "replay.replay_read_cannot_mutate",
+            "transaction registry changed unexpectedly",
+            payload,
+        )
         raise AssertionError("transaction registry changed unexpectedly")
     return True
 
@@ -321,3 +362,17 @@ def _safe_int(value: Any, fallback: int) -> int:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _record_invariant_violation(invariant: str, reason: str, context: Mapping[str, Any]) -> None:
+    try:
+        from core.runtime.runtime_constitution_freeze import record_runtime_invariant_violation
+
+        record_runtime_invariant_violation(
+            invariant,
+            component="replay",
+            reason=reason,
+            context=context,
+        )
+    except Exception:
+        pass

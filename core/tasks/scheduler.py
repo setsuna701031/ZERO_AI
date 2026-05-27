@@ -1967,6 +1967,15 @@ class Scheduler(RuntimeTaskScheduler):
                         "step_scope": step_scope,
                         "guard_result": guard_result,
                         "guard_fallthrough_bridge": apply_patch_guard_fallthrough,
+                        "operator_session_id": str(
+                            task.get("operator_session_id")
+                            or (
+                                task.get("metadata", {}).get("operator_session_id")
+                                if isinstance(task.get("metadata"), dict)
+                                else ""
+                            )
+                            or ""
+                        ).strip(),
                         "authority_context": scheduler_authority,
                         "runtime_authority_context": scheduler_authority,
                         "authority_propagation_required": bool(
@@ -4718,6 +4727,14 @@ class Scheduler(RuntimeTaskScheduler):
                     "task_dir",
                     "goal",
                     "title",
+                    "metadata",
+                    "operator",
+                    "operator_session_id",
+                    "persistent_operator_session_id",
+                    "execution_authority",
+                    "authority_context",
+                    "runtime_authority_context",
+                    "authority_propagation_required",
                 ):
                     if key in runtime_data:
                         hydrated[key] = copy.deepcopy(runtime_data.get(key))

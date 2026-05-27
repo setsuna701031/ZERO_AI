@@ -210,14 +210,28 @@ class RuntimeReplayEngine:
     def __init__(
         self,
         session_manager: RuntimeExecutionSessionManager | None = None,
+        operator_bridge: Any = None,
     ) -> None:
         self.session_manager = (
             session_manager
             if session_manager is not None
             else RuntimeExecutionSessionManager()
         )
+        self.operator_bridge = operator_bridge
         self._replays: dict[str, RuntimeReplaySession] = {}
         self._sequence = 0
+
+    def replay_evidence_refs(self, session_id: str) -> list[dict[str, Any]]:
+        bridge = getattr(self, "operator_bridge", None)
+        if bridge is None:
+            return []
+        try:
+            return bridge.replay_evidence_refs(session_id)
+        except Exception:
+            return []
+
+    def operator_replay_evidence_refs(self, session_id: str) -> list[dict[str, Any]]:
+        return self.replay_evidence_refs(session_id)
 
     def replay_session(
         self,

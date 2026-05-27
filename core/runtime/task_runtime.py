@@ -69,11 +69,18 @@ class TaskRuntime:
         debug: bool = False,
         trace_log_filename: str = "task_runtime_trace.log",
         evidence_adapter: Any = None,
+        operator_runtime: Any = None,
+        operator_bridge: Any = None,
     ) -> None:
         self.workspace_root = workspace_root
         self.debug = debug
         self.trace_log_filename = trace_log_filename
         self.evidence_adapter = evidence_adapter
+        if operator_bridge is None and operator_runtime is not None:
+            from core.runtime.operator_integration_bridge import OperatorIntegrationBridge
+
+            operator_bridge = OperatorIntegrationBridge(operator_runtime)
+        self.operator_bridge = operator_bridge
         self.state_machine = RuntimeStateMachine(debug=debug)
         self.audit = AuditLogger(workspace_root=self.workspace_root)
         self.state_guard = RuntimeStateGuard()
@@ -82,6 +89,70 @@ class TaskRuntime:
             workspace_root=self.workspace_root,
             source="task_runtime",
         )
+
+    def _operator_bridge_session_id(
+        self,
+        *,
+        task: Optional[Dict[str, Any]] = None,
+        state: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        for source in (state or {}, task or {}):
+            if not isinstance(source, dict):
+                continue
+            for key in ("operator_session_id", "persistent_operator_session_id", "session_id"):
+                value = str(source.get(key) or "").strip()
+                if value:
+                    return value
+            operator_state = source.get("operator")
+            if isinstance(operator_state, dict):
+                value = str(operator_state.get("session_id") or "").strip()
+                if value:
+                    return value
+            metadata = source.get("metadata")
+            if isinstance(metadata, dict):
+                for key in ("operator_session_id", "persistent_operator_session_id"):
+                    value = str(metadata.get(key) or "").strip()
+                    if value:
+                        return value
+        return ""
+
+    def _operator_bridge_record_step(
+        self,
+        *,
+        task: Dict[str, Any],
+        state: Dict[str, Any],
+        step: Any,
+        result: Dict[str, Any],
+        failed: bool,
+    ) -> None:
+        bridge = getattr(self, "operator_bridge", None)
+        if bridge is None:
+            return
+        session_id = self._operator_bridge_session_id(task=task, state=state)
+        if not session_id:
+            return
+        try:
+            evidence_refs = result.get("evidence_refs") if isinstance(result, dict) else None
+            nested_result = result.get("result") if isinstance(result, dict) else None
+            if not evidence_refs and isinstance(nested_result, dict):
+                evidence_refs = nested_result.get("evidence_refs")
+            if failed:
+                bridge.on_step_failed(
+                    session_id,
+                    step,
+                    error=result.get("error") or result.get("message") or result,
+                    evidence_refs=evidence_refs,
+                )
+            else:
+                bridge.on_step_completed(
+                    session_id,
+                    step,
+                    result=result,
+                    evidence_refs=evidence_refs,
+                )
+        except Exception:
+            if self.debug:
+                print("[TaskRuntime] operator bridge step record ignored")
 
     # ============================================================
     # runtime state
@@ -297,6 +368,14 @@ class TaskRuntime:
                         state["last_output"] = value.strip()
                         break
 
+            self._operator_bridge_record_step(
+                task=task,
+                state=state,
+                step=current_step,
+                result=sanitized_step_result,
+                failed=False,
+            )
+
         next_index = idx + 1
         state["current_step_index"] = next_index
         state["updated_at"] = self._now()
@@ -436,6 +515,14 @@ class TaskRuntime:
                 if isinstance(value, str) and value.strip():
                     state["last_output"] = value.strip()
                     break
+
+        self._operator_bridge_record_step(
+            task=task,
+            state=state,
+            step=current_step,
+            result=sanitized_step_result,
+            failed=True,
+        )
 
         normalized_status = str(status or "").strip().lower()
         if normalized_status in TERMINAL_STATUSES or normalized_status in NON_TERMINAL_STATUSES:
@@ -1109,6 +1196,12 @@ class TaskRuntime:
             "active_blocker_count": 0,
             "waiting_reason": str(task.get("waiting_reason") or ""),
         }
+        operator_session_id = self._operator_bridge_session_id(task=task, state=state)
+        if operator_session_id:
+            state["operator_session_id"] = operator_session_id
+            state.setdefault("metadata", {})
+            if isinstance(state["metadata"], dict):
+                state["metadata"]["operator_session_id"] = operator_session_id
         active = self._active_blockers(state.get("blockers", []))
         state["active_blocker_count"] = len(active)
         review_blocker = next((item for item in active if item.get("type") == "review"), None)
@@ -1128,6 +1221,14 @@ class TaskRuntime:
         normalized["task_id"] = normalized.get("task_id") or self._task_id(task)
         normalized["goal"] = normalized.get("goal") or self._task_goal(task)
         normalized["task_dir"] = normalized.get("task_dir") or self._task_dir(task)
+        operator_session_id = self._operator_bridge_session_id(task=task, state=normalized)
+        if operator_session_id:
+            normalized["operator_session_id"] = operator_session_id
+            metadata = normalized.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata["operator_session_id"] = operator_session_id
+            normalized["metadata"] = metadata
 
         status = str(normalized.get("status") or task.get("status") or "queued").strip().lower()
         if status not in TERMINAL_STATUSES and status not in NON_TERMINAL_STATUSES:
@@ -1431,6 +1532,15 @@ class TaskRuntime:
         task["failure_type"] = safe_state.get("failure_type")
         task["failure_message"] = safe_state.get("failure_message")
         task["failure_decision"] = copy.deepcopy(safe_state.get("failure_decision"))
+        operator_session_id = self._operator_bridge_session_id(task=task, state=safe_state)
+        if operator_session_id:
+            task["operator_session_id"] = operator_session_id
+            metadata = task.setdefault("metadata", {})
+            if isinstance(metadata, dict):
+                metadata["operator_session_id"] = operator_session_id
+            operator_state = task.setdefault("operator", {})
+            if isinstance(operator_state, dict):
+                operator_state["session_id"] = operator_session_id
 
         # Do not embed the whole runtime_state back into task.
         # That creates recursive task -> runtime_state -> task-like payload growth.

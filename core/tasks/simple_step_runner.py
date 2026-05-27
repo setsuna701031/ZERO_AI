@@ -39,6 +39,7 @@ class SimpleStepRunner:
     ) -> Dict[str, Any]:
         step_type = str(step.get("type") or "").strip().lower()
         task_dir = self._resolve_task_dir(task)
+        operator_session_id = self._operator_session_id(task)
 
         guard_step = copy.deepcopy(step)
 
@@ -154,6 +155,8 @@ class SimpleStepRunner:
                 timeout=60.0,
                 encoding="utf-8",
                 errors="replace",
+                operator_session_id=operator_session_id or None,
+                context={"operator_session_id": operator_session_id} if operator_session_id else None,
             )
 
             result = {
@@ -210,6 +213,8 @@ class SimpleStepRunner:
                 timeout=60.0,
                 encoding="utf-8",
                 errors="replace",
+                operator_session_id=operator_session_id or None,
+                context={"operator_session_id": operator_session_id} if operator_session_id else None,
             )
 
             result = {
@@ -345,6 +350,24 @@ class SimpleStepRunner:
             }
 
         raise ValueError(f"unsupported step type: {step_type}")
+
+    def _operator_session_id(self, task: Dict[str, Any]) -> str:
+        if not isinstance(task, dict):
+            return ""
+        for key in ("operator_session_id", "persistent_operator_session_id"):
+            value = str(task.get(key) or "").strip()
+            if value:
+                return value
+        metadata = task.get("metadata")
+        if isinstance(metadata, dict):
+            for key in ("operator_session_id", "persistent_operator_session_id"):
+                value = str(metadata.get(key) or "").strip()
+                if value:
+                    return value
+        operator_state = task.get("operator")
+        if isinstance(operator_state, dict):
+            return str(operator_state.get("session_id") or "").strip()
+        return ""
 
     def _resolve_task_dir(self, task: Dict[str, Any]) -> str:
         task_dir = str(task.get("task_dir") or "").strip()

@@ -24,6 +24,30 @@ def validate_authority_metadata(
     *,
     surface: Any | None = None,
 ) -> dict[str, Any]:
+    def _with_invariant(payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            from core.runtime.runtime_constitution_freeze import (
+                RuntimeInvariant,
+                record_runtime_invariant_violation,
+            )
+
+            classified_surface = classify_runtime_surface(surface)
+            invariant = (
+                RuntimeInvariant.AUTHORITY_SIDE_EFFECT_REQUIRES_AUTHORITY
+                if classified_surface.side_effect
+                else RuntimeInvariant.AUTHORITY_CONTEXT_IS_NOT_AUTHORITY
+            )
+            violation = record_runtime_invariant_violation(
+                invariant,
+                component="authority",
+                reason=str(payload.get("reason") or "authority_metadata_invalid"),
+                context={"surface": classified_surface.name, "missing_fields": payload.get("missing_fields", [])},
+            )
+            payload = {**payload, "invariant_violations": [violation.to_dict()]}
+        except Exception:
+            pass
+        return payload
+
     if surface is not None:
         classified = classify_runtime_surface(surface)
         if not classified.requires_authority:
@@ -55,23 +79,23 @@ def validate_authority_metadata(
         policy_allowed = policy_result
 
     if missing:
-        return {
+        return _with_invariant({
             "ok": False,
             "reason": "missing_authority_metadata",
             "missing_fields": missing,
-        }
+        })
     if approval_state not in ALLOWED_APPROVAL_STATES:
-        return {
+        return _with_invariant({
             "ok": False,
             "reason": "approval_state_not_allowed",
             "approval_state": approval_state,
-        }
+        })
     if not policy_allowed:
-        return {
+        return _with_invariant({
             "ok": False,
             "reason": "policy_result_not_allowed",
             "policy_result": policy_result,
-        }
+        })
     return {
         "ok": True,
         "reason": "authority_metadata_valid",
@@ -139,6 +163,15 @@ def normalize_authority_metadata(
         "recovery_attempt_id",
         "original_transaction_id",
         "rollback_evidence",
+        "evidence",
+        "canonical_evidence",
+        "evidence_snapshot",
+        "evidence_refs",
+        "operator_context",
+        "operator_run_id",
+        "operator_repo_scan",
+        "operator_edit_plan",
+        "operator_prediction",
     }
     has_explicit_authority = bool(
         payload.get("execution_authority")

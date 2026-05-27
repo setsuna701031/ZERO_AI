@@ -65,6 +65,8 @@ class RuntimeRecoveryAttempt:
     failure_result: dict[str, Any] = field(default_factory=dict)
     audit_refs: tuple[str, ...] = ()
     replay_refs: tuple[str, ...] = ()
+    prediction_refs: tuple[str, ...] = ()
+    evidence_id: str = ""
     created_at: str = ""
     updated_at: str = ""
     state_history: tuple[str, ...] = ()
@@ -74,6 +76,7 @@ class RuntimeRecoveryAttempt:
         payload["state"] = self.state.value
         payload["audit_refs"] = list(self.audit_refs)
         payload["replay_refs"] = list(self.replay_refs)
+        payload["prediction_refs"] = list(self.prediction_refs)
         payload["state_history"] = list(self.state_history)
         return payload
 
@@ -92,11 +95,13 @@ class RuntimeRecoveryDecision:
     retry_count: int = 0
     max_retries: int = 1
     audit_refs: tuple[str, ...] = ()
+    prediction_refs: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["state"] = self.state.value
         payload["audit_refs"] = list(self.audit_refs)
+        payload["prediction_refs"] = list(self.prediction_refs)
         return payload
 
 
@@ -112,6 +117,7 @@ def create_recovery_attempt(
     max_retries: int = 1,
     audit_refs: Any = None,
     replay_refs: Any = None,
+    prediction_refs: Any = None,
 ) -> RuntimeRecoveryAttempt:
     if not str(original_transaction_id or "").strip():
         raise ValueError("recovery requires original_transaction_id")
@@ -131,6 +137,7 @@ def create_recovery_attempt(
         max_retries=max(0, int(max_retries)),
         audit_refs=_normalize_text_tuple(audit_refs),
         replay_refs=_normalize_text_tuple(replay_refs or ([replay_run_id] if replay_run_id else [])),
+        prediction_refs=_normalize_text_tuple(prediction_refs),
         created_at=now,
         updated_at=now,
         state_history=(RuntimeRecoveryState.PROPOSED.value,),
@@ -227,6 +234,51 @@ def record_recovery_terminal_failure(
     )
 
 
+def handoff_terminal_failure_to_autonomous_repair(
+    attempt: RuntimeRecoveryAttempt | str,
+    *,
+    authority: Mapping[str, Any] | None = None,
+    max_attempts: int = 1,
+) -> Any:
+    current = get_recovery_attempt(attempt)
+    if current.state is RuntimeRecoveryState.REQUIRES_HUMAN_REVIEW:
+        return {
+            "ok": False,
+            "state": RuntimeRecoveryState.REQUIRES_HUMAN_REVIEW.value,
+            "reason": "requires_human_review_stops_autonomous_repair",
+            "recovery_attempt_id": current.recovery_attempt_id,
+        }
+    if current.state is RuntimeRecoveryState.BLOCKED:
+        return {
+            "ok": False,
+            "state": RuntimeRecoveryState.BLOCKED.value,
+            "reason": "blocked_recovery_stops_autonomous_repair",
+            "recovery_attempt_id": current.recovery_attempt_id,
+        }
+    if current.state is not RuntimeRecoveryState.FAILED_TERMINAL:
+        return {
+            "ok": False,
+            "state": current.state.value,
+            "reason": "autonomous_repair_requires_terminal_failure",
+            "recovery_attempt_id": current.recovery_attempt_id,
+        }
+    from core.runtime.autonomous_repair_loop import run_autonomous_repair_loop
+
+    return run_autonomous_repair_loop(
+        {
+            "task_id": "task-recovery-repair",
+            "step_id": "step-recovery-repair",
+            "trace_id": current.original_trace_id,
+            "failure_id": current.recovery_attempt_id,
+            "reason": current.failure_result.get("reason") if current.failure_result else "recovery_failed_terminal",
+            "transaction_id": current.original_transaction_id,
+            "recovery_attempt_id": current.recovery_attempt_id,
+        },
+        authority=authority,
+        max_attempts=max_attempts,
+    )
+
+
 def record_recovery_requires_human_review(
     attempt: RuntimeRecoveryAttempt | str,
     reason: str,
@@ -250,6 +302,8 @@ def create_recovery_transaction(
     authority_source: str,
     surface: str = "recovery_apply",
     affected_files: Any = None,
+    repair_loop_id: str = "",
+    repair_source: str = "",
 ) -> RuntimeTransaction:
     current = get_recovery_attempt(attempt)
     tx = create_transaction(
@@ -265,6 +319,8 @@ def create_recovery_transaction(
         recovery_source=current.recovery_source,
         original_transaction_id=current.original_transaction_id,
         original_trace_id=current.original_trace_id,
+        repair_loop_id=repair_loop_id,
+        repair_source=repair_source,
     )
     tx = record_preflight(tx, {"ok": True, "recovery_attempt_id": current.recovery_attempt_id})
     tx = record_approval(tx, {"ok": True, "approved": True, "recovery_attempt_id": current.recovery_attempt_id})
@@ -318,6 +374,11 @@ def assert_recovery_terminal_state(attempt: RuntimeRecoveryAttempt | str) -> boo
     if current.state is RuntimeRecoveryState.FAILED_TERMINAL and not current.failure_result:
         raise AssertionError("failed_terminal recovery requires reason")
     if current.retry_count > current.max_retries:
+        _record_invariant_violation(
+            "recovery.retry_loop_bounded",
+            "recovery retry count exceeded bound",
+            current.to_dict(),
+        )
         raise AssertionError("recovery retry count exceeded bound")
     return True
 
@@ -339,6 +400,7 @@ def build_recovery_decision(attempt: RuntimeRecoveryAttempt | str) -> RuntimeRec
     decision_state = current.state
     retry_allowed = decision_state not in TERMINAL_RECOVERY_STATES and current.retry_count < current.max_retries
     payload = repr((current.recovery_attempt_id, current.state.value, reason)).encode("utf-8", errors="replace")
+    prediction_refs = _prediction_refs_for_recovery(current)
     return RuntimeRecoveryDecision(
         decision_id="recovery_decision:" + hashlib.sha256(payload).hexdigest()[:16],
         state=decision_state,
@@ -352,6 +414,7 @@ def build_recovery_decision(attempt: RuntimeRecoveryAttempt | str) -> RuntimeRec
         retry_count=current.retry_count,
         max_retries=current.max_retries,
         audit_refs=current.audit_refs,
+        prediction_refs=prediction_refs,
     )
 
 
@@ -364,8 +427,23 @@ def _replace_attempt(attempt: RuntimeRecoveryAttempt, **updates: Any) -> Runtime
     history = attempt.state_history
     if state is not attempt.state:
         history = (*history, state.value)
+    if state in TERMINAL_RECOVERY_STATES and not updates.get("evidence_id") and not attempt.evidence_id:
+        try:
+            from core.runtime.runtime_evidence_freeze import attach_recovery_evidence
+
+            preview = replace(attempt, **updates, updated_at=_now(), state_history=history)
+            updates["evidence_id"] = attach_recovery_evidence(preview).evidence_id
+        except Exception:
+            pass
     updated = replace(attempt, **updates, updated_at=_now(), state_history=history)
     _ATTEMPTS[updated.recovery_attempt_id] = updated
+    if updated.state in TERMINAL_RECOVERY_STATES:
+        try:
+            from core.runtime.runtime_memory_engine import append_runtime_memory, memory_record_for_recovery
+
+            append_runtime_memory(memory_record_for_recovery(updated))
+        except Exception:
+            pass
     return updated
 
 
@@ -405,3 +483,36 @@ def _recovery_attempt_id(original_transaction_id: str, original_trace_id: str, o
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _record_invariant_violation(invariant: str, reason: str, context: Mapping[str, Any]) -> None:
+    try:
+        from core.runtime.runtime_constitution_freeze import record_runtime_invariant_violation
+
+        record_runtime_invariant_violation(
+            invariant,
+            component="recovery",
+            reason=reason,
+            context=context,
+        )
+    except Exception:
+        pass
+
+
+def _prediction_refs_for_recovery(current: RuntimeRecoveryAttempt) -> tuple[str, ...]:
+    if current.prediction_refs:
+        return current.prediction_refs
+    try:
+        from core.runtime.runtime_prediction_engine import predict_rollback_risk
+
+        prediction = predict_rollback_risk(
+            {
+                "trace_id": current.original_trace_id,
+                "source_transaction_id": current.original_transaction_id,
+                "source_replay_run_id": current.replay_run_id,
+                "source_recovery_attempt_id": current.recovery_attempt_id,
+            }
+        )
+        return (prediction.prediction_id,)
+    except Exception:
+        return ()

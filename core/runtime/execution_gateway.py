@@ -154,9 +154,20 @@ def build_runtime_execution_request(
     errors: str = "replace",
     metadata: Mapping[str, Any] | None = None,
     lineage: Mapping[str, Any] | None = None,
+    operator_session_id: str | None = None,
+    context: Mapping[str, Any] | None = None,
 ) -> RuntimeExecutionRequest:
     normalized_command = _normalize_command(command)
     surface = classify_runtime_surface("command" if shell else "subprocess")
+    forwarded_metadata: dict[str, Any] = dict(metadata or {})
+    forwarded_lineage: dict[str, Any] = dict(lineage or {})
+    context_session_id = ""
+    if isinstance(context, Mapping):
+        context_session_id = str(context.get("operator_session_id") or context.get("persistent_operator_session_id") or "").strip()
+    resolved_operator_session_id = str(operator_session_id or context_session_id or "").strip()
+    if resolved_operator_session_id:
+        forwarded_metadata.setdefault("operator_session_id", resolved_operator_session_id)
+        forwarded_lineage.setdefault("operator_session_id", resolved_operator_session_id)
 
     request_metadata = _build_authority_metadata(
         command=normalized_command,
@@ -166,7 +177,7 @@ def build_runtime_execution_request(
         text=text,
         encoding=encoding,
         errors=errors,
-        extra_metadata=metadata,
+        extra_metadata=forwarded_metadata,
     )
 
     request_lineage: dict[str, Any] = {
@@ -176,8 +187,8 @@ def build_runtime_execution_request(
         "canonical_owner": RUNTIME_AUTHORITY_OWNER,
     }
 
-    if lineage:
-        request_lineage.update(dict(lineage))
+    if forwarded_lineage:
+        request_lineage.update(forwarded_lineage)
 
     return RuntimeExecutionRequest(
         execution_type="command" if shell else "subprocess",
@@ -287,6 +298,8 @@ def safe_subprocess_run(
     encoding: str = "utf-8",
     errors: str = "replace",
     metadata: Mapping[str, Any] | None = None,
+    operator_session_id: str | None = None,
+    context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Canonical runtime execution gateway.
@@ -308,6 +321,8 @@ def safe_subprocess_run(
         encoding=encoding,
         errors=errors,
         metadata=metadata,
+        operator_session_id=operator_session_id,
+        context=context,
     )
 
     return execute_runtime_request(request).to_dict()

@@ -31,11 +31,25 @@ class RuntimeRecoveryExecutor:
         journal: Any = None,
         handlers: dict[str, RecoveryHandler] | None = None,
         store: RuntimeRecoveryExecutionStore | None = None,
+        operator_bridge: Any = None,
     ) -> None:
         self.policy = policy if policy is not None else RuntimeRecoveryPolicy()
         self.journal = journal
         self.handlers: dict[str, RecoveryHandler] = dict(handlers or {})
         self.store = store if store is not None else RuntimeRecoveryExecutionStore()
+        self.operator_bridge = operator_bridge
+
+    def recovery_resume_payload(self, session_id: str) -> dict[str, Any] | None:
+        bridge = getattr(self, "operator_bridge", None)
+        if bridge is None:
+            return None
+        try:
+            return bridge.build_resume_payload(session_id)
+        except Exception:
+            return None
+
+    def operator_resume_payload(self, session_id: str) -> dict[str, Any] | None:
+        return self.recovery_resume_payload(session_id)
 
     def register_handler(self, action_type: str, handler: RecoveryHandler) -> None:
         action = str(action_type or "").strip()

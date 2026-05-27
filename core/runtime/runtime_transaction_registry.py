@@ -64,6 +64,8 @@ class RuntimeTransaction:
     parent_transaction_id: str = ""
     replay_source: str = ""
     recovery_source: str = ""
+    repair_loop_id: str = ""
+    repair_source: str = ""
     original_transaction_id: str = ""
     original_trace_id: str = ""
     created_at: str = ""
@@ -132,6 +134,8 @@ def create_transaction(
     parent_transaction_id: str = "",
     replay_source: str = "",
     recovery_source: str = "",
+    repair_loop_id: str = "",
+    repair_source: str = "",
     original_transaction_id: str = "",
     original_trace_id: str = "",
 ) -> RuntimeTransaction:
@@ -170,6 +174,8 @@ def create_transaction(
         parent_transaction_id=str(parent_transaction_id or ""),
         replay_source=str(replay_source or ""),
         recovery_source=str(recovery_source or ""),
+        repair_loop_id=str(repair_loop_id or ""),
+        repair_source=str(repair_source or ""),
         original_transaction_id=str(original_transaction_id or ""),
         original_trace_id=str(original_trace_id or ""),
         created_at=now,
@@ -222,6 +228,11 @@ def record_verification(transaction: RuntimeTransaction | str, result: Mapping[s
 def record_commit(transaction: RuntimeTransaction | str, result: Mapping[str, Any]) -> RuntimeTransaction:
     tx = get_transaction(transaction)
     if tx.state is not RuntimeTransactionState.VERIFIED or not _result_ok(tx.verification_result):
+        _record_invariant_violation(
+            "transaction.committed_requires_verified_success",
+            "committed transaction requires verified success",
+            tx.to_dict(),
+        )
         raise ValueError("committed transaction requires verified success")
     return _transition(tx, RuntimeTransactionState.COMMITTED, commit_result=dict(result or {}))
 
@@ -230,6 +241,11 @@ def record_rollback(transaction: RuntimeTransaction | str, result: Mapping[str, 
     tx = get_transaction(transaction)
     has_evidence = bool(result) or bool(tx.rollback_result) or bool(tx.apply_result) or bool(tx.parent_transaction_id)
     if not has_evidence:
+        _record_invariant_violation(
+            "transaction.rollback_requires_rollback_evidence",
+            "rollback requires evidence",
+            tx.to_dict(),
+        )
         raise ValueError("rollback requires evidence")
     if tx.state not in {
         RuntimeTransactionState.APPLIED,
@@ -318,6 +334,10 @@ def assert_transaction_lifecycle_valid(transaction: RuntimeTransaction | str) ->
         raise AssertionError("replay-created transaction must differ from source transaction")
     if tx.recovery_source and tx.original_transaction_id and tx.transaction_id == tx.original_transaction_id:
         raise AssertionError("recovery-created transaction must differ from source transaction")
+    if tx.repair_source and tx.original_transaction_id and tx.transaction_id == tx.original_transaction_id:
+        raise AssertionError("repair-created transaction must differ from source transaction")
+    if tx.repair_source and not tx.repair_loop_id:
+        raise AssertionError("repair-created transaction requires repair_loop_id")
     return True
 
 
@@ -328,6 +348,11 @@ def _transition(
 ) -> RuntimeTransaction:
     tx = get_transaction(transaction)
     if state not in _ALLOWED_TRANSITIONS.get(tx.state, set()):
+        _record_invariant_violation(
+            "transaction.state_order_cannot_skip",
+            f"invalid transaction transition: {tx.state.value}->{state.value}",
+            tx.to_dict(),
+        )
         raise ValueError(f"invalid transaction transition: {tx.state.value}->{state.value}")
     return _replace_tx(tx, state=state, **updates)
 
@@ -391,6 +416,20 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _record_invariant_violation(invariant: str, reason: str, context: Mapping[str, Any]) -> None:
+    try:
+        from core.runtime.runtime_constitution_freeze import record_runtime_invariant_violation
+
+        record_runtime_invariant_violation(
+            invariant,
+            component="transaction",
+            reason=reason,
+            context=context,
+        )
+    except Exception:
+        pass
+
+
 def transaction_to_dict(transaction: RuntimeTransaction | str) -> dict[str, Any]:
     payload = copy.deepcopy(get_transaction(transaction).to_dict())
     # Keep the public transaction serialization ABI stable for existing
@@ -398,4 +437,6 @@ def transaction_to_dict(transaction: RuntimeTransaction | str) -> dict[str, Any]
     # RuntimeTransaction.to_dict(), but the legacy transaction_to_dict()
     # helper must not add new top-level keys.
     payload.pop("recovery_source", None)
+    payload.pop("repair_loop_id", None)
+    payload.pop("repair_source", None)
     return payload
