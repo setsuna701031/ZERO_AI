@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List
+
+
+def _workspace_dir() -> str:
+    return os.environ.get("ZERO_WORKSPACE", "workspace")
+
+
+def _print_json(data: Any) -> None:
+    print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _workspace_root(repo_root: Path) -> Path:
+    workspace = Path(_workspace_dir())
+    if workspace.is_absolute():
+        return workspace
+    return repo_root / workspace
+
+
+def _tasks_json_path(repo_root: Path) -> Path:
+    return _workspace_root(repo_root) / "tasks.json"
+
+
+def _read_tasks_index(repo_root: Path) -> List[Dict[str, Any]]:
+    path = _tasks_json_path(repo_root)
+    if not path.is_file():
+        return []
+
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return []
+
+    if isinstance(data, dict) and isinstance(data.get("tasks"), list):
+        return [item for item in data["tasks"] if isinstance(item, dict)]
+
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+
+    return []
+
+
+def _status(task: Dict[str, Any]) -> str:
+    return str(task.get("status") or "").strip().lower()
+
+
+def _task_id(task: Dict[str, Any]) -> str:
+    return str(
+        task.get("task_id")
+        or task.get("task_name")
+        or task.get("id")
+        or ""
+    ).strip()
+
+
+def _count_statuses(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for task in tasks:
+        status = _status(task) or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _deps_satisfied(task: Dict[str, Any], by_id: Dict[str, Dict[str, Any]]) -> bool:
+    deps = task.get("depends_on")
+    if not isinstance(deps, list) or not deps:
+        return True
+
+    completed = {"done", "finished", "completed", "success"}
+    for dep in deps:
+        dep_task = by_id.get(str(dep).strip())
+        if not isinstance(dep_task, dict):
+            return False
+        if _status(dep_task) not in completed:
+            return False
+    return True
+
+
+def _ready_count(tasks: List[Dict[str, Any]]) -> int:
+    by_id = {_task_id(task): task for task in tasks if _task_id(task)}
+    ready_statuses = {"queued", "ready", "retry", "retrying", "running"}
+    terminal_statuses = {
+        "finished",
+        "done",
+        "success",
+        "completed",
+        "failed",
+        "error",
+        "cancelled",
+        "canceled",
+    }
+
+    count = 0
+    for task in tasks:
+        status = _status(task)
+        if not status or status in terminal_statuses:
+            continue
+        if status not in ready_statuses:
+            continue
+        if not _deps_satisfied(task, by_id):
+            continue
+        count += 1
+    return count
+
+
+def _fast_health_payload(repo_root: Path) -> Dict[str, Any]:
+    workspace = _workspace_root(repo_root)
+    tasks = _read_tasks_index(repo_root)
+    status_counts = _count_statuses(tasks)
+
+    return {
+        "ok": True,
+        "system": "ZERO",
+        "mode": "fast_runtime_cli",
+        "legacy_app_booted": False,
+        "runtime_booted": False,
+        "workspace": str(workspace),
+        "tasks_db_path": str(_tasks_json_path(repo_root)),
+        "tasks_dir": str(workspace / "tasks"),
+        "runtime_dir": str(workspace / "runtime"),
+        "logs_dir": str(workspace / "logs"),
+        "scheduler_state_file": str(workspace / "scheduler_state.json"),
+        "memory_root": str(workspace / "memory"),
+        "knowledge_root": str(workspace / "knowledge"),
+        "cache_root": str(workspace / "cache"),
+        "queue": {
+            "total_count": len(tasks),
+            "ready_count": _ready_count(tasks),
+            "status_counts": status_counts,
+        },
+        "components": {
+            "router_type": None,
+            "step_executor_type": None,
+            "planner_type": None,
+            "llm_client_type": None,
+            "agent_loop_type": None,
+            "scheduler_type": "fast_runtime_cli_snapshot",
+            "task_repository_type": "tasks_json_snapshot",
+            "task_runtime_type": None,
+        },
+    }
+
+
+def _fast_runtime_payload(repo_root: Path) -> Dict[str, Any]:
+    health = _fast_health_payload(repo_root)
+    return {
+        "ok": True,
+        "mode": "fast_runtime_cli",
+        "legacy_app_booted": False,
+        "runtime_booted": False,
+        "workspace": health.get("workspace"),
+        "runtime": {
+            "ok": True,
+            "app": "ZERO Task OS",
+            "workspace_dir": _workspace_dir(),
+            "has_scheduler": False,
+            "has_agent_loop": False,
+            "llm": {
+                "plugin_name": os.environ.get("ZERO_LLM_PLUGIN", ""),
+                "provider": "",
+                "base_url": os.environ.get("ZERO_LLM_BASE_URL", "") or os.environ.get("OLLAMA_BASE_URL", ""),
+                "model": os.environ.get("ZERO_MODEL", "") or os.environ.get("ZERO_LLM_MODEL", ""),
+                "coder_model": os.environ.get("ZERO_CODER_MODEL", "") or os.environ.get("ZERO_LLM_CODER_MODEL", ""),
+                "timeout": os.environ.get("ZERO_LLM_TIMEOUT", ""),
+            },
+        },
+        "queue": health.get("queue", {}),
+    }
+
+
+def _normalized_command(argv: List[str]) -> str:
+    parts = [str(item).strip() for item in argv if str(item).strip()]
+    if not parts:
+        return ""
+    return " ".join(parts).strip().lower()
+
+
+def try_handle_fast_runtime_command(argv: List[str], *, repo_root: Path) -> bool:
+    command = _normalized_command(argv)
+
+    if command == "health":
+        _print_json(_fast_health_payload(repo_root))
+        return True
+
+    if command == "runtime":
+        _print_json(_fast_runtime_payload(repo_root))
+        return True
+
+    return False
