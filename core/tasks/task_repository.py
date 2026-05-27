@@ -77,14 +77,16 @@ class TaskRepository:
     def save(self) -> None:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
+        # Keep save pure and cheap. Public mutators normalize before assigning
+        # to self.tasks, so save should not trigger another full repository
+        # normalize pass with path enrichment / filesystem mkdir work.
         normalized: List[Dict[str, Any]] = []
         for task in self.tasks:
             if not isinstance(task, dict):
                 continue
-            try:
-                normalized.append(self._normalize_task(task))
-            except Exception:
+            if not str(task.get("task_id") or "").strip():
                 continue
+            normalized.append(copy.deepcopy(task))
 
         with open(self.db_path, "w", encoding="utf-8") as f:
             json.dump(
@@ -411,24 +413,39 @@ class TaskRepository:
         status = self._resolve_default_status(task.get("status"), depends_on)
         history = self._normalize_history(task.get("history"), status)
 
-        enriched = self.path_manager.enrich_task(copy.deepcopy(task))
+        # Fast normalization path.
+        #
+        # Repository load/get/list operations are read paths. They must not call
+        # TaskPathManager.enrich_task(), because enrich_task() creates
+        # workspace/task/sandbox directories. With a large tasks.json, that turns
+        # one empty scheduler tick into hundreds of repeated Windows mkdir/stat
+        # calls. Derive path strings only; creation remains owned by
+        # ensure_task_paths() at create/execution boundaries.
+        paths = self.path_manager.get_task_paths(task_id)
+
+        raw_priority = task.get("priority", 0)
+        try:
+            priority = int(raw_priority)
+        except Exception:
+            priority = 0
+
+        raw_l5_trigger = task.get("l5_trigger", {})
+        l5_trigger = copy.deepcopy(raw_l5_trigger) if isinstance(raw_l5_trigger, dict) else {}
 
         normalized = {
             "task_id": task_id,
-            "title": str(enriched.get("title", task.get("title", ""))),
-            "goal": str(enriched.get("goal", task.get("goal", ""))),
+            "title": str(task.get("title", "")),
+            "goal": str(task.get("goal", "")),
             "status": status,
-            "task_type": str(enriched.get("task_type", task.get("task_type", ""))),
-            "source": str(enriched.get("source", task.get("source", ""))),
-            "requires_approval": bool(enriched.get("requires_approval", task.get("requires_approval", False))),
-            "l5_trigger": copy.deepcopy(enriched.get("l5_trigger", task.get("l5_trigger", {})))
-            if isinstance(enriched.get("l5_trigger", task.get("l5_trigger", {})), dict)
-            else {},
-            "priority": int(enriched.get("priority", task.get("priority", 0))),
+            "task_type": str(task.get("task_type", "")),
+            "source": str(task.get("source", "")),
+            "requires_approval": bool(task.get("requires_approval", False)),
+            "l5_trigger": l5_trigger,
+            "priority": priority,
             "depends_on": copy.deepcopy(depends_on),
             "history": copy.deepcopy(history),
-            "workspace_dir": str(enriched.get("workspace_dir", "")),
-            "task_dir": str(enriched.get("task_dir", "")),
+            "workspace_dir": str(self.path_manager.tasks_root),
+            "task_dir": str(paths.get("task_dir", "")),
         }
 
         return normalized

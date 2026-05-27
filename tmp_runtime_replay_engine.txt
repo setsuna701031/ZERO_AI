@@ -376,16 +376,8 @@ class RuntimeReplayEngine:
             enforcement_classification=transition["enforcement_classification"],
             enforcement_reason=transition["enforcement_reason"],
             safe_to_enforce=transition["safe_to_enforce"],
-            review_required=(
-                transition["review_required"]
-                or constitution["review_required"]
-                or (not integrity_record.integrity_verified)
-            ),
-            block_recommended=(
-                transition["block_recommended"]
-                or constitution["block_recommended"]
-                or (not integrity_record.integrity_verified)
-            ),
+            review_required=transition["review_required"] or constitution["review_required"],
+            block_recommended=transition["block_recommended"] or constitution["block_recommended"],
             constitutional_continuity=constitution["constitutional_continuity"],
             continuity_verified=constitution["continuity_verified"],
             continuity_break=constitution["continuity_break"],

@@ -1328,65 +1328,6 @@ class TaskRunner:
             or state.get("authority_propagation_required")
         )
 
-        task_id = str(
-            task.get("task_id")
-            or task.get("task_name")
-            or state.get("task_id")
-            or state.get("task_name")
-            or ""
-        ).strip()
-        step_id = str(step.get("id") or step.get("step_id") or f"{task_id}:step" if task_id else "step").strip() if isinstance(step, dict) else "step"
-        step_path = str(step.get("path") or step.get("target_path") or "").replace("\\", "/").strip() if isinstance(step, dict) else ""
-        task_type = str(task.get("task_type") or task.get("type") or "").strip().lower()
-        planner_result = task.get("planner_result") if isinstance(task.get("planner_result"), dict) else {}
-        planner_intent = str(planner_result.get("intent") or "").strip().lower()
-        planner_meta = planner_result.get("meta") if isinstance(planner_result.get("meta"), dict) else {}
-        semantic_type = str(planner_meta.get("semantic_type") or "").strip().lower()
-
-        controlled_document_write = bool(
-            step_type in {"write_file", "workspace_write", "append_file", "workspace_append"}
-            and step_path.startswith("workspace/shared/")
-            and (
-                task_type == "document"
-                or planner_intent in {"summary", "document_summary", "action_items", "requirement"}
-                or semantic_type in {"summary", "document_summary", "action_items", "requirement"}
-            )
-        )
-
-        if controlled_document_write and not execution_authority:
-            trace_id = f"{task_id}:{step_id}:controlled_document_write" if task_id else f"{step_id}:controlled_document_write"
-            execution_authority = {
-                "task_id": task_id,
-                "step_id": step_id,
-                "authority_source": "operator_cli",
-                "source": "operator_cli",
-                "authority_status": "allowed",
-                "status": "allowed",
-                "execution_authority_endpoint": "step_executor",
-                "authority_endpoint": "step_executor",
-                "action_type": "mutation",
-                "authority_action": "mutation",
-                "runtime_session": {
-                    "session_id": task_id or "document_pipeline",
-                    "runtime_mode": "execute",
-                    "scope": "workspace/shared",
-                    "controlled_document_write": True,
-                },
-                "approval_state": "approved",
-                "approval_mode": "controlled_document_pipeline",
-                "approved_by": "operator_cli",
-                "approval_reason": "bounded document pipeline shared artifact write",
-                "policy_result": {
-                    "allowed": True,
-                    "policy": "controlled_document_pipeline_shared_write",
-                    "scope": "workspace/shared",
-                    "target_path": step_path,
-                    "reason": "document pipeline may write its declared shared artifact",
-                },
-                "trace_id": trace_id,
-            }
-            propagation_required = True
-
         return {
             "authority_phase": "taskrunner_propagation",
             "authority_layer": "task_runner",
@@ -1394,8 +1335,8 @@ class TaskRunner:
             "authority_source": "taskrunner_propagation",
             "authority_policy": "non_escalating_authority_propagation",
             "authority_propagation_required": propagation_required,
-            "execution_authority_granted": bool(execution_authority),
-            "can_execute_privileged_step": bool(execution_authority),
+            "execution_authority_granted": False,
+            "can_execute_privileged_step": False,
             "escalated": False,
             "step_type": step_type,
             "received_authority": copy.deepcopy(received),

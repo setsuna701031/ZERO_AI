@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Dict, List
 
 
@@ -42,15 +43,52 @@ class TaskPathManager:
     # workspace-level paths
     # ============================================================
 
+    def _safe_mkdir(self, path: str) -> None:
+        """
+        Windows-safe mkdir guard.
+
+        Fast-path already-existing directories before calling Path.mkdir().
+        This avoids the Windows pathlib mkdir -> FileExistsError -> stat retry
+        path that can hang on busy NTFS metadata during repeated scheduler /
+        repository reloads.
+
+        If the final path exists as a file, raise a clear workspace corruption
+        error instead of hiding it.
+        """
+        target = Path(path)
+
+        try:
+            if target.exists():
+                if target.is_dir():
+                    return
+                raise FileExistsError(f"workspace path exists but is not a directory: {path}")
+        except OSError:
+            # Fall through to mkdir; mkdir will either succeed or provide the
+            # authoritative filesystem error.
+            pass
+
+        try:
+            target.mkdir(parents=True, exist_ok=False)
+            return
+        except FileExistsError:
+            # Race-safe path: another caller may have created the directory
+            # between exists() and mkdir().
+            try:
+                if target.is_dir():
+                    return
+            except OSError:
+                pass
+            raise FileExistsError(f"workspace path exists but is not a directory: {path}")
+
     def ensure_workspace(self) -> None:
-        os.makedirs(self.workspace_root, exist_ok=True)
-        os.makedirs(self.tasks_root, exist_ok=True)
-        os.makedirs(self.shared_root, exist_ok=True)
-        os.makedirs(self.runtime_root, exist_ok=True)
-        os.makedirs(self.logs_root, exist_ok=True)
-        os.makedirs(self.memory_root, exist_ok=True)
-        os.makedirs(self.knowledge_root, exist_ok=True)
-        os.makedirs(self.cache_root, exist_ok=True)
+        self._safe_mkdir(self.workspace_root)
+        self._safe_mkdir(self.tasks_root)
+        self._safe_mkdir(self.shared_root)
+        self._safe_mkdir(self.runtime_root)
+        self._safe_mkdir(self.logs_root)
+        self._safe_mkdir(self.memory_root)
+        self._safe_mkdir(self.knowledge_root)
+        self._safe_mkdir(self.cache_root)
 
     def get_workspace_paths(self) -> Dict[str, str]:
         return {
@@ -133,13 +171,13 @@ class TaskPathManager:
 
     def ensure_task_dir(self, task_id: str) -> str:
         task_dir = self.task_dir(task_id)
-        os.makedirs(task_dir, exist_ok=True)
+        self._safe_mkdir(task_dir)
         return task_dir
 
     def ensure_task_paths(self, task_id: str) -> Dict[str, str]:
         self.ensure_workspace()
         self.ensure_task_dir(task_id)
-        os.makedirs(self.sandbox_dir(task_id), exist_ok=True)
+        self._safe_mkdir(self.sandbox_dir(task_id))
         return self.get_task_paths(task_id)
 
     # ============================================================

@@ -331,7 +331,7 @@ def _build_replay_verification(*, replay_id: str | None, metadata: Mapping[str, 
     replay_event = metadata.get("replay_event")
     replay_chain = metadata.get("replay_chain")
     replay_fingerprint = metadata.get("replay_fingerprint")
-    attached = bool(replay_event or replay_chain or replay_fingerprint)
+    attached = bool(replay_id or replay_event or replay_chain or replay_fingerprint)
     return {
         "ok": bool(ok) if attached else None,
         "attached": attached,
@@ -375,11 +375,10 @@ def _build_gateway_outcome_verification(
         frozen = bool(existing_outcome_verification.get("frozen", verification_state != "verified"))
         reason = str(existing_outcome_verification.get("reason") or "gateway_outcome_verification_attached")
     else:
-        rollback_attached = bool(rollback_verification.get("attached"))
+        rollback_attached = bool(rollback_verification.get("attached", True))
         rollback_ok = rollback_verification.get("ok")
         replay_attached = bool(replay_verification.get("attached"))
         replay_ok = replay_verification.get("ok")
-        has_verification_chain = bool(rollback_attached or replay_attached)
 
         rollback_verified = (
             (not rollback_attached)
@@ -388,36 +387,11 @@ def _build_gateway_outcome_verification(
             or rollback_verification.get("verification_state") == "verified"
         )
         replay_verified = (not replay_attached) or replay_ok is True
-        legality_verified = bool(str(metadata.get("execution_legality") or "legal") == "legal")
-
-        if not has_verification_chain:
-            # Neutral mode:
-            # A normal gateway execution without an attached replay/rollback proof
-            # should be classified by execution outcome. Missing execution_legality
-            # metadata is treated as legal by default for normal successful runs.
-            legality_verified = True if ok else legality_verified
-            deterministic = bool(ok and legality_verified)
-            verification_state = "verified" if deterministic else "failed"
-            frozen = bool(not ok)
-            reason = (
-                "gateway_outcome_neutral_verification_verified"
-                if deterministic
-                else "gateway_outcome_neutral_verification_failed"
-            )
-        else:
-            deterministic = bool(
-                ok
-                and rollback_verified
-                and replay_verified
-                and legality_verified
-            )
-            verification_state = "verified" if deterministic else "mismatched"
-            frozen = verification_state != "verified"
-            reason = (
-                "gateway_outcome_verification_verified"
-                if deterministic
-                else "gateway_outcome_verification_mismatched"
-            )
+        legality_verified = bool(metadata.get("execution_legality", "legal") == "legal")
+        deterministic = bool(ok and rollback_verified and replay_verified and legality_verified)
+        verification_state = "verified" if deterministic else "mismatched"
+        frozen = verification_state != "verified"
+        reason = "gateway_outcome_verification_verified" if deterministic else "gateway_outcome_verification_mismatched"
 
     payload = {
         "ok": ok,

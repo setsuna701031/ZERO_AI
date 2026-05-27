@@ -206,6 +206,223 @@ READY_STATUSES = {
     STATUS_QUEUED,
 }
 
+def _zero_safe_public_results_summary(results: Any, *, max_items: int = 3) -> List[Dict[str, Any]]:
+    """
+    Build a compact public-safe results summary.
+
+    Public snapshots must not deep-copy full runtime result payloads. Runtime
+    results may contain nested metadata, evidence snapshots, transaction payloads,
+    execution traces, and rollback state. Deep-copying those structures during
+    queue rebuild makes `task run` progressively slower and can appear to hang on
+    large histories.
+
+    Keep only stable, shallow fields needed for status display/debugging.
+
+    Important: this helper is intentionally idempotent. _save_task_snapshot_safe()
+    first sanitizes the live task, then writes result.json from the sanitized task.
+    Older versions summarized results twice. The second pass saw entries that were
+    already compact summaries, found no nested "result" object, and erased useful
+    blocked/error signals such as "approval_state_not_allowed". Keep top-level
+    compact fields as fallback sources so public result files preserve the signal
+    even when large metadata is intentionally dropped.
+    """
+    if not isinstance(results, list):
+        return []
+
+    summary: List[Dict[str, Any]] = []
+    for item in results[-max_items:]:
+        if not isinstance(item, dict):
+            continue
+
+        result = item.get("result") if isinstance(item.get("result"), dict) else {}
+        error = result.get("error") if isinstance(result.get("error"), dict) else {}
+
+        step = item.get("step") if isinstance(item.get("step"), dict) else {}
+        if not step and isinstance(result.get("step"), dict):
+            step = result.get("step")
+
+        error_type = (
+            result.get("error_type")
+            or error.get("type")
+            or item.get("error_type")
+            or item.get("failure_type")
+            or ""
+        )
+        message = (
+            result.get("message")
+            or result.get("final_answer")
+            or error.get("message")
+            or item.get("message")
+            or item.get("final_answer")
+            or item.get("last_error")
+            or item.get("failure_message")
+            or ""
+        )
+
+        entry = {
+            "step_index": item.get("step_index"),
+            "step_type": (
+                result.get("step_type")
+                or item.get("step_type")
+                or step.get("type")
+                or step.get("action")
+                or ""
+            ),
+            "ok": bool(result.get("ok", item.get("ok", False))),
+            "blocked": bool(result.get("blocked", item.get("blocked", False))),
+            "failed": bool(result.get("failed", item.get("failed", False))),
+            "error_type": str(error_type)[:200],
+            "message": str(message)[:500],
+        }
+
+        # Preserve a tiny amount of diagnostic metadata without copying large
+        # execution/evidence payloads. This keeps public result.json useful for
+        # tests and operators while still avoiding the original metadata bloat.
+        metadata = item.get("metadata")
+        if isinstance(metadata, dict):
+            compact_metadata: Dict[str, Any] = {}
+            for key in (
+                "error_type",
+                "approval_state",
+                "approval_status",
+                "approval_required",
+                "requires_approval",
+                "requires_review",
+                "blocked_reason",
+                "reason",
+            ):
+                if key in metadata:
+                    value = metadata.get(key)
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        compact_metadata[key] = value
+                    else:
+                        compact_metadata[key] = str(value)[:500]
+            if compact_metadata:
+                entry["metadata"] = compact_metadata
+
+        summary.append(entry)
+
+    return summary
+
+def _zero_safe_task_for_snapshot(task: Any) -> Dict[str, Any]:
+    """
+    Return a bounded task payload for public snapshot / result persistence.
+
+    The live task may contain nested runtime evidence, rollback metadata,
+    transaction payloads, and execution traces under results/step_results.  Never
+    deepcopy the whole task on the scheduler hot path.
+    """
+    if not isinstance(task, dict):
+        return {}
+
+    sanitized: Dict[str, Any] = {}
+    shallow_keys = [
+        "task_id",
+        "task_name",
+        "id",
+        "title",
+        "goal",
+        "status",
+        "priority",
+        "task_type",
+        "created_tick",
+        "last_run_tick",
+        "finished_tick",
+        "last_failure_tick",
+        "last_error",
+        "failure_type",
+        "failure_message",
+        "current_step_index",
+        "steps_total",
+        "retry_count",
+        "max_retries",
+        "retry_delay",
+        "next_retry_tick",
+        "timeout_ticks",
+        "wait_until_tick",
+        "workspace_root",
+        "workspace_dir",
+        "shared_dir",
+        "task_dir",
+        "sandbox_dir",
+        "plan_file",
+        "runtime_state_file",
+        "result_file",
+        "execution_log_file",
+        "snapshot_file",
+        "log_file",
+        "scheduler_build",
+        "final_answer",
+        "summary",
+        "requires_approval",
+        "requires_review",
+        "review_status",
+        "review_id",
+        "blocked_reason",
+        "waiting_reason",
+        "next_action",
+    ]
+
+    for key in shallow_keys:
+        if key in task:
+            value = task.get(key)
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                sanitized[key] = value
+            else:
+                sanitized[key] = str(value)[:1000]
+
+    steps = task.get("steps")
+    if isinstance(steps, list):
+        sanitized["steps"] = [
+            {
+                "type": str(item.get("type") or item.get("action") or ""),
+                "path": str(item.get("path") or item.get("target_path") or ""),
+                "id": str(item.get("id") or item.get("step_id") or ""),
+                "mode": str(item.get("mode") or ""),
+                "scope": str(item.get("scope") or ""),
+            }
+            for item in steps
+            if isinstance(item, dict)
+        ]
+    else:
+        sanitized["steps"] = []
+
+    history = task.get("history")
+    sanitized["history"] = list(history[-20:]) if isinstance(history, list) else []
+
+    sanitized["results"] = _zero_safe_public_results_summary(task.get("results", []), max_items=5)
+    sanitized["step_results"] = _zero_safe_public_results_summary(task.get("step_results", []), max_items=5)
+
+    last_step = task.get("last_step_result")
+    if isinstance(last_step, dict):
+        sanitized["last_step_result"] = _zero_safe_public_results_summary([last_step], max_items=1)[0] if _zero_safe_public_results_summary([last_step], max_items=1) else {}
+    else:
+        sanitized["last_step_result"] = None
+
+    execution_log = task.get("execution_log")
+    if isinstance(execution_log, list):
+        sanitized["execution_log"] = _zero_safe_public_results_summary(execution_log, max_items=20)
+    else:
+        sanitized["execution_log"] = []
+
+    planner_result = task.get("planner_result")
+    if isinstance(planner_result, dict):
+        sanitized["planner_result"] = {
+            "intent": str(planner_result.get("intent") or ""),
+            "summary": str(planner_result.get("summary") or "")[:1000],
+            "steps_total": len(planner_result.get("steps", [])) if isinstance(planner_result.get("steps"), list) else 0,
+        }
+
+    public_snapshot = task.get("public_snapshot")
+    if isinstance(public_snapshot, dict):
+        sanitized["public_snapshot"] = {
+            "task_id": str(public_snapshot.get("task_id") or sanitized.get("task_id") or ""),
+            "status": str(public_snapshot.get("status") or sanitized.get("status") or ""),
+            "final_answer": str(public_snapshot.get("final_answer") or sanitized.get("final_answer") or "")[:1000],
+        }
+
+    return sanitized
+
 
 class Scheduler(RuntimeTaskScheduler):
     SCHEDULER_BUILD = SCHEDULER_BUILD
@@ -4396,7 +4613,7 @@ class Scheduler(RuntimeTaskScheduler):
             "priority": int(normalized.get("priority", 0) or 0),
             "current_step_index": int(normalized.get("current_step_index", 0) or 0),
             "steps": copy.deepcopy(normalized.get("steps", [])) if isinstance(normalized.get("steps"), list) else [],
-            "results": copy.deepcopy(normalized.get("results", [])) if isinstance(normalized.get("results"), list) else [],
+            "results": _zero_safe_public_results_summary(normalized.get("results", [])),
             "step_results": copy.deepcopy(normalized.get("step_results", [])) if isinstance(normalized.get("step_results"), list) else [],
             "execution_log": copy.deepcopy(normalized.get("execution_log", [])) if isinstance(normalized.get("execution_log"), list) else [],
             "depends_on": copy.deepcopy(normalized.get("depends_on", [])) if isinstance(normalized.get("depends_on"), list) else [],
@@ -4984,7 +5201,60 @@ class Scheduler(RuntimeTaskScheduler):
             pass
 
     def _sync_blocked_state(self, task_id: str, blocked_reason: str) -> None:
-        return sync_blocked_state(scheduler=self, task_id=task_id, blocked_reason=blocked_reason)
+        """Persist blocked state as a terminal scheduler-owned write.
+
+        This wrapper is the terminal blocked-state persistence boundary.
+        Calling sync_blocked_state(...) from here re-enters the helper.
+        It loads the task, mutates public blocked fields, persists the task,
+        and stops. Keep this method as a direct repository write point.
+        """
+        clean_task_id = str(task_id or "").strip()
+        if not clean_task_id:
+            return
+
+        reason = str(blocked_reason or "").strip() or "blocked"
+
+        task: Dict[str, Any] = {}
+        try:
+            loaded = self._get_task_from_repo(clean_task_id)
+            if isinstance(loaded, dict):
+                task = copy.deepcopy(loaded)
+        except Exception:
+            task = {}
+
+        if not task:
+            task = {
+                "task_id": clean_task_id,
+                "task_name": clean_task_id,
+                "goal": "",
+            }
+
+        task["task_id"] = str(task.get("task_id") or clean_task_id)
+        task["task_name"] = str(task.get("task_name") or task.get("task_id") or clean_task_id)
+        task["status"] = STATUS_BLOCKED
+        task["blocked_reason"] = reason
+        task["waiting_reason"] = reason
+        task["next_action"] = "wait_for_external_event"
+        task["last_error"] = reason
+        task["failure_message"] = str(task.get("failure_message") or "")
+        task["history"] = self._append_history(task.get("history"), STATUS_BLOCKED)
+
+        runtime_state = task.get("runtime_state")
+        if isinstance(runtime_state, dict):
+            runtime_state["status"] = STATUS_BLOCKED
+            runtime_state["blocked_reason"] = reason
+            runtime_state["waiting_reason"] = reason
+            runtime_state["next_action"] = "wait_for_external_event"
+            runtime_state["history"] = self._append_history(runtime_state.get("history"), STATUS_BLOCKED)
+            task["runtime_state"] = runtime_state
+
+        try:
+            self._persist_task_payload(clean_task_id, task)
+        except Exception:
+            try:
+                self._save_task_snapshot_safe(task)
+            except Exception:
+                pass
 
     # Repository persistence ownership boundary:
     # Scheduler owns the public task lifecycle write point. Do not add repair
@@ -5023,7 +5293,8 @@ class Scheduler(RuntimeTaskScheduler):
         self._save_task_snapshot_safe(task)
 
     def _save_task_snapshot_safe(self, task: Dict[str, Any]) -> None:
-        task = self._backfill_replan_decision_fields(copy.deepcopy(task))
+        task = _zero_safe_task_for_snapshot(task)
+        task = self._backfill_replan_decision_fields(task)
         task = self._infer_completion_fields(task)
         task = self._clear_stale_replan_fields(task)
         task = refresh_task_public_fields(scheduler=self, task=task, status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
@@ -5048,10 +5319,10 @@ class Scheduler(RuntimeTaskScheduler):
                 public_record = build_public_task_record(scheduler=self, task=task, status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
                 result_payload = {
                     **public_record,
-                    "results": copy.deepcopy(task.get("results", [])),
-                    "step_results": copy.deepcopy(task.get("step_results", [])),
-                    "last_step_result": copy.deepcopy(task.get("last_step_result")),
-                    "execution_log": copy.deepcopy(task.get("execution_log", [])),
+                    "results": _zero_safe_public_results_summary(task.get("results", []), max_items=5),
+                    "step_results": _zero_safe_public_results_summary(task.get("step_results", []), max_items=5),
+                    "last_step_result": task.get("last_step_result"),
+                    "execution_log": _zero_safe_public_results_summary(task.get("execution_log", []), max_items=20),
                 }
                 with open(result_file, "w", encoding="utf-8") as f:
                     json.dump(result_payload, f, ensure_ascii=False, indent=2)
@@ -5063,7 +5334,7 @@ class Scheduler(RuntimeTaskScheduler):
             try:
                 os.makedirs(os.path.dirname(execution_log_file), exist_ok=True)
                 with open(execution_log_file, "w", encoding="utf-8") as f:
-                    json.dump(task.get("execution_log", []), f, ensure_ascii=False, indent=2)
+                    json.dump(_zero_safe_public_results_summary(task.get("execution_log", []), max_items=50), f, ensure_ascii=False, indent=2)
             except Exception:
                 pass
 

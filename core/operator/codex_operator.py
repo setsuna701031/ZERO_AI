@@ -153,9 +153,19 @@ def start_operator_run(*, task_id: str, user_intent: str, repo_root: str | Path,
     return _store(_with_digest(run))
 
 
-def scan_repository_context(run: CodexOperatorRun | str, *, max_files: int = 500) -> CodexOperatorRun:
+def scan_repository_context(
+    run: CodexOperatorRun | str,
+    *,
+    max_files: int = 500,
+    allowed_paths: Any = None,
+) -> CodexOperatorRun:
     current = get_operator_run(run)
-    snapshot = build_repo_context_snapshot(current.repo_root, task_intent=current.user_intent, max_files=max_files)
+    snapshot = build_repo_context_snapshot(
+        current.repo_root,
+        task_intent=current.user_intent,
+        max_files=max_files,
+        allow_paths=allowed_paths,
+    )
     evidence = _operator_evidence(current, "repo_scan", "repo_scanned")
     return _store(
         _with_digest(
@@ -333,7 +343,7 @@ def run_codex_style_operator(
     allowed_paths: Any = None,
 ) -> CodexOperatorResult:
     run = start_operator_run(task_id=task_id, user_intent=user_intent, repo_root=repo_root, branch_name=branch_name)
-    run = scan_repository_context(run)
+    run = scan_repository_context(run, allowed_paths=allowed_paths)
     selected = _filter_allowed_paths(run.selected_files or run.impacted_files, allowed_paths)
     run = select_impacted_files(run, selected)
     run = create_edit_plan(run)

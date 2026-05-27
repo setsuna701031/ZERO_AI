@@ -1,0 +1,533 @@
+"""Runtime transaction context.
+
+This module provides process-local transaction context propagation for the ZERO
+runtime kernel. It does not execute commands, mutate files, or persist state.
+It only carries the current transaction identity/metadata across runtime layers.
+
+The coordinator owns lifecycle and binding. The context owns propagation.
+"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
+from typing import Any, Iterator
+
+from core.runtime.runtime_authority import build_authority_metadata
+from core.runtime.runtime_closure import build_runtime_closure_fields
+from core.runtime.runtime_recovery_readiness import build_runtime_recovery_readiness_fields
+from core.runtime.runtime_transaction_coordinator import (
+    RuntimeTransactionCoordinator,
+    RuntimeTransactionResult,
+    RuntimeTransactionScope,
+)
+
+
+_CURRENT_TRANSACTION: ContextVar["RuntimeTransactionContext | None"] = ContextVar(
+    "zero_runtime_transaction_context",
+    default=None,
+)
+_CURRENT_COORDINATOR: ContextVar[RuntimeTransactionCoordinator | None] = ContextVar(
+    "zero_runtime_transaction_coordinator",
+    default=None,
+)
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+TRANSACTION_BOUNDARY_STATUSES = {
+    "opened",
+    "committed",
+    "rolled_back",
+    "denied",
+    "failed",
+    "incomplete",
+}
+
+
+def build_transaction_boundary_metadata(
+    payload: dict[str, Any] | None = None,
+    *,
+    transaction_id: Any = "",
+    transaction_source: Any = "",
+    transaction_status: Any = "",
+    transaction_scope: Any = "",
+    transaction_timestamp: Any = "",
+) -> dict[str, Any]:
+    data = dict(payload or {})
+    nested = data.get("transaction_boundary")
+    if isinstance(nested, dict):
+        data = {**dict(nested), **data}
+
+    tx_id = _clean_text(transaction_id) or _clean_text(data.get("transaction_id"))
+    source = (
+        _clean_text(transaction_source)
+        or _clean_text(data.get("transaction_source"))
+        or _clean_text(data.get("source"))
+        or "runtime_transaction"
+    )
+    status = (
+        _clean_text(transaction_status)
+        or _clean_text(data.get("transaction_status"))
+        or _clean_text(data.get("status"))
+        or "opened"
+    ).lower()
+    scope = (
+        _clean_text(transaction_scope)
+        or _clean_text(data.get("transaction_scope"))
+        or _clean_text(data.get("scope"))
+        or "runtime"
+    )
+    timestamp = _clean_text(transaction_timestamp) or _clean_text(
+        data.get("transaction_timestamp") or data.get("timestamp") or data.get("created_at")
+    )
+
+    duplicate = isinstance(data.get("runtime_transaction"), dict) or isinstance(
+        data.get("transaction_boundary"),
+        dict,
+    )
+    incomplete = not tx_id or status == "incomplete"
+    denied = status in {"denied", "blocked", "rejected"}
+    failed = status in {"failed", "error", "exception"}
+    committed = status == "committed"
+
+    if duplicate:
+        legality = "duplicate"
+        reason = "duplicate_transaction_propagation"
+    elif denied:
+        legality = "denied"
+        reason = _clean_text(data.get("denial_reason") or data.get("blocked_reason")) or "transaction_denied"
+    elif failed:
+        legality = "failed"
+        reason = _clean_text(data.get("failure_reason") or data.get("error_type") or data.get("error")) or "transaction_failed"
+    elif incomplete and committed:
+        legality = "incomplete"
+        reason = "incomplete_transaction_cannot_commit"
+    elif incomplete:
+        legality = "incomplete"
+        reason = "transaction_id_missing"
+    elif committed and data.get("commit_allowed") is False:
+        legality = "denied"
+        reason = "transaction_commit_not_allowed"
+    else:
+        legality = "legal"
+        reason = ""
+
+    canonical_status = status
+    if status in {"active", "created", "staged"}:
+        canonical_status = "opened"
+    elif denied:
+        canonical_status = "denied"
+    elif failed:
+        canonical_status = "failed"
+    elif canonical_status not in TRANSACTION_BOUNDARY_STATUSES:
+        canonical_status = "opened"
+
+    boundary = {
+        "transaction_id": tx_id,
+        "transaction_source": source,
+        "transaction_status": canonical_status,
+        "transaction_legality": legality,
+        "transaction_scope": scope,
+        "transaction_timestamp": timestamp,
+    }
+    if reason:
+        boundary["denial_reason" if legality == "denied" else "boundary_reason"] = reason
+    if duplicate:
+        boundary["duplicate_transaction_propagation"] = True
+        existing = data.get("runtime_transaction") if isinstance(data.get("runtime_transaction"), dict) else {}
+        existing_provenance = existing.get("provenance") if isinstance(existing.get("provenance"), dict) else {}
+        boundary["duplicate_transaction_evidence"] = {
+            "transaction_id": _clean_text(existing.get("transaction_id")),
+            "transaction_status": _clean_text(existing.get("status") or existing.get("transaction_status")),
+            "transaction_source": _clean_text(existing.get("transaction_source") or existing_provenance.get("source")),
+        }
+    boundary.update(
+        build_runtime_closure_fields(
+            {
+                **data,
+                **boundary,
+                "source": source,
+            },
+            artifact_type="transaction",
+            artifact_id=tx_id,
+            finalized_by=source,
+        )
+    )
+    boundary.update(
+        build_runtime_recovery_readiness_fields(
+            {
+                **data,
+                "transaction_boundary": boundary,
+                "closure_evidence": boundary.get("closure_evidence"),
+                "runtime_closure": {
+                    key: boundary.get(key)
+                    for key in (
+                        "closure_status",
+                        "closure_reason",
+                        "finalized_timestamp",
+                        "finalized_by",
+                        "immutable_state",
+                        "closure_evidence",
+                    )
+                },
+            },
+            artifact_type="transaction",
+            artifact_id=tx_id,
+        )
+    )
+    return boundary
+
+
+def attach_transaction_boundary_metadata(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    boundary = build_transaction_boundary_metadata(merged)
+    merged["transaction_boundary"] = boundary
+    for key, value in boundary.items():
+        merged.setdefault(key, value)
+    return merged
+
+
+def attach_authority_metadata(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    authority = build_authority_metadata(merged)
+    merged["authority_seal"] = authority
+    for key, value in authority.items():
+        merged.setdefault(key, value)
+    return merged
+
+
+@dataclass(frozen=True)
+class RuntimeTransactionContext:
+    transaction_id: str
+    parent_transaction_id: str = ""
+    lineage: dict[str, Any] = field(default_factory=dict)
+    authority_metadata: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        transaction_id = _clean_text(self.transaction_id)
+        if not transaction_id:
+            raise ValueError("transaction_id is required")
+        object.__setattr__(self, "transaction_id", transaction_id)
+        object.__setattr__(self, "parent_transaction_id", _clean_text(self.parent_transaction_id))
+
+    @classmethod
+    def from_scope(cls, scope: RuntimeTransactionScope) -> "RuntimeTransactionContext":
+        return cls(
+            transaction_id=scope.transaction_id,
+            parent_transaction_id=scope.parent_transaction_id,
+            lineage=dict(scope.lineage),
+            authority_metadata=dict(scope.authority_metadata),
+            provenance=dict(scope.provenance),
+            metadata=dict(scope.metadata),
+        )
+
+    def to_metadata(self) -> dict[str, Any]:
+        boundary = build_transaction_boundary_metadata(
+            {
+                **dict(self.metadata),
+                "transaction_id": self.transaction_id,
+                "parent_transaction_id": self.parent_transaction_id,
+                "transaction_source": self.provenance.get("source") if isinstance(self.provenance, dict) else "",
+                "transaction_status": self.metadata.get("transaction_status", "opened"),
+                "transaction_scope": self.metadata.get("transaction_scope", "runtime"),
+            }
+        )
+        return {
+            "transaction_id": self.transaction_id,
+            "parent_transaction_id": self.parent_transaction_id,
+            "transaction_boundary": boundary,
+            "lineage": dict(self.lineage),
+            "authority": dict(self.authority_metadata),
+            "provenance": dict(self.provenance),
+            "metadata": dict(self.metadata),
+        }
+
+
+def get_current_transaction() -> RuntimeTransactionContext | None:
+    return _CURRENT_TRANSACTION.get()
+
+
+def get_current_transaction_coordinator() -> RuntimeTransactionCoordinator | None:
+    return _CURRENT_COORDINATOR.get()
+
+
+def require_current_transaction() -> RuntimeTransactionContext:
+    context = get_current_transaction()
+    if context is None:
+        raise RuntimeError("runtime transaction context is required")
+    return context
+
+
+def set_current_transaction(
+    context: RuntimeTransactionContext,
+    coordinator: RuntimeTransactionCoordinator | None = None,
+) -> RuntimeTransactionContext | None:
+    if not isinstance(context, RuntimeTransactionContext):
+        raise TypeError("context must be RuntimeTransactionContext")
+    if coordinator is not None and not isinstance(coordinator, RuntimeTransactionCoordinator):
+        raise TypeError("coordinator must be RuntimeTransactionCoordinator")
+    previous = _CURRENT_TRANSACTION.get()
+    _CURRENT_TRANSACTION.set(context)
+    if coordinator is not None:
+        _CURRENT_COORDINATOR.set(coordinator)
+    return previous
+
+
+def set_current_transaction_coordinator(
+    coordinator: RuntimeTransactionCoordinator | None,
+) -> RuntimeTransactionCoordinator | None:
+    if coordinator is not None and not isinstance(coordinator, RuntimeTransactionCoordinator):
+        raise TypeError("coordinator must be RuntimeTransactionCoordinator")
+    previous = _CURRENT_COORDINATOR.get()
+    _CURRENT_COORDINATOR.set(coordinator)
+    return previous
+
+
+def clear_current_transaction() -> None:
+    _CURRENT_TRANSACTION.set(None)
+    _CURRENT_COORDINATOR.set(None)
+
+
+@contextmanager
+def transaction_context(
+    context: RuntimeTransactionContext,
+    coordinator: RuntimeTransactionCoordinator | None = None,
+) -> Iterator[RuntimeTransactionContext]:
+    if not isinstance(context, RuntimeTransactionContext):
+        raise TypeError("context must be RuntimeTransactionContext")
+    if coordinator is not None and not isinstance(coordinator, RuntimeTransactionCoordinator):
+        raise TypeError("coordinator must be RuntimeTransactionCoordinator")
+    token = _CURRENT_TRANSACTION.set(context)
+    coordinator_token = None
+    if coordinator is not None:
+        coordinator_token = _CURRENT_COORDINATOR.set(coordinator)
+    try:
+        yield context
+    finally:
+        _CURRENT_TRANSACTION.reset(token)
+        if coordinator_token is not None:
+            _CURRENT_COORDINATOR.reset(coordinator_token)
+
+
+@contextmanager
+def transaction_scope(
+    coordinator: RuntimeTransactionCoordinator,
+    *,
+    transaction_id: str,
+    parent_transaction_id: str = "",
+    lineage: dict[str, Any] | None = None,
+    authority_metadata: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    auto_commit: bool = False,
+    auto_seal: bool = False,
+    rollback_on_exception: bool = True,
+) -> Iterator[RuntimeTransactionContext]:
+    """Begin a coordinator-backed transaction and propagate it as current.
+
+    By default this context manager only begins and propagates the transaction.
+    Callers that want automatic lifecycle closure can set auto_commit and/or
+    auto_seal. On exception, rollback is attempted unless rollback_on_exception
+    is False.
+    """
+
+    if not isinstance(coordinator, RuntimeTransactionCoordinator):
+        raise TypeError("coordinator must be RuntimeTransactionCoordinator")
+
+    begin_result = coordinator.begin_transaction(
+        transaction_id=transaction_id,
+        parent_transaction_id=parent_transaction_id,
+        lineage=lineage or {},
+        authority_metadata=authority_metadata or {},
+        provenance=provenance or {},
+        metadata=metadata or {},
+    )
+    context = RuntimeTransactionContext.from_scope(begin_result.scope)
+    token = _CURRENT_TRANSACTION.set(context)
+    coordinator_token = _CURRENT_COORDINATOR.set(coordinator)
+    try:
+        yield context
+    except Exception:
+        if rollback_on_exception:
+            try:
+                coordinator.mark_rollback_required(
+                    context.transaction_id,
+                    metadata={"reason": "transaction_scope_exception"},
+                )
+                coordinator.rollback(
+                    context.transaction_id,
+                    metadata={"reason": "transaction_scope_exception"},
+                )
+            except Exception:
+                pass
+        raise
+    else:
+        if auto_commit:
+            coordinator.commit(context.transaction_id, metadata={"source": "transaction_scope"})
+        if auto_seal:
+            coordinator.seal(context.transaction_id, metadata={"source": "transaction_scope"})
+    finally:
+        _CURRENT_TRANSACTION.reset(token)
+        _CURRENT_COORDINATOR.reset(coordinator_token)
+
+
+def current_transaction_metadata() -> dict[str, Any]:
+    context = get_current_transaction()
+    if context is None:
+        return {}
+    return context.to_metadata()
+
+
+def merge_current_transaction_metadata(metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    merged = dict(metadata or {})
+    context = get_current_transaction()
+    if context is not None:
+        merged.setdefault("runtime_transaction", context.to_metadata())
+        merged.setdefault("transaction_id", context.transaction_id)
+        merged = attach_transaction_boundary_metadata(
+            {
+                **merged,
+                "transaction_id": context.transaction_id,
+                "transaction_source": context.provenance.get("source") if isinstance(context.provenance, dict) else "",
+                "transaction_status": merged.get("transaction_status", "opened"),
+                "transaction_scope": merged.get("transaction_scope", context.metadata.get("transaction_scope", "runtime")),
+            }
+        )
+        merged = attach_authority_metadata(
+            {
+                **merged,
+                "authority_source": merged.get("authority_source", "runtime_transaction_context"),
+                "authority_scope": merged.get("authority_scope", "runtime_transaction"),
+                "authority_status": merged.get("authority_status", "allowed"),
+                "authority_reason": merged.get("authority_reason", "current_transaction_authorized"),
+                "ownership_source": merged.get("ownership_source", "core.runtime.runtime_transaction_context"),
+                "ownership_scope": merged.get("ownership_scope", "runtime_transaction"),
+            }
+        )
+        if context.parent_transaction_id:
+            merged.setdefault("parent_transaction_id", context.parent_transaction_id)
+        if context.lineage:
+            existing_lineage = merged.get("lineage") if isinstance(merged.get("lineage"), dict) else {}
+            merged["lineage"] = {**dict(context.lineage), **dict(existing_lineage)}
+        if context.provenance:
+            existing_provenance = merged.get("provenance") if isinstance(merged.get("provenance"), dict) else {}
+            merged["provenance"] = {**dict(context.provenance), **dict(existing_provenance)}
+    return merged
+
+
+def attach_current_transaction_to_mapping(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise TypeError("payload must be a dict")
+    merged = dict(payload)
+    return merge_current_transaction_metadata(merged)
+
+
+class RuntimeTransactionBinder:
+    """Convenience binder that links observed runtime ids to current transaction."""
+
+    def __init__(self, coordinator: RuntimeTransactionCoordinator) -> None:
+        if not isinstance(coordinator, RuntimeTransactionCoordinator):
+            raise TypeError("coordinator must be RuntimeTransactionCoordinator")
+        self.coordinator = coordinator
+
+    def bind_execution(self, execution_id: str, metadata: dict[str, Any] | None = None) -> RuntimeTransactionResult | None:
+        context = get_current_transaction()
+        if context is None:
+            return None
+        return self.coordinator.bind_execution(context.transaction_id, execution_id, metadata=metadata)
+
+    def bind_mutation(self, mutation_transaction_id: str, metadata: dict[str, Any] | None = None) -> RuntimeTransactionResult | None:
+        context = get_current_transaction()
+        if context is None:
+            return None
+        return self.coordinator.bind_mutation(context.transaction_id, mutation_transaction_id, metadata=metadata)
+
+    def bind_state(self, state_id: str, metadata: dict[str, Any] | None = None) -> RuntimeTransactionResult | None:
+        context = get_current_transaction()
+        if context is None:
+            return None
+        return self.coordinator.bind_state(context.transaction_id, state_id, metadata=metadata)
+
+    def bind_snapshot(self, snapshot_id: str, metadata: dict[str, Any] | None = None) -> RuntimeTransactionResult | None:
+        context = get_current_transaction()
+        if context is None:
+            return None
+        return self.coordinator.bind_snapshot(context.transaction_id, snapshot_id, metadata=metadata)
+
+    def bind_replay(self, replay_id: str, metadata: dict[str, Any] | None = None) -> RuntimeTransactionResult | None:
+        context = get_current_transaction()
+        if context is None:
+            return None
+        return self.coordinator.bind_replay(context.transaction_id, replay_id, metadata=metadata)
+
+    def bind_side_effect(self, side_effect_id: str, metadata: dict[str, Any] | None = None) -> RuntimeTransactionResult | None:
+        context = get_current_transaction()
+        if context is None:
+            return None
+        return self.coordinator.bind_side_effect(context.transaction_id, side_effect_id, metadata=metadata)
+
+
+def _bind_with_current_coordinator(
+    binder_name: str,
+    artifact_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    artifact_id = _clean_text(artifact_id)
+    if not artifact_id:
+        return None
+    coordinator = get_current_transaction_coordinator()
+    context = get_current_transaction()
+    if coordinator is None or context is None:
+        return None
+    binder = RuntimeTransactionBinder(coordinator)
+    method = getattr(binder, binder_name)
+    return method(artifact_id, metadata=metadata)
+
+
+def bind_current_execution(
+    execution_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    return _bind_with_current_coordinator("bind_execution", execution_id, metadata)
+
+
+def bind_current_mutation(
+    mutation_transaction_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    return _bind_with_current_coordinator("bind_mutation", mutation_transaction_id, metadata)
+
+
+def bind_current_state(
+    state_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    return _bind_with_current_coordinator("bind_state", state_id, metadata)
+
+
+def bind_current_snapshot(
+    snapshot_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    return _bind_with_current_coordinator("bind_snapshot", snapshot_id, metadata)
+
+
+def bind_current_replay(
+    replay_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    return _bind_with_current_coordinator("bind_replay", replay_id, metadata)
+
+
+def bind_current_side_effect(
+    side_effect_id: str,
+    metadata: dict[str, Any] | None = None,
+) -> RuntimeTransactionResult | None:
+    return _bind_with_current_coordinator("bind_side_effect", side_effect_id, metadata)
+

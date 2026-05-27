@@ -13,6 +13,57 @@ class ControlledMutationSandboxExecutorRejected(RuntimeError):
     pass
 
 
+def _norm(path: Any) -> str:
+    text = str(path or "").replace("\\", "/").strip()
+    while text.startswith("./"):
+        text = text[2:]
+    return text.rstrip("/")
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    try:
+        return list(value)
+    except TypeError:
+        return [value]
+
+
+def _is_under(path: str, root: str) -> bool:
+    path = _norm(path)
+    root = _norm(root)
+    return bool(root) and (path == root or path.startswith(root + "/"))
+
+
+def _extract_allow_paths(metadata: Any, runtime_args: Any) -> list[str]:
+    found: list[str] = []
+
+    for source in (metadata, runtime_args):
+        if isinstance(source, dict):
+            for key in ("allow_paths", "allowed_paths"):
+                found.extend(_as_list(source.get(key)))
+
+    return sorted(set(_norm(path) for path in found if _norm(path)))
+
+
+def _validate_target_paths_allowed(target_paths: list[str], allow_paths: list[str]) -> None:
+    if not allow_paths:
+        return
+
+    blocked = [
+        path for path in target_paths
+        if not any(_is_under(path, root) for root in allow_paths)
+    ]
+
+    if blocked:
+        raise ControlledMutationSandboxExecutorRejected(
+            "controlled mutation sandbox executor target path outside allow_paths boundary: "
+            + ", ".join(blocked)
+        )
+
+
 class ControlledMutationSandboxExecutionRecord:
     def __init__(
         self,
@@ -44,11 +95,7 @@ class ControlledMutationSandboxExecutionRecord:
         self._evidence_refs = copy.deepcopy(evidence_refs)
         self._metadata = copy.deepcopy(metadata)
         self._runtime_args = copy.deepcopy(runtime_args)
-        self._created_at = (
-            created_at
-            if created_at is not None
-            else datetime.now(timezone.utc).isoformat()
-        )
+        self._created_at = created_at if created_at is not None else datetime.now(timezone.utc).isoformat()
 
     @property
     def record_id(self) -> str:
@@ -108,12 +155,7 @@ class ControlledMutationSandboxExecutionRecord:
 
     @property
     def fingerprint(self) -> str:
-        encoded = json.dumps(
-            self._fingerprint_payload(),
-            default=str,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        encoded = json.dumps(self._fingerprint_payload(), default=str, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
     def _fingerprint_payload(self) -> dict[str, Any]:
@@ -134,24 +176,8 @@ class ControlledMutationSandboxExecutionRecord:
         }
 
     def _normalize_target_paths(self, target_paths: Any) -> list[str]:
-        if target_paths is None:
-            return []
-        if isinstance(target_paths, str):
-            paths = [target_paths]
-        else:
-            try:
-                paths = list(target_paths)
-            except TypeError as exc:
-                raise ControlledMutationSandboxExecutorRejected(
-                    "controlled mutation sandbox executor target_paths must be iterable"
-                ) from exc
-
-        normalized: set[str] = set()
-        for path in paths:
-            clean_path = str(path or "").strip()
-            if clean_path:
-                normalized.add(clean_path)
-        return sorted(normalized)
+        normalized = sorted(set(_norm(path) for path in _as_list(target_paths) if _norm(path)))
+        return normalized
 
     def _validate_text(self, field_name: str, value: str) -> str:
         if not isinstance(value, str) or not value.strip():
@@ -182,119 +208,29 @@ class ControlledMutationSandboxExecutor:
         self.plan = plan
         self._sequence = 0
         self._records: list[ControlledMutationSandboxExecutionRecord] = []
+        self._allow_paths = _extract_allow_paths(plan.metadata, plan.runtime_args)
+        _validate_target_paths_allowed(plan.target_paths, self._allow_paths)
 
-    def record_workspace_copy(
-        self,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "workspace_copy",
-            target_paths=target_paths,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_workspace_copy(self, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("workspace_copy", target_paths=target_paths, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
-    def record_patch_prepare(
-        self,
-        patch_identity: Any = None,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "patch_prepare",
-            target_paths=target_paths,
-            patch_identity=patch_identity,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_patch_prepare(self, patch_identity: Any = None, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("patch_prepare", target_paths=target_paths, patch_identity=patch_identity, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
-    def record_patch_apply(
-        self,
-        patch_identity: Any = None,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "patch_apply",
-            target_paths=target_paths,
-            patch_identity=patch_identity,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_patch_apply(self, patch_identity: Any = None, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("patch_apply", target_paths=target_paths, patch_identity=patch_identity, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
-    def record_verification_prepare(
-        self,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "verification_prepare",
-            target_paths=target_paths,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_verification_prepare(self, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("verification_prepare", target_paths=target_paths, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
-    def record_verification_result(
-        self,
-        verification_result: Any,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "verification_result",
-            target_paths=target_paths,
-            verification_result=verification_result,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_verification_result(self, verification_result: Any, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("verification_result", target_paths=target_paths, verification_result=verification_result, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
-    def record_rollback_prepare(
-        self,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "rollback_prepare",
-            target_paths=target_paths,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_rollback_prepare(self, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("rollback_prepare", target_paths=target_paths, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
-    def record_rollback_result(
-        self,
-        rollback_result: Any,
-        target_paths: Any = None,
-        evidence_refs: Any = None,
-        metadata: Any = None,
-        runtime_args: Any = None,
-    ) -> ControlledMutationSandboxExecutionRecord:
-        return self._record(
-            "rollback_result",
-            target_paths=target_paths,
-            rollback_result=rollback_result,
-            evidence_refs=evidence_refs,
-            metadata=metadata,
-            runtime_args=runtime_args,
-        )
+    def record_rollback_result(self, rollback_result: Any, target_paths: Any = None, evidence_refs: Any = None, metadata: Any = None, runtime_args: Any = None) -> ControlledMutationSandboxExecutionRecord:
+        return self._record("rollback_result", target_paths=target_paths, rollback_result=rollback_result, evidence_refs=evidence_refs, metadata=metadata, runtime_args=runtime_args)
 
     def list_records(self) -> list[ControlledMutationSandboxExecutionRecord]:
         return copy.deepcopy(self._records)
@@ -305,10 +241,8 @@ class ControlledMutationSandboxExecutor:
             {
                 "executor_id": self.executor_id,
                 "plan_fingerprint": self.plan.fingerprint,
-                "record_fingerprints": [
-                    record.fingerprint
-                    for record in self._records
-                ],
+                "record_fingerprints": [record.fingerprint for record in self._records],
+                "allow_paths": self._allow_paths,
             },
             default=str,
             sort_keys=True,
@@ -327,6 +261,10 @@ class ControlledMutationSandboxExecutor:
         metadata: Any = None,
         runtime_args: Any = None,
     ) -> ControlledMutationSandboxExecutionRecord:
+        resolved_target_paths = self.plan.target_paths if target_paths is None else target_paths
+        normalized_targets = sorted(set(_norm(path) for path in _as_list(resolved_target_paths) if _norm(path)))
+        _validate_target_paths_allowed(normalized_targets, self._allow_paths)
+
         self._sequence += 1
         record = ControlledMutationSandboxExecutionRecord(
             record_id=self._record_id(execution_phase, self._sequence),
@@ -335,7 +273,7 @@ class ControlledMutationSandboxExecutor:
             mutation_id=self.plan.mutation_id,
             execution_phase=execution_phase,
             sequence=self._sequence,
-            target_paths=self.plan.target_paths if target_paths is None else target_paths,
+            target_paths=normalized_targets,
             patch_identity=self.plan.patch_identity if patch_identity is None else patch_identity,
             verification_result=verification_result,
             rollback_result=rollback_result,
@@ -347,10 +285,7 @@ class ControlledMutationSandboxExecutor:
         return copy.deepcopy(record)
 
     def _record_id(self, execution_phase: str, sequence: int) -> str:
-        return (
-            f"{self.executor_id}:{self.plan.sandbox_id}:"
-            f"{self.plan.mutation_id}:{execution_phase}:{sequence}"
-        )
+        return f"{self.executor_id}:{self.plan.sandbox_id}:{self.plan.mutation_id}:{execution_phase}:{sequence}"
 
     def _validate_text(self, field_name: str, value: str) -> str:
         if not isinstance(value, str) or not value.strip():
