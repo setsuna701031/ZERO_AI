@@ -8214,8 +8214,16 @@ def _zero_v812_terminal_transaction_state(result):
     return "failed"
 
 
+def _zero_v812_runtime_transaction_surface(step_type):
+    normalized = str(step_type or "").strip().lower()
+    if normalized in {"autonomous_repair_chain", "runtime_autonomous_repair_chain"}:
+        return "repair_chain_apply"
+    return normalized
+
+
 def _zero_v812_create_step_transaction(step, authority, step_type):
-    surface = classify_runtime_surface(step_type)
+    tx_surface = _zero_v812_runtime_transaction_surface(step_type)
+    surface = classify_runtime_surface(tx_surface)
     if not surface.requires_transaction:
         return None
     affected_files = _zero_v812_affected_files_from_step_and_result(step if isinstance(step, dict) else {}, {})
@@ -8230,7 +8238,7 @@ def _zero_v812_create_step_transaction(step, authority, step_type):
         step_id=str(authority.get("step_id") or ""),
         trace_id=str(authority.get("trace_id") or ""),
         authority_source=str(authority.get("authority_source") or authority.get("source") or ""),
-        surface=step_type,
+        surface=tx_surface,
         affected_files=affected_files,
         audit_refs=[str(authority.get("trace_id") or "")],
         replay_refs=replay_refs,
@@ -8243,9 +8251,9 @@ def _zero_v812_create_step_transaction(step, authority, step_type):
         original_transaction_id=str(step.get("original_transaction_id") or step.get("source_transaction_id") or ""),
         original_trace_id=str(step.get("original_trace_id") or step.get("source_trace_id") or ""),
         repair_loop_id=str(step.get("repair_loop_id") or step.get("autonomous_repair_loop_id") or ""),
-        repair_source=str(step.get("repair_source") or ("autonomous_repair_loop" if step_type in {"governed_repair_mutation", "repair_chain_apply"} else "")),
+        repair_source=str(step.get("repair_source") or ("autonomous_repair_loop" if tx_surface in {"governed_repair_mutation", "repair_chain_apply"} else "")),
     )
-    tx = record_preflight(tx, {"ok": True, "surface": step_type, "affected_files": affected_files})
+    tx = record_preflight(tx, {"ok": True, "surface": tx_surface, "step_type": step_type, "affected_files": affected_files})
     return record_approval(tx, {"ok": True, "approved": True, "authority_source": tx.authority_source})
 
 
@@ -8336,14 +8344,16 @@ def _zero_v812_attach_transaction(result, tx):
 
 
 def _zero_v812_blocked_transaction_evidence(step, step_type, decision):
-    surface = classify_runtime_surface(step_type)
+    tx_surface = _zero_v812_runtime_transaction_surface(step_type)
+    surface = classify_runtime_surface(tx_surface)
     if not surface.requires_transaction:
         return {}
     trace_id = str(decision.get("trace_id") or "")
     seed = repr((step_type, step, decision.get("reason"), trace_id)).encode("utf-8", errors="replace")
     return {
         "transaction_id": "blocked_tx:" + hashlib.sha256(seed).hexdigest()[:16],
-        "surface": step_type,
+        "surface": tx_surface,
+        "step_type": step_type,
         "state": "blocked",
         "requires_transaction": True,
         "blocked_reason": str(decision.get("reason") or "execution_authority_denied"),
@@ -8741,3 +8751,122 @@ def _zero_operator_handle_verification(self, step, task=None, context=None, prev
             "direct_subprocess": False,
         },
     }
+
+
+# ZERO v2.0 - Autonomous Repair Chaining runtime step integration
+# ------------------------------------------------------------
+def _zero_v2_callable_or_value(value):
+    return value if callable(value) else None
+
+
+def _zero_v2_autonomous_repair_chain_handler(self, step, task=None, context=None, previous_result=None):
+    step = copy.deepcopy(step) if isinstance(step, dict) else {}
+    context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    task = copy.deepcopy(task) if isinstance(task, dict) else {}
+
+    try:
+        from core.runtime.runtime_native_autonomous_repair_chain import RuntimeNativeAutonomousRepairChain
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": {"type": "autonomous_repair_chain_import_failed", "message": str(exc)},
+            "message": "autonomous repair chain import failed",
+            "final_answer": "autonomous repair chain import failed",
+        }
+
+    chain = step.get("repair_chain") or context.get("runtime_autonomous_repair_chain")
+    if chain is None:
+        mutation_loop = step.get("mutation_loop") or context.get("mutation_loop") or getattr(self, "mutation_loop", None)
+        if mutation_loop is None:
+            return {
+                "ok": False,
+                "error": {"type": "mutation_loop_required", "message": "autonomous_repair_chain step requires mutation_loop or repair_chain"},
+                "message": "autonomous repair chain rejected: mutation_loop_required",
+                "final_answer": "autonomous repair chain rejected: mutation_loop_required",
+            }
+        chain = RuntimeNativeAutonomousRepairChain(
+            workspace_root=step.get("workspace_root") or context.get("workspace_root") or getattr(self, "workspace_root", "workspace"),
+            storage_path=step.get("storage_path") or context.get("repair_chain_storage_path"),
+            mutation_loop=mutation_loop,
+            pytest_planner=step.get("pytest_planner") or context.get("pytest_planner"),
+            patch_pipeline=step.get("patch_pipeline") or context.get("patch_pipeline"),
+            engineering_session=step.get("engineering_session") or context.get("engineering_session"),
+        )
+
+    goal = str(step.get("goal") or task.get("goal") or context.get("goal") or "autonomous repair chain").strip()
+    max_retries = self._safe_int(step.get("max_retries", context.get("max_retries", 2)), 2)
+
+    initial_plan_callable = _zero_v2_callable_or_value(step.get("initial_plan_fn") or context.get("initial_plan_fn"))
+    if initial_plan_callable is None:
+        initial_plan_payload = copy.deepcopy(step.get("initial_plan") or step.get("plan") or context.get("initial_plan") or {})
+        def initial_plan_callable(_goal, _ctx):
+            return copy.deepcopy(initial_plan_payload)
+
+    verify_callable = _zero_v2_callable_or_value(step.get("verify_fn") or context.get("verify_fn"))
+    if verify_callable is None:
+        verification_payload = copy.deepcopy(step.get("verification_result") or context.get("verification_result") or {"ok": True})
+        def verify_callable(_mutation):
+            return copy.deepcopy(verification_payload)
+
+    repair_plan_callable = _zero_v2_callable_or_value(step.get("repair_plan_fn") or context.get("repair_plan_fn"))
+    if repair_plan_callable is None:
+        repair_plan_payload = copy.deepcopy(step.get("repair_plan") or context.get("repair_plan") or {})
+        def repair_plan_callable(record, attempt):
+            if repair_plan_payload:
+                return copy.deepcopy(repair_plan_payload)
+            return {
+                "ok": True,
+                "goal": goal,
+                "reason": "default_autonomous_repair_replan",
+                "failure_class": getattr(attempt, "failure_class", "unknown"),
+                "previous_attempt": attempt.to_dict() if hasattr(attempt, "to_dict") else copy.deepcopy(attempt),
+            }
+
+    try:
+        record = chain.run_repair_chain(
+            goal=goal,
+            initial_plan_fn=initial_plan_callable,
+            verify_fn=verify_callable,
+            repair_plan_fn=repair_plan_callable,
+            max_retries=max(0, int(max_retries)),
+            repair_chain_id=step.get("repair_chain_id") or context.get("repair_chain_id"),
+            metadata={
+                "source": "step_executor.autonomous_repair_chain",
+                "task_id": task.get("task_id") or task.get("id"),
+                "step_id": step.get("id") or step.get("step_id"),
+                "runtime_integration": "v2",
+            },
+        )
+        envelope = chain.to_runtime_execution_result(record) if hasattr(chain, "to_runtime_execution_result") else record.to_dict()
+        ok = bool(envelope.get("ok", False)) if isinstance(envelope, dict) else False
+        return {
+            "ok": ok,
+            "action": "autonomous_repair_chain",
+            "runtime_phase": "autonomous_repair_chaining_v2",
+            "result": copy.deepcopy(envelope),
+            "message": "autonomous repair chain finalized" if ok else "autonomous repair chain failed or retry limit reached",
+            "final_answer": "autonomous repair chain finalized" if ok else "autonomous repair chain failed or retry limit reached",
+            "error": None if ok else {"type": "autonomous_repair_chain_not_finalized", "message": str(envelope.get("status") if isinstance(envelope, dict) else "failed")},
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "action": "autonomous_repair_chain",
+            "runtime_phase": "autonomous_repair_chaining_v2",
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+            "message": f"autonomous repair chain failed: {type(exc).__name__}: {exc}",
+            "final_answer": f"autonomous repair chain failed: {type(exc).__name__}: {exc}",
+        }
+
+
+_ZERO_V2_ORIGINAL_STEP_EXECUTOR_REGISTER_BUILTINS = StepExecutor._register_builtin_handlers
+
+
+def _zero_v2_step_executor_register_builtin_handlers(self):
+    _ZERO_V2_ORIGINAL_STEP_EXECUTOR_REGISTER_BUILTINS(self)
+    self.register_handler("autonomous_repair_chain", _zero_v2_autonomous_repair_chain_handler.__get__(self, StepExecutor))
+    self.register_handler("runtime_autonomous_repair_chain", _zero_v2_autonomous_repair_chain_handler.__get__(self, StepExecutor))
+
+
+StepExecutor._register_builtin_handlers = _zero_v2_step_executor_register_builtin_handlers
+StepExecutor._handle_autonomous_repair_chain_step = _zero_v2_autonomous_repair_chain_handler

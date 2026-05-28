@@ -9814,3 +9814,63 @@ def _zero_v7337_scheduler_create_task_record(self, *args, **kwargs) -> Dict[str,
 
 Scheduler._try_force_repo_edit_at_create_task = _zero_v7337_scheduler_try_force_repo_edit_at_create_task
 Scheduler._create_task_record = _zero_v7337_scheduler_create_task_record
+
+
+# ZERO v7.3.38 - Autonomous Repair Chaining v2 scheduler envelope
+# ------------------------------------------------------------
+def _zero_v7338_is_autonomous_repair_chain_payload(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    step = value.get("step") if isinstance(value.get("step"), dict) else value
+    step_type = str(step.get("type") or step.get("action") or value.get("step_type") or "").strip().lower()
+    return step_type in {"autonomous_repair_chain", "runtime_autonomous_repair_chain"} or bool(value.get("autonomous_repair_chain"))
+
+
+def _zero_v7338_attach_autonomous_repair_chain_summary(target: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(target, dict):
+        return target
+    candidates = []
+    for key in ("last_result", "last_step_result", "result"):
+        if isinstance(target.get(key), dict):
+            candidates.append(target.get(key))
+    for item in target.get("results") or []:
+        if isinstance(item, dict):
+            candidates.append(item)
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        result = item.get("result") if isinstance(item.get("result"), dict) else item
+        inner = result.get("result") if isinstance(result.get("result"), dict) else result
+        if _zero_v7338_is_autonomous_repair_chain_payload(item) or str(inner.get("runtime_phase") or "") == "autonomous_repair_chaining_v2":
+            summary = {
+                "ok": bool(inner.get("ok", result.get("ok", False))),
+                "runtime_phase": "autonomous_repair_chaining_v2",
+                "status": str(inner.get("status") or result.get("status") or ""),
+                "repair_chain_id": str(inner.get("repair_chain_id") or result.get("repair_chain_id") or ""),
+                "attempt_count": int(inner.get("attempt_count") or 0),
+                "retry_count": int(inner.get("retry_count") or 0),
+            }
+            target["autonomous_repair_chain_summary"] = summary
+            target["runtime_autonomous_repair_chain_v2"] = True
+            if not summary["ok"] and summary["status"] == "retry_limit_reached":
+                target["retryable"] = False
+                target.setdefault("replan_blocked_reason", "autonomous_repair_retry_limit_reached")
+            return target
+    return target
+
+
+_ZERO_V7338_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
+
+
+def _zero_v7338_scheduler_run_one_step(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
+    result = _ZERO_V7338_ORIGINAL_SCHEDULER_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+    if isinstance(result, dict):
+        _zero_v7338_attach_autonomous_repair_chain_summary(result)
+        for target in (task, result.get("task"), result.get("runtime_state")):
+            if isinstance(target, dict):
+                _zero_v7338_attach_autonomous_repair_chain_summary(target)
+    return result
+
+
+Scheduler.run_one_step = _zero_v7338_scheduler_run_one_step
+Scheduler._attach_autonomous_repair_chain_summary = _zero_v7338_attach_autonomous_repair_chain_summary

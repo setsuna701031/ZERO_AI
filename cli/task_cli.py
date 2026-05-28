@@ -506,6 +506,139 @@ def _try_handle_fast_task_runtime_session_smoke(argv: List[str], repo_root: Path
     return True
 
 
+
+def _try_handle_fast_task_runtime_session_resume(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"runtime-session-resume", "session-resume", "resume-session"}:
+        return False
+
+    source_session_id = str(argv[2]).strip() if len(argv) == 3 else ""
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_session_resume"
+    task = _new_task(
+        task_name,
+        "runtime session resume" + (f" for {source_session_id}" if source_session_id else ""),
+    )
+    task["type"] = "runtime_session_resume"
+    if source_session_id:
+        task["source_session_id"] = source_session_id
+    task["runtime_session_resume_v1"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "runtime_session_resume_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "source_session_id": source_session_id,
+            "message": "Created runtime session resume task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
+
+def _try_handle_fast_task_recovery_finalization(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3, 4}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"runtime-session-finalize", "recovery-finalize", "session-finalize"}:
+        return False
+
+    source_session_id = str(argv[2]).strip() if len(argv) >= 3 else ""
+    max_resume_depth = 2
+    if len(argv) == 4:
+        try:
+            max_resume_depth = int(str(argv[3]).strip())
+        except Exception:
+            max_resume_depth = 2
+
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_recovery_finalization"
+    task = _new_task(
+        task_name,
+        "runtime session recovery finalization" + (f" for {source_session_id}" if source_session_id else ""),
+    )
+    task["type"] = "runtime_session_recovery_finalization"
+    if source_session_id:
+        task["source_session_id"] = source_session_id
+    task["max_resume_depth"] = max_resume_depth
+    task["runtime_session_recovery_finalization_v1"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "runtime_session_recovery_finalization_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "source_session_id": source_session_id,
+            "max_resume_depth": max_resume_depth,
+            "message": "Created runtime session recovery finalization task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
+
+def _try_handle_fast_task_runtime_supervisor(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3, 4}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"runtime-supervisor-smoke", "runtime-supervisor-run", "runtime-watchdog"}:
+        return False
+
+    stale_after_seconds = 900
+    max_retry_depth = 2
+    if len(argv) >= 3:
+        try:
+            stale_after_seconds = int(str(argv[2]).strip())
+        except Exception:
+            stale_after_seconds = 900
+    if len(argv) == 4:
+        try:
+            max_retry_depth = int(str(argv[3]).strip())
+        except Exception:
+            max_retry_depth = 2
+
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_runtime_supervisor"
+    task = _new_task(task_name, "autonomous runtime supervisor scan")
+    task["type"] = "runtime_supervisor"
+    task["stale_after_seconds"] = stale_after_seconds
+    task["max_retry_depth"] = max_retry_depth
+    task["runtime_supervisor_v1"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "runtime_supervisor_smoke_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "stale_after_seconds": stale_after_seconds,
+            "max_retry_depth": max_retry_depth,
+            "message": "Created runtime supervisor task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
 def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
     if len(argv) != 2:
         return False
@@ -579,6 +712,15 @@ def try_handle_fast_task_command(argv: List[str], *, repo_root: Path) -> bool:
         return True
 
     if _try_handle_fast_task_runtime_session_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_runtime_session_resume(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_recovery_finalization(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_runtime_supervisor(clean_argv, repo_root):
         return True
 
     if _try_handle_fast_task_drain(clean_argv, repo_root):

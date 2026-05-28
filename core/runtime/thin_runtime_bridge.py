@@ -12,6 +12,9 @@ from core.runtime.controlled_mutation_bridge import attach_controlled_mutation_p
 from core.runtime.governed_engineering_batch import attach_governed_engineering_transaction_batch, _make_default_batch_targets, _normalize_target_list
 from core.runtime.runtime_plan_executor import execute_runtime_mutation_plan_graph
 from core.runtime.runtime_session import execute_persistent_runtime_session, parse_session_targets
+from core.runtime.runtime_session_resume import execute_session_resume
+from core.runtime.runtime_session_recovery_finalization import finalize_runtime_session_recovery
+from core.runtime.runtime_supervisor import run_runtime_supervisor
 from core.artifacts.writers import (
     build_generic_ingestion_artifact,
     build_markdown_report_artifact,
@@ -68,6 +71,15 @@ def is_fast_routable_task(task: Dict[str, Any]) -> bool:
             "persistent runtime session",
             "runtime session",
             "long-chain session",
+            "runtime session resume",
+            "resume runtime session",
+            "session resume",
+            "runtime session recovery finalization",
+            "recovery finalization",
+            "finalize runtime session recovery",
+            "runtime supervisor",
+            "autonomous runtime supervisor",
+            "runtime watchdog",
         )
     )
     return task_type in {"ask", "chat", "summarize", "report", "markdown_report"} or routable_goal
@@ -398,6 +410,380 @@ def is_persistent_runtime_session_task(task: Dict[str, Any]) -> bool:
         or "runtime session" in goal
         or "long-chain session" in goal
     )
+
+
+
+def is_runtime_session_resume_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"runtime_session_resume", "session_resume", "resume_session"}
+        or "runtime session resume" in goal
+        or "resume runtime session" in goal
+        or "session resume" in goal
+    )
+
+
+
+def is_runtime_session_recovery_finalization_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"runtime_session_recovery_finalization", "recovery_finalization", "session_recovery_finalization"}
+        or "runtime session recovery finalization" in goal
+        or "recovery finalization" in goal
+        or "finalize runtime session recovery" in goal
+    )
+
+
+
+def is_runtime_supervisor_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"runtime_supervisor", "autonomous_runtime_supervisor", "runtime_watchdog"}
+        or "runtime supervisor" in goal
+        or "autonomous runtime supervisor" in goal
+        or "runtime watchdog" in goal
+    )
+
+
+def execute_runtime_supervisor_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "runtime_supervisor"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+
+    stale_after_seconds = int(task.get("stale_after_seconds") or 900)
+    max_retry_depth = int(task.get("max_retry_depth") or 2)
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "runtime_supervisor",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_runtime_supervisor.json"),
+        "input_path": "workspace/runtime_sessions",
+        "content_preview": "",
+        "message": "Prepared runtime supervisor scan.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "runtime_supervisor_v1",
+        "planner_attached": "runtime_supervisor",
+        "executor_attached": "runtime_supervisor",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Runtime supervisor handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="runtime_supervisor_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+
+    supervisor_record = run_runtime_supervisor(
+        repo_root,
+        stale_after_seconds=stale_after_seconds,
+        max_retry_depth=max_retry_depth,
+    )
+
+    result["runtime_supervisor"] = supervisor_record
+    result["runtime_supervisor_schema"] = supervisor_record.get("schema")
+    result["runtime_supervisor_ok"] = bool(supervisor_record.get("ok"))
+    result["runtime_watchdog_scan_ok"] = bool(supervisor_record.get("runtime_watchdog_scan_ok"))
+    result["runtime_health_registry_ok"] = bool(supervisor_record.get("runtime_health_registry_ok"))
+    result["runtime_incident_queue_ok"] = bool(supervisor_record.get("runtime_incident_queue_ok"))
+    result["runtime_recovery_schedule_ok"] = bool(supervisor_record.get("runtime_recovery_schedule_ok"))
+    result["runtime_supervisor_journal_path"] = supervisor_record.get("supervisor_journal_path")
+    result["ok"] = bool(supervisor_record.get("ok"))
+
+    task["runtime_supervisor"] = supervisor_record
+    task["runtime_supervisor_schema"] = supervisor_record.get("schema")
+    task["runtime_supervisor_ok"] = bool(supervisor_record.get("ok"))
+    task["runtime_supervisor_journal_path"] = supervisor_record.get("supervisor_journal_path")
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "runtime_supervisor_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "runtime_supervisor_schema": result.get("runtime_supervisor_schema"),
+            "runtime_supervisor_ok": result.get("runtime_supervisor_ok"),
+            "runtime_watchdog_scan_ok": result.get("runtime_watchdog_scan_ok"),
+            "runtime_health_registry_ok": result.get("runtime_health_registry_ok"),
+            "runtime_incident_queue_ok": result.get("runtime_incident_queue_ok"),
+            "runtime_recovery_schedule_ok": result.get("runtime_recovery_schedule_ok"),
+            "runtime_supervisor_journal_path": result.get("runtime_supervisor_journal_path"),
+        },
+    )
+
+    return result
+
+
+def execute_runtime_session_recovery_finalization_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "runtime_session_recovery_finalization"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+    source_session_id = str(task.get("source_session_id") or "").strip()
+    max_resume_depth = int(task.get("max_resume_depth") or 2)
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "runtime_session_recovery_finalization",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_runtime_session_recovery_finalization.json"),
+        "input_path": source_session_id,
+        "content_preview": "",
+        "message": "Prepared runtime session recovery finalization.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "runtime_session_recovery_finalization_v1",
+        "planner_attached": "runtime_session_recovery_finalizer",
+        "executor_attached": "runtime_session_recovery_finalization_executor",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Runtime session recovery finalization handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="runtime_session_recovery_finalization_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+
+    record = finalize_runtime_session_recovery(
+        repo_root=repo_root,
+        task_id=current_task_id,
+        goal=goal,
+        source_session_id=source_session_id,
+        max_resume_depth=max_resume_depth,
+    )
+
+    result["runtime_session_recovery_finalization"] = record
+    result["runtime_session_recovery_finalization_schema"] = record.get("schema")
+    result["runtime_session_recovery_finalization_status"] = record.get("status")
+    result["runtime_session_recovery_finalization_ok"] = bool(record.get("ok"))
+    result["runtime_session_recovery_finalization_path"] = record.get("finalization_path")
+    result["runtime_session_recovery_escalation_required"] = bool(record.get("escalation_required"))
+    result["ok"] = bool(record.get("ok"))
+
+    task["runtime_session_recovery_finalization"] = record
+    task["runtime_session_recovery_finalization_schema"] = record.get("schema")
+    task["runtime_session_recovery_finalization_status"] = record.get("status")
+    task["runtime_session_recovery_finalization_ok"] = bool(record.get("ok"))
+    task["runtime_session_recovery_finalization_path"] = record.get("finalization_path")
+    task["runtime_session_recovery_escalation_required"] = bool(record.get("escalation_required"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "runtime_session_recovery_finalization_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "runtime_session_recovery_finalization_schema": result.get("runtime_session_recovery_finalization_schema"),
+            "runtime_session_recovery_finalization_status": result.get("runtime_session_recovery_finalization_status"),
+            "runtime_session_recovery_finalization_ok": result.get("runtime_session_recovery_finalization_ok"),
+            "runtime_session_recovery_finalization_path": result.get("runtime_session_recovery_finalization_path"),
+            "runtime_session_recovery_escalation_required": result.get("runtime_session_recovery_escalation_required"),
+        },
+    )
+
+    return result
+
+
+def execute_runtime_session_resume_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "runtime_session_resume"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+    source_session_id = str(task.get("source_session_id") or "").strip()
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "runtime_session_resume",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_runtime_session_resume.json"),
+        "input_path": source_session_id,
+        "content_preview": "",
+        "message": "Prepared runtime session resume.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "runtime_session_resume_v1",
+        "planner_attached": "runtime_session_resume_builder",
+        "executor_attached": "runtime_session_resume_executor",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Runtime session resume handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="runtime_session_resume_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = execute_session_resume(
+        repo_root=repo_root,
+        task=task,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        source_session_id=source_session_id,
+    )
+    result["ok"] = bool(result.get("runtime_session_resume_ok"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "runtime_session_resume_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "runtime_session_resume_schema": result.get("runtime_session_resume_schema"),
+            "runtime_session_resume_status": result.get("runtime_session_resume_status"),
+            "runtime_session_resume_ok": result.get("runtime_session_resume_ok"),
+            "runtime_session_resume_source_session_id": result.get("runtime_session_resume_source_session_id"),
+            "runtime_session_resume_resumed_session_id": result.get("runtime_session_resume_resumed_session_id"),
+            "runtime_session_resume_journal_path": result.get("runtime_session_resume_journal_path"),
+        },
+    )
+
+    return result
 
 
 def execute_persistent_runtime_session_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -975,7 +1361,13 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
         task["runtime_booted"] = False
         task["fast_cli_path"] = True
 
-        if is_persistent_runtime_session_task(task):
+        if is_runtime_supervisor_task(task):
+            result = execute_runtime_supervisor_task(repo_root, task)
+        elif is_runtime_session_recovery_finalization_task(task):
+            result = execute_runtime_session_recovery_finalization_task(repo_root, task)
+        elif is_runtime_session_resume_task(task):
+            result = execute_runtime_session_resume_task(repo_root, task)
+        elif is_persistent_runtime_session_task(task):
             result = execute_persistent_runtime_session_task(repo_root, task)
         elif is_runtime_mutation_plan_task(task):
             result = execute_runtime_mutation_plan_task(repo_root, task)

@@ -6548,3 +6548,35 @@ def _zero_v7337_agent_try_force_repo_edit_route(self, user_input: str) -> Option
 
 
 AgentLoop._try_force_repo_edit_route = _zero_v7337_agent_try_force_repo_edit_route
+
+
+# ZERO v7.3.38 - AgentLoop autonomous repair chain intent tagging
+# ------------------------------------------------------------
+def _zero_v7338_agent_autonomous_repair_intent(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    return (
+        "autonomous repair" in lowered
+        or "repair chain" in lowered
+        or "autonomous_repair_chain" in lowered
+        or "runtime_autonomous_repair_chain" in lowered
+        or "自動修復鏈" in lowered
+    )
+
+
+_ZERO_V7338_ORIGINAL_AGENT_BUILD_CONTEXT = AgentLoop._build_context
+
+
+def _zero_v7338_agent_build_context(self, user_input: str) -> Dict[str, Any]:
+    context = _ZERO_V7338_ORIGINAL_AGENT_BUILD_CONTEXT(self, user_input)
+    if isinstance(context, dict) and _zero_v7338_agent_autonomous_repair_intent(user_input):
+        context.setdefault("runtime_hints", {})
+        if isinstance(context.get("runtime_hints"), dict):
+            context["runtime_hints"]["autonomous_repair_chain_v2"] = True
+            context["runtime_hints"]["required_authority_path"] = "AgentLoop -> Scheduler -> StepExecutor -> ExecutionGateway -> RuntimeNativeAutonomousRepairChain"
+        context["autonomous_repair_chain_intent"] = True
+    return context
+
+
+AgentLoop._build_context = _zero_v7338_agent_build_context

@@ -869,3 +869,27 @@ __all__ = [
     "safe_subprocess_run",
 ]
 
+
+
+# ZERO v2.0 - Autonomous Repair Chaining execution metadata helper
+# ------------------------------------------------------------
+def build_autonomous_repair_chain_gateway_metadata(
+    *,
+    repair_chain_id: str,
+    attempt_index: int | None = None,
+    target_paths: Any = None,
+    allow_paths: Any = None,
+    extra: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = {
+        "runtime_phase": "autonomous_repair_chaining_v2",
+        "repair_chain_id": str(repair_chain_id or ""),
+        "attempt_index": attempt_index,
+        "target_paths": list(_normalize_path_list(target_paths)),
+        "allow_paths": list(_normalize_path_list(allow_paths)),
+        "authority_source": RUNTIME_AUTHORITY_SOURCE,
+        "execution_gateway_integration": True,
+    }
+    if isinstance(extra, Mapping):
+        metadata.update(copy.deepcopy(dict(extra)))
+    return metadata
