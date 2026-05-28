@@ -429,6 +429,83 @@ def _try_handle_fast_task_runtime_plan_smoke(argv: List[str], repo_root: Path) -
     return True
 
 
+
+def _try_handle_fast_task_runtime_session_smoke(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3, 4}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"runtime-session-smoke", "session-smoke", "long-chain-smoke"}:
+        return False
+
+    target_arg = str(argv[2]).strip() if len(argv) >= 3 else ""
+    fail_plan_index = 0
+    if len(argv) == 4:
+        raw_fail = str(argv[3]).strip().lower()
+        if raw_fail in {"fail", "force-fail", "--fail"}:
+            fail_plan_index = 2
+        else:
+            try:
+                fail_plan_index = int(raw_fail)
+            except Exception:
+                fail_plan_index = 0
+
+    if target_arg:
+        groups = []
+        for group_text in target_arg.split(";"):
+            group = [part.strip() for part in group_text.split(",") if part.strip()]
+            if group:
+                groups.append(group)
+    else:
+        groups = [
+            [
+                "workspace/shared/runtime_session_plan_a1.py",
+                "workspace/shared/runtime_session_plan_a2.py",
+            ],
+            [
+                "workspace/shared/runtime_session_plan_b1.py",
+                "workspace/shared/runtime_session_plan_b2.py",
+            ],
+        ]
+
+    for group_index, group in enumerate(groups, start=1):
+        for target_index, target_path in enumerate(group, start=1):
+            target = Path(target_path.replace("\\", "/"))
+            if not target.is_absolute():
+                target = repo_root / target
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(f'print("runtime session target {group_index}-{target_index}")\n', encoding="utf-8")
+
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_runtime_session"
+    task = _new_task(
+        task_name,
+        "persistent runtime session for " + str(groups),
+    )
+    task["type"] = "persistent_runtime_session"
+    task["target_groups"] = groups
+    task["fail_plan_index"] = fail_plan_index
+    task["persistent_runtime_session_v1"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "persistent_runtime_session_smoke_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "target_groups": groups,
+            "fail_plan_index": fail_plan_index,
+            "message": "Created persistent runtime session task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
 def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
     if len(argv) != 2:
         return False
@@ -499,6 +576,9 @@ def try_handle_fast_task_command(argv: List[str], *, repo_root: Path) -> bool:
         return True
 
     if _try_handle_fast_task_runtime_plan_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_runtime_session_smoke(clean_argv, repo_root):
         return True
 
     if _try_handle_fast_task_drain(clean_argv, repo_root):

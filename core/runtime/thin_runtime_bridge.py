@@ -11,6 +11,7 @@ from core.runtime.artifact_step_bridge import attach_step_executor_artifact_exec
 from core.runtime.controlled_mutation_bridge import attach_controlled_mutation_probe, attach_controlled_source_mutation, attach_controlled_mutation_transaction_seal
 from core.runtime.governed_engineering_batch import attach_governed_engineering_transaction_batch, _make_default_batch_targets, _normalize_target_list
 from core.runtime.runtime_plan_executor import execute_runtime_mutation_plan_graph
+from core.runtime.runtime_session import execute_persistent_runtime_session, parse_session_targets
 from core.artifacts.writers import (
     build_generic_ingestion_artifact,
     build_markdown_report_artifact,
@@ -64,6 +65,9 @@ def is_fast_routable_task(task: Dict[str, Any]) -> bool:
             "runtime mutation plan graph",
             "mutation plan graph",
             "plan graph",
+            "persistent runtime session",
+            "runtime session",
+            "long-chain session",
         )
     )
     return task_type in {"ask", "chat", "summarize", "report", "markdown_report"} or routable_goal
@@ -382,6 +386,126 @@ def is_runtime_mutation_plan_task(task: Dict[str, Any]) -> bool:
         or "mutation plan graph" in goal
         or "plan graph" in goal
     )
+
+
+
+def is_persistent_runtime_session_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"persistent_runtime_session", "runtime_session", "long_chain_session"}
+        or "persistent runtime session" in goal
+        or "runtime session" in goal
+        or "long-chain session" in goal
+    )
+
+
+def execute_persistent_runtime_session_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "persistent_runtime_session"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+
+    target_groups = parse_session_targets(task.get("target_groups") or task.get("targets"), repo_root)
+    fail_plan_index = int(task.get("fail_plan_index") or 0)
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "persistent_runtime_session",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_persistent_runtime_session.json"),
+        "input_path": str(target_groups),
+        "content_preview": "",
+        "message": "Prepared persistent runtime session.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "persistent_runtime_session_v1",
+        "planner_attached": "runtime_session_builder",
+        "executor_attached": "persistent_runtime_session_executor",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Persistent runtime session handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="persistent_runtime_session_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = execute_persistent_runtime_session(
+        repo_root=repo_root,
+        task=task,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        target_groups=target_groups,
+        fail_plan_index=fail_plan_index,
+    )
+    result["ok"] = bool(result.get("persistent_runtime_session_ok"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "persistent_runtime_session_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "persistent_runtime_session_schema": result.get("persistent_runtime_session_schema"),
+            "persistent_runtime_session_id": result.get("persistent_runtime_session_id"),
+            "persistent_runtime_session_status": result.get("persistent_runtime_session_status"),
+            "persistent_runtime_session_ok": result.get("persistent_runtime_session_ok"),
+            "persistent_runtime_session_journal_path": result.get("persistent_runtime_session_journal_path"),
+            "persistent_runtime_session_state_path": result.get("persistent_runtime_session_state_path"),
+            "persistent_runtime_session_replay_path": result.get("persistent_runtime_session_replay_path"),
+            "persistent_runtime_session_recovery_marker_path": result.get("persistent_runtime_session_recovery_marker_path"),
+        },
+    )
+
+    return result
 
 
 def execute_runtime_mutation_plan_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -851,7 +975,9 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
         task["runtime_booted"] = False
         task["fast_cli_path"] = True
 
-        if is_runtime_mutation_plan_task(task):
+        if is_persistent_runtime_session_task(task):
+            result = execute_persistent_runtime_session_task(repo_root, task)
+        elif is_runtime_mutation_plan_task(task):
             result = execute_runtime_mutation_plan_task(repo_root, task)
         elif is_governed_engineering_batch_task(task):
             result = execute_governed_engineering_batch_task(repo_root, task)
