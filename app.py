@@ -32,11 +32,7 @@ def _load_runtime_cli() -> Callable[..., bool]:
 
 def _is_help_command(argv: List[str]) -> bool:
     normalized = [str(item).strip().lower() for item in argv if str(item).strip()]
-    if not normalized:
-        return False
-    if len(normalized) != 1:
-        return False
-    return normalized[0] in {"--help", "-h", "help", "/help"}
+    return len(normalized) == 1 and normalized[0] in {"--help", "-h", "help", "/help"}
 
 
 def _print_thin_help() -> None:
@@ -49,7 +45,8 @@ def _print_thin_help() -> None:
     print("  python app.py runtime")
     print("  python app.py health")
     print("  python app.py replay")
-    print("  python app.py audit")
+    print("  python app.py ask <message>")
+    print("  python app.py chat <message>")
     print("")
     print("Legacy/runtime commands:")
     print("  python app.py task show <task_id>")
@@ -60,8 +57,6 @@ def _print_thin_help() -> None:
     print("  python app.py task rerun <task_id>")
     print("  python app.py task create <goal>")
     print("  python app.py task submit [task_id]")
-    print("  python app.py chat <message>")
-    print("  python app.py ask <message>")
     print("  python app.py l5-run [--json] [--tts] <task>")
     print("")
     print("Note:")
@@ -70,21 +65,10 @@ def _print_thin_help() -> None:
 
 
 def _is_runtime_command(argv: List[str]) -> bool:
-    if not argv:
-        return False
-
     normalized = [str(item).strip().lower() for item in argv if str(item).strip()]
     if not normalized:
         return False
-
-    runtime_roots = {
-        "runtime",
-        "health",
-        "replay",
-        "audit",
-    }
-
-    return normalized[0] in runtime_roots
+    return normalized[0] in {"runtime", "health", "replay", "audit", "ask", "chat"}
 
 
 def _try_fast_cli(argv: List[str]) -> bool:
@@ -127,18 +111,12 @@ def _run_legacy(argv: List[str]) -> int:
         sys.argv = [str(legacy), *argv]
         runpy.run_path(str(legacy), run_name="__main__")
         return 0
-
     except SystemExit as exc:
-        code = exc.code
-
-        if code is None:
+        if exc.code is None:
             return 0
-
-        if isinstance(code, int):
-            return code
-
+        if isinstance(exc.code, int):
+            return exc.code
         return 1
-
     finally:
         sys.argv = old_argv
 

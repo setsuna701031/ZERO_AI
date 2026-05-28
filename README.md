@@ -831,3 +831,95 @@ Expected result:
 ```text
 22 passed
 ```
+
+
+---
+
+## Thin Artifact Chain / Artifact Graph Smoke Path v1
+
+Current CLI smoke checkpoint:
+
+```text
+thin-artifact-chain-artifact-graph-smoke-v1
+```
+
+ZERO now has a fast, local artifact-producing task path through the thin launcher
+without booting the heavy legacy runtime graph:
+
+```text
+python app.py ask <artifact task>
+-> workspace/tasks.json queued task
+-> python app.py task run 1
+-> thin artifact writer
+-> workspace/shared artifact
+-> workspace/tasks/<task_id>/result.json
+-> workspace/shared/artifact_graph.json
+```
+
+Validated smoke artifacts:
+
+```text
+workspace/shared/task_<id>_hello_world.py
+workspace/shared/summary.txt
+workspace/shared/report.md
+workspace/shared/summary_chain.txt
+workspace/shared/report_chain.md
+workspace/shared/summary_graph.txt
+workspace/shared/report_graph.md
+workspace/shared/artifact_graph.json
+```
+
+Validated artifact chain:
+
+```text
+workspace/shared/input.txt
+-> workspace/shared/summary_graph.txt
+-> workspace/shared/report_graph.md
+```
+
+The artifact graph registry records:
+
+```text
+nodes
+edges
+producer_task_id
+operation type
+event log
+```
+
+Boundary decision:
+
+```text
+app.py remains a thin launcher.
+cli/task_cli.py owns only the temporary fast CLI smoke route.
+Artifact output is not execution evidence.
+Artifact graph is a lineage/readability aid, not an authority source.
+Legacy runtime boot remains avoided on this smoke path.
+Scheduler / TaskRunner / StepExecutor ownership boundaries remain unchanged.
+```
+
+Representative validation commands:
+
+```text
+python -m py_compile cli/task_cli.py
+python app.py ask "summarize workspace/shared/input.txt into workspace/shared/summary_graph.txt"
+python app.py task run 1
+python app.py ask "generate a markdown report from workspace/shared/summary_graph.txt into workspace/shared/report_graph.md"
+python app.py task run 1
+python app.py task graph
+python app.py task graph json
+type workspace/shared/artifact_graph.json
+```
+
+Current verdict:
+
+```text
+Thin Artifact Chain / Artifact Graph Smoke Path v1: PASS
+```
+
+Next mainline direction:
+
+```text
+Move artifact graph and artifact writers out of cli/task_cli.py into dedicated
+core/artifacts modules before expanding this path further.
+```

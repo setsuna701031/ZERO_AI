@@ -777,3 +777,92 @@ Validation:
 python -m pytest tests/test_runtime_workflow_session_contract.py -q
 -> 22 passed
 ```
+
+
+---
+
+## 2026-05-28 - Thin Artifact Chain / Artifact Graph Smoke Path v1
+
+Added and validated a thin artifact-producing CLI smoke path.
+
+ZERO now proves a local task-to-artifact execution path without booting the
+heavy legacy runtime graph:
+
+```text
+ask
+-> task queue
+-> task run
+-> thin runtime dispatch
+-> artifact writer
+-> workspace/shared output
+-> task result.json
+-> artifact_graph.json
+```
+
+Validated outputs:
+
+```text
+workspace/shared/task_<id>_hello_world.py
+workspace/shared/summary.txt
+workspace/shared/report.md
+workspace/shared/summary_chain.txt
+workspace/shared/report_chain.md
+workspace/shared/summary_graph.txt
+workspace/shared/report_graph.md
+workspace/shared/artifact_graph.json
+```
+
+Validated artifact dependency chain:
+
+```text
+workspace/shared/input.txt
+-> workspace/shared/summary_graph.txt
+-> workspace/shared/report_graph.md
+```
+
+The generated artifact graph records:
+
+```text
+nodes
+edges
+producer task ids
+operation types
+event log
+```
+
+Representative commands:
+
+```text
+python -m py_compile cli/task_cli.py
+python app.py ask "summarize workspace/shared/input.txt into workspace/shared/summary_graph.txt"
+python app.py task run 1
+python app.py ask "generate a markdown report from workspace/shared/summary_graph.txt into workspace/shared/report_graph.md"
+python app.py task run 1
+python app.py task graph
+python app.py task graph json
+type workspace/shared/artifact_graph.json
+```
+
+Important boundary decision:
+
+```text
+This is a thin smoke bridge, not the final runtime architecture.
+cli/task_cli.py should not keep absorbing artifact registry and writer logic.
+Next mainline cleanup should split artifact graph persistence and artifact
+writers into core/artifacts/* while keeping app.py as a launcher and preserving
+Scheduler / TaskRunner / StepExecutor ownership boundaries.
+```
+
+Showcase screenshots saved:
+
+```text
+docs/images/zero_runtime_report_artifact_chain_v1.png
+docs/images/zero_artifact_dependency_chain_v1.png
+docs/images/zero_artifact_graph_registry_v1.png
+```
+
+Engineering verdict:
+
+```text
+Thin Artifact Chain / Artifact Graph Smoke Path v1: PASS
+```
