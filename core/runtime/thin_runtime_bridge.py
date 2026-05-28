@@ -220,3 +220,74 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
         "blocked_count": len(skipped_blocked),
         "blocked_tasks": skipped_blocked,
     }
+
+
+def drain_ingestion_tasks(repo_root: Path, max_rounds: int = 50) -> Dict[str, Any]:
+    max_rounds = max(1, int(max_rounds or 1))
+    rounds: List[Dict[str, Any]] = []
+    total_executed = 0
+    total_blocked = 0
+
+    for round_index in range(1, max_rounds + 1):
+        result = run_ingestion_tasks(repo_root, 1)
+        if result is None:
+            return {
+                "ok": True,
+                "mode": "thin_execution_bridge_drain_v1",
+                "fast_cli_path": True,
+                "legacy_app_booted": False,
+                "runtime_booted": False,
+                "rounds_used": round_index - 1,
+                "max_rounds": max_rounds,
+                "executed_count": total_executed,
+                "blocked_count": total_blocked,
+                "rounds": rounds,
+                "drained": True,
+                "message": "No executable ready tasks remain.",
+            }
+
+        executed_count = int(result.get("executed_count") or 0)
+        blocked_count = int(result.get("blocked_count") or 0)
+        total_executed += executed_count
+        total_blocked += blocked_count
+        rounds.append(
+            {
+                "round": round_index,
+                "executed_count": executed_count,
+                "blocked_count": blocked_count,
+                "executed_results": result.get("executed_results", []),
+                "blocked_tasks": result.get("blocked_tasks", []),
+            }
+        )
+
+        if executed_count <= 0:
+            return {
+                "ok": True,
+                "mode": "thin_execution_bridge_drain_v1",
+                "fast_cli_path": True,
+                "legacy_app_booted": False,
+                "runtime_booted": False,
+                "rounds_used": round_index,
+                "max_rounds": max_rounds,
+                "executed_count": total_executed,
+                "blocked_count": total_blocked,
+                "rounds": rounds,
+                "drained": blocked_count <= 0,
+                "message": "Drain stopped because no dependency-ready task was executable.",
+            }
+
+    return {
+        "ok": True,
+        "mode": "thin_execution_bridge_drain_v1",
+        "fast_cli_path": True,
+        "legacy_app_booted": False,
+        "runtime_booted": False,
+        "rounds_used": max_rounds,
+        "max_rounds": max_rounds,
+        "executed_count": total_executed,
+        "blocked_count": total_blocked,
+        "rounds": rounds,
+        "drained": False,
+        "message": "Drain stopped at max_rounds.",
+    }
+

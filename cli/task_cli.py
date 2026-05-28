@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.artifacts.registry import artifact_graph_path, format_artifact_graph, read_json_file
-from core.runtime.thin_runtime_bridge import run_ingestion_tasks
+from core.runtime.thin_runtime_bridge import drain_ingestion_tasks, run_ingestion_tasks
 from core.tasks.task_index import (
     read_tasks_index,
     runtime_queue_empty,
@@ -196,6 +196,26 @@ def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
     return True
 
 
+
+
+def _try_handle_fast_task_drain(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"drain", "auto-drain", "run-all"}:
+        return False
+
+    raw_max_rounds = str(argv[2]).strip() if len(argv) == 3 else "50"
+    try:
+        max_rounds = int(raw_max_rounds)
+    except Exception:
+        max_rounds = 50
+
+    _print_json(drain_ingestion_tasks(repo_root, max_rounds=max_rounds))
+    return True
+
+
 def _try_handle_fast_task_run(argv: List[str], repo_root: Path) -> bool:
     count = _parse_task_run(argv)
     if count is None:
@@ -220,6 +240,9 @@ def try_handle_fast_task_command(argv: List[str], *, repo_root: Path) -> bool:
         return True
 
     if _try_handle_fast_task_dag_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_drain(clean_argv, repo_root):
         return True
 
     if _try_handle_fast_task_run(clean_argv, repo_root):
