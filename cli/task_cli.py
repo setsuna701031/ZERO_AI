@@ -315,6 +315,63 @@ def _try_handle_fast_task_mutation_transaction_smoke(argv: List[str], repo_root:
     return True
 
 
+
+def _try_handle_fast_task_engineering_batch_smoke(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3, 4}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"engineering-batch-smoke", "transaction-batch-smoke", "batch-mutation-smoke"}:
+        return False
+
+    target_arg = str(argv[2]).strip() if len(argv) >= 3 else ""
+    force_failure = len(argv) == 4 and str(argv[3]).strip().lower() in {"fail", "force-fail", "--fail"}
+
+    if target_arg:
+        targets = [part.strip() for part in target_arg.split(",") if part.strip()]
+    else:
+        targets = [
+            "workspace/shared/engineering_batch_target_a.py",
+            "workspace/shared/engineering_batch_target_b.py",
+        ]
+
+    for index, target_path in enumerate(targets, start=1):
+        target = Path(target_path.replace("\\", "/"))
+        if not target.is_absolute():
+            target = repo_root / target
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f'print("engineering batch target {index}")\n', encoding="utf-8")
+
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_engineering_batch"
+    task = _new_task(
+        task_name,
+        "governed engineering transaction batch for " + ",".join(targets),
+    )
+    task["type"] = "governed_engineering_batch"
+    task["targets"] = targets
+    task["force_verification_failure"] = force_failure
+    task["governed_engineering_transaction_batch_v1"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "governed_engineering_transaction_batch_smoke_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "targets": targets,
+            "force_verification_failure": force_failure,
+            "message": "Created governed engineering transaction batch task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
 def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
     if len(argv) != 2:
         return False
@@ -379,6 +436,9 @@ def try_handle_fast_task_command(argv: List[str], *, repo_root: Path) -> bool:
         return True
 
     if _try_handle_fast_task_mutation_transaction_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_engineering_batch_smoke(clean_argv, repo_root):
         return True
 
     if _try_handle_fast_task_drain(clean_argv, repo_root):

@@ -9,6 +9,7 @@ from core.runtime.aer_runtime_ownership_bridge import attach_runtime_ownership_r
 from core.runtime.execution_authority_handoff import attach_execution_authority_handoff_record
 from core.runtime.artifact_step_bridge import attach_step_executor_artifact_execution
 from core.runtime.controlled_mutation_bridge import attach_controlled_mutation_probe, attach_controlled_source_mutation, attach_controlled_mutation_transaction_seal
+from core.runtime.governed_engineering_batch import attach_governed_engineering_transaction_batch, _make_default_batch_targets, _normalize_target_list
 from core.artifacts.writers import (
     build_generic_ingestion_artifact,
     build_markdown_report_artifact,
@@ -55,6 +56,10 @@ def is_fast_routable_task(task: Dict[str, Any]) -> bool:
             "controlled mutation transaction",
             "mutation transaction",
             "transaction seal",
+            "governed engineering transaction batch",
+            "engineering transaction batch",
+            "multi-file transaction",
+            "transaction batch",
         )
     )
     return task_type in {"ask", "chat", "summarize", "report", "markdown_report"} or routable_goal
@@ -350,6 +355,128 @@ def is_controlled_mutation_transaction_task(task: Dict[str, Any]) -> bool:
     )
 
 
+
+def is_governed_engineering_batch_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"governed_engineering_batch", "engineering_batch", "transaction_batch", "multi_file_transaction"}
+        or "governed engineering transaction batch" in goal
+        or "engineering transaction batch" in goal
+        or "multi-file transaction" in goal
+        or "transaction batch" in goal
+    )
+
+
+def execute_governed_engineering_batch_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "governed_engineering_batch"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+
+    targets = _normalize_target_list(task.get("targets"))
+    if not targets:
+        targets = _make_default_batch_targets(repo_root)
+
+    force_failure = bool(task.get("force_verification_failure"))
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "governed_engineering_transaction_batch",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_governed_engineering_batch.json"),
+        "input_path": ",".join(targets),
+        "content_preview": "",
+        "message": "Prepared governed engineering transaction batch.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "governed_engineering_transaction_batch_v1",
+        "planner_attached": False,
+        "executor_attached": "step_executor_governed_engineering_batch",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Governed engineering transaction batch handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="governed_engineering_transaction_batch_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = attach_governed_engineering_transaction_batch(
+        repo_root=repo_root,
+        task=task,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        targets=targets,
+        force_verification_failure=force_failure,
+    )
+    result["ok"] = bool(result.get("governed_engineering_transaction_batch_ok"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "governed_engineering_transaction_batch_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "governed_engineering_transaction_batch_schema": result.get("governed_engineering_transaction_batch_schema"),
+            "governed_engineering_transaction_batch_id": result.get("governed_engineering_transaction_batch_id"),
+            "governed_engineering_transaction_batch_status": result.get("governed_engineering_transaction_batch_status"),
+            "governed_engineering_transaction_batch_ok": result.get("governed_engineering_transaction_batch_ok"),
+            "governed_engineering_transaction_batch_journal_path": result.get("governed_engineering_transaction_batch_journal_path"),
+            "governed_engineering_transaction_batch_rollback_applied": result.get("governed_engineering_transaction_batch_rollback_applied"),
+        },
+    )
+
+    return result
+
+
 def execute_controlled_mutation_transaction_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
     task_type = str(task.get("type") or "").strip().lower() or "controlled_mutation_transaction"
     goal = task_goal(task)
@@ -599,7 +726,9 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
         task["runtime_booted"] = False
         task["fast_cli_path"] = True
 
-        if is_controlled_mutation_transaction_task(task):
+        if is_governed_engineering_batch_task(task):
+            result = execute_governed_engineering_batch_task(repo_root, task)
+        elif is_controlled_mutation_transaction_task(task):
             result = execute_controlled_mutation_transaction_task(repo_root, task)
         elif is_controlled_source_mutation_task(task):
             result = execute_controlled_source_mutation_task(repo_root, task)
