@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.artifacts.registry import update_artifact_graph, write_json_file
+from core.runtime.aer_runtime_ownership_bridge import attach_runtime_ownership_record, summarize_runtime_ownership_transition
+from core.runtime.execution_authority_handoff import attach_execution_authority_handoff_record
+from core.runtime.artifact_step_bridge import attach_step_executor_artifact_execution
 from core.artifacts.writers import (
     build_generic_ingestion_artifact,
     build_markdown_report_artifact,
@@ -115,6 +118,34 @@ def execute_ingestion_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, A
         "artifact_graph_path": str(graph_path),
         "message": f"Thin execution bridge handled task: {goal}",
     }
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="thin_execution_bridge_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = attach_step_executor_artifact_execution(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
 
     current_task_dir = task_dir(repo_root, current_task_id)
     result_path = current_task_dir / "result.json"
@@ -139,6 +170,17 @@ def execute_ingestion_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, A
             "artifact_path": artifact.get("artifact_path"),
             "artifact_graph_path": str(graph_path),
             "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "runtime_ownership_schema": result.get("runtime_ownership_schema"),
+            "runtime_ownership_transition": result.get("runtime_ownership_transition"),
+            "formal_execution_endpoint": result.get("formal_execution_endpoint"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "execution_authority_handoff_schema": result.get("execution_authority_handoff_schema"),
+            "authority_handoff_status": result.get("authority_handoff_status"),
+            "step_executor_artifact_execution": result.get("step_executor_artifact_execution"),
+            "step_executor_artifact_execution_schema": result.get("step_executor_artifact_execution_schema"),
+            "step_executor_handoff_executed": result.get("step_executor_handoff_executed"),
+            "step_executor_artifact_execution_ok": result.get("step_executor_artifact_execution_ok"),
         },
     )
 
