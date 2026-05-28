@@ -16,25 +16,102 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.display.runtime_presenter import format_runtime_replay_compact, format_runtime_replay_detail, format_runtime_replay_summary
-from core.display.runtime_repair_presenter import format_runtime_repair_suggestion
-from core.display.runtime_repair_envelope_presenter import format_runtime_repair_envelope
-from core.display.runtime_repair_planner_bridge_presenter import format_runtime_repair_planner_bridge
-from core.display.runtime_repair_planner_proposal_presenter import format_runtime_repair_planner_proposal
-from core.display.runtime_repair_confirmation_presenter import format_runtime_repair_confirmation_gate
-from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
-from core.persona.presentation_bridge import render_cli_view, render_json_view
-from core.persona.runtime_bridge import PersonaRuntimeBridge
-from core.tasks.runtime_kernel_status import build_task_runtime_kernel_status, format_task_runtime_kernel_status
 from core.tasks.runtime_state_hygiene import make_json_safe
-from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
-from core.tasks.runtime_repair_contract import build_runtime_repair_contract
-from core.tasks.runtime_repair_envelope import build_runtime_repair_envelope
-from core.tasks.runtime_repair_planner_bridge import build_runtime_repair_planner_bridge
-from core.tasks.runtime_repair_planner_proposal import build_runtime_repair_planner_proposal
-from core.tasks.runtime_repair_confirmation import build_runtime_repair_confirmation_gate
-from core.tasks.runtime_repair_suggestion import build_runtime_repair_suggestion
-from services.system_boot import boot_system
+
+
+# ---------------------------------------------------------------------------
+# Lazy imports
+# ---------------------------------------------------------------------------
+# app_legacy.py is the full runtime-compatible CLI surface.  Keep heavyweight
+# runtime/display/persona imports out of module import so thin app.py can fall
+# back here without immediately importing the entire Runtime OS graph.
+
+
+def _lazy_boot_system():
+    from services.system_boot import boot_system
+
+    return boot_system
+
+
+def _lazy_persona_cli_imports():
+    from core.persona.presentation_bridge import render_cli_view, render_json_view
+    from core.persona.runtime_bridge import PersonaRuntimeBridge
+
+    return render_cli_view, render_json_view, PersonaRuntimeBridge
+
+
+def _lazy_runtime_presenter_imports():
+    from core.display.runtime_presenter import (
+        format_runtime_replay_compact,
+        format_runtime_replay_detail,
+        format_runtime_replay_summary,
+    )
+
+    return (
+        format_runtime_replay_compact,
+        format_runtime_replay_detail,
+        format_runtime_replay_summary,
+    )
+
+
+def _lazy_runtime_repair_presenter_imports():
+    from core.display.runtime_repair_presenter import format_runtime_repair_suggestion
+    from core.display.runtime_repair_envelope_presenter import format_runtime_repair_envelope
+    from core.display.runtime_repair_planner_bridge_presenter import format_runtime_repair_planner_bridge
+    from core.display.runtime_repair_planner_proposal_presenter import format_runtime_repair_planner_proposal
+    from core.display.runtime_repair_confirmation_presenter import format_runtime_repair_confirmation_gate
+
+    return {
+        "suggestion": format_runtime_repair_suggestion,
+        "envelope": format_runtime_repair_envelope,
+        "bridge": format_runtime_repair_planner_bridge,
+        "proposal": format_runtime_repair_planner_proposal,
+        "confirmation": format_runtime_repair_confirmation_gate,
+    }
+
+
+def _lazy_runtime_repair_builders():
+    from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
+    from core.tasks.runtime_repair_suggestion import build_runtime_repair_suggestion
+    from core.tasks.runtime_repair_contract import build_runtime_repair_contract
+    from core.tasks.runtime_repair_envelope import build_runtime_repair_envelope
+    from core.tasks.runtime_repair_planner_bridge import build_runtime_repair_planner_bridge
+    from core.tasks.runtime_repair_planner_proposal import build_runtime_repair_planner_proposal
+    from core.tasks.runtime_repair_confirmation import build_runtime_repair_confirmation_gate
+
+    return {
+        "snapshot": build_runtime_replay_snapshot,
+        "suggestion": build_runtime_repair_suggestion,
+        "contract": build_runtime_repair_contract,
+        "envelope": build_runtime_repair_envelope,
+        "bridge": build_runtime_repair_planner_bridge,
+        "proposal": build_runtime_repair_planner_proposal,
+        "confirmation": build_runtime_repair_confirmation_gate,
+    }
+
+
+def _lazy_runtime_kernel_imports():
+    from core.tasks.runtime_kernel_status import (
+        build_task_runtime_kernel_status,
+        format_task_runtime_kernel_status,
+    )
+
+    return build_task_runtime_kernel_status, format_task_runtime_kernel_status
+
+
+def _lazy_replan_imports():
+    from core.planning.replan_suggestion import (
+        build_replan_suggestion,
+        build_replan_suggestions,
+        format_replan_suggestion_cli,
+    )
+
+    return (
+        build_replan_suggestion,
+        build_replan_suggestions,
+        format_replan_suggestion_cli,
+    )
+
 
 
 WORKSPACE_DIR = os.environ.get("ZERO_WORKSPACE", "workspace")
@@ -91,6 +168,8 @@ def run_l5_run_command(argv: List[str]) -> int:
     except ValueError as exc:
         print_json({"ok": False, "error": str(exc), "mode": "l5_run"})
         return 1
+
+    render_cli_view, render_json_view, PersonaRuntimeBridge = _lazy_persona_cli_imports()
 
     bridge = PersonaRuntimeBridge(workspace_dir=_repo_root_path())
     display_state = bridge.submit_ui_task(str(options["task"]))
@@ -702,6 +781,8 @@ def _extract_runtime_kernel_trace_paths(task: Dict[str, Any]) -> Tuple[Optional[
 
 def _build_task_runtime_kernel_display(task: Dict[str, Any]) -> str:
     planner_path, execution_path = _extract_runtime_kernel_trace_paths(task)
+    build_task_runtime_kernel_status, format_task_runtime_kernel_status = _lazy_runtime_kernel_imports()
+
     try:
         status = build_task_runtime_kernel_status(
             task,
@@ -724,6 +805,14 @@ def _build_task_runtime_kernel_display(task: Dict[str, Any]) -> str:
 
 
 def _build_task_runtime_replay_display(task: Dict[str, Any], *, detail: bool = False, compact: bool = False) -> str:
+    (
+        format_runtime_replay_compact,
+        format_runtime_replay_detail,
+        format_runtime_replay_summary,
+    ) = _lazy_runtime_presenter_imports()
+    builders = _lazy_runtime_repair_builders()
+    build_runtime_replay_snapshot = builders["snapshot"]
+
     try:
         snapshot = build_runtime_replay_snapshot(task)
     except Exception as exc:
@@ -746,6 +835,12 @@ def _build_task_runtime_replay_display(task: Dict[str, Any], *, detail: bool = F
 
 
 def _build_task_runtime_repair_display(task: Dict[str, Any]) -> str:
+    presenters = _lazy_runtime_repair_presenter_imports()
+    builders = _lazy_runtime_repair_builders()
+    build_runtime_replay_snapshot = builders["snapshot"]
+    build_runtime_repair_suggestion = builders["suggestion"]
+    format_runtime_repair_suggestion = presenters["suggestion"]
+
     try:
         snapshot = build_runtime_replay_snapshot(task)
     except Exception as exc:
@@ -764,6 +859,14 @@ def _build_task_runtime_repair_display(task: Dict[str, Any]) -> str:
 
 
 def _build_task_runtime_repair_envelope_display(task: Dict[str, Any]) -> str:
+    presenters = _lazy_runtime_repair_presenter_imports()
+    builders = _lazy_runtime_repair_builders()
+    build_runtime_replay_snapshot = builders["snapshot"]
+    build_runtime_repair_suggestion = builders["suggestion"]
+    build_runtime_repair_contract = builders["contract"]
+    build_runtime_repair_envelope = builders["envelope"]
+    format_runtime_repair_envelope = presenters["envelope"]
+
     try:
         snapshot = build_runtime_replay_snapshot(task)
     except Exception as exc:
@@ -807,6 +910,15 @@ def _build_task_runtime_repair_envelope_display(task: Dict[str, Any]) -> str:
 
 
 def _build_task_runtime_repair_planner_bridge_display(task: Dict[str, Any]) -> str:
+    presenters = _lazy_runtime_repair_presenter_imports()
+    builders = _lazy_runtime_repair_builders()
+    build_runtime_replay_snapshot = builders["snapshot"]
+    build_runtime_repair_suggestion = builders["suggestion"]
+    build_runtime_repair_contract = builders["contract"]
+    build_runtime_repair_envelope = builders["envelope"]
+    build_runtime_repair_planner_bridge = builders["bridge"]
+    format_runtime_repair_planner_bridge = presenters["bridge"]
+
     try:
         snapshot = build_runtime_replay_snapshot(task)
         suggestion = build_runtime_repair_suggestion(snapshot)
@@ -849,6 +961,16 @@ def _build_task_runtime_repair_planner_bridge_display(task: Dict[str, Any]) -> s
 
 
 def _build_task_runtime_repair_planner_proposal_display(task: Dict[str, Any]) -> str:
+    presenters = _lazy_runtime_repair_presenter_imports()
+    builders = _lazy_runtime_repair_builders()
+    build_runtime_replay_snapshot = builders["snapshot"]
+    build_runtime_repair_suggestion = builders["suggestion"]
+    build_runtime_repair_contract = builders["contract"]
+    build_runtime_repair_envelope = builders["envelope"]
+    build_runtime_repair_planner_bridge = builders["bridge"]
+    build_runtime_repair_planner_proposal = builders["proposal"]
+    format_runtime_repair_planner_proposal = presenters["proposal"]
+
     try:
         snapshot = build_runtime_replay_snapshot(task)
         suggestion = build_runtime_repair_suggestion(snapshot)
@@ -892,6 +1014,17 @@ def _build_task_runtime_repair_planner_proposal_display(task: Dict[str, Any]) ->
 
 
 def _build_task_runtime_repair_confirmation_display(task: Dict[str, Any]) -> str:
+    presenters = _lazy_runtime_repair_presenter_imports()
+    builders = _lazy_runtime_repair_builders()
+    build_runtime_replay_snapshot = builders["snapshot"]
+    build_runtime_repair_suggestion = builders["suggestion"]
+    build_runtime_repair_contract = builders["contract"]
+    build_runtime_repair_envelope = builders["envelope"]
+    build_runtime_repair_planner_bridge = builders["bridge"]
+    build_runtime_repair_planner_proposal = builders["proposal"]
+    build_runtime_repair_confirmation_gate = builders["confirmation"]
+    format_runtime_repair_confirmation_gate = presenters["confirmation"]
+
     try:
         snapshot = build_runtime_replay_snapshot(task)
         suggestion = build_runtime_repair_suggestion(snapshot)
@@ -1785,6 +1918,8 @@ def _normalize_loop_returned_task_for_persist(task: Any) -> Any:
         normalized["current_step"] = copy.deepcopy(current_step) if isinstance(current_step, dict) else current_step
 
     normalized["current_step_index"] = current_step_index
+    build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli = _lazy_replan_imports()
+
     suggestion = build_replan_suggestion(normalized)
     normalized["replan_suggestion"] = suggestion
     normalized["suggestions"] = build_replan_suggestions(normalized)
@@ -4363,12 +4498,14 @@ def _argv_to_command(argv: List[str]) -> Optional[str]:
 
 
 def _boot_system_for_cli() -> Any:
+    boot_system = _lazy_boot_system()
     sink = io.StringIO()
     with redirect_stdout(sink):
         return boot_system(workspace_dir=WORKSPACE_DIR)
 
 
 def _boot_system_for_interactive() -> Any:
+    boot_system = _lazy_boot_system()
     return boot_system(workspace_dir=WORKSPACE_DIR)
 
 

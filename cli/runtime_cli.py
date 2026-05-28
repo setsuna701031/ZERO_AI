@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -40,6 +41,13 @@ def _read_json_file(path: Path) -> Any:
         return None
 
 
+def _write_json_file(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def _read_tasks_index(repo_root: Path) -> List[Dict[str, Any]]:
     data = _read_json_file(_tasks_json_path(repo_root))
 
@@ -50,6 +58,16 @@ def _read_tasks_index(repo_root: Path) -> List[Dict[str, Any]]:
         return [item for item in data if isinstance(item, dict)]
 
     return []
+
+
+def _save_tasks_index(
+    repo_root: Path,
+    tasks: List[Dict[str, Any]],
+) -> None:
+    _write_json_file(
+        _tasks_json_path(repo_root),
+        {"tasks": tasks},
+    )
 
 
 def _read_scheduler_state(repo_root: Path) -> Dict[str, Any]:
@@ -323,23 +341,6 @@ def _fast_runtime_payload(repo_root: Path) -> Dict[str, Any]:
             "workspace_dir": _workspace_dir(),
             "has_scheduler": False,
             "has_agent_loop": False,
-            "llm": {
-                "plugin_name": os.environ.get("ZERO_LLM_PLUGIN", ""),
-                "provider": "",
-                "base_url": (
-                    os.environ.get("ZERO_LLM_BASE_URL", "")
-                    or os.environ.get("OLLAMA_BASE_URL", "")
-                ),
-                "model": (
-                    os.environ.get("ZERO_MODEL", "")
-                    or os.environ.get("ZERO_LLM_MODEL", "")
-                ),
-                "coder_model": (
-                    os.environ.get("ZERO_CODER_MODEL", "")
-                    or os.environ.get("ZERO_LLM_CODER_MODEL", "")
-                ),
-                "timeout": os.environ.get("ZERO_LLM_TIMEOUT", ""),
-            },
         },
         "queue": health.get("queue", {}),
     }
@@ -353,10 +354,42 @@ def _fast_replay_payload() -> Dict[str, Any]:
         "runtime_booted": False,
         "error": "agent_loop not available",
         "input": "replay",
-        "note": (
-            "Replay runtime is intentionally not booted "
-            "inside the thin runtime CLI path."
-        ),
+    }
+
+
+def _create_ingestion_task(
+    repo_root: Path,
+    *,
+    mode: str,
+    prompt: str,
+) -> Dict[str, Any]:
+    tasks = _read_tasks_index(repo_root)
+
+    task_id = f"task_{int(time.time() * 1000)}"
+
+    task = {
+        "task_id": task_id,
+        "type": mode,
+        "title": prompt[:80],
+        "goal": prompt,
+        "status": "queued",
+        "created_at": time.time(),
+        "fast_cli_path": True,
+        "legacy_app_booted": False,
+        "runtime_booted": False,
+    }
+
+    tasks.append(task)
+    _save_tasks_index(repo_root, tasks)
+
+    return {
+        "ok": True,
+        "mode": "fast_runtime_cli",
+        "created": True,
+        "task_id": task_id,
+        "status": "queued",
+        "input": prompt,
+        "task": task,
     }
 
 
@@ -390,6 +423,19 @@ def try_handle_fast_runtime_command(
 
     if command == "replay":
         _print_json(_fast_replay_payload())
+        return True
+
+    if argv and argv[0] in {"ask", "chat"}:
+        prompt = " ".join(argv[1:]).strip()
+
+        _print_json(
+            _create_ingestion_task(
+                repo_root,
+                mode=argv[0],
+                prompt=prompt,
+            )
+        )
+
         return True
 
     return False
