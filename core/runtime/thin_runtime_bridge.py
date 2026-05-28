@@ -8,6 +8,7 @@ from core.artifacts.registry import update_artifact_graph, write_json_file
 from core.runtime.aer_runtime_ownership_bridge import attach_runtime_ownership_record, summarize_runtime_ownership_transition
 from core.runtime.execution_authority_handoff import attach_execution_authority_handoff_record
 from core.runtime.artifact_step_bridge import attach_step_executor_artifact_execution
+from core.runtime.controlled_mutation_bridge import attach_controlled_mutation_probe, attach_controlled_source_mutation, attach_controlled_mutation_transaction_seal
 from core.artifacts.writers import (
     build_generic_ingestion_artifact,
     build_markdown_report_artifact,
@@ -46,6 +47,14 @@ def is_fast_routable_task(task: Dict[str, Any]) -> bool:
             "create a markdown",
             "目前系統",
             "system",
+            "controlled mutation",
+            "governed mutation",
+            "mutation probe",
+            "controlled source mutation",
+            "source mutation",
+            "controlled mutation transaction",
+            "mutation transaction",
+            "transaction seal",
         )
     )
     return task_type in {"ask", "chat", "summarize", "report", "markdown_report"} or routable_goal
@@ -187,6 +196,370 @@ def execute_ingestion_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, A
     return result
 
 
+
+def is_controlled_mutation_probe_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"controlled_mutation", "governed_mutation", "mutation_probe"}
+        or "controlled mutation" in goal
+        or "governed mutation" in goal
+        or "mutation probe" in goal
+        or "controlled code mutation" in goal
+    )
+
+
+def _extract_mutation_target_from_goal(goal: str) -> str:
+    import re
+
+    text = str(goal or "")
+    for pattern in (
+        r"(?:for|target|path|file)\s+([A-Za-z0-9_./\\-]+\.py)",
+        r"([A-Za-z0-9_./\\-]+\.py)",
+    ):
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return str(match.group(1)).strip()
+    return "workspace/shared/mutation_probe.txt"
+
+
+
+def is_controlled_source_mutation_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"controlled_source_mutation", "source_mutation", "governed_source_mutation"}
+        or "controlled source mutation" in goal
+        or "source mutation" in goal
+        or "real source mutation" in goal
+    )
+
+
+
+def execute_controlled_mutation_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "controlled_mutation"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+    target_path = str(task.get("target_path") or task.get("path") or "").strip()
+    if not target_path:
+        target_path = _extract_mutation_target_from_goal(goal)
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "controlled_mutation_probe",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_controlled_mutation_probe.json"),
+        "input_path": target_path,
+        "content_preview": "",
+        "message": "Prepared controlled mutation probe.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "controlled_mutation_probe_v1",
+        "planner_attached": False,
+        "executor_attached": "step_executor_controlled_mutation_probe",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Controlled mutation probe handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="controlled_mutation_probe_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = attach_controlled_mutation_probe(
+        repo_root=repo_root,
+        task=task,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        target_path=target_path,
+    )
+    result["ok"] = bool(result.get("controlled_mutation_execution_ok"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "controlled_mutation_probe_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "controlled_mutation_execution": result.get("controlled_mutation_execution"),
+            "controlled_mutation_execution_schema": result.get("controlled_mutation_execution_schema"),
+            "controlled_mutation_execution_ok": result.get("controlled_mutation_execution_ok"),
+        },
+    )
+
+    return result
+
+
+
+def is_controlled_mutation_transaction_task(task: Dict[str, Any]) -> bool:
+    task_type = str(task.get("type") or task.get("task_type") or "").strip().lower()
+    goal = task_goal(task).lower()
+    return (
+        task_type in {"controlled_mutation_transaction", "mutation_transaction", "transaction_mutation"}
+        or "controlled mutation transaction" in goal
+        or "mutation transaction" in goal
+        or "transaction seal" in goal
+    )
+
+
+def execute_controlled_mutation_transaction_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "controlled_mutation_transaction"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+    target_path = str(task.get("target_path") or task.get("path") or "").strip()
+    if not target_path:
+        target_path = _extract_mutation_target_from_goal(goal)
+
+    force_failure = bool(task.get("force_verification_failure"))
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "controlled_mutation_transaction",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_controlled_mutation_transaction.json"),
+        "input_path": target_path,
+        "content_preview": "",
+        "message": "Prepared controlled mutation transaction.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "controlled_mutation_transaction_seal_v1",
+        "planner_attached": False,
+        "executor_attached": "step_executor_controlled_mutation_transaction",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Controlled mutation transaction handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="controlled_mutation_transaction_seal_v1",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = attach_controlled_mutation_transaction_seal(
+        repo_root=repo_root,
+        task=task,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        target_path=target_path,
+        force_verification_failure=force_failure,
+    )
+    result["ok"] = bool(result.get("controlled_mutation_transaction_ok"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "controlled_mutation_transaction_seal_v1",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "controlled_mutation_transaction_schema": result.get("controlled_mutation_transaction_schema"),
+            "controlled_mutation_transaction_id": result.get("controlled_mutation_transaction_id"),
+            "controlled_mutation_transaction_status": result.get("controlled_mutation_transaction_status"),
+            "controlled_mutation_transaction_ok": result.get("controlled_mutation_transaction_ok"),
+            "controlled_mutation_transaction_journal_path": result.get("controlled_mutation_transaction_journal_path"),
+            "controlled_mutation_transaction_rollback_applied": result.get("controlled_mutation_transaction_rollback_applied"),
+        },
+    )
+
+    return result
+
+
+def execute_controlled_source_mutation_task(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    task_type = str(task.get("type") or "").strip().lower() or "controlled_source_mutation"
+    goal = task_goal(task)
+    current_task_id = task_id(task)
+    target_path = str(task.get("target_path") or task.get("path") or "").strip()
+    if not target_path:
+        target_path = _extract_mutation_target_from_goal(goal)
+
+    artifact = {
+        "ok": True,
+        "artifact_type": "controlled_source_mutation",
+        "artifact_path": str(shared_dir(repo_root) / f"{current_task_id}_controlled_source_mutation.json"),
+        "input_path": target_path,
+        "content_preview": "",
+        "message": "Prepared controlled source mutation.",
+    }
+
+    graph_path = update_artifact_graph(
+        repo_root=repo_root,
+        shared_dir=shared_dir(repo_root),
+        task_id=current_task_id,
+        goal=goal,
+        artifact=artifact,
+    )
+
+    result = {
+        "ok": True,
+        "task_id": current_task_id,
+        "type": task_type,
+        "goal": goal,
+        "runtime_mode": "controlled_source_mutation_v2",
+        "planner_attached": False,
+        "executor_attached": "step_executor_controlled_source_mutation",
+        "artifact": artifact,
+        "artifact_graph_path": str(graph_path),
+        "message": f"Controlled source mutation handled task: {goal}",
+    }
+
+    result = attach_runtime_ownership_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        runtime_mode="controlled_source_mutation_v2",
+    )
+    result["runtime_ownership_transition"] = summarize_runtime_ownership_transition(
+        result.get("runtime_ownership", {})
+    )
+    result = attach_execution_authority_handoff_record(
+        repo_root=repo_root,
+        task=task,
+        artifact=artifact,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+    )
+    result = attach_controlled_source_mutation(
+        repo_root=repo_root,
+        task=task,
+        result=result,
+        task_id=current_task_id,
+        goal=goal,
+        target_path=target_path,
+    )
+    result["ok"] = bool(result.get("controlled_source_mutation_ok"))
+
+    current_task_dir = task_dir(repo_root, current_task_id)
+    result_path = current_task_dir / "result.json"
+    snapshot_path = current_task_dir / "task_snapshot.json"
+    runtime_state_path = current_task_dir / "runtime_state.json"
+
+    task["result_path"] = str(result_path)
+    task["snapshot_path"] = str(snapshot_path)
+    task["runtime_state_path"] = str(runtime_state_path)
+    task["artifact_path"] = artifact.get("artifact_path")
+    task["artifact_graph_path"] = str(graph_path)
+
+    write_json_file(result_path, result)
+    write_json_file(snapshot_path, task)
+    write_json_file(
+        runtime_state_path,
+        {
+            "ok": bool(result.get("ok")),
+            "task_id": current_task_id,
+            "status": "finished" if result.get("ok") else "failed",
+            "runtime_mode": "controlled_source_mutation_v2",
+            "artifact_path": artifact.get("artifact_path"),
+            "artifact_graph_path": str(graph_path),
+            "result_path": str(result_path),
+            "runtime_ownership": result.get("runtime_ownership"),
+            "execution_authority_handoff": result.get("execution_authority_handoff"),
+            "controlled_source_mutation": result.get("controlled_source_mutation"),
+            "controlled_source_mutation_schema": result.get("controlled_source_mutation_schema"),
+            "controlled_source_mutation_ok": result.get("controlled_source_mutation_ok"),
+        },
+    )
+
+    return result
+
+
 def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]:
     tasks = read_tasks_index(repo_root)
     if not tasks:
@@ -226,7 +599,14 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
         task["runtime_booted"] = False
         task["fast_cli_path"] = True
 
-        result = execute_ingestion_task(repo_root, task)
+        if is_controlled_mutation_transaction_task(task):
+            result = execute_controlled_mutation_transaction_task(repo_root, task)
+        elif is_controlled_source_mutation_task(task):
+            result = execute_controlled_source_mutation_task(repo_root, task)
+        elif is_controlled_mutation_probe_task(task):
+            result = execute_controlled_mutation_task(repo_root, task)
+        else:
+            result = execute_ingestion_task(repo_root, task)
 
         task["status"] = "finished" if result.get("ok") else "failed"
         task["finished_at"] = time.time()

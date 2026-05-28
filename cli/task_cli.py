@@ -185,6 +185,136 @@ def _try_handle_fast_task_dag_smoke(argv: List[str], repo_root: Path) -> bool:
     return True
 
 
+
+def _try_handle_fast_task_mutation_smoke(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"mutation-smoke", "controlled-mutation-smoke", "mutation-probe"}:
+        return False
+
+    target_path = str(argv[2]).strip() if len(argv) == 3 else "core/runtime/thin_runtime_bridge.py"
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_mutation_probe"
+    task = _new_task(
+        task_name,
+        f"controlled mutation probe for {target_path}",
+    )
+    task["type"] = "controlled_mutation"
+    task["target_path"] = target_path
+    task["requires_review_before_real_source_edit"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "controlled_mutation_smoke_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "target_path": target_path,
+            "message": "Created controlled mutation probe task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
+
+def _try_handle_fast_task_source_mutation_smoke(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"source-mutation-smoke", "controlled-source-mutation", "source-mutation"}:
+        return False
+
+    target_path = str(argv[2]).strip() if len(argv) == 3 else "workspace/shared/controlled_source_mutation_target.py"
+    target = Path(target_path.replace("\\", "/"))
+    if not target.is_absolute():
+        target = repo_root / target
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('print("controlled source mutation target")\n', encoding="utf-8")
+
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_source_mutation"
+    task = _new_task(
+        task_name,
+        f"controlled source mutation for {target_path}",
+    )
+    task["type"] = "controlled_source_mutation"
+    task["target_path"] = target_path
+    task["requires_review_before_real_source_edit"] = False
+    task["controlled_source_mutation_v2"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "controlled_source_mutation_smoke_v2",
+            "created_count": 1,
+            "task_id": task_name,
+            "target_path": target_path,
+            "message": "Created controlled source mutation task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
+
+def _try_handle_fast_task_mutation_transaction_smoke(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) not in {2, 3, 4}:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"mutation-transaction-smoke", "transaction-mutation-smoke", "mutation-seal"}:
+        return False
+
+    target_path = str(argv[2]).strip() if len(argv) >= 3 else "workspace/shared/controlled_mutation_transaction_target.py"
+    force_failure = len(argv) == 4 and str(argv[3]).strip().lower() in {"fail", "force-fail", "--fail"}
+
+    target = Path(target_path.replace("\\", "/"))
+    if not target.is_absolute():
+        target = repo_root / target
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('print("controlled mutation transaction target")\n', encoding="utf-8")
+
+    stamp = int(time.time() * 1000)
+    task_name = f"task_{stamp}_mutation_transaction"
+    task = _new_task(
+        task_name,
+        f"controlled mutation transaction for {target_path}",
+    )
+    task["type"] = "controlled_mutation_transaction"
+    task["target_path"] = target_path
+    task["force_verification_failure"] = force_failure
+    task["controlled_mutation_transaction_seal_v1"] = True
+
+    tasks = read_tasks_index(repo_root)
+    tasks.append(task)
+    write_tasks_index(repo_root, tasks)
+
+    _print_json(
+        {
+            "ok": True,
+            "mode": "controlled_mutation_transaction_smoke_v1",
+            "created_count": 1,
+            "task_id": task_name,
+            "target_path": target_path,
+            "force_verification_failure": force_failure,
+            "message": "Created controlled mutation transaction task. Run `python app.py task drain`.",
+        }
+    )
+    return True
+
+
 def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
     if len(argv) != 2:
         return False
@@ -240,6 +370,15 @@ def try_handle_fast_task_command(argv: List[str], *, repo_root: Path) -> bool:
         return True
 
     if _try_handle_fast_task_dag_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_mutation_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_source_mutation_smoke(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_mutation_transaction_smoke(clean_argv, repo_root):
         return True
 
     if _try_handle_fast_task_drain(clean_argv, repo_root):
