@@ -866,3 +866,67 @@ Engineering verdict:
 ```text
 Thin Artifact Chain / Artifact Graph Smoke Path v1: PASS
 ```
+
+
+---
+
+## 2026-05-29 - AER Runtime Core Seal Candidate
+
+AER Runtime Core mainline integration completed.
+
+ZERO now has a connected engineering-runtime path:
+
+```text
+User
+-> AgentLoop
+-> Planner
+-> PlannerRuntimeDispatch
+-> PersistentRuntimeOrchestrator
+-> MultiCycleEngineeringLoop
+-> RecoveryReplayClosure
+-> LongEngineeringRuntime
+```
+
+Validated checkpoints:
+
+```text
+python -m pytest tests/test_long_engineering_runtime_contract.py \
+tests/test_recovery_replay_multicycle_contract.py \
+tests/test_persistent_runtime_orchestrator_contract.py \
+tests/test_agent_loop_persistent_runtime_route_contract.py \
+tests/test_planner_runtime_dispatch_contract.py \
+tests/test_agent_loop_planner_runtime_dispatch_contract.py -q
+
+-> 22 passed
+```
+
+Completed:
+
+- LongEngineeringRuntime
+- RecoveryReplayClosure
+- MultiCycleEngineeringLoop
+- PersistentRuntimeOrchestrator
+- PlannerRuntimeDispatch
+- AgentLoop Planner Runtime Integration
+
+Boundary confirmation:
+
+```text
+Planner remains planning only.
+PlannerRuntimeDispatch converts plans into runtime cycles.
+PersistentRuntimeOrchestrator owns long-running session orchestration.
+StepExecutor remains the governed execution endpoint.
+ExecutionGateway remains the execution gateway.
+```
+
+Engineering verdict:
+
+```text
+AER Runtime Core Seal Candidate: YES
+```
+
+Showcase artifact:
+
+```text
+docs/images/2026-05-29_aer_runtime_core_planner_dispatch_22_passed.png
+```

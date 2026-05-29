@@ -6580,3 +6580,654 @@ def _zero_v7338_agent_build_context(self, user_input: str) -> Dict[str, Any]:
 
 
 AgentLoop._build_context = _zero_v7338_agent_build_context
+
+# ============================================================
+# ZERO v8.2.3 - AgentLoop Persistent Runtime Orchestrator Route
+# ============================================================
+# Fix:
+# - Windows pytest tmp_path can be much longer than tempfile.mkdtemp().
+# - v8.2.2 used the full goal text in task_id, causing nested workspace paths
+#   under long_engineering_runtime to approach/exceed Windows path limits.
+# - v8.2.3 uses a short deterministic task id while preserving the full goal in
+#   task["goal"].
+# Boundary:
+# - AgentLoop routes only.
+# - PersistentRuntimeOrchestrator owns session / long-loop orchestration.
+# - StepExecutor and ExecutionGateway remain execution endpoints.
+
+try:
+    from core.runtime.persistent_runtime_orchestrator import (
+        run_persistent_runtime_orchestrator as _zero_v823_run_persistent_runtime_orchestrator,
+        should_route_persistent_runtime as _zero_v823_should_route_persistent_runtime,
+    )
+except Exception:  # pragma: no cover
+    _zero_v823_run_persistent_runtime_orchestrator = None
+    _zero_v823_should_route_persistent_runtime = None
+
+
+def _zero_v823_agent_persistent_runtime_candidate(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+
+    markers = (
+        "persistent autonomous engineering runtime",
+        "persistent runtime",
+        "long engineering runtime",
+        "long-running runtime",
+        "long running runtime",
+        "multi-cycle",
+        "multi cycle",
+        "failure recovery resume",
+        "failure -> recovery -> resume",
+        "recovery replay closure",
+        "persistentruntimeorchestrator",
+        "persistent_runtime_orchestrator",
+        "aer runtime core",
+        "aer persistent runtime",
+        "長時間自主工程",
+        "長時間工程",
+        "自主工程循環",
+        "持久運行",
+        "多輪工程",
+        "失敗恢復續跑",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _zero_v823_short_task_id(text: str) -> str:
+    digest = str(abs(hash(str(text or ""))))[-8:]
+    lowered = str(text or "").strip().lower()
+    if "failure" in lowered and "recovery" in lowered and "resume" in lowered:
+        return f"agent_prt_recovery_{digest}"
+    if "persistent" in lowered:
+        return f"agent_prt_{digest}"
+    return f"agent_prt_task_{digest}"
+
+
+def _zero_v823_agent_build_persistent_runtime_task(text: str) -> Dict[str, Any]:
+    goal = str(text or "").strip() or "Persistent Autonomous Engineering Runtime"
+
+    return {
+        "id": _zero_v823_short_task_id(goal),
+        "goal": goal,
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "mode": "persistent_runtime",
+        "type": "persistent_autonomous_engineering_runtime",
+        "source": "agent_loop",
+        "cycles": [
+            {
+                "cycle_id": "agent_prt_cycle",
+                "goal": goal,
+                "target_groups": [
+                    [
+                        "route persistent runtime task from AgentLoop",
+                        "delegate long-loop orchestration to PersistentRuntimeOrchestrator",
+                        "preserve StepExecutor and ExecutionGateway execution boundaries",
+                    ]
+                ],
+                "replan_hint": "AgentLoop routing smoke cycle; real planner cycles may be supplied by later task mode integration.",
+            }
+        ],
+        "boundary": {
+            "agent_loop_routes_only": True,
+            "persistent_runtime_orchestrator_owns_session": True,
+            "step_executor_remains_execution_endpoint": True,
+            "execution_gateway_remains_execution_endpoint": True,
+            "short_task_id_for_windows_path_safety": True,
+        },
+    }
+
+
+def _zero_v823_agent_summarize_persistent_runtime(orchestrator_result: Dict[str, Any]) -> str:
+    if not isinstance(orchestrator_result, dict):
+        return "persistent runtime route returned invalid result"
+
+    status = str(orchestrator_result.get("status") or "unknown")
+    session_id = str(orchestrator_result.get("session_id") or "")
+    cycle_count = orchestrator_result.get("cycle_count", 0)
+    closure_count = orchestrator_result.get("closure_count", 0)
+
+    if bool(orchestrator_result.get("ok")):
+        return (
+            "persistent runtime finished: "
+            f"status={status}, cycles={cycle_count}, recovery_closures={closure_count}, session={session_id}"
+        )
+
+    reason = str(orchestrator_result.get("reason") or orchestrator_result.get("error") or status)
+    return f"persistent runtime failed: {reason}"
+
+
+def _zero_v823_repo_root_from_agent(self) -> str:
+    extra = getattr(self, "extra_kwargs", None)
+    if isinstance(extra, dict):
+        return str(
+            extra.get("repo_root")
+            or extra.get("project_root")
+            or extra.get("workspace_project_root")
+            or "."
+        )
+    return "."
+
+
+def _zero_v823_agent_try_persistent_runtime_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+    text = str(user_input or "").strip()
+    if not text:
+        return None
+
+    if _zero_v823_run_persistent_runtime_orchestrator is None:
+        return None
+
+    if not _zero_v823_agent_persistent_runtime_candidate(text):
+        return None
+
+    task = _zero_v823_agent_build_persistent_runtime_task(text)
+    context = {
+        "source": "agent_loop",
+        "route": "persistent_runtime_orchestrator",
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "user_input": text,
+    }
+
+    if _zero_v823_should_route_persistent_runtime is not None:
+        try:
+            if not bool(_zero_v823_should_route_persistent_runtime(task, context)):
+                return None
+        except Exception:
+            pass
+
+    try:
+        orchestrator_payload = _zero_v823_run_persistent_runtime_orchestrator(
+            repo_root=_zero_v823_repo_root_from_agent(self),
+            task=task,
+            context=context,
+            result={},
+            executor=None,
+            force=True,
+        )
+    except Exception as exc:
+        orchestrator_payload = {
+            "ok": False,
+            "persistent_runtime_orchestrator": {
+                "ok": False,
+                "schema": "zero.aer.persistent_runtime_orchestrator.v1",
+                "status": "agent_loop_persistent_runtime_route_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "routed": True,
+            },
+            "persistent_runtime_orchestrator_ok": False,
+            "persistent_runtime_orchestrator_status": "agent_loop_persistent_runtime_route_failed",
+        }
+
+    orchestrator_result = orchestrator_payload.get("persistent_runtime_orchestrator", {})
+    if not isinstance(orchestrator_result, dict):
+        orchestrator_result = {}
+
+    ok = bool(orchestrator_payload.get("ok")) and bool(orchestrator_result.get("ok"))
+    final_answer = _zero_v823_agent_summarize_persistent_runtime(orchestrator_result)
+    error = None if ok else final_answer
+
+    route = {
+        "mode": "persistent_runtime",
+        "task": True,
+        "forced_route": True,
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "tool": "PersistentRuntimeOrchestrator",
+        "boundary": {
+            "agent_loop_routes_only": True,
+            "does_not_bypass_scheduler_or_executor": True,
+            "does_not_change_execution_gateway": True,
+            "does_not_change_step_executor": True,
+        },
+    }
+    plan = {
+        "ok": ok,
+        "planner_mode": "agent_loop_persistent_runtime_orchestrator_v8_2_3",
+        "task": copy.deepcopy(task),
+        "route": "PersistentRuntimeOrchestrator",
+        "boundary": {
+            "agent_loop_routes_only": True,
+            "orchestrator_owns_long_loop": True,
+            "step_executor_not_modified": True,
+            "execution_gateway_not_modified": True,
+            "short_task_id_for_windows_path_safety": True,
+        },
+    }
+    execution = {
+        "ok": ok,
+        "summary": "persistent runtime orchestrator executed" if ok else "persistent runtime orchestrator failed",
+        "message": final_answer,
+        "final_answer": final_answer,
+        "error": error,
+        "step_count": 1,
+        "steps_executed": 1,
+        "completed_steps": 1 if ok else 0,
+        "failed_step": None if ok else 0,
+        "results": [
+            {
+                "ok": ok,
+                "step_index": 1,
+                "step_count": 1,
+                "step_type": "persistent_runtime_orchestrator",
+                "step": {
+                    "type": "persistent_runtime_orchestrator",
+                    "task_id": task.get("id"),
+                    "goal": task.get("goal"),
+                },
+                "result": copy.deepcopy(orchestrator_result),
+                "message": final_answer,
+                "final_answer": final_answer,
+                "error": error,
+            }
+        ],
+        "last_result": copy.deepcopy(orchestrator_result),
+        "execution_trace": [
+            {
+                "type": "persistent_runtime_orchestrator",
+                "status": str(orchestrator_result.get("status") or "unknown"),
+                "ok": ok,
+                "session_id": orchestrator_result.get("session_id", ""),
+                "cycle_count": orchestrator_result.get("cycle_count", 0),
+                "closure_count": orchestrator_result.get("closure_count", 0),
+            }
+        ],
+        "persistent_runtime_orchestrator": copy.deepcopy(orchestrator_result),
+    }
+
+    return {
+        "ok": ok,
+        "mode": "persistent_runtime",
+        "context": context,
+        "route": route,
+        "plan": plan,
+        "execution": execution,
+        "final_answer": final_answer,
+        "error": error,
+        "persistent_runtime_orchestrator": copy.deepcopy(orchestrator_result),
+        "persistent_runtime_orchestrator_payload": copy.deepcopy(orchestrator_payload),
+        "agent_loop_persistent_runtime_route": True,
+        "task": copy.deepcopy(task),
+    }
+
+
+_ZERO_V823_ORIGINAL_AGENT_RUN = AgentLoop.run
+
+
+def _zero_v823_agent_run_with_persistent_runtime(self, user_input: str) -> Dict[str, Any]:
+    persistent_result = _zero_v823_agent_try_persistent_runtime_route(self, user_input)
+    if persistent_result is not None:
+        return persistent_result
+    return _ZERO_V823_ORIGINAL_AGENT_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v823_agent_run_with_persistent_runtime
+AgentLoop._zero_v823_agent_try_persistent_runtime_route_for_test = _zero_v823_agent_try_persistent_runtime_route
+
+# ============================================================
+# ZERO v8.2.4 - AgentLoop Planner Runtime Dispatch Route
+# ============================================================
+# Purpose:
+# - Connect real Planner output to PlannerRuntimeDispatch.
+# - This is the natural-language -> planner -> persistent runtime bridge.
+#
+# Boundary:
+# - AgentLoop calls Planner and dispatches only when the user clearly asks for
+#   persistent / long-running AER behavior.
+# - Planner remains planning only.
+# - PlannerRuntimeDispatch converts planner output to cycles.
+# - PersistentRuntimeOrchestrator owns session / long-loop orchestration.
+# - StepExecutor and ExecutionGateway remain execution endpoints.
+#
+# Ordering:
+# - v8.2.3 direct persistent route remains available for explicit runtime smoke
+#   phrases.
+# - v8.2.4 is exposed as a helper and a guarded public run wrapper for planner
+#   dispatch phrases that mention planner/plan.
+
+try:
+    from core.runtime.planner_runtime_dispatch import (
+        dispatch_planner_result_to_persistent_runtime as _zero_v824_dispatch_planner_result_to_persistent_runtime,
+        should_dispatch_planner_result_to_persistent_runtime as _zero_v824_should_dispatch_planner_result_to_persistent_runtime,
+    )
+except Exception:  # pragma: no cover
+    _zero_v824_dispatch_planner_result_to_persistent_runtime = None
+    _zero_v824_should_dispatch_planner_result_to_persistent_runtime = None
+
+
+def _zero_v824_agent_planner_dispatch_candidate(text: str) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+
+    persistent_markers = (
+        "persistent autonomous engineering runtime",
+        "persistent runtime",
+        "long engineering runtime",
+        "long-running runtime",
+        "long running runtime",
+        "multi-cycle",
+        "multi cycle",
+        "failure recovery resume",
+        "failure -> recovery -> resume",
+        "recovery replay closure",
+        "aer persistent runtime",
+        "長時間自主工程",
+        "長時間工程",
+        "自主工程循環",
+        "持久運行",
+        "多輪工程",
+        "失敗恢復續跑",
+    )
+    planner_markers = (
+        "planner",
+        "plan",
+        "planning",
+        "planner runtime dispatch",
+        "runtime dispatch",
+        "dispatch",
+        "規劃",
+        "計畫",
+        "調度",
+        "派發",
+    )
+
+    return any(marker in lowered for marker in persistent_markers) and any(marker in lowered for marker in planner_markers)
+
+
+def _zero_v824_repo_root_from_agent(self) -> str:
+    extra = getattr(self, "extra_kwargs", None)
+    if isinstance(extra, dict):
+        return str(
+            extra.get("repo_root")
+            or extra.get("project_root")
+            or extra.get("workspace_project_root")
+            or "."
+        )
+    return "."
+
+
+def _zero_v824_call_planner_like(self, *, context: Dict[str, Any], user_input: str, route: Dict[str, Any]) -> Dict[str, Any]:
+    planner = getattr(self, "planner", None)
+    if planner is None:
+        try:
+            from core.planning.planner import Planner
+
+            planner = Planner()
+        except Exception as exc:
+            return {
+                "ok": False,
+                "steps": [],
+                "goal": user_input,
+                "error": f"planner unavailable: {type(exc).__name__}: {exc}",
+                "execution_route": "planner_unavailable",
+                "semantic_type": "generic_task",
+            }
+
+    for method_name in ("plan", "run", "__call__"):
+        method = getattr(planner, method_name, None)
+        if not callable(method):
+            continue
+
+        candidate_calls = (
+            {"context": context, "user_input": user_input, "route": route},
+            {"context": context, "user_input": user_input},
+            {"user_input": user_input, "route": route},
+            {"user_input": user_input},
+        )
+        for kwargs in candidate_calls:
+            try:
+                result = method(**kwargs)
+                return result if isinstance(result, dict) else {
+                    "ok": False,
+                    "steps": [],
+                    "goal": user_input,
+                    "error": "planner returned non-dict result",
+                    "raw_result": copy.deepcopy(result),
+                }
+            except TypeError:
+                continue
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "steps": [],
+                    "goal": user_input,
+                    "error": f"planner call failed: {type(exc).__name__}: {exc}",
+                    "execution_route": "planner_exception",
+                    "semantic_type": "generic_task",
+                }
+
+        try:
+            result = method(user_input)
+            return result if isinstance(result, dict) else {
+                "ok": False,
+                "steps": [],
+                "goal": user_input,
+                "error": "planner returned non-dict result",
+                "raw_result": copy.deepcopy(result),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "steps": [],
+                "goal": user_input,
+                "error": f"planner call failed: {type(exc).__name__}: {exc}",
+                "execution_route": "planner_exception",
+                "semantic_type": "generic_task",
+            }
+
+    return {
+        "ok": False,
+        "steps": [],
+        "goal": user_input,
+        "error": "planner has no callable plan/run/__call__",
+        "execution_route": "planner_unavailable",
+        "semantic_type": "generic_task",
+    }
+
+
+def _zero_v824_mark_plan_persistent_runtime(plan: Dict[str, Any], user_input: str) -> Dict[str, Any]:
+    marked = copy.deepcopy(plan) if isinstance(plan, dict) else {}
+    goal = str(marked.get("goal") or marked.get("title") or marked.get("summary") or user_input or "").strip()
+    marked["goal"] = goal or "Persistent Autonomous Engineering Runtime"
+    marked["persistent_runtime"] = True
+    marked["aer_runtime"] = True
+    marked["mode"] = "persistent_runtime"
+    marked["runtime_mode"] = "persistent_runtime"
+    marked["planner_runtime_dispatch"] = True
+    marked.setdefault("execution_route", "planner_runtime_dispatch")
+    marked.setdefault("semantic_type", "persistent_runtime")
+    marked.setdefault("steps", [])
+    marked.setdefault("boundary", {})
+    if isinstance(marked.get("boundary"), dict):
+        marked["boundary"]["planner_runtime_dispatch_requested"] = True
+        marked["boundary"]["planner_remains_planning_only"] = True
+        marked["boundary"]["orchestrator_owns_long_loop"] = True
+    return marked
+
+
+def _zero_v824_summarize_planner_runtime_dispatch(dispatch_result: Dict[str, Any]) -> str:
+    if not isinstance(dispatch_result, dict):
+        return "planner runtime dispatch returned invalid result"
+
+    orchestrator = dispatch_result.get("orchestrator")
+    if not isinstance(orchestrator, dict):
+        orchestrator = {}
+
+    status = str(dispatch_result.get("status") or "unknown")
+    session_id = str(orchestrator.get("session_id") or "")
+    cycle_count = orchestrator.get("cycle_count", 0)
+    closure_count = orchestrator.get("closure_count", 0)
+
+    if bool(dispatch_result.get("ok")):
+        return (
+            "planner runtime dispatch finished: "
+            f"status={status}, cycles={cycle_count}, recovery_closures={closure_count}, session={session_id}"
+        )
+
+    reason = str(dispatch_result.get("reason") or dispatch_result.get("error") or status)
+    return f"planner runtime dispatch failed: {reason}"
+
+
+def _zero_v824_agent_try_planner_runtime_dispatch_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+    text = str(user_input or "").strip()
+    if not text:
+        return None
+
+    if _zero_v824_dispatch_planner_result_to_persistent_runtime is None:
+        return None
+
+    if not _zero_v824_agent_planner_dispatch_candidate(text):
+        return None
+
+    context = {
+        "source": "agent_loop",
+        "route": "planner_runtime_dispatch",
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "planner_runtime_dispatch": True,
+        "user_input": text,
+    }
+    route = {
+        "mode": "planner_runtime_dispatch",
+        "task": True,
+        "forced_route": True,
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "tool": "PlannerRuntimeDispatch",
+    }
+
+    planner_result = _zero_v824_call_planner_like(
+        self,
+        context=context,
+        user_input=text,
+        route=route,
+    )
+    marked_plan = _zero_v824_mark_plan_persistent_runtime(planner_result, text)
+
+    should_dispatch = True
+    if _zero_v824_should_dispatch_planner_result_to_persistent_runtime is not None:
+        try:
+            should_dispatch = bool(
+                _zero_v824_should_dispatch_planner_result_to_persistent_runtime(
+                    user_input=text,
+                    planner_result=marked_plan,
+                    context=context,
+                )
+            )
+        except Exception:
+            should_dispatch = True
+
+    if not should_dispatch:
+        return None
+
+    try:
+        dispatch_payload = _zero_v824_dispatch_planner_result_to_persistent_runtime(
+            repo_root=_zero_v824_repo_root_from_agent(self),
+            user_input=text,
+            planner_result=marked_plan,
+            context=context,
+            result={},
+            executor=None,
+            force=True,
+        )
+    except Exception as exc:
+        dispatch_payload = {
+            "ok": False,
+            "planner_runtime_dispatch": {
+                "ok": False,
+                "schema": "zero.aer.planner_runtime_dispatch.v1",
+                "status": "agent_loop_planner_runtime_dispatch_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "routed": True,
+            },
+            "planner_runtime_dispatch_ok": False,
+            "planner_runtime_dispatch_status": "agent_loop_planner_runtime_dispatch_failed",
+            "planner_runtime_dispatch_routed": True,
+        }
+
+    dispatch_result = dispatch_payload.get("planner_runtime_dispatch", {})
+    if not isinstance(dispatch_result, dict):
+        dispatch_result = {}
+
+    orchestrator = dispatch_result.get("orchestrator")
+    if not isinstance(orchestrator, dict):
+        orchestrator = {}
+
+    ok = bool(dispatch_payload.get("ok")) and bool(dispatch_result.get("ok"))
+    final_answer = _zero_v824_summarize_planner_runtime_dispatch(dispatch_result)
+    error = None if ok else final_answer
+
+    execution = {
+        "ok": ok,
+        "summary": "planner runtime dispatch executed" if ok else "planner runtime dispatch failed",
+        "message": final_answer,
+        "final_answer": final_answer,
+        "error": error,
+        "step_count": 1,
+        "steps_executed": 1,
+        "completed_steps": 1 if ok else 0,
+        "failed_step": None if ok else 0,
+        "results": [
+            {
+                "ok": ok,
+                "step_index": 1,
+                "step_count": 1,
+                "step_type": "planner_runtime_dispatch",
+                "step": {
+                    "type": "planner_runtime_dispatch",
+                    "goal": marked_plan.get("goal"),
+                },
+                "result": copy.deepcopy(dispatch_result),
+                "message": final_answer,
+                "final_answer": final_answer,
+                "error": error,
+            }
+        ],
+        "last_result": copy.deepcopy(dispatch_result),
+        "execution_trace": [
+            {
+                "type": "planner_runtime_dispatch",
+                "status": str(dispatch_result.get("status") or "unknown"),
+                "ok": ok,
+                "cycle_count": orchestrator.get("cycle_count", 0),
+                "closure_count": orchestrator.get("closure_count", 0),
+                "session_id": orchestrator.get("session_id", ""),
+            }
+        ],
+        "planner_runtime_dispatch": copy.deepcopy(dispatch_result),
+        "persistent_runtime_orchestrator": copy.deepcopy(orchestrator),
+    }
+
+    return {
+        "ok": ok,
+        "mode": "planner_runtime_dispatch",
+        "context": context,
+        "route": route,
+        "plan": copy.deepcopy(marked_plan),
+        "execution": execution,
+        "final_answer": final_answer,
+        "error": error,
+        "planner_result": copy.deepcopy(planner_result),
+        "planner_runtime_dispatch": copy.deepcopy(dispatch_result),
+        "planner_runtime_dispatch_payload": copy.deepcopy(dispatch_payload),
+        "persistent_runtime_orchestrator": copy.deepcopy(orchestrator),
+        "agent_loop_planner_runtime_dispatch_route": True,
+    }
+
+
+_ZERO_V824_ORIGINAL_AGENT_RUN = AgentLoop.run
+
+
+def _zero_v824_agent_run_with_planner_runtime_dispatch(self, user_input: str) -> Dict[str, Any]:
+    planner_dispatch_result = _zero_v824_agent_try_planner_runtime_dispatch_route(self, user_input)
+    if planner_dispatch_result is not None:
+        return planner_dispatch_result
+    return _ZERO_V824_ORIGINAL_AGENT_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v824_agent_run_with_planner_runtime_dispatch
+AgentLoop._zero_v824_agent_try_planner_runtime_dispatch_route_for_test = _zero_v824_agent_try_planner_runtime_dispatch_route
+

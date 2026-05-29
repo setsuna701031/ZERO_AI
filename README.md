@@ -923,3 +923,54 @@ Next mainline direction:
 Move artifact graph and artifact writers out of cli/task_cli.py into dedicated
 core/artifacts modules before expanding this path further.
 ```
+
+
+---
+
+## AER Runtime Core Seal Candidate (2026-05-29)
+
+ZERO has now connected the complete natural-language engineering runtime path:
+
+```text
+User
+-> AgentLoop
+-> Planner
+-> PlannerRuntimeDispatch
+-> PersistentRuntimeOrchestrator
+-> MultiCycleEngineeringLoop
+-> RecoveryReplayClosure
+-> LongEngineeringRuntime
+```
+
+Validated integration checkpoints:
+
+```text
+python -m pytest tests/test_long_engineering_runtime_contract.py \
+tests/test_recovery_replay_multicycle_contract.py \
+tests/test_persistent_runtime_orchestrator_contract.py \
+tests/test_agent_loop_persistent_runtime_route_contract.py \
+tests/test_planner_runtime_dispatch_contract.py \
+tests/test_agent_loop_planner_runtime_dispatch_contract.py -q
+
+-> 22 passed
+```
+
+Newly sealed runtime surfaces:
+
+```text
+LongEngineeringRuntime
+RecoveryReplayClosure
+MultiCycleEngineeringLoop
+PersistentRuntimeOrchestrator
+PlannerRuntimeDispatch
+AgentLoop Planner Runtime Integration
+```
+
+Engineering verdict:
+
+```text
+AER Runtime Core Seal Candidate: YES
+```
+
+This milestone completes the mainline path from natural language planning to
+persistent autonomous engineering runtime execution and recovery continuity.
