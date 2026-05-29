@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 
 SCHEMA = "zero.aer.planner_step_executor_adapter.v1"
+TOOL_BRIDGE_SCHEMA = "zero.aer.planner_step_executor_adapter.tool_bridge.v1"
 
 
 def _now() -> float:
@@ -31,7 +32,17 @@ class PlannerStepExecutorAdapter:
     - This adapter does not plan.
     - This adapter does not own sessions/checkpoints/recovery.
     - This adapter does not call ExecutionGateway directly.
+    - This adapter does not call ToolRegistry directly.
     - It only converts the current planner step/group into a StepExecutor call.
+
+    v8.2.8 runtime fix:
+    - Planner tool-call steps are normalized into StepExecutor's canonical
+      tool-step shape.
+    - The important compatibility field is `tool_input`.  The existing
+      StepExecutor/Planner examples use `tool_input` for tool steps, while the
+      lower-level ToolCallExecutor also understands `args` / `input`.  This
+      adapter now supplies all three fields so the StepExecutor tool handler,
+      ToolCallExecutor, and ToolRegistry can share the same payload.
     """
 
     def __init__(self, step_executor: Any) -> None:
@@ -43,13 +54,15 @@ class PlannerStepExecutorAdapter:
         if not isinstance(task, dict):
             task = {}
 
-        step = self._select_step(task=task, group=group, group_index=group_index)
+        raw_step = self._select_step(task=task, group=group, group_index=group_index)
+        step = self._normalize_planner_step_for_step_executor(raw_step)
         context = self._build_context(task=task, group=group, group_index=group_index, session=session)
 
         call_record = {
             "schema": SCHEMA,
             "group_index": group_index,
             "group": copy.deepcopy(group),
+            "raw_step": copy.deepcopy(raw_step),
             "step": copy.deepcopy(step),
             "task_id": task.get("id") or task.get("task_id") or getattr(session, "task_id", ""),
             "session_id": getattr(session, "session_id", ""),
@@ -84,13 +97,16 @@ class PlannerStepExecutorAdapter:
             "message": "planner step executed through StepExecutor adapter" if ok else "planner step execution failed",
             "group_index": group_index,
             "group": copy.deepcopy(group),
+            "raw_step": copy.deepcopy(raw_step),
             "step": copy.deepcopy(step),
             "step_executor_result": copy.deepcopy(result),
             "adapter_call": call_record,
+            "tool_bridge": copy.deepcopy(step.get("planner_tool_bridge")) if isinstance(step.get("planner_tool_bridge"), dict) else {},
             "boundary": {
                 "adapter_only": True,
                 "step_executor_remains_execution_endpoint": True,
                 "execution_gateway_not_called_directly": True,
+                "tool_registry_not_called_directly": True,
                 "planner_not_executing": True,
             },
         }
@@ -122,6 +138,105 @@ class PlannerStepExecutorAdapter:
         step["planner_runtime_group_index"] = int(group_index)
         step["planner_step_executor_adapter"] = True
         return step
+
+    def _normalize_planner_step_for_step_executor(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        normalized = copy.deepcopy(step) if isinstance(step, dict) else {}
+        step_type = _clean_text(normalized.get("type")).lower()
+
+        tool_name = self._extract_tool_name(normalized)
+        tool_args = self._extract_tool_args(normalized)
+
+        is_tool_shape = bool(tool_name) and (
+            step_type in {"tool", "tool_call", "tool_request", "call_tool", "l4_tool"}
+            or bool(normalized.get("tool_call"))
+            or bool(normalized.get("use_tool"))
+            or bool(normalized.get("planner_tool_call"))
+        )
+
+        if is_tool_shape:
+            original_type = step_type or "tool"
+            normalized["type"] = "tool"
+            normalized["tool_name"] = tool_name
+            normalized["tool"] = tool_name
+
+            # Compatibility closure:
+            # - StepExecutor planner examples use tool_input.
+            # - ToolCallExecutor normalize_tool_call understands args/input.
+            # - ToolRegistry receives ToolRequest.input from the tool handler.
+            normalized["tool_input"] = copy.deepcopy(tool_args)
+            normalized["args"] = copy.deepcopy(tool_args)
+            normalized["input"] = copy.deepcopy(tool_args)
+
+            normalized["planner_step_executor_adapter"] = True
+            normalized["planner_tool_bridge"] = {
+                "schema": TOOL_BRIDGE_SCHEMA,
+                "enabled": True,
+                "original_type": original_type,
+                "tool_name": tool_name,
+                "args_keys": sorted(str(key) for key in tool_args.keys()),
+                "step_executor_tool_handler": True,
+                "tool_registry_called_by_step_executor": True,
+                "tool_input_compatibility": True,
+            }
+            return normalized
+
+        normalized["planner_step_executor_adapter"] = True
+        return normalized
+
+    def _extract_tool_name(self, step: Dict[str, Any]) -> str:
+        for key in ("tool_name", "tool", "name"):
+            value = _clean_text(step.get(key))
+            if value:
+                return value
+
+        tool_call = step.get("tool_call")
+        if isinstance(tool_call, dict):
+            for key in ("tool_name", "tool", "name"):
+                value = _clean_text(tool_call.get(key))
+                if value:
+                    return value
+
+        request = step.get("request")
+        if isinstance(request, dict):
+            for key in ("tool_name", "tool", "name"):
+                value = _clean_text(request.get(key))
+                if value:
+                    return value
+
+        return ""
+
+    def _extract_tool_args(self, step: Dict[str, Any]) -> Dict[str, Any]:
+        for key in ("tool_input", "args", "input", "arguments", "params"):
+            value = step.get(key)
+            if isinstance(value, dict):
+                return copy.deepcopy(value)
+
+        tool_call = step.get("tool_call")
+        if isinstance(tool_call, dict):
+            for key in ("tool_input", "args", "input", "arguments", "params"):
+                value = tool_call.get(key)
+                if isinstance(value, dict):
+                    return copy.deepcopy(value)
+
+        request = step.get("request")
+        if isinstance(request, dict):
+            for key in ("tool_input", "args", "input", "arguments", "params"):
+                value = request.get(key)
+                if isinstance(value, dict):
+                    return copy.deepcopy(value)
+
+        args: Dict[str, Any] = {}
+        for key in (
+            "path",
+            "content",
+            "allow_overwrite",
+            "create_if_missing",
+            "ensure_trailing_newline",
+            "recursive",
+        ):
+            if key in step:
+                args[key] = copy.deepcopy(step.get(key))
+        return args
 
     def _build_context(self, *, task: Dict[str, Any], group: List[str], group_index: int, session: Any) -> Dict[str, Any]:
         return {
@@ -196,5 +311,6 @@ class PlannerStepExecutorAdapter:
 
 __all__ = [
     "SCHEMA",
+    "TOOL_BRIDGE_SCHEMA",
     "PlannerStepExecutorAdapter",
 ]
