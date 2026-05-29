@@ -235,6 +235,8 @@ def planner_result_to_persistent_runtime_task(
             }
         ]
 
+    planner_steps = _extract_steps_from_plan(plan)
+
     return {
         "id": _clean_text(task_id) or _safe_short_id(goal),
         "goal": goal,
@@ -245,6 +247,8 @@ def planner_result_to_persistent_runtime_task(
         "source": "planner_runtime_dispatch",
         "user_input": _clean_text(user_input),
         "planner_result": plan,
+        "planner_steps": planner_steps,
+        "steps": copy.deepcopy(planner_steps),
         "cycles": cycles,
         "boundary": {
             "planner_output_conversion_only": True,

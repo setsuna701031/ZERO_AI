@@ -1,40 +1,25 @@
-# ZERO AER AgentLoop Planner Runtime Dispatch v8.2.4
+# ZERO AER v8.2.5 Test Contract Fix
 
 覆蓋：
-
-```text
-core/agent/agent_loop.py
-```
-
-新增：
 
 ```text
 tests/test_agent_loop_planner_runtime_dispatch_contract.py
 ```
 
-這包正式接：
+原因：
 
 ```text
-User
-  -> AgentLoop
-      -> Planner
-          -> PlannerRuntimeDispatch
-              -> PersistentRuntimeOrchestrator
-                  -> MultiCycleEngineeringLoop
-                      -> RecoveryReplayClosure
-                          -> LongEngineeringRuntime
-```
+v8.2.5 把 AgentLoop planner runtime dispatch 公開 mode 升級為：
+planner_step_executor_bridge
 
-不改：
+舊測試仍固定期待：
+planner_runtime_dispatch
 
-```text
-core/planning/planner.py
-core/runtime/step_executor.py
-core/runtime/execution_gateway.py
+功能沒有壞；這是 contract evolution。
 ```
 
 測試：
 
 ```bash
-python -m pytest tests/test_long_engineering_runtime_contract.py tests/test_recovery_replay_multicycle_contract.py tests/test_persistent_runtime_orchestrator_contract.py tests/test_agent_loop_persistent_runtime_route_contract.py tests/test_planner_runtime_dispatch_contract.py tests/test_agent_loop_planner_runtime_dispatch_contract.py -q
+python -m pytest tests/test_long_engineering_runtime_contract.py tests/test_recovery_replay_multicycle_contract.py tests/test_persistent_runtime_orchestrator_contract.py tests/test_agent_loop_persistent_runtime_route_contract.py tests/test_planner_runtime_dispatch_contract.py tests/test_agent_loop_planner_runtime_dispatch_contract.py tests/test_agent_loop_planner_step_executor_bridge_contract.py -q
 ```

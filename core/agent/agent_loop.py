@@ -7231,3 +7231,218 @@ def _zero_v824_agent_run_with_planner_runtime_dispatch(self, user_input: str) ->
 AgentLoop.run = _zero_v824_agent_run_with_planner_runtime_dispatch
 AgentLoop._zero_v824_agent_try_planner_runtime_dispatch_route_for_test = _zero_v824_agent_try_planner_runtime_dispatch_route
 
+# ============================================================
+# ZERO v8.2.5 - AgentLoop Planner StepExecutor Bridge
+# ============================================================
+# Purpose:
+# - When AgentLoop receives a planner-runtime-dispatch request and a
+#   StepExecutor is attached, pass planner groups through a dedicated adapter.
+#
+# Boundary:
+# - AgentLoop remains a request producer / router.
+# - Planner remains planning only.
+# - PlannerRuntimeDispatch converts planner output into runtime cycles.
+# - PlannerStepExecutorAdapter adapts planner step dictionaries to StepExecutor.
+# - StepExecutor remains the actual execution endpoint.
+# - ExecutionGateway remains downstream of StepExecutor.
+
+try:
+    from core.runtime.planner_step_executor_adapter import (
+        PlannerStepExecutorAdapter as _zero_v825_PlannerStepExecutorAdapter,
+    )
+except Exception:  # pragma: no cover
+    _zero_v825_PlannerStepExecutorAdapter = None
+
+
+def _zero_v825_build_planner_step_executor_adapter(self):
+    if _zero_v825_PlannerStepExecutorAdapter is None:
+        return None
+    step_executor = getattr(self, "step_executor", None)
+    if step_executor is None:
+        return None
+    return _zero_v825_PlannerStepExecutorAdapter(step_executor=step_executor)
+
+
+def _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+    text = str(user_input or "").strip()
+    if not text:
+        return None
+
+    candidate_gate = globals().get("_zero_v824_agent_planner_dispatch_candidate")
+    if callable(candidate_gate) and not bool(candidate_gate(text)):
+        return None
+
+    dispatch_func = globals().get("_zero_v824_dispatch_planner_result_to_persistent_runtime")
+    should_dispatch_func = globals().get("_zero_v824_should_dispatch_planner_result_to_persistent_runtime")
+    if dispatch_func is None:
+        return None
+
+    context = {
+        "source": "agent_loop",
+        "route": "planner_runtime_dispatch",
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "planner_runtime_dispatch": True,
+        "planner_step_executor_bridge": True,
+        "user_input": text,
+    }
+    route = {
+        "mode": "planner_runtime_dispatch",
+        "task": True,
+        "forced_route": True,
+        "persistent_runtime": True,
+        "aer_runtime": True,
+        "tool": "PlannerRuntimeDispatch",
+        "planner_step_executor_bridge": True,
+    }
+
+    call_planner = globals().get("_zero_v824_call_planner_like")
+    mark_plan = globals().get("_zero_v824_mark_plan_persistent_runtime")
+    repo_root_func = globals().get("_zero_v824_repo_root_from_agent")
+    summarize = globals().get("_zero_v824_summarize_planner_runtime_dispatch")
+
+    if not callable(call_planner) or not callable(mark_plan) or not callable(repo_root_func):
+        return None
+
+    planner_result = call_planner(
+        self,
+        context=context,
+        user_input=text,
+        route=route,
+    )
+    marked_plan = mark_plan(planner_result, text)
+    marked_plan["planner_step_executor_bridge"] = True
+    marked_plan.setdefault("boundary", {})
+    if isinstance(marked_plan.get("boundary"), dict):
+        marked_plan["boundary"]["planner_step_executor_bridge"] = True
+        marked_plan["boundary"]["step_executor_remains_execution_endpoint"] = True
+
+    should_dispatch = True
+    if callable(should_dispatch_func):
+        try:
+            should_dispatch = bool(
+                should_dispatch_func(
+                    user_input=text,
+                    planner_result=marked_plan,
+                    context=context,
+                )
+            )
+        except Exception:
+            should_dispatch = True
+
+    if not should_dispatch:
+        return None
+
+    executor_adapter = _zero_v825_build_planner_step_executor_adapter(self)
+
+    try:
+        dispatch_payload = dispatch_func(
+            repo_root=repo_root_func(self),
+            user_input=text,
+            planner_result=marked_plan,
+            context=context,
+            result={},
+            executor=executor_adapter,
+            force=True,
+        )
+    except Exception as exc:
+        dispatch_payload = {
+            "ok": False,
+            "planner_runtime_dispatch": {
+                "ok": False,
+                "schema": "zero.aer.planner_runtime_dispatch.v1",
+                "status": "agent_loop_planner_step_executor_bridge_failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "routed": True,
+            },
+            "planner_runtime_dispatch_ok": False,
+            "planner_runtime_dispatch_status": "agent_loop_planner_step_executor_bridge_failed",
+            "planner_runtime_dispatch_routed": True,
+        }
+
+    dispatch_result = dispatch_payload.get("planner_runtime_dispatch", {})
+    if not isinstance(dispatch_result, dict):
+        dispatch_result = {}
+
+    orchestrator = dispatch_result.get("orchestrator")
+    if not isinstance(orchestrator, dict):
+        orchestrator = {}
+
+    ok = bool(dispatch_payload.get("ok")) and bool(dispatch_result.get("ok"))
+    final_answer = summarize(dispatch_result) if callable(summarize) else str(dispatch_result.get("status") or "")
+    error = None if ok else final_answer
+
+    execution = {
+        "ok": ok,
+        "summary": "planner step executor bridge executed" if ok else "planner step executor bridge failed",
+        "message": final_answer,
+        "final_answer": final_answer,
+        "error": error,
+        "step_count": 1,
+        "steps_executed": 1,
+        "completed_steps": 1 if ok else 0,
+        "failed_step": None if ok else 0,
+        "results": [
+            {
+                "ok": ok,
+                "step_index": 1,
+                "step_count": 1,
+                "step_type": "planner_step_executor_bridge",
+                "step": {
+                    "type": "planner_step_executor_bridge",
+                    "goal": marked_plan.get("goal"),
+                    "executor_attached": executor_adapter is not None,
+                },
+                "result": copy.deepcopy(dispatch_result),
+                "message": final_answer,
+                "final_answer": final_answer,
+                "error": error,
+            }
+        ],
+        "last_result": copy.deepcopy(dispatch_result),
+        "execution_trace": [
+            {
+                "type": "planner_step_executor_bridge",
+                "status": str(dispatch_result.get("status") or "unknown"),
+                "ok": ok,
+                "executor_attached": executor_adapter is not None,
+                "cycle_count": orchestrator.get("cycle_count", 0),
+                "closure_count": orchestrator.get("closure_count", 0),
+                "session_id": orchestrator.get("session_id", ""),
+            }
+        ],
+        "planner_runtime_dispatch": copy.deepcopy(dispatch_result),
+        "persistent_runtime_orchestrator": copy.deepcopy(orchestrator),
+    }
+
+    return {
+        "ok": ok,
+        "mode": "planner_step_executor_bridge",
+        "context": context,
+        "route": route,
+        "plan": copy.deepcopy(marked_plan),
+        "execution": execution,
+        "final_answer": final_answer,
+        "error": error,
+        "planner_result": copy.deepcopy(planner_result),
+        "planner_runtime_dispatch": copy.deepcopy(dispatch_result),
+        "planner_runtime_dispatch_payload": copy.deepcopy(dispatch_payload),
+        "persistent_runtime_orchestrator": copy.deepcopy(orchestrator),
+        "agent_loop_planner_runtime_dispatch_route": True,
+        "agent_loop_planner_step_executor_bridge": True,
+    }
+
+
+_ZERO_V825_ORIGINAL_AGENT_RUN = AgentLoop.run
+
+
+def _zero_v825_agent_run_with_planner_step_executor_bridge(self, user_input: str) -> Dict[str, Any]:
+    bridge_result = _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input)
+    if bridge_result is not None:
+        return bridge_result
+    return _ZERO_V825_ORIGINAL_AGENT_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v825_agent_run_with_planner_step_executor_bridge
+AgentLoop._zero_v825_agent_try_planner_runtime_dispatch_route_for_test = _zero_v825_agent_try_planner_runtime_dispatch_route
+
