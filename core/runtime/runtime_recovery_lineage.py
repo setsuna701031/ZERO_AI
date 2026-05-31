@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 def utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -96,6 +98,10 @@ class RuntimeRecoveryLineage:
 
     def __init__(self, storage_path: str | Path | None = None) -> None:
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_recovery_lineage",
+        )
         self._nodes: dict[str, RuntimeRecoveryLineageNode] = {}
         self._edges: dict[str, RuntimeRecoveryLineageEdge] = {}
         self._node_order: list[str] = []
@@ -310,7 +316,10 @@ class RuntimeRecoveryLineage:
             self._node_order = []
             self._edge_order = []
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         nodes = payload.get("nodes") if isinstance(payload, dict) else []
         edges = payload.get("edges") if isinstance(payload, dict) else []
 
@@ -340,10 +349,11 @@ class RuntimeRecoveryLineage:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_recovery_lineage_save",
+            metadata={"runtime_recovery_lineage": True},
         )
 
     def _validate_text(self, field_name: str, value: Any) -> str:

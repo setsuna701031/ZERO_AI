@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 LEASE_STATUS_ACTIVE = "active"
 LEASE_STATUS_EXPIRED = "expired"
@@ -202,6 +204,10 @@ class RuntimeSessionLeaseRegistry:
         audit: Any = None,
     ) -> None:
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_session_lease",
+        )
         self.default_ttl_ticks = max(1, int(default_ttl_ticks))
         self.zombie_after_ticks = max(1, int(zombie_after_ticks))
         self.journal = journal
@@ -594,7 +600,10 @@ class RuntimeSessionLeaseRegistry:
             self._leases = {}
             self._events = []
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._sessions = {}
         self._leases = {}
         self._events = []
@@ -629,10 +638,11 @@ class RuntimeSessionLeaseRegistry:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_session_lease_save",
+            metadata={"runtime_session_lease": True},
         )
 
     def _active_lease_for_session(self, session_id: str, *, current_tick: int) -> RuntimeSessionLease | None:

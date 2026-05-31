@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 TRANSACTION_STATUS_OPEN = "open"
 TRANSACTION_STATUS_PREPARED = "prepared"
@@ -325,6 +327,10 @@ class RuntimeTransactionFabric:
         audit: Any = None,
     ) -> None:
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_transaction_fabric",
+        )
         self.recovery_orchestrator = recovery_orchestrator
         self.execution_fabric = execution_fabric
         self.journal = journal
@@ -820,7 +826,10 @@ class RuntimeTransactionFabric:
             self._transaction_order = []
             self._events = []
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._transactions = {}
         self._transaction_order = []
         self._events = []
@@ -848,10 +857,11 @@ class RuntimeTransactionFabric:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_transaction_fabric_save",
+            metadata={"runtime_transaction_fabric": True},
         )
 
     def _replace_transaction(self, record: RuntimeTransactionRecord, **updates: Any) -> RuntimeTransactionRecord:

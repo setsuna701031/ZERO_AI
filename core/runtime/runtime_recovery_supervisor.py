@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 SUPERVISOR_HANDOFF_STATUS_OPEN = "open"
 SUPERVISOR_HANDOFF_STATUS_ACKNOWLEDGED = "acknowledged"
@@ -87,6 +89,10 @@ class RuntimeRecoverySupervisor:
 
     def __init__(self, storage_path: str | Path | None = None) -> None:
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_recovery_supervisor",
+        )
         self._handoffs: dict[str, RuntimeSupervisorHandoff] = {}
         self._order: list[str] = []
         if self.storage_path is not None:
@@ -188,7 +194,10 @@ class RuntimeRecoverySupervisor:
             self._handoffs = {}
             self._order = []
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         handoffs = payload.get("handoffs") if isinstance(payload, dict) else []
         self._handoffs = {}
         self._order = []
@@ -204,10 +213,11 @@ class RuntimeRecoverySupervisor:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_recovery_supervisor_save",
+            metadata={"runtime_recovery_supervisor": True},
         )
 
     def _set_status(

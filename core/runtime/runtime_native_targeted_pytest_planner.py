@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 def utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -117,6 +119,10 @@ class RuntimeNativeTargetedPytestPlanner:
         self.workspace_root = Path(workspace_root)
         self.storage_path = Path(storage_path) if storage_path is not None else self.workspace_root / "workspace" / "runtime_native_targeted_pytest_planner.json"
         self.repo_surface = repo_surface
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=self.workspace_root,
+            source="runtime_native_targeted_pytest_planner",
+        )
         self._plans: dict[str, RuntimePytestPlan] = {}
         self._order: list[str] = []
         self.load()
@@ -219,7 +225,10 @@ class RuntimeNativeTargetedPytestPlanner:
     def load(self) -> None:
         if self.storage_path is None or not self.storage_path.exists():
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         if not isinstance(payload, dict):
             return
         self._plans = {}
@@ -234,8 +243,12 @@ class RuntimeNativeTargetedPytestPlanner:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_targeted_pytest_planner_save",
+            metadata={"runtime_native_targeted_pytest_planner": True},
+        )
 
     def _select_targets(self, impacted: list[str], *, keywords: list[str]) -> list[RuntimePytestTarget]:
         candidates: dict[str, RuntimePytestTarget] = {}

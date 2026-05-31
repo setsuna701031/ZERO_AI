@@ -24,6 +24,7 @@ from core.runtime.runtime_supervisor_bridge import RuntimeSupervisorBridge
 from core.runtime.runtime_transaction_fabric import RuntimeTransactionFabric
 from core.runtime.runtime_watchdog import RuntimeWatchdog
 from core.runtime.runtime_watchdog_lease_bridge import RuntimeWatchdogLeaseBridge
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
 MAINLINE_STATUS_READY = "ready"
@@ -258,6 +259,10 @@ class RuntimeNativeMainline:
         self.storage_path = Path(storage_path) if storage_path is not None else self.workspace_root / "runtime_native_mainline" / "runtime_native_mainline.json"
         self.journal = journal
         self.audit = audit
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_native_mainline",
+        )
 
         self.orchestrator = orchestrator
         self.lease_registry = lease_registry
@@ -555,7 +560,10 @@ class RuntimeNativeMainline:
         if self.storage_path is None or not self.storage_path.exists():
             return
         try:
-            payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+            payload = self.persistence_service.read_json(
+                self.storage_path,
+                default={},
+            )
         except Exception:
             return
         if not isinstance(payload, dict):
@@ -585,8 +593,12 @@ class RuntimeNativeMainline:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_mainline_save",
+            metadata={"runtime_native_mainline": True},
+        )
 
     def _ensure_runtime_registered(self) -> None:
         try:

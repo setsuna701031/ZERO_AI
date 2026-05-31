@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 LOOP_STATUS_CREATED = "created"
 LOOP_STATUS_RUNNING = "running"
@@ -247,6 +249,10 @@ class RuntimeNativeAgentLoop:
         self.ownership_fabric = ownership_fabric
         self.journal = journal
         self.audit = audit
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_native_agent_loop",
+        )
         self._loops: dict[str, RuntimeNativeAgentLoopRecord] = {}
         self._loop_order: list[str] = []
         self._events: list[RuntimeNativeAgentLoopEvent] = []
@@ -485,7 +491,10 @@ class RuntimeNativeAgentLoop:
             self._events = []
             return
 
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._loops = {}
         self._loop_order = []
         self._events = []
@@ -517,10 +526,11 @@ class RuntimeNativeAgentLoop:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_agent_loop_save",
+            metadata={"runtime_native_agent_loop": True},
         )
 
     def _cycle_runner(

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 REPAIR_STATUS_CREATED = "created"
 REPAIR_STATUS_FAILED_VERIFICATION = "failed_verification"
@@ -178,6 +180,10 @@ class RuntimeNativeAutonomousRepairChain:
         self.pytest_planner = pytest_planner
         self.patch_pipeline = patch_pipeline
         self.engineering_session = engineering_session
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_native_autonomous_repair_chain",
+        )
         self._records: dict[str, RuntimeAutonomousRepairRecord] = {}
         self._order: list[str] = []
         self.load()
@@ -383,7 +389,10 @@ class RuntimeNativeAutonomousRepairChain:
     def load(self) -> None:
         if self.storage_path is None or not self.storage_path.exists():
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         if not isinstance(payload, dict):
             return
         self._records = {}
@@ -398,8 +407,12 @@ class RuntimeNativeAutonomousRepairChain:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_autonomous_repair_chain_save",
+            metadata={"runtime_native_autonomous_repair_chain": True},
+        )
 
     def _latest_verification(self, mutation_payload: dict[str, Any]) -> dict[str, Any]:
         verifications = mutation_payload.get("verifications") or []

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 DISPATCH_STATUS_CREATED = "created"
 DISPATCH_STATUS_ROUTED = "routed"
@@ -266,6 +268,10 @@ class RuntimeNativeExecutionDispatch:
         self.supervisor_bridge = supervisor_bridge or getattr(mainline, "supervisor_bridge", None)
         self.journal = journal
         self.audit = audit
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_native_execution_dispatch",
+        )
         self._dispatches: dict[str, RuntimeDispatchRecord] = {}
         self._order: list[str] = []
         self._events: list[RuntimeDispatchEvent] = []
@@ -561,7 +567,10 @@ class RuntimeNativeExecutionDispatch:
     def load(self) -> None:
         if self.storage_path is None or not self.storage_path.exists():
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._dispatches = {}
         self._order = []
         self._events = []
@@ -582,8 +591,12 @@ class RuntimeNativeExecutionDispatch:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_execution_dispatch_save",
+            metadata={"runtime_native_execution_dispatch": True},
+        )
 
     def _make_node(
         self,

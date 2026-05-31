@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 RUNTIME_STATUS_ACTIVE = "active"
 RUNTIME_STATUS_QUARANTINED = "quarantined"
@@ -256,6 +258,10 @@ class RuntimeOwnershipIsolationFabric:
         self.supervisor = supervisor
         self.journal = journal
         self.audit = audit
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_ownership_isolation_fabric",
+        )
         self._ownerships: dict[str, RuntimeOwnershipRecord] = {}
         self._decisions: list[RuntimeAuthorityDecision] = []
         if self.storage_path is not None:
@@ -534,7 +540,10 @@ class RuntimeOwnershipIsolationFabric:
             self._decisions = []
             return
 
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._ownerships = {}
         self._decisions = []
 
@@ -556,10 +565,11 @@ class RuntimeOwnershipIsolationFabric:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_ownership_isolation_fabric_save",
+            metadata={"runtime_ownership_isolation_fabric": True},
         )
 
     def _decision(

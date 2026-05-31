@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 EXECUTION_STATUS_CREATED = "created"
 EXECUTION_STATUS_RUNNING = "running"
@@ -263,6 +265,10 @@ class RuntimeExecutionFabric:
         self.replay_engine = replay_engine
         self.journal = journal
         self.audit = audit
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_execution_fabric",
+        )
         self._executions: dict[str, RuntimeExecutionRecord] = {}
         self._execution_order: list[str] = []
         self._continuations: dict[str, RuntimeExecutionContinuation] = {}
@@ -745,7 +751,10 @@ class RuntimeExecutionFabric:
             self._events = []
             return
 
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._executions = {}
         self._execution_order = []
         self._continuations = {}
@@ -795,10 +804,11 @@ class RuntimeExecutionFabric:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_execution_fabric_save",
+            metadata={"runtime_execution_fabric": True},
         )
 
     def _append_event(

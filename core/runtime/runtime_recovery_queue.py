@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 RECOVERY_TICKET_STATUS_QUEUED = "queued"
 RECOVERY_TICKET_STATUS_RUNNING = "running"
@@ -120,6 +122,10 @@ class RuntimeRecoveryQueue:
 
     def __init__(self, storage_path: str | Path | None = None) -> None:
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_recovery_queue",
+        )
         self._tickets: dict[str, RuntimeRecoveryTicket] = {}
         self._order: list[str] = []
         if self.storage_path is not None:
@@ -293,7 +299,10 @@ class RuntimeRecoveryQueue:
             self._tickets = {}
             self._order = []
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         tickets = payload.get("tickets") if isinstance(payload, dict) else []
         self._tickets = {}
         self._order = []
@@ -310,10 +319,11 @@ class RuntimeRecoveryQueue:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_recovery_queue_save",
+            metadata={"runtime_recovery_queue": True},
         )
 
     def _get_ticket(self, ticket_id: str) -> RuntimeRecoveryTicket:

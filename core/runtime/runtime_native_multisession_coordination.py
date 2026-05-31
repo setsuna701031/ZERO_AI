@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 RUNTIME_NODE_ACTIVE = "active"
 RUNTIME_NODE_BLOCKED = "blocked"
@@ -296,6 +298,10 @@ class RuntimeNativeMultiSessionCoordination:
         self.supervisor_bridge = supervisor_bridge or getattr(mainline, "supervisor_bridge", None)
         self.journal = journal
         self.audit = audit
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_native_multisession_coordination",
+        )
         self._nodes: dict[str, RuntimeFederationNode] = {}
         self._node_order: list[str] = []
         self._signals: dict[str, RuntimeSignal] = {}
@@ -605,7 +611,10 @@ class RuntimeNativeMultiSessionCoordination:
     def load(self) -> None:
         if self.storage_path is None or not self.storage_path.exists():
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._nodes = {}
         self._node_order = []
         self._signals = {}
@@ -642,8 +651,12 @@ class RuntimeNativeMultiSessionCoordination:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_multisession_coordination_save",
+            metadata={"runtime_native_multisession_coordination": True},
+        )
 
     def _authorize_cross_runtime(self, source: RuntimeFederationNode, target: RuntimeFederationNode, signal_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         if target.status != RUNTIME_NODE_ACTIVE:

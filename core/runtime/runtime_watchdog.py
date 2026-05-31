@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 WATCHDOG_SESSION_STATUS_HEALTHY = "healthy"
 WATCHDOG_SESSION_STATUS_STALLED = "stalled"
@@ -197,6 +199,10 @@ class RuntimeWatchdog:
         audit: Any = None,
     ) -> None:
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_watchdog",
+        )
         self.stall_after_ticks = max(1, int(stall_after_ticks))
         self.dead_after_ticks = max(self.stall_after_ticks + 1, int(dead_after_ticks))
         self.orchestrator = orchestrator
@@ -445,7 +451,10 @@ class RuntimeWatchdog:
             self._incident_order = []
             return
 
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._sessions = {}
         self._heartbeats = []
         self._incidents = {}
@@ -484,10 +493,11 @@ class RuntimeWatchdog:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_watchdog_save",
+            metadata={"runtime_watchdog": True},
         )
 
     def _create_incident(

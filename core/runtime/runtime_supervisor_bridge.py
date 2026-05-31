@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 def utc_timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -103,6 +105,10 @@ class RuntimeSupervisorBridge:
         self.supervisor = supervisor
         self.recovery_orchestrator = recovery_orchestrator
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_supervisor_bridge",
+        )
         self.journal = journal
         self.audit = audit
         self._results: list[RuntimeSupervisorBridgeResult] = []
@@ -319,7 +325,10 @@ class RuntimeSupervisorBridge:
             self._events = []
             return
 
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._results = []
         self._events = []
         if not isinstance(payload, dict):
@@ -359,10 +368,11 @@ class RuntimeSupervisorBridge:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_supervisor_bridge_save",
+            metadata={"runtime_supervisor_bridge": True},
         )
 
     def _append_event(

@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 PATCH_STATUS_CREATED = "created"
 PATCH_STATUS_SNAPSHOTTED = "snapshotted"
@@ -186,6 +188,10 @@ class RuntimeNativeGitPatchPipeline:
         self.storage_path = Path(storage_path) if storage_path is not None else self.workspace_root / "workspace" / "runtime_native_git_patch_pipeline.json"
         self.mutation_loop = mutation_loop
         self.engineering_session = engineering_session
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_native_git_patch_pipeline",
+        )
         self._records: dict[str, RuntimePatchRecord] = {}
         self._order: list[str] = []
         self.load()
@@ -379,7 +385,10 @@ class RuntimeNativeGitPatchPipeline:
     def load(self) -> None:
         if self.storage_path is None or not self.storage_path.exists():
             return
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         if not isinstance(payload, dict):
             return
         self._records = {}
@@ -394,8 +403,12 @@ class RuntimeNativeGitPatchPipeline:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_native_git_patch_pipeline_save",
+            metadata={"runtime_native_git_patch_pipeline": True},
+        )
 
     def _snapshot_file(self, target: str) -> RuntimePatchFileSnapshot:
         path = self._resolve_target(target)

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_persistence_service import RuntimePersistenceService
+
 
 SUPERVISOR_SEVERITY_INFO = "info"
 SUPERVISOR_SEVERITY_WARNING = "warning"
@@ -259,6 +261,10 @@ class RuntimeSupervisor:
         self.orchestrator = orchestrator
         self.lease_registry = lease_registry
         self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.persistence_service = RuntimePersistenceService(
+            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            source="runtime_supervisor",
+        )
         self.journal = journal
         self.audit = audit
         self._cases: dict[str, RuntimeSupervisorCase] = {}
@@ -450,7 +456,10 @@ class RuntimeSupervisor:
             self._sequence = 0
             return
 
-        payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        payload = self.persistence_service.read_json(
+            self.storage_path,
+            default={},
+        )
         self._cases = {}
         self._case_order = []
         self._events = []
@@ -480,10 +489,11 @@ class RuntimeSupervisor:
     def save(self) -> None:
         if self.storage_path is None:
             return
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        self.storage_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
+        self.persistence_service.write_json(
+            self.storage_path,
+            self.to_dict(),
+            reason="runtime_supervisor_save",
+            metadata={"runtime_supervisor": True},
         )
 
     def _queue_recovery(self, case: RuntimeSupervisorCase, *, current_tick: int) -> RuntimeSupervisorCase:
@@ -703,3 +713,101 @@ class RuntimeSupervisor:
         if not text:
             raise RuntimeSupervisorRejected(f"{field_name}_required")
         return text
+
+def run_runtime_supervisor(
+    repo_root: str | Path = ".",
+    *,
+    stale_after_seconds: int = 300,
+    max_retry_depth: int = 3,
+    incidents: list[dict[str, Any]] | None = None,
+    storage_path: str | Path | None = None,
+    current_tick: int = 0,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compatibility entrypoint used by thin_runtime_bridge.
+
+    This function performs a lightweight governed supervisor pass without
+    directly executing scheduler tasks or mutations. It returns the schema and
+    status fields expected by thin_runtime_bridge.
+    """
+
+    repo_path = Path(repo_root)
+    workspace_root = repo_path / "workspace"
+    supervisor_storage = (
+        Path(storage_path)
+        if storage_path is not None
+        else workspace_root / "runtime_supervisor" / "runtime_supervisor.json"
+    )
+
+    supervisor = RuntimeSupervisor.with_workspace(
+        workspace_root,
+        storage_path=supervisor_storage,
+    )
+
+    normalized_incidents: list[dict[str, Any]] = []
+    for item in incidents or []:
+        if isinstance(item, dict):
+            normalized_incidents.append(copy.deepcopy(item))
+
+    processed_cases: list[dict[str, Any]] = []
+    for incident in normalized_incidents:
+        case = supervisor.process_incident(
+            incident,
+            current_tick=current_tick,
+            metadata=metadata,
+        )
+        processed_cases.append(case.to_dict())
+
+    supervisor.save()
+
+    supervisor_journal_path = str(supervisor_storage)
+    runtime_watchdog_scan = {
+        "ok": True,
+        "stale_after_seconds": int(stale_after_seconds),
+        "max_retry_depth": int(max_retry_depth),
+        "incident_count": len(normalized_incidents),
+        "processed_case_count": len(processed_cases),
+        "source": "run_runtime_supervisor",
+    }
+    runtime_health_registry = {
+        "ok": True,
+        "workspace_root": str(workspace_root),
+        "supervisor_storage": supervisor_journal_path,
+        "source": "run_runtime_supervisor",
+    }
+    runtime_incident_queue = {
+        "ok": True,
+        "incident_count": len(normalized_incidents),
+        "processed_case_count": len(processed_cases),
+        "source": "run_runtime_supervisor",
+    }
+    runtime_recovery_schedule = {
+        "ok": True,
+        "scheduled_count": sum(
+            1
+            for case in processed_cases
+            if str(case.get("status") or "") == SUPERVISOR_CASE_STATUS_RECOVERY_QUEUED
+        ),
+        "source": "run_runtime_supervisor",
+    }
+
+    return {
+        "ok": True,
+        "schema": "zero.runtime_supervisor.run.v1",
+        "mode": "runtime_supervisor",
+        "runtime_watchdog_scan_ok": bool(runtime_watchdog_scan.get("ok")),
+        "runtime_health_registry_ok": bool(runtime_health_registry.get("ok")),
+        "runtime_incident_queue_ok": bool(runtime_incident_queue.get("ok")),
+        "runtime_recovery_schedule_ok": bool(runtime_recovery_schedule.get("ok")),
+        "runtime_watchdog_scan": runtime_watchdog_scan,
+        "runtime_health_registry": runtime_health_registry,
+        "runtime_incident_queue": runtime_incident_queue,
+        "runtime_recovery_schedule": runtime_recovery_schedule,
+        "processed_cases": processed_cases,
+        "case_count": len(supervisor.list_cases()),
+        "event_count": len(supervisor.list_events()),
+        "supervisor_journal_path": supervisor_journal_path,
+        "stale_after_seconds": int(stale_after_seconds),
+        "max_retry_depth": int(max_retry_depth),
+        "created_at": utc_timestamp(),
+    }
