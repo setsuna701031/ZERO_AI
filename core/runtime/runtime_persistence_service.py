@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_capability_scope import RuntimeCapabilityScope
 from core.runtime.runtime_file_service import RuntimeFileService
 from core.runtime.runtime_transaction_context import merge_current_transaction_metadata
 
@@ -34,6 +35,19 @@ class RuntimePersistenceService:
         self.file_service = file_service or RuntimeFileService(
             workspace_root=self.workspace_root,
             source=self.source,
+            capability_scope=RuntimeCapabilityScope(
+                capability_id=f"capability:runtime_persistence_service:{self.source}",
+                allowed_mutation_types=("file_write", "generated_artifact_write"),
+                allowed_execution_types=("mutation", "file_write", "command"),
+                risk_ceiling="EXTERNAL",
+                replay_allowed=True,
+                rollback_allowed=True,
+                metadata={
+                    "runtime_persistence_service": True,
+                    "governed_persistence_capability": True,
+                    "source": self.source,
+                },
+            ),
         )
 
     def ensure_parent_dir(self, file_path: str | Path) -> None:

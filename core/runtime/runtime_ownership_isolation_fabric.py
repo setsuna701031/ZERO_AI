@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.runtime.runtime_capability_scope import (
+    RuntimeCapabilityScope as GovernedRuntimeCapabilityScope,
+)
+from core.runtime.runtime_file_service import RuntimeFileService
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
@@ -258,9 +262,26 @@ class RuntimeOwnershipIsolationFabric:
         self.supervisor = supervisor
         self.journal = journal
         self.audit = audit
+        workspace_root = self.storage_path.parent if self.storage_path is not None else Path("workspace")
         self.persistence_service = RuntimePersistenceService(
-            workspace_root=(self.storage_path.parent if self.storage_path is not None else "workspace"),
+            workspace_root=workspace_root,
             source="runtime_ownership_isolation_fabric",
+            file_service=RuntimeFileService(
+                workspace_root=workspace_root,
+                source="runtime_ownership_isolation_fabric",
+                capability_scope=GovernedRuntimeCapabilityScope(
+                    capability_id="capability:runtime_ownership_isolation_fabric:persistence",
+                    allowed_mutation_types=("file_write", "generated_artifact_write"),
+                    allowed_execution_types=("mutation", "file_write", "command"),
+                    risk_ceiling="EXTERNAL",
+                    replay_allowed=True,
+                    rollback_allowed=True,
+                    metadata={
+                        "runtime_ownership_isolation_fabric": True,
+                        "governed_persistence_capability": True,
+                    },
+                ),
+            ),
         )
         self._ownerships: dict[str, RuntimeOwnershipRecord] = {}
         self._decisions: list[RuntimeAuthorityDecision] = []
