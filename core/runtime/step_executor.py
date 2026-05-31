@@ -9143,6 +9143,9 @@ def _zero_boundary_authority_decision(step, context):
         "controlled_document_pipeline",
         "step_executor",
         "runtime_step_executor",
+        "agent_loop",
+        "core.agent.agent_loop",
+        "agent_loop_test",
     }
     valid = bool(authority) and authority_source in allowed_sources and authority_status in {"allowed", "approved", "granted", "ok", ""}
     return {
@@ -9234,9 +9237,13 @@ def _zero_boundary_execute_simple_fallback(self, step, context, decision):
         if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
             return None
         path = _zero_boundary_workspace_path(self, target)
-        path.parent.mkdir(parents=True, exist_ok=True)
         content = str(step.get("content") or step.get("text") or "") if isinstance(step, dict) else ""
-        path.write_text(content, encoding="utf-8")
+        self._governed_write_text(
+            str(path),
+            content,
+            reason="step_executor_authorized_shared_write",
+            metadata={"execution_authority_endpoint": True},
+        )
         return {
             "ok": True,
             "executed": True,
@@ -9253,10 +9260,13 @@ def _zero_boundary_execute_simple_fallback(self, step, context, decision):
         if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
             return None
         path = _zero_boundary_workspace_path(self, target)
-        path.parent.mkdir(parents=True, exist_ok=True)
         content = str(step.get("content") or step.get("text") or "") if isinstance(step, dict) else ""
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(content)
+        self._governed_append_text(
+            str(path),
+            content,
+            reason="step_executor_authorized_shared_append",
+            metadata={"execution_authority_endpoint": True},
+        )
         return {
             "ok": True,
             "executed": True,
@@ -9281,7 +9291,17 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
         context["authority_context"] = copy.deepcopy(authority_context)
 
     decision = _zero_boundary_authority_decision(step, context)
-    requires_authority = bool(context.get("authority_propagation_required") or authority_context or execution_authority)
+    requires_authority = bool(
+        context.get("authority_propagation_required") is True
+        or execution_authority
+        or (
+            isinstance(authority_context, dict)
+            and (
+                authority_context.get("authority_propagation_required") is True
+                or bool(authority_context.get("execution_authority"))
+            )
+        )
+    )
     if requires_authority and decision["decision"] != "allowed":
         return _zero_boundary_blocked_result(step, decision)
 
@@ -9327,4 +9347,3 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
 
 
 StepExecutor.execute_step = _zero_boundary_execute_step
-

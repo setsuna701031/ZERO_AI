@@ -3,8 +3,11 @@ from __future__ import annotations
 import os
 import runpy
 import sys
+import json
 from pathlib import Path
-from typing import Callable, List
+from typing import Any, Callable, List
+
+from core.tasks.runtime_state_hygiene import make_json_safe
 
 
 def _repo_root() -> Path:
@@ -62,6 +65,10 @@ def _print_thin_help() -> None:
     print("Note:")
     print("  This is the thin launcher help path.")
     print("  It intentionally does not boot app_legacy.py or the heavy runtime graph.")
+
+
+def print_json(data: Any) -> None:
+    print(json.dumps(make_json_safe(data), ensure_ascii=False, indent=2, sort_keys=True))
 
 
 def _is_runtime_command(argv: List[str]) -> bool:

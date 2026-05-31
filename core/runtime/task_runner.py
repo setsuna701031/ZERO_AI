@@ -4693,14 +4693,21 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
     if controlled_document_write and not execution_authority:
         execution_authority = _zero_boundary_build_document_execution_authority(task, state, step)
 
-    # TaskRunner is an orchestration layer.  It may propagate a real upstream
-    # execution_authority, but it must not create a fake authority context with
-    # authority_source=taskrunner_propagation.  StepExecutor intentionally rejects
-    # orchestration-layer authority sources.  Returning an empty context for the
-    # no-authority case keeps normal registered-handler steps from being blocked
-    # by a pre-execution authority gate they did not opt into.
     if not execution_authority:
-        return {}
+        return {
+            "authority_phase": "taskrunner_propagation",
+            "authority_layer": "task_runner",
+            "authority_role": "propagation",
+            "authority_source": "",
+            "authority_policy": "no_execution_authority",
+            "authority_propagation_required": False,
+            "execution_authority_granted": False,
+            "can_execute_privileged_step": False,
+            "escalated": False,
+            "execution_authority": {},
+            "received_authority": copy.deepcopy(incoming),
+            "authority_chain": authority_chain,
+        }
 
     authority_source = _zero_boundary_norm_text(
         execution_authority.get("authority_source") or execution_authority.get("source")
@@ -4733,4 +4740,3 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
 
 
 TaskRunner._build_taskrunner_authority_context = _zero_boundary_build_taskrunner_authority_context
-

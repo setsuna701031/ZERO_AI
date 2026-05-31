@@ -448,6 +448,10 @@ class TaskRepository:
             "task_dir": str(paths.get("task_dir", "")),
         }
 
+        for key, value in task.items():
+            if key not in normalized:
+                normalized[key] = copy.deepcopy(value)
+
         return normalized
 
     # ============================================================

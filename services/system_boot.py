@@ -302,6 +302,7 @@ class ZeroSystem:
 
         self._ensure_persistent_runtime_orchestrator()
         self._resume_persistent_runtime_on_boot()
+        self._ensure_runtime_components()
 
     def _ensure_persistent_runtime_orchestrator(self) -> None:
         if self.persistent_runtime_orchestrator is not None:
@@ -974,4 +975,3 @@ class ZeroSystem:
 
 def boot_system(workspace_dir: str = "workspace") -> ZeroSystem:
     return ZeroSystem(workspace=workspace_dir)
-

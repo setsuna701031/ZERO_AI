@@ -5775,7 +5775,16 @@ class Scheduler(RuntimeTaskScheduler):
     # or retry mutation here; callers should normalize mutations in
     # scheduler_core helpers before invoking this persistence primitive.
     def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
+        raw_results = copy.deepcopy(task.get("results")) if isinstance(task.get("results"), list) else None
+        raw_step_results = copy.deepcopy(task.get("step_results")) if isinstance(task.get("step_results"), list) else None
+        raw_execution_log = copy.deepcopy(task.get("execution_log")) if isinstance(task.get("execution_log"), list) else None
         task = refresh_task_public_fields(scheduler=self, task=copy.deepcopy(task), status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
+        if raw_results is not None:
+            task["results"] = raw_results
+        if raw_step_results is not None:
+            task["step_results"] = raw_step_results
+        if raw_execution_log is not None:
+            task["execution_log"] = raw_execution_log
 
         replace_task_fn = getattr(self.task_repo, "replace_task", None)
         upsert_task_fn = getattr(self.task_repo, "upsert_task", None)
@@ -10492,6 +10501,17 @@ def _zero_boundary_scheduler_direct_step(self, task, current_tick):
         else:
             updated_task["status"] = "queued"
             status = "queued"
+        runtime_state = copy.deepcopy(updated_task)
+        try:
+            runtime = getattr(self, "task_runtime", None)
+            if runtime is not None and hasattr(runtime, "save_runtime_state"):
+                runtime_state = runtime.save_runtime_state(updated_task, runtime_state)
+        except Exception:
+            runtime_state = copy.deepcopy(updated_task)
+        try:
+            self._persist_task_payload(task_id=_zero_boundary_norm_text(updated_task.get("task_id") or updated_task.get("task_name")), task=updated_task)
+        except Exception:
+            pass
         # scheduler_boundary_direct_step_contract_preserved
         # Keep the public Scheduler.run_one_step contract aligned with the
         # normal simple-runner path: progress fields must be available at the
@@ -10502,6 +10522,7 @@ def _zero_boundary_scheduler_direct_step(self, task, current_tick):
             "status": status,
             "task_id": _zero_boundary_norm_text(task.get("task_id") or task.get("task_name")),
             "task": updated_task,
+            "runtime_state": copy.deepcopy(runtime_state),
             "result": copy.deepcopy(step_result),
             "step_result": copy.deepcopy(step_result),
             "last_step_result": copy.deepcopy(step_result),
@@ -10528,12 +10549,24 @@ def _zero_boundary_scheduler_direct_step(self, task, current_tick):
         updated_task["step_results"] = list(updated_task.get("step_results") or []) + [copy.deepcopy(step_result)]
     except Exception:
         pass
+    runtime_state = copy.deepcopy(updated_task)
+    try:
+        runtime = getattr(self, "task_runtime", None)
+        if runtime is not None and hasattr(runtime, "save_runtime_state"):
+            runtime_state = runtime.save_runtime_state(updated_task, runtime_state)
+    except Exception:
+        runtime_state = copy.deepcopy(updated_task)
+    try:
+        self._persist_task_payload(task_id=_zero_boundary_norm_text(updated_task.get("task_id") or updated_task.get("task_name")), task=updated_task)
+    except Exception:
+        pass
     return {
         "ok": True,
         "action": "scheduler_step_executor_fallback_handled_failure",
         "status": failed_status,
         "task_id": _zero_boundary_norm_text(task.get("task_id") or task.get("task_name")),
         "task": updated_task,
+        "runtime_state": copy.deepcopy(runtime_state),
         "result": copy.deepcopy(step_result),
         "step_result": copy.deepcopy(step_result),
         "last_step_result": copy.deepcopy(step_result),
@@ -10552,6 +10585,8 @@ def _zero_boundary_scheduler_run_one_step(self, task=None, current_tick=None):
     result = _ZERO_BOUNDARY_ORIGINAL_SCHEDULER_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
     if isinstance(result, dict) and result.get("ok") is True:
         return result
+    if isinstance(result, dict) and result.get("action") == "retrying_repair_bridge_failed":
+        return result
     fallback = _zero_boundary_scheduler_direct_step(self, task, current_tick)
     if isinstance(fallback, dict) and fallback.get("ok") is True:
         fallback["legacy_result"] = copy.deepcopy(result) if isinstance(result, dict) else result
@@ -10560,4 +10595,3 @@ def _zero_boundary_scheduler_run_one_step(self, task=None, current_tick=None):
 
 
 Scheduler.run_one_step = _zero_boundary_scheduler_run_one_step
-

@@ -334,19 +334,19 @@ class BaseStepHandler:
 
         candidates = []
 
-        cwd_candidate = os.path.abspath(os.path.join(os.getcwd(), clean))
-        candidates.append(cwd_candidate)
-
         workspace_root = getattr(self.executor, "workspace_root", "")
         if isinstance(workspace_root, str) and workspace_root.strip():
             workspace_root_abs = os.path.abspath(workspace_root.strip())
+            if lowered.startswith("workspace/"):
+                candidates.append(os.path.abspath(os.path.join(workspace_root_abs, clean[len("workspace/"):])))
+            elif lowered == "workspace":
+                candidates.append(workspace_root_abs)
             parent = os.path.dirname(workspace_root_abs)
             if parent:
                 candidates.append(os.path.abspath(os.path.join(parent, clean)))
 
-        for candidate in candidates:
-            if os.path.exists(candidate):
-                return candidate
+        cwd_candidate = os.path.abspath(os.path.join(os.getcwd(), clean))
+        candidates.append(cwd_candidate)
 
         return candidates[0] if candidates else ""
 
@@ -2595,4 +2595,3 @@ class ApplyUnifiedDiffStepHandler(BaseStepHandler):
 
     def _normalize_for_compare(self, text: str) -> str:
         return str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip("\n")
-
