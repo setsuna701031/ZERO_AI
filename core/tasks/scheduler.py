@@ -373,17 +373,34 @@ def _zero_safe_task_for_snapshot(task: Any) -> Dict[str, Any]:
 
     steps = task.get("steps")
     if isinstance(steps, list):
-        sanitized["steps"] = [
-            {
-                "type": str(item.get("type") or item.get("action") or ""),
-                "path": str(item.get("path") or item.get("target_path") or ""),
-                "id": str(item.get("id") or item.get("step_id") or ""),
-                "mode": str(item.get("mode") or ""),
-                "scope": str(item.get("scope") or ""),
-            }
-            for item in steps
-            if isinstance(item, dict)
-        ]
+        # scheduler_snapshot_steps_preserve_execution_contract
+        # Keep the snapshot bounded, but do not collapse executable step payloads
+        # down to type/path/id/mode/scope.  Scheduler hydration and simple-drain
+        # paths may later use persisted task data; dropping fields such as
+        # content, force_fail, verification flags, or step-local metadata changes
+        # the execution contract and can turn a failing step into a successful one.
+        sanitized_steps: List[Dict[str, Any]] = []
+        for item in steps:
+            if not isinstance(item, dict):
+                continue
+            compact_step: Dict[str, Any] = {}
+            for key, value in item.items():
+                clean_key = str(key or "").strip()
+                if not clean_key:
+                    continue
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    compact_step[clean_key] = value
+                    continue
+                if isinstance(value, (dict, list)):
+                    try:
+                        json.dumps(value, ensure_ascii=False)
+                        compact_step[clean_key] = copy.deepcopy(value)
+                    except Exception:
+                        compact_step[clean_key] = str(value)[:1000]
+                    continue
+                compact_step[clean_key] = str(value)[:1000]
+            sanitized_steps.append(compact_step)
+        sanitized["steps"] = sanitized_steps
     else:
         sanitized["steps"] = []
 
@@ -831,6 +848,9 @@ class Scheduler(RuntimeTaskScheduler):
         ):
             execution_authority = copy.deepcopy(received["received_authority"]["execution_authority"])
 
+        if not execution_authority and isinstance(source.get("execution_authority"), dict):
+            execution_authority = copy.deepcopy(source["execution_authority"])
+
         chain: List[Dict[str, Any]] = []
         if isinstance(received.get("authority_chain"), list):
             chain = copy.deepcopy(received["authority_chain"])
@@ -1112,6 +1132,12 @@ class Scheduler(RuntimeTaskScheduler):
             queue_name="runtime",
         )
 
+        if self._is_scheduler_owned_simple_step_task(task):
+            return self._run_scheduler_owned_simple_task_until_stop(
+                task=task,
+                current_tick=current_tick,
+            )
+
         loop_result = self._run_task_via_agent_loop_with_fallback_check(
             task=task,
             current_tick=current_tick,
@@ -1124,6 +1150,130 @@ class Scheduler(RuntimeTaskScheduler):
         result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
         route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
         return self._compact_runner_result(result)
+
+    def _run_scheduler_owned_simple_task_until_stop(
+        self,
+        *,
+        task: Dict[str, Any],
+        current_tick: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Run scheduler-owned simple plans until terminal or blocked.
+
+        Boundary: for persisted simple step plans, Scheduler owns step
+        progression. AgentLoop may observe/advise, but it must not be required
+        to advance read_file -> llm -> write_file document chains. This method
+        keeps that ownership local to scheduler.py and delegates every actual
+        step execution to scheduler_core.simple_runner_helpers through
+        _run_simple_task_tick().
+        """
+        live_task = self._hydrate_task_from_workspace(copy.deepcopy(task))
+        live_task = self._ensure_executable_steps_for_task(live_task)
+        task_id = self._extract_task_id(live_task)
+
+        steps = live_task.get("steps")
+        max_rounds = len(steps) + 2 if isinstance(steps, list) else 1
+        if max_rounds < 1:
+            max_rounds = 1
+
+        executed_results: List[Dict[str, Any]] = []
+        last_result: Dict[str, Any] = {
+            "ok": True,
+            "action": "simple_step_drain_not_started",
+            "task_id": task_id,
+            "status": str(live_task.get("status") or "queued"),
+        }
+
+        base_tick = current_tick if current_tick is not None else getattr(self, "current_tick", 0)
+        try:
+            base_tick_int = int(base_tick or 0)
+        except Exception:
+            base_tick_int = 0
+
+        for round_index in range(max_rounds):
+            live_task = self._hydrate_task_from_workspace(live_task)
+            live_task = self._ensure_executable_steps_for_task(live_task)
+
+            status_before = str(live_task.get("status") or "").strip().lower()
+            if status_before in TERMINAL_STATUSES:
+                break
+            if not self._is_scheduler_owned_simple_step_task(live_task):
+                break
+
+            snapshot_before = self._simple_step_progress_snapshot(live_task)
+            before_index = int(snapshot_before.get("current_step_index", 0) or 0)
+            steps_total = int(snapshot_before.get("steps_total", 0) or 0)
+            if steps_total <= 0 or before_index >= steps_total:
+                break
+
+            tick_value = base_tick_int + round_index if base_tick_int else round_index + 1
+            result = self._run_simple_task_tick(task=live_task, current_tick=tick_value)
+            result = self._attach_orchestration_summary_to_runner_result(task=live_task, runner_result=result)
+            route_sync_runner_result_and_requeue_if_ready(self, task=live_task, runner_result=result)
+
+            last_result = result if isinstance(result, dict) else {"ok": bool(result), "raw_result": result}
+            executed_results.append(copy.deepcopy(last_result))
+
+            refreshed = self._get_task_from_repo(task_id) if task_id else None
+            if isinstance(refreshed, dict):
+                live_task = self._hydrate_task_from_workspace(refreshed)
+            elif isinstance(last_result.get("task"), dict):
+                live_task = self._hydrate_task_from_workspace(last_result["task"])
+
+            snapshot_after = self._simple_step_progress_snapshot(live_task)
+            after_index = int(snapshot_after.get("current_step_index", before_index) or 0)
+            status_after = str(live_task.get("status") or last_result.get("status") or "").strip().lower()
+
+            if status_after in TERMINAL_STATUSES or after_index >= int(snapshot_after.get("steps_total", steps_total) or steps_total):
+                break
+            if bool(last_result.get("blocked", False)) or str(last_result.get("status") or "").strip().lower() in {"blocked", "waiting", "review_required", "waiting_review"}:
+                break
+            if not bool(last_result.get("ok", False)):
+                break
+            if after_index <= before_index:
+                no_progress = copy.deepcopy(last_result)
+                no_progress["ok"] = False
+                no_progress["action"] = "simple_step_drain_no_progress"
+                no_progress["status"] = status_after or "queued"
+                no_progress["message"] = "scheduler simple-step drain stopped: current_step_index did not advance"
+                no_progress["final_answer"] = no_progress["message"]
+                no_progress["error"] = {
+                    "type": "simple_step_no_progress",
+                    "message": no_progress["message"],
+                    "retryable": False,
+                }
+                last_result = no_progress
+                executed_results[-1] = copy.deepcopy(no_progress)
+                route_sync_runner_result_and_requeue_if_ready(self, task=live_task, runner_result=no_progress)
+                break
+
+        final_task = self._get_task_from_repo(task_id) if task_id else None
+        if isinstance(final_task, dict):
+            final_task = self._hydrate_task_from_workspace(final_task)
+        else:
+            final_task = live_task
+
+        final_status = str(final_task.get("status") or last_result.get("status") or "queued").strip().lower() if isinstance(final_task, dict) else str(last_result.get("status") or "queued")
+        final_index = 0
+        final_total = 0
+        if isinstance(final_task, dict):
+            final_snapshot = self._simple_step_progress_snapshot(final_task)
+            final_index = int(final_snapshot.get("current_step_index", 0) or 0)
+            final_total = int(final_snapshot.get("steps_total", 0) or 0)
+
+        aggregate = copy.deepcopy(last_result) if isinstance(last_result, dict) else {"ok": bool(last_result)}
+        aggregate["mode"] = "scheduler_owned_simple_step_drain"
+        aggregate["driver"] = "run_scheduler_owned_simple_task_until_stop"
+        aggregate["task_id"] = task_id
+        aggregate["status"] = final_status
+        aggregate["current_step_index"] = final_index
+        aggregate["steps_total"] = final_total
+        aggregate["step"] = f"{final_index}/{final_total}" if final_total else "0/0"
+        aggregate["executed_rounds"] = len(executed_results)
+        aggregate["executed_results"] = executed_results
+        aggregate["task"] = copy.deepcopy(final_task) if isinstance(final_task, dict) else {}
+
+        aggregate = self._attach_orchestration_summary_to_runner_result(task=final_task if isinstance(final_task, dict) else live_task, runner_result=aggregate)
+        return self._compact_runner_result(aggregate)
 
     def _build_terminal_skip_runner_result(
         self,
@@ -1251,7 +1401,228 @@ class Scheduler(RuntimeTaskScheduler):
 
 
     def _compact_runner_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        return compact_runner_result(result)
+        compact = compact_runner_result(result)
+        if isinstance(result, dict) and isinstance(compact, dict):
+            # scheduler_progress_fields_preserved
+            # Some compact adapters keep only public/message fields.  Boundary
+            # tests and scheduler callers still need deterministic progress
+            # counters from the scheduler-owned simple-step drain.
+            for key in (
+                "current_step_index",
+                "step_count",
+                "steps_total",
+                "last_run_tick",
+                "last_failure_tick",
+                "executed_rounds",
+                "mode",
+                "driver",
+                "step",
+            ):
+                if key in result and key not in compact:
+                    compact[key] = copy.deepcopy(result.get(key))
+            if "task" in result and "task" not in compact and isinstance(result.get("task"), dict):
+                compact["task"] = copy.deepcopy(result.get("task"))
+        return compact
+
+    def _simple_step_progress_snapshot(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a compact progress snapshot for scheduler-owned simple steps.
+
+        This helper is intentionally local to scheduler.py because it decides
+        whether an AgentLoop response is authoritative for this scheduler tick.
+        It does not mutate task state.
+        """
+        if not isinstance(task, dict):
+            return {
+                "has_steps": False,
+                "current_step_index": 0,
+                "steps_total": 0,
+                "current_step_type": "",
+                "finished": False,
+            }
+
+        steps = task.get("steps")
+        if not isinstance(steps, list):
+            steps = []
+
+        try:
+            current_step_index = int(task.get("current_step_index", 0) or 0)
+        except Exception:
+            current_step_index = 0
+
+        if current_step_index < 0:
+            current_step_index = 0
+
+        steps_total = len(steps)
+        current_step_type = ""
+        if 0 <= current_step_index < steps_total and isinstance(steps[current_step_index], dict):
+            current_step_type = str(
+                steps[current_step_index].get("type")
+                or steps[current_step_index].get("action")
+                or ""
+            ).strip().lower()
+
+        return {
+            "has_steps": steps_total > 0,
+            "current_step_index": current_step_index,
+            "steps_total": steps_total,
+            "current_step_type": current_step_type,
+            "finished": steps_total > 0 and current_step_index >= steps_total,
+        }
+
+    def _is_scheduler_owned_simple_step_task(self, task: Dict[str, Any]) -> bool:
+        """True when the scheduler simple runner should own step advancement.
+
+        AgentLoop may still provide high-level observation/repair metadata, but
+        for persisted planner steps the scheduler must advance exactly one step
+        per tick.  Otherwise advisory runtime metadata can be accepted as the
+        tick result and the simple runner never gets a chance to move
+        current_step_index forward.
+        """
+        snapshot = self._simple_step_progress_snapshot(task)
+        if not snapshot.get("has_steps"):
+            return False
+
+        if snapshot.get("finished"):
+            return False
+
+        steps = task.get("steps")
+        if not isinstance(steps, list):
+            return False
+
+        simple_types = {
+            "",
+            "llm",
+            "llm_generate",
+            "basic",
+            "read_file",
+            "write_file",
+            "ensure_file",
+            "verify",
+            "command",
+            "run_command",
+            "run_python",
+            "python",
+            "shell",
+        }
+
+        current_type = str(snapshot.get("current_step_type") or "").strip().lower()
+        if current_type not in simple_types:
+            return False
+
+        # If all declared steps are simple scheduler steps, make scheduler_core
+        # simple_runner_helpers the owner of step progression.
+        for step in steps:
+            if not isinstance(step, dict):
+                return False
+            step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+            if step_type not in simple_types:
+                return False
+
+        return True
+
+    def _agent_loop_result_should_yield_to_simple_runner(
+        self,
+        *,
+        task: Dict[str, Any],
+        runner_result: Optional[Dict[str, Any]],
+        loop_error_text: str = "",
+    ) -> bool:
+        """Decide whether AgentLoop should yield this tick to the simple runner.
+
+        The bug this protects against:
+          AgentLoop returns an observe/advisory result such as queued/blocked
+          with "allowed transition observed; hard enforcement not enabled".
+          The scheduler accepts that result and never calls _run_simple_task_tick,
+          so current_step_index can stay at the last step forever.
+
+        A terminal AgentLoop result remains authoritative.  A real error still
+        follows the existing fallback logic.  Non-terminal/advisory/no-progress
+        results for scheduler-owned simple step plans yield to simple_runner.
+        """
+        if not self._is_scheduler_owned_simple_step_task(task):
+            return False
+
+        if not isinstance(runner_result, dict):
+            return True
+
+        if str(loop_error_text or "").strip():
+            return self._is_simple_runner_eligible_fallback(loop_error_text=loop_error_text)
+
+        status_text = str(runner_result.get("status") or "").strip().lower()
+        action_text = str(runner_result.get("action") or "").strip().lower()
+        mode_text = str(runner_result.get("mode") or "").strip().lower()
+
+        if status_text in TERMINAL_STATUSES or action_text in {
+            "simple_task_finished",
+            "terminal_skip",
+            "finished",
+            "task_finished",
+        }:
+            return False
+
+        if status_text in {"failed", "error", "cancelled", "canceled"}:
+            return False
+
+        advisory_text = " ".join(
+            str(value or "")
+            for value in (
+                runner_result.get("blocked_reason"),
+                runner_result.get("reason"),
+                runner_result.get("message"),
+                runner_result.get("final_answer"),
+                runner_result.get("last_decision_reason"),
+                runner_result.get("next_action"),
+                action_text,
+                mode_text,
+            )
+        ).lower()
+
+        advisory_tokens = (
+            "allowed transition observed",
+            "hard enforcement not enabled",
+            "observe_only",
+            "observe only",
+            "downgrade_advisory_blocked_state",
+        )
+
+        if any(token in advisory_text for token in advisory_tokens):
+            return True
+
+        snapshot = self._simple_step_progress_snapshot(task)
+        original_index = int(snapshot.get("current_step_index", 0) or 0)
+
+        result_index = runner_result.get("current_step_index")
+        if result_index is None and isinstance(runner_result.get("task"), dict):
+            result_index = runner_result["task"].get("current_step_index")
+        if result_index is None and isinstance(runner_result.get("runtime_state"), dict):
+            result_index = runner_result["runtime_state"].get("current_step_index")
+
+        try:
+            resolved_index = int(result_index)
+        except Exception:
+            resolved_index = original_index
+
+        if status_text in {"queued", "ready", "retry", "running", "blocked", "waiting", "waiting_review", ""}:
+            if resolved_index <= original_index:
+                return True
+
+        # If AgentLoop produced only observation metadata and no concrete step
+        # result/progress, let scheduler_core simple runner own this tick.
+        has_concrete_result = any(
+            key in runner_result
+            for key in (
+                "execution_log",
+                "results",
+                "step_results",
+                "last_step_result",
+                "step_result",
+            )
+        )
+        if not has_concrete_result and status_text not in TERMINAL_STATUSES:
+            return True
+
+        return False
+
 
     def _run_task_via_agent_loop_with_fallback_check(
         self,
@@ -1378,6 +1749,23 @@ class Scheduler(RuntimeTaskScheduler):
             }
             route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
             return result
+
+        if self._agent_loop_result_should_yield_to_simple_runner(
+            task=task,
+            runner_result=runner_result if isinstance(runner_result, dict) else None,
+            loop_error_text=loop_error_text,
+        ):
+            _write_loop_fallback_trace(
+                "agent_loop_yield_to_simple_runner",
+                {
+                    "reason": "scheduler_owned_simple_step_progress",
+                    "status": str(runner_result.get("status") or "") if isinstance(runner_result, dict) else "",
+                    "action": str(runner_result.get("action") or "") if isinstance(runner_result, dict) else "",
+                    "current_step_index": task.get("current_step_index"),
+                    "steps_total": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
+                },
+            )
+            return None
 
         _write_loop_fallback_trace(
             "agent_loop_accepted",
@@ -2195,8 +2583,12 @@ class Scheduler(RuntimeTaskScheduler):
                         ).strip(),
                         "authority_context": scheduler_authority,
                         "runtime_authority_context": scheduler_authority,
+                        "execution_authority": copy.deepcopy(
+                            scheduler_authority.get("execution_authority", {})
+                        ),
                         "authority_propagation_required": bool(
                             scheduler_authority.get("authority_propagation_required")
+                            or scheduler_authority.get("execution_authority")
                         ),
                     },
                 )
@@ -2297,14 +2689,46 @@ class Scheduler(RuntimeTaskScheduler):
         else:
             result = dict(legacy_payload)
 
-        result.setdefault("ok", bool(legacy_payload.get("ok", gateway_result.ok)) if isinstance(legacy_payload, Mapping) else bool(gateway_result.ok))
-        result.setdefault("action", str(legacy_payload.get("action") or legacy_payload.get("type") or "execution_result") if isinstance(legacy_payload, Mapping) else "execution_result")
+        # Important boundary rule:
+        # The scheduler execution gateway is a transport/metadata boundary here.
+        # It must not rewrite the legacy/basic step's execution truth.  The
+        # previous implementation used ``gateway_result.ok`` as if it meant
+        # runtime transport success, but that field is derived from the payload
+        # truth inside SchedulerExecutionGatewayResult.  That allowed the wrapper
+        # layer to blur two different facts:
+        #   1. did the legacy/basic step succeed?
+        #   2. did the gateway wrapper itself run without an invocation error?
+        # Keep the legacy payload as the source of truth for ``ok`` and preserve
+        # gateway/runtime fields as telemetry only.
+        if isinstance(legacy_payload, Mapping):
+            legacy_ok = bool(legacy_payload.get("ok", result.get("ok", False)))
+            legacy_action = str(
+                legacy_payload.get("action")
+                or legacy_payload.get("type")
+                or result.get("action")
+                or result.get("type")
+                or "execution_result"
+            )
+        else:
+            legacy_ok = bool(result.get("ok", legacy_payload))
+            legacy_action = str(result.get("action") or result.get("type") or "execution_result")
+
+        result["ok"] = legacy_ok
+        if legacy_ok:
+            result["error"] = None
+        elif not result.get("error"):
+            result["error"] = "execution_failed"
+
+        result.setdefault("action", legacy_action)
+        result.setdefault("type", result.get("action", legacy_action))
         result["scheduler_execution_gateway_source"] = str(source or "scheduler_basic_step")
         result["scheduler_execution_gateway_returned"] = True
         result["scheduler_execution_gateway_used"] = bool(gateway_result.used_gateway)
         result["scheduler_execution_legacy_fallback_used"] = bool(gateway_result.used_legacy_fallback)
-        result["scheduler_execution_runtime_ok"] = bool(gateway_result.ok)
+        result["scheduler_execution_runtime_ok"] = gateway_result.runtime_error is None
         result["scheduler_execution_runtime_error"] = gateway_result.runtime_error
+        result["scheduler_execution_payload_ok"] = legacy_ok
+        result["scheduler_execution_gateway_payload_ok"] = bool(gateway_result.ok)
         if gateway_result.errors:
             result["scheduler_execution_gateway_errors"] = list(gateway_result.errors)
         if gateway_result.warnings:
@@ -4842,6 +5266,54 @@ class Scheduler(RuntimeTaskScheduler):
 
         hydrated = copy.deepcopy(task)
 
+        # execution_authority_preserved / operator_session_preserved
+        # Scheduler hydration may merge persisted runtime_state/task snapshots that
+        # do not contain transient operator handoff metadata.  Preserve the
+        # inbound authority/session fields so Scheduler only forwards them and
+        # never silently strips them before StepExecutor sees the context.
+        preserved_execution_authority = (
+            copy.deepcopy(task.get("execution_authority"))
+            if isinstance(task.get("execution_authority"), dict)
+            else None
+        )
+        preserved_authority_context = (
+            copy.deepcopy(task.get("authority_context"))
+            if isinstance(task.get("authority_context"), dict)
+            else None
+        )
+        preserved_runtime_authority_context = (
+            copy.deepcopy(task.get("runtime_authority_context"))
+            if isinstance(task.get("runtime_authority_context"), dict)
+            else None
+        )
+        preserved_operator_session_id = str(
+            task.get("operator_session_id")
+            or task.get("persistent_operator_session_id")
+            or (
+                task.get("metadata", {}).get("operator_session_id")
+                if isinstance(task.get("metadata"), dict)
+                else ""
+            )
+            or (
+                task.get("operator", {}).get("session_id")
+                if isinstance(task.get("operator"), dict)
+                else ""
+            )
+            or ""
+        ).strip()
+        preserved_metadata_operator_session_id = ""
+        if isinstance(task.get("metadata"), dict):
+            preserved_metadata_operator_session_id = str(
+                task["metadata"].get("operator_session_id")
+                or task["metadata"].get("persistent_operator_session_id")
+                or ""
+            ).strip()
+        preserved_operator_payload = (
+            copy.deepcopy(task.get("operator"))
+            if isinstance(task.get("operator"), dict)
+            else None
+        )
+
         task_id = self._extract_task_id(hydrated)
         if not task_id:
             return hydrated
@@ -4978,7 +5450,49 @@ class Scheduler(RuntimeTaskScheduler):
             current_status = str(hydrated.get("status") or STATUS_CREATED)
             hydrated["history"] = [current_status]
 
+        if isinstance(preserved_execution_authority, dict) and preserved_execution_authority:
+            hydrated["execution_authority"] = copy.deepcopy(preserved_execution_authority)
+        if isinstance(preserved_authority_context, dict) and preserved_authority_context:
+            hydrated["authority_context"] = copy.deepcopy(preserved_authority_context)
+        if isinstance(preserved_runtime_authority_context, dict) and preserved_runtime_authority_context:
+            hydrated["runtime_authority_context"] = copy.deepcopy(preserved_runtime_authority_context)
+        if preserved_operator_session_id:
+            hydrated["operator_session_id"] = preserved_operator_session_id
+            hydrated["persistent_operator_session_id"] = preserved_operator_session_id
+            metadata = hydrated.setdefault("metadata", {})
+            if isinstance(metadata, dict):
+                metadata["operator_session_id"] = preserved_operator_session_id
+                metadata["persistent_operator_session_id"] = preserved_operator_session_id
+            operator_payload = hydrated.setdefault("operator", {})
+            if isinstance(operator_payload, dict):
+                operator_payload["session_id"] = preserved_operator_session_id
+        elif preserved_metadata_operator_session_id:
+            metadata = hydrated.setdefault("metadata", {})
+            if isinstance(metadata, dict):
+                metadata["operator_session_id"] = preserved_metadata_operator_session_id
+                metadata["persistent_operator_session_id"] = preserved_metadata_operator_session_id
+        if isinstance(preserved_operator_payload, dict) and preserved_operator_payload:
+            operator_payload = hydrated.setdefault("operator", {})
+            if isinstance(operator_payload, dict):
+                merged_operator = copy.deepcopy(preserved_operator_payload)
+                merged_operator.update(operator_payload)
+                hydrated["operator"] = merged_operator
+
         hydrated = refresh_task_public_fields(scheduler=self, task=hydrated, status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
+
+        if isinstance(preserved_execution_authority, dict) and preserved_execution_authority:
+            hydrated["execution_authority"] = copy.deepcopy(preserved_execution_authority)
+        if preserved_operator_session_id:
+            hydrated["operator_session_id"] = preserved_operator_session_id
+            hydrated["persistent_operator_session_id"] = preserved_operator_session_id
+            metadata = hydrated.setdefault("metadata", {})
+            if isinstance(metadata, dict):
+                metadata["operator_session_id"] = preserved_operator_session_id
+                metadata["persistent_operator_session_id"] = preserved_operator_session_id
+            operator_payload = hydrated.setdefault("operator", {})
+            if isinstance(operator_payload, dict):
+                operator_payload["session_id"] = preserved_operator_session_id
+
         return hydrated
 
     def _safe_read_json(self, path: str) -> Any:
@@ -9874,3 +10388,176 @@ def _zero_v7338_scheduler_run_one_step(self, task: Dict[str, Any], current_tick:
 
 Scheduler.run_one_step = _zero_v7338_scheduler_run_one_step
 Scheduler._attach_autonomous_repair_chain_summary = _zero_v7338_attach_autonomous_repair_chain_summary
+
+# ZERO_BOUNDARY_AUTHORITY_HOTFIX_20260530
+# Boundary intent:
+# - Keep scheduler as orchestration layer.
+# - If the legacy path returns a false failure for a simple scheduler-owned step,
+#   retry through StepExecutor with propagated scheduler authority metadata.
+
+_ZERO_BOUNDARY_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
+
+
+def _zero_boundary_norm_text(value):
+    return str(value or "").strip()
+
+
+def _zero_boundary_scheduler_step_type(step):
+    if isinstance(step, dict):
+        return _zero_boundary_norm_text(step.get("type") or step.get("action")).lower()
+    return ""
+
+
+def _zero_boundary_scheduler_direct_step(self, task, current_tick):
+    if not isinstance(task, dict):
+        return None
+    steps = task.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return None
+    try:
+        index = int(task.get("current_step_index", 0) or 0)
+    except Exception:
+        index = 0
+    if index < 0:
+        index = 0
+    if index >= len(steps):
+        return {
+            "ok": True,
+            "action": "already_finished",
+            "status": "finished",
+            "task": copy.deepcopy(task),
+            "current_step_index": len(steps),
+            "step_count": len(steps),
+            "steps_total": len(steps),
+        }
+    step = steps[index]
+    if not isinstance(step, dict):
+        return None
+
+    executor = getattr(self, "step_executor", None)
+    if executor is None:
+        try:
+            from core.runtime.step_executor import StepExecutor
+            executor = StepExecutor(workspace_root=getattr(self, "workspace_dir", "workspace"))
+            self.step_executor = executor
+        except Exception:
+            return None
+
+    authority_context = {}
+    try:
+        authority_context = self._build_scheduler_authority_context(task)
+    except Exception:
+        authority_context = {}
+
+    context = {
+        "cwd": getattr(self, "workspace_dir", "workspace"),
+        "authority_context": authority_context,
+        "runtime_authority_context": authority_context,
+        "execution_authority": copy.deepcopy(authority_context.get("execution_authority", {})),
+        "authority_propagation_required": bool(
+            task.get("authority_propagation_required")
+            or task.get("execution_authority")
+            or authority_context
+        ),
+    }
+    for key in ("operator_session_id", "operator_runtime_id", "operator_session"):
+        if task.get(key):
+            context[key] = copy.deepcopy(task[key])
+
+    execute_step = getattr(executor, "execute_step", None)
+    if not callable(execute_step):
+        return None
+
+    try:
+        step_result = execute_step(
+            step=copy.deepcopy(step),
+            task=copy.deepcopy(task),
+            context=context,
+            previous_result=None,
+            step_index=index,
+            step_count=len(steps),
+        )
+    except TypeError:
+        step_result = execute_step(copy.deepcopy(step), task=copy.deepcopy(task), context=context)
+
+    if not isinstance(step_result, dict):
+        step_result = {"ok": bool(step_result), "raw_result": step_result}
+
+    if bool(step_result.get("ok")):
+        updated_task = copy.deepcopy(task)
+        updated_task["current_step_index"] = min(index + 1, len(steps))
+        if index + 1 >= len(steps):
+            updated_task["status"] = "finished"
+            status = "finished"
+        else:
+            updated_task["status"] = "queued"
+            status = "queued"
+        # scheduler_boundary_direct_step_contract_preserved
+        # Keep the public Scheduler.run_one_step contract aligned with the
+        # normal simple-runner path: progress fields must be available at the
+        # top level, not only inside result["task"].
+        return {
+            "ok": True,
+            "action": "scheduler_step_executor_fallback",
+            "status": status,
+            "task_id": _zero_boundary_norm_text(task.get("task_id") or task.get("task_name")),
+            "task": updated_task,
+            "result": copy.deepcopy(step_result),
+            "step_result": copy.deepcopy(step_result),
+            "last_step_result": copy.deepcopy(step_result),
+            "executed_results": [copy.deepcopy(step_result)],
+            "current_step_index": updated_task["current_step_index"],
+            "step_count": len(steps),
+            "steps_total": len(steps),
+            "final_answer": step_result.get("final_answer") or step_result.get("message") or "ok",
+        }
+    blocked = bool(step_result.get("blocked"))
+    # scheduler_direct_step_failure_contract_preserved
+    # A handled step failure is a successful scheduler tick/transport result.
+    # The step outcome remains failed/blocked in step_result so operator
+    # lifecycle and recovery can record failed_step instead of completing it.
+    failed_status = "blocked" if blocked else "failed"
+    updated_task = copy.deepcopy(task)
+    updated_task["status"] = failed_status
+    updated_task["current_step_index"] = index
+    updated_task["last_step_result"] = copy.deepcopy(step_result)
+    updated_task.setdefault("results", [])
+    updated_task.setdefault("step_results", [])
+    try:
+        updated_task["results"] = list(updated_task.get("results") or []) + [copy.deepcopy(step_result)]
+        updated_task["step_results"] = list(updated_task.get("step_results") or []) + [copy.deepcopy(step_result)]
+    except Exception:
+        pass
+    return {
+        "ok": True,
+        "action": "scheduler_step_executor_fallback_handled_failure",
+        "status": failed_status,
+        "task_id": _zero_boundary_norm_text(task.get("task_id") or task.get("task_name")),
+        "task": updated_task,
+        "result": copy.deepcopy(step_result),
+        "step_result": copy.deepcopy(step_result),
+        "last_step_result": copy.deepcopy(step_result),
+        "executed_results": [copy.deepcopy(step_result)],
+        "current_step_index": index,
+        "step_count": len(steps),
+        "steps_total": len(steps),
+        "blocked": blocked,
+        "failed": not blocked,
+        "error": step_result.get("error") or step_result.get("message") or "step execution failed",
+        "final_answer": step_result.get("final_answer") or step_result.get("message") or "step execution failed",
+    }
+
+
+def _zero_boundary_scheduler_run_one_step(self, task=None, current_tick=None):
+    result = _ZERO_BOUNDARY_ORIGINAL_SCHEDULER_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
+    if isinstance(result, dict) and result.get("ok") is True:
+        return result
+    fallback = _zero_boundary_scheduler_direct_step(self, task, current_tick)
+    if isinstance(fallback, dict) and fallback.get("ok") is True:
+        fallback["legacy_result"] = copy.deepcopy(result) if isinstance(result, dict) else result
+        return fallback
+    return result
+
+
+Scheduler.run_one_step = _zero_boundary_scheduler_run_one_step
+

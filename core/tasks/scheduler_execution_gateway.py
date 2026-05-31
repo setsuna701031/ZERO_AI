@@ -187,6 +187,81 @@ def build_noop_execution_result(
     return result
 
 
+def _nested_mapping_values(payload: Any) -> List[Dict[str, Any]]:
+    """Return nested dict payloads that commonly carry executor truth.
+
+    SchedulerExecutionGateway is a transport/compatibility layer. It must not
+    reinterpret a successful StepExecutor payload as failed just because the
+    outer compatibility wrapper did not include an explicit top-level ``ok``.
+    """
+    if not isinstance(payload, dict):
+        return []
+
+    values: List[Dict[str, Any]] = []
+    for key in ("result", "output", "data", "payload", "raw", "adapter_payload"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            values.append(nested)
+            values.extend(_nested_mapping_values(nested))
+    return values
+
+
+def _infer_execution_ok(payload: Dict[str, Any]) -> bool:
+    """Infer execution truth without inventing success.
+
+    Precedence:
+    1. Explicit top-level ok/success/executed.
+    2. Explicit nested ok/success/executed from executor payloads.
+    3. False when explicit error/block/failure signals exist.
+    4. False by default.
+    """
+    for key in ("ok", "success", "executed"):
+        if key in payload:
+            return bool(payload.get(key))
+
+    for nested in _nested_mapping_values(payload):
+        for key in ("ok", "success", "executed"):
+            if key in nested:
+                return bool(nested.get(key))
+
+    for source_payload in [payload, *_nested_mapping_values(payload)]:
+        for key in ("blocked", "failed"):
+            if bool(source_payload.get(key)):
+                return False
+        error = source_payload.get("error")
+        if error not in (None, "", False, {}, []):
+            return False
+        error_type = source_payload.get("error_type")
+        if isinstance(error_type, str) and error_type.strip():
+            return False
+
+    return False
+
+
+def _extract_execution_text(payload: Dict[str, Any]) -> str:
+    """Extract the best human-facing text from a gateway/executor payload."""
+    keys = (
+        "final_answer",
+        "message",
+        "summary",
+        "summary_text",
+        "content",
+        "text",
+        "response",
+        "answer",
+        "output_text",
+        "stdout",
+    )
+
+    for source_payload in [payload, *_nested_mapping_values(payload)]:
+        for key in keys:
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    return ""
+
+
 def normalize_execution_result(
     value: Any,
     *,
@@ -210,14 +285,21 @@ def normalize_execution_result(
         fallback=fallback_action,
     )
 
-    result.setdefault("ok", bool(result.get("success", result.get("executed", False))))
+    inferred_ok = _infer_execution_ok(result)
+    result["ok"] = bool(result.get("ok")) if "ok" in result else inferred_ok
     result["action"] = action
     result.setdefault("type", action)
     result.setdefault("step_type", _step_type(normalized_step))
     result.setdefault("step", copy.deepcopy(normalized_step))
-    result.setdefault("message", str(result.get("final_answer") or result.get("summary") or action))
-    result.setdefault("final_answer", str(result.get("message") or action))
-    result.setdefault("error", None if bool(result.get("ok")) else result.get("error") or "execution_failed")
+
+    extracted_text = _extract_execution_text(result)
+    result.setdefault("message", extracted_text or str(result.get("final_answer") or result.get("summary") or action))
+    result.setdefault("final_answer", extracted_text or str(result.get("message") or action))
+
+    if bool(result.get("ok")):
+        result["error"] = None
+    else:
+        result.setdefault("error", result.get("error") or "execution_failed")
 
     target_path = _extract_target_path(result) or _extract_target_path(normalized_step)
     if target_path is not None:
@@ -266,10 +348,17 @@ def build_gateway_result(
         final_gateway_error = error_list[0]
         runtime_error = error_list[0]
 
+    payload_ok = bool(normalized_result.get("ok"))
+    transport_ok = final_gateway_error is None
+
     normalized_result["scheduler_execution_gateway_used"] = bool(used_gateway)
     normalized_result["scheduler_execution_legacy_fallback_used"] = bool(used_legacy_fallback)
-    normalized_result["scheduler_execution_runtime_ok"] = final_gateway_error is None
+    # Transport truth and payload truth are intentionally separate.
+    # ``scheduler_execution_runtime_ok`` means the gateway wrapper did not fail;
+    # ``ok`` remains the executor/legacy payload result.
+    normalized_result["scheduler_execution_runtime_ok"] = transport_ok
     normalized_result["scheduler_execution_runtime_error"] = final_gateway_error
+    normalized_result["scheduler_execution_payload_ok"] = payload_ok
     normalized_result["scheduler_execution_gateway_layer"] = GATEWAY_LAYER
 
     if error_list:

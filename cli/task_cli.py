@@ -670,9 +670,60 @@ def _try_handle_fast_task_drain(argv: List[str], repo_root: Path) -> bool:
     return True
 
 
+def _has_legacy_scheduler_runnable_tasks(repo_root: Path) -> bool:
+    """Return True when task run should fall through to the full legacy Scheduler.
+
+    The thin task CLI only owns fast-ingestion tasks that it created itself.
+    Full runtime tasks created by app_legacy.py/task_repository are persisted in
+    workspace/tasks.json too, but they must be executed by the real Scheduler so
+    queue rebuild, TaskRunner, AgentLoop, runtime persistence, and resume state
+    are exercised.
+
+    Without this guard, `task run` can be swallowed by the fast CLI and return a
+    stale manual_ticks/snapshot payload while a submitted scheduler task remains
+    queued forever.
+    """
+    try:
+        tasks = read_tasks_index(repo_root)
+    except Exception:
+        return False
+
+    if not isinstance(tasks, list):
+        return False
+
+    runnable_statuses = {
+        "queued",
+        "ready",
+        "retry",
+        "retrying",
+        "running",
+    }
+
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+
+        status = str(task_status(task) or task.get("status") or "").strip().lower()
+        if status not in runnable_statuses:
+            continue
+
+        # Fast CLI smoke/ingestion tasks mark themselves explicitly.  Those can
+        # still be handled here.  Scheduler-created tasks normally do not carry
+        # fast_cli_path=True and must fall through to the full runtime path.
+        if task.get("fast_cli_path") is True:
+            continue
+
+        return True
+
+    return False
+
+
 def _try_handle_fast_task_run(argv: List[str], repo_root: Path) -> bool:
     count = _parse_task_run(argv)
     if count is None:
+        return False
+
+    if _has_legacy_scheduler_runnable_tasks(repo_root):
         return False
 
     ingestion_result = run_ingestion_tasks(repo_root, count)

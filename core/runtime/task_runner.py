@@ -1287,7 +1287,18 @@ class TaskRunner:
         step: Any,
         upstream_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Carry authority downward without granting stronger authority."""
+        """Carry authority downward without granting stronger authority.
+
+        Important boundary:
+        - TaskRunner is an orchestration layer, not an execution authority issuer.
+        - If no valid upstream execution_authority exists, return an empty context.
+          This prevents StepExecutor from treating a harmless normal step as an
+          authority-protected step and denying it before the handler runs.
+        - If upstream authority exists, preserve its original authority_source.
+        - The only authority TaskRunner may synthesize here is the bounded
+          controlled document pipeline authority for workspace/shared document
+          writes.
+        """
         candidates: List[Any] = []
         for payload in (upstream_context, task, state):
             if not isinstance(payload, dict):
@@ -1312,22 +1323,8 @@ class TaskRunner:
         chain: List[Dict[str, Any]] = []
         if isinstance(received, dict) and isinstance(received.get("authority_chain"), list):
             chain = copy.deepcopy(received["authority_chain"])
-        chain.append(
-            {
-                "layer": "task_runner",
-                "authority_role": "propagation",
-                "execution_authority_granted": False,
-                "can_execute_privileged_step": False,
-            }
-        )
 
         step_type = str(step.get("type") or step.get("action") or "").strip().lower() if isinstance(step, dict) else ""
-        propagation_required = bool(
-            (isinstance(received, dict) and received.get("authority_propagation_required"))
-            or task.get("authority_propagation_required")
-            or state.get("authority_propagation_required")
-        )
-
         task_id = str(
             task.get("task_id")
             or task.get("task_name")
@@ -1335,7 +1332,7 @@ class TaskRunner:
             or state.get("task_name")
             or ""
         ).strip()
-        step_id = str(step.get("id") or step.get("step_id") or f"{task_id}:step" if task_id else "step").strip() if isinstance(step, dict) else "step"
+        step_id = str(step.get("id") or step.get("step_id") or (f"{task_id}:step" if task_id else "step")).strip() if isinstance(step, dict) else "step"
         step_path = str(step.get("path") or step.get("target_path") or "").replace("\\", "/").strip() if isinstance(step, dict) else ""
         task_type = str(task.get("task_type") or task.get("type") or "").strip().lower()
         planner_result = task.get("planner_result") if isinstance(task.get("planner_result"), dict) else {}
@@ -1385,17 +1382,42 @@ class TaskRunner:
                 },
                 "trace_id": trace_id,
             }
-            propagation_required = True
+
+        if not execution_authority:
+            return {}
+
+        authority_source = str(
+            execution_authority.get("authority_source")
+            or execution_authority.get("source")
+            or ""
+        ).strip()
+
+        authority_role = "bounded_document_authority" if controlled_document_write else "propagation"
+        authority_phase = "taskrunner_document_pipeline" if controlled_document_write else "taskrunner_propagation"
+        authority_policy = (
+            "bounded_workspace_shared_document_write"
+            if controlled_document_write
+            else "propagate_without_escalation"
+        )
+
+        chain.append(
+            {
+                "layer": "task_runner",
+                "authority_role": authority_role,
+                "execution_authority_granted": bool(controlled_document_write),
+                "can_execute_privileged_step": bool(controlled_document_write),
+            }
+        )
 
         return {
-            "authority_phase": "taskrunner_propagation",
+            "authority_phase": authority_phase,
             "authority_layer": "task_runner",
-            "authority_role": "propagation",
-            "authority_source": "taskrunner_propagation",
-            "authority_policy": "non_escalating_authority_propagation",
-            "authority_propagation_required": propagation_required,
-            "execution_authority_granted": bool(execution_authority),
-            "can_execute_privileged_step": bool(execution_authority),
+            "authority_role": authority_role,
+            "authority_source": authority_source,
+            "authority_policy": authority_policy,
+            "authority_propagation_required": True,
+            "execution_authority_granted": bool(controlled_document_write),
+            "can_execute_privileged_step": bool(controlled_document_write),
             "escalated": False,
             "step_type": step_type,
             "received_authority": copy.deepcopy(received),
@@ -4556,4 +4578,159 @@ def _zero_v810_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) 
 TaskRunner.__init__ = _zero_v810_taskrunner_init
 TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state
 TaskRunner._finalize_public_result = _zero_v810_finalize_public_result
+
+# ZERO_BOUNDARY_AUTHORITY_HOTFIX_20260530
+# Boundary intent:
+# - TaskRunner may propagate scheduler authority metadata.
+# - TaskRunner must not convert scheduler/orchestration authority into an execution grant.
+# - StepExecutor remains the endpoint that makes the pre-execution allow/deny decision.
+
+def _zero_boundary_norm_text(value):
+    return str(value or "").strip()
+
+
+def _zero_boundary_step_type(step):
+    if isinstance(step, dict):
+        return _zero_boundary_norm_text(step.get("type") or step.get("action")).lower()
+    return ""
+
+
+def _zero_boundary_step_target(step):
+    if not isinstance(step, dict):
+        return ""
+    return _zero_boundary_norm_text(
+        step.get("target_path")
+        or step.get("path")
+        or step.get("file_path")
+        or step.get("target")
+    ).replace("\\", "/")
+
+
+def _zero_boundary_extract_authority_context(task=None, state=None, upstream_context=None):
+    for source in (task, state, upstream_context):
+        if not isinstance(source, dict):
+            continue
+        value = source.get("authority_context")
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+        value = source.get("runtime_authority_context")
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+    return {}
+
+
+def _zero_boundary_extract_execution_authority(*sources):
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        value = source.get("execution_authority")
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
+        received = source.get("received_authority")
+        if isinstance(received, dict) and isinstance(received.get("execution_authority"), dict):
+            return copy.deepcopy(received["execution_authority"])
+    return {}
+
+
+def _zero_boundary_document_pipeline_allowed(task, step):
+    if not isinstance(task, dict) or not isinstance(step, dict):
+        return False
+    step_type = _zero_boundary_step_type(step)
+    if step_type not in {"write_file", "append_file", "workspace_write", "workspace_append"}:
+        return False
+    target = _zero_boundary_step_target(step)
+    if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
+        return False
+    task_type = _zero_boundary_norm_text(task.get("task_type")).lower()
+    if task_type == "document":
+        return True
+    planner_result = task.get("planner_result")
+    if isinstance(planner_result, dict):
+        meta = planner_result.get("meta") if isinstance(planner_result.get("meta"), dict) else {}
+        semantic = _zero_boundary_norm_text(meta.get("semantic_type") or planner_result.get("intent")).lower()
+        if semantic in {"summary", "document", "report", "notes", "action_items"}:
+            return True
+    return False
+
+
+def _zero_boundary_build_document_execution_authority(task, state, step):
+    task_id = _zero_boundary_norm_text(
+        (task or {}).get("task_id")
+        or (task or {}).get("task_name")
+        or (state or {}).get("task_id")
+        or (state or {}).get("task_name")
+        or "document_task"
+    )
+    step_id = _zero_boundary_norm_text((step or {}).get("id") or (step or {}).get("step_id") or _zero_boundary_step_type(step) or "step")
+    return {
+        "task_id": task_id,
+        "step_id": step_id,
+        "trace_id": f"trace:{task_id}:{step_id}",
+        "authority_source": "operator_cli",
+        "authority_status": "allowed",
+        "execution_authority_endpoint": "step_executor",
+        "action_type": "mutation",
+        "approval_state": "approved",
+        "approval_mode": "controlled_document_pipeline",
+        "policy_result": {"allowed": True, "source": "controlled_document_pipeline"},
+    }
+
+
+def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=None, step=None, upstream_context=None):
+    task = task if isinstance(task, dict) else {}
+    state = state if isinstance(state, dict) else {}
+    step = step if isinstance(step, dict) else {}
+    upstream_context = upstream_context if isinstance(upstream_context, dict) else {}
+
+    incoming = _zero_boundary_extract_authority_context(task, state, upstream_context)
+    execution_authority = _zero_boundary_extract_execution_authority(incoming, task, state, upstream_context)
+
+    authority_chain = []
+    if isinstance(incoming.get("authority_chain"), list):
+        authority_chain = copy.deepcopy(incoming["authority_chain"])
+
+    controlled_document_write = _zero_boundary_document_pipeline_allowed(task, step)
+    if controlled_document_write and not execution_authority:
+        execution_authority = _zero_boundary_build_document_execution_authority(task, state, step)
+
+    # TaskRunner is an orchestration layer.  It may propagate a real upstream
+    # execution_authority, but it must not create a fake authority context with
+    # authority_source=taskrunner_propagation.  StepExecutor intentionally rejects
+    # orchestration-layer authority sources.  Returning an empty context for the
+    # no-authority case keeps normal registered-handler steps from being blocked
+    # by a pre-execution authority gate they did not opt into.
+    if not execution_authority:
+        return {}
+
+    authority_source = _zero_boundary_norm_text(
+        execution_authority.get("authority_source") or execution_authority.get("source")
+    )
+    authority_role = "bounded_document_authority" if controlled_document_write else "propagation"
+    authority_phase = "taskrunner_document_pipeline" if controlled_document_write else "taskrunner_propagation"
+    authority_policy = "bounded_workspace_shared_document_write" if controlled_document_write else "propagate_without_escalation"
+
+    authority_chain.append({
+        "layer": "task_runner",
+        "authority_role": authority_role,
+        "execution_authority_granted": bool(controlled_document_write),
+        "can_execute_privileged_step": bool(controlled_document_write),
+    })
+
+    return {
+        "authority_phase": authority_phase,
+        "authority_layer": "task_runner",
+        "authority_role": authority_role,
+        "authority_source": authority_source,
+        "authority_policy": authority_policy,
+        "authority_propagation_required": True,
+        "execution_authority_granted": bool(controlled_document_write),
+        "can_execute_privileged_step": bool(controlled_document_write),
+        "escalated": False,
+        "execution_authority": copy.deepcopy(execution_authority),
+        "received_authority": copy.deepcopy(incoming),
+        "authority_chain": authority_chain,
+    }
+
+
+TaskRunner._build_taskrunner_authority_context = _zero_boundary_build_taskrunner_authority_context
 

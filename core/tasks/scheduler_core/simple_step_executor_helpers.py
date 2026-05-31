@@ -87,6 +87,7 @@ def execute_simple_basic_step(
 ) -> Optional[Dict[str, Any]]:
     if step_type == "noop":
         return {
+            "ok": True,
             "type": "noop",
             "message": str(step.get("message") or "noop ok"),
         }

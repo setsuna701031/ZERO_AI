@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -80,9 +81,106 @@ def is_fast_routable_task(task: Dict[str, Any]) -> bool:
             "runtime supervisor",
             "autonomous runtime supervisor",
             "runtime watchdog",
+            "scheduler",
+            "scheduler status",
         )
     )
-    return task_type in {"ask", "chat", "summarize", "report", "markdown_report"} or routable_goal
+    return task_type in {"ask", "chat", "summarize", "report", "markdown_report", "scheduler"} or routable_goal
+
+
+def _load_task_plan_payload(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
+    current_task_id = task_id(task)
+    candidates: List[Path] = []
+
+    for key in ("plan_path", "plan_file"):
+        raw = str(task.get(key) or "").strip()
+        if raw:
+            path = Path(raw)
+            candidates.append(path if path.is_absolute() else repo_root / path)
+
+    if current_task_id:
+        candidates.append(task_dir(repo_root, current_task_id) / "plan.json")
+
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            return payload
+
+    return {}
+
+
+def _extract_steps_from_plan_payload(payload: Any) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ("steps", "plan", "actions"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+
+    planner_result = payload.get("planner_result")
+    if isinstance(planner_result, dict):
+        for key in ("steps", "plan", "actions"):
+            value = planner_result.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+
+    return []
+
+
+def _planner_contract_output_path(repo_root: Path, task: Dict[str, Any]) -> str:
+    step_sources: List[Any] = []
+    for key in ("steps", "plan", "actions"):
+        value = task.get(key)
+        if isinstance(value, list):
+            step_sources.extend(value)
+
+    plan_payload = _load_task_plan_payload(repo_root, task)
+    step_sources.extend(_extract_steps_from_plan_payload(plan_payload))
+
+    for step in reversed(step_sources):
+        if not isinstance(step, dict):
+            continue
+        step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+        if step_type not in {"write_file", "append_file", "workspace_write", "workspace_append"}:
+            continue
+        raw_path = str(
+            step.get("path")
+            or step.get("target_path")
+            or step.get("file_path")
+            or step.get("target")
+            or ""
+        ).strip()
+        if raw_path:
+            return raw_path
+
+    return ""
+
+
+def _with_planner_contract_output(repo_root: Path, task: Dict[str, Any], artifact: Dict[str, Any]) -> Dict[str, Any]:
+    output_path = _planner_contract_output_path(repo_root, task)
+    if not output_path or not isinstance(artifact, dict):
+        return artifact
+
+    updated = dict(artifact)
+    updated["planner_contract_output_path"] = output_path
+    # If the thin writer already wrote to a fallback path, preserve the contract
+    # by rewriting through the same StepExecutor artifact bridge destination.
+    # The bridge will receive artifact_path and write content_preview there.
+    path = Path(output_path)
+    resolved = path if path.is_absolute() else repo_root / path
+    updated["artifact_path"] = str(resolved)
+    return updated
 
 
 def select_artifact_writer(repo_root: Path, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -99,10 +197,12 @@ def select_artifact_writer(repo_root: Path, task: Dict[str, Any]) -> Dict[str, A
         or "產生" in goal
         or "report" in lowered
     ):
-        return build_markdown_report_artifact(repo_root, current_shared_dir, goal)
+        output_path = _planner_contract_output_path(repo_root, task)
+        return build_markdown_report_artifact(repo_root, current_shared_dir, goal, output_path=output_path or None)
 
     if task_type == "summarize" or "summarize" in lowered or "summary" in lowered or "摘要" in goal:
-        return build_summary_artifact(repo_root, current_shared_dir, goal)
+        output_path = _planner_contract_output_path(repo_root, task)
+        return build_summary_artifact(repo_root, current_shared_dir, goal, output_path=output_path or None)
 
     if "hello world" in lowered and ("python" in lowered or "py" in lowered):
         return build_python_hello_world_artifact(repo_root, current_shared_dir, current_task_id)
@@ -1339,7 +1439,7 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
     for task in tasks:
         if executed_count >= count:
             break
-        if task_status(task) not in {"queued", "ready", "retry", "retrying"}:
+        if task_status(task) not in {"created", "queued", "ready", "retry", "retrying"}:
             continue
         if not is_fast_routable_task(task):
             continue

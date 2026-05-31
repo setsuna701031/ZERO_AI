@@ -4661,7 +4661,9 @@ class AgentLoop:
             and bool(action_items_output_path)
         )
 
-        if should_enable_document_flow:
+        has_planner_steps = bool(task.get("steps")) or self._safe_int(task.get("steps_total", 0), 0) > 0
+
+        if should_enable_document_flow and not has_planner_steps:
             task["capability_execution"] = {
                 "enabled": True,
                 "status": "pending",

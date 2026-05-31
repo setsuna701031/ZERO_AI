@@ -2471,6 +2471,103 @@ def _repersist_pipeline_metadata_if_possible(system: Any, task_id: str, task: An
     if not metadata:
         return {'snapshot': False, 'runtime_state': False, 'result': False}
     return _persist_document_pipeline_metadata(system, task_id, metadata)
+
+
+def _task_serial_for_queue(task: Dict[str, Any]) -> int:
+    task_id = _extract_task_id(task)
+    match = re.search(r"(\d+)", task_id)
+    if match:
+        try:
+            return int(match.group(1))
+        except Exception:
+            pass
+    return 0
+
+
+def _find_latest_runnable_task_id(system: Any) -> str:
+    runnable_statuses = {"queued", "ready", "retry", "retrying", "created"}
+    candidates: List[Dict[str, Any]] = []
+    for task in _list_tasks(system):
+        if not isinstance(task, dict):
+            continue
+        status = _extract_status(task).lower()
+        if status not in runnable_statuses:
+            continue
+        task_id = _extract_task_id(task)
+        if not task_id:
+            continue
+        candidates.append(task)
+
+    if not candidates:
+        return ""
+
+    def score(task: Dict[str, Any]) -> Tuple[int, int, str]:
+        total = _extract_steps_total(task)
+        goal = _extract_goal(task).strip().lower()
+        # Prefer real multi-step tasks over accidental one-word CLI goals such as
+        # "scheduler" or "scheduler status" that were created during probing.
+        meaningful = 1 if total > 1 else 0
+        accidental_cli_probe = 1 if goal in {"scheduler", "scheduler status", "scheduler run"} else 0
+        return (meaningful, -accidental_cli_probe, _task_serial_for_queue(task), _extract_task_id(task))
+
+    candidates.sort(key=score)
+    return _extract_task_id(candidates[-1])
+
+
+def _remove_task_from_tasks_index_file(task_id: str) -> Dict[str, Any]:
+    normalized_task_id = _safe_str(task_id)
+    result = {"ok": False, "removed_count": 0, "path": ""}
+    if not normalized_task_id:
+        return result
+
+    path = os.path.join(WORKSPACE_DIR, "tasks.json")
+    result["path"] = path
+    if not os.path.isfile(path):
+        return result
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:
+        result["error"] = f"read tasks index failed: {exc}"
+        return result
+
+    def keep_task(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return True
+        item_id = _first_nonempty_str(item.get("task_id"), item.get("task_name"), item.get("id"), item.get("name"))
+        return item_id != normalized_task_id
+
+    removed_count = 0
+    if isinstance(data, dict) and isinstance(data.get("tasks"), list):
+        before = len(data["tasks"])
+        data["tasks"] = [item for item in data["tasks"] if keep_task(item)]
+        removed_count = before - len(data["tasks"])
+    elif isinstance(data, list):
+        before = len(data)
+        data = [item for item in data if keep_task(item)]
+        removed_count = before - len(data)
+    elif isinstance(data, dict):
+        # Some repository variants store task_id -> task mappings.
+        if normalized_task_id in data:
+            data.pop(normalized_task_id, None)
+            removed_count = 1
+
+    if removed_count <= 0:
+        result["ok"] = False
+        return result
+
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    except Exception as exc:
+        result["error"] = f"write tasks index failed: {exc}"
+        return result
+
+    result["ok"] = True
+    result["removed_count"] = removed_count
+    return result
+
 def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str, Any]:
     normalized_task_id = _safe_str(task_id)
     if not normalized_task_id:
@@ -2495,6 +2592,53 @@ def _run_target_task(system: Any, task_id: str, max_ticks: int = 50) -> Dict[str
             }
 
     scheduler = _get_scheduler(system)
+
+    # Prefer direct target execution when available.  The global ready queue can
+    # contain old stale tasks; target execution keeps `task run <task_id>` and
+    # the selected auto-run task from being starved behind historical queue rows.
+    run_one_step = getattr(scheduler, "run_one_step", None)
+    if callable(run_one_step):
+        try:
+            refreshed_before = _get_task(system, normalized_task_id) or task
+            direct_step_result = run_one_step(task=copy.deepcopy(refreshed_before))
+            refreshed_after = _get_task(system, normalized_task_id)
+            persistence = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, refreshed_after)
+            current_status = _extract_status(refreshed_after).lower() if isinstance(refreshed_after, dict) else "unknown"
+            current_step = _format_step_progress(refreshed_after) if isinstance(refreshed_after, dict) else "-"
+            return {
+                "ok": True if not isinstance(direct_step_result, dict) else bool(direct_step_result.get("ok", True)),
+                "mode": "target_task",
+                "task_id": normalized_task_id,
+                "driver": "run_one_step",
+                "status": current_status,
+                "step": current_step,
+                "result": direct_step_result,
+                "task": refreshed_after,
+                "metadata_persisted": persistence,
+            }
+        except TypeError:
+            try:
+                refreshed_before = _get_task(system, normalized_task_id) or task
+                direct_step_result = run_one_step(copy.deepcopy(refreshed_before))
+                refreshed_after = _get_task(system, normalized_task_id)
+                persistence = _repersist_pipeline_metadata_if_possible(system, normalized_task_id, refreshed_after)
+                current_status = _extract_status(refreshed_after).lower() if isinstance(refreshed_after, dict) else "unknown"
+                current_step = _format_step_progress(refreshed_after) if isinstance(refreshed_after, dict) else "-"
+                return {
+                    "ok": True if not isinstance(direct_step_result, dict) else bool(direct_step_result.get("ok", True)),
+                    "mode": "target_task",
+                    "task_id": normalized_task_id,
+                    "driver": "run_one_step",
+                    "status": current_status,
+                    "step": current_step,
+                    "result": direct_step_result,
+                    "task": refreshed_after,
+                    "metadata_persisted": persistence,
+                }
+            except Exception as e:
+                return {"ok": False, "mode": "target_task", "task_id": normalized_task_id, "driver": "run_one_step", "error": f"run_one_step failed: {e}"}
+        except Exception as e:
+            return {"ok": False, "mode": "target_task", "task_id": normalized_task_id, "driver": "run_one_step", "error": f"run_one_step failed: {e}"}
 
     direct_methods = [
         "run_task",
@@ -2699,13 +2843,18 @@ def _delete_task_from_repo(system: Any, task_id: str) -> Dict[str, Any]:
                         break
                     except Exception as e:
                         errors.append(f"dict delete: {e}")
+    index_result = _remove_task_from_tasks_index_file(task_id)
+    if isinstance(index_result, dict) and index_result.get("ok"):
+        removed = True
+
     task_dir = os.path.join(WORKSPACE_DIR, "tasks", task_id)
     if os.path.isdir(task_dir):
         try:
             shutil.rmtree(task_dir)
+            removed = True
         except Exception as e:
             errors.append(f"remove task dir: {e}")
-    return {"ok": removed, "task_id": task_id, "errors": errors}
+    return {"ok": removed, "task_id": task_id, "errors": errors, "index_result": index_result}
 
 
 def _purge_tasks(system: Any, mode: str) -> Dict[str, Any]:
@@ -4141,8 +4290,18 @@ def handle_command(system: Any, text: str, cli_state: Dict[str, Any]) -> None:
                 count = max(1, int(explicit_arg))
             except Exception:
                 count = 1
-            results = [{"tick_index": i + 1, "result": _run_once(system)} for i in range(count)]
-            print_json({"ok": True, "count": count, "results": results, "mode": "manual_ticks"})
+            results = []
+            for i in range(count):
+                selected_task_id = _find_latest_runnable_task_id(system)
+                if selected_task_id:
+                    results.append({
+                        "tick_index": i + 1,
+                        "selected_task_id": selected_task_id,
+                        "result": _run_target_task(system, selected_task_id, max_ticks=1),
+                    })
+                else:
+                    results.append({"tick_index": i + 1, "result": _run_once(system)})
+            print_json({"ok": True, "count": count, "results": results, "mode": "targeted_manual_ticks"})
             return
 
         auto_submit_result = _auto_submit_created_task_if_needed(system, cli_state)

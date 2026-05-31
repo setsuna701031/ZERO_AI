@@ -346,6 +346,74 @@ def _fast_runtime_payload(repo_root: Path) -> Dict[str, Any]:
     }
 
 
+def _fast_runtime_kernel_payload(repo_root: Path) -> Dict[str, Any]:
+    """Build the real Runtime Kernel summary without booting app_legacy.py.
+
+    This keeps the fast runtime CLI path lightweight while wiring
+    `python app.py runtime kernel` to the same kernel-status builder used by
+    the task display path.
+    """
+    try:
+        from core.tasks.runtime_kernel_status import build_runtime_kernel_status
+
+        status = build_runtime_kernel_status()
+        if not isinstance(status, dict):
+            status = {}
+
+        status.setdefault("ok", False)
+        status.setdefault("mode", "fast_runtime_cli_kernel")
+        status.setdefault("legacy_app_booted", False)
+        status.setdefault("runtime_booted", False)
+        status.setdefault("workspace", str(_workspace_root(repo_root)))
+        return status
+    except Exception as exc:
+        return {
+            "ok": False,
+            "mode": "fast_runtime_cli_kernel",
+            "legacy_app_booted": False,
+            "runtime_booted": False,
+            "workspace": str(_workspace_root(repo_root)),
+            "error": f"{exc.__class__.__name__}: {exc}",
+            "kernel": {
+                "status": "unavailable",
+                "total_events": 0,
+                "total_invalid": 0,
+                "total_noop": 0,
+                "total_errors": 0,
+                "total_warnings": 0,
+                "planner_event_count": 0,
+                "execution_event_count": 0,
+                "planner_ready": False,
+                "execution_ready": False,
+            },
+            "planner": {"event_count": 0},
+            "execution": {"event_count": 0},
+        }
+
+
+def _print_fast_runtime_kernel(repo_root: Path, *, output_json: bool = False) -> None:
+    payload = _fast_runtime_kernel_payload(repo_root)
+
+    if output_json:
+        _print_json(payload)
+        return
+
+    try:
+        from core.tasks.runtime_kernel_status import format_runtime_kernel_status
+
+        print(format_runtime_kernel_status(payload))
+    except Exception:
+        kernel = payload.get("kernel") if isinstance(payload.get("kernel"), dict) else {}
+        planner = payload.get("planner") if isinstance(payload.get("planner"), dict) else {}
+        execution = payload.get("execution") if isinstance(payload.get("execution"), dict) else {}
+        print(f"Runtime Kernel Status: {kernel.get('status', 'unavailable')}")
+        print(f"- planner events: {planner.get('event_count', 0)}")
+        print(f"- execution events: {execution.get('event_count', 0)}")
+        print(f"- total invalid: {kernel.get('total_invalid', 0)}")
+        print(f"- total errors: {kernel.get('total_errors', 0)}")
+        print(f"- total warnings: {kernel.get('total_warnings', 0)}")
+
+
 def _fast_replay_payload() -> Dict[str, Any]:
     return {
         "ok": False,
@@ -419,6 +487,18 @@ def try_handle_fast_runtime_command(
 
     if command == "runtime":
         _print_json(_fast_runtime_payload(repo_root))
+        return True
+
+    if command in {"runtime status", "runtime snapshot"}:
+        _print_json(_fast_runtime_payload(repo_root))
+        return True
+
+    if command == "runtime kernel":
+        _print_fast_runtime_kernel(repo_root, output_json=False)
+        return True
+
+    if command in {"runtime kernel --json", "runtime kernel json"}:
+        _print_fast_runtime_kernel(repo_root, output_json=True)
         return True
 
     if command == "replay":

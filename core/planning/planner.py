@@ -326,6 +326,7 @@ class Planner:
             steps = self._build_semantic_chain_v0_pipeline(
                 source_path=parsed["source_path"],
                 output_path=parsed["output_path"],
+                action_items_output_path=parsed.get("action_items_output_path", ""),
             )
             return steps, semantic_type, "semantic_chain_v0_pipeline"
 
@@ -912,11 +913,20 @@ class Planner:
         if not self._looks_like_semantic_chain_v0(lowered):
             return None
 
-        output_path = self._detect_output_path_from_text(stripped, llm_mode="semantic_chain_v0")
-        if not output_path:
-            output_path = "workspace/shared/semantic_chain_v0.txt"
+        output_paths = self._detect_semantic_chain_output_paths(stripped)
+        summary_output_path = output_paths.get("summary_output_path") or "workspace/shared/summary.txt"
+        action_items_output_path = output_paths.get("action_items_output_path") or "workspace/shared/action_items.txt"
 
-        source_path = self._detect_source_path_from_text(stripped, output_path=output_path)
+        # Keep backward compatibility for older one-output semantic-chain prompts.
+        # If the user only names one output path, use it as the combined semantic-chain output.
+        combined_output_path = self._detect_output_path_from_text(stripped, llm_mode="semantic_chain_v0")
+        if combined_output_path and not output_paths.get("summary_output_path") and not output_paths.get("action_items_output_path"):
+            summary_output_path = combined_output_path
+            action_items_output_path = ""
+
+        source_path = self._detect_source_path_from_text(stripped, output_path=summary_output_path)
+        if not source_path and action_items_output_path:
+            source_path = self._detect_source_path_from_text(stripped, output_path=action_items_output_path)
         if not source_path:
             read_match = re.search(r"\bread\s+([^\s,;]+)", stripped, flags=re.IGNORECASE)
             if read_match:
@@ -927,11 +937,48 @@ class Planner:
 
         return {
             "source_path": source_path,
-            "output_path": output_path,
+            "output_path": summary_output_path,
+            "summary_output_path": summary_output_path,
+            "action_items_output_path": action_items_output_path,
         }
 
-    def _build_semantic_chain_v0_pipeline(self, source_path: str, output_path: str) -> List[Dict[str, Any]]:
-        return [
+    def _detect_semantic_chain_output_paths(self, text: str) -> Dict[str, str]:
+        stripped = str(text or "").strip()
+        outputs: Dict[str, str] = {}
+
+        patterns = [
+            (
+                "summary_output_path",
+                r"(?:write|create|save|output|produce)\s+(?:a\s+|the\s+)?(?:short\s+|concise\s+)?summary\s+(?:to|into|as)\s+([^\s,;]+)",
+            ),
+            (
+                "summary_output_path",
+                r"(?:summary|summarize)[^,;]*?\b(?:to|into|as)\s+([^\s,;]+)",
+            ),
+            (
+                "action_items_output_path",
+                r"(?:write|create|save|output|produce|extract)\s+(?:the\s+)?(?:action\s+items|action-items|action_items|todo\s+list|todos)\s+(?:to|into|as)\s+([^\s,;]+)",
+            ),
+            (
+                "action_items_output_path",
+                r"(?:action\s+items|action-items|action_items|todo\s+list|todos)[^,;]*?\b(?:to|into|as)\s+([^\s,;]+)",
+            ),
+        ]
+
+        for key, pattern in patterns:
+            if key in outputs:
+                continue
+            match = re.search(pattern, stripped, flags=re.IGNORECASE)
+            if not match:
+                continue
+            candidate = self._normalize_requested_path(match.group(1))
+            if self._looks_like_file_candidate(candidate):
+                outputs[key] = candidate
+
+        return outputs
+
+    def _build_semantic_chain_v0_pipeline(self, source_path: str, output_path: str, action_items_output_path: str = "") -> List[Dict[str, Any]]:
+        steps: List[Dict[str, Any]] = [
             {
                 "type": "read_file",
                 "path": source_path,
@@ -942,17 +989,47 @@ class Planner:
                 "prompt": self._build_semantic_summary_prompt(source_path),
             },
             {
-                "type": "llm",
-                "mode": "action_items",
-                "prompt": self._build_semantic_chain_v0_action_items_prompt(source_path),
-            },
-            {
                 "type": "write_file",
                 "path": output_path,
                 "scope": self._infer_path_scope(output_path),
                 "content": "{{previous_result}}",
             },
         ]
+
+        if action_items_output_path:
+            steps.extend(
+                [
+                    {
+                        "type": "llm",
+                        "mode": "action_items",
+                        "prompt": self._build_semantic_action_items_prompt(source_path),
+                    },
+                    {
+                        "type": "write_file",
+                        "path": action_items_output_path,
+                        "scope": self._infer_path_scope(action_items_output_path),
+                        "content": "{{previous_result}}",
+                    },
+                ]
+            )
+        else:
+            steps.extend(
+                [
+                    {
+                        "type": "llm",
+                        "mode": "action_items",
+                        "prompt": self._build_semantic_chain_v0_action_items_prompt(source_path),
+                    },
+                    {
+                        "type": "write_file",
+                        "path": output_path,
+                        "scope": self._infer_path_scope(output_path),
+                        "content": "{{previous_result}}",
+                    },
+                ]
+            )
+
+        return steps
 
     def _match_semantic_document_task(
         self,
@@ -1260,6 +1337,7 @@ class Planner:
             return self._build_semantic_chain_v0_pipeline(
                 source_path=chain_v0["source_path"],
                 output_path=chain_v0["output_path"],
+                action_items_output_path=chain_v0.get("action_items_output_path", ""),
             )
 
         parsed = self._match_read_transform_write(text)
@@ -2382,3 +2460,247 @@ def _zero_v730_planner_plan_steps(
 Planner._plan_semantic_route = _zero_v730_planner_plan_semantic_route
 Planner._plan_steps = _zero_v730_planner_plan_steps
 Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_3_0_autonomous_multistep_repair_chain"
+
+
+# ============================================================
+# ZERO v7.3.5 - Generic Multi-Step Task Enforcement
+# ============================================================
+# Purpose:
+# - Prevent explicit "multi-step task" requests from collapsing into one
+#   fallback llm step.
+# - Keep planner ownership only: this layer builds an executable step plan; it
+#   does not execute tasks, mutate files, call tools, or touch Scheduler.
+# - Preserve existing semantic/document/code-chain routes before this generic
+#   multi-step fallback is applied.
+
+_ZERO_V735_ORIGINAL_PLAN_STEPS = Planner._plan_steps
+
+
+def _zero_v735_text_contains_any(text: str, tokens: tuple[str, ...]) -> bool:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return False
+    return any(token in lowered for token in tokens)
+
+
+def _zero_v735_looks_like_generic_multistep_task(text: str, context: Optional[Dict[str, Any]] = None) -> bool:
+    raw = str(text or "").strip()
+    lowered = raw.lower()
+    if not raw:
+        return False
+
+    # Do not steal explicit file / code / command / document routes. Those
+    # already have specialized deterministic planners.
+    if re.search(r"[a-z0-9_\-./\\]+\.(?:py|txt|md|json|log|csv|yaml|yml|patch|diff)\b", lowered):
+        return False
+    if _zero_v735_text_contains_any(lowered, (
+        "code chain",
+        "code_chain",
+        "git diff",
+        "commit message",
+        "pull request",
+        "run python",
+        "python ",
+        "powershell",
+        "cmd ",
+        "read ",
+        "write ",
+        "summarize",
+        "summary",
+        "action items",
+        "requirement pack",
+        "requirement-pack",
+        "修正程式",
+        "修改程式",
+        "讀取檔案",
+        "寫入檔案",
+        "摘要",
+        "行動項目",
+    )):
+        return False
+
+    explicit_multistep = _zero_v735_text_contains_any(lowered, (
+        "multi-step",
+        "multistep",
+        "multi step",
+        "step by step",
+        "多步驟",
+        "多階段",
+        "分步",
+        "一步一步",
+    ))
+    explicit_task = _zero_v735_text_contains_any(lowered, (
+        "create task",
+        "new task",
+        "submit task",
+        "background task",
+        "long-running",
+        "long running",
+        "建立任務",
+        "新增任務",
+        "提交任務",
+        "長任務",
+        "背景執行",
+        "排程",
+    ))
+    planning_request = _zero_v735_text_contains_any(lowered, (
+        "plan",
+        "workflow",
+        "checklist",
+        "流程",
+        "計畫",
+        "規劃",
+        "任務",
+        "工作流",
+    ))
+
+    if explicit_multistep and (explicit_task or planning_request):
+        return True
+    if explicit_task and _zero_v735_text_contains_any(lowered, ("步驟", "階段", "流程", "規劃")):
+        return True
+
+    if isinstance(context, dict):
+        semantic_type = str(context.get("semantic_type") or context.get("task_type") or "").strip().lower()
+        if semantic_type in {"multi_step_task", "multistep_task", "generic_multistep_task"}:
+            return True
+
+    return False
+
+
+def _zero_v735_clean_goal(text: str) -> str:
+    goal = str(text or "").strip()
+    prefixes = (
+        "task ",
+        "create task ",
+        "new task ",
+        "submit task ",
+        "please ",
+        "請",
+        "請幫我",
+        "幫我",
+        "建立一個",
+        "建立",
+        "新增一個",
+        "新增",
+    )
+    changed = True
+    while changed:
+        changed = False
+        lowered = goal.lower()
+        for prefix in prefixes:
+            if lowered.startswith(prefix.lower()):
+                goal = goal[len(prefix):].strip(" ：:，,。")
+                changed = True
+                break
+    return goal or str(text or "").strip() or "generic multi-step task"
+
+
+def _zero_v735_make_llm_step(
+    *,
+    task_name: str,
+    index: int,
+    prompt: str,
+    mode: str,
+    description: str,
+) -> Dict[str, Any]:
+    return {
+        "type": "llm",
+        "id": f"{task_name}_step_{index}",
+        "task_name": task_name,
+        "mode": mode,
+        "prompt": prompt,
+        "description": description,
+        "planner_multistep_enforced": True,
+        "preserve_step_type": True,
+    }
+
+
+def _zero_v735_build_generic_multistep_task_steps(self: Planner, text: str) -> List[Dict[str, Any]]:
+    goal = _zero_v735_clean_goal(text)
+    task_name = self._infer_task_name(task_dir="", goal=goal)
+
+    prompts = [
+        (
+            "clarify_goal",
+            "Clarify the goal, success criteria, constraints, and required final output for this task. "
+            f"Goal: {goal}",
+            "Clarify objective and acceptance criteria",
+        ),
+        (
+            "breakdown",
+            "Break the task into concrete phases. Include prerequisites, dependencies, and what information must be collected before execution. "
+            f"Goal: {goal}",
+            "Break down the work into phases",
+        ),
+        (
+            "research_options",
+            "Identify the main options, decision points, risks, and comparison criteria for completing the task. "
+            f"Goal: {goal}",
+            "Collect options and decision criteria",
+        ),
+        (
+            "decision_plan",
+            "Create a practical execution plan with ordered actions, expected outputs for each action, and stop/check points. "
+            f"Goal: {goal}",
+            "Create ordered execution plan",
+        ),
+        (
+            "verification",
+            "Define verification checks, failure signals, and what evidence proves the task is complete. "
+            f"Goal: {goal}",
+            "Define verification and evidence",
+        ),
+        (
+            "final_summary",
+            "Summarize the complete multi-step plan into a concise operator-ready checklist. "
+            f"Goal: {goal}",
+            "Produce final operator checklist",
+        ),
+    ]
+
+    return [
+        _zero_v735_make_llm_step(
+            task_name=task_name,
+            index=index,
+            mode=mode,
+            prompt=prompt,
+            description=description,
+        )
+        for index, (mode, prompt, description) in enumerate(prompts, start=1)
+    ]
+
+
+def _zero_v735_planner_plan_steps(
+    self,
+    text: str,
+    route: Any = None,
+    context: Optional[Dict[str, Any]] = None,
+):
+    if _zero_v735_looks_like_generic_multistep_task(text, context=context):
+        steps = _zero_v735_build_generic_multistep_task_steps(self, text)
+        try:
+            self.trace_logger.log_decision(
+                title="generic multi-step task enforced",
+                message=f"steps={len(steps)}",
+                source="planner",
+                raw={
+                    "text": text,
+                    "step_count": len(steps),
+                    "steps": steps,
+                    "version": "v7.3.5",
+                },
+            )
+        except Exception:
+            pass
+        return steps, False
+
+    try:
+        return _ZERO_V735_ORIGINAL_PLAN_STEPS(self, text=text, route=route, context=context)
+    except TypeError as exc:
+        if "unexpected keyword argument 'context'" not in str(exc):
+            raise
+        return _ZERO_V735_ORIGINAL_PLAN_STEPS(self, text=text, route=route)
+
+
+Planner._plan_steps = _zero_v735_planner_plan_steps
+Planner.PLANNER_MODE = "deterministic_v35_3_plus_v7_3_5_generic_multistep_enforcement"

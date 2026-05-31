@@ -1169,3 +1169,118 @@ Input:
                 "step_count": len(steps),
             },
         }
+
+# ============================================================
+# ZERO v4.5 - Generic Multi-Step Task Deterministic Guard
+# ============================================================
+# Purpose:
+# - Keep LLMPlanner from collapsing explicit multi-step task requests into one
+#   generic response.
+# - This guard only builds plan steps. It never executes or mutates state.
+
+_ZERO_LLM_V45_ORIGINAL_PLAN_DETERMINISTIC = LLMPlanner._plan_deterministic
+
+
+def _zero_llm_v45_contains_any(text: str, tokens: tuple[str, ...]) -> bool:
+    lowered = str(text or "").strip().lower()
+    return bool(lowered) and any(token in lowered for token in tokens)
+
+
+def _zero_llm_v45_looks_like_generic_multistep_task(text: str) -> bool:
+    raw = str(text or "").strip()
+    lowered = raw.lower()
+    if not raw:
+        return False
+
+    if re.search(r"[a-z0-9_\-./\\]+\.(?:py|txt|md|json|log|csv|yaml|yml|patch|diff)\b", lowered):
+        return False
+
+    explicit_multistep = _zero_llm_v45_contains_any(lowered, (
+        "multi-step",
+        "multistep",
+        "multi step",
+        "step by step",
+        "多步驟",
+        "多階段",
+        "分步",
+        "一步一步",
+    ))
+    explicit_task = _zero_llm_v45_contains_any(lowered, (
+        "create task",
+        "new task",
+        "submit task",
+        "background task",
+        "long-running",
+        "long running",
+        "建立任務",
+        "新增任務",
+        "提交任務",
+        "長任務",
+        "背景執行",
+        "排程",
+    ))
+    planning_request = _zero_llm_v45_contains_any(lowered, (
+        "plan",
+        "workflow",
+        "checklist",
+        "流程",
+        "計畫",
+        "規劃",
+        "任務",
+        "工作流",
+    ))
+
+    return bool((explicit_multistep and (explicit_task or planning_request)) or (explicit_task and _zero_llm_v45_contains_any(lowered, ("步驟", "階段", "流程", "規劃"))))
+
+
+def _zero_llm_v45_clean_goal(text: str) -> str:
+    goal = str(text or "").strip()
+    for prefix in ("請幫我", "幫我", "請", "建立一個", "建立", "新增一個", "新增", "create task", "new task", "task"):
+        if goal.lower().startswith(prefix.lower()):
+            goal = goal[len(prefix):].strip(" ：:，,。")
+            break
+    return goal or str(text or "").strip() or "generic multi-step task"
+
+
+def _zero_llm_v45_build_generic_multistep_steps(text: str) -> List[Dict[str, Any]]:
+    goal = _zero_llm_v45_clean_goal(text)
+    prompts = [
+        ("clarify_goal", "Clarify the goal, success criteria, constraints, and final deliverable."),
+        ("breakdown", "Break the work into concrete phases and dependencies."),
+        ("research_options", "Identify options, risks, comparison criteria, and missing information."),
+        ("decision_plan", "Create an ordered execution plan with checkpoints."),
+        ("verification", "Define verification checks and evidence of completion."),
+        ("final_summary", "Produce an operator-ready checklist."),
+    ]
+    steps: List[Dict[str, Any]] = []
+    for index, (mode, instruction) in enumerate(prompts, start=1):
+        steps.append(
+            {
+                "type": "llm",
+                "id": f"generic_multistep_task_step_{index}",
+                "mode": mode,
+                "prompt": f"{instruction}\n\nGoal: {goal}",
+                "description": instruction,
+                "planner_multistep_enforced": True,
+                "preserve_step_type": True,
+            }
+        )
+    return steps
+
+
+def _zero_llm_v45_plan_deterministic(self, text: str) -> Optional[Dict[str, Any]]:
+    if _zero_llm_v45_looks_like_generic_multistep_task(text):
+        steps = _zero_llm_v45_build_generic_multistep_steps(text)
+        return self._build_result(
+            ok=True,
+            intent="llm",
+            final_answer=f"已規劃 {len(steps)} 個步驟",
+            steps=steps[: max(int(getattr(self, "max_steps", 5) or 5), len(steps))],
+            error=None,
+            fallback_used=False,
+            reason="generic multi-step deterministic guard matched",
+        )
+    return _ZERO_LLM_V45_ORIGINAL_PLAN_DETERMINISTIC(self, text)
+
+
+LLMPlanner._plan_deterministic = _zero_llm_v45_plan_deterministic

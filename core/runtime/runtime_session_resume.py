@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -43,9 +43,12 @@ TERMINAL_TASK_STATUSES = {
     TASK_STATUS_FINISHED,
     TASK_STATUS_DONE,
     TASK_STATUS_CANCELLED,
+    "canceled",
     "success",
     "completed",
     "error",
+    "rejected_terminal",
+    "blocked_terminal",
 }
 
 
@@ -226,10 +229,13 @@ class RuntimeSessionResume:
             if not isinstance(task, Mapping):
                 continue
             snapshot = self.capture_task_snapshot(task)
+            snapshot = self._resolve_snapshot_against_runtime_state(snapshot)
             if include_terminal or is_resumable_task_status(snapshot.status):
                 snapshots.append(snapshot)
 
-        resume_plan = self._build_resume_plan_from_snapshots(snapshots)
+        resume_plan = self._build_resume_plan_from_snapshots(
+            [item for item in snapshots if include_terminal or is_resumable_task_status(item.status)]
+        )
         status = SESSION_STATUS_RESUMABLE if snapshots else SESSION_STATUS_EMPTY
         now = utc_timestamp()
         record = RuntimeSessionResumeRecord(
@@ -270,16 +276,22 @@ class RuntimeSessionResume:
         if record is None:
             return self._empty_resume_plan(reason="no_session_record")
 
-        snapshots = [item for item in record.snapshots if include_terminal or is_resumable_task_status(item.status)]
+        resolved_snapshots = [self._resolve_snapshot_against_runtime_state(item) for item in record.snapshots]
+        snapshots = [item for item in resolved_snapshots if include_terminal or is_resumable_task_status(item.status)]
         plan = self._build_resume_plan_from_snapshots(snapshots)
         if persist:
+            terminal_skipped = [item.task_id for item in resolved_snapshots if is_terminal_task_status(item.status)]
+            metadata_copy = copy.deepcopy(record.metadata)
+            if terminal_skipped:
+                metadata_copy["terminal_resume_guard_skipped_task_ids"] = terminal_skipped
+                metadata_copy["terminal_resume_guard_applied_at"] = utc_timestamp()
             updated = RuntimeSessionResumeRecord(
                 session_id=record.session_id,
                 status=SESSION_STATUS_RESUMABLE if snapshots else SESSION_STATUS_EMPTY,
                 workspace_root=record.workspace_root,
-                snapshots=list(record.snapshots),
+                snapshots=resolved_snapshots,
                 resume_plan=copy.deepcopy(plan),
-                metadata=copy.deepcopy(record.metadata),
+                metadata=metadata_copy,
                 created_at=record.created_at,
                 updated_at=utc_timestamp(),
             )
@@ -377,6 +389,83 @@ class RuntimeSessionResume:
         tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         tmp_path.replace(self.storage_path)
 
+    def _resolve_snapshot_against_runtime_state(self, snapshot: RuntimeTaskResumeSnapshot) -> RuntimeTaskResumeSnapshot:
+        """Prefer the task directory runtime_state.json over stale resume snapshots.
+
+        Runtime resume records may be older than the per-task runtime state.
+        If a task finished after the resume snapshot was captured, boot-time
+        resume must not requeue that stale snapshot back into tasks.json.
+        """
+        runtime_status = self._read_snapshot_runtime_state_status(snapshot)
+        if not runtime_status:
+            return snapshot
+        if runtime_status == snapshot.status:
+            return snapshot
+
+        task_payload = copy.deepcopy(snapshot.task)
+        if task_payload:
+            task_payload["status"] = runtime_status
+            history = task_payload.setdefault("history", [])
+            if isinstance(history, list) and runtime_status not in history:
+                history.append(runtime_status)
+            task_payload.setdefault("task_id", snapshot.task_id)
+
+        reason = snapshot.resume_reason
+        if is_terminal_task_status(runtime_status):
+            reason = "terminal_runtime_state_guard"
+        elif runtime_status in {TASK_STATUS_BLOCKED, TASK_STATUS_REVIEW_REQUIRED}:
+            reason = "runtime_state_waiting_guard"
+
+        fingerprint_payload = {
+            "task_id": snapshot.task_id,
+            "status": runtime_status,
+            "current_step_index": snapshot.current_step_index,
+            "retry_count": snapshot.retry_count,
+            "max_retries": snapshot.max_retries,
+            "task": task_payload,
+            "guard": "runtime_state_status_precedence",
+        }
+        return replace(
+            snapshot,
+            status=runtime_status,
+            task=task_payload,
+            resume_reason=reason,
+            fingerprint=stable_resume_fingerprint(fingerprint_payload),
+        )
+
+    def _read_snapshot_runtime_state_status(self, snapshot: RuntimeTaskResumeSnapshot) -> str:
+        runtime_state_path = self._snapshot_runtime_state_path(snapshot)
+        if runtime_state_path is None or not runtime_state_path.exists():
+            return ""
+        try:
+            payload = json.loads(runtime_state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return ""
+        if not isinstance(payload, Mapping):
+            return ""
+        return normalize_task_status(payload.get("status"))
+
+    def _snapshot_runtime_state_path(self, snapshot: RuntimeTaskResumeSnapshot) -> Path | None:
+        task_payload = snapshot.task if isinstance(snapshot.task, Mapping) else {}
+        explicit = task_payload.get("runtime_state_file") if isinstance(task_payload, Mapping) else None
+        if explicit:
+            return Path(str(explicit))
+
+        task_dir_value = task_payload.get("task_dir") if isinstance(task_payload, Mapping) else None
+        if task_dir_value:
+            return Path(str(task_dir_value)) / "runtime_state.json"
+
+        if snapshot.task_id:
+            workspace_root = self._resolve_workspace_root()
+            return workspace_root / "tasks" / snapshot.task_id / "runtime_state.json"
+        return None
+
+    def _resolve_workspace_root(self) -> Path:
+        root = Path(self.workspace_root)
+        if root.name.lower() == "workspace":
+            return root
+        return root / "workspace"
+
     def _build_resume_plan_from_snapshots(self, snapshots: Iterable[RuntimeTaskResumeSnapshot]) -> dict[str, Any]:
         ordered = list(snapshots or [])
         task_ids = [item.task_id for item in ordered]
@@ -432,6 +521,78 @@ def build_runtime_resume_plan(tasks: Iterable[Mapping[str, Any]], *, workspace_r
 def capture_runtime_session(tasks: Iterable[Mapping[str, Any]], *, workspace_root: str | Path = ".", storage_path: str | Path | None = None, session_id: str | None = None, metadata: Mapping[str, Any] | None = None) -> RuntimeSessionResumeRecord:
     runtime = RuntimeSessionResume(workspace_root=workspace_root, storage_path=storage_path)
     return runtime.create_session_record(session_id=session_id, tasks=tasks, metadata=metadata)
+
+
+def execute_session_resume(
+    *,
+    repo_root: str | Path = ".",
+    task: Mapping[str, Any] | None = None,
+    result: Mapping[str, Any] | None = None,
+    storage_path: str | Path | None = None,
+    session_id: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
+    include_terminal: bool = False,
+) -> dict[str, Any]:
+    """Compatibility entrypoint used by thin_runtime_bridge.
+
+    This function intentionally does not execute tasks directly. It captures the
+    current task/session state, builds a resume plan, and marks the session as
+    resumed when a runnable plan exists. The actual task execution remains owned
+    by the scheduler/runtime bridge.
+    """
+
+    repo_path = Path(repo_root)
+    task_payload = _copy_dict(task)
+    result_payload = _copy_dict(result)
+    merged_metadata = _copy_dict(metadata)
+
+    if result_payload:
+        merged_metadata["upstream_result"] = result_payload
+
+    tasks: list[Mapping[str, Any]] = []
+    if task_payload:
+        tasks.append(task_payload)
+
+    runtime = RuntimeSessionResume(workspace_root=repo_path, storage_path=storage_path)
+    record = runtime.create_session_record(
+        session_id=session_id,
+        tasks=tasks,
+        metadata=merged_metadata,
+        include_terminal=include_terminal,
+    )
+    plan = copy.deepcopy(record.resume_plan)
+
+    if plan.get("ok"):
+        resumed = runtime.mark_resumed(
+            record.session_id,
+            metadata={
+                "resume_entrypoint": "execute_session_resume",
+                "resumed_at": utc_timestamp(),
+            },
+        )
+    else:
+        resumed = record
+
+    task_ids = plan.get("task_ids")
+    runnable_task_ids = plan.get("runnable_task_ids")
+    blocked_task_ids = plan.get("blocked_task_ids")
+
+    return {
+        "ok": True,
+        "mode": "runtime_session_resume",
+        "schema": "runtime_session_resume.execute.v1",
+        "action": plan.get("action", "nothing_to_resume"),
+        "status": resumed.status,
+        "session_id": resumed.session_id,
+        "task_id": extract_task_id(task_payload),
+        "task_ids": copy.deepcopy(task_ids) if isinstance(task_ids, list) else [],
+        "runnable_task_ids": copy.deepcopy(runnable_task_ids) if isinstance(runnable_task_ids, list) else [],
+        "blocked_task_ids": copy.deepcopy(blocked_task_ids) if isinstance(blocked_task_ids, list) else [],
+        "resume_plan": plan,
+        "session_record": resumed.to_dict(),
+        "upstream_result": result_payload,
+        "created_at": utc_timestamp(),
+    }
 
 
 def _safe_int(value: Any, default: int) -> int:

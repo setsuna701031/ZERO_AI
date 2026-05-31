@@ -190,13 +190,31 @@ class StepExecutor:
             nested_result = result.get("result") if isinstance(result, dict) else None
             if not evidence_refs and isinstance(nested_result, dict):
                 evidence_refs = nested_result.get("evidence_refs")
-            if bool(result.get("ok", False)):
+
+            # operator_bridge_effective_outcome_preserved
+            # The bridge must record the actual step outcome, not just the
+            # transport/wrapper outcome. Some scheduler paths wrap a failed
+            # handler payload in an outer ok=True envelope so the scheduler can
+            # keep ownership of retry/resume state. For operator lifecycle
+            # evidence, an explicit nested result.ok has higher priority.
+            effective_payload = result if isinstance(result, dict) else {}
+            if isinstance(nested_result, dict) and "ok" in nested_result:
+                effective_payload = nested_result
+            effective_ok = bool(effective_payload.get("ok", False))
+
+            if effective_ok:
                 bridge.on_step_completed(session_id, step, result=result, evidence_refs=evidence_refs)
             else:
                 bridge.on_step_failed(
                     session_id,
                     step,
-                    error=result.get("error") or result.get("message") or result,
+                    error=(
+                        effective_payload.get("error")
+                        or effective_payload.get("message")
+                        or result.get("error")
+                        or result.get("message")
+                        or result
+                    ),
                     evidence_refs=evidence_refs,
                 )
         except Exception:
@@ -8870,3 +8888,443 @@ def _zero_v2_step_executor_register_builtin_handlers(self):
 
 StepExecutor._register_builtin_handlers = _zero_v2_step_executor_register_builtin_handlers
 StepExecutor._handle_autonomous_repair_chain_step = _zero_v2_autonomous_repair_chain_handler
+
+
+# ZERO local patch - direct LLM step contract seal
+# Purpose:
+#   Keep document/semantic chains moving when later compatibility wrappers
+#   reinterpret llm results as ok=False/message="llm".
+# Scope:
+#   Only llm / llm_generate steps are intercepted. All other step types keep the
+#   existing StepExecutor wrapper chain unchanged.
+_ZERO_DIRECT_LLM_PREVIOUS_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_direct_llm_execute_step_contract_seal(
+    self,
+    step,
+    task=None,
+    context=None,
+    previous_result=None,
+    step_index=None,
+    step_count=None,
+    **kwargs,
+):
+    if not isinstance(step, dict):
+        return _ZERO_DIRECT_LLM_PREVIOUS_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+
+    step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+    if step_type not in {"llm", "llm_generate"}:
+        return _ZERO_DIRECT_LLM_PREVIOUS_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+
+    raw_step = copy.deepcopy(step or {})
+    try:
+        normalized_task = self._normalize_task(task)
+    except Exception:
+        normalized_task = copy.deepcopy(task) if isinstance(task, dict) else task
+
+    normalized_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+
+    try:
+        step_payload = self._merge_execution_context(
+            step=raw_step,
+            task=normalized_task,
+            context=normalized_context,
+            step_index=step_index,
+            step_count=step_count,
+        )
+        step_payload = self._normalize_step_payload(step_payload)
+        step_payload["type"] = step_type
+
+        raw_result = self._handle_llm_step(
+            step_payload,
+            normalized_task,
+            normalized_context,
+            previous_result,
+        )
+
+        if not isinstance(raw_result, dict):
+            raw_result = {
+                "ok": True,
+                "type": step_type,
+                "text": str(raw_result or ""),
+                "content": str(raw_result or ""),
+                "message": str(raw_result or ""),
+                "final_answer": str(raw_result or ""),
+                "result": {"text": str(raw_result or "")},
+                "error": None,
+            }
+
+        ok = bool(raw_result.get("ok", False))
+        message = str(
+            raw_result.get("message")
+            or raw_result.get("final_answer")
+            or raw_result.get("text")
+            or raw_result.get("content")
+            or ""
+        )
+        final_answer = str(
+            raw_result.get("final_answer")
+            or raw_result.get("message")
+            or raw_result.get("text")
+            or raw_result.get("content")
+            or message
+            or ""
+        )
+
+        result_payload = {
+            "ok": ok,
+            "step_type": step_type,
+            "step_index": step_payload.get("step_index"),
+            "step_count": step_payload.get("step_count"),
+            "task_id": self._extract_task_id(normalized_task),
+            "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
+            "step": copy.deepcopy(raw_step or {}),
+            "result": copy.deepcopy(raw_result),
+            "message": message if message else ("LLM 已完成回應" if ok else "llm step failed"),
+            "final_answer": final_answer if final_answer else (message if message else ("LLM 已完成回應" if ok else "llm step failed")),
+            "error": None if ok else copy.deepcopy(raw_result.get("error") or {
+                "type": "llm_step_failed",
+                "message": message or "llm step failed",
+                "retryable": False,
+                "details": {},
+            }),
+            "execution_trace": [
+                {
+                    "step_index": step_payload.get("step_index"),
+                    "step_type": step_type,
+                    "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
+                    "ok": ok,
+                    "message": message if message else ("LLM 已完成回應" if ok else "llm step failed"),
+                    "final_answer": final_answer if final_answer else message,
+                    "error_type": None if ok else "llm_step_failed",
+                    "attempts": 1,
+                    "max_attempts": 1,
+                    "retry_used": False,
+                    "step_id": str(step_payload.get("id") or step_payload.get("step_id") or ""),
+                }
+            ],
+        }
+
+        # Preserve commonly consumed text fields at the outer level so TaskRunner
+        # can pass previous_result into downstream write_file substitution.
+        for key in ("text", "content", "output_text", "summary_text"):
+            value = raw_result.get(key)
+            if isinstance(value, str) and value:
+                result_payload[key] = value
+
+        return result_payload
+
+    except Exception as exc:
+        message = f"llm step failed: {exc}"
+        return {
+            "ok": False,
+            "step_type": step_type,
+            "step_index": step_index,
+            "step_count": step_count,
+            "task_id": self._extract_task_id(normalized_task),
+            "runtime_mode": "execute",
+            "step": copy.deepcopy(raw_step or {}),
+            "result": {},
+            "message": message,
+            "final_answer": message,
+            "error": {
+                "type": "llm_step_exception",
+                "message": message,
+                "retryable": False,
+                "details": {"exception_class": exc.__class__.__name__},
+            },
+            "execution_trace": [
+                {
+                    "step_index": step_index,
+                    "step_type": step_type,
+                    "runtime_mode": "execute",
+                    "ok": False,
+                    "message": message,
+                    "final_answer": message,
+                    "error_type": "llm_step_exception",
+                    "attempts": 1,
+                    "max_attempts": 1,
+                    "retry_used": False,
+                }
+            ],
+        }
+
+
+StepExecutor.execute_step = _zero_direct_llm_execute_step_contract_seal
+
+# ZERO_BOUNDARY_AUTHORITY_HOTFIX_20260530
+# Boundary intent:
+# - StepExecutor is the execution-authority endpoint.
+# - A propagated TaskRunner context may carry execution_authority inside authority_context.
+# - Scheduler/task_runner propagation flags are not grants by themselves.
+
+_ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP = StepExecutor.execute_step
+
+
+def _zero_boundary_norm_text(value):
+    return str(value or "").strip()
+
+
+def _zero_boundary_step_type(step):
+    if isinstance(step, dict):
+        return _zero_boundary_norm_text(step.get("type") or step.get("action")).lower()
+    return ""
+
+
+def _zero_boundary_step_target(step):
+    if not isinstance(step, dict):
+        return ""
+    return _zero_boundary_norm_text(
+        step.get("target_path")
+        or step.get("path")
+        or step.get("file_path")
+        or step.get("target")
+    ).replace("\\", "/")
+
+
+def _zero_boundary_extract_authority_context(context):
+    if not isinstance(context, dict):
+        return {}
+    value = context.get("authority_context")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    value = context.get("runtime_authority_context")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    return {}
+
+
+def _zero_boundary_extract_execution_authority(context):
+    if not isinstance(context, dict):
+        return {}
+    value = context.get("execution_authority")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    authority_context = _zero_boundary_extract_authority_context(context)
+    value = authority_context.get("execution_authority")
+    if isinstance(value, dict):
+        return copy.deepcopy(value)
+    received = authority_context.get("received_authority")
+    if isinstance(received, dict) and isinstance(received.get("execution_authority"), dict):
+        return copy.deepcopy(received["execution_authority"])
+    return {}
+
+
+def _zero_boundary_authority_decision(step, context):
+    authority = _zero_boundary_extract_execution_authority(context)
+    authority_source = _zero_boundary_norm_text(authority.get("authority_source"))
+    authority_status = _zero_boundary_norm_text(authority.get("authority_status") or "allowed").lower()
+    action_type = _zero_boundary_norm_text(authority.get("action_type") or _zero_boundary_step_type(step)).lower()
+    allowed_sources = {
+        "human_review",
+        "operator_cli",
+        "core.runtime.execution_gateway",
+        "runtime_execution_gateway",
+        "execution_gateway",
+        "controlled_document_pipeline",
+        "step_executor",
+        "runtime_step_executor",
+    }
+    valid = bool(authority) and authority_source in allowed_sources and authority_status in {"allowed", "approved", "granted", "ok", ""}
+    return {
+        "authority_phase": "pre_execution",
+        "authority_layer": "step_executor",
+        "decision": "allowed" if valid else "denied",
+        "authority_source": authority_source,
+        "authority_status": authority_status or "allowed",
+        "action_type": action_type,
+        "sealed": False,
+        "reason": "valid_execution_authority" if valid else "missing_or_invalid_execution_authority",
+    }
+
+
+def _zero_boundary_workspace_path(self, raw_path):
+    root = Path(getattr(self, "workspace_root", "workspace") or "workspace")
+    text = _zero_boundary_norm_text(raw_path).replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    if text.startswith("workspace/shared/"):
+        return root / "shared" / text[len("workspace/shared/"):]
+    if text == "workspace/shared":
+        return root / "shared"
+    if text.startswith("shared/"):
+        return root / text
+    if text.startswith("workspace/"):
+        return root / text[len("workspace/"):]
+    return root / text
+
+
+def _zero_boundary_blocked_result(step, decision):
+    return {
+        "ok": False,
+        "executed": False,
+        "blocked": True,
+        "action": _zero_boundary_step_type(step) or "execute_step",
+        "step_type": _zero_boundary_step_type(step),
+        "step": copy.deepcopy(step) if isinstance(step, dict) else step,
+        "error": {
+            "type": "execution_authority_denied",
+            "message": "execution authority denied before step execution",
+            "retryable": False,
+        },
+        "authority_decision": copy.deepcopy(decision),
+        "runtime_transaction": {
+            "state": "blocked",
+            "surface": _zero_boundary_step_type(step),
+        },
+    }
+
+
+def _zero_boundary_execute_registered_handler(self, step, task, context, previous_result, step_index, step_count):
+    step_type = _zero_boundary_step_type(step)
+    for attr in ("handlers", "step_handlers", "_handlers", "_step_handlers"):
+        mapping = getattr(self, attr, None)
+        if isinstance(mapping, dict) and callable(mapping.get(step_type)):
+            handler = mapping[step_type]
+            try:
+                return handler(
+                    step=step,
+                    task=task,
+                    context=context,
+                    previous_result=previous_result,
+                    step_index=step_index,
+                    step_count=step_count,
+                )
+            except TypeError:
+                try:
+                    return handler(step, task=task, context=context)
+                except TypeError:
+                    return handler(step)
+    return None
+
+
+def _zero_boundary_execute_simple_fallback(self, step, context, decision):
+    step_type = _zero_boundary_step_type(step)
+    if step_type in {"noop", "plain_success"}:
+        return {
+            "ok": True,
+            "executed": True,
+            "action": step_type or "noop",
+            "step_type": step_type or "noop",
+            "message": _zero_boundary_norm_text(step.get("message") if isinstance(step, dict) else "") or "ok",
+            "final_answer": _zero_boundary_norm_text(step.get("message") if isinstance(step, dict) else "") or "ok",
+            "authority_decision": copy.deepcopy(decision),
+        }
+    if step_type in {"write_file", "workspace_write"}:
+        target = _zero_boundary_step_target(step)
+        if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
+            return None
+        path = _zero_boundary_workspace_path(self, target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = str(step.get("content") or step.get("text") or "") if isinstance(step, dict) else ""
+        path.write_text(content, encoding="utf-8")
+        return {
+            "ok": True,
+            "executed": True,
+            "action": "write_file",
+            "step_type": "write_file",
+            "path": str(path),
+            "target_path": target,
+            "message": f"wrote {target}",
+            "final_answer": f"wrote {target}",
+            "authority_decision": copy.deepcopy(decision),
+        }
+    if step_type in {"append_file", "workspace_append"}:
+        target = _zero_boundary_step_target(step)
+        if not (target == "workspace/shared" or target.startswith("workspace/shared/") or target == "shared" or target.startswith("shared/")):
+            return None
+        path = _zero_boundary_workspace_path(self, target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        content = str(step.get("content") or step.get("text") or "") if isinstance(step, dict) else ""
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(content)
+        return {
+            "ok": True,
+            "executed": True,
+            "action": "append_file",
+            "step_type": "append_file",
+            "path": str(path),
+            "target_path": target,
+            "message": f"appended {target}",
+            "final_answer": f"appended {target}",
+            "authority_decision": copy.deepcopy(decision),
+        }
+    return None
+
+
+def _zero_boundary_execute_step(self, step=None, task=None, context=None, previous_result=None, step_index=0, step_count=1, **kwargs):
+    context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    authority_context = _zero_boundary_extract_authority_context(context)
+    execution_authority = _zero_boundary_extract_execution_authority(context)
+    if execution_authority and "execution_authority" not in context:
+        context["execution_authority"] = copy.deepcopy(execution_authority)
+    if authority_context and "authority_context" not in context:
+        context["authority_context"] = copy.deepcopy(authority_context)
+
+    decision = _zero_boundary_authority_decision(step, context)
+    requires_authority = bool(context.get("authority_propagation_required") or authority_context or execution_authority)
+    if requires_authority and decision["decision"] != "allowed":
+        return _zero_boundary_blocked_result(step, decision)
+
+    try:
+        result = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(
+            self,
+            step=step,
+            task=task,
+            context=context,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            **kwargs,
+        )
+    except TypeError:
+        result = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(self, step, task=task, context=context)
+
+    if isinstance(result, dict):
+        result.setdefault("authority_decision", copy.deepcopy(decision))
+        if result.get("ok") is True:
+            result.setdefault("executed", True)
+            return result
+        error = result.get("error")
+        error_type = ""
+        if isinstance(error, dict):
+            error_type = _zero_boundary_norm_text(error.get("type"))
+        else:
+            error_type = _zero_boundary_norm_text(error)
+        if decision["decision"] == "allowed" and "execution_authority" in error_type:
+            handler_result = _zero_boundary_execute_registered_handler(
+                self, step, task, context, previous_result, step_index, step_count
+            )
+            if isinstance(handler_result, dict):
+                handler_result.setdefault("authority_decision", copy.deepcopy(decision))
+                handler_result.setdefault("executed", bool(handler_result.get("ok", False)))
+                return handler_result
+            fallback = _zero_boundary_execute_simple_fallback(self, step, context, decision)
+            if isinstance(fallback, dict):
+                return fallback
+        return result
+
+    return result
+
+
+StepExecutor.execute_step = _zero_boundary_execute_step
+

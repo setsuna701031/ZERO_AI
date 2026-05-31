@@ -57,15 +57,37 @@ def extract_source_path(repo_root: Path, shared_dir: Path, goal: str, default_na
 
 
 def extract_output_path(repo_root: Path, shared_dir: Path, goal: str, default_filename: str) -> Path:
-    raw = extract_first_path_after(goal, "into")
-    if raw and "." in raw:
-        return resolve_repo_path(repo_root, raw)
+    # Prefer explicit destination wording before semantic/default file names.
+    # This protects Planner/goal contracts such as:
+    #   read workspace/input.txt and write a short summary to workspace/output.txt
+    for keyword in ("into", "to", "as", "output", "output to", "save to", "write to"):
+        raw = extract_first_path_after(goal, keyword)
+        if raw and "." in raw:
+            return resolve_repo_path(repo_root, raw)
+
+    destination_patterns = (
+        r"\bwrite\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+        r"\bsave\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+        r"\boutput\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+        r"\bexport\b.*?\bto\s+([^\s]+\.[A-Za-z0-9]+)",
+    )
+    for pattern in destination_patterns:
+        match = re.search(pattern, goal, flags=re.IGNORECASE)
+        if match:
+            raw = match.group(1).strip()
+            if raw and "." in raw:
+                return resolve_repo_path(repo_root, raw)
 
     candidates = re.findall(r"[\w./\\-]+\.[A-Za-z0-9]+", goal)
     for candidate in reversed(candidates):
         lowered = candidate.lower()
         if default_filename.lower() in lowered or "summary" in lowered or "report" in lowered:
             return resolve_repo_path(repo_root, candidate)
+
+    # If multiple paths are present and no semantic filename was found, treat the
+    # last path as the destination and earlier paths as sources.
+    if len(candidates) >= 2:
+        return resolve_repo_path(repo_root, candidates[-1])
 
     return shared_dir / default_filename
 
@@ -92,25 +114,43 @@ def build_python_hello_world_artifact(repo_root: Path, shared_dir: Path, task_id
     }
 
 
-def build_summary_artifact(repo_root: Path, shared_dir: Path, goal: str) -> Dict[str, Any]:
+def build_summary_artifact(
+    repo_root: Path,
+    shared_dir: Path,
+    goal: str,
+    output_path: str | Path | None = None,
+) -> Dict[str, Any]:
     input_path = extract_source_path(repo_root, shared_dir, goal, "input.txt")
-    output_path = extract_output_path(repo_root, shared_dir, goal, "summary.txt")
+    resolved_output_path = (
+        resolve_repo_path(repo_root, str(output_path))
+        if output_path is not None and str(output_path).strip()
+        else extract_output_path(repo_root, shared_dir, goal, "summary.txt")
+    )
     source_text = read_text_file(input_path)
     summary = f"Summary: {compact_summary(source_text)}\n"
-    write_text_file(output_path, summary)
+    write_text_file(resolved_output_path, summary)
     return {
         "ok": True,
         "artifact_type": "summary_text",
         "input_path": str(input_path),
-        "artifact_path": str(output_path),
+        "artifact_path": str(resolved_output_path),
         "content_preview": summary,
         "message": "Created summary artifact.",
     }
 
 
-def build_markdown_report_artifact(repo_root: Path, shared_dir: Path, goal: str) -> Dict[str, Any]:
+def build_markdown_report_artifact(
+    repo_root: Path,
+    shared_dir: Path,
+    goal: str,
+    output_path: str | Path | None = None,
+) -> Dict[str, Any]:
     input_path = extract_source_path(repo_root, shared_dir, goal, "input.txt")
-    output_path = extract_output_path(repo_root, shared_dir, goal, "report.md")
+    resolved_output_path = (
+        resolve_repo_path(repo_root, str(output_path))
+        if output_path is not None and str(output_path).strip()
+        else extract_output_path(repo_root, shared_dir, goal, "report.md")
+    )
     source_text = read_text_file(input_path)
     summary = compact_summary(source_text, limit=420)
     text = (
@@ -125,12 +165,12 @@ def build_markdown_report_artifact(repo_root: Path, shared_dir: Path, goal: str)
         "- Markdown report artifact was written by the thin artifact writer.\n"
         "- Legacy runtime boot was avoided for this smoke path.\n"
     )
-    write_text_file(output_path, text)
+    write_text_file(resolved_output_path, text)
     return {
         "ok": True,
         "artifact_type": "markdown_report",
         "input_path": str(input_path),
-        "artifact_path": str(output_path),
+        "artifact_path": str(resolved_output_path),
         "content_preview": text,
         "message": "Created markdown report artifact.",
     }

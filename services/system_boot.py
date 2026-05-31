@@ -21,6 +21,11 @@ def _lazy_runtime_mainline_evidence_seal_builder() -> Any:
     return build_runtime_mainline_evidence_seal
 
 
+def _lazy_persistent_runtime_orchestrator_class() -> Type[Any]:
+    from core.runtime.persistent_runtime_orchestrator import PersistentRuntimeOrchestrator
+    return PersistentRuntimeOrchestrator
+
+
 def _lazy_step_executor_class() -> Type[Any]:
     from core.runtime.step_executor import StepExecutor
     return StepExecutor
@@ -281,6 +286,8 @@ class ZeroSystem:
 
         self._runtime_booted = False
         self._real_scheduler = None
+        self.persistent_runtime_orchestrator = None
+        self.persistent_runtime_resume_result: Dict[str, Any] = {}
 
         # Keep app.py compatible: _get_scheduler(system) reads system.scheduler.
         # This lightweight proxy avoids full runtime boot when the queue is empty.
@@ -292,6 +299,74 @@ class ZeroSystem:
             pass
 
         self.tick_count = 0
+
+        self._ensure_persistent_runtime_orchestrator()
+        self._resume_persistent_runtime_on_boot()
+
+    def _ensure_persistent_runtime_orchestrator(self) -> None:
+        if self.persistent_runtime_orchestrator is not None:
+            return
+        try:
+            repo_root = os.path.dirname(self.workspace) if os.path.basename(self.workspace).lower() == "workspace" else os.getcwd()
+            self.persistent_runtime_orchestrator = _lazy_persistent_runtime_orchestrator_class()(
+                repo_root=repo_root,
+                workspace_dir=self.workspace,
+                resume_store_path=os.path.join(self.workspace, "runtime_session_resume.json"),
+                audit_path=os.path.join(self.workspace, "persistent_runtime_orchestrator.json"),
+            )
+        except Exception as e:
+            self.persistent_runtime_orchestrator = None
+            self.boot_errors["persistent_runtime_orchestrator"] = {
+                "stage": "orchestrator_init",
+                "error": f"{e.__class__.__name__}: {e}",
+                "traceback": traceback.format_exc(),
+            }
+
+    def _resume_persistent_runtime_on_boot(self) -> Dict[str, Any]:
+        if isinstance(self.persistent_runtime_resume_result, dict) and self.persistent_runtime_resume_result:
+            return self.persistent_runtime_resume_result
+
+        self._ensure_persistent_runtime_orchestrator()
+        if self.persistent_runtime_orchestrator is None:
+            self.persistent_runtime_resume_result = {
+                "ok": False,
+                "action": "persistent_runtime_resume_unavailable",
+                "reason": "orchestrator_not_available",
+            }
+            return self.persistent_runtime_resume_result
+
+        try:
+            self.persistent_runtime_resume_result = self.persistent_runtime_orchestrator.resume_last_session(
+                task_repository=self.task_repository,
+                scheduler=self.scheduler,
+                agent_loop=self.agent_loop,
+                persist=True,
+            )
+            return self.persistent_runtime_resume_result
+        except Exception as e:
+            self.persistent_runtime_resume_result = {
+                "ok": False,
+                "action": "persistent_runtime_resume_failed",
+                "error": f"{e.__class__.__name__}: {e}",
+            }
+            self.boot_errors["persistent_runtime_resume"] = {
+                "stage": "resume_on_boot",
+                "error": f"{e.__class__.__name__}: {e}",
+                "traceback": traceback.format_exc(),
+            }
+            return self.persistent_runtime_resume_result
+
+    def persistent_runtime_status(self) -> Dict[str, Any]:
+        self._ensure_persistent_runtime_orchestrator()
+        if self.persistent_runtime_orchestrator is None:
+            return {
+                "ok": False,
+                "error": "persistent_runtime_orchestrator not available",
+                "resume_result": copy.deepcopy(self.persistent_runtime_resume_result),
+            }
+        status = self.persistent_runtime_orchestrator.status()
+        status["resume_result"] = copy.deepcopy(self.persistent_runtime_resume_result)
+        return status
 
     def _build_fast_idle_tick_result(self) -> Dict[str, Any]:
         self.tick_count += 1
@@ -561,6 +636,9 @@ class ZeroSystem:
             setattr(self.task_runner, "agent_loop", self.agent_loop)
         except Exception:
             pass
+
+        if self.persistent_runtime_orchestrator is not None and isinstance(self.persistent_runtime_resume_result, dict):
+            self.persistent_runtime_resume_result.setdefault("agent_loop_attached_after_runtime_boot", self.agent_loop is not None)
 
         self._runtime_booted = True
         return self
@@ -888,6 +966,10 @@ class ZeroSystem:
             "ok": False,
             "error": "scheduler.status not available",
         }
+
+    def resume_persistent_runtime(self) -> Dict[str, Any]:
+        self.persistent_runtime_resume_result = {}
+        return self._resume_persistent_runtime_on_boot()
 
 
 def boot_system(workspace_dir: str = "workspace") -> ZeroSystem:
