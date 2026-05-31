@@ -4,13 +4,12 @@ import copy
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping
 
 from core.runtime.runtime_session_resume import (
     RuntimeSessionResume,
     RuntimeSessionResumeRecord,
     RuntimeTaskResumeSnapshot,
-    build_runtime_resume_plan,
     is_resumable_task_status,
     is_terminal_task_status,
     normalize_task_status,
@@ -31,7 +30,6 @@ except Exception:  # pragma: no cover - optional during partial boot/import test
 
 SCHEMA = "zero.aer.persistent_runtime_orchestrator.v1"
 
-
 RESUME_TO_QUEUE_STATUSES = {
     "created",
     "queued",
@@ -49,7 +47,6 @@ WAITING_STATUSES = {
     "waiting_blocker",
     "paused",
 }
-
 
 TERMINAL_STATUSES = {
     "finished",
@@ -94,7 +91,10 @@ def _read_json(path: Path) -> Dict[str, Any]:
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     tmp.replace(path)
 
 
@@ -117,14 +117,13 @@ def should_route_persistent_runtime(task: Any, *, force: bool = False) -> bool:
     """Return True when a task/plan belongs to the persistent runtime path.
 
     This is a compatibility contract used by planner-runtime dispatch and
-    persistent-runtime tests.  It is intentionally read-only: it only inspects
+    persistent-runtime tests. It is intentionally read-only: it only inspects
     stable routing markers and never mutates the task.
     """
     if force:
         return True
     if not isinstance(task, Mapping):
         return False
-
     if bool(task.get("persistent_runtime")):
         return True
 
@@ -186,9 +185,9 @@ def _simulate_persistent_runtime_orchestrator_contract(
     """Execute the lightweight persistent-runtime contract path.
 
     This path is used when callers pass a task/plan directly instead of a
-    TaskRepository.  It models the multi-cycle orchestration contract and writes
-    a durable session record, but it does not execute tools, mutate gateways, or
-    modify source files.
+    TaskRepository. It models the multi-cycle orchestration contract and writes
+    a durable session record, but it does not execute tools, mutate gateways,
+    or modify source files.
     """
     root = Path(repo_root).resolve(strict=False)
     workspace = Path(workspace_dir).resolve(strict=False) if workspace_dir is not None else root / "workspace"
@@ -198,7 +197,6 @@ def _simulate_persistent_runtime_orchestrator_contract(
     routed = should_route_persistent_runtime(task, force=force)
     task_id = _clean_text(task.get("task_id") or task.get("id") or task.get("name")) or "persistent_runtime_task"
     session_record_path = records_dir / f"{task_id}_session_record.json"
-
     boundary = {
         "delegates_to_multi_cycle_engineering_loop": True,
         "does_not_modify_execution_gateway": True,
@@ -210,7 +208,7 @@ def _simulate_persistent_runtime_orchestrator_contract(
         orchestrator = {
             "ok": False,
             "schema": SCHEMA,
-            "status": "refused",
+            "status": "not_persistent_runtime_task",
             "routed": False,
             "reason": "persistent_runtime_route_not_selected",
             "cycle_count": 0,
@@ -220,25 +218,31 @@ def _simulate_persistent_runtime_orchestrator_contract(
             "session_record_path": str(session_record_path),
             "multi_cycle_engineering_loop": {
                 "ok": False,
-                "status": "refused",
+                "status": "not_persistent_runtime_task",
                 "cycle_results": [],
                 "closure_results": [],
             },
         }
         record = {
             "schema": SCHEMA,
-            "status": "refused",
+            "status": "not_persistent_runtime_task",
             "task_id": task_id,
             "boundary": boundary,
             "multi_cycle_engineering_loop": orchestrator["multi_cycle_engineering_loop"],
         }
         _write_json(session_record_path, record)
-        return {"ok": True, "persistent_runtime_orchestrator": orchestrator}
+        return {"ok": False, "persistent_runtime_orchestrator": orchestrator}
 
     raw_cycles = task.get("cycles")
     cycles = [copy.deepcopy(item) for item in raw_cycles if isinstance(item, Mapping)] if isinstance(raw_cycles, list) else []
     if not cycles:
-        cycles = [{"cycle_id": "default", "goal": _clean_text(task.get("goal") or task_id), "target_groups": []}]
+        cycles = [
+            {
+                "cycle_id": "default",
+                "goal": _clean_text(task.get("goal") or task_id),
+                "target_groups": [],
+            }
+        ]
 
     cycle_results: List[Dict[str, Any]] = []
     closure_results: List[Dict[str, Any]] = []
@@ -248,15 +252,19 @@ def _simulate_persistent_runtime_orchestrator_contract(
         target_groups = cycle.get("target_groups") if isinstance(cycle.get("target_groups"), list) else []
         should_fail = fail_cycle_index is not None and int(fail_cycle_index) == index
         runtime_status = "recoverable_failure" if should_fail else "finished"
-        group_results = []
+
+        group_results: List[Dict[str, Any]] = []
         for group_index, group in enumerate(target_groups):
             group_failed = should_fail and fail_group_index is not None and int(fail_group_index) == group_index
-            group_results.append({
-                "ok": not group_failed,
-                "group_index": group_index,
-                "target_group": copy.deepcopy(group),
-                "status": "recoverable_failure" if group_failed else "finished",
-            })
+            group_results.append(
+                {
+                    "ok": not group_failed,
+                    "group_index": group_index,
+                    "target_group": copy.deepcopy(group),
+                    "status": "recoverable_failure" if group_failed else "finished",
+                }
+            )
+
         cycle_result = {
             "ok": True,
             "cycle_id": cycle_id,
@@ -270,17 +278,20 @@ def _simulate_persistent_runtime_orchestrator_contract(
             "group_results": group_results,
         }
         cycle_results.append(cycle_result)
+
         if should_fail:
-            closure_results.append({
-                "cycle_id": cycle_id,
-                "cycle_index": index,
-                "closure": {
-                    "ok": True,
-                    "status": "closed",
-                    "reason": "failure_recovery_resume_continue",
-                    "failed_group_index": fail_group_index,
-                },
-            })
+            closure_results.append(
+                {
+                    "cycle_id": cycle_id,
+                    "cycle_index": index,
+                    "closure": {
+                        "ok": True,
+                        "status": "closed",
+                        "reason": "failure_recovery_resume_continue",
+                        "failed_group_index": fail_group_index,
+                    },
+                }
+            )
 
     loop = {
         "ok": True,
@@ -312,6 +323,183 @@ def _simulate_persistent_runtime_orchestrator_contract(
     return {"ok": True, "persistent_runtime_orchestrator": orchestrator}
 
 
+def _execute_persistent_runtime_task_with_executor(
+    *,
+    repo_root: str | Path = ".",
+    workspace_dir: str | Path | None = None,
+    task: Mapping[str, Any],
+    executor: Any,
+    force: bool = False,
+    fail_group_index: int | None = None,
+) -> Dict[str, Any]:
+    """Run a planner persistent-runtime task through LongEngineeringRuntime.
+
+    This preserves the public PersistentRuntimeOrchestrator contract while
+    allowing the long runtime to deliver each normalized planner step to the
+    StepExecutor endpoint.
+    """
+    root = Path(repo_root).resolve(strict=False)
+    workspace = Path(workspace_dir).resolve(strict=False) if workspace_dir is not None else root / "workspace"
+    records_dir = workspace / "runtime_session_orchestrator"
+    records_dir.mkdir(parents=True, exist_ok=True)
+
+    task_payload = copy.deepcopy(dict(task))
+    routed = should_route_persistent_runtime(task_payload, force=force)
+    task_id = _clean_text(task_payload.get("task_id") or task_payload.get("id") or task_payload.get("name")) or "persistent_runtime_task"
+    goal = _clean_text(task_payload.get("goal") or task_payload.get("title") or task_id)
+    session_record_path = records_dir / f"{task_id}_session_record.json"
+    boundary = {
+        "delegates_to_multi_cycle_engineering_loop": True,
+        "delegates_to_long_engineering_runtime": True,
+        "does_not_modify_execution_gateway": True,
+        "does_not_modify_step_executor": True,
+        "does_not_execute_steps_directly": True,
+        "step_executor_remains_execution_endpoint": True,
+    }
+
+    if not routed:
+        orchestrator = {
+            "ok": False,
+            "schema": SCHEMA,
+            "status": "not_persistent_runtime_task",
+            "routed": False,
+            "reason": "persistent_runtime_route_not_selected",
+            "cycle_count": 0,
+            "cycle_result_count": 0,
+            "closure_count": 0,
+            "boundary": boundary,
+            "session_record_path": str(session_record_path),
+            "multi_cycle_engineering_loop": {
+                "ok": False,
+                "status": "not_persistent_runtime_task",
+                "cycle_results": [],
+                "closure_results": [],
+                "closure_count": 0,
+            },
+        }
+        _write_json(
+            session_record_path,
+            {
+                "schema": SCHEMA,
+                "status": "not_persistent_runtime_task",
+                "task_id": task_id,
+                "boundary": boundary,
+                "multi_cycle_engineering_loop": orchestrator["multi_cycle_engineering_loop"],
+            },
+        )
+        return {"ok": False, "persistent_runtime_orchestrator": orchestrator}
+
+    try:
+        from core.runtime.long_engineering_runtime import LongEngineeringRuntime
+    except Exception as exc:
+        orchestrator = {
+            "ok": False,
+            "schema": SCHEMA,
+            "status": "long_engineering_runtime_unavailable",
+            "routed": True,
+            "reason": f"{exc.__class__.__name__}: {exc}",
+            "cycle_count": 0,
+            "cycle_result_count": 0,
+            "closure_count": 0,
+            "boundary": boundary,
+            "session_record_path": str(session_record_path),
+            "multi_cycle_engineering_loop": {
+                "ok": False,
+                "status": "long_engineering_runtime_unavailable",
+                "cycle_results": [],
+                "closure_results": [],
+                "closure_count": 0,
+            },
+        }
+        _write_json(session_record_path, orchestrator)
+        return {"ok": False, "persistent_runtime_orchestrator": orchestrator}
+
+    runtime = LongEngineeringRuntime(
+        repo_root=root,
+        task=task_payload,
+        task_id=task_id,
+        goal=goal,
+    )
+    runtime_result = runtime.run(
+        executor=executor,
+        fail_group_index=(-1 if fail_group_index is None else int(fail_group_index)),
+    )
+
+    runtime_ok = bool(runtime_result.get("ok"))
+    runtime_status = _clean_text(runtime_result.get("status")) or ("finished" if runtime_ok else "recoverable_failure")
+    recoverable = bool(runtime_result.get("recoverable")) or runtime_status == "recoverable_failure"
+    executed_group_count = int(runtime_result.get("executed_group_count") or 0)
+    plan_group_count = int(runtime_result.get("plan_group_count") or executed_group_count or 0)
+    failure_count = int(runtime_result.get("failure_count") or (1 if recoverable else 0))
+
+    runtime_payload = copy.deepcopy(runtime_result)
+    runtime_payload.setdefault("executed_group_count", executed_group_count)
+    runtime_payload.setdefault("plan_group_count", plan_group_count)
+    runtime_payload.setdefault("failure_count", failure_count)
+    runtime_payload.setdefault("status", runtime_status)
+
+    cycle_result = {
+        "ok": runtime_ok,
+        "cycle_id": "planner_cycle_1",
+        "cycle_index": 0,
+        "goal": goal,
+        "runtime": runtime_payload,
+        "group_results": copy.deepcopy(runtime_result.get("executed_groups") or []),
+    }
+
+    closure_results: List[Dict[str, Any]] = []
+    if recoverable or not runtime_ok:
+        closure_results.append(
+            {
+                "cycle_id": "planner_cycle_1",
+                "cycle_index": 0,
+                "closure": {
+                    "ok": True,
+                    "status": "closed",
+                    "reason": "failure_recovery_resume_continue",
+                    "failed_group_index": runtime_result.get("latest_checkpoint", {}).get("group_index", fail_group_index),
+                    "recovery_marker_path": runtime_result.get("recovery_marker_path", ""),
+                },
+            }
+        )
+
+    loop = {
+        "ok": True,
+        "status": "finished",
+        "cycle_results": [cycle_result],
+        "closure_results": closure_results,
+        "closure_count": len(closure_results),
+        "executed_group_count": executed_group_count,
+        "plan_group_count": plan_group_count,
+    }
+
+    orchestrator = {
+        "ok": True,
+        "schema": SCHEMA,
+        "status": "finished",
+        "routed": True,
+        "task_id": task_id,
+        "cycle_count": 1,
+        "cycle_result_count": 1,
+        "closure_count": len(closure_results),
+        "boundary": boundary,
+        "session_record_path": str(session_record_path),
+        "multi_cycle_engineering_loop": loop,
+        "long_engineering_runtime": runtime_payload,
+    }
+
+    record = {
+        "schema": SCHEMA,
+        "status": "finished",
+        "task_id": task_id,
+        "boundary": boundary,
+        "multi_cycle_engineering_loop": loop,
+        "persistent_runtime_orchestrator": orchestrator,
+    }
+    _write_json(session_record_path, record)
+    return {"ok": True, "persistent_runtime_orchestrator": orchestrator}
+
+
 class PersistentRuntimeOrchestrator:
     """Boot-time bridge from durable resume state back into ZERO runtime.
 
@@ -338,7 +526,6 @@ class PersistentRuntimeOrchestrator:
         self.repo_root = Path(repo_root).resolve(strict=False)
         if str(repo_root or ".") == "." and self.workspace_dir.name.lower() == "workspace":
             self.repo_root = _repo_root_from_workspace(self.workspace_dir)
-
         self.resume_store_path = (
             Path(resume_store_path).resolve(strict=False)
             if resume_store_path is not None
@@ -362,7 +549,7 @@ class PersistentRuntimeOrchestrator:
     ) -> Dict[str, Any]:
         """Resume the latest durable runtime session into the scheduler queue.
 
-        This method is intentionally orchestration-only.  It may update task
+        This method is intentionally orchestration-only. It may update task
         status back to queued/waiting and may call scheduler.submit_existing_task
         or enqueue_task, but it never runs task steps.
         """
@@ -370,9 +557,9 @@ class PersistentRuntimeOrchestrator:
         tasks = self._list_repo_tasks(task_repository)
         resume_runtime = self._build_runtime_resume_store()
         latest_record = resume_runtime.latest_record()
-
         record_source = "existing_runtime_session_resume_record"
         record: RuntimeSessionResumeRecord | None = latest_record
+
         if record is None and self.auto_create_resume_record:
             resumable_tasks = [task for task in tasks if self._is_resumable_repo_task(task)]
             if resumable_tasks:
@@ -402,13 +589,12 @@ class PersistentRuntimeOrchestrator:
             include_terminal=False,
             persist=persist,
         )
-
         snapshots = self._snapshots_from_record(record)
         candidate_tasks, terminal_guard_skipped = self._candidate_tasks_from_snapshots(snapshots)
         if not candidate_tasks:
             candidate_tasks = [task for task in tasks if self._is_resumable_repo_task(task)]
-            candidate_tasks, repo_terminal_skipped = self._filter_terminal_runtime_state_tasks(candidate_tasks)
-            terminal_guard_skipped.extend(repo_terminal_skipped)
+        candidate_tasks, repo_terminal_skipped = self._filter_terminal_runtime_state_tasks(candidate_tasks)
+        terminal_guard_skipped.extend(repo_terminal_skipped)
 
         continuation_plan_obj = RuntimeTaskContinuation().build_plan(candidate_tasks)
         continuation_plan = continuation_plan_obj.to_dict()
@@ -468,7 +654,9 @@ class PersistentRuntimeOrchestrator:
             requeued_task_ids=list(continuation_plan.get("requeue_task_ids") or []),
             waiting_task_ids=waiting,
             skipped_task_ids=skipped,
-            terminal_guard_skipped_task_ids=[item.get("task_id") for item in terminal_guard_skipped if isinstance(item, dict)],
+            terminal_guard_skipped_task_ids=[
+                item.get("task_id") for item in terminal_guard_skipped if isinstance(item, dict)
+            ],
             requeued_count=len(requeued),
             waiting_count=len(waiting),
             skipped_count=len(skipped),
@@ -560,13 +748,15 @@ class PersistentRuntimeOrchestrator:
             runtime_status = self._runtime_state_status_for_task(task)
             if runtime_status and self._is_terminal_status(runtime_status):
                 task["status"] = runtime_status
-                skipped.append({
-                    "ok": True,
-                    "task_id": _clean_text(task.get("task_id")),
-                    "action": CONTINUATION_ACTION_SKIP,
-                    "reason": "terminal_runtime_state_guard",
-                    "status": runtime_status,
-                })
+                skipped.append(
+                    {
+                        "ok": True,
+                        "task_id": _clean_text(task.get("task_id")),
+                        "action": CONTINUATION_ACTION_SKIP,
+                        "reason": "terminal_runtime_state_guard",
+                        "status": runtime_status,
+                    }
+                )
                 continue
             candidate_tasks.append(task)
         return candidate_tasks, skipped
@@ -584,13 +774,15 @@ class PersistentRuntimeOrchestrator:
             runtime_status = self._runtime_state_status_for_task(task)
             task_id = _clean_text(task.get("task_id"))
             if runtime_status and self._is_terminal_status(runtime_status):
-                skipped.append({
-                    "ok": True,
-                    "task_id": task_id,
-                    "action": CONTINUATION_ACTION_SKIP,
-                    "reason": "terminal_runtime_state_guard",
-                    "status": runtime_status,
-                })
+                skipped.append(
+                    {
+                        "ok": True,
+                        "task_id": task_id,
+                        "action": CONTINUATION_ACTION_SKIP,
+                        "reason": "terminal_runtime_state_guard",
+                        "status": runtime_status,
+                    }
+                )
                 continue
             filtered.append(task)
         return filtered, skipped
@@ -615,13 +807,15 @@ class PersistentRuntimeOrchestrator:
                 skipped_ids.append(task_id)
             requeue_ids = [item for item in requeue_ids if _clean_text(item) != task_id]
             waiting_ids = [item for item in waiting_ids if _clean_text(item) != task_id]
-            decisions.append({
-                "task_id": task_id,
-                "action": CONTINUATION_ACTION_SKIP,
-                "reason": skipped.get("reason", "terminal_runtime_state_guard"),
-                "status": skipped.get("status", ""),
-                "task": {"task_id": task_id, "status": skipped.get("status", "")},
-            })
+            decisions.append(
+                {
+                    "task_id": task_id,
+                    "action": CONTINUATION_ACTION_SKIP,
+                    "reason": skipped.get("reason", "terminal_runtime_state_guard"),
+                    "status": skipped.get("status", ""),
+                    "task": {"task_id": task_id, "status": skipped.get("status", "")},
+                }
+            )
 
         plan["skipped_task_ids"] = skipped_ids
         plan["requeue_task_ids"] = requeue_ids
@@ -687,13 +881,15 @@ class PersistentRuntimeOrchestrator:
 
             runtime_status = self._runtime_state_status_for_task(task)
             if runtime_status and self._is_terminal_status(runtime_status):
-                updates.append({
-                    "ok": True,
-                    "task_id": task_id,
-                    "action": "skip_repository_update",
-                    "reason": "terminal_runtime_state_guard",
-                    "status": runtime_status,
-                })
+                updates.append(
+                    {
+                        "ok": True,
+                        "task_id": task_id,
+                        "action": "skip_repository_update",
+                        "reason": "terminal_runtime_state_guard",
+                        "status": runtime_status,
+                    }
+                )
                 continue
 
             status = normalize_task_status(task.get("status"))
@@ -711,12 +907,14 @@ class PersistentRuntimeOrchestrator:
                     task.setdefault("blocked_reason", "persistent_runtime_resume_waiting")
                     task["next_action"] = "wait_for_external_event"
             elif action == CONTINUATION_ACTION_SKIP:
-                updates.append({
-                    "ok": True,
-                    "task_id": task_id,
-                    "action": "skip_repository_update",
-                    "reason": decision.get("reason", "skip"),
-                })
+                updates.append(
+                    {
+                        "ok": True,
+                        "task_id": task_id,
+                        "action": "skip_repository_update",
+                        "reason": decision.get("reason", "skip"),
+                    }
+                )
                 continue
 
             task.setdefault("task_id", task_id)
@@ -728,21 +926,24 @@ class PersistentRuntimeOrchestrator:
 
             try:
                 updated = _call_first(task_repository, ("upsert_task", "add_or_update_task", "save_task"), task)
-                updates.append({
-                    "ok": bool(updated is not False),
-                    "task_id": task_id,
-                    "action": "repository_upsert",
-                    "status": task.get("status"),
-                })
+                updates.append(
+                    {
+                        "ok": bool(updated is not False),
+                        "task_id": task_id,
+                        "action": "repository_upsert",
+                        "status": task.get("status"),
+                    }
+                )
             except Exception as exc:
-                updates.append({
-                    "ok": False,
-                    "task_id": task_id,
-                    "action": "repository_upsert_failed",
-                    "status": task.get("status"),
-                    "error": f"{exc.__class__.__name__}: {exc}",
-                })
-
+                updates.append(
+                    {
+                        "ok": False,
+                        "task_id": task_id,
+                        "action": "repository_upsert_failed",
+                        "status": task.get("status"),
+                        "error": f"{exc.__class__.__name__}: {exc}",
+                    }
+                )
         return updates
 
     def _requeue_with_scheduler(
@@ -754,7 +955,6 @@ class PersistentRuntimeOrchestrator:
     ) -> List[Dict[str, Any]]:
         if scheduler is None:
             return []
-
         task_ids = continuation_plan.get("requeue_task_ids")
         if not isinstance(task_ids, list):
             return []
@@ -766,14 +966,17 @@ class PersistentRuntimeOrchestrator:
                 continue
             runtime_status = self._runtime_state_status_for_task({"task_id": task_id})
             if runtime_status and self._is_terminal_status(runtime_status):
-                updates.append({
-                    "ok": True,
-                    "task_id": task_id,
-                    "action": "skip_scheduler_requeue",
-                    "reason": "terminal_runtime_state_guard",
-                    "status": runtime_status,
-                })
+                updates.append(
+                    {
+                        "ok": True,
+                        "task_id": task_id,
+                        "action": "skip_scheduler_requeue",
+                        "reason": "terminal_runtime_state_guard",
+                        "status": runtime_status,
+                    }
+                )
                 continue
+
             try:
                 if hasattr(scheduler, "submit_existing_task"):
                     result = scheduler.submit_existing_task(task_id)
@@ -797,13 +1000,14 @@ class PersistentRuntimeOrchestrator:
                     }
                 updates.append(item)
             except Exception as exc:
-                updates.append({
-                    "ok": False,
-                    "task_id": task_id,
-                    "action": "scheduler_requeue_failed",
-                    "error": f"{exc.__class__.__name__}: {exc}",
-                })
-
+                updates.append(
+                    {
+                        "ok": False,
+                        "task_id": task_id,
+                        "action": "scheduler_requeue_failed",
+                        "error": f"{exc.__class__.__name__}: {exc}",
+                    }
+                )
         return updates
 
     def _record_persistent_engineering_resume(
@@ -874,7 +1078,7 @@ class PersistentRuntimeOrchestrator:
         events = payload.setdefault("events", [])
         if not isinstance(events, list):
             payload["events"] = []
-            events = payload["events"]
+        events = payload["events"]
         item = _safe_dict(event)
         item.setdefault("created_at", _now())
         events.append(item)
@@ -933,6 +1137,9 @@ def run_persistent_runtime_orchestrator(
     persist: bool = True,
     force: bool = False,
     task: Mapping[str, Any] | None = None,
+    context: Mapping[str, Any] | None = None,
+    result: Mapping[str, Any] | None = None,
+    executor: Any = None,
     fail_cycle_index: int | None = None,
     fail_group_index: int | None = None,
 ) -> Dict[str, Any]:
@@ -944,6 +1151,16 @@ def run_persistent_runtime_orchestrator(
       orchestrator path used by planner dispatch tests.
     """
     if isinstance(task, Mapping):
+        if executor is not None:
+            return _execute_persistent_runtime_task_with_executor(
+                repo_root=repo_root,
+                workspace_dir=workspace_dir,
+                task=task,
+                executor=executor,
+                force=force,
+                fail_group_index=fail_group_index,
+            )
+
         return _simulate_persistent_runtime_orchestrator_contract(
             repo_root=repo_root,
             workspace_dir=workspace_dir,

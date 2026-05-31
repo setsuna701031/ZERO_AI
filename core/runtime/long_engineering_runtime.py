@@ -44,16 +44,46 @@ def _clean_group(group: Any) -> List[str]:
     return cleaned
 
 
+def _step_to_runtime_group(step: Any, index: int) -> List[str]:
+    if not isinstance(step, dict):
+        return []
+    group: List[str] = []
+
+    for key in ("description", "goal", "title", "name", "task", "action", "type", "tool"):
+        text = _clean_text(step.get(key))
+        if text and text not in group:
+            group.append(text)
+
+    for key in ("path", "file", "target_file", "source_path", "output_path"):
+        text = _clean_text(step.get(key))
+        if text and text not in group:
+            group.append(text)
+
+    targets = step.get("targets")
+    if isinstance(targets, list):
+        for item in targets:
+            text = _clean_text(item)
+            if text and text not in group:
+                group.append(text)
+
+    if not group:
+        group.append(f"planner step {index + 1}")
+    return group
+
+
 def normalize_runtime_plan_groups(task: Dict[str, Any]) -> List[List[str]]:
     """Normalize a long engineering task into deterministic executable groups.
 
-    Accepted sources:
+    Accepted sources, in priority order:
     - task["target_groups"] / task["plan_groups"] / task["groups"]
+    - task["steps"] / task["planner_steps"] as one executable group per step
+    - task["cycles"][*]["target_groups"] as flattened executable groups
     - task["targets"] as one group
     - task["goal"] fallback as one group
 
-    This module intentionally does not parse or mutate source code. It prepares the
-    persistent long-loop envelope only.
+    This module intentionally does not parse or mutate source code. It prepares
+    the persistent long-loop envelope and preserves planner step cardinality so
+    the StepExecutor endpoint receives each planned step.
     """
     for key in ("target_groups", "plan_groups", "groups"):
         raw = task.get(key)
@@ -62,6 +92,35 @@ def normalize_runtime_plan_groups(task: Dict[str, Any]) -> List[List[str]]:
             groups = [item for item in groups if item]
             if groups:
                 return groups
+
+    for key in ("steps", "planner_steps"):
+        raw_steps = task.get(key)
+        if isinstance(raw_steps, list):
+            groups = [_step_to_runtime_group(step, index) for index, step in enumerate(raw_steps)]
+            groups = [item for item in groups if item]
+            if groups:
+                return groups
+
+    cycles = task.get("cycles")
+    if isinstance(cycles, list):
+        groups: List[List[str]] = []
+        for cycle in cycles:
+            if not isinstance(cycle, dict):
+                continue
+            raw_groups = cycle.get("target_groups") or cycle.get("plan_groups") or cycle.get("groups")
+            if isinstance(raw_groups, list):
+                for group in raw_groups:
+                    cleaned = _clean_group(group)
+                    if cleaned:
+                        groups.append(cleaned)
+            raw_steps = cycle.get("steps") or cycle.get("planner_steps")
+            if isinstance(raw_steps, list):
+                for index, step in enumerate(raw_steps):
+                    cleaned = _step_to_runtime_group(step, index)
+                    if cleaned:
+                        groups.append(cleaned)
+        if groups:
+            return groups
 
     targets = task.get("targets")
     if isinstance(targets, list):
