@@ -7448,3 +7448,504 @@ def _zero_v825_agent_run_with_planner_step_executor_bridge(self, user_input: str
 AgentLoop.run = _zero_v825_agent_run_with_planner_step_executor_bridge
 AgentLoop._zero_v825_agent_try_planner_runtime_dispatch_route_for_test = _zero_v825_agent_try_planner_runtime_dispatch_route
 
+# ============================================================
+# ZERO v8.2.6 - Code Chain Controlled Self-Edit Bridge
+# ============================================================
+# Boundary:
+# - AgentLoop only recognizes the code-fix request and asks Planner for a plan.
+# - Planner owns the controlled mutation plan.
+# - PlannerStepExecutorAdapter normalizes planner step shapes.
+# - StepExecutor remains the execution endpoint.
+# - StepExecutor's governed write path remains RuntimeFileService ->
+#   RuntimeMutationGateway.
+
+
+def _zero_v826_code_fix_bridge_candidate(text: str) -> bool:
+    lowered = str(text or "").strip().lower().replace("\\", "/")
+    if not lowered:
+        return False
+    has_fix_intent = any(
+        marker in lowered
+        for marker in (
+            "fix",
+            "repair",
+            "correct",
+            "code failure",
+            "code-fix",
+            "code fix",
+            "controlled_edit",
+            "governed_mutation",
+        )
+    )
+    has_code_surface = any(
+        marker in lowered
+        for marker in (
+            ".py",
+            "code",
+            "workspace/",
+            "sandbox",
+            "workcopy",
+            "work copy",
+        )
+    )
+    return bool(has_fix_intent and has_code_surface)
+
+
+def _zero_v826_extract_plan_steps(planner_result: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not isinstance(planner_result, dict):
+        return []
+    for key in ("steps", "plan_steps", "actions", "tasks"):
+        value = planner_result.get(key)
+        if isinstance(value, list):
+            return [copy.deepcopy(item) for item in value if isinstance(item, dict)]
+    nested = planner_result.get("plan")
+    if isinstance(nested, dict):
+        return _zero_v826_extract_plan_steps(nested)
+    return []
+
+
+def _zero_v826_normalize_controlled_step(step: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = copy.deepcopy(step) if isinstance(step, dict) else {}
+    step_type = str(normalized.get("type") or "").strip().lower()
+    if step_type in {"controlled_edit", "code_fix", "code_fix_controlled_edit"}:
+        normalized["type"] = "apply_patch"
+        normalized.setdefault("controlled_edit_bridge", True)
+    elif step_type in {"governed_mutation", "controlled_mutation"}:
+        if isinstance(normalized.get("mutation"), dict):
+            normalized["type"] = "governed_repair_mutation"
+        else:
+            normalized["type"] = "apply_patch"
+        normalized.setdefault("controlled_edit_bridge", True)
+    return normalized
+
+
+def _zero_v826_is_controlled_edit_step(step: Dict[str, Any]) -> bool:
+    step_type = str((step or {}).get("type") or "").strip().lower()
+    if step_type in {
+        "apply_patch",
+        "apply_unified_diff",
+        "governed_repair_mutation",
+        "controlled_edit",
+        "code_fix",
+        "code_fix_controlled_edit",
+        "governed_mutation",
+        "controlled_mutation",
+    }:
+        return True
+    if isinstance((step or {}).get("edit_payload"), dict):
+        return True
+    if isinstance((step or {}).get("mutation"), dict):
+        return True
+    return False
+
+
+def _zero_v826_repo_root_from_agent(self) -> Path:
+    extra = getattr(self, "extra_kwargs", None)
+    if isinstance(extra, dict):
+        return Path(
+            str(
+                extra.get("repo_root")
+                or extra.get("project_root")
+                or extra.get("workspace_project_root")
+                or "."
+            )
+        ).resolve()
+    return Path(".").resolve()
+
+
+def _zero_v826_step_executor_from_agent(self, repo_root: Path):
+    step_executor = getattr(self, "step_executor", None)
+    if step_executor is not None:
+        return step_executor
+    try:
+        from core.runtime.step_executor import StepExecutor
+
+        return StepExecutor(workspace_root=repo_root / "workspace", debug=bool(getattr(self, "debug", False)))
+    except Exception:
+        return None
+
+
+def _zero_v826_adapt_steps_for_step_executor(self, steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    adapter = None
+    try:
+        adapter_builder = globals().get("_zero_v825_build_planner_step_executor_adapter")
+        if callable(adapter_builder):
+            adapter = adapter_builder(self)
+    except Exception:
+        adapter = None
+
+    adapted: List[Dict[str, Any]] = []
+    for raw_step in steps:
+        step = _zero_v826_normalize_controlled_step(raw_step)
+        normalizer = getattr(adapter, "_normalize_planner_step_for_step_executor", None)
+        if callable(normalizer):
+            try:
+                step = normalizer(step)
+            except Exception:
+                step = copy.deepcopy(step)
+        step["code_chain_controlled_self_edit_bridge"] = True
+        step.setdefault("planner_step_executor_adapter", True)
+        adapted.append(step)
+    return adapted
+
+
+def _zero_v826_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _zero_v826_collect_changed_files(results: List[Dict[str, Any]]) -> List[str]:
+    changed: List[str] = []
+
+    def add(value: Any) -> None:
+        text = _zero_v826_text(value).replace("\\", "/")
+        if text and text not in changed:
+            changed.append(text)
+
+    def visit(payload: Any) -> None:
+        if not isinstance(payload, dict):
+            return
+        values = payload.get("changed_files")
+        if isinstance(values, list):
+            for item in values:
+                add(item)
+        if bool(payload.get("changed")):
+            add(payload.get("target_path"))
+        result = payload.get("result")
+        if isinstance(result, dict):
+            visit(result)
+        pipeline = payload.get("pipeline_result")
+        if isinstance(pipeline, dict):
+            visit(pipeline)
+        for key in ("rollback_metadata", "repo_impact"):
+            nested = payload.get(key)
+            if isinstance(nested, dict):
+                visit(nested)
+
+    for item in results:
+        visit(item)
+    return changed
+
+
+def _zero_v826_changed_file_reasons(steps: List[Dict[str, Any]], changed_files: List[str], goal: str) -> List[Dict[str, str]]:
+    reasons: List[Dict[str, str]] = []
+    for path in changed_files:
+        reason = ""
+        for step in steps:
+            target = _zero_v826_text(
+                step.get("target_path")
+                or step.get("path")
+                or step.get("file_path")
+                or (step.get("edit_payload") or {}).get("target_path") if isinstance(step.get("edit_payload"), dict) else ""
+            ).replace("\\", "/")
+            if target == path:
+                reason = _zero_v826_text(step.get("reason") or step.get("repair_reason") or step.get("description"))
+                break
+        reasons.append({"path": path, "reason": reason or goal or "controlled code fix"})
+    return reasons
+
+
+def _zero_v826_collect_verification(results: List[Dict[str, Any]], steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    commands: List[str] = []
+    summaries: List[str] = []
+
+    for step in steps:
+        step_type = _zero_v826_text(step.get("type")).lower()
+        if step_type == "command":
+            command = _zero_v826_text(step.get("command"))
+            if command and command not in commands:
+                commands.append(command)
+        elif step_type in {"verify", "verify_file", "verify_python_syntax", "python_syntax_check"}:
+            target = _zero_v826_text(step.get("path") or step.get("target_path") or step.get("file_path"))
+            command = f"{step_type} {target}".strip()
+            if command and command not in commands:
+                commands.append(command)
+        elif step.get("verify_python_syntax"):
+            target = _zero_v826_text(step.get("target_path") or step.get("path"))
+            command = f"verify_python_syntax {target}".strip()
+            if command and command not in commands:
+                commands.append(command)
+
+    def visit(payload: Any) -> None:
+        if not isinstance(payload, dict):
+            return
+        message = _zero_v826_text(payload.get("message") or payload.get("final_answer"))
+        if message and message not in summaries:
+            summaries.append(message)
+        result = payload.get("result")
+        if isinstance(result, dict):
+            stdout = _zero_v826_text(result.get("stdout"))
+            stderr = _zero_v826_text(result.get("stderr"))
+            returncode = result.get("returncode")
+            if stdout:
+                summaries.append(stdout[:400])
+            if stderr:
+                summaries.append(stderr[:400])
+            if returncode is not None:
+                summaries.append(f"returncode={returncode}")
+            visit(result)
+        verification = payload.get("verification")
+        if isinstance(verification, dict):
+            visit(verification)
+
+    for item in results:
+        visit(item)
+
+    return {
+        "verification_command": " && ".join(commands) if commands else "represented by controlled mutation verification metadata",
+        "verification_output_summary": "; ".join(summaries[:6]) if summaries else "no verification output",
+    }
+
+
+def _zero_v826_review_required(execution_result: Dict[str, Any], steps: List[Dict[str, Any]]) -> bool:
+    if not bool(execution_result.get("ok")):
+        return True
+    for step in steps:
+        if bool(step.get("review_required") or step.get("requires_review") or step.get("human_review_required")):
+            return True
+    for item in execution_result.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        repo_impact = item.get("repo_impact")
+        if isinstance(repo_impact, dict) and bool(repo_impact.get("requires_confirmation")):
+            return True
+    return False
+
+
+def _zero_v826_reviewable_result(
+    *,
+    ok: bool,
+    task_id: str,
+    goal: str,
+    steps: List[Dict[str, Any]],
+    execution_result: Dict[str, Any],
+    failure_reason: str = "",
+) -> Dict[str, Any]:
+    results = execution_result.get("results") if isinstance(execution_result.get("results"), list) else []
+    changed_files = _zero_v826_collect_changed_files(results)
+    verification = _zero_v826_collect_verification(results, steps)
+    if not failure_reason and not ok:
+        failure_reason = _zero_v826_text(
+            execution_result.get("message")
+            or execution_result.get("final_answer")
+            or execution_result.get("error")
+            or "controlled mutation execution failed"
+        )
+    return {
+        "status": "ok" if ok else "failed",
+        "ok": bool(ok),
+        "task_id": task_id,
+        "runtime_id": task_id,
+        "changed_files": changed_files,
+        "changed_file_reasons": _zero_v826_changed_file_reasons(steps, changed_files, goal),
+        "verification_command": verification["verification_command"],
+        "verification_output_summary": verification["verification_output_summary"],
+        "human_review_required": _zero_v826_review_required(execution_result, steps),
+        "failure_reason": "" if ok else failure_reason,
+    }
+
+
+def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input: str) -> Optional[Dict[str, Any]]:
+    text = str(user_input or "").strip()
+    if not _zero_v826_code_fix_bridge_candidate(text):
+        return None
+
+    call_planner = globals().get("_zero_v824_call_planner_like")
+    if not callable(call_planner):
+        return None
+
+    repo_root = _zero_v826_repo_root_from_agent(self)
+    task_id = f"code_chain_controlled_self_edit_{str(abs(hash(text)))[-8:]}"
+    context = {
+        "source": "agent_loop",
+        "route": "code_chain_controlled_self_edit_bridge",
+        "code_chain_controlled_self_edit_bridge": True,
+        "planner_runtime_dispatch": True,
+        "workspace_root": str(repo_root / "workspace"),
+        "repo_root": str(repo_root),
+        "user_input": text,
+    }
+    route = {
+        "mode": "code_chain_controlled_self_edit_bridge",
+        "task": True,
+        "forced_route": True,
+        "planner_runtime_dispatch": True,
+        "step_executor_bridge": True,
+    }
+
+    planner_result = call_planner(
+        self,
+        context=context,
+        user_input=text,
+        route=route,
+    )
+    raw_steps = _zero_v826_extract_plan_steps(planner_result)
+    controlled_steps = [step for step in raw_steps if _zero_v826_is_controlled_edit_step(step)]
+    if not controlled_steps:
+        failure_reason = "planner did not produce a controlled mutation step"
+        execution = {
+            "ok": False,
+            "summary": failure_reason,
+            "message": failure_reason,
+            "final_answer": failure_reason,
+            "error": failure_reason,
+            "results": [],
+            "last_result": {},
+            "execution_trace": [],
+        }
+        review = _zero_v826_reviewable_result(
+            ok=False,
+            task_id=task_id,
+            goal=text,
+            steps=[],
+            execution_result=execution,
+            failure_reason=failure_reason,
+        )
+        return self._make_agent_response(
+            ok=False,
+            mode="code_chain_controlled_self_edit_bridge",
+            context=context,
+            route=route,
+            plan={"ok": False, "planner_result": copy.deepcopy(planner_result), "steps": raw_steps},
+            execution=execution,
+            final_answer=failure_reason,
+            error=failure_reason,
+            extra={
+                "reviewable_result": review,
+                "code_chain_controlled_self_edit_bridge": True,
+            },
+        )
+
+    step_executor = _zero_v826_step_executor_from_agent(self, repo_root)
+    if step_executor is None:
+        failure_reason = "StepExecutor unavailable for controlled mutation execution"
+        execution = {
+            "ok": False,
+            "summary": failure_reason,
+            "message": failure_reason,
+            "final_answer": failure_reason,
+            "error": failure_reason,
+            "results": [],
+            "last_result": {},
+            "execution_trace": [],
+        }
+        review = _zero_v826_reviewable_result(
+            ok=False,
+            task_id=task_id,
+            goal=text,
+            steps=controlled_steps,
+            execution_result=execution,
+            failure_reason=failure_reason,
+        )
+        return self._make_agent_response(
+            ok=False,
+            mode="code_chain_controlled_self_edit_bridge",
+            context=context,
+            route=route,
+            plan={"ok": False, "planner_result": copy.deepcopy(planner_result), "steps": controlled_steps},
+            execution=execution,
+            final_answer=failure_reason,
+            error=failure_reason,
+            extra={
+                "reviewable_result": review,
+                "code_chain_controlled_self_edit_bridge": True,
+            },
+        )
+
+    original_step_executor = getattr(self, "step_executor", None)
+    self.step_executor = step_executor
+    try:
+        executable_steps = _zero_v826_adapt_steps_for_step_executor(self, raw_steps)
+    finally:
+        self.step_executor = original_step_executor
+
+    task = {
+        "id": task_id,
+        "task_id": task_id,
+        "goal": _zero_v826_text(planner_result.get("goal")) or text,
+        "repo_root": str(repo_root),
+        "target_repo_root": str(repo_root),
+        "workspace_dir": str(repo_root / "workspace"),
+        "planner_result": copy.deepcopy(planner_result),
+        "steps": copy.deepcopy(executable_steps),
+    }
+
+    try:
+        execute_steps = getattr(step_executor, "execute_steps", None)
+        if callable(execute_steps):
+            execution_result = execute_steps(
+                steps=copy.deepcopy(executable_steps),
+                task=copy.deepcopy(task),
+                context=copy.deepcopy(context),
+            )
+        else:
+            raise RuntimeError("StepExecutor has no execute_steps method")
+    except Exception as exc:
+        execution_result = {
+            "ok": False,
+            "summary": "controlled mutation execution failed",
+            "message": f"{type(exc).__name__}: {exc}",
+            "final_answer": f"{type(exc).__name__}: {exc}",
+            "error": f"{type(exc).__name__}: {exc}",
+            "results": [],
+            "last_result": {},
+            "execution_trace": [],
+        }
+
+    ok = bool(execution_result.get("ok")) if isinstance(execution_result, dict) else False
+    final_answer = _zero_v826_text(
+        execution_result.get("final_answer") if isinstance(execution_result, dict) else ""
+    ) or ("controlled code fix completed" if ok else "controlled code fix failed")
+    review = _zero_v826_reviewable_result(
+        ok=ok,
+        task_id=task_id,
+        goal=task["goal"],
+        steps=executable_steps,
+        execution_result=execution_result if isinstance(execution_result, dict) else {},
+    )
+    execution = copy.deepcopy(execution_result) if isinstance(execution_result, dict) else {"ok": False}
+    execution["reviewable_result"] = copy.deepcopy(review)
+    execution["code_chain_controlled_self_edit_bridge"] = True
+
+    return self._make_agent_response(
+        ok=ok,
+        mode="code_chain_controlled_self_edit_bridge",
+        context=context,
+        route=route,
+        plan={
+            "ok": bool(controlled_steps),
+            "planner_mode": "code_chain_controlled_self_edit_bridge_v8_2_6",
+            "planner_result": copy.deepcopy(planner_result),
+            "controlled_mutation_plan": copy.deepcopy(controlled_steps),
+            "steps": copy.deepcopy(executable_steps),
+            "boundary": {
+                "agent_loop_routes_only": True,
+                "planner_produces_plan": True,
+                "step_executor_executes": True,
+                "runtime_file_service_required": True,
+                "runtime_mutation_gateway_required": True,
+            },
+        },
+        execution=execution,
+        final_answer=final_answer,
+        error=None if ok else review.get("failure_reason") or final_answer,
+        extra={
+            "reviewable_result": copy.deepcopy(review),
+            "code_chain_controlled_self_edit_bridge": True,
+            "planner_runtime_dispatch": True,
+            "controlled_mutation_plan_produced": bool(controlled_steps),
+        },
+    )
+
+
+_ZERO_V826_ORIGINAL_AGENT_RUN = AgentLoop.run
+
+
+def _zero_v826_agent_run_with_code_chain_controlled_self_edit_bridge(self, user_input: str) -> Dict[str, Any]:
+    bridge_result = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input)
+    if bridge_result is not None:
+        return bridge_result
+    return _ZERO_V826_ORIGINAL_AGENT_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v826_agent_run_with_code_chain_controlled_self_edit_bridge
+AgentLoop._zero_v826_agent_try_code_chain_controlled_self_edit_bridge_for_test = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge
