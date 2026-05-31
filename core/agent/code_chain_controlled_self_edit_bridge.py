@@ -148,47 +148,122 @@ def run_planner_owned_code_chain_bridge(
             },
         )
 
-    executable_steps = adapt_steps_for_step_executor(step_executor, raw_steps)
-    task = {
-        "id": task_id,
-        "task_id": task_id,
-        "goal": text_value(planner_result.get("goal")) or text,
-        "repo_root": str(repo_root),
-        "target_repo_root": str(repo_root),
-        "workspace_dir": str(repo_root / "workspace"),
-        "planner_result": copy.deepcopy(planner_result),
-        "steps": copy.deepcopy(executable_steps),
-        "planner_owned_intent_routing": not fallback_used,
-    }
+    first_attempt = execute_code_chain_attempt(
+        step_executor=step_executor,
+        repo_root=repo_root,
+        task_id=task_id,
+        planner_result=planner_result,
+        raw_steps=raw_steps,
+        context=context,
+        fallback_used=fallback_used,
+        attempt_index=1,
+        attempt_kind="initial",
+    )
+    attempts = [first_attempt]
+    final_attempt = first_attempt
+    repair_reason = ""
 
-    try:
-        execute_steps = getattr(step_executor, "execute_steps", None)
-        if callable(execute_steps):
-            execution_result = execute_steps(
-                steps=copy.deepcopy(executable_steps),
-                task=copy.deepcopy(task),
-                context=copy.deepcopy(context),
+    if not first_attempt["ok"]:
+        repair_reason = (
+            "verification failed; requesting planner repair attempt: "
+            + first_attempt["failure_reason"]
+        )
+        repair_context = {
+            **copy.deepcopy(context),
+            "repair_loop": True,
+            "repair_attempt": 2,
+            "repair_reason": repair_reason,
+            "previous_failure": copy.deepcopy(first_attempt["execution_result"]),
+            "previous_planner_result": copy.deepcopy(planner_result),
+            "attempt_history": [attempt_summary(first_attempt)],
+        }
+        try:
+            repair_planner_result = call_planner_like(
+                agent,
+                context=repair_context,
+                user_input=text,
+                route={**copy.deepcopy(route), "repair_loop": True, "repair_attempt": 2},
             )
-        else:
-            raise RuntimeError("StepExecutor has no execute_steps method")
-    except Exception as exc:
-        execution_result = _execution_failure(f"{type(exc).__name__}: {exc}")
+        except Exception as exc:
+            repair_planner_result = {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "steps": [],
+            }
 
-    ok = bool(execution_result.get("ok")) if isinstance(execution_result, dict) else False
+        repair_raw_steps = extract_plan_steps(repair_planner_result)
+        repair_controlled_steps = [
+            step for step in repair_raw_steps if is_controlled_edit_step(step)
+        ]
+        if repair_controlled_steps:
+            repair_attempt = execute_code_chain_attempt(
+                step_executor=step_executor,
+                repo_root=repo_root,
+                task_id=task_id,
+                planner_result=repair_planner_result,
+                raw_steps=repair_raw_steps,
+                context=repair_context,
+                fallback_used=fallback_used,
+                attempt_index=2,
+                attempt_kind="repair",
+            )
+            attempts.append(repair_attempt)
+            final_attempt = repair_attempt
+        else:
+            terminal = _execution_failure("planner did not produce a repair controlled mutation step")
+            terminal["previous_failure"] = copy.deepcopy(first_attempt["execution_result"])
+            terminal_attempt = {
+                "attempt_index": 2,
+                "attempt_kind": "repair",
+                "ok": False,
+                "planner_result": copy.deepcopy(repair_planner_result),
+                "raw_steps": repair_raw_steps,
+                "executable_steps": [],
+                "execution_result": terminal,
+                "failure_reason": terminal["message"],
+            }
+            attempts.append(terminal_attempt)
+            final_attempt = terminal_attempt
+
+    execution_result = final_attempt["execution_result"]
+    executable_steps = final_attempt["executable_steps"]
+    ok = bool(final_attempt["ok"])
     final_answer = text_value(
         execution_result.get("final_answer") if isinstance(execution_result, dict) else ""
     ) or ("controlled code fix completed" if ok else "controlled code fix failed")
     review = reviewable_result(
         ok=ok,
         task_id=task_id,
-        goal=task["goal"],
-        steps=executable_steps,
+        goal=text_value(final_attempt["planner_result"].get("goal")) or text,
+        steps=[step for attempt in attempts for step in attempt.get("executable_steps", [])],
         execution_result=execution_result if isinstance(execution_result, dict) else {},
+        failure_reason=first_attempt["failure_reason"] if len(attempts) > 1 else "",
+    )
+    review["status"] = "ok" if ok else "failed"
+    review["attempt_count"] = len(attempts)
+    review["verification_history"] = verification_history_from_attempts(attempts)
+    if len(attempts) > 1:
+        review["failure_reason"] = first_attempt["failure_reason"]
+    review["repair_reason"] = repair_reason
+    review["final_result"] = "passed" if ok else "terminal_failure"
+    review["changed_files"] = collect_changed_files(
+        [result for attempt in attempts for result in attempt_results(attempt)]
+    )
+    review["changed_file_reasons"] = changed_file_reasons(
+        [step for attempt in attempts for step in attempt.get("executable_steps", [])],
+        review["changed_files"],
+        text,
     )
     execution = copy.deepcopy(execution_result) if isinstance(execution_result, dict) else {"ok": False}
     execution["reviewable_result"] = copy.deepcopy(review)
     execution["code_chain_controlled_self_edit_bridge"] = True
     execution["planner_owned_intent_routing"] = not fallback_used
+    execution["repair_loop_entered"] = len(attempts) > 1
+    execution["attempt_history"] = [attempt_summary(attempt) for attempt in attempts]
+    execution["original_failure"] = (
+        copy.deepcopy(first_attempt["execution_result"]) if len(attempts) > 1 else {}
+    )
+    execution["verification_history"] = copy.deepcopy(review["verification_history"])
 
     return _make_response(
         agent=agent,
@@ -202,6 +277,7 @@ def run_planner_owned_code_chain_bridge(
             "planner_result": copy.deepcopy(planner_result),
             "controlled_mutation_plan": copy.deepcopy(controlled_steps),
             "steps": copy.deepcopy(executable_steps),
+            "attempt_history": [attempt_summary(attempt) for attempt in attempts],
             "route_decision": copy.deepcopy(route_decision),
             "planner_owned_intent_routing": not fallback_used,
             "fallback_used": fallback_used,
@@ -222,6 +298,7 @@ def run_planner_owned_code_chain_bridge(
             "planner_owned_intent_routing": not fallback_used,
             "code_chain_v1_fallback_used": fallback_used,
             "controlled_mutation_plan_produced": bool(controlled_steps),
+            "repair_loop_entered": len(attempts) > 1,
         },
     )
 
@@ -277,6 +354,127 @@ def planner_code_chain_route_decision(planner_result: dict[str, Any]) -> dict[st
         "code_chain_intent": False,
         "requires_controlled_mutation": False,
     }
+
+
+def execute_code_chain_attempt(
+    *,
+    step_executor: Any,
+    repo_root: Path,
+    task_id: str,
+    planner_result: dict[str, Any],
+    raw_steps: list[dict[str, Any]],
+    context: dict[str, Any],
+    fallback_used: bool,
+    attempt_index: int,
+    attempt_kind: str,
+) -> dict[str, Any]:
+    executable_steps = adapt_steps_for_step_executor(step_executor, raw_steps)
+    task = {
+        "id": task_id,
+        "task_id": task_id,
+        "goal": text_value(planner_result.get("goal")),
+        "repo_root": str(repo_root),
+        "target_repo_root": str(repo_root),
+        "workspace_dir": str(repo_root / "workspace"),
+        "planner_result": copy.deepcopy(planner_result),
+        "steps": copy.deepcopy(executable_steps),
+        "planner_owned_intent_routing": not fallback_used,
+        "repair_attempt": int(attempt_index),
+        "attempt_kind": str(attempt_kind),
+    }
+    attempt_context = {
+        **copy.deepcopy(context),
+        "repair_attempt": int(attempt_index),
+        "attempt_kind": str(attempt_kind),
+    }
+    try:
+        execute_steps = getattr(step_executor, "execute_steps", None)
+        if callable(execute_steps):
+            execution_result = execute_steps(
+                steps=copy.deepcopy(executable_steps),
+                task=copy.deepcopy(task),
+                context=attempt_context,
+            )
+        else:
+            raise RuntimeError("StepExecutor has no execute_steps method")
+    except Exception as exc:
+        execution_result = _execution_failure(f"{type(exc).__name__}: {exc}")
+
+    ok = bool(execution_result.get("ok")) if isinstance(execution_result, dict) else False
+    return {
+        "attempt_index": int(attempt_index),
+        "attempt_kind": str(attempt_kind),
+        "ok": ok,
+        "planner_result": copy.deepcopy(planner_result),
+        "raw_steps": copy.deepcopy(raw_steps),
+        "executable_steps": executable_steps,
+        "execution_result": execution_result if isinstance(execution_result, dict) else {},
+        "failure_reason": "" if ok else failure_reason_from_execution(execution_result),
+    }
+
+
+def attempt_summary(attempt: dict[str, Any]) -> dict[str, Any]:
+    execution_result = attempt.get("execution_result") if isinstance(attempt, dict) else {}
+    return {
+        "attempt_index": attempt.get("attempt_index"),
+        "attempt_kind": attempt.get("attempt_kind"),
+        "ok": bool(attempt.get("ok")),
+        "failure_reason": text_value(attempt.get("failure_reason")),
+        "changed_files": collect_changed_files(attempt_results(attempt)),
+        "verification": collect_verification(
+            attempt_results(attempt),
+            attempt.get("executable_steps") if isinstance(attempt.get("executable_steps"), list) else [],
+        ),
+        "message": text_value(
+            execution_result.get("message") if isinstance(execution_result, dict) else ""
+        ),
+    }
+
+
+def attempt_results(attempt: dict[str, Any]) -> list[dict[str, Any]]:
+    execution_result = attempt.get("execution_result") if isinstance(attempt, dict) else {}
+    if isinstance(execution_result, dict) and isinstance(execution_result.get("results"), list):
+        return [item for item in execution_result["results"] if isinstance(item, dict)]
+    return []
+
+
+def verification_history_from_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    history: list[dict[str, Any]] = []
+    for attempt in attempts:
+        verification = collect_verification(
+            attempt_results(attempt),
+            attempt.get("executable_steps") if isinstance(attempt.get("executable_steps"), list) else [],
+        )
+        history.append(
+            {
+                "attempt_index": attempt.get("attempt_index"),
+                "attempt_kind": attempt.get("attempt_kind"),
+                "ok": bool(attempt.get("ok")),
+                "verification_command": verification["verification_command"],
+                "verification_output_summary": verification["verification_output_summary"],
+                "failure_reason": text_value(attempt.get("failure_reason")),
+            }
+        )
+    return history
+
+
+def failure_reason_from_execution(execution_result: Any) -> str:
+    if not isinstance(execution_result, dict):
+        return "invalid execution result"
+    error = execution_result.get("error")
+    if isinstance(error, dict):
+        message = text_value(error.get("message") or error.get("type"))
+        if message:
+            return message
+    if error is not None:
+        message = text_value(error)
+        if message:
+            return message
+    return text_value(
+        execution_result.get("message")
+        or execution_result.get("final_answer")
+        or "controlled mutation execution failed"
+    )
 
 
 def extract_plan_steps(planner_result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -382,6 +580,7 @@ def reviewable_result(
             or execution_result.get("error")
             or "controlled mutation execution failed"
         )
+    requires_review = review_required(execution_result, steps)
     return {
         "status": "ok" if ok else "failed",
         "ok": bool(ok),
@@ -391,7 +590,8 @@ def reviewable_result(
         "changed_file_reasons": changed_file_reasons(steps, changed_files, goal),
         "verification_command": verification["verification_command"],
         "verification_output_summary": verification["verification_output_summary"],
-        "human_review_required": review_required(execution_result, steps),
+        "human_review_required": requires_review,
+        "review_required": requires_review,
         "failure_reason": "" if ok else failure_reason,
     }
 
