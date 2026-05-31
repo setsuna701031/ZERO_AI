@@ -7949,3 +7949,43 @@ def _zero_v826_agent_run_with_code_chain_controlled_self_edit_bridge(self, user_
 
 AgentLoop.run = _zero_v826_agent_run_with_code_chain_controlled_self_edit_bridge
 AgentLoop._zero_v826_agent_try_code_chain_controlled_self_edit_bridge_for_test = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge
+
+# ZERO v8.2.7 - Planner-owned Code Chain intent routing.
+# Keep AgentLoop as glue: Planner declares route metadata, the runtime helper
+# executes through StepExecutor, and the v8.2.6 keyword route remains fallback.
+try:
+    from core.agent.code_chain_controlled_self_edit_bridge import (
+        run_planner_owned_code_chain_bridge as _zero_v827_run_planner_owned_code_chain_bridge,
+    )
+except Exception:  # pragma: no cover
+    _zero_v827_run_planner_owned_code_chain_bridge = None
+
+
+_ZERO_V827_ORIGINAL_AGENT_RUN = AgentLoop.run
+
+
+def _zero_v827_agent_run_with_planner_owned_code_chain(self, user_input: str) -> Dict[str, Any]:
+    runner = _zero_v827_run_planner_owned_code_chain_bridge
+    call_planner = globals().get("_zero_v824_call_planner_like")
+    fallback_candidate = globals().get("_zero_v826_code_fix_bridge_candidate")
+    planner_dispatch_candidate = globals().get("_zero_v824_agent_planner_dispatch_candidate")
+    persistent_candidate = globals().get("_zero_v823_agent_persistent_runtime_candidate")
+    if callable(planner_dispatch_candidate) and bool(planner_dispatch_candidate(user_input)):
+        return _ZERO_V827_ORIGINAL_AGENT_RUN(self, user_input)
+    if callable(persistent_candidate) and bool(persistent_candidate(user_input)):
+        return _ZERO_V827_ORIGINAL_AGENT_RUN(self, user_input)
+    if callable(runner):
+        routed = runner(
+            agent=self,
+            user_input=user_input,
+            call_planner_like=call_planner if callable(call_planner) else None,
+            fallback_candidate=fallback_candidate if callable(fallback_candidate) else None,
+            fallback_enabled=False,
+        )
+        if routed is not None:
+            return routed
+    return _ZERO_V827_ORIGINAL_AGENT_RUN(self, user_input)
+
+
+AgentLoop.run = _zero_v827_agent_run_with_planner_owned_code_chain
+AgentLoop._zero_v827_agent_try_planner_owned_code_chain_for_test = _zero_v827_agent_run_with_planner_owned_code_chain
