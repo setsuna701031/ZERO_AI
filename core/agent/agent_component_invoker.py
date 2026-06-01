@@ -1,43 +1,96 @@
 from __future__ import annotations
 
 import traceback
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional
 
 
-def pick_callable(obj: Any, names: Sequence[str]):
-    for name in names:
-        fn = getattr(obj, name, None)
-        if callable(fn):
-            return fn
-    return None
+def _component_contract_error(
+    *,
+    component: str,
+    method: str,
+    source: str,
+    required_contract: str,
+    error: str,
+    include_traceback: bool = False,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "ok": False,
+        "component": component,
+        "component_method": method,
+        "component_source": source,
+        "component_route": f"{source}.{component}",
+        "component_contract_mismatch": True,
+        "legacy_adapter": False,
+        "error": error,
+        "required_contract": required_contract,
+    }
+    if component in {"planner", "llm_planner"}:
+        payload["_planner_error"] = True
+    if include_traceback:
+        payload["traceback"] = traceback.format_exc()
+    return payload
+
+
+def _component_runtime_error(
+    *,
+    component: str,
+    method: str,
+    source: str,
+    error: str,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "ok": False,
+        "component": component,
+        "component_method": method,
+        "component_source": source,
+        "component_route": f"{source}.{component}",
+        "error": error,
+        "traceback": traceback.format_exc(),
+    }
+    if component in {"planner", "llm_planner"}:
+        payload["_planner_error"] = True
+    return payload
+
+
+def _required_method(obj: Any, method_name: str) -> Any:
+    fn = getattr(obj, method_name, None)
+    return fn if callable(fn) else None
 
 
 def call_router(router: Any, context: Dict[str, Any], user_input: str) -> Any:
     if not router:
         return None
 
-    router_fn = pick_callable(router, ["route", "run", "handle", "__call__"])
+    method_name = "route"
+    router_fn = _required_method(router, method_name)
+    source = "agent_loop"
+    required_contract = "route(context=..., user_input=..., source=...)"
     if router_fn is None:
-        return None
-
-    candidate_calls = [
-        {"context": context, "user_input": user_input},
-        {"context": context},
-        {"user_input": user_input},
-    ]
-
-    for kwargs in candidate_calls:
-        try:
-            return router_fn(**kwargs)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {"router_error": str(e)}
+        return _component_contract_error(
+            component="router",
+            method=method_name,
+            source=source,
+            required_contract=required_contract,
+            error="router has no callable route method",
+        )
 
     try:
-        return router_fn(context)
-    except Exception as e:
-        return {"router_error": str(e)}
+        return router_fn(context=context, user_input=user_input, source=source)
+    except Exception as exc:
+        if isinstance(exc, TypeError):
+            return _component_contract_error(
+                component="router",
+                method=method_name,
+                source=source,
+                required_contract=required_contract,
+                error=f"router contract mismatch: {type(exc).__name__}: {exc}",
+            )
+        return _component_runtime_error(
+            component="router",
+            method=method_name,
+            source=source,
+            error=f"router invocation failed: {type(exc).__name__}: {exc}",
+        )
 
 
 def call_planner(
@@ -46,82 +99,13 @@ def call_planner(
     user_input: str,
     route: Any,
 ) -> Any:
-    if not planner:
-        return None
-
-    planner_fn = pick_callable(
-        planner,
-        [
-            "plan",
-            "run",
-            "create_plan",
-            "build_plan",
-            "build",
-            "make_plan",
-            "generate_plan",
-            "generate",
-            "handle",
-            "__call__",
-        ],
+    return _call_planner_component(
+        component_name="planner",
+        planner=planner,
+        context=context,
+        user_input=user_input,
+        route=route,
     )
-
-    if planner_fn is None:
-        return {
-            "ok": False,
-            "_planner_error": True,
-            "error": "planner has no callable method",
-        }
-
-    candidate_calls = [
-        {"context": context, "user_input": user_input, "route": route},
-        {"context": context, "user_input": user_input},
-        {"context": context},
-        {"user_input": user_input, "route": route},
-        {"user_input": user_input},
-        {"input_text": user_input},
-        {"message": user_input},
-        {"prompt": user_input},
-        {"task": context},
-        {"payload": context},
-    ]
-
-    for kwargs in candidate_calls:
-        try:
-            return planner_fn(**kwargs)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {
-                "ok": False,
-                "_planner_error": True,
-                "error": f"planner 呼叫失敗: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    positional_calls = [
-        context,
-        user_input,
-        {"context": context, "user_input": user_input, "route": route},
-    ]
-
-    for arg in positional_calls:
-        try:
-            return planner_fn(arg)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {
-                "ok": False,
-                "_planner_error": True,
-                "error": f"planner 呼叫失敗: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    return {
-        "ok": False,
-        "_planner_error": True,
-        "error": "planner 存在，但沒有找到相容的呼叫方式",
-    }
 
 
 def call_llm_planner(
@@ -130,82 +114,61 @@ def call_llm_planner(
     user_input: str,
     route: Any,
 ) -> Any:
-    if not llm_planner:
-        return None
-
-    planner_fn = pick_callable(
-        llm_planner,
-        [
-            "plan",
-            "run",
-            "create_plan",
-            "build_plan",
-            "build",
-            "make_plan",
-            "generate_plan",
-            "generate",
-            "handle",
-            "__call__",
-        ],
+    return _call_planner_component(
+        component_name="llm_planner",
+        planner=llm_planner,
+        context=context,
+        user_input=user_input,
+        route=route,
     )
 
+
+def _call_planner_component(
+    *,
+    component_name: str,
+    planner: Any,
+    context: Dict[str, Any],
+    user_input: str,
+    route: Any,
+) -> Any:
+    if not planner:
+        return None
+
+    method_name = "plan"
+    planner_fn = _required_method(planner, method_name)
+    source = "agent_loop"
+    required_contract = "plan(context=..., user_input=..., route=..., source=...)"
     if planner_fn is None:
-        return {
-            "ok": False,
-            "_planner_error": True,
-            "error": "llm_planner has no callable method",
-        }
+        return _component_contract_error(
+            component=component_name,
+            method=method_name,
+            source=source,
+            required_contract=required_contract,
+            error=f"{component_name} has no callable plan method",
+        )
 
-    candidate_calls = [
-        {"context": context, "user_input": user_input, "route": route},
-        {"context": context, "user_input": user_input},
-        {"context": context},
-        {"user_input": user_input, "route": route},
-        {"user_input": user_input},
-        {"input_text": user_input},
-        {"message": user_input},
-        {"prompt": user_input},
-        {"task": context},
-        {"payload": context},
-    ]
-
-    for kwargs in candidate_calls:
-        try:
-            return planner_fn(**kwargs)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {
-                "ok": False,
-                "_planner_error": True,
-                "error": f"llm_planner 呼叫失敗: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    positional_calls = [
-        context,
-        user_input,
-        {"context": context, "user_input": user_input, "route": route},
-    ]
-
-    for arg in positional_calls:
-        try:
-            return planner_fn(arg)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {
-                "ok": False,
-                "_planner_error": True,
-                "error": f"llm_planner 呼叫失敗: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    return {
-        "ok": False,
-        "_planner_error": True,
-        "error": "llm_planner 存在，但沒有找到相容的呼叫方式",
-    }
+    try:
+        return planner_fn(
+            context=context,
+            user_input=user_input,
+            route=route,
+            source=source,
+        )
+    except Exception as exc:
+        if isinstance(exc, TypeError):
+            return _component_contract_error(
+                component=component_name,
+                method=method_name,
+                source=source,
+                required_contract=required_contract,
+                error=f"{component_name} contract mismatch: {type(exc).__name__}: {exc}",
+            )
+        return _component_runtime_error(
+            component=component_name,
+            method=method_name,
+            source=source,
+            error=f"{component_name} invocation failed: {type(exc).__name__}: {exc}",
+        )
 
 
 def call_step_executor(
@@ -221,111 +184,117 @@ def call_step_executor(
     if not step_executor:
         return None
 
-    executor_fn = pick_callable(
-        step_executor,
-        [
-            "execute",
-            "run",
-            "execute_step",
-            "run_step",
-            "execute_one_step",
-            "handle",
-            "__call__",
-        ],
+    method_name = "execute"
+    executor_fn = _required_method(step_executor, method_name)
+    source = "agent_loop"
+    required_contract = (
+        "execute(step=..., context=..., user_input=..., route=..., "
+        "previous_result=..., step_index=..., step_count=..., source=...)"
     )
-
     if executor_fn is None:
-        return {"error": "step_executor has no callable method"}
+        return _component_contract_error(
+            component="step_executor",
+            method=method_name,
+            source=source,
+            required_contract=required_contract,
+            error="step_executor has no callable execute method",
+        )
 
-    candidate_calls = [
-        {
-            "step": step,
-            "context": context,
-            "user_input": user_input,
-            "route": route,
-            "previous_result": previous_result,
-            "step_index": step_index,
-            "step_count": step_count,
-        },
-        {
-            "step": step,
-            "context": context,
-            "previous_result": previous_result,
-            "step_index": step_index,
-            "step_count": step_count,
-        },
-        {
-            "step": step,
-            "context": context,
-        },
-        {
-            "step": step,
-        },
-        {
-            "payload": step,
-        },
-    ]
-
-    for kwargs in candidate_calls:
-        try:
-            return executor_fn(**kwargs)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {
-                "error": f"step_executor 呼叫失敗: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    for arg in (step, context):
-        try:
-            return executor_fn(arg)
-        except TypeError:
-            continue
-        except Exception as e:
-            return {
-                "error": f"step_executor 呼叫失敗: {e}",
-                "traceback": traceback.format_exc(),
-            }
-
-    return {"error": "step_executor 存在，但沒有找到相容的呼叫方式"}
+    try:
+        return executor_fn(
+            step=step,
+            context=context,
+            user_input=user_input,
+            route=route,
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+            source=source,
+        )
+    except Exception as exc:
+        if isinstance(exc, TypeError):
+            return _component_contract_error(
+                component="step_executor",
+                method=method_name,
+                source=source,
+                required_contract=required_contract,
+                error=f"step_executor contract mismatch: {type(exc).__name__}: {exc}",
+            )
+        return _component_runtime_error(
+            component="step_executor",
+            method=method_name,
+            source=source,
+            error=f"step_executor invocation failed: {type(exc).__name__}: {exc}",
+        )
 
 
 def run_verifier(verifier: Any, execution_result: Any) -> Any:
     if not verifier:
         return execution_result
 
-    try:
-        verify_fn = pick_callable(verifier, ["verify", "check", "review", "run"])
-        if verify_fn is None:
-            return execution_result
+    method_name = "verify"
+    verify_fn = _required_method(verifier, method_name)
+    source = "agent_loop"
+    required_contract = "verify(result=..., source=...)"
+    if verify_fn is None:
+        return _component_contract_error(
+            component="verifier",
+            method=method_name,
+            source=source,
+            required_contract=required_contract,
+            error="verifier has no callable verify method",
+        )
 
-        try:
-            return verify_fn(result=execution_result)
-        except TypeError:
-            try:
-                return verify_fn(payload=execution_result)
-            except TypeError:
-                return verify_fn(execution_result)
-    except Exception:
-        return execution_result
+    try:
+        return verify_fn(result=execution_result, source=source)
+    except Exception as exc:
+        if isinstance(exc, TypeError):
+            return _component_contract_error(
+                component="verifier",
+                method=method_name,
+                source=source,
+                required_contract=required_contract,
+                error=f"verifier contract mismatch: {type(exc).__name__}: {exc}",
+            )
+        return _component_runtime_error(
+            component="verifier",
+            method=method_name,
+            source=source,
+            error=f"verifier invocation failed: {type(exc).__name__}: {exc}",
+        )
 
 
 def run_safety_guard(safety_guard: Any, execution_result: Any) -> Any:
     if not safety_guard:
         return execution_result
 
-    try:
-        guard_fn = pick_callable(safety_guard, ["check", "review", "evaluate", "run"])
-        if guard_fn is None:
-            return execution_result
+    method_name = "check"
+    guard_fn = _required_method(safety_guard, method_name)
+    source = "agent_loop"
+    required_contract = "check(result=..., source=...)"
+    if guard_fn is None:
+        return _component_contract_error(
+            component="safety_guard",
+            method=method_name,
+            source=source,
+            required_contract=required_contract,
+            error="safety_guard has no callable check method",
+        )
 
-        try:
-            return guard_fn(result=execution_result)
-        except TypeError:
-            try:
-                return guard_fn(payload=execution_result)
-            except TypeError:
-                return guard_fn(execution_result)
-    except Exception:
-        return execution_result
+    try:
+        return guard_fn(result=execution_result, source=source)
+    except Exception as exc:
+        if isinstance(exc, TypeError):
+            return _component_contract_error(
+                component="safety_guard",
+                method=method_name,
+                source=source,
+                required_contract=required_contract,
+                error=f"safety_guard contract mismatch: {type(exc).__name__}: {exc}",
+            )
+        return _component_runtime_error(
+            component="safety_guard",
+            method=method_name,
+            source=source,
+            error=f"safety_guard invocation failed: {type(exc).__name__}: {exc}",
+        )

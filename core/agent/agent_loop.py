@@ -148,24 +148,45 @@ class AgentLoop:
     def run(self, user_input: str) -> Dict[str, Any]:
         text = str(user_input or "").strip()
         if not text:
-            return self._make_agent_response(
-                ok=False,
-                mode="empty",
-                context={},
-                route=None,
-                plan=None,
-                execution=None,
-                final_answer="",
-                error="user_input is empty",
+            return self._mark_agent_loop_route(
+                self._make_agent_response(
+                    ok=False,
+                    mode="empty",
+                    context={},
+                    route=None,
+                    plan=None,
+                    execution=None,
+                    final_answer="",
+                    error="user_input is empty",
+                ),
+                "empty_input",
             )
 
+        pre_route = self._try_agent_loop_pre_routes(text)
+        if pre_route is not None:
+            return self._mark_agent_loop_route(
+                pre_route,
+                str(pre_route.get("agent_loop_runtime_route") or pre_route.get("mode") or "pre_route")
+                if isinstance(pre_route, dict)
+                else "pre_route",
+            )
+
+        return self._run_default_agent_route(text)
+
+    def _run_default_agent_route(self, text: str) -> Dict[str, Any]:
         forced_repo_edit = self._try_force_repo_edit_route(text)
         if forced_repo_edit is not None:
-            return self._normalize_agent_response(forced_repo_edit)
+            return self._mark_agent_loop_route(
+                self._normalize_agent_response(forced_repo_edit),
+                "forced_repo_edit",
+            )
 
         scheduler_self_edit = self._try_force_scheduler_self_edit_route(text)
         if scheduler_self_edit is not None:
-            return self._normalize_agent_response(scheduler_self_edit)
+            return self._mark_agent_loop_route(
+                self._normalize_agent_response(scheduler_self_edit),
+                "scheduler_self_edit",
+            )
 
         context = self._build_context(text)
         route = self._call_router(context, text)
@@ -204,7 +225,10 @@ class AgentLoop:
             route=route,
         )
         if direct_result is not None:
-            return self._normalize_agent_response(direct_result)
+            return self._mark_agent_loop_route(
+                self._normalize_agent_response(direct_result),
+                "direct",
+            )
 
         llm_result = self._try_handle_llm_route(
             context=context,
@@ -212,24 +236,131 @@ class AgentLoop:
             route=route,
         )
         if llm_result is not None:
-            return self._normalize_agent_response(llm_result)
+            return self._mark_agent_loop_route(
+                self._normalize_agent_response(llm_result),
+                "llm",
+            )
 
         if self._should_enter_task_mode(route, text):
-            return self._normalize_agent_response(
-                self._run_task_mode(
+            return self._mark_agent_loop_route(
+                self._normalize_agent_response(
+                    self._run_task_mode(
+                        context=context,
+                        user_input=text,
+                        route=route,
+                    )
+                ),
+                "task",
+            )
+
+        return self._mark_agent_loop_route(
+            self._normalize_agent_response(
+                self._run_single_shot_mode(
                     context=context,
                     user_input=text,
                     route=route,
                 )
-            )
+            ),
+            "single_shot",
+        )
 
-        return self._normalize_agent_response(
-            self._run_single_shot_mode(
+    def _try_agent_loop_pre_routes(self, text: str) -> Optional[Dict[str, Any]]:
+        if _zero_v824_agent_planner_dispatch_candidate(text):
+            planner_bridge = _zero_v825_agent_try_planner_runtime_dispatch_route(self, text)
+            if planner_bridge is not None:
+                planner_bridge["agent_loop_runtime_route"] = "planner_step_executor_bridge"
+                return planner_bridge
+
+            planner_dispatch = _zero_v824_agent_try_planner_runtime_dispatch_route(self, text)
+            if planner_dispatch is not None:
+                planner_dispatch["agent_loop_runtime_route"] = "planner_runtime_dispatch"
+                return planner_dispatch
+
+        if _zero_v823_agent_persistent_runtime_candidate(text):
+            persistent_result = _zero_v823_agent_try_persistent_runtime_route(self, text)
+            if persistent_result is not None:
+                persistent_result["agent_loop_runtime_route"] = "persistent_runtime"
+                return persistent_result
+
+        planner_owned = _zero_v827_agent_try_planner_owned_code_chain(self, text)
+        if planner_owned is not None:
+            planner_owned["agent_loop_runtime_route"] = "planner_owned_code_chain"
+            return planner_owned
+
+        controlled_bridge = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, text)
+        if controlled_bridge is not None:
+            controlled_bridge["agent_loop_runtime_route"] = "code_chain_controlled_self_edit_bridge"
+            return controlled_bridge
+
+        if _zero_v710_looks_like_repair_intent(text):
+            decision = _zero_v710_repair_scope_decision(text)
+            if not bool(decision.get("ok")):
+                preflight = _zero_v710_make_preflight_response(self, text, decision)
+                preflight["agent_loop_runtime_route"] = "code_chain_repair_preflight"
+                return preflight
+
+        if _zero_v7_0_1_looks_like_autonomous_repair(text):
+            target_path = _zero_v7_0_1_extract_workspace_py_path(text)
+            context = self._build_context(text)
+            context["semantic_type"] = "autonomous_code_repair_v0"
+            context["planner_autonomous_repair"] = True
+            context["target_path"] = target_path
+
+            route = {
+                "mode": "task",
+                "task": True,
+                "forced_route": True,
+                "planner_autonomous_repair": True,
+                "semantic_type": "autonomous_code_repair_v0",
+                "execution_route": "planner_autonomous_repair_code_chain",
+                "target_path": target_path,
+            }
+            result = self._run_task_mode(
                 context=context,
                 user_input=text,
                 route=route,
             )
-        )
+            if isinstance(result, dict):
+                result["agent_loop_runtime_route"] = "planner_autonomous_repair"
+            return result
+
+        return None
+
+    def _zero_v823_agent_try_persistent_runtime_route_for_test(self, user_input: str) -> Optional[Dict[str, Any]]:
+        return _zero_v823_agent_try_persistent_runtime_route(self, user_input)
+
+    def _zero_v824_agent_try_planner_runtime_dispatch_route_for_test(self, user_input: str) -> Optional[Dict[str, Any]]:
+        return _zero_v824_agent_try_planner_runtime_dispatch_route(self, user_input)
+
+    def _zero_v825_agent_try_planner_runtime_dispatch_route_for_test(self, user_input: str) -> Optional[Dict[str, Any]]:
+        return _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input)
+
+    def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge_for_test(self, user_input: str) -> Optional[Dict[str, Any]]:
+        return _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input)
+
+    def _zero_v827_agent_try_planner_owned_code_chain_for_test(self, user_input: str) -> Optional[Dict[str, Any]]:
+        return _zero_v827_agent_try_planner_owned_code_chain(self, user_input)
+
+    def _mark_agent_loop_route(self, response: Dict[str, Any], route_name: str) -> Dict[str, Any]:
+        if not isinstance(response, dict):
+            return {
+                "ok": False,
+                "mode": "agent_loop_invalid_response",
+                "context": {},
+                "route": None,
+                "plan": None,
+                "execution": None,
+                "final_answer": "",
+                "error": "agent loop produced non-dict response",
+                "raw_response": copy.deepcopy(response),
+                "agent_loop_runtime_route": str(route_name or "unknown"),
+                "agent_loop_route_marker": True,
+            }
+        marker = str(route_name or response.get("agent_loop_runtime_route") or response.get("mode") or "unknown")
+        response["agent_loop_runtime_route"] = marker
+        response["agent_loop_route_marker"] = True
+        response.setdefault("agent_loop_main_path", "AgentLoop.run -> _try_agent_loop_pre_routes -> _run_default_agent_route")
+        return response
 
 
     def _analyze_scheduler_self_edit_candidate(self, user_input: str) -> Dict[str, Any]:
@@ -1529,11 +1660,14 @@ class AgentLoop:
         - Does not edit files directly.
         - Fails closed for missing files, missing functions, or missing patch pairs.
         """
-        if run_repo_edit_decision is None:
-            return None
-
         text = str(user_input or "").strip()
         if not text:
+            return None
+
+        if _zero_v7337_agent_repo_edit_intent_candidate(text):
+            return _zero_v7337_agent_forced_repo_edit_intent_response(self, text)
+
+        if run_repo_edit_decision is None:
             return None
 
         lowered = text.lower()
@@ -2672,6 +2806,67 @@ class AgentLoop:
             "error": runner_result.get("error"),
             "blockers": copy.deepcopy(effective_task.get("blockers", [])) if isinstance(effective_task.get("blockers"), list) else [],
         }
+        for source in (effective_task, runner_result):
+            if isinstance(source, dict) and isinstance(source.get("governed_self_repair"), dict):
+                execution["governed_self_repair"] = copy.deepcopy(source["governed_self_repair"])
+                for key in (
+                    "self_repair_state",
+                    "self_repair_reason",
+                    "self_repair_candidate",
+                    "self_repair_review_required",
+                    "self_repair_terminal_block",
+                    "self_repair_bridge_ready",
+                    "self_repair_lineage",
+                ):
+                    if key in source:
+                        execution[key] = copy.deepcopy(source[key])
+                break
+        _zero_v7334_agent_attach_self_repair(execution)
+
+        for source in (effective_task, runner_result):
+            if isinstance(source, dict) and isinstance(source.get("controlled_mutation_bridge"), dict):
+                execution["controlled_mutation_bridge"] = copy.deepcopy(source["controlled_mutation_bridge"])
+                for key in (
+                    "mutation_bridge_state",
+                    "mutation_bridge_eligible",
+                    "mutation_bridge_requires_review",
+                    "mutation_bridge_blocked",
+                    "mutation_bridge_lineage",
+                ):
+                    if key in source:
+                        execution[key] = copy.deepcopy(source[key])
+                break
+        _zero_v7335_agent_attach_bridge(execution)
+
+        sources = []
+        for candidate in (effective_task, runner_result, execution):
+            if isinstance(candidate, dict):
+                sources.append(candidate)
+                for nested_key in (
+                    "execution",
+                    "result",
+                    "runtime_state",
+                    "last_step_result",
+                    "last_result",
+                    "runtime_execution_result",
+                    "metadata",
+                ):
+                    nested = candidate.get(nested_key)
+                    if isinstance(nested, dict):
+                        sources.append(nested)
+                        nested_runtime_result = nested.get("runtime_execution_result")
+                        if isinstance(nested_runtime_result, dict):
+                            sources.append(nested_runtime_result)
+                        nested_metadata = nested.get("metadata")
+                        if isinstance(nested_metadata, dict):
+                            sources.append(nested_metadata)
+
+        for source in sources:
+            summary = _zero_v7336_agent_verified_change_summary(source)
+            if summary.get("verified_mutation_continuation"):
+                execution.update(copy.deepcopy(summary))
+                break
+        _zero_v7336_agent_attach_verified_change(execution)
         return execution
 
     def _extract_execution_trace_from_runner_result(
@@ -2765,6 +2960,12 @@ class AgentLoop:
             if key in runner_result:
                 task[key] = copy.deepcopy(runner_result.get(key))
 
+        continuation = _zero_v7333_agent_continuation_summary(runner_result)
+        if continuation.get("governed_continuation"):
+            _zero_v7333_agent_attach_continuation(task, continuation)
+        _zero_v7334_agent_attach_self_repair(task)
+        _zero_v7335_agent_attach_bridge(task)
+
 
     def _observe_and_record_loop_decision(
         self,
@@ -2774,6 +2975,46 @@ class AgentLoop:
     ) -> Dict[str, Any]:
         if not isinstance(effective_task, dict) or not isinstance(runner_result, dict):
             return {}
+
+        metadata = _zero_v7332_agent_constitutional_metadata(runner_result)
+        if metadata and _zero_v7332_agent_is_constitutional_block(runner_result):
+            boundary = _zero_v7332_agent_boundary(metadata)
+            _zero_v7332_agent_apply_boundary_to_task(effective_task, boundary)
+            decision = {
+                "decision": "wait",
+                "next_action": "wait_for_external_event",
+                "terminal": False,
+                "should_continue": False,
+                "should_replan": False,
+                "should_fail": False,
+                "reason": boundary["constitutional_activation_reason"],
+                "observation": {
+                    "governed_runtime_boundary": True,
+                    "constitutional_boundary": copy.deepcopy(boundary),
+                    "raw": {
+                        "blocker_gate": {
+                            "active_blockers": [
+                                {
+                                    "kind": "constitutional_execution_boundary",
+                                    "reason": boundary["constitutional_activation_reason"],
+                                    "requires_review": True,
+                                }
+                            ]
+                        }
+                    },
+                },
+            }
+            self._append_loop_history_event(
+                effective_task,
+                decision="wait",
+                next_action="wait_for_external_event",
+                reason=boundary["constitutional_activation_reason"],
+                terminal=False,
+                should_continue=False,
+                should_replan=False,
+                observation=decision["observation"],
+            )
+            return decision
 
         max_replans = self._safe_int(effective_task.get("max_replans"), 1)
         replan_count = self._safe_int(effective_task.get("replan_count"), 0)
@@ -2816,7 +3057,71 @@ class AgentLoop:
             effective_task=effective_task,
             loop_decision=decision,
         )
+        self._attach_agent_loop_decision_metadata(
+            effective_task=effective_task,
+            runner_result=runner_result,
+            decision=decision,
+        )
         return decision
+
+    def _attach_agent_loop_decision_metadata(
+        self,
+        *,
+        effective_task: Dict[str, Any],
+        runner_result: Dict[str, Any],
+        decision: Dict[str, Any],
+    ) -> None:
+        continuation = _zero_v7333_agent_continuation_summary(runner_result)
+        if continuation.get("governed_continuation"):
+            metadata = _zero_v7332_agent_constitutional_metadata(runner_result)
+            if metadata:
+                boundary = _zero_v7332_agent_boundary(metadata)
+                _zero_v7332_agent_apply_boundary_to_task(effective_task, boundary)
+            _zero_v7333_agent_attach_continuation(effective_task, continuation)
+            if continuation.get("terminal_constitutional_boundary"):
+                effective_task["status"] = "review_required"
+                effective_task["blocked_reason"] = continuation.get("continuation_reason")
+                effective_task["waiting_reason"] = "constitutional_review_required"
+                effective_task["agent_action"] = "governed_continuation_boundary"
+                effective_task["next_action"] = "wait_for_external_event"
+                effective_task.setdefault("replan_blocked_reason", "constitutional_boundary")
+                decision["decision"] = "wait"
+                decision["next_action"] = "wait_for_external_event"
+                decision["should_continue"] = False
+                decision["should_replan"] = False
+                decision["should_fail"] = False
+                decision["reason"] = continuation.get("continuation_reason")
+                observation = decision.get("observation") if isinstance(decision.get("observation"), dict) else {}
+                observation["governed_continuation"] = copy.deepcopy(continuation)
+                decision["observation"] = observation
+
+        if isinstance(runner_result, dict):
+            _zero_v7334_agent_attach_self_repair(runner_result)
+            runtime_state = runner_result.get("runtime_state")
+            if isinstance(runtime_state, dict):
+                _zero_v7334_agent_attach_self_repair(runtime_state)
+        _zero_v7334_agent_attach_self_repair(effective_task)
+        if effective_task.get("self_repair_terminal_block"):
+            effective_task["next_action"] = "wait_for_external_event"
+            effective_task["agent_action"] = "governed_self_repair_boundary"
+            decision["should_replan"] = False
+            decision["reason"] = effective_task.get("self_repair_reason")
+
+        if isinstance(runner_result, dict):
+            _zero_v7335_agent_attach_bridge(runner_result)
+            runtime_state = runner_result.get("runtime_state")
+            if isinstance(runtime_state, dict):
+                _zero_v7335_agent_attach_bridge(runtime_state)
+        _zero_v7335_agent_attach_bridge(effective_task)
+        if effective_task.get("mutation_bridge_eligible"):
+            decision["decision"] = "wait"
+            decision["next_action"] = "wait_for_external_event"
+            decision["should_continue"] = False
+            decision["should_replan"] = False
+            decision["reason"] = effective_task.get("mutation_bridge_reason")
+            observation = decision.get("observation") if isinstance(decision.get("observation"), dict) else {}
+            observation["controlled_mutation_bridge"] = copy.deepcopy(effective_task.get("controlled_mutation_bridge"))
+            decision["observation"] = observation
 
     def _active_blockers_from_loop_decision(
         self,
@@ -3116,6 +3421,15 @@ class AgentLoop:
 
         effective_task["loop_history"] = history[-25:]
 
+        boundary = effective_task.get("constitutional_boundary")
+        if isinstance(boundary, dict):
+            reason = str(boundary.get("constitutional_activation_reason") or "constitutional_blocked")
+            effective_task["blocked_reason"] = reason
+            effective_task["waiting_reason"] = "constitutional_review_required"
+            effective_task["agent_action"] = "governed_constitutional_boundary"
+            effective_task["next_action"] = "wait_for_external_event"
+            effective_task["requires_review"] = True
+
     def _ensure_loop_state_defaults(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:
         task_dict.setdefault("loop_cycle_count", 0)
         task_dict.setdefault("loop_history", [])
@@ -3346,7 +3660,36 @@ class AgentLoop:
         else:
             normalized["error"] = None
 
+        self._attach_agent_loop_execution_metadata(normalized)
         return normalized
+
+    def _attach_agent_loop_execution_metadata(self, execution: Dict[str, Any]) -> None:
+        if not isinstance(execution, dict):
+            return
+
+        metadata = _zero_v7332_agent_constitutional_metadata(execution)
+        if metadata and _zero_v7332_agent_is_constitutional_block(execution):
+            boundary = _zero_v7332_agent_boundary(metadata)
+            execution["ok"] = False
+            execution["status"] = "review_required"
+            execution["governed_runtime_boundary"] = True
+            execution["constitutional_boundary"] = copy.deepcopy(boundary)
+            execution["constitutional_blocked"] = True
+            execution["should_replan"] = False
+            execution["retryable"] = False
+            execution["error"] = boundary["constitutional_activation_reason"]
+
+        continuation = _zero_v7333_agent_continuation_summary(execution)
+        if continuation.get("governed_continuation"):
+            _zero_v7333_agent_attach_continuation(execution, continuation)
+            if continuation.get("terminal_constitutional_boundary"):
+                execution["ok"] = False
+                execution["status"] = "review_required"
+                execution["error"] = continuation.get("continuation_reason")
+
+        _zero_v7334_agent_attach_self_repair(execution)
+        _zero_v7335_agent_attach_bridge(execution)
+        _zero_v7336_agent_attach_verified_change(execution)
 
     def _plan_has_tool_call(self, plan: Any) -> bool:
         return bool(self._extract_tool_calls_from_plan(plan))
@@ -3880,14 +4223,14 @@ class AgentLoop:
             )
 
         if self.llm_planner is None:
-            fallback_result = self._run_single_shot_mode(
+            single_shot_result = self._run_single_shot_mode(
                 context=context,
                 user_input=user_input,
                 route=route,
             )
-            if isinstance(fallback_result, dict):
-                fallback_result["mode"] = "llm_fallback_single_shot"
-            return fallback_result
+            if isinstance(single_shot_result, dict):
+                single_shot_result["mode"] = "llm_fallback_single_shot"
+            return single_shot_result
 
         llm_plan = self._call_llm_planner(
             context=context,
@@ -3900,26 +4243,26 @@ class AgentLoop:
             print("[AgentLoop] llm_plan =", llm_plan)
 
         if not isinstance(llm_plan, dict):
-            fallback_result = self._run_single_shot_mode(
+            single_shot_result = self._run_single_shot_mode(
                 context=context,
                 user_input=user_input,
                 route=route,
             )
-            if isinstance(fallback_result, dict):
-                fallback_result["mode"] = "llm_fallback_single_shot"
-                fallback_result["llm_plan_error"] = "llm_plan invalid"
-            return fallback_result
+            if isinstance(single_shot_result, dict):
+                single_shot_result["mode"] = "llm_fallback_single_shot"
+                single_shot_result["llm_plan_error"] = "llm_plan invalid"
+            return single_shot_result
 
         if llm_plan.get("ok") is False:
-            fallback_result = self._run_single_shot_mode(
+            single_shot_result = self._run_single_shot_mode(
                 context=context,
                 user_input=user_input,
                 route=route,
             )
-            if isinstance(fallback_result, dict):
-                fallback_result["mode"] = "llm_fallback_single_shot"
-                fallback_result["llm_plan_error"] = llm_plan.get("error")
-            return fallback_result
+            if isinstance(single_shot_result, dict):
+                single_shot_result["mode"] = "llm_fallback_single_shot"
+                single_shot_result["llm_plan_error"] = llm_plan.get("error")
+            return single_shot_result
 
         steps = self._extract_steps_from_plan(llm_plan)
 
@@ -4574,6 +4917,14 @@ class AgentLoop:
             memory_store=self.memory_store,
             runtime_store=self.runtime_store,
         )
+        if isinstance(context, dict) and _zero_v7338_agent_autonomous_repair_intent(user_input):
+            context.setdefault("runtime_hints", {})
+            if isinstance(context.get("runtime_hints"), dict):
+                context["runtime_hints"]["autonomous_repair_chain_v2"] = True
+                context["runtime_hints"]["required_authority_path"] = (
+                    "AgentLoop -> Scheduler -> StepExecutor -> ExecutionGateway -> RuntimeNativeAutonomousRepairChain"
+                )
+            context["autonomous_repair_chain_intent"] = True
         if self.debug:
             print("[AgentLoop] context =", context)
         return context
@@ -5257,9 +5608,6 @@ class AgentLoop:
 # the older scheduler self-edit shortcut can consume them as a simple task.
 # This keeps the write path inside planner -> scheduler/runtime -> code_chain.
 
-_ZERO_V7_0_1_ORIGINAL_AGENT_LOOP_RUN = AgentLoop.run
-
-
 def _zero_v7_0_1_extract_workspace_py_path(text: str) -> str:
     match = re.search(
         r"(workspace[/\\][A-Za-z0-9_./\\ -]+?\.py)",
@@ -5313,39 +5661,6 @@ def _zero_v7_0_1_looks_like_autonomous_repair(text: str) -> bool:
     return has_analyze and has_repair and has_code_target
 
 
-def _zero_v7_0_1_run(self, user_input: str) -> Dict[str, Any]:
-    text = str(user_input or "").strip()
-    if _zero_v7_0_1_looks_like_autonomous_repair(text):
-        target_path = _zero_v7_0_1_extract_workspace_py_path(text)
-        context = self._build_context(text)
-        context["semantic_type"] = "autonomous_code_repair_v0"
-        context["planner_autonomous_repair"] = True
-        context["target_path"] = target_path
-
-        route = {
-            "mode": "task",
-            "task": True,
-            "forced_route": True,
-            "planner_autonomous_repair": True,
-            "semantic_type": "autonomous_code_repair_v0",
-            "execution_route": "planner_autonomous_repair_code_chain",
-            "target_path": target_path,
-        }
-
-        return self._normalize_agent_response(
-            self._run_task_mode(
-                context=context,
-                user_input=text,
-                route=route,
-            )
-        )
-
-    return _ZERO_V7_0_1_ORIGINAL_AGENT_LOOP_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v7_0_1_run
-
-
 # ============================================================
 # ZERO v7.1.0 - Repair Scope Guard + Preflight Validation
 # ============================================================
@@ -5354,9 +5669,6 @@ AgentLoop.run = _zero_v7_0_1_run
 #   target path is missing or outside the allowed repair scope.
 # - Protected project/core paths must not be silently consumed by the older
 #   scheduler self-edit shortcut.
-
-_ZERO_V710_ORIGINAL_AGENT_LOOP_RUN = AgentLoop.run
-
 
 def _zero_v710_normalize_path_text(path_text: str) -> str:
     value = str(path_text or "").strip().strip("'\"`").replace("\\", "/")
@@ -5541,18 +5853,6 @@ def _zero_v710_make_preflight_response(self, text: str, decision: Dict[str, Any]
     )
 
 
-def _zero_v710_agent_loop_run(self, user_input: str) -> Dict[str, Any]:
-    text = str(user_input or "").strip()
-    if _zero_v710_looks_like_repair_intent(text):
-        decision = _zero_v710_repair_scope_decision(text)
-        if not bool(decision.get("ok")):
-            return _zero_v710_make_preflight_response(self, text, decision)
-    return _ZERO_V710_ORIGINAL_AGENT_LOOP_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v710_agent_loop_run
-
-
 # ZERO v7.3.32 - AgentLoop constitutional boundary awareness
 # Recognizes scheduler/runtime constitutional block envelopes as governed
 # boundaries. This prevents blind replan/retry without enabling global
@@ -5665,117 +5965,6 @@ def _zero_v7332_agent_apply_boundary_to_task(task: Dict[str, Any], boundary: Dic
     task["replan_blocked_reason"] = "constitutional_boundary"
 
 
-_ZERO_V7332_ORIGINAL_AGENT_NORMALIZE_EXECUTION = AgentLoop._normalize_execution_result
-
-
-def _zero_v7332_agent_normalize_execution_result(self, execution: Any) -> Optional[Dict[str, Any]]:
-    normalized = _ZERO_V7332_ORIGINAL_AGENT_NORMALIZE_EXECUTION(self, execution)
-    if not isinstance(normalized, dict):
-        return normalized
-    metadata = _zero_v7332_agent_constitutional_metadata(normalized)
-    if not metadata or not _zero_v7332_agent_is_constitutional_block(normalized):
-        return normalized
-    boundary = _zero_v7332_agent_boundary(metadata)
-    normalized["ok"] = False
-    normalized["status"] = "review_required"
-    normalized["governed_runtime_boundary"] = True
-    normalized["constitutional_boundary"] = copy.deepcopy(boundary)
-    normalized["constitutional_blocked"] = True
-    normalized["should_replan"] = False
-    normalized["retryable"] = False
-    normalized["error"] = boundary["constitutional_activation_reason"]
-    return normalized
-
-
-AgentLoop._normalize_execution_result = _zero_v7332_agent_normalize_execution_result
-
-_ZERO_V7332_ORIGINAL_AGENT_OBSERVE_DECISION = AgentLoop._observe_and_record_loop_decision
-
-
-def _zero_v7332_agent_observe_and_record_loop_decision(
-    self,
-    *,
-    effective_task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> Dict[str, Any]:
-    metadata = _zero_v7332_agent_constitutional_metadata(runner_result)
-    if metadata and _zero_v7332_agent_is_constitutional_block(runner_result):
-        boundary = _zero_v7332_agent_boundary(metadata)
-        _zero_v7332_agent_apply_boundary_to_task(effective_task, boundary)
-        decision = {
-            "decision": "wait",
-            "next_action": "wait_for_external_event",
-            "terminal": False,
-            "should_continue": False,
-            "should_replan": False,
-            "should_fail": False,
-            "reason": boundary["constitutional_activation_reason"],
-            "observation": {
-                "governed_runtime_boundary": True,
-                "constitutional_boundary": copy.deepcopy(boundary),
-                "raw": {
-                    "blocker_gate": {
-                        "active_blockers": [
-                            {
-                                "kind": "constitutional_execution_boundary",
-                                "reason": boundary["constitutional_activation_reason"],
-                                "requires_review": True,
-                            }
-                        ]
-                    }
-                },
-            },
-        }
-        self._append_loop_history_event(
-            effective_task,
-            decision="wait",
-            next_action="wait_for_external_event",
-            reason=boundary["constitutional_activation_reason"],
-            terminal=False,
-            should_continue=False,
-            should_replan=False,
-            observation=decision["observation"],
-        )
-        return decision
-    return _ZERO_V7332_ORIGINAL_AGENT_OBSERVE_DECISION(
-        self,
-        effective_task=effective_task,
-        runner_result=runner_result,
-    )
-
-
-AgentLoop._observe_and_record_loop_decision = _zero_v7332_agent_observe_and_record_loop_decision
-
-_ZERO_V7332_ORIGINAL_AGENT_APPLY_LOOP_DECISION = AgentLoop._apply_loop_decision_to_task
-
-
-def _zero_v7332_agent_apply_loop_decision_to_task(
-    self,
-    *,
-    effective_task: Dict[str, Any],
-    loop_decision: Dict[str, Any],
-) -> None:
-    _ZERO_V7332_ORIGINAL_AGENT_APPLY_LOOP_DECISION(
-        self,
-        effective_task=effective_task,
-        loop_decision=loop_decision,
-    )
-    if not isinstance(effective_task, dict):
-        return
-    boundary = effective_task.get("constitutional_boundary")
-    if not isinstance(boundary, dict):
-        return
-    reason = str(boundary.get("constitutional_activation_reason") or "constitutional_blocked")
-    effective_task["blocked_reason"] = reason
-    effective_task["waiting_reason"] = "constitutional_review_required"
-    effective_task["agent_action"] = "governed_constitutional_boundary"
-    effective_task["next_action"] = "wait_for_external_event"
-    effective_task["requires_review"] = True
-
-
-AgentLoop._apply_loop_decision_to_task = _zero_v7332_agent_apply_loop_decision_to_task
-
-
 # ZERO v7.3.33 - AgentLoop governed autonomous continuation
 # Preserves governed continuation state across loop cycles and stops terminal
 # constitutional boundaries without retry/replan recursion.
@@ -5807,109 +5996,6 @@ def _zero_v7333_agent_attach_continuation(target: Dict[str, Any], summary: Dict[
         target["retryable"] = False
         target["should_replan"] = False
         target.setdefault("replan_blocked_reason", "constitutional_boundary")
-
-
-_ZERO_V7333_ORIGINAL_AGENT_NORMALIZE_EXECUTION = AgentLoop._normalize_execution_result
-
-
-def _zero_v7333_agent_normalize_execution_result(self, execution: Any) -> Optional[Dict[str, Any]]:
-    normalized = _ZERO_V7333_ORIGINAL_AGENT_NORMALIZE_EXECUTION(self, execution)
-    if not isinstance(normalized, dict):
-        return normalized
-    summary = _zero_v7333_agent_continuation_summary(normalized)
-    if not summary.get("governed_continuation"):
-        return normalized
-    _zero_v7333_agent_attach_continuation(normalized, summary)
-    if summary.get("terminal_constitutional_boundary"):
-        normalized["ok"] = False
-        normalized["status"] = "review_required"
-        normalized["error"] = summary.get("continuation_reason")
-    return normalized
-
-
-AgentLoop._normalize_execution_result = _zero_v7333_agent_normalize_execution_result
-
-_ZERO_V7333_ORIGINAL_AGENT_OBSERVE_DECISION = AgentLoop._observe_and_record_loop_decision
-
-
-def _zero_v7333_agent_observe_and_record_loop_decision(
-    self,
-    *,
-    effective_task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> Dict[str, Any]:
-    summary = _zero_v7333_agent_continuation_summary(runner_result)
-    if summary.get("governed_continuation"):
-        metadata = _zero_v7332_agent_constitutional_metadata(runner_result)
-        if metadata:
-            boundary = _zero_v7332_agent_boundary(metadata)
-            _zero_v7332_agent_apply_boundary_to_task(effective_task, boundary)
-        _zero_v7333_agent_attach_continuation(effective_task, summary)
-        if summary.get("terminal_constitutional_boundary"):
-            effective_task["status"] = "review_required"
-            effective_task["blocked_reason"] = summary.get("continuation_reason")
-            effective_task["waiting_reason"] = "constitutional_review_required"
-            effective_task["agent_action"] = "governed_continuation_boundary"
-            effective_task["next_action"] = "wait_for_external_event"
-            effective_task.setdefault("replan_blocked_reason", "constitutional_boundary")
-            decision = {
-                "decision": "wait",
-                "next_action": "wait_for_external_event",
-                "terminal": False,
-                "should_continue": False,
-                "should_replan": False,
-                "should_fail": False,
-                "reason": summary.get("continuation_reason"),
-                "observation": {
-                    "governed_continuation": copy.deepcopy(summary),
-                    "raw": {
-                        "blocker_gate": {
-                            "active_blockers": [
-                                {
-                                    "kind": "governed_continuation_boundary",
-                                    "reason": summary.get("continuation_reason"),
-                                    "requires_review": True,
-                                }
-                            ]
-                        }
-                    },
-                },
-            }
-            self._append_loop_history_event(
-                effective_task,
-                decision="wait",
-                next_action="wait_for_external_event",
-                reason=str(summary.get("continuation_reason") or ""),
-                terminal=False,
-                should_continue=False,
-                should_replan=False,
-                observation=decision["observation"],
-            )
-            return decision
-    return _ZERO_V7333_ORIGINAL_AGENT_OBSERVE_DECISION(
-        self,
-        effective_task=effective_task,
-        runner_result=runner_result,
-    )
-
-
-AgentLoop._observe_and_record_loop_decision = _zero_v7333_agent_observe_and_record_loop_decision
-
-_ZERO_V7333_ORIGINAL_AGENT_SYNC_TASK = AgentLoop._sync_task_from_runner_result
-
-
-def _zero_v7333_agent_sync_task_from_runner_result(
-    self,
-    task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> None:
-    _ZERO_V7333_ORIGINAL_AGENT_SYNC_TASK(self, task, runner_result)
-    summary = _zero_v7333_agent_continuation_summary(runner_result)
-    if summary.get("governed_continuation"):
-        _zero_v7333_agent_attach_continuation(task, summary)
-
-
-AgentLoop._sync_task_from_runner_result = _zero_v7333_agent_sync_task_from_runner_result
 
 
 # ZERO v7.3.34 - AgentLoop governed self-repair continuation classification
@@ -5957,100 +6043,6 @@ def _zero_v7334_agent_attach_self_repair(target: Dict[str, Any]) -> None:
         target["should_replan"] = False
         target["retryable"] = False
         target.setdefault("replan_blocked_reason", "terminal_constitutional_boundary")
-
-
-_ZERO_V7334_ORIGINAL_AGENT_NORMALIZE_EXECUTION = AgentLoop._normalize_execution_result
-
-
-def _zero_v7334_agent_normalize_execution_result(self, execution: Any) -> Optional[Dict[str, Any]]:
-    normalized = _ZERO_V7334_ORIGINAL_AGENT_NORMALIZE_EXECUTION(self, execution)
-    if isinstance(normalized, dict):
-        _zero_v7334_agent_attach_self_repair(normalized)
-    return normalized
-
-
-AgentLoop._normalize_execution_result = _zero_v7334_agent_normalize_execution_result
-
-_ZERO_V7334_ORIGINAL_AGENT_SYNC_TASK = AgentLoop._sync_task_from_runner_result
-
-
-def _zero_v7334_agent_sync_task_from_runner_result(
-    self,
-    task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> None:
-    _ZERO_V7334_ORIGINAL_AGENT_SYNC_TASK(self, task, runner_result)
-    _zero_v7334_agent_attach_self_repair(task)
-
-
-AgentLoop._sync_task_from_runner_result = _zero_v7334_agent_sync_task_from_runner_result
-
-_ZERO_V7334_ORIGINAL_AGENT_OBSERVE_DECISION = AgentLoop._observe_and_record_loop_decision
-
-
-def _zero_v7334_agent_observe_and_record_loop_decision(
-    self,
-    *,
-    effective_task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> Dict[str, Any]:
-    decision = _ZERO_V7334_ORIGINAL_AGENT_OBSERVE_DECISION(
-        self,
-        effective_task=effective_task,
-        runner_result=runner_result,
-    )
-    if isinstance(runner_result, dict):
-        _zero_v7334_agent_attach_self_repair(runner_result)
-        runtime_state = runner_result.get("runtime_state")
-        if isinstance(runtime_state, dict):
-            _zero_v7334_agent_attach_self_repair(runtime_state)
-    _zero_v7334_agent_attach_self_repair(effective_task)
-    if effective_task.get("self_repair_terminal_block"):
-        effective_task["next_action"] = "wait_for_external_event"
-        effective_task["agent_action"] = "governed_self_repair_boundary"
-        if isinstance(decision, dict):
-            decision["should_replan"] = False
-            decision["reason"] = effective_task.get("self_repair_reason")
-    return decision
-
-
-AgentLoop._observe_and_record_loop_decision = _zero_v7334_agent_observe_and_record_loop_decision
-
-_ZERO_V7334_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION = AgentLoop._build_task_loop_execution
-
-
-def _zero_v7334_agent_build_task_loop_execution(
-    self,
-    *,
-    runner_result: Dict[str, Any],
-    effective_task: Dict[str, Any],
-) -> Dict[str, Any]:
-    execution = _ZERO_V7334_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
-        self,
-        runner_result=runner_result,
-        effective_task=effective_task,
-    )
-    if isinstance(execution, dict):
-        for source in (effective_task, runner_result):
-            if isinstance(source, dict) and isinstance(source.get("governed_self_repair"), dict):
-                execution["governed_self_repair"] = copy.deepcopy(source["governed_self_repair"])
-                for key in (
-                    "self_repair_state",
-                    "self_repair_reason",
-                    "self_repair_candidate",
-                    "self_repair_review_required",
-                    "self_repair_terminal_block",
-                    "self_repair_bridge_ready",
-                    "self_repair_lineage",
-                ):
-                    if key in source:
-                        execution[key] = copy.deepcopy(source[key])
-                break
-        _zero_v7334_agent_attach_self_repair(execution)
-    return execution
-
-
-AgentLoop._build_task_loop_execution = _zero_v7334_agent_build_task_loop_execution
 
 
 # ZERO v7.3.35 - AgentLoop controlled mutation bridge awareness
@@ -6108,105 +6100,6 @@ def _zero_v7335_agent_attach_bridge(target: Dict[str, Any]) -> None:
         target["should_replan"] = False
         target["retryable"] = False
         target.setdefault("replan_blocked_reason", summary.get("mutation_bridge_state"))
-
-
-_ZERO_V7335_ORIGINAL_AGENT_NORMALIZE_EXECUTION = AgentLoop._normalize_execution_result
-
-
-def _zero_v7335_agent_normalize_execution_result(self, execution: Any) -> Optional[Dict[str, Any]]:
-    normalized = _ZERO_V7335_ORIGINAL_AGENT_NORMALIZE_EXECUTION(self, execution)
-    if isinstance(normalized, dict):
-        _zero_v7335_agent_attach_bridge(normalized)
-    return normalized
-
-
-AgentLoop._normalize_execution_result = _zero_v7335_agent_normalize_execution_result
-
-_ZERO_V7335_ORIGINAL_AGENT_SYNC_TASK = AgentLoop._sync_task_from_runner_result
-
-
-def _zero_v7335_agent_sync_task_from_runner_result(
-    self,
-    task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> None:
-    _ZERO_V7335_ORIGINAL_AGENT_SYNC_TASK(self, task, runner_result)
-    _zero_v7335_agent_attach_bridge(task)
-
-
-AgentLoop._sync_task_from_runner_result = _zero_v7335_agent_sync_task_from_runner_result
-
-_ZERO_V7335_ORIGINAL_AGENT_OBSERVE_DECISION = AgentLoop._observe_and_record_loop_decision
-
-
-def _zero_v7335_agent_observe_and_record_loop_decision(
-    self,
-    *,
-    effective_task: Dict[str, Any],
-    runner_result: Dict[str, Any],
-) -> Dict[str, Any]:
-    decision = _ZERO_V7335_ORIGINAL_AGENT_OBSERVE_DECISION(
-        self,
-        effective_task=effective_task,
-        runner_result=runner_result,
-    )
-    if isinstance(runner_result, dict):
-        _zero_v7335_agent_attach_bridge(runner_result)
-        runtime_state = runner_result.get("runtime_state")
-        if isinstance(runtime_state, dict):
-            _zero_v7335_agent_attach_bridge(runtime_state)
-    _zero_v7335_agent_attach_bridge(effective_task)
-    if effective_task.get("mutation_bridge_eligible") and isinstance(decision, dict):
-        decision["decision"] = "wait"
-        decision["next_action"] = "wait_for_external_event"
-        decision["should_continue"] = False
-        decision["should_replan"] = False
-        decision["reason"] = effective_task.get("mutation_bridge_reason")
-        observation = decision.get("observation")
-        if not isinstance(observation, dict):
-            observation = {}
-        observation["controlled_mutation_bridge"] = copy.deepcopy(
-            effective_task.get("controlled_mutation_bridge")
-        )
-        decision["observation"] = observation
-    return decision
-
-
-AgentLoop._observe_and_record_loop_decision = _zero_v7335_agent_observe_and_record_loop_decision
-
-_ZERO_V7335_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION = AgentLoop._build_task_loop_execution
-
-
-def _zero_v7335_agent_build_task_loop_execution(
-    self,
-    *,
-    runner_result: Dict[str, Any],
-    effective_task: Dict[str, Any],
-) -> Dict[str, Any]:
-    execution = _ZERO_V7335_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
-        self,
-        runner_result=runner_result,
-        effective_task=effective_task,
-    )
-    if isinstance(execution, dict):
-        for source in (effective_task, runner_result):
-            if isinstance(source, dict) and isinstance(source.get("controlled_mutation_bridge"), dict):
-                execution["controlled_mutation_bridge"] = copy.deepcopy(source["controlled_mutation_bridge"])
-                for key in (
-                    "mutation_bridge_state",
-                    "mutation_bridge_eligible",
-                    "mutation_bridge_requires_review",
-                    "mutation_bridge_blocked",
-                    "mutation_bridge_lineage",
-                ):
-                    if key in source:
-                        execution[key] = copy.deepcopy(source[key])
-                break
-        _zero_v7335_agent_attach_bridge(execution)
-    return execution
-
-
-AgentLoop._build_task_loop_execution = _zero_v7335_agent_build_task_loop_execution
 
 
 # ZERO v7.3.36 - Verified mutation continuation propagation
@@ -6304,121 +6197,9 @@ def _zero_v7336_agent_attach_verified_change(execution: Dict[str, Any]) -> Dict[
 _zero_v7336_agent_attach_verified_mutation = _zero_v7336_agent_attach_verified_change
 
 
-_ZERO_V7336_ORIGINAL_AGENT_NORMALIZE_EXECUTION_RESULT = AgentLoop._normalize_execution_result
-
-
-def _zero_v7336_agent_normalize_execution_result(self, result: Any) -> Dict[str, Any]:
-    execution = _ZERO_V7336_ORIGINAL_AGENT_NORMALIZE_EXECUTION_RESULT(self, result)
-    if isinstance(execution, dict):
-        _zero_v7336_agent_attach_verified_change(execution)
-    return execution
-
-
-AgentLoop._normalize_execution_result = _zero_v7336_agent_normalize_execution_result
-
-_ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION = AgentLoop._build_task_loop_execution
-
-
-def _zero_v7336_agent_build_task_loop_execution(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-    """Build task-loop execution while preserving AgentLoop runner-result ABI.
-
-    v7.3.36 originally wrapped ``_build_task_loop_execution`` with a
-    positional ``scheduler_result`` signature.  The task-loop path already
-    calls this hook with keyword-only ``runner_result`` and ``effective_task``;
-    narrowing the signature broke the constitutional continuation tests before
-    execution metadata could be normalized.
-
-    This compatibility wrapper accepts both call styles and forwards to the
-    previous wrapper using the most precise contract available.  It does not
-    introduce a new runtime layer, does not mutate scheduler behavior, and only
-    preserves verified-mutation metadata after the existing execution builder
-    has produced its payload.
-    """
-    runner_result = kwargs.get("runner_result")
-    effective_task = kwargs.get("effective_task")
-    scheduler_result = kwargs.get("scheduler_result")
-
-    if runner_result is None:
-        if scheduler_result is not None:
-            runner_result = scheduler_result
-        elif args:
-            runner_result = args[0]
-
-    if scheduler_result is None:
-        scheduler_result = runner_result
-
-    try:
-        if effective_task is not None:
-            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
-                self,
-                runner_result=runner_result,
-                effective_task=effective_task,
-            )
-        else:
-            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
-                self,
-                scheduler_result,
-            )
-    except TypeError:
-        try:
-            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
-                self,
-                runner_result=runner_result,
-                effective_task=effective_task,
-            )
-        except TypeError:
-            execution = _ZERO_V7336_ORIGINAL_AGENT_BUILD_TASK_LOOP_EXECUTION(
-                self,
-                scheduler_result,
-            )
-
-    if isinstance(execution, dict):
-        sources = []
-        for candidate in (
-            effective_task,
-            runner_result,
-            scheduler_result,
-            execution,
-        ):
-            if isinstance(candidate, dict):
-                sources.append(candidate)
-                for nested_key in (
-                    "execution",
-                    "result",
-                    "runtime_state",
-                    "last_step_result",
-                    "last_result",
-                    "runtime_execution_result",
-                    "metadata",
-                ):
-                    nested = candidate.get(nested_key)
-                    if isinstance(nested, dict):
-                        sources.append(nested)
-                        nested_runtime_result = nested.get("runtime_execution_result")
-                        if isinstance(nested_runtime_result, dict):
-                            sources.append(nested_runtime_result)
-                        nested_metadata = nested.get("metadata")
-                        if isinstance(nested_metadata, dict):
-                            sources.append(nested_metadata)
-
-        for source in sources:
-            summary = _zero_v7336_agent_verified_change_summary(source)
-            if summary.get("verified_mutation_continuation"):
-                execution.update(copy.deepcopy(summary))
-                break
-
-        _zero_v7336_agent_attach_verified_change(execution)
-    return execution
-
-
-AgentLoop._build_task_loop_execution = _zero_v7336_agent_build_task_loop_execution
-
 # ZERO v7.3.37 - AgentLoop mutation bridge intent seal
 # Forced repo-edit / Code Chain surfaces are allowed to create execution intent
 # only.  They must not call repo_edit_tool or mutate files from AgentLoop.
-_ZERO_V7337_ORIGINAL_AGENT_TRY_FORCE_REPO_EDIT_ROUTE = AgentLoop._try_force_repo_edit_route
-
-
 def _zero_v7337_agent_repo_edit_intent_candidate(text: str) -> bool:
     lowered = str(text or "").strip().lower().replace("\\", "/")
     if not lowered:
@@ -6542,16 +6323,6 @@ def _zero_v7337_agent_forced_repo_edit_intent_response(self, text: str) -> Dict[
     )
 
 
-def _zero_v7337_agent_try_force_repo_edit_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-    text = str(user_input or "").strip()
-    if _zero_v7337_agent_repo_edit_intent_candidate(text):
-        return _zero_v7337_agent_forced_repo_edit_intent_response(self, text)
-    return _ZERO_V7337_ORIGINAL_AGENT_TRY_FORCE_REPO_EDIT_ROUTE(self, user_input)
-
-
-AgentLoop._try_force_repo_edit_route = _zero_v7337_agent_try_force_repo_edit_route
-
-
 # ZERO v7.3.38 - AgentLoop autonomous repair chain intent tagging
 # ------------------------------------------------------------
 def _zero_v7338_agent_autonomous_repair_intent(text: str) -> bool:
@@ -6566,22 +6337,6 @@ def _zero_v7338_agent_autonomous_repair_intent(text: str) -> bool:
         or "自動修復鏈" in lowered
     )
 
-
-_ZERO_V7338_ORIGINAL_AGENT_BUILD_CONTEXT = AgentLoop._build_context
-
-
-def _zero_v7338_agent_build_context(self, user_input: str) -> Dict[str, Any]:
-    context = _ZERO_V7338_ORIGINAL_AGENT_BUILD_CONTEXT(self, user_input)
-    if isinstance(context, dict) and _zero_v7338_agent_autonomous_repair_intent(user_input):
-        context.setdefault("runtime_hints", {})
-        if isinstance(context.get("runtime_hints"), dict):
-            context["runtime_hints"]["autonomous_repair_chain_v2"] = True
-            context["runtime_hints"]["required_authority_path"] = "AgentLoop -> Scheduler -> StepExecutor -> ExecutionGateway -> RuntimeNativeAutonomousRepairChain"
-        context["autonomous_repair_chain_intent"] = True
-    return context
-
-
-AgentLoop._build_context = _zero_v7338_agent_build_context
 
 # ============================================================
 # ZERO v8.2.3 - AgentLoop Persistent Runtime Orchestrator Route
@@ -6855,19 +6610,6 @@ def _zero_v823_agent_try_persistent_runtime_route(self, user_input: str) -> Opti
     }
 
 
-_ZERO_V823_ORIGINAL_AGENT_RUN = AgentLoop.run
-
-
-def _zero_v823_agent_run_with_persistent_runtime(self, user_input: str) -> Dict[str, Any]:
-    persistent_result = _zero_v823_agent_try_persistent_runtime_route(self, user_input)
-    if persistent_result is not None:
-        return persistent_result
-    return _ZERO_V823_ORIGINAL_AGENT_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v823_agent_run_with_persistent_runtime
-AgentLoop._zero_v823_agent_try_persistent_runtime_route_for_test = _zero_v823_agent_try_persistent_runtime_route
-
 # ============================================================
 # ZERO v8.2.4 - AgentLoop Planner Runtime Dispatch Route
 # ============================================================
@@ -6973,36 +6715,8 @@ def _zero_v824_call_planner_like(self, *, context: Dict[str, Any], user_input: s
         if not callable(method):
             continue
 
-        candidate_calls = (
-            {"context": context, "user_input": user_input, "route": route},
-            {"context": context, "user_input": user_input},
-            {"user_input": user_input, "route": route},
-            {"user_input": user_input},
-        )
-        for kwargs in candidate_calls:
-            try:
-                result = method(**kwargs)
-                return result if isinstance(result, dict) else {
-                    "ok": False,
-                    "steps": [],
-                    "goal": user_input,
-                    "error": "planner returned non-dict result",
-                    "raw_result": copy.deepcopy(result),
-                }
-            except TypeError:
-                continue
-            except Exception as exc:
-                return {
-                    "ok": False,
-                    "steps": [],
-                    "goal": user_input,
-                    "error": f"planner call failed: {type(exc).__name__}: {exc}",
-                    "execution_route": "planner_exception",
-                    "semantic_type": "generic_task",
-                }
-
         try:
-            result = method(user_input)
+            result = method(context=context, user_input=user_input, route=route)
             return result if isinstance(result, dict) else {
                 "ok": False,
                 "steps": [],
@@ -7011,6 +6725,16 @@ def _zero_v824_call_planner_like(self, *, context: Dict[str, Any], user_input: s
                 "raw_result": copy.deepcopy(result),
             }
         except Exception as exc:
+            if isinstance(exc, TypeError):
+                return {
+                    "ok": False,
+                    "steps": [],
+                    "goal": user_input,
+                    "error": f"planner contract mismatch: {type(exc).__name__}: {exc}",
+                    "execution_route": "planner_contract_mismatch",
+                    "semantic_type": "generic_task",
+                    "required_contract": f"{method_name}(context=..., user_input=..., route=...)",
+                }
             return {
                 "ok": False,
                 "steps": [],
@@ -7220,19 +6944,6 @@ def _zero_v824_agent_try_planner_runtime_dispatch_route(self, user_input: str) -
     }
 
 
-_ZERO_V824_ORIGINAL_AGENT_RUN = AgentLoop.run
-
-
-def _zero_v824_agent_run_with_planner_runtime_dispatch(self, user_input: str) -> Dict[str, Any]:
-    planner_dispatch_result = _zero_v824_agent_try_planner_runtime_dispatch_route(self, user_input)
-    if planner_dispatch_result is not None:
-        return planner_dispatch_result
-    return _ZERO_V824_ORIGINAL_AGENT_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v824_agent_run_with_planner_runtime_dispatch
-AgentLoop._zero_v824_agent_try_planner_runtime_dispatch_route_for_test = _zero_v824_agent_try_planner_runtime_dispatch_route
-
 # ============================================================
 # ZERO v8.2.5 - AgentLoop Planner StepExecutor Bridge
 # ============================================================
@@ -7434,19 +7145,6 @@ def _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input: str) -
         "agent_loop_planner_step_executor_bridge": True,
     }
 
-
-_ZERO_V825_ORIGINAL_AGENT_RUN = AgentLoop.run
-
-
-def _zero_v825_agent_run_with_planner_step_executor_bridge(self, user_input: str) -> Dict[str, Any]:
-    bridge_result = _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input)
-    if bridge_result is not None:
-        return bridge_result
-    return _ZERO_V825_ORIGINAL_AGENT_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v825_agent_run_with_planner_step_executor_bridge
-AgentLoop._zero_v825_agent_try_planner_runtime_dispatch_route_for_test = _zero_v825_agent_try_planner_runtime_dispatch_route
 
 # ============================================================
 # ZERO v8.2.6 - Code Chain Controlled Self-Edit Bridge
@@ -7937,19 +7635,6 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
     )
 
 
-_ZERO_V826_ORIGINAL_AGENT_RUN = AgentLoop.run
-
-
-def _zero_v826_agent_run_with_code_chain_controlled_self_edit_bridge(self, user_input: str) -> Dict[str, Any]:
-    bridge_result = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input)
-    if bridge_result is not None:
-        return bridge_result
-    return _ZERO_V826_ORIGINAL_AGENT_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v826_agent_run_with_code_chain_controlled_self_edit_bridge
-AgentLoop._zero_v826_agent_try_code_chain_controlled_self_edit_bridge_for_test = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge
-
 # ZERO v8.2.7 - Planner-owned Code Chain intent routing.
 # Keep AgentLoop as glue: Planner declares route metadata, the runtime helper
 # executes through StepExecutor, and the v8.2.6 keyword route remains fallback.
@@ -7961,19 +7646,16 @@ except Exception:  # pragma: no cover
     _zero_v827_run_planner_owned_code_chain_bridge = None
 
 
-_ZERO_V827_ORIGINAL_AGENT_RUN = AgentLoop.run
-
-
-def _zero_v827_agent_run_with_planner_owned_code_chain(self, user_input: str) -> Dict[str, Any]:
+def _zero_v827_agent_try_planner_owned_code_chain(self, user_input: str) -> Optional[Dict[str, Any]]:
     runner = _zero_v827_run_planner_owned_code_chain_bridge
     call_planner = globals().get("_zero_v824_call_planner_like")
     fallback_candidate = globals().get("_zero_v826_code_fix_bridge_candidate")
     planner_dispatch_candidate = globals().get("_zero_v824_agent_planner_dispatch_candidate")
     persistent_candidate = globals().get("_zero_v823_agent_persistent_runtime_candidate")
     if callable(planner_dispatch_candidate) and bool(planner_dispatch_candidate(user_input)):
-        return _ZERO_V827_ORIGINAL_AGENT_RUN(self, user_input)
+        return None
     if callable(persistent_candidate) and bool(persistent_candidate(user_input)):
-        return _ZERO_V827_ORIGINAL_AGENT_RUN(self, user_input)
+        return None
     if callable(runner):
         routed = runner(
             agent=self,
@@ -7984,8 +7666,4 @@ def _zero_v827_agent_run_with_planner_owned_code_chain(self, user_input: str) ->
         )
         if routed is not None:
             return routed
-    return _ZERO_V827_ORIGINAL_AGENT_RUN(self, user_input)
-
-
-AgentLoop.run = _zero_v827_agent_run_with_planner_owned_code_chain
-AgentLoop._zero_v827_agent_try_planner_owned_code_chain_for_test = _zero_v827_agent_run_with_planner_owned_code_chain
+    return None

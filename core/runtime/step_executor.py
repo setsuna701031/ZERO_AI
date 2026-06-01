@@ -9203,20 +9203,12 @@ def _zero_boundary_execute_registered_handler(self, step, task, context, previou
         mapping = getattr(self, attr, None)
         if isinstance(mapping, dict) and callable(mapping.get(step_type)):
             handler = mapping[step_type]
-            try:
-                return handler(
-                    step=step,
-                    task=task,
-                    context=context,
-                    previous_result=previous_result,
-                    step_index=step_index,
-                    step_count=step_count,
-                )
-            except TypeError:
-                try:
-                    return handler(step, task=task, context=context)
-                except TypeError:
-                    return handler(step)
+            return handler(
+                step,
+                task,
+                context,
+                previous_result,
+            )
     return None
 
 
@@ -9281,10 +9273,115 @@ def _zero_boundary_execute_simple_fallback(self, step, context, decision):
     return None
 
 
+
+def _zero_boundary_document_path_allowed(raw_path):
+    text = _zero_boundary_norm_text(raw_path).replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    if not text:
+        return False
+    if text.startswith("../") or "/../" in text or text == "..":
+        return False
+    if re.match(r"^[A-Za-z]:", text):
+        normalized = text.lower()
+        return "\\workspace\\" in normalized.replace("/", "\\") or normalized.endswith("\\workspace")
+    return (
+        text == "workspace"
+        or text.startswith("workspace/")
+        or text == "shared"
+        or text.startswith("shared/")
+    )
+
+
+def _zero_boundary_is_controlled_document_task(task):
+    if not isinstance(task, dict):
+        return False
+    task_type = _zero_boundary_norm_text(
+        task.get("task_type")
+        or task.get("type")
+        or task.get("document_mode")
+    ).lower()
+    if task_type in {"document", "summary", "doc_summary", "doc_action_items", "doc_requirement"}:
+        return True
+    payload = task.get("document_payload")
+    if isinstance(payload, dict):
+        payload_type = _zero_boundary_norm_text(payload.get("task_type") or payload.get("type")).lower()
+        if payload_type == "document":
+            return True
+        if payload.get("input_file") or payload.get("output_file"):
+            return True
+    return False
+
+
+def _zero_boundary_document_step_allowed(step, task):
+    if not isinstance(step, dict):
+        return False
+    if not _zero_boundary_is_controlled_document_task(task):
+        return False
+
+    step_type = _zero_boundary_step_type(step)
+    if step_type in {"llm", "llm_generate", "respond", "final_answer", "noop"}:
+        return True
+
+    if step_type in {"read_file", "workspace_read", "ensure_file", "verify", "verify_file"}:
+        target = _zero_boundary_step_target(step) or step.get("path") or step.get("target_path")
+        return _zero_boundary_document_path_allowed(target)
+
+    if step_type in {"write_file", "workspace_write", "append_file", "workspace_append"}:
+        target = _zero_boundary_step_target(step) or step.get("path") or step.get("target_path")
+        if not _zero_boundary_document_path_allowed(target):
+            return False
+        payload = task.get("document_payload") if isinstance(task.get("document_payload"), dict) else {}
+        expected_output = _zero_boundary_norm_text(
+            task.get("output_file")
+            or payload.get("output_file")
+            or payload.get("target_file")
+        ).replace("\\", "/")
+        actual = _zero_boundary_norm_text(target).replace("\\", "/")
+        if expected_output:
+            return actual == expected_output
+        return True
+
+    return False
+
+
+def _zero_boundary_build_document_pipeline_authority(step, task):
+    if not _zero_boundary_document_step_allowed(step, task):
+        return {}
+    step_type = _zero_boundary_step_type(step)
+    action_type = "read"
+    if step_type in {"write_file", "workspace_write", "append_file", "workspace_append"}:
+        action_type = "write_file"
+    elif step_type in {"llm", "llm_generate"}:
+        action_type = "generate"
+    elif step_type in {"respond", "final_answer"}:
+        action_type = "respond"
+    return {
+        "authority_source": "controlled_document_pipeline",
+        "source": "controlled_document_pipeline",
+        "authority_status": "allowed",
+        "status": "allowed",
+        "authority_endpoint": "step_executor",
+        "endpoint": "step_executor",
+        "action_type": action_type,
+        "step_type": step_type,
+        "scope": "workspace_document_pipeline",
+        "sealed": True,
+        "reason": "controlled_document_pipeline_authority",
+    }
+
+
 def _zero_boundary_execute_step(self, step=None, task=None, context=None, previous_result=None, step_index=0, step_count=1, **kwargs):
     context = copy.deepcopy(context) if isinstance(context, dict) else {}
     authority_context = _zero_boundary_extract_authority_context(context)
     execution_authority = _zero_boundary_extract_execution_authority(context)
+    if not execution_authority:
+        execution_authority = _zero_boundary_build_document_pipeline_authority(step, task)
+        if execution_authority:
+            context["execution_authority"] = copy.deepcopy(execution_authority)
+            authority_context = copy.deepcopy(authority_context) if isinstance(authority_context, dict) else {}
+            authority_context["execution_authority"] = copy.deepcopy(execution_authority)
+            authority_context["authority_propagation_required"] = True
     if execution_authority and "execution_authority" not in context:
         context["execution_authority"] = copy.deepcopy(execution_authority)
     if authority_context and "authority_context" not in context:

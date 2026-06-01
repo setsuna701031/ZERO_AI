@@ -206,15 +206,133 @@ def _nested_mapping_values(payload: Any) -> List[Dict[str, Any]]:
     return values
 
 
-def _infer_execution_ok(payload: Dict[str, Any]) -> bool:
-    """Infer execution truth without inventing success.
+def _payload_chain(payload: Any) -> List[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    return [payload, *_nested_mapping_values(payload)]
+
+
+def _payload_step_type(payload: Any, fallback: str = "") -> str:
+    for source_payload in _payload_chain(payload):
+        for key in ("step_type", "type", "action"):
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
+                return value.strip().lower()
+        step = source_payload.get("step")
+        if isinstance(step, dict):
+            value = step.get("type") or step.get("action")
+            if isinstance(value, str) and value.strip() and value.strip().lower() != "unknown":
+                return value.strip().lower()
+    return str(fallback or "").strip().lower()
+
+
+def _has_nonempty_text(payload: Any, *keys: str) -> bool:
+    for source_payload in _payload_chain(payload):
+        for key in keys:
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+    return False
+
+
+def _has_path_signal(payload: Any) -> bool:
+    for source_payload in _payload_chain(payload):
+        for key in ("full_path", "path", "target_path", "file_path"):
+            value = source_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return True
+    return False
+
+
+def _has_hard_failure_signal(payload: Any) -> bool:
+    """Return True only for errors that should beat a successful payload shape."""
+    soft_errors = {"execution_failed"}
+    for source_payload in _payload_chain(payload):
+        for key in ("blocked", "failed"):
+            if bool(source_payload.get(key)):
+                return True
+
+        error_type = source_payload.get("error_type")
+        if isinstance(error_type, str) and error_type.strip():
+            return True
+
+        error = source_payload.get("error")
+        if isinstance(error, dict):
+            error_name = str(error.get("type") or "").strip().lower()
+            if error_name and error_name not in soft_errors:
+                return True
+            message = str(error.get("message") or "").strip()
+            if message and error_name not in soft_errors:
+                return True
+        elif isinstance(error, str):
+            error_name = error.strip().lower()
+            if error_name and error_name not in soft_errors:
+                return True
+        elif error not in (None, "", False, {}, []):
+            return True
+    return False
+
+
+def _looks_like_successful_payload(payload: Any, *, fallback_step_type: str = "") -> bool:
+    """Recognize legacy/basic executor success shapes without inventing success.
+
+    Some older scheduler-basic paths return useful read/write payloads but mark
+    ``ok`` false because they treat missing outer executor transport metadata as
+    a failure.  The gateway is the contract boundary, so it may correct those
+    known shapes only when a concrete success signal exists and no hard error is
+    present.
+    """
+    if not isinstance(payload, dict):
+        return bool(payload)
+
+    if _has_hard_failure_signal(payload):
+        return False
+
+    step_type = _payload_step_type(payload, fallback=fallback_step_type)
+
+    if step_type in {"read_file", "workspace_read"}:
+        return _has_path_signal(payload) and _has_nonempty_text(payload, "content", "text", "message", "final_answer")
+
+    if step_type in {"write_file", "workspace_write", "append_file", "workspace_append", "ensure_file"}:
+        return _has_path_signal(payload) and (
+            _has_nonempty_text(payload, "content", "message", "final_answer")
+            or any("bytes" in source_payload or "bytes_appended" in source_payload for source_payload in _payload_chain(payload))
+            or any(source_payload.get("created") is not None for source_payload in _payload_chain(payload))
+        )
+
+    if step_type in {"llm", "llm_generate", "respond", "final_answer"}:
+        return _has_nonempty_text(payload, "text", "content", "message", "final_answer", "response")
+
+    if step_type in {"command", "shell", "run_python"}:
+        for source_payload in _payload_chain(payload):
+            if "returncode" in source_payload:
+                try:
+                    return int(source_payload.get("returncode", 1)) == 0
+                except Exception:
+                    return False
+
+    return False
+
+
+def _infer_execution_ok(payload: Dict[str, Any], *, fallback_step_type: str = "") -> bool:
+    """Infer execution truth without letting legacy wrappers invert success.
 
     Precedence:
-    1. Explicit top-level ok/success/executed.
-    2. Explicit nested ok/success/executed from executor payloads.
-    3. False when explicit error/block/failure signals exist.
-    4. False by default.
+    1. Explicit hard failure signals.
+    2. Known successful executor payload shapes such as read_file with content.
+    3. Explicit top-level ok/success/executed.
+    4. Explicit nested ok/success/executed.
+    5. False by default.
     """
+    if not isinstance(payload, dict):
+        return bool(payload)
+
+    if _has_hard_failure_signal(payload):
+        return False
+
+    if _looks_like_successful_payload(payload, fallback_step_type=fallback_step_type):
+        return True
+
     for key in ("ok", "success", "executed"):
         if key in payload:
             return bool(payload.get(key))
@@ -223,17 +341,6 @@ def _infer_execution_ok(payload: Dict[str, Any]) -> bool:
         for key in ("ok", "success", "executed"):
             if key in nested:
                 return bool(nested.get(key))
-
-    for source_payload in [payload, *_nested_mapping_values(payload)]:
-        for key in ("blocked", "failed"):
-            if bool(source_payload.get(key)):
-                return False
-        error = source_payload.get("error")
-        if error not in (None, "", False, {}, []):
-            return False
-        error_type = source_payload.get("error_type")
-        if isinstance(error_type, str) and error_type.strip():
-            return False
 
     return False
 
@@ -285,8 +392,10 @@ def normalize_execution_result(
         fallback=fallback_action,
     )
 
-    inferred_ok = _infer_execution_ok(result)
-    result["ok"] = bool(result.get("ok")) if "ok" in result else inferred_ok
+    inferred_ok = _infer_execution_ok(result, fallback_step_type=_step_type(normalized_step))
+    # Do not let a legacy/basic wrapper keep ok=False when the payload has a
+    # concrete successful executor shape (for example read_file with content).
+    result["ok"] = inferred_ok
     result["action"] = action
     result.setdefault("type", action)
     result.setdefault("step_type", _step_type(normalized_step))
@@ -382,25 +491,46 @@ def build_gateway_result(
 
 
 def _invoke_executor(executor: Any, step: Dict[str, Any], kwargs: Dict[str, Any]) -> Any:
-    if callable(executor):
-        try:
-            return executor(step, **kwargs)
-        except TypeError:
-            return executor(step)
+    """Invoke a scheduler execution target with one canonical contract.
+
+    This function deliberately avoids broad TypeError fallback chains. Those
+    chains used to catch TypeError raised *inside* a handler and retry with
+    ``handler(step)``, hiding the real error and breaking bound handlers.
+
+    Supported contracts:
+    - StepExecutor-like object: execute_step(step=..., task=..., context=..., previous_result=...)
+    - StepExecutor-like object: execute(step=..., task=..., context=..., previous_result=...)
+    - Bound StepHandler callable: handler(step, task, context, previous_result)
+    - Legacy explicit opt-in callable: handler(step) only when no task/context/previous_result exists.
+    """
+    task = kwargs.get("task")
+    context = kwargs.get("context")
+    previous_result = kwargs.get("previous_result")
 
     execute_step = getattr(executor, "execute_step", None)
     if callable(execute_step):
-        try:
-            return execute_step(step=step, **kwargs)
-        except TypeError:
-            return execute_step(step)
+        return execute_step(step=step, **kwargs)
 
     execute = getattr(executor, "execute", None)
     if callable(execute):
+        return execute(step=step, **kwargs)
+
+    if callable(executor):
+        if task is not None or context is not None or previous_result is not None:
+            return executor(step, task, context, previous_result)
         try:
-            return execute(step=step, **kwargs)
-        except TypeError:
-            return execute(step)
+            return executor(step, task, context, previous_result)
+        except TypeError as exc:
+            message = str(exc)
+            contract_error_markers = (
+                "required positional argument",
+                "positional arguments",
+                "unexpected keyword argument",
+                "takes",
+            )
+            if any(marker in message for marker in contract_error_markers):
+                return executor(step)
+            raise
 
     raise TypeError("executor_not_callable")
 

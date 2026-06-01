@@ -78,6 +78,10 @@ from core.tasks.scheduler_core.public_task_record_helpers import (
     refresh_task_public_fields,
     sync_runtime_back_to_repo_with_retry_collapse,
 )
+from core.tasks.scheduler_core.public_snapshot_helpers import (
+    safe_public_results_summary as _zero_safe_public_results_summary,
+    safe_task_for_snapshot as _zero_safe_task_for_snapshot,
+)
 from core.tasks.scheduler_core.queue_formatting_helpers import (
     build_queue_rows_payload,
     build_queue_snapshot_payload,
@@ -109,6 +113,10 @@ from core.tasks.scheduler_core.simple_runner_helpers import (
     handle_simple_terminal_task,
     load_simple_task_state,
     run_simple_task_tick,
+)
+from core.tasks.scheduler_core.fallback_compatibility_helpers import (
+    is_simple_runner_eligible_fallback,
+    should_fallback_to_simple_runner,
 )
 from core.tasks.scheduler_core.step_path_helpers import (
     extract_text_from_previous_result,
@@ -164,6 +172,10 @@ from core.tasks.scheduler_core.path_parser_helpers import (
     _extract_document_source_path as _scheduler_path_parser_helper_extract_document_source_path,
     _extract_document_output_path as _scheduler_path_parser_helper_extract_document_output_path,
 )
+from core.tasks.scheduler_core.runtime_overlay_helpers import (
+    apply_autonomous_repair_chain_overlay,
+    apply_boundary_authority_overlay,
+)
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
 
@@ -205,241 +217,6 @@ READY_STATUSES = {
     "running",
     STATUS_QUEUED,
 }
-
-def _zero_safe_public_results_summary(results: Any, *, max_items: int = 3) -> List[Dict[str, Any]]:
-    """
-    Build a compact public-safe results summary.
-
-    Public snapshots must not deep-copy full runtime result payloads. Runtime
-    results may contain nested metadata, evidence snapshots, transaction payloads,
-    execution traces, and rollback state. Deep-copying those structures during
-    queue rebuild makes `task run` progressively slower and can appear to hang on
-    large histories.
-
-    Keep only stable, shallow fields needed for status display/debugging.
-
-    Important: this helper is intentionally idempotent. _save_task_snapshot_safe()
-    first sanitizes the live task, then writes result.json from the sanitized task.
-    Older versions summarized results twice. The second pass saw entries that were
-    already compact summaries, found no nested "result" object, and erased useful
-    blocked/error signals such as "approval_state_not_allowed". Keep top-level
-    compact fields as fallback sources so public result files preserve the signal
-    even when large metadata is intentionally dropped.
-    """
-    if not isinstance(results, list):
-        return []
-
-    summary: List[Dict[str, Any]] = []
-    for item in results[-max_items:]:
-        if not isinstance(item, dict):
-            continue
-
-        result = item.get("result") if isinstance(item.get("result"), dict) else {}
-        error = result.get("error") if isinstance(result.get("error"), dict) else {}
-
-        step = item.get("step") if isinstance(item.get("step"), dict) else {}
-        if not step and isinstance(result.get("step"), dict):
-            step = result.get("step")
-
-        error_type = (
-            result.get("error_type")
-            or error.get("type")
-            or item.get("error_type")
-            or item.get("failure_type")
-            or ""
-        )
-        message = (
-            result.get("message")
-            or result.get("final_answer")
-            or error.get("message")
-            or item.get("message")
-            or item.get("final_answer")
-            or item.get("last_error")
-            or item.get("failure_message")
-            or ""
-        )
-
-        entry = {
-            "step_index": item.get("step_index"),
-            "step_type": (
-                result.get("step_type")
-                or item.get("step_type")
-                or step.get("type")
-                or step.get("action")
-                or ""
-            ),
-            "ok": bool(result.get("ok", item.get("ok", False))),
-            "blocked": bool(result.get("blocked", item.get("blocked", False))),
-            "failed": bool(result.get("failed", item.get("failed", False))),
-            "error_type": str(error_type)[:200],
-            "message": str(message)[:500],
-        }
-
-        # Preserve a tiny amount of diagnostic metadata without copying large
-        # execution/evidence payloads. This keeps public result.json useful for
-        # tests and operators while still avoiding the original metadata bloat.
-        metadata = item.get("metadata")
-        if isinstance(metadata, dict):
-            compact_metadata: Dict[str, Any] = {}
-            for key in (
-                "error_type",
-                "approval_state",
-                "approval_status",
-                "approval_required",
-                "requires_approval",
-                "requires_review",
-                "blocked_reason",
-                "reason",
-            ):
-                if key in metadata:
-                    value = metadata.get(key)
-                    if isinstance(value, (str, int, float, bool)) or value is None:
-                        compact_metadata[key] = value
-                    else:
-                        compact_metadata[key] = str(value)[:500]
-            if compact_metadata:
-                entry["metadata"] = compact_metadata
-
-        summary.append(entry)
-
-    return summary
-
-def _zero_safe_task_for_snapshot(task: Any) -> Dict[str, Any]:
-    """
-    Return a bounded task payload for public snapshot / result persistence.
-
-    The live task may contain nested runtime evidence, rollback metadata,
-    transaction payloads, and execution traces under results/step_results.  Never
-    deepcopy the whole task on the scheduler hot path.
-    """
-    if not isinstance(task, dict):
-        return {}
-
-    sanitized: Dict[str, Any] = {}
-    shallow_keys = [
-        "task_id",
-        "task_name",
-        "id",
-        "title",
-        "goal",
-        "status",
-        "priority",
-        "task_type",
-        "created_tick",
-        "last_run_tick",
-        "finished_tick",
-        "last_failure_tick",
-        "last_error",
-        "failure_type",
-        "failure_message",
-        "current_step_index",
-        "steps_total",
-        "retry_count",
-        "max_retries",
-        "retry_delay",
-        "next_retry_tick",
-        "timeout_ticks",
-        "wait_until_tick",
-        "workspace_root",
-        "workspace_dir",
-        "shared_dir",
-        "task_dir",
-        "sandbox_dir",
-        "plan_file",
-        "runtime_state_file",
-        "result_file",
-        "execution_log_file",
-        "snapshot_file",
-        "log_file",
-        "scheduler_build",
-        "final_answer",
-        "summary",
-        "requires_approval",
-        "requires_review",
-        "review_status",
-        "review_id",
-        "blocked_reason",
-        "waiting_reason",
-        "next_action",
-    ]
-
-    for key in shallow_keys:
-        if key in task:
-            value = task.get(key)
-            if isinstance(value, (str, int, float, bool)) or value is None:
-                sanitized[key] = value
-            else:
-                sanitized[key] = str(value)[:1000]
-
-    steps = task.get("steps")
-    if isinstance(steps, list):
-        # scheduler_snapshot_steps_preserve_execution_contract
-        # Keep the snapshot bounded, but do not collapse executable step payloads
-        # down to type/path/id/mode/scope.  Scheduler hydration and simple-drain
-        # paths may later use persisted task data; dropping fields such as
-        # content, force_fail, verification flags, or step-local metadata changes
-        # the execution contract and can turn a failing step into a successful one.
-        sanitized_steps: List[Dict[str, Any]] = []
-        for item in steps:
-            if not isinstance(item, dict):
-                continue
-            compact_step: Dict[str, Any] = {}
-            for key, value in item.items():
-                clean_key = str(key or "").strip()
-                if not clean_key:
-                    continue
-                if isinstance(value, (str, int, float, bool)) or value is None:
-                    compact_step[clean_key] = value
-                    continue
-                if isinstance(value, (dict, list)):
-                    try:
-                        json.dumps(value, ensure_ascii=False)
-                        compact_step[clean_key] = copy.deepcopy(value)
-                    except Exception:
-                        compact_step[clean_key] = str(value)[:1000]
-                    continue
-                compact_step[clean_key] = str(value)[:1000]
-            sanitized_steps.append(compact_step)
-        sanitized["steps"] = sanitized_steps
-    else:
-        sanitized["steps"] = []
-
-    history = task.get("history")
-    sanitized["history"] = list(history[-20:]) if isinstance(history, list) else []
-
-    sanitized["results"] = _zero_safe_public_results_summary(task.get("results", []), max_items=5)
-    sanitized["step_results"] = _zero_safe_public_results_summary(task.get("step_results", []), max_items=5)
-
-    last_step = task.get("last_step_result")
-    if isinstance(last_step, dict):
-        sanitized["last_step_result"] = _zero_safe_public_results_summary([last_step], max_items=1)[0] if _zero_safe_public_results_summary([last_step], max_items=1) else {}
-    else:
-        sanitized["last_step_result"] = None
-
-    execution_log = task.get("execution_log")
-    if isinstance(execution_log, list):
-        sanitized["execution_log"] = _zero_safe_public_results_summary(execution_log, max_items=20)
-    else:
-        sanitized["execution_log"] = []
-
-    planner_result = task.get("planner_result")
-    if isinstance(planner_result, dict):
-        sanitized["planner_result"] = {
-            "intent": str(planner_result.get("intent") or ""),
-            "summary": str(planner_result.get("summary") or "")[:1000],
-            "steps_total": len(planner_result.get("steps", [])) if isinstance(planner_result.get("steps"), list) else 0,
-        }
-
-    public_snapshot = task.get("public_snapshot")
-    if isinstance(public_snapshot, dict):
-        sanitized["public_snapshot"] = {
-            "task_id": str(public_snapshot.get("task_id") or sanitized.get("task_id") or ""),
-            "status": str(public_snapshot.get("status") or sanitized.get("status") or ""),
-            "final_answer": str(public_snapshot.get("final_answer") or sanitized.get("final_answer") or "")[:1000],
-        }
-
-    return sanitized
-
 
 class Scheduler(RuntimeTaskScheduler):
     SCHEDULER_BUILD = SCHEDULER_BUILD
@@ -1804,42 +1581,13 @@ class Scheduler(RuntimeTaskScheduler):
         runner_result: Optional[Dict[str, Any]],
         loop_error_text: str,
     ) -> bool:
-        if not isinstance(runner_result, dict):
-            return True
-
-        if loop_error_text:
-            return True
-
-        action_text = str(runner_result.get("action") or "").strip().lower()
-        status_text = str(runner_result.get("status") or "").strip().lower()
-
-        if action_text in {"failed", "exception_failed"} and loop_error_text:
-            return True
-
-        if status_text in {"failed", "error"} and loop_error_text:
-            return True
-
-        return False
+        return should_fallback_to_simple_runner(runner_result, loop_error_text)
 
     def _is_simple_runner_eligible_fallback(
         self,
         loop_error_text: str,
     ) -> bool:
-        lower_error = str(loop_error_text or "").lower()
-        sandbox_path_error = (
-            "task_id required for sandbox-relative path" in lower_error
-            or "path resolve failed" in lower_error
-        )
-        if sandbox_path_error:
-            return True
-
-        fallback_like_errors = [
-            "unsupported step type",
-            "step_executor",
-            "path resolve failed",
-            "sandbox-relative path",
-        ]
-        return any(token in lower_error for token in fallback_like_errors)
+        return is_simple_runner_eligible_fallback(loop_error_text)
 
     def _sync_runner_result_and_requeue_if_ready(
         self,
@@ -2561,6 +2309,16 @@ class Scheduler(RuntimeTaskScheduler):
             "apply_unified_diff",
         }:
             step_executor = getattr(self, "step_executor", None)
+            simple_runtime_previous_result_contract = (
+                step_type in {"write_file", "append_file"}
+                and bool(step.get("use_previous_text", False))
+                and str(step.get("input_binding") or "").strip() == "previous_result"
+                and str(step.get("declared_input") or "").strip() == "previous_result"
+            )
+            if step_executor is not None:
+                if simple_runtime_previous_result_contract:
+                    step_executor = None
+
             if step_executor is not None:
                 scheduler_authority = self._build_scheduler_authority_context(task)
 
@@ -10339,259 +10097,7 @@ Scheduler._try_force_repo_edit_at_create_task = _zero_v7337_scheduler_try_force_
 Scheduler._create_task_record = _zero_v7337_scheduler_create_task_record
 
 
-# ZERO v7.3.38 - Autonomous Repair Chaining v2 scheduler envelope
-# ------------------------------------------------------------
-def _zero_v7338_is_autonomous_repair_chain_payload(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-    step = value.get("step") if isinstance(value.get("step"), dict) else value
-    step_type = str(step.get("type") or step.get("action") or value.get("step_type") or "").strip().lower()
-    return step_type in {"autonomous_repair_chain", "runtime_autonomous_repair_chain"} or bool(value.get("autonomous_repair_chain"))
-
-
-def _zero_v7338_attach_autonomous_repair_chain_summary(target: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(target, dict):
-        return target
-    candidates = []
-    for key in ("last_result", "last_step_result", "result"):
-        if isinstance(target.get(key), dict):
-            candidates.append(target.get(key))
-    for item in target.get("results") or []:
-        if isinstance(item, dict):
-            candidates.append(item)
-    for item in candidates:
-        if not isinstance(item, dict):
-            continue
-        result = item.get("result") if isinstance(item.get("result"), dict) else item
-        inner = result.get("result") if isinstance(result.get("result"), dict) else result
-        if _zero_v7338_is_autonomous_repair_chain_payload(item) or str(inner.get("runtime_phase") or "") == "autonomous_repair_chaining_v2":
-            summary = {
-                "ok": bool(inner.get("ok", result.get("ok", False))),
-                "runtime_phase": "autonomous_repair_chaining_v2",
-                "status": str(inner.get("status") or result.get("status") or ""),
-                "repair_chain_id": str(inner.get("repair_chain_id") or result.get("repair_chain_id") or ""),
-                "attempt_count": int(inner.get("attempt_count") or 0),
-                "retry_count": int(inner.get("retry_count") or 0),
-            }
-            target["autonomous_repair_chain_summary"] = summary
-            target["runtime_autonomous_repair_chain_v2"] = True
-            if not summary["ok"] and summary["status"] == "retry_limit_reached":
-                target["retryable"] = False
-                target.setdefault("replan_blocked_reason", "autonomous_repair_retry_limit_reached")
-            return target
-    return target
-
-
-_ZERO_V7338_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
-
-
-def _zero_v7338_scheduler_run_one_step(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
-    result = _ZERO_V7338_ORIGINAL_SCHEDULER_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
-    if isinstance(result, dict):
-        _zero_v7338_attach_autonomous_repair_chain_summary(result)
-        for target in (task, result.get("task"), result.get("runtime_state")):
-            if isinstance(target, dict):
-                _zero_v7338_attach_autonomous_repair_chain_summary(target)
-    return result
-
-
-Scheduler.run_one_step = _zero_v7338_scheduler_run_one_step
-Scheduler._attach_autonomous_repair_chain_summary = _zero_v7338_attach_autonomous_repair_chain_summary
-
-# ZERO_BOUNDARY_AUTHORITY_HOTFIX_20260530
-# Boundary intent:
-# - Keep scheduler as orchestration layer.
-# - If the legacy path returns a false failure for a simple scheduler-owned step,
-#   retry through StepExecutor with propagated scheduler authority metadata.
-
-_ZERO_BOUNDARY_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
-
-
-def _zero_boundary_norm_text(value):
-    return str(value or "").strip()
-
-
-def _zero_boundary_scheduler_step_type(step):
-    if isinstance(step, dict):
-        return _zero_boundary_norm_text(step.get("type") or step.get("action")).lower()
-    return ""
-
-
-def _zero_boundary_scheduler_direct_step(self, task, current_tick):
-    if not isinstance(task, dict):
-        return None
-    steps = task.get("steps")
-    if not isinstance(steps, list) or not steps:
-        return None
-    try:
-        index = int(task.get("current_step_index", 0) or 0)
-    except Exception:
-        index = 0
-    if index < 0:
-        index = 0
-    if index >= len(steps):
-        return {
-            "ok": True,
-            "action": "already_finished",
-            "status": "finished",
-            "task": copy.deepcopy(task),
-            "current_step_index": len(steps),
-            "step_count": len(steps),
-            "steps_total": len(steps),
-        }
-    step = steps[index]
-    if not isinstance(step, dict):
-        return None
-
-    executor = getattr(self, "step_executor", None)
-    if executor is None:
-        try:
-            from core.runtime.step_executor import StepExecutor
-            executor = StepExecutor(workspace_root=getattr(self, "workspace_dir", "workspace"))
-            self.step_executor = executor
-        except Exception:
-            return None
-
-    authority_context = {}
-    try:
-        authority_context = self._build_scheduler_authority_context(task)
-    except Exception:
-        authority_context = {}
-
-    context = {
-        "cwd": getattr(self, "workspace_dir", "workspace"),
-        "authority_context": authority_context,
-        "runtime_authority_context": authority_context,
-        "execution_authority": copy.deepcopy(authority_context.get("execution_authority", {})),
-        "authority_propagation_required": bool(
-            task.get("authority_propagation_required")
-            or task.get("execution_authority")
-            or authority_context
-        ),
-    }
-    for key in ("operator_session_id", "operator_runtime_id", "operator_session"):
-        if task.get(key):
-            context[key] = copy.deepcopy(task[key])
-
-    execute_step = getattr(executor, "execute_step", None)
-    if not callable(execute_step):
-        return None
-
-    try:
-        step_result = execute_step(
-            step=copy.deepcopy(step),
-            task=copy.deepcopy(task),
-            context=context,
-            previous_result=None,
-            step_index=index,
-            step_count=len(steps),
-        )
-    except TypeError:
-        step_result = execute_step(copy.deepcopy(step), task=copy.deepcopy(task), context=context)
-
-    if not isinstance(step_result, dict):
-        step_result = {"ok": bool(step_result), "raw_result": step_result}
-
-    if bool(step_result.get("ok")):
-        updated_task = copy.deepcopy(task)
-        updated_task["current_step_index"] = min(index + 1, len(steps))
-        if index + 1 >= len(steps):
-            updated_task["status"] = "finished"
-            status = "finished"
-        else:
-            updated_task["status"] = "queued"
-            status = "queued"
-        runtime_state = copy.deepcopy(updated_task)
-        try:
-            runtime = getattr(self, "task_runtime", None)
-            if runtime is not None and hasattr(runtime, "save_runtime_state"):
-                runtime_state = runtime.save_runtime_state(updated_task, runtime_state)
-        except Exception:
-            runtime_state = copy.deepcopy(updated_task)
-        try:
-            self._persist_task_payload(task_id=_zero_boundary_norm_text(updated_task.get("task_id") or updated_task.get("task_name")), task=updated_task)
-        except Exception:
-            pass
-        # scheduler_boundary_direct_step_contract_preserved
-        # Keep the public Scheduler.run_one_step contract aligned with the
-        # normal simple-runner path: progress fields must be available at the
-        # top level, not only inside result["task"].
-        return {
-            "ok": True,
-            "action": "scheduler_step_executor_fallback",
-            "status": status,
-            "task_id": _zero_boundary_norm_text(task.get("task_id") or task.get("task_name")),
-            "task": updated_task,
-            "runtime_state": copy.deepcopy(runtime_state),
-            "result": copy.deepcopy(step_result),
-            "step_result": copy.deepcopy(step_result),
-            "last_step_result": copy.deepcopy(step_result),
-            "executed_results": [copy.deepcopy(step_result)],
-            "current_step_index": updated_task["current_step_index"],
-            "step_count": len(steps),
-            "steps_total": len(steps),
-            "final_answer": step_result.get("final_answer") or step_result.get("message") or "ok",
-        }
-    blocked = bool(step_result.get("blocked"))
-    # scheduler_direct_step_failure_contract_preserved
-    # A handled step failure is a successful scheduler tick/transport result.
-    # The step outcome remains failed/blocked in step_result so operator
-    # lifecycle and recovery can record failed_step instead of completing it.
-    failed_status = "blocked" if blocked else "failed"
-    updated_task = copy.deepcopy(task)
-    updated_task["status"] = failed_status
-    updated_task["current_step_index"] = index
-    updated_task["last_step_result"] = copy.deepcopy(step_result)
-    updated_task.setdefault("results", [])
-    updated_task.setdefault("step_results", [])
-    try:
-        updated_task["results"] = list(updated_task.get("results") or []) + [copy.deepcopy(step_result)]
-        updated_task["step_results"] = list(updated_task.get("step_results") or []) + [copy.deepcopy(step_result)]
-    except Exception:
-        pass
-    runtime_state = copy.deepcopy(updated_task)
-    try:
-        runtime = getattr(self, "task_runtime", None)
-        if runtime is not None and hasattr(runtime, "save_runtime_state"):
-            runtime_state = runtime.save_runtime_state(updated_task, runtime_state)
-    except Exception:
-        runtime_state = copy.deepcopy(updated_task)
-    try:
-        self._persist_task_payload(task_id=_zero_boundary_norm_text(updated_task.get("task_id") or updated_task.get("task_name")), task=updated_task)
-    except Exception:
-        pass
-    return {
-        "ok": True,
-        "action": "scheduler_step_executor_fallback_handled_failure",
-        "status": failed_status,
-        "task_id": _zero_boundary_norm_text(task.get("task_id") or task.get("task_name")),
-        "task": updated_task,
-        "runtime_state": copy.deepcopy(runtime_state),
-        "result": copy.deepcopy(step_result),
-        "step_result": copy.deepcopy(step_result),
-        "last_step_result": copy.deepcopy(step_result),
-        "executed_results": [copy.deepcopy(step_result)],
-        "current_step_index": index,
-        "step_count": len(steps),
-        "steps_total": len(steps),
-        "blocked": blocked,
-        "failed": not blocked,
-        "error": step_result.get("error") or step_result.get("message") or "step execution failed",
-        "final_answer": step_result.get("final_answer") or step_result.get("message") or "step execution failed",
-    }
-
-
-def _zero_boundary_scheduler_run_one_step(self, task=None, current_tick=None):
-    result = _ZERO_BOUNDARY_ORIGINAL_SCHEDULER_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
-    if isinstance(result, dict) and result.get("ok") is True:
-        return result
-    if isinstance(result, dict) and result.get("action") == "retrying_repair_bridge_failed":
-        return result
-    fallback = _zero_boundary_scheduler_direct_step(self, task, current_tick)
-    if isinstance(fallback, dict) and fallback.get("ok") is True:
-        fallback["legacy_result"] = copy.deepcopy(result) if isinstance(result, dict) else result
-        return fallback
-    return result
-
-
-Scheduler.run_one_step = _zero_boundary_scheduler_run_one_step
+# Facade compatibility overlays live in scheduler_core. Keep scheduler.py as
+# the public attachment point while helper logic stays out of the facade.
+apply_autonomous_repair_chain_overlay(Scheduler)
+apply_boundary_authority_overlay(Scheduler)

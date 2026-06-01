@@ -1,9 +1,173 @@
 from __future__ import annotations
 
 import copy
-import json
 import os
 from typing import Any, Dict, Optional, Tuple
+
+
+SIMPLE_RUNTIME_CONTRACT_VERSION = "simple_runtime_contract.v1"
+
+
+def _step_contract_metadata(step: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "contract_source": "planner",
+        "contract_version": str(step.get("planner_contract_version") or ""),
+        "planner_contract_version": str(step.get("planner_contract_version") or ""),
+        "runtime_contract_version": SIMPLE_RUNTIME_CONTRACT_VERSION,
+        "input_binding": str(step.get("input_binding") or ""),
+        "declared_input": str(step.get("declared_input") or ""),
+    }
+
+
+def _contract_failure(
+    *,
+    step: Dict[str, Any],
+    error_type: str,
+    message: str,
+) -> Dict[str, Any]:
+    payload = {
+        "ok": False,
+        "type": str(step.get("type") or ""),
+        "action": "runtime_contract_failed",
+        "status": "failed",
+        "error_type": error_type,
+        "message": message,
+        "final_answer": message,
+        "error": {
+            "type": error_type,
+            "message": message,
+            "retryable": False,
+        },
+    }
+    payload.update(_step_contract_metadata(step))
+    return payload
+
+
+def _extract_text_from_task_previous_result(scheduler, task: Dict[str, Any]) -> str:
+    """Extract previous step text for the declared previous_result contract."""
+    extractor = getattr(scheduler, "_extract_text_from_previous_result", None)
+    if callable(extractor):
+        text = extractor(task)
+        if isinstance(text, str) and text:
+            return text
+
+    return _extract_text_deep((task or {}).get("last_step_result"))
+
+
+def _resolve_previous_result_text_for_contract(scheduler, task: Dict[str, Any], step: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
+    declared_input = str(step.get("declared_input") or "").strip()
+    input_binding = str(step.get("input_binding") or "").strip()
+    if declared_input != "previous_result" or input_binding != "previous_result":
+        return False, "", _contract_failure(
+            step=step,
+            error_type="runtime_contract_mismatch",
+            message="use_previous_text requires declared_input and input_binding to be previous_result",
+        )
+
+    last_step_result = (task or {}).get("last_step_result")
+    if last_step_result in (None, "", [], {}):
+        return False, "", _contract_failure(
+            step=step,
+            error_type="runtime_contract_mismatch",
+            message="declared_input previous_result is missing",
+        )
+
+    previous_text = _extract_text_from_task_previous_result(scheduler, task)
+    if not isinstance(previous_text, str) or previous_text == "":
+        return False, "", _contract_failure(
+            step=step,
+            error_type="runtime_contract_mismatch",
+            message="declared_input previous_result has no text payload",
+        )
+
+    return True, previous_text, {}
+
+
+def _extract_text_deep(payload: Any, depth: int = 0) -> str:
+    if depth > 12 or payload is None:
+        return ""
+
+    if isinstance(payload, str):
+        return payload
+
+    if isinstance(payload, dict):
+        for key in (
+            "text",
+            "content",
+            "message",
+            "final_answer",
+            "response",
+            "answer",
+            "summary",
+            "summary_text",
+            "stdout",
+            "output_text",
+        ):
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value
+
+        for nested_key in (
+            "result",
+            "raw",
+            "data",
+            "payload",
+            "output",
+            "previous_result",
+            "last_step_result",
+            "runtime_execution_result",
+            "adapter_payload",
+        ):
+            nested = payload.get(nested_key)
+            text = _extract_text_deep(nested, depth + 1)
+            if isinstance(text, str) and text:
+                return text
+
+    if isinstance(payload, list):
+        for item in reversed(payload):
+            text = _extract_text_deep(item, depth + 1)
+            if isinstance(text, str) and text:
+                return text
+
+    return ""
+
+
+def _render_simple_step_template(
+    value: Any,
+    *,
+    scheduler,
+    task: Dict[str, Any],
+) -> str:
+    text = "" if value is None else str(value)
+    if "{{file_content}}" not in text:
+        return text
+
+    previous_text = _extract_text_from_task_previous_result(scheduler, task)
+    text = text.replace("{{file_content}}", previous_text)
+    return text
+
+
+def _resolve_simple_runtime_output_path(
+    scheduler,
+    *,
+    raw_path: str,
+    task_dir: str,
+    step_scope: str,
+) -> str:
+    return scheduler._resolve_step_path(
+        raw_path=raw_path,
+        task_dir=task_dir,
+        shared_dir=scheduler.shared_dir,
+        scope=step_scope,
+    )
+
+
+def _legacy_template_detected(step: Dict[str, Any]) -> bool:
+    for key in ("content", "text", "body"):
+        value = step.get(key)
+        if isinstance(value, str) and "{{previous_result" in value:
+            return True
+    return False
 
 
 def prepare_simple_step_guard(
@@ -134,29 +298,34 @@ def execute_simple_basic_step(
         if not raw_path:
             raise ValueError("write_file step missing path")
 
+        if _legacy_template_detected(step):
+            return _contract_failure(
+                step=step,
+                error_type="legacy_contract_detected",
+                message="legacy previous_result template is not supported by simple runtime",
+            )
+
         if bool(step.get("use_previous_text", False)):
-            content = scheduler._extract_text_from_previous_result(task)
+            ok, content, failure = _resolve_previous_result_text_for_contract(scheduler, task, step)
+            if not ok:
+                return failure
         else:
             content = step.get("content", "")
 
         if content is None:
             content = ""
-        content = str(content)
+        content = _render_simple_step_template(
+            content,
+            scheduler=scheduler,
+            task=task,
+        )
 
-        if str(step_scope or "").strip().lower() == "shared":
-            full_path = scheduler._resolve_step_path(
-                raw_path=raw_path,
-                task_dir=task_dir,
-                shared_dir=scheduler.shared_dir,
-                scope="shared",
-            )
-        else:
-            full_path = scheduler._resolve_guard_target_path(
-                raw_path=raw_path,
-                task_dir=task_dir,
-                scope=step_scope,
-                resolved_path=str(guard_result.get("resolved_path") or ""),
-            )
+        full_path = _resolve_simple_runtime_output_path(
+            scheduler,
+            raw_path=raw_path,
+            task_dir=task_dir,
+            step_scope=step_scope,
+        )
 
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         with open(full_path, "w", encoding="utf-8") as f:
@@ -170,6 +339,7 @@ def execute_simple_basic_step(
             "bytes": len(content.encode("utf-8")),
             "content": content,
             "used_previous_text": bool(step.get("use_previous_text", False)),
+            **_step_contract_metadata(step),
         }
 
     if step_type == "append_file":
@@ -177,10 +347,27 @@ def execute_simple_basic_step(
         if not raw_path:
             raise ValueError("append_file step missing path")
 
-        content = step.get("content", "")
+        if _legacy_template_detected(step):
+            return _contract_failure(
+                step=step,
+                error_type="legacy_contract_detected",
+                message="legacy previous_result template is not supported by simple runtime",
+            )
+
+        if bool(step.get("use_previous_text", False)):
+            ok, content, failure = _resolve_previous_result_text_for_contract(scheduler, task, step)
+            if not ok:
+                return failure
+        else:
+            content = step.get("content", "")
+
         if content is None:
             content = ""
-        content = str(content)
+        content = _render_simple_step_template(
+            content,
+            scheduler=scheduler,
+            task=task,
+        )
 
         if bool(step.get("ensure_trailing_newline", False)) and content and not content.endswith("\n"):
             content += "\n"
@@ -223,6 +410,7 @@ def execute_simple_basic_step(
             "chars_appended": len(content),
             "created": before_size == 0,
             "ensure_trailing_newline": bool(step.get("ensure_trailing_newline", False)),
+            **_step_contract_metadata(step),
         }
 
     if step_type == "read_file":

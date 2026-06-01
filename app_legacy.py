@@ -2484,33 +2484,149 @@ def _task_serial_for_queue(task: Dict[str, Any]) -> int:
     return 0
 
 
+def _load_runtime_task_candidates_from_workspace() -> List[Dict[str, Any]]:
+    """Read runnable task candidates directly from persisted workspace files.
+
+    This is a CLI wiring safety net, not a new execution path.
+
+    The full runtime remains responsible for executing tasks.  This helper only
+    helps `/task_run <count>` pick a target task when a freshly booted CLI system
+    does not expose the persisted TaskRepository rows through `_list_tasks()` yet.
+
+    Sources are read-only:
+    - workspace/tasks.json
+    - workspace/tasks/<task_id>/runtime_state.json
+    - workspace/tasks/<task_id>/task_snapshot.json
+    """
+    candidates: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    def add_candidate(payload: Any, *, source: str = "") -> None:
+        if not isinstance(payload, dict):
+            return
+
+        task_id = _extract_task_id(payload)
+        if not task_id:
+            return
+
+        task = copy.deepcopy(payload)
+        task.setdefault("task_id", task_id)
+        if source:
+            task.setdefault("workspace_candidate_source", source)
+
+        if task_id in seen_ids:
+            # Prefer richer workspace task-dir state over the compact index row.
+            for index, existing in enumerate(candidates):
+                if _extract_task_id(existing) != task_id:
+                    continue
+                existing_score = len(existing.keys())
+                new_score = len(task.keys())
+                if new_score > existing_score:
+                    candidates[index] = task
+                break
+            return
+
+        seen_ids.add(task_id)
+        candidates.append(task)
+
+    tasks_index_path = os.path.join(WORKSPACE_DIR, "tasks.json")
+    index_payload = _load_json_file(tasks_index_path)
+    if isinstance(index_payload, dict) and isinstance(index_payload.get("tasks"), list):
+        for item in index_payload.get("tasks", []):
+            add_candidate(item, source="tasks_index")
+    elif isinstance(index_payload, list):
+        for item in index_payload:
+            add_candidate(item, source="tasks_index")
+    elif isinstance(index_payload, dict):
+        for key, item in index_payload.items():
+            if isinstance(item, dict):
+                merged = copy.deepcopy(item)
+                merged.setdefault("task_id", str(key))
+                add_candidate(merged, source="tasks_index_map")
+
+    tasks_root = os.path.join(WORKSPACE_DIR, "tasks")
+    if os.path.isdir(tasks_root):
+        try:
+            names = sorted(os.listdir(tasks_root))
+        except Exception:
+            names = []
+
+        for name in names:
+            if not name.startswith("task_"):
+                continue
+
+            task_dir = os.path.join(tasks_root, name)
+            if not os.path.isdir(task_dir):
+                continue
+
+            merged: Dict[str, Any] = {"task_id": name, "task_dir": task_dir}
+            for filename in ("task_snapshot.json", "runtime_state.json"):
+                path = os.path.join(task_dir, filename)
+                payload = _load_json_file(path)
+                if isinstance(payload, dict):
+                    for key, value in payload.items():
+                        if key not in merged or merged.get(key) in (None, "", [], {}):
+                            merged[key] = copy.deepcopy(value)
+                    merged.setdefault(filename.replace(".json", "_path"), path)
+
+            add_candidate(merged, source="task_workspace")
+
+    return candidates
+
+
+def _score_runnable_task_candidate(task: Dict[str, Any]) -> Tuple[int, int, int, str]:
+    total = _extract_steps_total(task)
+    goal = _extract_goal(task).strip().lower()
+
+    # Prefer real multi-step tasks over accidental one-word CLI goals such as
+    # "scheduler" or "scheduler status" that were created during probing.
+    meaningful = 1 if total > 1 else 0
+    accidental_cli_probe = 1 if goal in {"scheduler", "scheduler status", "scheduler run"} else 0
+
+    return (
+        meaningful,
+        -accidental_cli_probe,
+        _task_serial_for_queue(task),
+        _extract_task_id(task),
+    )
+
+
 def _find_latest_runnable_task_id(system: Any) -> str:
     runnable_statuses = {"queued", "ready", "retry", "retrying", "created"}
     candidates: List[Dict[str, Any]] = []
-    for task in _list_tasks(system):
+    seen_ids: set[str] = set()
+
+    def add_if_runnable(task: Any) -> None:
         if not isinstance(task, dict):
-            continue
+            return
+
         status = _extract_status(task).lower()
         if status not in runnable_statuses:
-            continue
+            return
+
         task_id = _extract_task_id(task)
-        if not task_id:
-            continue
+        if not task_id or task_id in seen_ids:
+            return
+
+        seen_ids.add(task_id)
         candidates.append(task)
+
+    for task in _list_tasks(system):
+        add_if_runnable(task)
+
+    # CLI wiring closure:
+    # A freshly booted command-mode system can occasionally expose an empty
+    # in-memory repository even though workspace/tasks.json and task-local
+    # runtime_state.json contain runnable tasks.  Falling back to persisted
+    # workspace metadata lets `/task_run <count>` select the correct target and
+    # then hand it to the existing `_run_target_task()` path.
+    for task in _load_runtime_task_candidates_from_workspace():
+        add_if_runnable(task)
 
     if not candidates:
         return ""
 
-    def score(task: Dict[str, Any]) -> Tuple[int, int, str]:
-        total = _extract_steps_total(task)
-        goal = _extract_goal(task).strip().lower()
-        # Prefer real multi-step tasks over accidental one-word CLI goals such as
-        # "scheduler" or "scheduler status" that were created during probing.
-        meaningful = 1 if total > 1 else 0
-        accidental_cli_probe = 1 if goal in {"scheduler", "scheduler status", "scheduler run"} else 0
-        return (meaningful, -accidental_cli_probe, _task_serial_for_queue(task), _extract_task_id(task))
-
-    candidates.sort(key=score)
+    candidates.sort(key=_score_runnable_task_candidate)
     return _extract_task_id(candidates[-1])
 
 

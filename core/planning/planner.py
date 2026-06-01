@@ -8,6 +8,14 @@ from core.planning.planner_document_logic import (
     plan_document_flow,
     plan_structured_document_task,
 )
+from core.planning.planner_contract import (
+    FILE_CONTENT_TEMPLATE,
+    PREVIOUS_RESULT_TEMPLATE,
+    annotate_plan_contract,
+    llm_file_template_step,
+    read_file_step,
+    write_previous_result_step,
+)
 from core.planning.planner_rule_parser import (
     extract_command,
     extract_file_path,
@@ -654,21 +662,12 @@ class Planner:
 
     def _build_code_chain_diff_v0_pipeline(self, source_path: str, output_path: str, instruction: str = "") -> List[Dict[str, Any]]:
         steps: List[Dict[str, Any]] = [
-            {
-                "type": "read_file",
-                "path": source_path,
-            },
-            {
-                "type": "llm",
-                "mode": "code_chain_diff_v0",
-                "prompt": self._build_code_chain_diff_v0_prompt(source_path=source_path, instruction=instruction),
-            },
-            {
-                "type": "write_file",
-                "path": output_path,
-                "scope": self._infer_path_scope(output_path),
-                "content": "{{previous_result}}",
-            },
+            read_file_step(source_path),
+            llm_file_template_step(
+                mode="code_chain_diff_v0",
+                prompt=self._build_code_chain_diff_v0_prompt(source_path=source_path, instruction=instruction),
+            ),
+            write_previous_result_step(output_path, scope=self._infer_path_scope(output_path)),
             {
                 "type": "verify_unified_diff",
                 "path": output_path,
@@ -710,7 +709,7 @@ class Planner:
             f"Source path: {source_path}\n"
             f"Edit instruction: {edit_instruction}\n\n"
             "Source code:\n"
-            "{{file_content}}"
+            f"{FILE_CONTENT_TEMPLATE}"
         )
 
     def _looks_like_code_chain_v0(self, lowered: str) -> bool:
@@ -812,21 +811,12 @@ class Planner:
 
     def _build_code_chain_v0_pipeline(self, source_path: str, output_path: str, instruction: str = "") -> List[Dict[str, Any]]:
         steps: List[Dict[str, Any]] = [
-            {
-                "type": "read_file",
-                "path": source_path,
-            },
-            {
-                "type": "llm",
-                "mode": "code_chain_v0",
-                "prompt": self._build_code_chain_v0_prompt(source_path=source_path, instruction=instruction),
-            },
-            {
-                "type": "write_file",
-                "path": output_path,
-                "scope": self._infer_path_scope(output_path),
-                "content": "{{previous_result}}",
-            },
+            read_file_step(source_path),
+            llm_file_template_step(
+                mode="code_chain_v0",
+                prompt=self._build_code_chain_v0_prompt(source_path=source_path, instruction=instruction),
+            ),
+            write_previous_result_step(output_path, scope=self._infer_path_scope(output_path)),
         ]
 
         if self._should_add_python_syntax_verification(output_path):
@@ -861,7 +851,7 @@ class Planner:
             f"Source path: {source_path}\n"
             f"Edit instruction: {edit_instruction}\n\n"
             "Source code:\n"
-            "{{file_content}}"
+            f"{FILE_CONTENT_TEMPLATE}"
         )
 
     def _looks_like_semantic_chain_v0(self, lowered: str) -> bool:
@@ -979,53 +969,37 @@ class Planner:
 
     def _build_semantic_chain_v0_pipeline(self, source_path: str, output_path: str, action_items_output_path: str = "") -> List[Dict[str, Any]]:
         steps: List[Dict[str, Any]] = [
-            {
-                "type": "read_file",
-                "path": source_path,
-            },
-            {
-                "type": "llm",
-                "mode": "summary",
-                "prompt": self._build_semantic_summary_prompt(source_path),
-            },
-            {
-                "type": "write_file",
-                "path": output_path,
-                "scope": self._infer_path_scope(output_path),
-                "content": "{{previous_result}}",
-            },
+            read_file_step(source_path),
+            llm_file_template_step(
+                mode="summary",
+                prompt=self._build_semantic_summary_prompt(source_path),
+            ),
+            write_previous_result_step(output_path, scope=self._infer_path_scope(output_path)),
         ]
 
         if action_items_output_path:
             steps.extend(
                 [
                     {
-                        "type": "llm",
-                        "mode": "action_items",
-                        "prompt": self._build_semantic_action_items_prompt(source_path),
+                        **llm_file_template_step(
+                            mode="action_items",
+                            prompt=self._build_semantic_action_items_prompt(source_path),
+                        ),
                     },
-                    {
-                        "type": "write_file",
-                        "path": action_items_output_path,
-                        "scope": self._infer_path_scope(action_items_output_path),
-                        "content": "{{previous_result}}",
-                    },
+                    write_previous_result_step(
+                        action_items_output_path,
+                        scope=self._infer_path_scope(action_items_output_path),
+                    ),
                 ]
             )
         else:
             steps.extend(
                 [
-                    {
-                        "type": "llm",
-                        "mode": "action_items",
-                        "prompt": self._build_semantic_chain_v0_action_items_prompt(source_path),
-                    },
-                    {
-                        "type": "write_file",
-                        "path": output_path,
-                        "scope": self._infer_path_scope(output_path),
-                        "content": "{{previous_result}}",
-                    },
+                    llm_file_template_step(
+                        mode="action_items",
+                        prompt=self._build_semantic_chain_v0_action_items_prompt(source_path),
+                    ),
+                    write_previous_result_step(output_path, scope=self._infer_path_scope(output_path)),
                 ]
             )
 
@@ -1085,21 +1059,9 @@ class Planner:
         prompt: str,
     ) -> List[Dict[str, Any]]:
         return [
-            {
-                "type": "read_file",
-                "path": source_path,
-            },
-            {
-                "type": "llm",
-                "mode": llm_mode,
-                "prompt": prompt,
-            },
-            {
-                "type": "write_file",
-                "path": output_path,
-                "scope": self._infer_path_scope(output_path),
-                "content": "{{previous_result}}",
-            },
+            read_file_step(source_path),
+            llm_file_template_step(mode=llm_mode, prompt=prompt),
+            write_previous_result_step(output_path, scope=self._infer_path_scope(output_path)),
         ]
 
     def _build_requirement_pack_pipeline(self, source_path: str) -> List[Dict[str, Any]]:
@@ -1108,43 +1070,22 @@ class Planner:
         acceptance_checklist_path = "workspace/shared/acceptance_checklist.txt"
 
         return [
-            {
-                "type": "read_file",
-                "path": source_path,
-            },
-            {
-                "type": "llm",
-                "mode": "project_summary",
-                "prompt": self._build_requirement_project_summary_prompt(source_path),
-            },
-            {
-                "type": "write_file",
-                "path": project_summary_path,
-                "scope": self._infer_path_scope(project_summary_path),
-                "content": "{{previous_result}}",
-            },
-            {
-                "type": "llm",
-                "mode": "implementation_plan",
-                "prompt": self._build_requirement_implementation_plan_prompt(source_path),
-            },
-            {
-                "type": "write_file",
-                "path": implementation_plan_path,
-                "scope": self._infer_path_scope(implementation_plan_path),
-                "content": "{{previous_result}}",
-            },
-            {
-                "type": "llm",
-                "mode": "acceptance_checklist",
-                "prompt": self._build_requirement_acceptance_checklist_prompt(source_path),
-            },
-            {
-                "type": "write_file",
-                "path": acceptance_checklist_path,
-                "scope": self._infer_path_scope(acceptance_checklist_path),
-                "content": "{{previous_result}}",
-            },
+            read_file_step(source_path),
+            llm_file_template_step(
+                mode="project_summary",
+                prompt=self._build_requirement_project_summary_prompt(source_path),
+            ),
+            write_previous_result_step(project_summary_path, scope=self._infer_path_scope(project_summary_path)),
+            llm_file_template_step(
+                mode="implementation_plan",
+                prompt=self._build_requirement_implementation_plan_prompt(source_path),
+            ),
+            write_previous_result_step(implementation_plan_path, scope=self._infer_path_scope(implementation_plan_path)),
+            llm_file_template_step(
+                mode="acceptance_checklist",
+                prompt=self._build_requirement_acceptance_checklist_prompt(source_path),
+            ),
+            write_previous_result_step(acceptance_checklist_path, scope=self._infer_path_scope(acceptance_checklist_path)),
         ]
 
     def _build_git_pipeline_steps(self, context: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -1170,7 +1111,7 @@ class Planner:
             "1. Keep it clear and short.\n"
             "2. Do not use JSON.\n"
             "3. Do not add extra commentary.\n\n"
-            f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+            f"Document content:\n{FILE_CONTENT_TEMPLATE}\n\nSource path: {source_path}"
         )
 
     def _build_semantic_action_items_prompt(self, source_path: str) -> str:
@@ -1180,7 +1121,7 @@ class Planner:
             "1. Focus on actionable tasks only.\n"
             "2. Prefer bullet-style plain text.\n"
             "3. Do not use JSON.\n\n"
-            f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+            f"Document content:\n{FILE_CONTENT_TEMPLATE}\n\nSource path: {source_path}"
         )
 
     def _build_semantic_chain_v0_action_items_prompt(self, source_path: str) -> str:
@@ -1198,7 +1139,7 @@ class Planner:
             "4. Keep the output plain text.\n\n"
             f"Source path: {source_path}\n\n"
             "Input summary from previous step:\n"
-            "{{previous_result}}"
+            f"{PREVIOUS_RESULT_TEMPLATE}"
         )
 
     def _build_semantic_report_prompt(self, source_path: str) -> str:
@@ -1208,7 +1149,7 @@ class Planner:
             "1. Use plain text.\n"
             "2. Include brief sections for summary, key points, and next steps.\n"
             "3. Do not use JSON.\n\n"
-            f"Document content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+            f"Document content:\n{FILE_CONTENT_TEMPLATE}\n\nSource path: {source_path}"
         )
 
     def _build_requirement_project_summary_prompt(self, source_path: str) -> str:
@@ -1220,7 +1161,7 @@ class Planner:
             "3. Keep it concise and engineering-oriented.\n"
             "4. Include goal, scope, and expected outputs.\n"
             "5. Mention project_summary.txt, implementation_plan.txt, and acceptance_checklist.txt explicitly.\n\n"
-            f"Requirement content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+            f"Requirement content:\n{FILE_CONTENT_TEMPLATE}\n\nSource path: {source_path}"
         )
 
     def _build_requirement_implementation_plan_prompt(self, source_path: str) -> str:
@@ -1232,7 +1173,7 @@ class Planner:
             "3. Make it practical and engineering-oriented.\n"
             "4. Include phases, concrete steps, and expected deliverables.\n"
             "5. Mention project_summary.txt, implementation_plan.txt, and acceptance_checklist.txt explicitly.\n\n"
-            f"Requirement content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+            f"Requirement content:\n{FILE_CONTENT_TEMPLATE}\n\nSource path: {source_path}"
         )
 
     def _build_requirement_acceptance_checklist_prompt(self, source_path: str) -> str:
@@ -1247,7 +1188,7 @@ class Planner:
             "   - Deliverable\n"
             "4. Keep it clear and checklist-oriented.\n"
             "5. Mention project_summary.txt, implementation_plan.txt, and acceptance_checklist.txt explicitly when relevant.\n\n"
-            f"Requirement content:\n{{{{file_content}}}}\n\nSource path: {source_path}"
+            f"Requirement content:\n{FILE_CONTENT_TEMPLATE}\n\nSource path: {source_path}"
         )
 
     # ============================================================
@@ -1349,21 +1290,12 @@ class Planner:
         llm_mode = parsed["llm_mode"]
 
         return [
-            {
-                "type": "read_file",
-                "path": source_path,
-            },
-            {
-                "type": "llm",
-                "mode": llm_mode,
-                "prompt": self._build_transform_prompt(llm_mode=llm_mode, source_path=source_path),
-            },
-            {
-                "type": "write_file",
-                "path": output_path,
-                "scope": self._infer_path_scope(output_path),
-                "content": "{{previous_result}}",
-            },
+            read_file_step(source_path),
+            llm_file_template_step(
+                mode=llm_mode,
+                prompt=self._build_transform_prompt(llm_mode=llm_mode, source_path=source_path),
+            ),
+            write_previous_result_step(output_path, scope=self._infer_path_scope(output_path)),
         ]
 
     def _match_read_transform_write(self, text: str) -> Optional[Dict[str, str]]:
@@ -1492,7 +1424,7 @@ class Planner:
             "4. Keep the output plain text.\n\n"
             f"Source path: {source_path}\n\n"
             "Document content:\n"
-            "{{file_content}}"
+            f"{FILE_CONTENT_TEMPLATE}"
         )
 
     # ============================================================
@@ -1979,12 +1911,15 @@ class Planner:
         result = {
             "ok": error is None,
             "planner_mode": self.PLANNER_MODE,
+            "planner_contract_version": "",
             "intent": str(intent or "respond"),
             "semantic_type": str(semantic_type or "generic_task"),
             "execution_route": str(execution_route or "generic_planner_path"),
             "final_answer": str(final_answer or ""),
             "steps": normalized_steps,
             "error": error,
+            "runtime_requirements": [],
+            "step_contracts": [],
             "meta": {
                 "fallback_used": bool(fallback_used),
                 "step_count": len(normalized_steps),
@@ -1993,7 +1928,7 @@ class Planner:
             },
         }
 
-        return result
+        return annotate_plan_contract(result)
 
     def _normalize_steps(self, steps: Any) -> List[Dict[str, Any]]:
         if not isinstance(steps, list):
@@ -2032,6 +1967,8 @@ class Planner:
         normalized["type"] = step_type
         normalized["task_name"] = task_name
         normalized["id"] = step_id
+        normalized.setdefault("planner_contract_version", "planner_step_contract.v2")
+        normalized.setdefault("legacy_plan_contract", False)
 
         if step_type in {"read_file", "write_file", "append_file", "ensure_file", "run_python", "verify_file", "verify_python_syntax", "verify_unified_diff"}:
             normalized["path"] = str(normalized.get("path") or "")
@@ -2051,15 +1988,38 @@ class Planner:
 
         if step_type == "llm":
             normalized["prompt"] = str(normalized.get("prompt") or "")
+            if not normalized["prompt"] and normalized.get("prompt_template") is not None:
+                normalized["prompt_template"] = str(normalized.get("prompt_template") or "")
             normalized["mode"] = str(normalized.get("mode") or "")
+            for field in ("prompt", "prompt_template"):
+                value = normalized.get(field)
+                if isinstance(value, str) and "{{" in value and "}}" in value:
+                    template_fields = normalized.get("template_fields")
+                    if not isinstance(template_fields, list):
+                        template_fields = []
+                    if field not in template_fields:
+                        template_fields.append(field)
+                    normalized["template_fields"] = template_fields
+                    features = normalized.get("required_runtime_features")
+                    if not isinstance(features, list):
+                        features = []
+                    if "template_substitution" not in features:
+                        features.append("template_substitution")
+                    normalized["required_runtime_features"] = features
 
         if step_type == "write_file":
             normalized["content"] = str(normalized.get("content") or "")
             normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
+            if normalized.get("use_previous_text") is True:
+                normalized.setdefault("input_binding", "previous_result")
+                normalized.setdefault("declared_input", "previous_result")
 
         if step_type == "append_file":
             normalized["content"] = str(normalized.get("content") or "")
             normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
+            if normalized.get("use_previous_text") is True:
+                normalized.setdefault("input_binding", "previous_result")
+                normalized.setdefault("declared_input", "previous_result")
 
         if step_type == "ensure_file":
             normalized["scope"] = str(normalized.get("scope") or self._infer_path_scope(normalized.get("path", "")))
