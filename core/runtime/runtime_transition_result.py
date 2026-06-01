@@ -13,6 +13,7 @@ from typing import Any
 from core.runtime.runtime_transition_evidence import (
     RuntimeTransitionEvidence,
     build_runtime_transition_evidence,
+    export_runtime_transition_evidence,
 )
 from core.runtime.runtime_transition_record import RuntimeTransitionRecord
 
@@ -75,12 +76,18 @@ def build_runtime_transition_result(
         else RuntimeTransitionRecord.from_mapping(record)
     )
     transition_evidence = evidence or build_runtime_transition_evidence(transition_record)
+    result_metadata = copy.deepcopy(metadata or {})
+    _maybe_export_transition_evidence(
+        transition_record=transition_record,
+        transition_evidence=transition_evidence,
+        metadata=result_metadata,
+    )
 
     return RuntimeTransitionResult(
         record=transition_record,
         evidence=transition_evidence,
         status=status or transition_record.status,
-        metadata=metadata or {},
+        metadata=result_metadata,
     )
 
 
@@ -95,3 +102,37 @@ def runtime_transition_result_from_parts(
         status=status,
         metadata=metadata,
     )
+
+
+def _maybe_export_transition_evidence(
+    *,
+    transition_record: RuntimeTransitionRecord,
+    transition_evidence: RuntimeTransitionEvidence,
+    metadata: dict[str, Any],
+) -> None:
+    surface = metadata.get("runtime_evidence_surface")
+    if not isinstance(surface, dict):
+        return
+
+    repo_root = surface.get("repo_root")
+    task_id = surface.get("task_id") or transition_record.lifecycle_id or transition_record.transition_id
+    if not repo_root or not task_id:
+        return
+
+    export = export_runtime_transition_evidence(
+        repo_root=repo_root,
+        task_id=str(task_id),
+        transition_evidence=transition_evidence,
+        metadata={
+            "transition_id": transition_record.transition_id,
+            "record_schema": transition_record.schema,
+            "result_schema": RUNTIME_TRANSITION_RESULT_SCHEMA,
+        },
+    )
+    if export:
+        metadata["runtime_transition_evidence_export"] = {
+            "evidence_type": export["evidence_type"],
+            "evidence_path": export["evidence_path"],
+            "artifact_path": export["artifact_path"],
+            "schema": export["schema"],
+        }

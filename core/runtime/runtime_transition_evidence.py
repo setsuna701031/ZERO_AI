@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from typing import Any
+from pathlib import Path
 
 from core.runtime.runtime_status import normalize_runtime_status
 
@@ -226,6 +228,7 @@ def _text(value: Any) -> str:
 
 from dataclasses import dataclass, field
 
+from core.runtime.runtime_evidence_surface import register_evidence
 from core.runtime.runtime_transition_record import (
     RUNTIME_TRANSITION_RECORD_SCHEMA,
     RuntimeTransitionRecord,
@@ -344,6 +347,72 @@ def build_runtime_transition_evidence(
             "transition_record": transition_record.to_dict(),
         },
     )
+
+
+def export_runtime_transition_evidence(
+    *,
+    repo_root: Path | str,
+    task_id: str,
+    transition_evidence: RuntimeTransitionEvidence | dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Export and index runtime transition evidence.
+
+    This is an evidence-surface integration point only. It does not create,
+    approve, reject, or execute transitions.
+    """
+    payload = (
+        transition_evidence.to_dict()
+        if isinstance(transition_evidence, RuntimeTransitionEvidence)
+        else copy.deepcopy(transition_evidence if isinstance(transition_evidence, dict) else {})
+    )
+    if not payload:
+        return {}
+
+    root = Path(repo_root).resolve()
+    safe_task_id = _safe_filename(task_id) or "runtime_transition_task"
+    evidence_id = _text(payload.get("evidence_id") or payload.get("transition_id")) or "transition"
+    safe_evidence_id = _safe_filename(evidence_id) or "transition"
+    evidence_dir = root / "workspace" / "evidence" / "runtime_transition"
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    evidence_path = evidence_dir / f"{safe_task_id}_{safe_evidence_id}_runtime_transition_evidence.json"
+
+    evidence_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    surface_metadata = {
+        "artifact_path": str(evidence_path),
+        "evidence_path": str(evidence_path),
+        "schema": _text(payload.get("schema")) or RUNTIME_TRANSITION_EVIDENCE_SCHEMA,
+        "transition_id": _text(payload.get("transition_id")),
+        "evidence_id": _text(payload.get("evidence_id")),
+    }
+    if isinstance(metadata, dict):
+        surface_metadata.update(copy.deepcopy(metadata))
+
+    register_evidence(
+        task_id,
+        "runtime_transition",
+        evidence_path,
+        surface_metadata,
+        repo_root=root,
+    )
+
+    return {
+        "evidence_type": "runtime_transition",
+        "evidence_path": str(evidence_path),
+        "artifact_path": str(evidence_path),
+        "schema": surface_metadata["schema"],
+        "payload": copy.deepcopy(payload),
+    }
+
+
+def _safe_filename(value: Any) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text)
+    return text.strip("._-")[:120]
 
 
 def runtime_transition_evidence_from_legacy_metadata(
