@@ -4,6 +4,9 @@ import copy
 from pathlib import Path
 from typing import Any, Callable
 
+from core.agent.code_chain_repair_evidence import export_code_chain_repair_evidence
+from core.agent.code_chain_repair_report import normalize_code_chain_repair_report
+
 
 CODE_CHAIN_ROUTE_VALUES = {
     "code_chain_controlled_self_edit",
@@ -264,6 +267,24 @@ def run_planner_owned_code_chain_bridge(
         copy.deepcopy(first_attempt["execution_result"]) if len(attempts) > 1 else {}
     )
     execution["verification_history"] = copy.deepcopy(review["verification_history"])
+    repair_report = normalize_code_chain_repair_report(
+        ok=ok,
+        execution=execution,
+        reviewable_result=review,
+    )
+    repair_evidence = export_code_chain_repair_evidence(
+        repo_root=repo_root,
+        task_id=task_id,
+        repair_result_report=repair_report,
+    )
+    if repair_evidence:
+        repair_report["evidence_path"] = repair_evidence["evidence_path"]
+        repair_report["artifact_path"] = repair_evidence["artifact_path"]
+        repair_report["evidence_type"] = repair_evidence["evidence_type"]
+    execution["repair_result_report"] = copy.deepcopy(repair_report)
+    execution["repair_result_evidence"] = copy.deepcopy(repair_evidence)
+    review["repair_result_report"] = copy.deepcopy(repair_report)
+    review["repair_result_evidence"] = copy.deepcopy(repair_evidence)
 
     return _make_response(
         agent=agent,
@@ -299,6 +320,8 @@ def run_planner_owned_code_chain_bridge(
             "code_chain_v1_fallback_used": fallback_used,
             "controlled_mutation_plan_produced": bool(controlled_steps),
             "repair_loop_entered": len(attempts) > 1,
+            "repair_result_report": copy.deepcopy(repair_report),
+            "repair_result_evidence": copy.deepcopy(repair_evidence),
         },
     )
 
