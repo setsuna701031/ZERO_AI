@@ -324,7 +324,165 @@ class AgentLoop:
                 result["agent_loop_runtime_route"] = "planner_autonomous_repair"
             return result
 
+        work_package_result = self._try_handle_work_package_route(text)
+        if work_package_result is not None:
+            work_package_result["agent_loop_runtime_route"] = "work_package_intake"
+            return work_package_result
+
         return None
+
+    def _try_handle_work_package_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Dispatch JSON work-package requests through Work Package Intake.
+
+        Work Package v4 boundary:
+        - AgentLoop is only the entry point.
+        - Work package validation/execution stays in core.tasks.work_package_intake.
+        - v4 supports JSON payloads only, so natural chat text is not misrouted.
+        - Explore/Plan/Verify remain read-only; Execute requires approval by contract.
+        """
+        text = str(user_input or "").strip()
+        if not text:
+            return None
+        if not (text.startswith("{") and text.endswith("}")):
+            return None
+
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        task_type = str(payload.get("task_type") or payload.get("type") or "").strip().lower()
+        is_work_package = (
+            task_type == "work_package"
+            or bool(payload.get("work_package"))
+            or str(payload.get("package_type") or "").strip().lower() == "work_package"
+        )
+        if not is_work_package:
+            return None
+
+        package_payload = payload.get("package") if isinstance(payload.get("package"), dict) else dict(payload)
+        package_payload.pop("task_type", None)
+        package_payload.pop("type", None)
+        package_payload.pop("work_package", None)
+        package_payload.pop("package_type", None)
+
+        repo_root = str(payload.get("repo_root") or package_payload.pop("repo_root", ".") or ".")
+
+        try:
+            from core.tasks.work_package_intake import submit_work_package
+
+            result = submit_work_package(package_payload, repo_root=repo_root)
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "schema": "zero.work_package.agent_loop_dispatch_error.v1",
+                "package_id": str(package_payload.get("package_id") or package_payload.get("id") or "work_package"),
+                "kind": str(package_payload.get("kind") or "unknown"),
+                "mode": str(package_payload.get("mode") or "unknown"),
+                "report_path": str(package_payload.get("report_path") or ""),
+                "mutation_allowed": False,
+                "readonly": True,
+                "error": f"work package dispatch failed: {type(exc).__name__}: {exc}",
+            }
+
+        ok = bool(result.get("ok", False)) if isinstance(result, dict) else False
+        mode = str(result.get("mode") or package_payload.get("mode") or "work_package") if isinstance(result, dict) else "work_package"
+        package_id = str(result.get("package_id") or package_payload.get("package_id") or "work_package") if isinstance(result, dict) else "work_package"
+        report_path = str(result.get("report_path") or package_payload.get("report_path") or "") if isinstance(result, dict) else ""
+        reason = str(result.get("reason") or result.get("error") or "") if isinstance(result, dict) else "invalid work package result"
+
+        if ok:
+            final_answer = f"work package {package_id} completed in {mode} mode"
+            if report_path:
+                final_answer += f"; report={report_path}"
+        else:
+            final_answer = f"work package {package_id} blocked or failed in {mode} mode"
+            if reason:
+                final_answer += f": {reason}"
+
+        route = {
+            "mode": "work_package",
+            "task": False,
+            "forced_route": True,
+            "work_package": True,
+            "work_package_mode": mode,
+            "package_id": package_id,
+            "repo_root": repo_root,
+        }
+        plan = {
+            "ok": ok,
+            "planner_mode": "work_package_intake_v4",
+            "intent": "work_package",
+            "final_answer": final_answer,
+            "steps": [
+                {
+                    "type": "work_package_intake",
+                    "mode": mode,
+                    "package_id": package_id,
+                    "report_path": report_path,
+                }
+            ],
+            "meta": {
+                "fallback_used": False,
+                "step_count": 1,
+                "forced_route": True,
+                "work_package_entrypoint": "AgentLoop",
+            },
+            "work_package_result": copy.deepcopy(result),
+        }
+        execution = {
+            "ok": ok,
+            "steps_executed": 1,
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": {
+                        "type": "work_package_intake",
+                        "mode": mode,
+                        "package_id": package_id,
+                    },
+                    "result": copy.deepcopy(result),
+                }
+            ],
+            "execution_log": [
+                {
+                    "type": "work_package_intake",
+                    "status": "success" if ok else "blocked_or_failed",
+                    "ok": ok,
+                    "data": copy.deepcopy(result),
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "work_package_intake",
+                    "status": "success" if ok else "blocked_or_failed",
+                    "ok": ok,
+                    "data": copy.deepcopy(result),
+                }
+            ],
+            "last_result": copy.deepcopy(result),
+            "final_answer": final_answer,
+            "error": None if ok else reason or "work_package_failed",
+        }
+
+        return self._make_agent_response(
+            ok=ok,
+            mode="work_package",
+            context={},
+            route=route,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=None if ok else reason or "work_package_failed",
+            extra={
+                "work_package_result": copy.deepcopy(result),
+                "package_id": package_id,
+                "work_package_mode": mode,
+                "report_path": report_path,
+            },
+        )
 
     def _zero_v823_agent_try_persistent_runtime_route_for_test(self, user_input: str) -> Optional[Dict[str, Any]]:
         return _zero_v823_agent_try_persistent_runtime_route(self, user_input)
