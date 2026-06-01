@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 """
-ZERO Work Package Intake v6.1.
+ZERO Work Package Intake v6.4.
 
 Mode enforcement:
 - explore: read-only audit.
 - plan: non-mutating plan report.
-- execute: approval + execution guard + controlled workspace write.
+- execute: approval + execution guard + one controlled write policy.
 - verify: non-mutating verification-mode report.
+
+v6.4 consolidates workspace/core execute behavior behind one internal policy.
+Legacy workspace reason strings are kept only as outward compatibility aliases
+for existing readonly_audit execute callers; the actual allow/block decisions
+are not duplicated.
 """
 
 import time
@@ -26,7 +31,15 @@ from core.tasks.work_package_mode import WorkPackageMode
 from core.tasks.work_package_plan import build_work_package_plan
 
 
-SCHEMA = "zero.work_package.intake_result.v6_1"
+SCHEMA = "zero.work_package.intake_result.v6_4"
+
+CONTROLLED_CORE_WRITE_GUARD = "controlled_core_write_v6_4"
+CONTROLLED_CORE_WRITE_GUARD_COMPAT = "controlled_core_write_v6_3"
+CONTROLLED_WORKSPACE_WRITE_GUARD = "workspace_only"
+
+
+def _normalize_target_path(relative_path: str) -> str:
+    return str(relative_path or "").replace("\\", "/")
 
 
 def _repo_path(repo_root: Path, relative_path: str) -> Path:
@@ -81,46 +94,139 @@ def _plan_report(request: WorkPackageRequest) -> str:
     return "\n".join(lines)
 
 
-def _execute_controlled_workspace_edit(
+def _controlled_write_policy(target_path: str) -> tuple[bool, str, str]:
+    normalized = _normalize_target_path(target_path)
+
+    if normalized.startswith("core/runtime/"):
+        return False, "controlled_core_write_blocked:runtime", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
+    if normalized.startswith("core/agent/"):
+        return False, "controlled_core_write_blocked:agent", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
+    if normalized == "core/tasks/scheduler.py":
+        return False, "controlled_core_write_blocked:scheduler", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
+    if normalized.startswith("tests/"):
+        return False, "controlled_core_write_blocked:tests", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
+    if normalized.startswith("core/tasks/work_package_") and normalized.endswith(".py"):
+        return True, "controlled_core_write_allowed", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
+    if normalized.startswith("workspace/"):
+        return True, "controlled_workspace_write_allowed", CONTROLLED_WORKSPACE_WRITE_GUARD
+
+    return False, "controlled_core_write_blocked:not_allowlisted", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
+
+def _legacy_execute_alias_required(request: WorkPackageRequest) -> bool:
+    return request.kind == "readonly_audit" and request.mode == WorkPackageMode.EXECUTE
+
+
+def _public_block_reason(request: WorkPackageRequest, reason: str) -> str:
+    """
+    Keep one internal policy while preserving old readonly_audit execute output.
+
+    The workspace execution tests still assert the older operator-facing reason
+    strings. Core-write tests assert the v6.3 reason strings. This function is
+    intentionally a presentation/compatibility alias only; it does not decide
+    whether a write is allowed.
+    """
+
+    if not _legacy_execute_alias_required(request):
+        return reason
+
+    if reason.startswith("path_escapes_repo:"):
+        return reason.replace("path_escapes_repo:", "path_must_not_escape_repo:", 1)
+
+    if reason.startswith("controlled_core_write_blocked:"):
+        blocked_area = reason.rsplit(":", 1)[-1]
+        if blocked_area in {"runtime", "agent", "scheduler", "tests", "not_allowlisted"}:
+            return f"blocked_target_prefix:core:{reason}"
+
+    return reason
+
+
+def _public_success_reason(*, guard: str) -> str:
+    if guard == CONTROLLED_WORKSPACE_WRITE_GUARD:
+        return "controlled_workspace_execution_completed"
+    return "controlled_write_execution_completed"
+
+
+def _blocked_execute_response(
+    *,
+    repo_root: Path,
+    request: WorkPackageRequest,
+    reason: str,
+    approval_required: bool,
+    error: str | None = None,
+) -> dict[str, Any]:
+    public_reason = _public_block_reason(request, reason)
+    public_error = public_reason if error is not None else None
+    plan = build_work_package_plan(request)
+    _write_report(repo_root, request.report_path, _plan_report(request))
+    response = _base_response(request)
+    response.update(
+        {
+            "ok": False,
+            "blocked": True,
+            "approval_required": approval_required,
+            "reason": public_reason,
+            "plan": plan.to_dict(),
+        }
+    )
+    if public_error is not None:
+        response["error"] = public_error
+    return response
+
+
+def _execute_controlled_write(
     *,
     repo_root: Path,
     request: WorkPackageRequest,
     raw_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
     if not request.approval:
-        plan = build_work_package_plan(request)
-        _write_report(repo_root, request.report_path, _plan_report(request))
-        response = _base_response(request)
-        response.update(
-            {
-                "ok": False,
-                "blocked": True,
-                "approval_required": True,
-                "reason": "execute_requires_approval",
-                "plan": plan.to_dict(),
-            }
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason="execute_requires_approval",
+            approval_required=True,
         )
-        return response
 
     try:
         edit_plan = edit_plan_from_work_package_payload(raw_payload)
     except WorkPackageExecutionRejected as exc:
-        plan = build_work_package_plan(request)
-        _write_report(repo_root, request.report_path, _plan_report(request))
-        response = _base_response(request)
-        response.update(
-            {
-                "ok": False,
-                "blocked": True,
-                "approval_required": False,
-                "reason": str(exc),
-                "plan": plan.to_dict(),
-                "error": str(exc),
-            }
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=str(exc),
+            approval_required=False,
+            error=str(exc),
         )
-        return response
 
-    target = _repo_path(repo_root, edit_plan.target_path)
+    target_path = _normalize_target_path(edit_plan.target_path)
+
+    try:
+        target = _repo_path(repo_root, target_path)
+    except ValueError as exc:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=str(exc),
+            approval_required=False,
+            error=str(exc),
+        )
+
+    allowed, policy_reason, guard = _controlled_write_policy(target_path)
+    if not allowed:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=policy_reason,
+            approval_required=False,
+            error=policy_reason,
+        )
+
     before_exists = target.exists()
     before_text = target.read_text(encoding="utf-8") if before_exists and target.is_file() else ""
 
@@ -136,24 +242,27 @@ def _execute_controlled_workspace_edit(
             {
                 "ok": False,
                 "blocked": True,
+                "approval_required": False,
                 "reason": f"operation_not_allowed:{edit_plan.operation}",
+                "error": f"operation_not_allowed:{edit_plan.operation}",
             }
         )
         return response
 
     after_text = target.read_text(encoding="utf-8")
     evidence = {
-        "schema": "zero.work_package.controlled_workspace_execution_evidence.v6_1",
+        "schema": "zero.work_package.controlled_write_execution_evidence.v6_3",
         "package_id": request.package_id,
         "operation": edit_plan.operation,
-        "target_path": edit_plan.target_path,
+        "target_path": target_path,
         "before_exists": before_exists,
         "before_size": len(before_text),
         "after_size": len(after_text),
         "changed": before_text != after_text,
         "timestamp": time.time(),
         "approval": True,
-        "guard": "workspace_only",
+        "guard": guard,
+        "policy_reason": policy_reason,
     }
 
     report_lines = [
@@ -162,9 +271,10 @@ def _execute_controlled_workspace_edit(
         f"- Package ID: `{request.package_id}`",
         f"- Mode: `execute`",
         f"- Operation: `{edit_plan.operation}`",
-        f"- Target: `{edit_plan.target_path}`",
+        f"- Target: `{target_path}`",
         "- Approval: `true`",
-        "- Guard: `workspace_only`",
+        f"- Guard: `{guard}`",
+        f"- Policy: `{policy_reason}`",
         f"- Changed: `{str(evidence['changed']).lower()}`",
         "",
         "## Evidence",
@@ -182,10 +292,10 @@ def _execute_controlled_workspace_edit(
             "ok": True,
             "blocked": False,
             "approval_required": False,
-            "reason": "controlled_workspace_execution_completed",
+            "reason": _public_success_reason(guard=guard),
             "edit_plan": edit_plan.to_dict(),
             "evidence": evidence,
-            "changed_files": [edit_plan.target_path] if evidence["changed"] else [],
+            "changed_files": [target_path] if evidence["changed"] else [],
         }
     )
     return response
@@ -236,7 +346,7 @@ def submit_work_package(
         return response
 
     if request.mode == WorkPackageMode.EXECUTE:
-        return _execute_controlled_workspace_edit(
+        return _execute_controlled_write(
             repo_root=root,
             request=request,
             raw_payload=raw_payload,

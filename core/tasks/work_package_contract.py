@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-ZERO Work Package Contract v3.
+ZERO Work Package Contract v6.4.
 
 This module defines the operator-level work package contract.
 
@@ -11,8 +11,13 @@ Boundary:
 - No repository mutation.
 - Work package modes are explicit: explore / plan / execute / verify.
 
-v3 keeps the v1 readonly_audit contract compatible while adding mode-level
-authority rules.
+v6.4 closes the partial migration between the old workspace execution
+contract and the v6.3 controlled core-write contract:
+- one package-kind registry;
+- one mode normalization path;
+- execute-mode target validation is deferred to the execution guard so blocked
+  execution returns a structured result instead of raising during contract
+  validation.
 """
 
 from dataclasses import dataclass, field
@@ -22,8 +27,15 @@ from typing import Any, Mapping, Sequence
 from core.tasks.work_package_mode import WorkPackageMode
 
 
-SCHEMA = "zero.work_package.v3"
-SUPPORTED_PACKAGE_KINDS = frozenset({"readonly_audit", "plan"})
+SCHEMA = "zero.work_package.v6_4"
+
+SUPPORTED_PACKAGE_KINDS = frozenset(
+    {
+        "readonly_audit",
+        "plan",
+        "controlled_core_write_test",
+    }
+)
 SUPPORTED_MODES = frozenset(mode.value for mode in WorkPackageMode)
 
 
@@ -51,8 +63,12 @@ def _clean_list(value: Any) -> list[str]:
     return [text] if text else []
 
 
+def _normalize_relative_text(value: Any) -> str:
+    return _clean_text(value).replace("\\", "/")
+
+
 def _safe_relative_path(value: Any, *, field_name: str) -> str:
-    text = _clean_text(value).replace("\\", "/")
+    text = _normalize_relative_text(value)
     if not text:
         raise WorkPackageContractError(f"{field_name}_required")
 
@@ -64,6 +80,24 @@ def _safe_relative_path(value: Any, *, field_name: str) -> str:
     if any(part in ("..", "") for part in parts):
         raise WorkPackageContractError(f"{field_name}_must_not_escape_repo")
 
+    return text
+
+
+def _execute_scope_path(value: Any, *, field_name: str) -> str:
+    """
+    Normalize execute-mode scope paths without blocking path-escape cases here.
+
+    Execute-mode mutation safety belongs to the execution guard, not the contract
+    parser. This keeps operator-facing blocked writes as structured intake
+    results instead of leaking validation exceptions before policy/evidence code
+    can run.
+    """
+
+    text = _normalize_relative_text(value)
+    if not text:
+        raise WorkPackageContractError(f"{field_name}_required")
+    if Path(text).is_absolute():
+        raise WorkPackageContractError(f"{field_name}_must_be_relative")
     return text
 
 
@@ -157,7 +191,10 @@ def validate_work_package_request(payload: Mapping[str, Any]) -> WorkPackageRequ
     raw_paths = payload.get("scope_paths")
     if raw_paths is None:
         raw_paths = payload.get("paths")
-    scope_paths = tuple(_safe_relative_path(path, field_name="scope_path") for path in _clean_list(raw_paths))
+    scope_path_parser = _execute_scope_path if mode == WorkPackageMode.EXECUTE else _safe_relative_path
+    scope_paths = tuple(
+        scope_path_parser(path, field_name="scope_path") for path in _clean_list(raw_paths)
+    )
     if not scope_paths:
         raise WorkPackageContractError("scope_paths_required")
 
@@ -185,7 +222,7 @@ def validate_work_package_request(payload: Mapping[str, Any]) -> WorkPackageRequ
         package_id=package_id,
         kind=kind,
         title=title,
-        scope_paths=scope_paths,
+        scope_paths=tuple(str(path) for path in scope_paths if str(path).strip()),
         mode=mode,
         markers=tuple(str(marker) for marker in markers if str(marker).strip()),
         report_path=report_path,
