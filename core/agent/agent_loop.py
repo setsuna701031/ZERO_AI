@@ -326,18 +326,20 @@ class AgentLoop:
 
         work_package_result = self._try_handle_work_package_route(text)
         if work_package_result is not None:
-            work_package_result["agent_loop_runtime_route"] = "work_package_intake"
+            work_package_result["agent_loop_runtime_route"] = "work_package_scheduler"
             return work_package_result
 
         return None
 
     def _try_handle_work_package_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Dispatch JSON work-package requests through Work Package Intake.
+        """Dispatch JSON AER/work-package requests through the package scheduler.
 
-        Work Package v4 boundary:
+        Work Package boundary:
         - AgentLoop is only the entry point.
+        - Planner normalizes the operator intent.
+        - WorkPackageScheduler owns queue/status/result records.
         - Work package validation/execution stays in core.tasks.work_package_intake.
-        - v4 supports JSON payloads only, so natural chat text is not misrouted.
+        - JSON payloads only, so natural chat text is not misrouted.
         - Explore/Plan/Verify remain read-only; Execute requires approval by contract.
         """
         text = str(user_input or "").strip()
@@ -356,25 +358,53 @@ class AgentLoop:
         task_type = str(payload.get("task_type") or payload.get("type") or "").strip().lower()
         is_work_package = (
             task_type == "work_package"
+            or task_type in {"aer_task", "engineering_task", "autonomous_engineering_task"}
             or bool(payload.get("work_package"))
+            or bool(payload.get("aer_task"))
             or str(payload.get("package_type") or "").strip().lower() == "work_package"
         )
         if not is_work_package:
             return None
 
         package_payload = payload.get("package") if isinstance(payload.get("package"), dict) else dict(payload)
-        package_payload.pop("task_type", None)
-        package_payload.pop("type", None)
-        package_payload.pop("work_package", None)
-        package_payload.pop("package_type", None)
-
-        repo_root = str(payload.get("repo_root") or package_payload.pop("repo_root", ".") or ".")
+        repo_root = str(payload.get("repo_root") or package_payload.get("repo_root") or ".")
 
         try:
-            from core.tasks.work_package_intake import submit_work_package
+            planner = self.planner
+            normalizer = getattr(planner, "normalize_aer_execution_intent", None)
+            if not callable(normalizer):
+                from core.planning.planner import Planner
 
-            result = submit_work_package(package_payload, repo_root=repo_root)
+                planner = Planner()
+                normalizer = planner.normalize_aer_execution_intent
+            normalized_intent = normalizer(payload, user_input=user_input)
+            work_package_payload = normalized_intent.get("work_package") if isinstance(normalized_intent, dict) else None
+            if not isinstance(work_package_payload, dict):
+                raise ValueError("planner did not produce a work package")
+            work_package_payload.pop("repo_root", None)
+
+            from core.tasks.work_package_scheduler import WorkPackageScheduler
+
+            scheduler = WorkPackageScheduler(repo_root=repo_root)
+            schedule_record = scheduler.submit(work_package_payload, execute=True)
+            result = schedule_record.get("result") if isinstance(schedule_record.get("result"), dict) else {}
+            if not result:
+                result = {
+                    "ok": False,
+                    "package_id": str(work_package_payload.get("package_id") or "work_package"),
+                    "kind": str(work_package_payload.get("kind") or "unknown"),
+                    "mode": str(work_package_payload.get("mode") or "unknown"),
+                    "report_path": str(work_package_payload.get("report_path") or ""),
+                    "error": str(schedule_record.get("error") or "work_package_scheduler_failed"),
+                }
         except Exception as exc:
+            normalized_intent = {
+                "ok": False,
+                "schema": "zero.aer.normalized_execution_intent.v1",
+                "intent": "work_package",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            schedule_record = {}
             result = {
                 "ok": False,
                 "schema": "zero.work_package.agent_loop_dispatch_error.v1",
@@ -391,6 +421,9 @@ class AgentLoop:
         mode = str(result.get("mode") or package_payload.get("mode") or "work_package") if isinstance(result, dict) else "work_package"
         package_id = str(result.get("package_id") or package_payload.get("package_id") or "work_package") if isinstance(result, dict) else "work_package"
         report_path = str(result.get("report_path") or package_payload.get("report_path") or "") if isinstance(result, dict) else ""
+        audit_path = str(result.get("audit_path") or "") if isinstance(result, dict) else ""
+        evidence_path = str(result.get("evidence_path") or "") if isinstance(result, dict) else ""
+        result_path = str(result.get("result_path") or "") if isinstance(result, dict) else ""
         reason = str(result.get("reason") or result.get("error") or "") if isinstance(result, dict) else "invalid work package result"
 
         if ok:
@@ -401,27 +434,34 @@ class AgentLoop:
             final_answer = f"work package {package_id} blocked or failed in {mode} mode"
             if reason:
                 final_answer += f": {reason}"
+        if result_path:
+            final_answer += f"; result={result_path}"
 
         route = {
             "mode": "work_package",
-            "task": False,
+            "task": True,
             "forced_route": True,
             "work_package": True,
             "work_package_mode": mode,
             "package_id": package_id,
             "repo_root": repo_root,
+            "authority_path": "AgentLoop -> Planner -> WorkPackageScheduler -> WorkPackageIntake",
         }
         plan = {
             "ok": ok,
-            "planner_mode": "work_package_intake_v4",
+            "planner_mode": "aer_work_package_intent_v1",
             "intent": "work_package",
+            "normalized_execution_intent": copy.deepcopy(normalized_intent),
             "final_answer": final_answer,
             "steps": [
                 {
-                    "type": "work_package_intake",
+                    "type": "work_package_scheduler_submit",
                     "mode": mode,
                     "package_id": package_id,
                     "report_path": report_path,
+                    "audit_path": audit_path,
+                    "evidence_path": evidence_path,
+                    "result_path": result_path,
                 }
             ],
             "meta": {
@@ -429,6 +469,7 @@ class AgentLoop:
                 "step_count": 1,
                 "forced_route": True,
                 "work_package_entrypoint": "AgentLoop",
+                "scheduler_recorded": bool(schedule_record),
             },
             "work_package_result": copy.deepcopy(result),
         }
@@ -439,7 +480,7 @@ class AgentLoop:
                 {
                     "step_index": 1,
                     "step": {
-                        "type": "work_package_intake",
+                        "type": "work_package_scheduler_submit",
                         "mode": mode,
                         "package_id": package_id,
                     },
@@ -448,7 +489,7 @@ class AgentLoop:
             ],
             "execution_log": [
                 {
-                    "type": "work_package_intake",
+                    "type": "work_package_scheduler_submit",
                     "status": "success" if ok else "blocked_or_failed",
                     "ok": ok,
                     "data": copy.deepcopy(result),
@@ -456,13 +497,14 @@ class AgentLoop:
             ],
             "execution_trace": [
                 {
-                    "type": "work_package_intake",
+                    "type": "work_package_scheduler_submit",
                     "status": "success" if ok else "blocked_or_failed",
                     "ok": ok,
                     "data": copy.deepcopy(result),
                 }
             ],
             "last_result": copy.deepcopy(result),
+            "scheduler_record": copy.deepcopy(schedule_record),
             "final_answer": final_answer,
             "error": None if ok else reason or "work_package_failed",
         }
@@ -481,6 +523,12 @@ class AgentLoop:
                 "package_id": package_id,
                 "work_package_mode": mode,
                 "report_path": report_path,
+                "audit_path": audit_path,
+                "evidence_path": evidence_path,
+                "result_path": result_path,
+                "execution_mode": mode,
+                "final_message": result.get("final_message") if isinstance(result, dict) else final_answer,
+                "scheduler_record": copy.deepcopy(schedule_record),
             },
         )
 

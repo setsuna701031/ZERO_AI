@@ -265,6 +265,60 @@ class Planner:
     def run(self, *args, **kwargs):
         return self.plan(*args, **kwargs)
 
+    def normalize_aer_execution_intent(
+        self,
+        payload: Dict[str, Any],
+        *,
+        user_input: str = "",
+    ) -> Dict[str, Any]:
+        """Normalize an operator AER task into one work-package intent."""
+
+        if not isinstance(payload, dict):
+            payload = {}
+
+        package_payload = payload.get("package") if isinstance(payload.get("package"), dict) else dict(payload)
+        task_type = str(package_payload.get("task_type") or package_payload.get("type") or payload.get("task_type") or payload.get("type") or "").strip().lower()
+        package_payload.pop("task_type", None)
+        package_payload.pop("type", None)
+        package_payload.pop("work_package", None)
+        package_payload.pop("package_type", None)
+        package_payload.pop("aer_task", None)
+
+        if task_type in {"aer_task", "engineering_task", "autonomous_engineering_task"} or bool(payload.get("aer_task")):
+            package_id = str(package_payload.get("package_id") or package_payload.get("task_id") or payload.get("task_id") or "aer_task").strip()
+            target_path = str(package_payload.get("target_path") or package_payload.get("path") or "").strip().replace("\\", "/")
+            operation = str(package_payload.get("operation") or "write_file").strip()
+            content = str(package_payload.get("content") or "")
+            mode = str(package_payload.get("mode") or "execute").strip().lower()
+            package_payload = {
+                "package_id": package_id,
+                "kind": str(package_payload.get("kind") or "readonly_audit"),
+                "mode": mode,
+                "title": str(package_payload.get("title") or package_payload.get("goal") or user_input or package_id),
+                "scope_paths": list(package_payload.get("scope_paths") or [target_path]),
+                "report_path": str(package_payload.get("report_path") or f"workspace/{package_id}_report.md"),
+                "approval": bool(package_payload.get("approval") or package_payload.get("approved")),
+                "instructions": str(package_payload.get("instructions") or user_input or ""),
+                "metadata": dict(package_payload.get("metadata") or {}),
+            }
+            if mode == "execute":
+                package_payload["edit"] = {
+                    "operation": operation,
+                    "target_path": target_path,
+                    "content": content,
+                }
+
+        return {
+            "ok": True,
+            "schema": "zero.aer.normalized_execution_intent.v1",
+            "intent": "work_package",
+            "execution_mode": str(package_payload.get("mode") or "explore"),
+            "package_id": str(package_payload.get("package_id") or package_payload.get("id") or "work_package"),
+            "work_package": package_payload,
+            "planner_mode": self.PLANNER_MODE,
+            "source": "planner.normalize_aer_execution_intent",
+        }
+
     # ============================================================
     # structured document task
     # ============================================================

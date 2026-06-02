@@ -16,6 +16,7 @@ are not duplicated.
 """
 
 import time
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -56,16 +57,115 @@ def _write_report(repo_root: Path, relative_path: str, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _write_json_artifact(repo_root: Path, relative_path: str, payload: Mapping[str, Any]) -> None:
+    path = _repo_path(repo_root, relative_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _safe_artifact_id(package_id: str) -> str:
+    safe = []
+    for char in str(package_id or "work_package"):
+        if char.isalnum() or char in ("-", "_", "."):
+            safe.append(char)
+        else:
+            safe.append("_")
+    cleaned = "".join(safe).strip("._-")
+    return cleaned or "work_package"
+
+
+def _artifact_paths(request: WorkPackageRequest) -> dict[str, str]:
+    artifact_id = _safe_artifact_id(request.package_id)
+    base = f"workspace/work_packages/artifacts/{artifact_id}"
+    return {
+        "audit_path": f"{base}_audit.json",
+        "evidence_path": f"{base}_evidence.json",
+        "result_path": f"{base}_result.json",
+    }
+
+
 def _base_response(request: WorkPackageRequest) -> dict[str, Any]:
+    artifact_paths = _artifact_paths(request)
     return {
         "schema": SCHEMA,
         "package_id": request.package_id,
+        "task_id": request.package_id,
         "kind": request.kind,
         "mode": request.mode.value,
+        "execution_mode": request.mode.value,
         "report_path": request.report_path,
+        "audit_path": artifact_paths["audit_path"],
+        "evidence_path": artifact_paths["evidence_path"],
+        "result_path": artifact_paths["result_path"],
         "mutation_allowed": request.mutation_allowed,
         "readonly": request.readonly,
     }
+
+
+def _final_message(result: Mapping[str, Any]) -> str:
+    if result.get("final_message"):
+        return str(result.get("final_message") or "")
+    if result.get("reason"):
+        return str(result.get("reason") or "")
+    if result.get("error"):
+        return str(result.get("error") or "")
+    if bool(result.get("ok")):
+        return "work package completed"
+    return "work package failed"
+
+
+def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: dict[str, Any]) -> dict[str, Any]:
+    status = "ok" if bool(response.get("ok")) else "failed"
+    response.setdefault("status", status)
+    response.setdefault("execution_mode", request.mode.value)
+    response.setdefault("task_id", request.package_id)
+    response["final_message"] = _final_message(response)
+
+    evidence_payload = response.get("evidence")
+    if not isinstance(evidence_payload, Mapping):
+        evidence_payload = {
+            "schema": "zero.work_package.execution_evidence.v1",
+            "package_id": request.package_id,
+            "mode": request.mode.value,
+            "ok": bool(response.get("ok")),
+            "blocked": bool(response.get("blocked", False)),
+            "report_path": response.get("report_path"),
+            "timestamp": time.time(),
+        }
+
+    audit_payload = {
+        "schema": "zero.work_package.audit_record.v1",
+        "package_id": request.package_id,
+        "task_id": request.package_id,
+        "mode": request.mode.value,
+        "status": status,
+        "ok": bool(response.get("ok")),
+        "blocked": bool(response.get("blocked", False)),
+        "reason": str(response.get("reason") or response.get("error") or ""),
+        "report_path": response.get("report_path"),
+        "evidence_path": response.get("evidence_path"),
+        "result_path": response.get("result_path"),
+        "timestamp": time.time(),
+    }
+
+    result_payload = {
+        "schema": "zero.work_package.final_result.v1",
+        "package_id": request.package_id,
+        "task_id": request.package_id,
+        "status": status,
+        "ok": bool(response.get("ok")),
+        "execution_mode": request.mode.value,
+        "audit_path": response.get("audit_path"),
+        "evidence_path": response.get("evidence_path"),
+        "report_path": response.get("report_path"),
+        "final_message": response["final_message"],
+        "result": response,
+    }
+
+    _write_json_artifact(repo_root, str(response["evidence_path"]), evidence_payload)
+    _write_json_artifact(repo_root, str(response["audit_path"]), audit_payload)
+    _write_json_artifact(repo_root, str(response["result_path"]), result_payload)
+    return response
 
 
 def _plan_report(request: WorkPackageRequest) -> str:
@@ -330,7 +430,7 @@ def submit_work_package(
                 "result": audit_result.to_dict(),
             }
         )
-        return response
+        return _finalize_artifacts(root, request, response)
 
     if request.mode == WorkPackageMode.PLAN:
         plan = build_work_package_plan(request)
@@ -343,14 +443,15 @@ def submit_work_package(
                 "finding_count": 0,
             }
         )
-        return response
+        return _finalize_artifacts(root, request, response)
 
     if request.mode == WorkPackageMode.EXECUTE:
-        return _execute_controlled_write(
+        response = _execute_controlled_write(
             repo_root=root,
             request=request,
             raw_payload=raw_payload,
         )
+        return _finalize_artifacts(root, request, response)
 
     if request.mode == WorkPackageMode.VERIFY:
         plan = build_work_package_plan(request)
@@ -363,7 +464,7 @@ def submit_work_package(
                 "finding_count": 0,
             }
         )
-        return response
+        return _finalize_artifacts(root, request, response)
 
     response = _base_response(request)
     response.update(
@@ -372,7 +473,7 @@ def submit_work_package(
             "error": f"unsupported_work_package_mode:{request.mode.value}",
         }
     )
-    return response
+    return _finalize_artifacts(root, request, response)
 
 
 def submit_legacy_path_audit_package(
