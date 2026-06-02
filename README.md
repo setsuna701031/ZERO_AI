@@ -974,3 +974,79 @@ AER Runtime Core Seal Candidate: YES
 
 This milestone completes the mainline path from natural language planning to
 persistent autonomous engineering runtime execution and recovery continuity.
+---
+
+## Work Package Contract Closure (2026-06-01)
+
+ZERO has now sealed the work-package contract migration path.
+
+This checkpoint consolidates the work-package request contract, controlled
+workspace execution, controlled core-write policy, execution guard behavior,
+evidence output, and report generation into one contract path.
+
+The sealed work-package path is:
+
+```text
+work package request
+-> contract validation
+-> explicit mode
+-> approval gate
+-> controlled write policy
+-> execution guard
+-> evidence record
+-> report output
+```
+
+Completed surfaces:
+
+```text
+core/tasks/work_package_contract.py
+core/tasks/work_package_execution_guard.py
+core/tasks/work_package_intake.py
+tests/test_work_package_controlled_core_write.py
+tests/test_work_package_core_edit_gate.py
+```
+
+Boundary decision:
+
+```text
+Mode decides lifecycle intent.
+Policy decides write authority.
+Kind must not become a second permission system.
+Workspace execution and controlled core-write execution share one policy path.
+Scheduler remains orchestration only.
+Execution evidence remains explicit and separate from normal output artifacts.
+```
+
+Validated checkpoint:
+
+```text
+python -m pytest tests/test_work_package_controlled_workspace_execution.py tests/test_work_package_controlled_core_write.py -q
+
+-> 15 passed
+```
+
+Full regression validation:
+
+```text
+python -m pytest -q tests
+
+-> 4169 passed
+-> 186 subtests passed
+```
+
+Showcase evidence:
+
+```text
+docs/images/2026-06-01_work_package_contract_migration_15_passed.png
+docs/images/2026-06-01_zero_full_test_suite_4169_passed.png
+```
+
+Engineering verdict:
+
+```text
+Work Package Contract Closure: SEALED
+```
+
+This closes the contract drift between workspace execution and controlled
+core-write execution without adding a second hidden execution path.

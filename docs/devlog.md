@@ -930,3 +930,90 @@ Showcase artifact:
 ```text
 docs/images/2026-05-29_aer_runtime_core_planner_dispatch_22_passed.png
 ```
+---
+
+## 2026-06-01 - Work Package Contract Closure
+
+Completed the work-package contract migration and sealed the controlled write
+contract path.
+
+Purpose:
+
+```text
+work package request
+-> contract validation
+-> explicit mode
+-> approval gate
+-> controlled write policy
+-> execution guard
+-> evidence record
+-> report output
+```
+
+This package resolves the contract drift between the older controlled workspace
+execution path and the newer controlled core-write policy path. The final design
+keeps one internal write-policy path instead of preserving separate workspace
+and core-write permission systems.
+
+Files added / updated:
+
+```text
+core/tasks/work_package_contract.py
+core/tasks/work_package_execution_guard.py
+core/tasks/work_package_intake.py
+tests/test_work_package_controlled_core_write.py
+tests/test_work_package_core_edit_gate.py
+runtime/mutations/mutation_audit.jsonl
+docs/images/2026-06-01_work_package_contract_migration_15_passed.png
+docs/images/2026-06-01_zero_full_test_suite_4169_passed.png
+```
+
+Boundary decision:
+
+```text
+Mode decides lifecycle intent.
+Policy decides write authority.
+Kind must not become a second permission system.
+Workspace execution and controlled core-write execution share one policy path.
+Scheduler remains orchestration only.
+Execution evidence remains explicit and separate from normal output artifacts.
+No compatibility layer was added to hide contract drift.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_work_package_controlled_workspace_execution.py tests/test_work_package_controlled_core_write.py -q
+
+-> 15 passed
+```
+
+Full regression validation:
+
+```text
+python -m pytest -q tests
+
+-> 4169 passed
+-> 186 subtests passed
+```
+
+Showcase artifacts:
+
+```text
+docs/images/2026-06-01_work_package_contract_migration_15_passed.png
+docs/images/2026-06-01_zero_full_test_suite_4169_passed.png
+```
+
+Engineering verdict:
+
+```text
+Work Package Contract Closure: SEALED
+```
+
+Next mainline direction:
+
+```text
+Return to Scheduler -> Runtime -> Agent Loop -> AER Closure.
+Do not keep expanding work-package contract variants unless a real new authority
+boundary is introduced.
+```
