@@ -15,6 +15,19 @@ from core.tasks.work_package_execution_guard import validate_execute_request
 
 SCHEMA = "zero.work_package.edit_plan.v6_1"
 
+OPERATION_ALIASES = {
+    "append": "append_file",
+    "create": "create_file",
+    "write": "write_file",
+    "workspace_append": "append_file",
+    "workspace_write": "write_file",
+}
+
+
+def normalize_edit_operation(operation: Any) -> str:
+    text = str(operation or "").strip()
+    return OPERATION_ALIASES.get(text, text)
+
 
 @dataclass(frozen=True)
 class WorkPackageEditPlan:
@@ -54,7 +67,7 @@ def edit_plan_from_work_package_payload(payload: Mapping[str, Any]) -> WorkPacka
 
     return build_edit_plan(
         {
-            "operation": source.get("operation"),
+            "operation": normalize_edit_operation(source.get("operation")),
             "target_path": source.get("target_path") or source.get("path"),
             "content": source.get("content") or "",
         }
