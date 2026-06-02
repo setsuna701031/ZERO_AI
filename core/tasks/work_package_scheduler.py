@@ -95,6 +95,8 @@ def _request_payload_for_storage(payload: Mapping[str, Any] | WorkPackageRequest
 
     if "edit" in payload:
         stored_payload["edit"] = payload["edit"]
+    if "edits" in payload:
+        stored_payload["edits"] = payload["edits"]
 
     return request, stored_payload
 

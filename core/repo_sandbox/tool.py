@@ -30,6 +30,7 @@ from .policy import PolicyViolation, RepoSandboxPolicy
 
 EditMode = Literal[
     "create_file",
+    "delete_file",
     "replace_file",
     "replace_text",
     "append_text",
@@ -174,6 +175,28 @@ class RepoEditTool:
                     backup_path="",
                     apply_source="repo_edit_tool.create_file",
                 )
+            if request.mode == "delete_file":
+                delete_result = self._delete_file_in_workspace(request)
+                applied = bool(delete_result.get("applied"))
+                return RepoEditToolResult(
+                    status="success" if applied else "failed",
+                    file_path=request.file_path,
+                    instruction=request.instruction,
+                    changed_files=[request.file_path] if applied else [],
+                    selected_files=[request.file_path],
+                    test_command=None,
+                    test_allowed=False,
+                    test_result="(test not requested)\n",
+                    diff="",
+                    report="[CONTROLLED EDIT RESULT]\n"
+                    f"Selected files: {request.file_path}\n"
+                    f"Changed files : {request.file_path if applied else '(none)'}\n",
+                    error=None if applied else str(delete_result.get("error") or "delete_file failed"),
+                    applied_to_workspace=applied,
+                    workspace_path=str(delete_result.get("workspace_path") or ""),
+                    backup_path="",
+                    apply_source="repo_edit_tool.delete_file",
+                )
 
             session = ControlledEditSession(
                 self.repo_root,
@@ -252,7 +275,7 @@ class RepoEditTool:
         if not request.instruction.strip():
             raise PolicyViolation("repo_edit requires instruction")
 
-        if request.mode not in {"create_file", "replace_file", "replace_text", "append_text", "controlled_replace"}:
+        if request.mode not in {"create_file", "delete_file", "replace_file", "replace_text", "append_text", "controlled_replace"}:
             raise PolicyViolation(f"unsupported edit mode: {request.mode}")
 
         normalized_path = self._repo_relative(request.file_path)
@@ -340,6 +363,31 @@ class RepoEditTool:
             return {
                 "applied": False,
                 "error": "workspace create verification mismatch",
+                "workspace_path": str(workspace_path),
+            }
+        return {
+            "applied": True,
+            "workspace_path": str(workspace_path),
+        }
+
+    def _delete_file_in_workspace(self, request: RepoEditRequest) -> dict[str, Any]:
+        workspace_path = self._resolve_workspace_path(request.file_path)
+        if not workspace_path.exists():
+            return {
+                "applied": True,
+                "workspace_path": str(workspace_path),
+            }
+        if not workspace_path.is_file():
+            return {
+                "applied": False,
+                "error": "delete_file target is not a file",
+                "workspace_path": str(workspace_path),
+            }
+        workspace_path.unlink()
+        if workspace_path.exists():
+            return {
+                "applied": False,
+                "error": "workspace delete verification failed",
                 "workspace_path": str(workspace_path),
             }
         return {

@@ -294,9 +294,28 @@ class Planner:
             action_items_path = str(package_payload.get("action_items_path") or "").strip().replace("\\", "/")
             source_path = str(package_payload.get("source_path") or package_payload.get("input_path") or "").strip().replace("\\", "/")
             verify_contains = str(package_payload.get("verify_contains") or package_payload.get("expect_contains") or "").strip()
+            raw_edits = package_payload.get("edits")
+            normalized_edits: List[Dict[str, Any]] = []
+            if isinstance(raw_edits, list):
+                for raw_edit in raw_edits:
+                    if not isinstance(raw_edit, dict):
+                        continue
+                    edit_target = str(raw_edit.get("target_path") or raw_edit.get("path") or "").strip().replace("\\", "/")
+                    edit_operation = str(raw_edit.get("operation") or operation or "write_file").strip()
+                    edit_payload = {
+                        "operation": edit_operation,
+                        "target_path": edit_target,
+                        "content": str(raw_edit.get("content") or ""),
+                    }
+                    edit_verify = str(raw_edit.get("verify_contains") or raw_edit.get("expect_contains") or "").strip()
+                    if edit_verify:
+                        edit_payload["verify_contains"] = edit_verify
+                    normalized_edits.append(edit_payload)
             scope_paths = list(package_payload.get("scope_paths") or [])
             if not scope_paths:
-                if operation == "summarize_action_items":
+                if normalized_edits:
+                    scope_paths = [edit["target_path"] for edit in normalized_edits if edit.get("target_path")]
+                elif operation == "summarize_action_items":
                     scope_paths = [path for path in (source_path, summary_path, action_items_path) if path]
                 else:
                     scope_paths = [target_path]
@@ -321,6 +340,8 @@ class Planner:
                         "summary_path": summary_path,
                         "action_items_path": action_items_path,
                     }
+                elif normalized_edits:
+                    package_payload["edits"] = normalized_edits
                 else:
                     package_payload["edit"] = {
                         "operation": operation,

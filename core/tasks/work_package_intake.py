@@ -143,6 +143,15 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
         "ok": bool(response.get("ok")),
         "blocked": bool(response.get("blocked", False)),
         "reason": str(response.get("reason") or response.get("error") or ""),
+        "target_files": response.get("target_files"),
+        "changed_files": response.get("changed_files"),
+        "rollback_performed": response.get("rollback_performed"),
+        "plan": response.get("plan"),
+        "edit_plan": response.get("edit_plan"),
+        "impact_analysis": response.get("impact_analysis"),
+        "execution_result": response.get("execution_result"),
+        "verification_result": response.get("verification_result"),
+        "rollback_status": response.get("rollback_status"),
         "report_path": response.get("report_path"),
         "evidence_path": response.get("evidence_path"),
         "result_path": response.get("result_path"),
@@ -157,7 +166,14 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
         "ok": bool(response.get("ok")),
         "execution_mode": request.mode.value,
         "target_file": response.get("target_file") or response.get("target_path"),
+        "target_files": response.get("target_files"),
+        "changed_files": response.get("changed_files"),
+        "rollback_performed": response.get("rollback_performed"),
+        "plan": response.get("plan"),
+        "impact_analysis": response.get("impact_analysis"),
+        "execution_result": response.get("execution_result"),
         "verification_result": response.get("verification_result"),
+        "rollback_status": response.get("rollback_status"),
         "audit_path": response.get("audit_path"),
         "evidence_path": response.get("evidence_path"),
         "result_path": response.get("result_path"),
@@ -266,6 +282,15 @@ def _verification_expectation(raw_payload: Mapping[str, Any]) -> str:
     return str(raw_payload.get("verify_contains") or raw_payload.get("expect_contains") or "")
 
 
+def _edit_verification_expectation(edit_payload: Mapping[str, Any], content: str) -> str:
+    verification = edit_payload.get("verification")
+    if isinstance(verification, Mapping):
+        expected = str(verification.get("expect_contains") or verification.get("contains") or "")
+    else:
+        expected = str(edit_payload.get("verify_contains") or edit_payload.get("expect_contains") or "")
+    return expected or content
+
+
 def _verify_target_content(*, target_path: Path, expected_text: str) -> dict[str, Any]:
     exists = target_path.exists() and target_path.is_file()
     actual_text = target_path.read_text(encoding="utf-8", errors="replace") if exists else ""
@@ -282,6 +307,176 @@ def _verify_target_content(*, target_path: Path, expected_text: str) -> dict[str
         "expect_contains": expected_text,
         "reason": reason,
         "actual_size": len(actual_text),
+    }
+
+
+def _module_for_path(path: str) -> str:
+    normalized = _normalize_target_path(path)
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) >= 2 and parts[0] in {"core", "tests", "workspace"}:
+        return "/".join(parts[:2])
+    return parts[0] if parts else ""
+
+
+def _risk_level_for_targets(target_files: list[str]) -> str:
+    if any(_normalize_target_path(path).startswith("core/") for path in target_files):
+        return "medium"
+    if len(target_files) > 1:
+        return "medium"
+    return "low"
+
+
+def _build_structured_edit_plan(
+    *,
+    request: WorkPackageRequest,
+    planned_edits: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    files_to_modify: list[dict[str, Any]] = []
+    for item in planned_edits:
+        target_path = _normalize_target_path(str(item.get("target_path") or ""))
+        operation = str(item.get("operation") or "write_file")
+        expected = str(item.get("expected") or item.get("content") or "")
+        files_to_modify.append(
+            {
+                "path": target_path,
+                "operation": operation,
+                "reason": str(item.get("reason") or f"{operation} requested by work package {request.package_id}"),
+                "expected_effect": str(item.get("expected_effect") or f"{operation} updates {target_path}"),
+                "verification_method": str(item.get("verification_method") or f"verify target content contains {expected!r}"),
+            }
+        )
+
+    target_files = [item["path"] for item in files_to_modify if item.get("path")]
+    return {
+        "schema": "zero.work_package.structured_edit_plan.v1",
+        "task_goal": request.title,
+        "package_id": request.package_id,
+        "mode": request.mode.value,
+        "files_to_modify": files_to_modify,
+        "target_files": target_files,
+        "expected_effect": "controlled repo edit updates declared target files only",
+        "verification_method": "content verification for each target followed by artifact finalization",
+        "valid": bool(request.package_id and files_to_modify and all(item.get("path") for item in files_to_modify)),
+    }
+
+
+def _build_impact_analysis(
+    *,
+    request: WorkPackageRequest,
+    edit_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    target_files = [str(path) for path in edit_plan.get("target_files") or []]
+    affected_modules = sorted({module for module in (_module_for_path(path) for path in target_files) if module})
+    affected_tests = sorted(
+        {
+            "tests/test_aer_controlled_repo_edit_phase3.py",
+            "tests/test_aer_controlled_repo_edit_phase2.py",
+            "tests/test_work_package_controlled_core_write.py",
+            "tests/test_work_package_controlled_workspace_execution.py",
+        }
+    )
+    affected_contracts = sorted(
+        {
+            "work_package_contract",
+            "work_package_scheduler_record",
+            "controlled_repo_edit_result_package",
+            "rollback_transaction",
+        }
+    )
+    return {
+        "schema": "zero.work_package.impact_analysis.v1",
+        "package_id": request.package_id,
+        "affected_modules": affected_modules,
+        "affected_tests": affected_tests,
+        "affected_contracts": affected_contracts,
+        "risk_level": _risk_level_for_targets(target_files),
+        "valid": bool(affected_modules and affected_tests and affected_contracts),
+    }
+
+
+def _execution_paths() -> dict[str, Any]:
+    return {
+        "schema": "zero.work_package.execution_paths.v1",
+        "existing_multi_file_transaction_path": "WorkPackageIntake._execute_controlled_multi_write -> _apply_controlled_repo_write -> run_repo_edit",
+        "existing_rollback_path": "WorkPackageIntake._rollback_transaction_changes -> run_repo_edit",
+        "existing_verification_path": "WorkPackageIntake._verify_target_content -> _multi_verification_result",
+        "no_new_runtime_path": True,
+        "work_package_contract_required": True,
+    }
+
+
+def _execution_result_package(
+    *,
+    ok: bool,
+    status: str,
+    reason: str,
+    target_files: list[str],
+    changed_files: list[str],
+    edit_results: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema": "zero.work_package.execution_result.v1",
+        "ok": bool(ok),
+        "status": status,
+        "reason": reason,
+        "target_files": list(target_files),
+        "changed_files": list(changed_files),
+        "edit_results": [dict(item) for item in edit_results or []],
+    }
+
+
+def _rollback_status(rollback: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    rollback_payload = dict(rollback or {})
+    return {
+        "schema": "zero.work_package.rollback_status.v1",
+        "ok": bool(rollback_payload.get("ok", True)),
+        "rollback_performed": bool(rollback_payload.get("rollback_performed", False)),
+        "rollback_results": list(rollback_payload.get("rollback_results") or []),
+    }
+
+
+def _plan_is_valid(edit_plan: Mapping[str, Any], impact_analysis: Mapping[str, Any]) -> bool:
+    return bool(edit_plan.get("valid") and impact_analysis.get("valid"))
+
+
+def _planned_edit_from_plan(
+    *,
+    edit_plan: Any,
+    payload: Mapping[str, Any],
+    request: WorkPackageRequest,
+) -> dict[str, Any]:
+    target_path = _normalize_target_path(str(edit_plan.target_path))
+    operation = str(edit_plan.operation)
+    expected = _edit_verification_expectation(payload, str(edit_plan.content or ""))
+    return {
+        "operation": operation,
+        "target_path": target_path,
+        "content": str(edit_plan.content or ""),
+        "expected": expected,
+        "reason": request.instructions or request.title,
+        "expected_effect": f"{operation} updates {target_path}",
+        "verification_method": f"verify {target_path} contains {expected!r}",
+    }
+
+
+def _phase3_package_fields(
+    *,
+    edit_plan: Mapping[str, Any],
+    impact_analysis: Mapping[str, Any],
+    execution_result: Mapping[str, Any],
+    verification_result: Mapping[str, Any],
+    rollback_status: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    rollback = _rollback_status(rollback_status)
+    return {
+        "plan": dict(edit_plan),
+        "edit_plan": dict(edit_plan),
+        "impact_analysis": dict(impact_analysis),
+        "execution": _execution_paths(),
+        "execution_result": dict(execution_result),
+        "verification_result": dict(verification_result),
+        "rollback_status": rollback,
+        "rollback_performed": bool(rollback.get("rollback_performed")),
     }
 
 
@@ -356,6 +551,330 @@ def _apply_controlled_repo_write(
     }
 
 
+def _controlled_edit_payloads(raw_payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    edits = raw_payload.get("edits")
+    if isinstance(edits, list):
+        return [edit for edit in edits if isinstance(edit, Mapping)]
+    edit = raw_payload.get("edit")
+    if isinstance(edit, list):
+        return [item for item in edit if isinstance(item, Mapping)]
+    if isinstance(edit, Mapping):
+        return [edit]
+    return [raw_payload]
+
+
+def _rollback_transaction_changes(
+    *,
+    repo_root: Path,
+    snapshots: Mapping[str, Mapping[str, Any]],
+    changed_targets: list[str],
+    instruction: str,
+) -> dict[str, Any]:
+    rollback_results: list[dict[str, Any]] = []
+    ok = True
+
+    for target_path in reversed(changed_targets):
+        snapshot = snapshots.get(target_path)
+        if not isinstance(snapshot, Mapping):
+            continue
+        if bool(snapshot.get("before_exists")):
+            payload = {
+                "file_path": target_path,
+                "instruction": instruction,
+                "mode": "replace_file",
+                "new_content": str(snapshot.get("before_text") or ""),
+            }
+        else:
+            payload = {
+                "file_path": target_path,
+                "instruction": instruction,
+                "mode": "delete_file",
+            }
+        result = run_repo_edit(payload, repo_root=repo_root)
+        result_ok = result.get("status") == "success" and bool(result.get("applied_to_workspace"))
+        if not result_ok:
+            ok = False
+        rollback_results.append(
+            {
+                "target_path": target_path,
+                "ok": bool(result_ok),
+                "result": result,
+            }
+        )
+
+    return {
+        "ok": ok,
+        "rollback_performed": bool(changed_targets),
+        "rollback_results": rollback_results,
+    }
+
+
+def _multi_verification_result(per_target: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "schema": "zero.work_package.multi_file_verification_result.v1",
+        "ok": all(bool(item.get("verification", {}).get("ok")) for item in per_target),
+        "targets": per_target,
+    }
+
+
+def _execute_controlled_multi_write(
+    *,
+    repo_root: Path,
+    request: WorkPackageRequest,
+    raw_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not request.approval:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason="execute_requires_approval",
+            approval_required=True,
+        )
+
+    edit_payloads = _controlled_edit_payloads(raw_payload)
+    if not edit_payloads:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason="edits_required",
+            approval_required=False,
+            error="edits_required",
+        )
+
+    planned_edits: list[dict[str, Any]] = []
+    for index, edit_payload in enumerate(edit_payloads, start=1):
+        try:
+            edit_plan = edit_plan_from_work_package_payload({"edit": edit_payload})
+            target_path = _normalize_target_path(edit_plan.target_path)
+            target = _repo_path(repo_root, target_path)
+        except (WorkPackageExecutionRejected, ValueError) as exc:
+            structured_plan = _build_structured_edit_plan(
+                request=request,
+                planned_edits=[
+                    {
+                        "operation": str(edit_payload.get("operation") or "unknown"),
+                        "target_path": str(edit_payload.get("target_path") or edit_payload.get("path") or ""),
+                        "content": str(edit_payload.get("content") or ""),
+                        "expected": str(edit_payload.get("verify_contains") or edit_payload.get("expect_contains") or ""),
+                        "reason": str(exc),
+                        "expected_effect": "no edit executed",
+                        "verification_method": "blocked before verification",
+                    }
+                ],
+            )
+            impact_analysis = _build_impact_analysis(request=request, edit_plan=structured_plan)
+            return _blocked_execute_response(
+                repo_root=repo_root,
+                request=request,
+                reason=str(exc),
+                approval_required=False,
+                error=str(exc),
+                edit_plan=structured_plan,
+                impact_analysis=impact_analysis,
+            )
+
+        proposed_item = _planned_edit_from_plan(edit_plan=edit_plan, payload=edit_payload, request=request)
+        proposed_plan = _build_structured_edit_plan(request=request, planned_edits=[*planned_edits, proposed_item])
+        proposed_impact = _build_impact_analysis(request=request, edit_plan=proposed_plan)
+        if not _plan_is_valid(proposed_plan, proposed_impact):
+            return _blocked_execute_response(
+                repo_root=repo_root,
+                request=request,
+                reason="valid_edit_plan_required",
+                approval_required=False,
+                error="valid_edit_plan_required",
+                edit_plan=proposed_plan,
+                impact_analysis=proposed_impact,
+            )
+
+        allowed, policy_reason, guard = _controlled_write_policy(target_path)
+        if not allowed:
+            return _blocked_execute_response(
+                repo_root=repo_root,
+                request=request,
+                reason=policy_reason,
+                approval_required=False,
+                error=policy_reason,
+                edit_plan=proposed_plan,
+                impact_analysis=proposed_impact,
+            )
+        planned_edits.append(
+            {
+                "index": index,
+                "payload": edit_payload,
+                "plan": edit_plan,
+                "target_path": target_path,
+                "target": target,
+                "policy_reason": policy_reason,
+                "guard": guard,
+                "phase3_plan_item": proposed_item,
+            }
+        )
+
+    target_files = [str(item["target_path"]) for item in planned_edits]
+    structured_plan = _build_structured_edit_plan(
+        request=request,
+        planned_edits=[item["phase3_plan_item"] for item in planned_edits],
+    )
+    impact_analysis = _build_impact_analysis(request=request, edit_plan=structured_plan)
+    if not _plan_is_valid(structured_plan, impact_analysis):
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason="valid_edit_plan_required",
+            approval_required=False,
+            error="valid_edit_plan_required",
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
+        )
+    snapshots: dict[str, dict[str, Any]] = {}
+    for item in planned_edits:
+        target_path = str(item["target_path"])
+        target = item["target"]
+        before_exists = target.exists() and target.is_file()
+        snapshots[target_path] = {
+            "before_exists": before_exists,
+            "before_text": target.read_text(encoding="utf-8") if before_exists else "",
+        }
+
+    edit_results: list[dict[str, Any]] = []
+    verification_targets: list[dict[str, Any]] = []
+    changed_targets: list[str] = []
+    failure_reason = ""
+
+    for item in planned_edits:
+        edit_plan = item["plan"]
+        target_path = str(item["target_path"])
+        try:
+            write_result = _apply_controlled_repo_write(
+                repo_root=repo_root,
+                target_path=target_path,
+                operation=edit_plan.operation,
+                content=edit_plan.content,
+                instruction=request.instructions or request.title,
+            )
+        except WorkPackageExecutionRejected as exc:
+            write_result = {"ok": False, "error": str(exc)}
+
+        changed = bool(write_result.get("before_text") != write_result.get("after_text"))
+        if changed and target_path not in changed_targets:
+            changed_targets.append(target_path)
+
+        edit_record = {
+            "index": item["index"],
+            "operation": edit_plan.operation,
+            "target_path": target_path,
+            "ok": bool(write_result.get("ok")),
+            "write_result": write_result,
+        }
+        edit_results.append(edit_record)
+
+        if not bool(write_result.get("ok")):
+            failure_reason = str(write_result.get("error") or f"edit_failed:{target_path}")
+            break
+
+        expected = _edit_verification_expectation(item["payload"], edit_plan.content)
+        verification = _verify_target_content(target_path=item["target"], expected_text=expected)
+        verification_targets.append(
+            {
+                "target_path": target_path,
+                "verification": verification,
+            }
+        )
+        edit_record["verification"] = verification
+
+        if not bool(verification.get("ok")):
+            failure_reason = "verification_failed"
+            break
+
+    verification_result = _multi_verification_result(verification_targets)
+    if failure_reason and len(verification_targets) != len(planned_edits):
+        verification_result["ok"] = False
+        verification_result["reason"] = "transaction_incomplete"
+    ok = not failure_reason and bool(verification_result.get("ok"))
+    rollback = {"ok": True, "rollback_performed": False, "rollback_results": []}
+    if not ok:
+        rollback = _rollback_transaction_changes(
+            repo_root=repo_root,
+            snapshots=snapshots,
+            changed_targets=changed_targets,
+            instruction=f"rollback {request.package_id}",
+        )
+
+    final_changed_files = list(changed_targets) if ok else []
+    evidence = {
+        "schema": "zero.work_package.multi_file_controlled_write_evidence.v1",
+        "package_id": request.package_id,
+        "edit_plan": structured_plan,
+        "impact_analysis": impact_analysis,
+        "execution": _execution_paths(),
+        "target_files": target_files,
+        "edit_results": edit_results,
+        "attempted_changed_files": list(changed_targets),
+        "changed_files": final_changed_files,
+        "rollback_performed": bool(rollback.get("rollback_performed")),
+        "rollback": rollback,
+        "verification_result": verification_result,
+        "timestamp": time.time(),
+        "approval": True,
+        "guard": CONTROLLED_CORE_WRITE_GUARD_COMPAT,
+    }
+
+    report_lines = [
+        f"# {request.title}",
+        "",
+        f"- Package ID: `{request.package_id}`",
+        "- Mode: `execute`",
+        "- Operation: `multi_file_controlled_write`",
+        "- Approval: `true`",
+        f"- Targets: `{', '.join(target_files)}`",
+        f"- Changed files: `{', '.join(final_changed_files)}`",
+        f"- Rollback performed: `{str(bool(rollback.get('rollback_performed'))).lower()}`",
+        f"- Verification: `{str(bool(verification_result.get('ok'))).lower()}`",
+        "",
+        "## Evidence",
+        "",
+    ]
+    for edit_record in edit_results:
+        report_lines.append(
+            f"- `{edit_record['target_path']}` `{edit_record['operation']}` ok=`{str(bool(edit_record['ok'])).lower()}`"
+        )
+    report_lines.append("")
+    _write_report(repo_root, request.report_path, "\n".join(report_lines))
+
+    response = _base_response(request)
+    reason = "controlled_multi_file_write_completed" if ok else failure_reason or "multi_file_transaction_failed"
+    execution_result = _execution_result_package(
+        ok=bool(ok),
+        status="success" if ok else "failed",
+        reason=reason,
+        target_files=target_files,
+        changed_files=final_changed_files,
+        edit_results=edit_results,
+    )
+    response.update(
+        {
+            "ok": bool(ok),
+            "blocked": False,
+            "approval_required": False,
+            "reason": reason,
+            "error": None if ok else reason,
+            "target_files": target_files,
+            "changed_files": final_changed_files,
+            "edit_results": edit_results,
+            "evidence": evidence,
+            **_phase3_package_fields(
+                edit_plan=structured_plan,
+                impact_analysis=impact_analysis,
+                execution_result=execution_result,
+                verification_result=verification_result,
+                rollback_status=rollback,
+            ),
+        }
+    )
+    return response
+
+
 def _blocked_execute_response(
     *,
     repo_root: Path,
@@ -363,10 +882,43 @@ def _blocked_execute_response(
     reason: str,
     approval_required: bool,
     error: str | None = None,
+    edit_plan: Mapping[str, Any] | None = None,
+    impact_analysis: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     public_reason = _public_block_reason(request, reason)
     public_error = public_reason if error is not None else None
-    plan = build_work_package_plan(request)
+    work_package_plan = build_work_package_plan(request)
+    target_files = list(edit_plan.get("target_files") or request.scope_paths) if isinstance(edit_plan, Mapping) else list(request.scope_paths)
+    if not isinstance(edit_plan, Mapping):
+        edit_plan = _build_structured_edit_plan(
+            request=request,
+            planned_edits=[
+                {
+                    "operation": "blocked",
+                    "target_path": path,
+                    "content": "",
+                    "expected": "",
+                    "reason": public_reason,
+                    "expected_effect": "no edit executed",
+                    "verification_method": "blocked before verification",
+                }
+                for path in target_files
+            ],
+        )
+    if not isinstance(impact_analysis, Mapping):
+        impact_analysis = _build_impact_analysis(request=request, edit_plan=edit_plan)
+    verification_result = {
+        "schema": "zero.work_package.verification_result.v1",
+        "ok": False,
+        "reason": "blocked_before_verification",
+    }
+    execution_result = _execution_result_package(
+        ok=False,
+        status="blocked",
+        reason=public_reason,
+        target_files=target_files,
+        changed_files=[],
+    )
     _write_report(repo_root, request.report_path, _plan_report(request))
     response = _base_response(request)
     response.update(
@@ -377,12 +929,16 @@ def _blocked_execute_response(
             "reason": public_reason,
             "target_file": request.scope_paths[0] if request.scope_paths else "",
             "target_path": request.scope_paths[0] if request.scope_paths else "",
-            "verification_result": {
-                "schema": "zero.work_package.verification_result.v1",
-                "ok": False,
-                "reason": "blocked_before_verification",
-            },
-            "plan": plan.to_dict(),
+            "target_files": target_files,
+            "changed_files": [],
+            "work_package_plan": work_package_plan.to_dict(),
+            **_phase3_package_fields(
+                edit_plan=edit_plan,
+                impact_analysis=impact_analysis,
+                execution_result=execution_result,
+                verification_result=verification_result,
+                rollback_status=_rollback_status(),
+            ),
         }
     )
     if public_error is not None:
@@ -412,18 +968,57 @@ def _execute_controlled_write(
             raw_payload=raw_payload,
         )
 
+    if isinstance(raw_payload.get("edits"), list):
+        return _execute_controlled_multi_write(
+            repo_root=repo_root,
+            request=request,
+            raw_payload=raw_payload,
+        )
+
     try:
         edit_plan = edit_plan_from_work_package_payload(raw_payload)
     except WorkPackageExecutionRejected as exc:
+        structured_plan = _build_structured_edit_plan(
+            request=request,
+            planned_edits=[
+                {
+                    "operation": str(edit_payload.get("operation") or "unknown") if isinstance(edit_payload, Mapping) else "unknown",
+                    "target_path": str(edit_payload.get("target_path") or edit_payload.get("path") or "") if isinstance(edit_payload, Mapping) else "",
+                    "content": str(edit_payload.get("content") or "") if isinstance(edit_payload, Mapping) else "",
+                    "expected": _verification_expectation(raw_payload),
+                    "reason": str(exc),
+                    "expected_effect": "no edit executed",
+                    "verification_method": "blocked before verification",
+                }
+            ],
+        )
+        impact_analysis = _build_impact_analysis(request=request, edit_plan=structured_plan)
         return _blocked_execute_response(
             repo_root=repo_root,
             request=request,
             reason=str(exc),
             approval_required=False,
             error=str(exc),
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
         )
 
     target_path = _normalize_target_path(edit_plan.target_path)
+    structured_plan = _build_structured_edit_plan(
+        request=request,
+        planned_edits=[_planned_edit_from_plan(edit_plan=edit_plan, payload=raw_payload, request=request)],
+    )
+    impact_analysis = _build_impact_analysis(request=request, edit_plan=structured_plan)
+    if not _plan_is_valid(structured_plan, impact_analysis):
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason="valid_edit_plan_required",
+            approval_required=False,
+            error="valid_edit_plan_required",
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
+        )
 
     try:
         target = _repo_path(repo_root, target_path)
@@ -434,6 +1029,8 @@ def _execute_controlled_write(
             reason=str(exc),
             approval_required=False,
             error=str(exc),
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
         )
 
     allowed, policy_reason, guard = _controlled_write_policy(target_path)
@@ -444,6 +1041,8 @@ def _execute_controlled_write(
             reason=policy_reason,
             approval_required=False,
             error=policy_reason,
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
         )
 
     try:
@@ -461,6 +1060,8 @@ def _execute_controlled_write(
             reason=str(exc),
             approval_required=False,
             error=str(exc),
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
         )
 
     if not bool(write_result.get("ok")):
@@ -471,6 +1072,8 @@ def _execute_controlled_write(
             reason=reason,
             approval_required=False,
             error=reason,
+            edit_plan=structured_plan,
+            impact_analysis=impact_analysis,
         )
 
     before_exists = bool(write_result.get("before_exists"))
@@ -484,6 +1087,9 @@ def _execute_controlled_write(
         "package_id": request.package_id,
         "operation": edit_plan.operation,
         "target_path": target_path,
+        "edit_plan": structured_plan,
+        "impact_analysis": impact_analysis,
+        "execution": _execution_paths(),
         "before_exists": before_exists,
         "before_size": len(before_text),
         "after_size": len(after_text),
@@ -521,19 +1127,42 @@ def _execute_controlled_write(
     _write_report(repo_root, request.report_path, "\n".join(report_lines))
 
     response = _base_response(request)
+    reason = _public_success_reason(guard=guard) if bool(verification_result["ok"]) else "verification_failed"
+    changed_files = [target_path] if changed else []
+    execution_result = _execution_result_package(
+        ok=bool(verification_result["ok"]),
+        status="success" if bool(verification_result["ok"]) else "failed",
+        reason=reason,
+        target_files=[target_path],
+        changed_files=changed_files,
+        edit_results=[
+            {
+                "operation": edit_plan.operation,
+                "target_path": target_path,
+                "ok": bool(write_result.get("ok")),
+                "write_result": write_result,
+            }
+        ],
+    )
     response.update(
         {
             "ok": bool(verification_result["ok"]),
             "blocked": False if bool(verification_result["ok"]) else True,
             "approval_required": False,
-            "reason": _public_success_reason(guard=guard) if bool(verification_result["ok"]) else "verification_failed",
+            "reason": reason,
             "error": None if bool(verification_result["ok"]) else "verification_failed",
             "target_file": target_path,
             "target_path": target_path,
-            "verification_result": verification_result,
-            "edit_plan": edit_plan.to_dict(),
             "evidence": evidence,
-            "changed_files": [target_path] if changed else [],
+            "changed_files": changed_files,
+            "legacy_edit_plan": edit_plan.to_dict(),
+            **_phase3_package_fields(
+                edit_plan=structured_plan,
+                impact_analysis=impact_analysis,
+                execution_result=execution_result,
+                verification_result=verification_result,
+                rollback_status=_rollback_status(),
+            ),
         }
     )
     return response
