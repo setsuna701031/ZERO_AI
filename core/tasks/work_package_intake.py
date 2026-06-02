@@ -30,6 +30,7 @@ from core.tasks.work_package_edit_plan import edit_plan_from_work_package_payloa
 from core.tasks.work_package_execution_guard import WorkPackageExecutionRejected
 from core.tasks.work_package_mode import WorkPackageMode
 from core.tasks.work_package_plan import build_work_package_plan
+from core.repo_sandbox.tool import run_repo_edit
 
 
 SCHEMA = "zero.work_package.intake_result.v6_4"
@@ -155,8 +156,11 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
         "status": status,
         "ok": bool(response.get("ok")),
         "execution_mode": request.mode.value,
+        "target_file": response.get("target_file") or response.get("target_path"),
+        "verification_result": response.get("verification_result"),
         "audit_path": response.get("audit_path"),
         "evidence_path": response.get("evidence_path"),
+        "result_path": response.get("result_path"),
         "report_path": response.get("report_path"),
         "final_message": response["final_message"],
         "result": response,
@@ -212,6 +216,9 @@ def _controlled_write_policy(target_path: str) -> tuple[bool, str, str]:
     if normalized.startswith("core/tasks/work_package_") and normalized.endswith(".py"):
         return True, "controlled_core_write_allowed", CONTROLLED_CORE_WRITE_GUARD_COMPAT
 
+    if normalized == "README.md":
+        return True, "controlled_root_file_write_allowed", CONTROLLED_CORE_WRITE_GUARD_COMPAT
+
     if normalized.startswith("workspace/"):
         return True, "controlled_workspace_write_allowed", CONTROLLED_WORKSPACE_WRITE_GUARD
 
@@ -252,6 +259,103 @@ def _public_success_reason(*, guard: str) -> str:
     return "controlled_write_execution_completed"
 
 
+def _verification_expectation(raw_payload: Mapping[str, Any]) -> str:
+    verification = raw_payload.get("verification")
+    if isinstance(verification, Mapping):
+        return str(verification.get("expect_contains") or verification.get("contains") or "")
+    return str(raw_payload.get("verify_contains") or raw_payload.get("expect_contains") or "")
+
+
+def _verify_target_content(*, target_path: Path, expected_text: str) -> dict[str, Any]:
+    exists = target_path.exists() and target_path.is_file()
+    actual_text = target_path.read_text(encoding="utf-8", errors="replace") if exists else ""
+    if expected_text:
+        matched = expected_text in actual_text
+        reason = "expected_text_found" if matched else "expected_text_missing"
+    else:
+        matched = exists
+        reason = "target_file_exists" if matched else "target_file_missing"
+    return {
+        "schema": "zero.work_package.verification_result.v1",
+        "ok": bool(matched),
+        "exists": bool(exists),
+        "expect_contains": expected_text,
+        "reason": reason,
+        "actual_size": len(actual_text),
+    }
+
+
+def _apply_controlled_repo_write(
+    *,
+    repo_root: Path,
+    target_path: str,
+    operation: str,
+    content: str,
+    instruction: str,
+) -> dict[str, Any]:
+    target = _repo_path(repo_root, target_path)
+    before_exists = target.exists()
+    before_text = target.read_text(encoding="utf-8") if before_exists and target.is_file() else ""
+
+    if before_exists:
+        if operation == "append_file":
+            payload = {
+                "file_path": target_path,
+                "instruction": instruction,
+                "mode": "replace_file",
+                "new_content": before_text + content,
+            }
+        elif operation in {"create_file", "write_file"}:
+            payload = {
+                "file_path": target_path,
+                "instruction": instruction,
+                "mode": "replace_file",
+                "new_content": content,
+            }
+        else:
+            raise WorkPackageExecutionRejected(f"operation_not_allowed:{operation}")
+
+        tool_result = run_repo_edit(payload, repo_root=repo_root)
+        after_text = target.read_text(encoding="utf-8") if target.exists() and target.is_file() else ""
+        return {
+            "ok": tool_result.get("status") == "success" and bool(tool_result.get("applied_to_workspace")),
+            "status": tool_result.get("status"),
+            "error": tool_result.get("error"),
+            "before_exists": before_exists,
+            "before_text": before_text,
+            "after_text": after_text,
+            "changed_files": list(tool_result.get("changed_files") or []),
+            "controlled_repo_write": tool_result,
+            "write_path": "repo_sandbox_tool",
+        }
+
+    if operation not in {"create_file", "write_file"}:
+        raise WorkPackageExecutionRejected("append_target_must_exist")
+
+    tool_result = run_repo_edit(
+        {
+            "file_path": target_path,
+            "instruction": instruction,
+            "mode": "create_file",
+            "new_content": content,
+        },
+        repo_root=repo_root,
+    )
+    after_text = target.read_text(encoding="utf-8") if target.exists() and target.is_file() else ""
+    ok = tool_result.get("status") == "success" and bool(tool_result.get("applied_to_workspace"))
+    return {
+        "ok": ok,
+        "status": tool_result.get("status"),
+        "error": tool_result.get("error"),
+        "before_exists": before_exists,
+        "before_text": before_text,
+        "after_text": after_text,
+        "changed_files": list(tool_result.get("changed_files") or []),
+        "controlled_repo_write": tool_result,
+        "write_path": "repo_sandbox_tool_create",
+    }
+
+
 def _blocked_execute_response(
     *,
     repo_root: Path,
@@ -271,6 +375,13 @@ def _blocked_execute_response(
             "blocked": True,
             "approval_required": approval_required,
             "reason": public_reason,
+            "target_file": request.scope_paths[0] if request.scope_paths else "",
+            "target_path": request.scope_paths[0] if request.scope_paths else "",
+            "verification_result": {
+                "schema": "zero.work_package.verification_result.v1",
+                "ok": False,
+                "reason": "blocked_before_verification",
+            },
             "plan": plan.to_dict(),
         }
     )
@@ -291,6 +402,14 @@ def _execute_controlled_write(
             request=request,
             reason="execute_requires_approval",
             approval_required=True,
+        )
+
+    edit_payload = raw_payload.get("edit") if isinstance(raw_payload.get("edit"), Mapping) else raw_payload
+    if isinstance(edit_payload, Mapping) and str(edit_payload.get("operation") or "").strip() == "summarize_action_items":
+        return _execute_summary_action_items(
+            repo_root=repo_root,
+            request=request,
+            raw_payload=raw_payload,
         )
 
     try:
@@ -327,29 +446,39 @@ def _execute_controlled_write(
             error=policy_reason,
         )
 
-    before_exists = target.exists()
-    before_text = target.read_text(encoding="utf-8") if before_exists and target.is_file() else ""
-
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if edit_plan.operation in {"create_file", "write_file"}:
-        target.write_text(edit_plan.content, encoding="utf-8")
-    elif edit_plan.operation == "append_file":
-        with target.open("a", encoding="utf-8") as handle:
-            handle.write(edit_plan.content)
-    else:
-        response = _base_response(request)
-        response.update(
-            {
-                "ok": False,
-                "blocked": True,
-                "approval_required": False,
-                "reason": f"operation_not_allowed:{edit_plan.operation}",
-                "error": f"operation_not_allowed:{edit_plan.operation}",
-            }
+    try:
+        write_result = _apply_controlled_repo_write(
+            repo_root=repo_root,
+            target_path=target_path,
+            operation=edit_plan.operation,
+            content=edit_plan.content,
+            instruction=request.instructions or request.title,
         )
-        return response
+    except WorkPackageExecutionRejected as exc:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=str(exc),
+            approval_required=False,
+            error=str(exc),
+        )
 
-    after_text = target.read_text(encoding="utf-8")
+    if not bool(write_result.get("ok")):
+        reason = str(write_result.get("error") or "controlled_repo_write_failed")
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=reason,
+            approval_required=False,
+            error=reason,
+        )
+
+    before_exists = bool(write_result.get("before_exists"))
+    before_text = str(write_result.get("before_text") or "")
+    after_text = str(write_result.get("after_text") or "")
+    verify_expected = _verification_expectation(raw_payload) or edit_plan.content
+    verification_result = _verify_target_content(target_path=target, expected_text=verify_expected)
+    changed = before_text != after_text
     evidence = {
         "schema": "zero.work_package.controlled_write_execution_evidence.v6_3",
         "package_id": request.package_id,
@@ -358,11 +487,14 @@ def _execute_controlled_write(
         "before_exists": before_exists,
         "before_size": len(before_text),
         "after_size": len(after_text),
-        "changed": before_text != after_text,
+        "changed": changed,
         "timestamp": time.time(),
         "approval": True,
         "guard": guard,
         "policy_reason": policy_reason,
+        "write_path": str(write_result.get("write_path") or ""),
+        "controlled_repo_write": write_result.get("controlled_repo_write"),
+        "verification_result": verification_result,
     }
 
     report_lines = [
@@ -376,12 +508,171 @@ def _execute_controlled_write(
         f"- Guard: `{guard}`",
         f"- Policy: `{policy_reason}`",
         f"- Changed: `{str(evidence['changed']).lower()}`",
+        f"- Verification: `{str(verification_result['ok']).lower()}`",
         "",
         "## Evidence",
         "",
         f"- Before exists: `{str(before_exists).lower()}`",
         f"- Before size: `{evidence['before_size']}`",
         f"- After size: `{evidence['after_size']}`",
+        f"- Verification reason: `{verification_result['reason']}`",
+        "",
+    ]
+    _write_report(repo_root, request.report_path, "\n".join(report_lines))
+
+    response = _base_response(request)
+    response.update(
+        {
+            "ok": bool(verification_result["ok"]),
+            "blocked": False if bool(verification_result["ok"]) else True,
+            "approval_required": False,
+            "reason": _public_success_reason(guard=guard) if bool(verification_result["ok"]) else "verification_failed",
+            "error": None if bool(verification_result["ok"]) else "verification_failed",
+            "target_file": target_path,
+            "target_path": target_path,
+            "verification_result": verification_result,
+            "edit_plan": edit_plan.to_dict(),
+            "evidence": evidence,
+            "changed_files": [target_path] if changed else [],
+        }
+    )
+    return response
+
+
+def _summary_text(source_text: str) -> str:
+    cleaned = " ".join(str(source_text or "").split())
+    if not cleaned:
+        return "Summary: input was empty.\n"
+    return f"Summary: {cleaned}\n"
+
+
+def _action_items_text(source_text: str) -> str:
+    text = str(source_text or "").strip()
+    items: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        marker_index = stripped.lower().find("action:")
+        if marker_index >= 0:
+            action = stripped[marker_index + len("action:"):].strip()
+            if action:
+                items.append(action.rstrip("."))
+    if not items:
+        items.append("Review the generated summary and confirm next steps")
+    return "\n".join(f"- {item}" for item in items) + "\n"
+
+
+def _execute_summary_action_items(
+    *,
+    repo_root: Path,
+    request: WorkPackageRequest,
+    raw_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    edit = raw_payload.get("edit") if isinstance(raw_payload.get("edit"), Mapping) else raw_payload
+    source_path = _normalize_target_path(str(edit.get("source_path") or edit.get("input_path") or ""))
+    summary_path = _normalize_target_path(str(edit.get("summary_path") or ""))
+    action_items_path = _normalize_target_path(str(edit.get("action_items_path") or ""))
+
+    if not source_path:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason="source_path_required",
+            approval_required=False,
+            error="source_path_required",
+        )
+
+    try:
+        source = _repo_path(repo_root, source_path)
+        summary_target = _repo_path(repo_root, summary_path)
+        action_target = _repo_path(repo_root, action_items_path)
+    except ValueError as exc:
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=str(exc),
+            approval_required=False,
+            error=str(exc),
+        )
+
+    if not source.is_file():
+        return _blocked_execute_response(
+            repo_root=repo_root,
+            request=request,
+            reason=f"source_path_not_found:{source_path}",
+            approval_required=False,
+            error=f"source_path_not_found:{source_path}",
+        )
+
+    for output_path in (summary_path, action_items_path):
+        allowed, policy_reason, _guard = _controlled_write_policy(output_path)
+        if not allowed:
+            return _blocked_execute_response(
+                repo_root=repo_root,
+                request=request,
+                reason=policy_reason,
+                approval_required=False,
+                error=policy_reason,
+            )
+
+    source_text = source.read_text(encoding="utf-8")
+    outputs = {
+        summary_path: _summary_text(source_text),
+        action_items_path: _action_items_text(source_text),
+    }
+    before: dict[str, dict[str, Any]] = {}
+    changed_files: list[str] = []
+
+    for relative_path, content in outputs.items():
+        target = summary_target if relative_path == summary_path else action_target
+        before_exists = target.exists()
+        before_text = target.read_text(encoding="utf-8") if before_exists and target.is_file() else ""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        after_text = target.read_text(encoding="utf-8")
+        before[relative_path] = {
+            "before_exists": before_exists,
+            "before_size": len(before_text),
+            "after_size": len(after_text),
+            "changed": before_text != after_text,
+        }
+        if before_text != after_text:
+            changed_files.append(relative_path)
+
+    evidence = {
+        "schema": "zero.work_package.summary_action_items_evidence.v1",
+        "package_id": request.package_id,
+        "operation": "summarize_action_items",
+        "source_path": source_path,
+        "summary_path": summary_path,
+        "action_items_path": action_items_path,
+        "source_size": len(source_text),
+        "outputs": before,
+        "changed_files": list(changed_files),
+        "timestamp": time.time(),
+        "approval": True,
+        "guard": CONTROLLED_WORKSPACE_WRITE_GUARD,
+        "policy_reason": "controlled_workspace_write_allowed",
+    }
+
+    report_lines = [
+        f"# {request.title}",
+        "",
+        f"- Package ID: `{request.package_id}`",
+        "- Mode: `execute`",
+        "- Operation: `summarize_action_items`",
+        f"- Source: `{source_path}`",
+        f"- Summary: `{summary_path}`",
+        f"- Action items: `{action_items_path}`",
+        "- Approval: `true`",
+        f"- Guard: `{CONTROLLED_WORKSPACE_WRITE_GUARD}`",
+        "- Policy: `controlled_workspace_write_allowed`",
+        "",
+        "## Evidence",
+        "",
+        f"- Source size: `{len(source_text)}`",
+        f"- Changed files: `{', '.join(changed_files)}`",
         "",
     ]
     _write_report(repo_root, request.report_path, "\n".join(report_lines))
@@ -392,10 +683,22 @@ def _execute_controlled_write(
             "ok": True,
             "blocked": False,
             "approval_required": False,
-            "reason": _public_success_reason(guard=guard),
-            "edit_plan": edit_plan.to_dict(),
+            "reason": "controlled_workspace_execution_completed",
+            "edit_plan": {
+                "schema": "zero.work_package.document_task_plan.v1",
+                "operation": "summarize_action_items",
+                "source_path": source_path,
+                "summary_path": summary_path,
+                "action_items_path": action_items_path,
+            },
             "evidence": evidence,
-            "changed_files": [target_path] if evidence["changed"] else [],
+            "changed_files": changed_files,
+            "result": {
+                "summary_path": summary_path,
+                "action_items_path": action_items_path,
+                "summary": outputs[summary_path],
+                "action_items": outputs[action_items_path],
+            },
         }
     )
     return response

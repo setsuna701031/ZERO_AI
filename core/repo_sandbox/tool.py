@@ -29,6 +29,7 @@ from .policy import PolicyViolation, RepoSandboxPolicy
 
 
 EditMode = Literal[
+    "create_file",
     "replace_file",
     "replace_text",
     "append_text",
@@ -151,6 +152,28 @@ class RepoEditTool:
 
         try:
             self._validate_request(request)
+            if request.mode == "create_file":
+                create_result = self._create_file_in_workspace(request)
+                applied = bool(create_result.get("applied"))
+                return RepoEditToolResult(
+                    status="success" if applied else "failed",
+                    file_path=request.file_path,
+                    instruction=request.instruction,
+                    changed_files=[request.file_path] if applied else [],
+                    selected_files=[request.file_path],
+                    test_command=None,
+                    test_allowed=False,
+                    test_result="(test not requested)\n",
+                    diff="",
+                    report="[CONTROLLED EDIT RESULT]\n"
+                    f"Selected files: {request.file_path}\n"
+                    f"Changed files : {request.file_path if applied else '(none)'}\n",
+                    error=None if applied else str(create_result.get("error") or "create_file failed"),
+                    applied_to_workspace=applied,
+                    workspace_path=str(create_result.get("workspace_path") or ""),
+                    backup_path="",
+                    apply_source="repo_edit_tool.create_file",
+                )
 
             session = ControlledEditSession(
                 self.repo_root,
@@ -229,15 +252,15 @@ class RepoEditTool:
         if not request.instruction.strip():
             raise PolicyViolation("repo_edit requires instruction")
 
-        if request.mode not in {"replace_file", "replace_text", "append_text", "controlled_replace"}:
+        if request.mode not in {"create_file", "replace_file", "replace_text", "append_text", "controlled_replace"}:
             raise PolicyViolation(f"unsupported edit mode: {request.mode}")
 
         normalized_path = self._repo_relative(request.file_path)
         if normalized_path.startswith("/") or ".." in Path(normalized_path).parts:
             raise PolicyViolation("unsafe file_path")
 
-        if request.mode == "replace_file" and request.new_content is None:
-            raise PolicyViolation("replace_file requires new_content")
+        if request.mode in {"create_file", "replace_file"} and request.new_content is None:
+            raise PolicyViolation(f"{request.mode} requires new_content")
 
         if request.mode in {"replace_text", "controlled_replace"} and (
             request.old_text is None or request.new_text is None
@@ -301,6 +324,28 @@ class RepoEditTool:
             raise PolicyViolation("workspace path escapes repo root") from exc
 
         return workspace_path
+
+    def _create_file_in_workspace(self, request: RepoEditRequest) -> dict[str, Any]:
+        workspace_path = self._resolve_workspace_path(request.file_path)
+        if workspace_path.exists():
+            return {
+                "applied": False,
+                "error": "create_file target already exists",
+                "workspace_path": str(workspace_path),
+            }
+        workspace_path.parent.mkdir(parents=True, exist_ok=True)
+        workspace_path.write_text(str(request.new_content or ""), encoding="utf-8")
+        written = workspace_path.read_text(encoding="utf-8")
+        if written != str(request.new_content or ""):
+            return {
+                "applied": False,
+                "error": "workspace create verification mismatch",
+                "workspace_path": str(workspace_path),
+            }
+        return {
+            "applied": True,
+            "workspace_path": str(workspace_path),
+        }
 
     def _read_edited_session_content(
         self,

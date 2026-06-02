@@ -9,6 +9,7 @@ SCHEMA = "zero.work_package.execution_guard.v6_2"
 
 ALLOWED_WORKSPACE_PREFIX = "workspace/"
 ALLOWED_CORE_PREFIX = "core/tasks/work_package_"
+ALLOWED_ROOT_FILES = frozenset({"README.md"})
 ALLOWED_OPERATIONS = frozenset({"create_file", "write_file", "append_file"})
 BLOCKED_PREFIXES = (
     "core/agent/",
@@ -105,6 +106,14 @@ def validate_execute_request(payload: Mapping[str, Any]) -> ExecutionGuardDecisi
             reason="workspace_target_allowed",
         )
 
+    if target_path in ALLOWED_ROOT_FILES:
+        return ExecutionGuardDecision(
+            ok=True,
+            operation=operation,
+            target_path=target_path,
+            reason="allowlisted_root_file_target_allowed",
+        )
+
     if _is_allowlisted_core_target(target_path):
         return ExecutionGuardDecision(
             ok=True,
@@ -119,6 +128,7 @@ def validate_execute_request(payload: Mapping[str, Any]) -> ExecutionGuardDecisi
 __all__ = [
     "ALLOWED_CORE_PREFIX",
     "ALLOWED_OPERATIONS",
+    "ALLOWED_ROOT_FILES",
     "ALLOWED_WORKSPACE_PREFIX",
     "BLOCKED_PREFIXES",
     "ExecutionGuardDecision",

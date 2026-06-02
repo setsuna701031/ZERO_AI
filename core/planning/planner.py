@@ -290,23 +290,43 @@ class Planner:
             operation = str(package_payload.get("operation") or "write_file").strip()
             content = str(package_payload.get("content") or "")
             mode = str(package_payload.get("mode") or "execute").strip().lower()
+            summary_path = str(package_payload.get("summary_path") or "").strip().replace("\\", "/")
+            action_items_path = str(package_payload.get("action_items_path") or "").strip().replace("\\", "/")
+            source_path = str(package_payload.get("source_path") or package_payload.get("input_path") or "").strip().replace("\\", "/")
+            verify_contains = str(package_payload.get("verify_contains") or package_payload.get("expect_contains") or "").strip()
+            scope_paths = list(package_payload.get("scope_paths") or [])
+            if not scope_paths:
+                if operation == "summarize_action_items":
+                    scope_paths = [path for path in (source_path, summary_path, action_items_path) if path]
+                else:
+                    scope_paths = [target_path]
             package_payload = {
                 "package_id": package_id,
                 "kind": str(package_payload.get("kind") or "readonly_audit"),
                 "mode": mode,
                 "title": str(package_payload.get("title") or package_payload.get("goal") or user_input or package_id),
-                "scope_paths": list(package_payload.get("scope_paths") or [target_path]),
+                "scope_paths": scope_paths,
                 "report_path": str(package_payload.get("report_path") or f"workspace/{package_id}_report.md"),
                 "approval": bool(package_payload.get("approval") or package_payload.get("approved")),
                 "instructions": str(package_payload.get("instructions") or user_input or ""),
                 "metadata": dict(package_payload.get("metadata") or {}),
             }
+            if verify_contains:
+                package_payload["verify_contains"] = verify_contains
             if mode == "execute":
-                package_payload["edit"] = {
-                    "operation": operation,
-                    "target_path": target_path,
-                    "content": content,
-                }
+                if operation == "summarize_action_items":
+                    package_payload["edit"] = {
+                        "operation": operation,
+                        "source_path": source_path,
+                        "summary_path": summary_path,
+                        "action_items_path": action_items_path,
+                    }
+                else:
+                    package_payload["edit"] = {
+                        "operation": operation,
+                        "target_path": target_path,
+                        "content": content,
+                    }
 
         return {
             "ok": True,

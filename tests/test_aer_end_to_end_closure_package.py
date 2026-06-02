@@ -120,3 +120,53 @@ def test_aer_task_blocks_unsafe_path_and_still_returns_readable_result(tmp_path:
     assert final["result"]["reason"] == result["reason"]
     assert scheduler_record["status"] == "failed"
     assert scheduler_record["result"]["result_path"] == result["result_path"]
+
+
+def test_aer_task_reads_input_and_writes_summary_and_action_items(tmp_path: Path) -> None:
+    input_path = tmp_path / "workspace/input.txt"
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    input_path.write_text(
+        "ZERO needs to read a file, summarize it, then extract action items. "
+        "Action: keep output paths exact.\n",
+        encoding="utf-8",
+    )
+    loop = AgentLoop(planner=Planner(), repo_root=str(tmp_path))
+
+    response = loop.run(
+        json.dumps(
+            {
+                "task_type": "aer_task",
+                "repo_root": str(tmp_path),
+                "task_id": "aer_real_workspace_task",
+                "goal": "Read workspace/input.txt and create workspace/summary.txt plus workspace/action_items.txt",
+                "operation": "summarize_action_items",
+                "source_path": "workspace/input.txt",
+                "summary_path": "workspace/summary.txt",
+                "action_items_path": "workspace/action_items.txt",
+                "approval": True,
+            }
+        )
+    )
+
+    assert response["ok"] is True
+    assert response["package_id"] == "aer_real_workspace_task"
+    assert response["execution_mode"] == "execute"
+
+    result = response["work_package_result"]
+    assert result["ok"] is True
+    assert result["status"] == "ok"
+    assert result["evidence_path"]
+    assert result["result_path"]
+    assert result["changed_files"] == ["workspace/summary.txt", "workspace/action_items.txt"]
+
+    assert (tmp_path / "workspace/summary.txt").exists()
+    assert (tmp_path / "workspace/action_items.txt").exists()
+    assert "Summary: ZERO needs to read a file" in (tmp_path / "workspace/summary.txt").read_text(encoding="utf-8")
+    assert "- keep output paths exact" in (tmp_path / "workspace/action_items.txt").read_text(encoding="utf-8")
+
+    evidence = json.loads((tmp_path / result["evidence_path"]).read_text(encoding="utf-8"))
+    final = json.loads((tmp_path / result["result_path"]).read_text(encoding="utf-8"))
+    assert evidence["operation"] == "summarize_action_items"
+    assert evidence["source_path"] == "workspace/input.txt"
+    assert final["status"] == "ok"
+    assert final["result"]["result"]["summary_path"] == "workspace/summary.txt"
