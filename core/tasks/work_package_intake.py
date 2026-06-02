@@ -130,6 +130,9 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
             "mode": request.mode.value,
             "ok": bool(response.get("ok")),
             "blocked": bool(response.get("blocked", False)),
+            "change_set": response.get("change_set"),
+            "verification_set": response.get("verification_set"),
+            "rollback_status": response.get("rollback_status"),
             "report_path": response.get("report_path"),
             "timestamp": time.time(),
         }
@@ -149,8 +152,10 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
         "plan": response.get("plan"),
         "edit_plan": response.get("edit_plan"),
         "impact_analysis": response.get("impact_analysis"),
+        "change_set": response.get("change_set"),
         "execution_result": response.get("execution_result"),
         "verification_result": response.get("verification_result"),
+        "verification_set": response.get("verification_set"),
         "rollback_status": response.get("rollback_status"),
         "report_path": response.get("report_path"),
         "evidence_path": response.get("evidence_path"),
@@ -171,8 +176,10 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
         "rollback_performed": response.get("rollback_performed"),
         "plan": response.get("plan"),
         "impact_analysis": response.get("impact_analysis"),
+        "change_set": response.get("change_set"),
         "execution_result": response.get("execution_result"),
         "verification_result": response.get("verification_result"),
+        "verification_set": response.get("verification_set"),
         "rollback_status": response.get("rollback_status"),
         "audit_path": response.get("audit_path"),
         "evidence_path": response.get("evidence_path"),
@@ -370,6 +377,7 @@ def _build_impact_analysis(
     affected_tests = sorted(
         {
             "tests/test_aer_controlled_repo_edit_phase3.py",
+            "tests/test_aer_controlled_repo_edit_phase4.py",
             "tests/test_aer_controlled_repo_edit_phase2.py",
             "tests/test_work_package_controlled_core_write.py",
             "tests/test_work_package_controlled_workspace_execution.py",
@@ -380,6 +388,7 @@ def _build_impact_analysis(
             "work_package_contract",
             "work_package_scheduler_record",
             "controlled_repo_edit_result_package",
+            "controlled_repo_edit_change_set_bundle",
             "rollback_transaction",
         }
     )
@@ -435,6 +444,116 @@ def _rollback_status(rollback: Mapping[str, Any] | None = None) -> dict[str, Any
     }
 
 
+def _verification_set(verification_result: Mapping[str, Any]) -> dict[str, Any]:
+    target_results: list[dict[str, Any]] = []
+    raw_targets = verification_result.get("targets")
+    if isinstance(raw_targets, list):
+        for item in raw_targets:
+            if isinstance(item, Mapping):
+                target_results.append(dict(item))
+    else:
+        target_results.append({"target_path": "", "verification": dict(verification_result)})
+    return {
+        "schema": "zero.work_package.verification_set.v1",
+        "ok": bool(verification_result.get("ok")),
+        "targets": target_results,
+        "verification_result": dict(verification_result),
+    }
+
+
+def _change_set_operations(edit_plan: Mapping[str, Any], execution_result: Mapping[str, Any]) -> list[dict[str, Any]]:
+    operations: list[dict[str, Any]] = []
+    edit_results_by_path: dict[str, Mapping[str, Any]] = {}
+    for item in execution_result.get("edit_results") or []:
+        if isinstance(item, Mapping):
+            edit_results_by_path[str(item.get("target_path") or "")] = item
+    for index, item in enumerate(edit_plan.get("files_to_modify") or [], start=1):
+        if not isinstance(item, Mapping):
+            continue
+        path = _normalize_target_path(str(item.get("path") or ""))
+        edit_result = edit_results_by_path.get(path, {})
+        operations.append(
+            {
+                "index": index,
+                "operation": str(item.get("operation") or ""),
+                "target_path": path,
+                "reason": str(item.get("reason") or ""),
+                "expected_effect": str(item.get("expected_effect") or ""),
+                "verification_method": str(item.get("verification_method") or ""),
+                "executed": bool(edit_result),
+                "ok": bool(edit_result.get("ok")) if isinstance(edit_result, Mapping) else False,
+            }
+        )
+    return operations
+
+
+def _result_summary(
+    *,
+    execution_result: Mapping[str, Any],
+    verification_set: Mapping[str, Any],
+    rollback: Mapping[str, Any],
+) -> dict[str, Any]:
+    ok = bool(execution_result.get("ok"))
+    status = str(execution_result.get("status") or ("success" if ok else "failed"))
+    changed_files = list(execution_result.get("changed_files") or [])
+    target_files = list(execution_result.get("target_files") or [])
+    return {
+        "schema": "zero.work_package.change_set_result_summary.v1",
+        "ok": ok,
+        "status": status,
+        "reason": str(execution_result.get("reason") or ""),
+        "target_file_count": len(target_files),
+        "changed_file_count": len(changed_files),
+        "verification_ok": bool(verification_set.get("ok")),
+        "rollback_performed": bool(rollback.get("rollback_performed")),
+    }
+
+
+def _build_change_set_bundle(
+    *,
+    request: WorkPackageRequest,
+    edit_plan: Mapping[str, Any],
+    impact_analysis: Mapping[str, Any],
+    execution_result: Mapping[str, Any],
+    verification_result: Mapping[str, Any],
+    rollback_status: Mapping[str, Any],
+) -> dict[str, Any]:
+    files = [str(path) for path in edit_plan.get("target_files") or execution_result.get("target_files") or []]
+    verification = _verification_set(verification_result)
+    operations = _change_set_operations(edit_plan, execution_result)
+    summary = _result_summary(
+        execution_result=execution_result,
+        verification_set=verification,
+        rollback=rollback_status,
+    )
+    complete = bool(
+        request.package_id
+        and edit_plan.get("valid")
+        and impact_analysis.get("valid")
+        and files
+        and operations
+        and verification
+        and rollback_status
+        and execution_result
+        and summary
+    )
+    return {
+        "schema": "zero.work_package.change_set.v1",
+        "change_set_id": f"change_set:{request.package_id}",
+        "goal": request.title,
+        "edit_plan": dict(edit_plan),
+        "impact_analysis": dict(impact_analysis),
+        "files": files,
+        "operations": operations,
+        "verification_set": verification,
+        "rollback_status": dict(rollback_status),
+        "execution_result": dict(execution_result),
+        "result_summary": summary,
+        "complete": complete,
+        "successful": bool(execution_result.get("ok")) and bool(verification.get("ok")) and not bool(rollback_status.get("rollback_performed")),
+    }
+
+
 def _plan_is_valid(edit_plan: Mapping[str, Any], impact_analysis: Mapping[str, Any]) -> bool:
     return bool(edit_plan.get("valid") and impact_analysis.get("valid"))
 
@@ -461,6 +580,7 @@ def _planned_edit_from_plan(
 
 def _phase3_package_fields(
     *,
+    request: WorkPackageRequest,
     edit_plan: Mapping[str, Any],
     impact_analysis: Mapping[str, Any],
     execution_result: Mapping[str, Any],
@@ -468,6 +588,14 @@ def _phase3_package_fields(
     rollback_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     rollback = _rollback_status(rollback_status)
+    change_set = _build_change_set_bundle(
+        request=request,
+        edit_plan=edit_plan,
+        impact_analysis=impact_analysis,
+        execution_result=execution_result,
+        verification_result=verification_result,
+        rollback_status=rollback,
+    )
     return {
         "plan": dict(edit_plan),
         "edit_plan": dict(edit_plan),
@@ -475,8 +603,10 @@ def _phase3_package_fields(
         "execution": _execution_paths(),
         "execution_result": dict(execution_result),
         "verification_result": dict(verification_result),
+        "verification_set": dict(change_set["verification_set"]),
         "rollback_status": rollback,
         "rollback_performed": bool(rollback.get("rollback_performed")),
+        "change_set": change_set,
     }
 
 
@@ -852,6 +982,16 @@ def _execute_controlled_multi_write(
         changed_files=final_changed_files,
         edit_results=edit_results,
     )
+    package_fields = _phase3_package_fields(
+        request=request,
+        edit_plan=structured_plan,
+        impact_analysis=impact_analysis,
+        execution_result=execution_result,
+        verification_result=verification_result,
+        rollback_status=rollback,
+    )
+    evidence["change_set"] = package_fields["change_set"]
+    evidence["verification_set"] = package_fields["verification_set"]
     response.update(
         {
             "ok": bool(ok),
@@ -863,13 +1003,7 @@ def _execute_controlled_multi_write(
             "changed_files": final_changed_files,
             "edit_results": edit_results,
             "evidence": evidence,
-            **_phase3_package_fields(
-                edit_plan=structured_plan,
-                impact_analysis=impact_analysis,
-                execution_result=execution_result,
-                verification_result=verification_result,
-                rollback_status=rollback,
-            ),
+            **package_fields,
         }
     )
     return response
@@ -933,6 +1067,7 @@ def _blocked_execute_response(
             "changed_files": [],
             "work_package_plan": work_package_plan.to_dict(),
             **_phase3_package_fields(
+                request=request,
                 edit_plan=edit_plan,
                 impact_analysis=impact_analysis,
                 execution_result=execution_result,
@@ -1144,6 +1279,16 @@ def _execute_controlled_write(
             }
         ],
     )
+    package_fields = _phase3_package_fields(
+        request=request,
+        edit_plan=structured_plan,
+        impact_analysis=impact_analysis,
+        execution_result=execution_result,
+        verification_result=verification_result,
+        rollback_status=_rollback_status(),
+    )
+    evidence["change_set"] = package_fields["change_set"]
+    evidence["verification_set"] = package_fields["verification_set"]
     response.update(
         {
             "ok": bool(verification_result["ok"]),
@@ -1156,13 +1301,7 @@ def _execute_controlled_write(
             "evidence": evidence,
             "changed_files": changed_files,
             "legacy_edit_plan": edit_plan.to_dict(),
-            **_phase3_package_fields(
-                edit_plan=structured_plan,
-                impact_analysis=impact_analysis,
-                execution_result=execution_result,
-                verification_result=verification_result,
-                rollback_status=_rollback_status(),
-            ),
+            **package_fields,
         }
     )
     return response
