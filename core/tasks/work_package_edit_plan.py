@@ -25,7 +25,7 @@ OPERATION_ALIASES = {
 
 
 def normalize_edit_operation(operation: Any) -> str:
-    text = str(operation or "").strip()
+    text = str(operation or "").strip().lower().replace("-", "_").replace(" ", "_")
     return OPERATION_ALIASES.get(text, text)
 
 
@@ -79,4 +79,5 @@ __all__ = [
     "WorkPackageEditPlan",
     "build_edit_plan",
     "edit_plan_from_work_package_payload",
+    "normalize_edit_operation",
 ]
