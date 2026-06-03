@@ -42,15 +42,24 @@ def _engineering_payload(
     )
 
 
-def _multi_step_payload(repo_root: Path, *, blocked: bool = False) -> str:
+def _multi_step_payload(
+    repo_root: Path,
+    *,
+    blocked: bool = False,
+    task_id: str | None = None,
+    resume: bool = False,
+    interrupt_after_step: int = 0,
+) -> str:
     return json.dumps(
         {
             "task_type": "engineering_task",
             "repo_root": str(repo_root),
-            "task_id": "agent_loop_multi_step_blocked" if blocked else "agent_loop_multi_step_e2e",
+            "task_id": task_id or ("agent_loop_multi_step_blocked" if blocked else "agent_loop_multi_step_e2e"),
             "goal": "Run a multi-step engineering task through AgentLoop",
             "mode": "execute",
             "approval": True,
+            "resume": resume,
+            "interrupt_after_step": interrupt_after_step,
             "acceptance": [
                 "multi-step task enters AgentLoop",
                 "first step produces result_bundle",
@@ -323,6 +332,88 @@ def test_multi_step_engineering_task_blocked_step_stops_safely(tmp_path: Path) -
     assert (tmp_path / "workspace/agent_loop_multi_step_first.txt").exists()
     assert not (tmp_path / "core/runtime/agent_loop_multi_step_blocked.py").exists()
     assert not (tmp_path / "workspace/agent_loop_multi_step_never_runs.txt").exists()
+
+
+def test_multi_step_engineering_task_persists_and_resumes_without_rerunning_completed_steps(tmp_path: Path) -> None:
+    task_id = "agent_loop_multi_step_resume"
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    interrupted = loop.run(_multi_step_payload(tmp_path, task_id=task_id, interrupt_after_step=1))
+
+    assert interrupted["ok"] is False
+    assert interrupted["interrupted"] is True
+    assert interrupted["resumed"] is False
+    assert interrupted["result_bundle"]["interrupted"] is True
+    assert interrupted["result_bundle"]["state_saved_after_each_step"] is True
+    assert len(interrupted["result_bundle"]["step_results"]) == 1
+
+    state_path = tmp_path / interrupted["state_path"]
+    assert state_path.exists()
+    saved_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert saved_state["schema"] == "zero.engineering_task.multi_step_state.v1"
+    assert saved_state["status"] == "interrupted"
+    assert saved_state["completed_step_count"] == 1
+    assert saved_state["next_step_index"] == 2
+
+    first_step_record_path = tmp_path / "workspace/work_packages/agent_loop_multi_step_first.json"
+    first_step_record_before = json.loads(first_step_record_path.read_text(encoding="utf-8"))
+
+    resumed = loop.run(_multi_step_payload(tmp_path, task_id=task_id, resume=True))
+
+    assert resumed["ok"] is True
+    assert resumed["resumed"] is True
+    assert resumed["interrupted"] is False
+    bundle = resumed["result_bundle"]
+    assert bundle["resumed"] is True
+    assert bundle["interrupted"] is False
+    assert len(bundle["step_results"]) == 3
+    assert bundle["step_results"][0] == interrupted["result_bundle"]["step_results"][0]
+    assert bundle["verification_result"]["ok"] is True
+    assert bundle["change_set"]["successful"] is True
+    assert bundle["execution_path"]["no_new_runtime_path"] is True
+    assert bundle["execution_path"]["direct_write_shortcut"] is False
+
+    first_step_record_after = json.loads(first_step_record_path.read_text(encoding="utf-8"))
+    assert first_step_record_after == first_step_record_before
+
+    final_state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert final_state["status"] == "completed"
+    assert final_state["completed_step_count"] == 3
+    assert final_state["next_step_index"] == 4
+    assert final_state["resumed"] is True
+    assert (tmp_path / "workspace/agent_loop_multi_step_second.txt").exists()
+    assert (tmp_path / "workspace/agent_loop_multi_step_never_runs.txt").exists()
+
+
+def test_multi_step_engineering_task_resume_blocked_step_stops_safely(tmp_path: Path) -> None:
+    task_id = "agent_loop_multi_step_resume_blocked"
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    interrupted = loop.run(_multi_step_payload(tmp_path, task_id=task_id, interrupt_after_step=1))
+    assert interrupted["interrupted"] is True
+    assert len(interrupted["result_bundle"]["step_results"]) == 1
+
+    resumed = loop.run(_multi_step_payload(tmp_path, task_id=task_id, blocked=True, resume=True))
+
+    assert resumed["ok"] is False
+    assert resumed["resumed"] is True
+    bundle = resumed["result_bundle"]
+    assert bundle["resumed"] is True
+    assert len(bundle["step_results"]) == 2
+    assert bundle["step_results"][0] == interrupted["result_bundle"]["step_results"][0]
+    assert bundle["observations"][1]["status"] == "blocked"
+    assert bundle["observations"][1]["next_action"] == "stop_safely"
+    assert bundle["replans"][-1]["decision"] == "stop_safely"
+    assert "blocked_target_prefix:core/runtime" in bundle["stopped_reason"]
+    assert bundle["execution_path"]["no_new_runtime_path"] is True
+    assert bundle["execution_path"]["direct_write_shortcut"] is False
+    assert not (tmp_path / "core/runtime/agent_loop_multi_step_blocked.py").exists()
+    assert not (tmp_path / "workspace/agent_loop_multi_step_never_runs.txt").exists()
+
+    final_state = json.loads((tmp_path / resumed["state_path"]).read_text(encoding="utf-8"))
+    assert final_state["status"] == "blocked_or_failed"
+    assert final_state["completed_step_count"] == 2
+    assert final_state["resumed"] is True
 
 
 def test_agent_loop_engineering_task_blocked_task_still_blocked(tmp_path: Path) -> None:

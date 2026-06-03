@@ -15,6 +15,8 @@ Boundary:
 """
 
 import copy
+import json
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -28,6 +30,7 @@ FINAL_BUNDLE_SCHEMA = "zero.engineering_task.result_bundle.v1"
 MULTI_STEP_PLAN_SCHEMA = "zero.engineering_task.multi_step_plan.v1"
 MULTI_STEP_BUNDLE_SCHEMA = "zero.engineering_task.multi_step_result_bundle.v1"
 MULTI_STEP_OBSERVATION_SCHEMA = "zero.engineering_task.step_observation.v1"
+MULTI_STEP_STATE_SCHEMA = "zero.engineering_task.multi_step_state.v1"
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -41,6 +44,44 @@ def _normalize_relative_path(value: Any) -> str:
 
 def _as_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _safe_state_id(value: Any) -> str:
+    text = _clean_text(value, "engineering_task")
+    safe = []
+    for char in text:
+        if char.isalnum() or char in ("-", "_", "."):
+            safe.append(char)
+        else:
+            safe.append("_")
+    cleaned = "".join(safe).strip("._-")
+    return cleaned[:120] or "engineering_task"
+
+
+def _multi_step_state_path(repo_root: str | Path, package_id: str) -> Path:
+    return Path(repo_root) / "workspace" / "work_packages" / f"{_safe_state_id(package_id)}.engineering_state.json"
+
+
+def _display_path(path: Path, repo_root: str | Path) -> str:
+    try:
+        return str(path.relative_to(Path(repo_root)))
+    except ValueError:
+        return str(path)
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def _task_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -399,6 +440,9 @@ def build_multi_step_result_bundle(
     observations: list[dict[str, Any]],
     replans: list[dict[str, Any]],
     stopped_reason: str = "",
+    state_path: str = "",
+    resumed: bool = False,
+    interrupted: bool = False,
 ) -> dict[str, Any]:
     verification_result = _aggregate_verification(step_results)
     change_set = _aggregate_change_set(step_results)
@@ -406,7 +450,12 @@ def build_multi_step_result_bundle(
         bool(_as_mapping(_as_mapping(_as_mapping(item.get("result")).get("result_bundle")).get("rollback_status")).get("rollback_performed"))
         for item in step_results
     )
-    ok = bool(step_results) and all(bool(_as_mapping(item.get("result")).get("ok")) for item in step_results)
+    planned_step_count = int(plan.get("step_count") or 0)
+    ok = (
+        bool(step_results)
+        and len(step_results) == planned_step_count
+        and all(bool(_as_mapping(item.get("result")).get("ok")) for item in step_results)
+    )
     last_result = _as_mapping(step_results[-1].get("result")) if step_results else {}
     last_bundle = _as_mapping(last_result.get("result_bundle"))
     return {
@@ -419,6 +468,10 @@ def build_multi_step_result_bundle(
         "step_results": copy.deepcopy(step_results),
         "observations": copy.deepcopy(observations),
         "replans": copy.deepcopy(replans),
+        "resumed": bool(resumed),
+        "interrupted": bool(interrupted),
+        "state_path": str(state_path or ""),
+        "state_saved_after_each_step": bool(step_results),
         "last_result_bundle": copy.deepcopy(last_bundle),
         "verification_result": verification_result,
         "verification_set": {"schema": "zero.engineering_task.multi_step_verification_set.v1", "ok": bool(verification_result.get("ok")), "targets": verification_result.get("targets", [])},
@@ -540,13 +593,51 @@ def run_multi_step_engineering_task(
     requirement_summary = build_requirement_summary(payload)
     plan = build_multi_step_plan(payload)
     raw_steps = _raw_step_payloads(payload)
-    step_results: list[dict[str, Any]] = []
-    observations: list[dict[str, Any]] = []
-    replans: list[dict[str, Any]] = []
-    previous_observation: dict[str, Any] | None = None
+    parent = _task_payload(payload)
+    package_id = str(plan.get("package_id") or requirement_summary.get("package_id") or "engineering_task")
+    state_path = _multi_step_state_path(repo_root, package_id)
+    resume_requested = bool(parent.get("resume") or payload.get("resume"))
+    interrupt_after_step = int(parent.get("interrupt_after_step") or payload.get("interrupt_after_step") or 0)
+    loaded_state = _read_json(state_path) if resume_requested else {}
+
+    if loaded_state.get("schema") == MULTI_STEP_STATE_SCHEMA:
+        step_results = [dict(item) for item in loaded_state.get("step_results", []) if isinstance(item, Mapping)]
+        observations = [dict(item) for item in loaded_state.get("observations", []) if isinstance(item, Mapping)]
+        replans = [dict(item) for item in loaded_state.get("replans", []) if isinstance(item, Mapping)]
+    else:
+        step_results = []
+        observations = []
+        replans = []
+
+    previous_observation: dict[str, Any] | None = observations[-1] if observations else None
     stopped_reason = ""
+    interrupted = False
+
+    def save_state(status: str, next_step_index: int) -> None:
+        _write_json(
+            state_path,
+            {
+                "schema": MULTI_STEP_STATE_SCHEMA,
+                "package_id": package_id,
+                "status": status,
+                "resumed": resume_requested,
+                "next_step_index": next_step_index,
+                "completed_step_count": len(step_results),
+                "step_count": len(raw_steps),
+                "plan": copy.deepcopy(plan),
+                "step_results": copy.deepcopy(step_results),
+                "observations": copy.deepcopy(observations),
+                "replans": copy.deepcopy(replans),
+                "updated_at": time.time(),
+            },
+        )
+
+    save_state("running", len(step_results) + 1)
 
     for step_index, raw_step in enumerate(raw_steps, start=1):
+        if step_index <= len(step_results):
+            continue
+
         step_payload = _build_step_payload(
             parent_payload=payload,
             raw_step=raw_step,
@@ -596,7 +687,19 @@ def run_multi_step_engineering_task(
                     "existing_rollback_preserved": True,
                 }
             )
+            save_state("blocked_or_failed", step_index + 1)
             break
+
+        save_state("running", step_index + 1)
+
+        if interrupt_after_step == step_index and not resume_requested:
+            interrupted = True
+            stopped_reason = "simulated_interruption"
+            save_state("interrupted", step_index + 1)
+            break
+
+    if not stopped_reason and len(step_results) >= len(raw_steps):
+        save_state("completed", len(raw_steps) + 1)
 
     result_bundle = build_multi_step_result_bundle(
         requirement_summary=requirement_summary,
@@ -605,11 +708,14 @@ def run_multi_step_engineering_task(
         observations=observations,
         replans=replans,
         stopped_reason=stopped_reason,
+        state_path=_display_path(state_path, repo_root),
+        resumed=resume_requested,
+        interrupted=interrupted,
     )
 
     return {
         "schema": SCHEMA,
-        "ok": bool(result_bundle.get("ok")),
+        "ok": bool(result_bundle.get("ok")) and not interrupted,
         "mode": "engineering_task_runner",
         "package_id": result_bundle["package_id"],
         "requirement_summary": requirement_summary,
@@ -627,7 +733,10 @@ def run_multi_step_engineering_task(
         "step_results": copy.deepcopy(step_results),
         "observations": copy.deepcopy(observations),
         "replans": copy.deepcopy(replans),
-        "final_message": "multi_step_engineering_task_completed" if bool(result_bundle.get("ok")) else stopped_reason or "multi_step_engineering_task_stopped",
+        "resumed": resume_requested,
+        "interrupted": interrupted,
+        "state_path": _display_path(state_path, repo_root),
+        "final_message": "multi_step_engineering_task_completed" if bool(result_bundle.get("ok")) and not interrupted else stopped_reason or "multi_step_engineering_task_stopped",
     }
 
 
