@@ -288,6 +288,11 @@ def test_multi_step_engineering_task_enters_agent_loop_and_completes_with_result
     assert len(observations) == 3
     assert observations[0]["schema"] == "zero.engineering_task.step_observation.v1"
     assert observations[0]["changed_files"] == ["workspace/agent_loop_multi_step_first.txt"]
+    decisions = bundle["decisions"]
+    assert len(decisions) == 3
+    assert decisions[0]["schema"] == "zero.engineering_task.observation_decision.v1"
+    assert decisions[0]["decision"] == "continue"
+    assert decisions[0]["next_action"] == "continue"
 
     second_payload = step_results[1]["step_payload"]
     assert second_payload["metadata"]["derived_from_observation"] is True
@@ -301,6 +306,7 @@ def test_multi_step_engineering_task_enters_agent_loop_and_completes_with_result
     assert len(bundle["step_results"]) == 3
     assert response["step_results"] == bundle["step_results"]
     assert response["observations"] == bundle["observations"]
+    assert response["decisions"] == bundle["decisions"]
     assert (tmp_path / "workspace/agent_loop_multi_step_first.txt").read_text(encoding="utf-8") == "first full-file output\n"
     assert (tmp_path / "workspace/agent_loop_multi_step_second.txt").read_text(encoding="utf-8") == (
         "derived from workspace/agent_loop_multi_step_first.txt\n"
@@ -323,6 +329,8 @@ def test_multi_step_engineering_task_blocked_step_stops_safely(tmp_path: Path) -
     assert len(bundle["observations"]) == 2
     assert bundle["observations"][1]["status"] == "blocked"
     assert bundle["observations"][1]["next_action"] == "stop_safely"
+    assert bundle["decisions"][1]["decision"] == "stop_safely"
+    assert bundle["decisions"][1]["next_action"] == "stop_safely"
     assert bundle["replans"][-1]["decision"] == "stop_safely"
     assert bundle["replans"][-1]["blocked_step_stops_safely"] is True
     assert "blocked_target_prefix:core/runtime" in bundle["stopped_reason"]
@@ -332,6 +340,136 @@ def test_multi_step_engineering_task_blocked_step_stops_safely(tmp_path: Path) -
     assert (tmp_path / "workspace/agent_loop_multi_step_first.txt").exists()
     assert not (tmp_path / "core/runtime/agent_loop_multi_step_blocked.py").exists()
     assert not (tmp_path / "workspace/agent_loop_multi_step_never_runs.txt").exists()
+
+
+def test_multi_step_engineering_task_replans_next_step_from_observation(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(
+        json.dumps(
+            {
+                "task_type": "engineering_task",
+                "repo_root": str(tmp_path),
+                "task_id": "agent_loop_adaptive_replan",
+                "goal": "Adapt next step after observing first result",
+                "mode": "execute",
+                "approval": True,
+                "steps": [
+                    {
+                        "package_id": "agent_loop_adaptive_replan_first",
+                        "goal": "Write source observation file",
+                        "edits": [
+                            {
+                                "operation": "write_file",
+                                "target_path": "workspace/agent_loop_adaptive_source.txt",
+                                "content": "adaptive source\n",
+                                "verify_contains": "adaptive source",
+                            }
+                        ],
+                    },
+                    {
+                        "package_id": "agent_loop_adaptive_replan_second",
+                        "goal": "This goal is replaced by observation replan",
+                        "replan_from_observation": {
+                            "goal_template": "Replanned after {previous_package_id}",
+                            "target_path_template": "workspace/replanned_from_{previous_package_id}.txt",
+                            "content_template": "replanned from {first_changed_file}\n",
+                            "verify_contains_template": "replanned from {first_changed_file}",
+                            "reason_template": "observed {first_changed_file}",
+                        },
+                        "edits": [
+                            {
+                                "operation": "write_file",
+                                "target_path": "workspace/agent_loop_adaptive_original_target.txt",
+                                "content": "original next step\n",
+                                "verify_contains": "original next step",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+    )
+
+    assert response["ok"] is True
+    assert response["agent_loop_runtime_route"] == "engineering_task_runner"
+    bundle = response["result_bundle"]
+    assert bundle["schema"] == "zero.engineering_task.multi_step_result_bundle.v1"
+    assert bundle["decisions"][0]["decision"] == "replan_next_step"
+    assert bundle["decisions"][0]["next_action"] == "replan"
+    assert bundle["decisions"][0]["replanned"] is True
+    assert bundle["replans"][0]["decision"] == "replan_next_step"
+    assert bundle["replans"][0]["existing_aer_path_preserved"] is True
+
+    second = bundle["step_results"][1]
+    second_payload = second["step_payload"]
+    assert second_payload["goal"] == "Replanned after agent_loop_adaptive_replan_first"
+    assert second_payload["metadata"]["replanned_from_observation"] is True
+    assert second_payload["edits"][0]["target_path"] == "workspace/replanned_from_agent_loop_adaptive_replan_first.txt"
+    assert second["result"]["result_bundle"]["execution_path"]["no_new_runtime_path"] is True
+    assert second["result"]["result_bundle"]["execution_path"]["direct_write_shortcut"] is False
+    assert second["result"]["result_bundle"]["change_set"]["files"] == [
+        "workspace/replanned_from_agent_loop_adaptive_replan_first.txt"
+    ]
+    assert (tmp_path / "workspace/replanned_from_agent_loop_adaptive_replan_first.txt").read_text(encoding="utf-8") == (
+        "replanned from workspace/agent_loop_adaptive_source.txt\n"
+    )
+    assert not (tmp_path / "workspace/agent_loop_adaptive_original_target.txt").exists()
+
+
+def test_multi_step_engineering_task_failed_observation_stops_before_next_step(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(
+        json.dumps(
+            {
+                "task_type": "engineering_task",
+                "repo_root": str(tmp_path),
+                "task_id": "agent_loop_adaptive_failed_observation",
+                "goal": "Stop safely when a step fails verification",
+                "mode": "execute",
+                "approval": True,
+                "steps": [
+                    {
+                        "package_id": "agent_loop_adaptive_failed_first",
+                        "goal": "Write file that fails verification",
+                        "edits": [
+                            {
+                                "operation": "write_file",
+                                "target_path": "workspace/agent_loop_adaptive_failed_first.txt",
+                                "content": "temporary failed content\n",
+                                "verify_contains": "missing verification marker",
+                            }
+                        ],
+                    },
+                    {
+                        "package_id": "agent_loop_adaptive_should_not_run",
+                        "goal": "This step must not execute",
+                        "edits": [
+                            {
+                                "operation": "write_file",
+                                "target_path": "workspace/agent_loop_adaptive_should_not_run.txt",
+                                "content": "should not run\n",
+                                "verify_contains": "should not run",
+                            }
+                        ],
+                    },
+                ],
+            }
+        )
+    )
+
+    assert response["ok"] is False
+    bundle = response["result_bundle"]
+    assert len(bundle["observations"]) == 1
+    assert len(bundle["decisions"]) == 1
+    assert bundle["observations"][0]["status"] == "failed"
+    assert bundle["decisions"][0]["decision"] == "stop_safely"
+    assert bundle["decisions"][0]["existing_rollback_preserved"] is True
+    assert bundle["replans"][-1]["decision"] == "stop_safely"
+    assert bundle["step_results"][0]["result"]["result_bundle"]["rollback_status"]["rollback_performed"] is True
+    assert not (tmp_path / "workspace/agent_loop_adaptive_failed_first.txt").exists()
+    assert not (tmp_path / "workspace/agent_loop_adaptive_should_not_run.txt").exists()
 
 
 def test_multi_step_engineering_task_persists_and_resumes_without_rerunning_completed_steps(tmp_path: Path) -> None:

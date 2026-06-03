@@ -482,6 +482,7 @@ class AgentLoop:
                 "change_set": copy.deepcopy(result.get("change_set") if isinstance(result, dict) else {}),
                 "step_results": copy.deepcopy(result.get("step_results") if isinstance(result, dict) else []),
                 "observations": copy.deepcopy(result.get("observations") if isinstance(result, dict) else []),
+                "decisions": copy.deepcopy(result.get("decisions") if isinstance(result, dict) else []),
                 "replans": copy.deepcopy(result.get("replans") if isinstance(result, dict) else []),
                 "resumed": bool(result.get("resumed")) if isinstance(result, dict) else False,
                 "interrupted": bool(result.get("interrupted")) if isinstance(result, dict) else False,

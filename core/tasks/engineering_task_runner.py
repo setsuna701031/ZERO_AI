@@ -30,6 +30,7 @@ FINAL_BUNDLE_SCHEMA = "zero.engineering_task.result_bundle.v1"
 MULTI_STEP_PLAN_SCHEMA = "zero.engineering_task.multi_step_plan.v1"
 MULTI_STEP_BUNDLE_SCHEMA = "zero.engineering_task.multi_step_result_bundle.v1"
 MULTI_STEP_OBSERVATION_SCHEMA = "zero.engineering_task.step_observation.v1"
+MULTI_STEP_DECISION_SCHEMA = "zero.engineering_task.observation_decision.v1"
 MULTI_STEP_STATE_SCHEMA = "zero.engineering_task.multi_step_state.v1"
 
 
@@ -283,6 +284,31 @@ def _apply_observation_derivation(step_payload: dict[str, Any], observation: Map
     return derived
 
 
+def _apply_observation_replan(step_payload: dict[str, Any], observation: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(observation, Mapping):
+        return step_payload
+
+    replan = step_payload.get("replan_from_observation")
+    if not isinstance(replan, Mapping):
+        return step_payload
+
+    replanned = _apply_observation_derivation(
+        {
+            **copy.deepcopy(step_payload),
+            "derive_from_observation": dict(replan),
+        },
+        observation,
+    )
+    metadata = dict(replanned.get("metadata") or {})
+    metadata["replanned_from_observation"] = True
+    metadata["replan_reason"] = _format_from_observation(
+        replan.get("reason_template") or replan.get("reason") or "next_step_replanned_from_observation",
+        observation,
+    )
+    replanned["metadata"] = metadata
+    return replanned
+
+
 def _build_step_payload(
     *,
     parent_payload: Mapping[str, Any],
@@ -293,6 +319,7 @@ def _build_step_payload(
     parent = _task_payload(parent_payload)
     parent_id = _clean_text(parent.get("package_id") or parent.get("task_id") or parent_payload.get("task_id"), "engineering_task")
     step = _apply_observation_derivation(copy.deepcopy(dict(raw_step)), previous_observation)
+    step = _apply_observation_replan(step, previous_observation)
     package_id = _clean_text(step.get("package_id") or step.get("task_id"), f"{parent_id}_step_{step_index}")
 
     step_payload = {
@@ -328,6 +355,7 @@ def _build_step_payload(
     step_payload.pop("engineering_steps", None)
     step_payload.pop("task_steps", None)
     step_payload.pop("derive_from_observation", None)
+    step_payload.pop("replan_from_observation", None)
     return step_payload
 
 
@@ -394,6 +422,58 @@ def _observe_step_result(*, step_index: int, step_payload: Mapping[str, Any], re
     }
 
 
+def _next_step_uses_observation_replan(raw_step: Mapping[str, Any] | None) -> bool:
+    return isinstance(_as_mapping(raw_step).get("replan_from_observation"), Mapping)
+
+
+def _next_step_uses_observation_derivation(raw_step: Mapping[str, Any] | None) -> bool:
+    return isinstance(_as_mapping(raw_step).get("derive_from_observation"), Mapping)
+
+
+def _decide_after_observation(
+    *,
+    observation: Mapping[str, Any],
+    next_raw_step: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not bool(observation.get("ok")):
+        return {
+            "schema": MULTI_STEP_DECISION_SCHEMA,
+            "step_index": observation.get("step_index"),
+            "observed_package_id": str(observation.get("package_id") or ""),
+            "decision": "stop_safely",
+            "next_action": "stop_safely",
+            "replanned": False,
+            "reason": str(observation.get("reason") or "step_failed"),
+            "blocked": bool(observation.get("blocked")),
+            "existing_rollback_preserved": True,
+        }
+
+    if _next_step_uses_observation_replan(next_raw_step):
+        return {
+            "schema": MULTI_STEP_DECISION_SCHEMA,
+            "step_index": observation.get("step_index"),
+            "observed_package_id": str(observation.get("package_id") or ""),
+            "decision": "replan_next_step",
+            "next_action": "replan",
+            "replanned": True,
+            "reason": "next_step_declared_replan_from_observation",
+            "blocked": False,
+            "existing_aer_path_required": True,
+        }
+
+    return {
+        "schema": MULTI_STEP_DECISION_SCHEMA,
+        "step_index": observation.get("step_index"),
+        "observed_package_id": str(observation.get("package_id") or ""),
+        "decision": "continue",
+        "next_action": "continue",
+        "replanned": False,
+        "reason": "step_succeeded",
+        "blocked": False,
+        "next_step_derived_from_observation": _next_step_uses_observation_derivation(next_raw_step),
+    }
+
+
 def _aggregate_verification(step_results: list[dict[str, Any]]) -> dict[str, Any]:
     targets = []
     for item in step_results:
@@ -438,6 +518,7 @@ def build_multi_step_result_bundle(
     plan: Mapping[str, Any],
     step_results: list[dict[str, Any]],
     observations: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
     replans: list[dict[str, Any]],
     stopped_reason: str = "",
     state_path: str = "",
@@ -467,6 +548,7 @@ def build_multi_step_result_bundle(
         "multi_step_plan": dict(plan),
         "step_results": copy.deepcopy(step_results),
         "observations": copy.deepcopy(observations),
+        "decisions": copy.deepcopy(decisions),
         "replans": copy.deepcopy(replans),
         "resumed": bool(resumed),
         "interrupted": bool(interrupted),
@@ -603,10 +685,12 @@ def run_multi_step_engineering_task(
     if loaded_state.get("schema") == MULTI_STEP_STATE_SCHEMA:
         step_results = [dict(item) for item in loaded_state.get("step_results", []) if isinstance(item, Mapping)]
         observations = [dict(item) for item in loaded_state.get("observations", []) if isinstance(item, Mapping)]
+        decisions = [dict(item) for item in loaded_state.get("decisions", []) if isinstance(item, Mapping)]
         replans = [dict(item) for item in loaded_state.get("replans", []) if isinstance(item, Mapping)]
     else:
         step_results = []
         observations = []
+        decisions = []
         replans = []
 
     previous_observation: dict[str, Any] | None = observations[-1] if observations else None
@@ -627,6 +711,7 @@ def run_multi_step_engineering_task(
                 "plan": copy.deepcopy(plan),
                 "step_results": copy.deepcopy(step_results),
                 "observations": copy.deepcopy(observations),
+                "decisions": copy.deepcopy(decisions),
                 "replans": copy.deepcopy(replans),
                 "updated_at": time.time(),
             },
@@ -673,6 +758,9 @@ def run_multi_step_engineering_task(
         )
         observations.append(observation)
         previous_observation = observation
+        next_raw_step = raw_steps[step_index] if step_index < len(raw_steps) else None
+        decision = _decide_after_observation(observation=observation, next_raw_step=next_raw_step)
+        decisions.append(decision)
 
         if not bool(result.get("ok")):
             stopped_reason = observation.get("reason") or "step_failed"
@@ -690,6 +778,20 @@ def run_multi_step_engineering_task(
             save_state("blocked_or_failed", step_index + 1)
             break
 
+        if decision.get("decision") == "replan_next_step":
+            replans.append(
+                {
+                    "schema": "zero.engineering_task.replan_decision.v1",
+                    "step_index": step_index,
+                    "decision": "replan_next_step",
+                    "next_step_index": step_index + 1,
+                    "replanned": True,
+                    "reason": str(decision.get("reason") or "next_step_declared_replan_from_observation"),
+                    "source_observation_step": observation.get("step_index"),
+                    "existing_aer_path_preserved": True,
+                }
+            )
+
         save_state("running", step_index + 1)
 
         if interrupt_after_step == step_index and not resume_requested:
@@ -706,6 +808,7 @@ def run_multi_step_engineering_task(
         plan=plan,
         step_results=step_results,
         observations=observations,
+        decisions=decisions,
         replans=replans,
         stopped_reason=stopped_reason,
         state_path=_display_path(state_path, repo_root),
@@ -732,6 +835,7 @@ def run_multi_step_engineering_task(
         "change_set": result_bundle["change_set"],
         "step_results": copy.deepcopy(step_results),
         "observations": copy.deepcopy(observations),
+        "decisions": copy.deepcopy(decisions),
         "replans": copy.deepcopy(replans),
         "resumed": resume_requested,
         "interrupted": interrupted,
@@ -759,6 +863,7 @@ def run_engineering_task(
 __all__ = [
     "FINAL_BUNDLE_SCHEMA",
     "MULTI_STEP_BUNDLE_SCHEMA",
+    "MULTI_STEP_DECISION_SCHEMA",
     "MULTI_STEP_OBSERVATION_SCHEMA",
     "MULTI_STEP_PLAN_SCHEMA",
     "REQUIREMENT_SUMMARY_SCHEMA",
