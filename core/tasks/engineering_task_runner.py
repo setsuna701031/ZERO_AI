@@ -21,6 +21,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.planning.planner import Planner
+from core.tasks.engineering_memory_store import (
+    EngineeringMemoryStore,
+    build_memory_record_from_result_bundle,
+)
 from core.tasks.work_package_scheduler import WorkPackageScheduler
 
 
@@ -446,8 +450,10 @@ def _generated_task_record(
     step_payload: Mapping[str, Any],
     previous_observation: Mapping[str, Any] | None,
     generated_reason: str,
+    relevant_memory: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     metadata = _as_mapping(step_payload.get("metadata"))
+    memory = _as_mapping(relevant_memory)
     return {
         "schema": GENERATED_TASK_SCHEMA,
         "step_index": int(step_index),
@@ -463,6 +469,8 @@ def _generated_task_record(
         "generated_reason": str(generated_reason or "initial_engineering_task"),
         "derived_from_observation": bool(metadata.get("derived_from_observation")),
         "replanned_from_observation": bool(metadata.get("replanned_from_observation")),
+        "relevant_memory": copy.deepcopy(memory),
+        "memory_visible_to_candidate_generation": bool(memory.get("records")),
         "full_file_outputs_only": True,
         "enters_existing_engineering_task_runner_path": True,
         "existing_runner_entrypoint": "_run_single_engineering_task",
@@ -515,14 +523,86 @@ def _candidate_priority(step_payload: Mapping[str, Any]) -> int:
         return 0
 
 
+def _metadata_int(step_payload: Mapping[str, Any], key: str, default: int = 0) -> int:
+    metadata = _as_mapping(step_payload.get("metadata"))
+    raw_value = metadata.get(key)
+    if raw_value is None:
+        raw_value = step_payload.get(key)
+    try:
+        return int(raw_value)
+    except Exception:
+        return int(default)
+
+
+def _candidate_risk_analysis(step_payload: Mapping[str, Any], *, blocked: bool) -> dict[str, Any]:
+    explicit = _metadata_int(step_payload, "risk_score", -1)
+    target_paths = _step_target_paths(step_payload)
+    if explicit >= 0:
+        score = explicit
+        reason = "metadata_risk_score"
+    elif blocked:
+        score = 100
+        reason = "blocked_target_prefix"
+    else:
+        score = max(1, len(target_paths) * 10)
+        reason = "target_file_count"
+    return {
+        "schema": "zero.engineering_task.candidate_risk_analysis.v1",
+        "score": int(score),
+        "blocked_without_execution": bool(blocked),
+        "target_paths": target_paths,
+        "reason": reason,
+    }
+
+
+def _candidate_cost_analysis(step_payload: Mapping[str, Any]) -> dict[str, Any]:
+    explicit = _metadata_int(step_payload, "cost_score", -1)
+    operation_count = len(_raw_edit_payloads(step_payload))
+    if explicit >= 0:
+        score = explicit
+        reason = "metadata_cost_score"
+    else:
+        score = max(1, operation_count * 5)
+        reason = "operation_count"
+    return {
+        "schema": "zero.engineering_task.candidate_cost_analysis.v1",
+        "score": int(score),
+        "operation_count": operation_count,
+        "reason": reason,
+    }
+
+
+def _candidate_value_analysis(step_payload: Mapping[str, Any]) -> dict[str, Any]:
+    explicit = _metadata_int(step_payload, "value_score", -1)
+    if explicit >= 0:
+        score = explicit
+        reason = "metadata_value_score"
+    else:
+        score = max(1, _candidate_priority(step_payload) or 10)
+        reason = "selection_priority_or_default"
+    return {
+        "schema": "zero.engineering_task.candidate_value_analysis.v1",
+        "score": int(score),
+        "reason": reason,
+    }
+
+
 def _candidate_task_record(
     *,
     step_index: int,
     candidate_index: int,
     step_payload: Mapping[str, Any],
     previous_observation: Mapping[str, Any] | None,
+    relevant_memory: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     blocked = _candidate_is_blocked_without_execution(step_payload)
+    risk_analysis = _candidate_risk_analysis(step_payload, blocked=blocked)
+    cost_analysis = _candidate_cost_analysis(step_payload)
+    value_analysis = _candidate_value_analysis(step_payload)
+    priority_score = int(value_analysis["score"]) - int(risk_analysis["score"]) - int(cost_analysis["score"])
+    if blocked:
+        priority_score -= 10000
+    memory = _as_mapping(relevant_memory)
     return {
         "schema": CANDIDATE_TASK_SCHEMA,
         "step_index": int(step_index),
@@ -537,7 +617,16 @@ def _candidate_task_record(
         },
         "target_paths": _step_target_paths(step_payload),
         "selection_priority": _candidate_priority(step_payload),
+        "risk_analysis": risk_analysis,
+        "cost_analysis": cost_analysis,
+        "value_analysis": value_analysis,
+        "risk_score": int(risk_analysis["score"]),
+        "cost_score": int(cost_analysis["score"]),
+        "value_score": int(value_analysis["score"]),
+        "priority_score": int(priority_score),
         "blocked_without_execution": blocked,
+        "relevant_memory": copy.deepcopy(memory),
+        "memory_visible_to_candidate_generation": bool(memory.get("records")),
         "full_file_outputs_only": True,
         "would_enter_existing_engineering_task_runner_path": True,
         "existing_aer_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
@@ -553,27 +642,47 @@ def _raw_candidate_task_payloads(raw_step: Mapping[str, Any]) -> list[dict[str, 
     return []
 
 
-def _evaluate_candidate_tasks(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _evaluate_candidate_tasks(
+    candidates: list[dict[str, Any]],
+    *,
+    relevant_memory: Mapping[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     evaluations: list[dict[str, Any]] = []
+    memory = _as_mapping(relevant_memory)
     for candidate in candidates:
-        priority = int(candidate.get("selection_priority") or 0)
+        risk_analysis = _as_mapping(candidate.get("risk_analysis"))
+        cost_analysis = _as_mapping(candidate.get("cost_analysis"))
+        value_analysis = _as_mapping(candidate.get("value_analysis"))
+        priority_score = int(candidate.get("priority_score") or 0)
         blocked = bool(candidate.get("blocked_without_execution"))
-        score = priority - (1000 if blocked else 0)
         reasons = []
         if blocked:
             reasons.append("candidate_target_would_be_blocked_by_existing_work_package_intake")
-        if priority:
-            reasons.append(f"selection_priority:{priority}")
-        if not reasons:
-            reasons.append("default_candidate_priority")
+        reasons.append(
+            "priority_score:{priority}; value:{value}; risk:{risk}; cost:{cost}".format(
+                priority=priority_score,
+                value=int(value_analysis.get("score") or 0),
+                risk=int(risk_analysis.get("score") or 0),
+                cost=int(cost_analysis.get("score") or 0),
+            )
+        )
         evaluations.append(
             {
                 "schema": CANDIDATE_EVALUATION_SCHEMA,
                 "step_index": candidate.get("step_index"),
                 "candidate_index": candidate.get("candidate_index"),
                 "package_id": str(candidate.get("package_id") or ""),
-                "score": score,
+                "score": priority_score,
+                "priority_score": priority_score,
+                "risk_analysis": risk_analysis,
+                "cost_analysis": cost_analysis,
+                "value_analysis": value_analysis,
+                "risk_score": int(risk_analysis.get("score") or 0),
+                "cost_score": int(cost_analysis.get("score") or 0),
+                "value_score": int(value_analysis.get("score") or 0),
                 "blocked_without_execution": blocked,
+                "relevant_memory": copy.deepcopy(memory),
+                "memory_visible_to_prioritization": bool(memory.get("records")),
                 "reason": "; ".join(reasons),
                 "existing_aer_path_required": True,
                 "direct_write_shortcut": False,
@@ -608,10 +717,47 @@ def _select_candidate_task(
         "selected_task": copy.deepcopy(selected),
         "selection_reason": str(selected_evaluation.get("reason") or "highest_scoring_candidate"),
         "selection_score": int(selected_evaluation.get("score") or 0),
+        "priority_score": int(selected_evaluation.get("priority_score") or 0),
+        "risk_score": int(selected_evaluation.get("risk_score") or 0),
+        "cost_score": int(selected_evaluation.get("cost_score") or 0),
+        "value_score": int(selected_evaluation.get("value_score") or 0),
+        "risk_analysis": _as_mapping(selected_evaluation.get("risk_analysis")),
+        "cost_analysis": _as_mapping(selected_evaluation.get("cost_analysis")),
+        "value_analysis": _as_mapping(selected_evaluation.get("value_analysis")),
         "blocked_without_execution": bool(selected.get("blocked_without_execution")),
         "only_selected_task_executes": True,
         "existing_engineering_task_runner_path": "_run_single_engineering_task",
         "existing_aer_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
+    }
+
+
+def _build_prioritization_data(
+    *,
+    candidate_tasks: list[dict[str, Any]],
+    candidate_evaluations: list[dict[str, Any]],
+    selected_tasks: list[dict[str, Any]],
+    relevant_memory: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    memory = _as_mapping(relevant_memory)
+    return {
+        "schema": "zero.engineering_task.prioritization_data.v1",
+        "candidate_count": len(candidate_tasks),
+        "evaluation_count": len(candidate_evaluations),
+        "selected_count": len(selected_tasks),
+        "candidate_tasks": copy.deepcopy(candidate_tasks),
+        "candidate_evaluations": copy.deepcopy(candidate_evaluations),
+        "selected_tasks": copy.deepcopy(selected_tasks),
+        "selected_task": copy.deepcopy(selected_tasks[-1]) if selected_tasks else {},
+        "selection_reason": str(_as_mapping(selected_tasks[-1]).get("selection_reason") or "") if selected_tasks else "",
+        "relevant_memory": copy.deepcopy(memory),
+        "memory_visible_to_prioritization": bool(memory.get("records")),
+        "priority_model": {
+            "schema": "zero.engineering_task.priority_model.v1",
+            "formula": "priority_score = value_score - risk_score - cost_score - blocked_penalty",
+            "blocked_penalty": 10000,
+            "blocked_task_can_win": False,
+            "existing_aer_path_required": True,
+        },
     }
 
 
@@ -654,6 +800,9 @@ def _build_step_payload(
         "edit",
         "edits",
         "selection_priority",
+        "risk_score",
+        "cost_score",
+        "value_score",
     ):
         if key in step:
             step_payload[key] = copy.deepcopy(step[key])
@@ -850,6 +999,8 @@ def build_multi_step_result_bundle(
     candidate_tasks: list[dict[str, Any]] | None = None,
     candidate_evaluations: list[dict[str, Any]] | None = None,
     selected_tasks: list[dict[str, Any]] | None = None,
+    relevant_memory: Mapping[str, Any] | None = None,
+    memory_record: Mapping[str, Any] | None = None,
     stopped_reason: str = "",
     state_path: str = "",
     resumed: bool = False,
@@ -869,6 +1020,13 @@ def build_multi_step_result_bundle(
     )
     last_result = _as_mapping(step_results[-1].get("result")) if step_results else {}
     last_bundle = _as_mapping(last_result.get("result_bundle"))
+    prioritization_data = _build_prioritization_data(
+        candidate_tasks=candidate_tasks if isinstance(candidate_tasks, list) else [],
+        candidate_evaluations=candidate_evaluations if isinstance(candidate_evaluations, list) else [],
+        selected_tasks=selected_tasks if isinstance(selected_tasks, list) else [],
+        relevant_memory=relevant_memory,
+    )
+    memory = _as_mapping(relevant_memory)
     return {
         "schema": MULTI_STEP_BUNDLE_SCHEMA,
         "ok": ok,
@@ -892,6 +1050,10 @@ def build_multi_step_result_bundle(
         "selected_tasks": copy.deepcopy(selected_tasks if isinstance(selected_tasks, list) else []),
         "selected_task": copy.deepcopy(selected_tasks[-1]) if isinstance(selected_tasks, list) and selected_tasks else {},
         "selection_reason": str(_as_mapping(selected_tasks[-1]).get("selection_reason") or "") if isinstance(selected_tasks, list) and selected_tasks else "",
+        "prioritization_data": prioritization_data,
+        "relevant_memory": copy.deepcopy(memory),
+        "retrieved_memory": copy.deepcopy(memory),
+        "memory_record": copy.deepcopy(dict(memory_record)) if isinstance(memory_record, Mapping) else {},
         "resumed": bool(resumed),
         "interrupted": bool(interrupted),
         "state_path": str(state_path or ""),
@@ -1020,6 +1182,7 @@ def run_multi_step_engineering_task(
     parent = _task_payload(payload)
     package_id = str(plan.get("package_id") or requirement_summary.get("package_id") or "engineering_task")
     state_path = _multi_step_state_path(repo_root, package_id)
+    memory_store = EngineeringMemoryStore(repo_root)
     resume_requested = bool(parent.get("resume") or payload.get("resume"))
     interrupt_after_step = int(parent.get("interrupt_after_step") or payload.get("interrupt_after_step") or 0)
     loaded_state = _read_json(state_path) if resume_requested else {}
@@ -1034,6 +1197,8 @@ def run_multi_step_engineering_task(
         candidate_tasks = [dict(item) for item in loaded_state.get("candidate_tasks", []) if isinstance(item, Mapping)]
         candidate_evaluations = [dict(item) for item in loaded_state.get("candidate_evaluations", []) if isinstance(item, Mapping)]
         selected_tasks = [dict(item) for item in loaded_state.get("selected_tasks", []) if isinstance(item, Mapping)]
+        prioritization_data = _as_mapping(loaded_state.get("prioritization_data"))
+        relevant_memory = _as_mapping(loaded_state.get("relevant_memory"))
     else:
         step_results = []
         observations = []
@@ -1044,6 +1209,8 @@ def run_multi_step_engineering_task(
         candidate_tasks = []
         candidate_evaluations = []
         selected_tasks = []
+        prioritization_data = {}
+        relevant_memory = memory_store.load_relevant_memory(goal=str(plan.get("goal") or requirement_summary.get("goal") or package_id))
 
     previous_observation: dict[str, Any] | None = observations[-1] if observations else None
     stopped_reason = ""
@@ -1084,6 +1251,8 @@ def run_multi_step_engineering_task(
                 "candidate_tasks": copy.deepcopy(candidate_tasks),
                 "candidate_evaluations": copy.deepcopy(candidate_evaluations),
                 "selected_tasks": copy.deepcopy(selected_tasks),
+                "prioritization_data": copy.deepcopy(prioritization_data),
+                "relevant_memory": copy.deepcopy(relevant_memory),
                 "updated_at": time.time(),
             },
         )
@@ -1116,9 +1285,10 @@ def run_multi_step_engineering_task(
                         candidate_index=candidate_index,
                         step_payload=candidate_payload,
                         previous_observation=previous_observation,
+                        relevant_memory=relevant_memory,
                     )
                 )
-            evaluations = _evaluate_candidate_tasks(step_candidates)
+            evaluations = _evaluate_candidate_tasks(step_candidates, relevant_memory=relevant_memory)
             selected_task = _select_candidate_task(
                 step_index=step_index,
                 candidates=step_candidates,
@@ -1127,6 +1297,12 @@ def run_multi_step_engineering_task(
             candidate_tasks.extend(step_candidates)
             candidate_evaluations.extend(evaluations)
             selected_tasks.append(selected_task)
+            prioritization_data = _build_prioritization_data(
+                candidate_tasks=candidate_tasks,
+                candidate_evaluations=candidate_evaluations,
+                selected_tasks=selected_tasks,
+                relevant_memory=relevant_memory,
+            )
             selected_payload = _as_mapping(_as_mapping(selected_task.get("selected_task")).get("task_payload"))
             if selected_payload:
                 step_payload = selected_payload
@@ -1157,6 +1333,7 @@ def run_multi_step_engineering_task(
             step_payload=step_payload,
             previous_observation=previous_observation,
             generated_reason=generated_reason,
+            relevant_memory=relevant_memory,
         )
         generated_tasks.append(generated_task)
         _append_iteration_trace(
@@ -1287,11 +1464,16 @@ def run_multi_step_engineering_task(
         candidate_tasks=candidate_tasks,
         candidate_evaluations=candidate_evaluations,
         selected_tasks=selected_tasks,
+        relevant_memory=relevant_memory,
         stopped_reason=stopped_reason,
         state_path=_display_path(state_path, repo_root),
         resumed=resume_requested,
         interrupted=interrupted,
     )
+    memory_record: dict[str, Any] = {}
+    if bool(result_bundle.get("ok")) and not interrupted:
+        memory_record = memory_store.save_record(build_memory_record_from_result_bundle(result_bundle))
+        result_bundle["memory_record"] = copy.deepcopy(memory_record)
 
     return {
         "schema": SCHEMA,
@@ -1326,6 +1508,10 @@ def run_multi_step_engineering_task(
         "selected_tasks": copy.deepcopy(selected_tasks),
         "selected_task": copy.deepcopy(selected_tasks[-1]) if selected_tasks else {},
         "selection_reason": str(_as_mapping(selected_tasks[-1]).get("selection_reason") or "") if selected_tasks else "",
+        "prioritization_data": copy.deepcopy(result_bundle.get("prioritization_data")),
+        "relevant_memory": copy.deepcopy(result_bundle.get("relevant_memory")),
+        "retrieved_memory": copy.deepcopy(result_bundle.get("retrieved_memory")),
+        "memory_record": copy.deepcopy(memory_record),
         "resumed": resume_requested,
         "interrupted": interrupted,
         "state_path": _display_path(state_path, repo_root),
