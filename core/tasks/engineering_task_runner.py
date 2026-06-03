@@ -25,6 +25,9 @@ from core.tasks.work_package_scheduler import WorkPackageScheduler
 SCHEMA = "zero.engineering_task_runner.v1"
 REQUIREMENT_SUMMARY_SCHEMA = "zero.engineering_task.requirement_summary.v1"
 FINAL_BUNDLE_SCHEMA = "zero.engineering_task.result_bundle.v1"
+MULTI_STEP_PLAN_SCHEMA = "zero.engineering_task.multi_step_plan.v1"
+MULTI_STEP_BUNDLE_SCHEMA = "zero.engineering_task.multi_step_result_bundle.v1"
+MULTI_STEP_OBSERVATION_SCHEMA = "zero.engineering_task.step_observation.v1"
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -50,8 +53,27 @@ def _task_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     return dict(payload)
 
 
+def _raw_step_payloads(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    task = _task_payload(payload)
+    for key in ("steps", "engineering_steps", "task_steps"):
+        steps = task.get(key)
+        if isinstance(steps, list):
+            return [dict(item) for item in steps if isinstance(item, Mapping)]
+    return []
+
+
+def _is_multi_step_payload(payload: Mapping[str, Any]) -> bool:
+    return bool(_raw_step_payloads(payload))
+
+
 def _raw_edit_payloads(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     task = _task_payload(payload)
+    if _raw_step_payloads(payload):
+        edits: list[dict[str, Any]] = []
+        for step in _raw_step_payloads(payload):
+            edits.extend(_raw_edit_payloads(step))
+        return edits
+
     edits = task.get("edits")
     if isinstance(edits, list):
         return [dict(item) for item in edits if isinstance(item, Mapping)]
@@ -154,6 +176,278 @@ def normalize_engineering_task_payload(payload: Mapping[str, Any]) -> dict[str, 
     }
 
 
+def _format_from_observation(template: Any, observation: Mapping[str, Any]) -> str:
+    text = str(template or "")
+    changed_files = observation.get("changed_files")
+    if not isinstance(changed_files, list):
+        changed_files = []
+    values = {
+        "changed_files": ", ".join(str(item) for item in changed_files),
+        "first_changed_file": str(changed_files[0]) if changed_files else "",
+        "previous_package_id": str(observation.get("package_id") or ""),
+        "previous_result_path": str(observation.get("result_path") or ""),
+        "previous_reason": str(observation.get("reason") or ""),
+        "previous_ok": str(bool(observation.get("ok"))).lower(),
+    }
+    try:
+        return text.format(**values)
+    except Exception:
+        return text
+
+
+def _apply_observation_derivation(step_payload: dict[str, Any], observation: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(observation, Mapping):
+        return step_payload
+
+    derive = step_payload.get("derive_from_observation")
+    if not isinstance(derive, Mapping):
+        return step_payload
+
+    derived = copy.deepcopy(step_payload)
+    first_edit: dict[str, Any] | None = None
+    edits = derived.get("edits")
+    if isinstance(edits, list) and edits and isinstance(edits[0], Mapping):
+        first_edit = dict(edits[0])
+        edits[0] = first_edit
+    elif isinstance(derived.get("edit"), Mapping):
+        first_edit = dict(derived["edit"])
+        derived["edit"] = first_edit
+
+    def set_value(field: str, value: str) -> None:
+        if first_edit is not None:
+            first_edit[field] = value
+        else:
+            derived[field] = value
+
+    if "content_template" in derive:
+        set_value("content", _format_from_observation(derive.get("content_template"), observation))
+    if "verify_contains_template" in derive:
+        set_value("verify_contains", _format_from_observation(derive.get("verify_contains_template"), observation))
+    if "target_path_template" in derive:
+        set_value("target_path", _format_from_observation(derive.get("target_path_template"), observation))
+    if "goal_template" in derive:
+        derived["goal"] = _format_from_observation(derive.get("goal_template"), observation)
+    if "instructions_template" in derive:
+        derived["instructions"] = _format_from_observation(derive.get("instructions_template"), observation)
+
+    metadata = dict(derived.get("metadata") or {})
+    metadata["derived_from_observation"] = True
+    metadata["source_observation"] = {
+        "step_index": observation.get("step_index"),
+        "package_id": observation.get("package_id"),
+        "changed_files": list(observation.get("changed_files") or []),
+        "result_path": observation.get("result_path"),
+    }
+    derived["metadata"] = metadata
+    return derived
+
+
+def _build_step_payload(
+    *,
+    parent_payload: Mapping[str, Any],
+    raw_step: Mapping[str, Any],
+    step_index: int,
+    previous_observation: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    parent = _task_payload(parent_payload)
+    parent_id = _clean_text(parent.get("package_id") or parent.get("task_id") or parent_payload.get("task_id"), "engineering_task")
+    step = _apply_observation_derivation(copy.deepcopy(dict(raw_step)), previous_observation)
+    package_id = _clean_text(step.get("package_id") or step.get("task_id"), f"{parent_id}_step_{step_index}")
+
+    step_payload = {
+        "task_type": "engineering_task",
+        "task_id": package_id,
+        "package_id": package_id,
+        "goal": _clean_text(step.get("goal") or step.get("title") or parent.get("goal"), f"{parent_id} step {step_index}"),
+        "mode": _clean_text(step.get("mode") or parent.get("mode"), "execute"),
+        "approval": bool(step.get("approval") if "approval" in step else parent.get("approval") or parent.get("approved")),
+        "acceptance": copy.deepcopy(step.get("acceptance") or parent.get("acceptance") or parent.get("acceptance_criteria") or []),
+        "metadata": copy.deepcopy(step.get("metadata") or {}),
+    }
+
+    for key in (
+        "kind",
+        "title",
+        "scope_paths",
+        "report_path",
+        "instructions",
+        "operation",
+        "target_path",
+        "path",
+        "content",
+        "verify_contains",
+        "expect_contains",
+        "edit",
+        "edits",
+    ):
+        if key in step:
+            step_payload[key] = copy.deepcopy(step[key])
+
+    step_payload.pop("steps", None)
+    step_payload.pop("engineering_steps", None)
+    step_payload.pop("task_steps", None)
+    step_payload.pop("derive_from_observation", None)
+    return step_payload
+
+
+def build_multi_step_plan(payload: Mapping[str, Any]) -> dict[str, Any]:
+    parent = _task_payload(payload)
+    package_id = _clean_text(parent.get("package_id") or parent.get("task_id") or payload.get("task_id"), "engineering_task")
+    raw_steps = _raw_step_payloads(payload)
+    return {
+        "schema": MULTI_STEP_PLAN_SCHEMA,
+        "package_id": package_id,
+        "goal": _clean_text(parent.get("goal") or parent.get("title"), package_id),
+        "step_count": len(raw_steps),
+        "steps": [
+            {
+                "step_index": index,
+                "package_id": _clean_text(step.get("package_id") or step.get("task_id"), f"{package_id}_step_{index}"),
+                "goal": _clean_text(step.get("goal") or step.get("title") or parent.get("goal"), f"{package_id} step {index}"),
+                "derived_from_observation": isinstance(step.get("derive_from_observation"), Mapping),
+                "operation_count": len(_raw_edit_payloads(step)),
+            }
+            for index, step in enumerate(raw_steps, start=1)
+        ],
+        "flow": ["task", "plan", "execute", "observe", "replan_if_needed", "continue", "complete", "result_bundle"],
+        "execution_path": {
+            "existing_engineering_task_runner": True,
+            "existing_aer_work_package_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
+            "existing_change_set_path": "WorkPackageIntake -> change_set",
+            "no_new_runtime_path": True,
+            "direct_write_shortcut": False,
+            "full_file_outputs_only": True,
+        },
+    }
+
+
+def _observe_step_result(*, step_index: int, step_payload: Mapping[str, Any], result: Mapping[str, Any]) -> dict[str, Any]:
+    bundle = _as_mapping(result.get("result_bundle"))
+    work_package_result = _as_mapping(result.get("work_package_result"))
+    change_set = _as_mapping(result.get("change_set"))
+    artifact_paths = _as_mapping(bundle.get("artifact_paths"))
+    changed_files = work_package_result.get("changed_files")
+    if not isinstance(changed_files, list):
+        changed_files = change_set.get("files") if isinstance(change_set.get("files"), list) else []
+    ok = bool(result.get("ok"))
+    blocked = bool(work_package_result.get("blocked"))
+    status = "completed" if ok else "blocked" if blocked else "failed"
+    reason = _clean_text(work_package_result.get("reason") or result.get("error") or result.get("final_message"))
+    return {
+        "schema": MULTI_STEP_OBSERVATION_SCHEMA,
+        "step_index": step_index,
+        "package_id": str(result.get("package_id") or step_payload.get("package_id") or step_payload.get("task_id") or ""),
+        "ok": ok,
+        "status": status,
+        "blocked": blocked,
+        "reason": reason,
+        "changed_files": list(changed_files),
+        "result_bundle_schema": str(bundle.get("schema") or ""),
+        "change_set_id": str(change_set.get("change_set_id") or ""),
+        "verification_ok": bool(_as_mapping(bundle.get("verification_result")).get("ok")),
+        "rollback_performed": bool(_as_mapping(bundle.get("rollback_status")).get("rollback_performed")),
+        "result_path": str(artifact_paths.get("result_path") or work_package_result.get("result_path") or ""),
+        "next_action": "continue" if ok else "stop_safely",
+        "should_replan_candidate": bool((not ok) and not blocked),
+        "should_fail_candidate": bool(blocked),
+    }
+
+
+def _aggregate_verification(step_results: list[dict[str, Any]]) -> dict[str, Any]:
+    targets = []
+    for item in step_results:
+        bundle = _as_mapping(_as_mapping(item.get("result")).get("result_bundle"))
+        targets.append(
+            {
+                "step_index": item.get("step_index"),
+                "package_id": item.get("package_id"),
+                "verification_result": _as_mapping(bundle.get("verification_result")),
+            }
+        )
+    return {
+        "schema": "zero.engineering_task.multi_step_verification_result.v1",
+        "ok": all(bool(_as_mapping(target.get("verification_result")).get("ok")) for target in targets) if targets else False,
+        "targets": targets,
+    }
+
+
+def _aggregate_change_set(step_results: list[dict[str, Any]]) -> dict[str, Any]:
+    files: list[str] = []
+    change_sets: list[dict[str, Any]] = []
+    for item in step_results:
+        change_set = _as_mapping(_as_mapping(item.get("result")).get("change_set"))
+        if change_set:
+            change_sets.append(change_set)
+        for path in change_set.get("files") or []:
+            text = str(path)
+            if text not in files:
+                files.append(text)
+    return {
+        "schema": "zero.engineering_task.multi_step_change_set.v1",
+        "complete": bool(step_results) and all(bool(_as_mapping(_as_mapping(item.get("result")).get("change_set")).get("complete")) for item in step_results),
+        "successful": bool(step_results) and all(bool(_as_mapping(_as_mapping(item.get("result")).get("change_set")).get("successful")) for item in step_results),
+        "files": files,
+        "step_change_sets": change_sets,
+    }
+
+
+def build_multi_step_result_bundle(
+    *,
+    requirement_summary: Mapping[str, Any],
+    plan: Mapping[str, Any],
+    step_results: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
+    replans: list[dict[str, Any]],
+    stopped_reason: str = "",
+) -> dict[str, Any]:
+    verification_result = _aggregate_verification(step_results)
+    change_set = _aggregate_change_set(step_results)
+    rollback_performed = any(
+        bool(_as_mapping(_as_mapping(_as_mapping(item.get("result")).get("result_bundle")).get("rollback_status")).get("rollback_performed"))
+        for item in step_results
+    )
+    ok = bool(step_results) and all(bool(_as_mapping(item.get("result")).get("ok")) for item in step_results)
+    last_result = _as_mapping(step_results[-1].get("result")) if step_results else {}
+    last_bundle = _as_mapping(last_result.get("result_bundle"))
+    return {
+        "schema": MULTI_STEP_BUNDLE_SCHEMA,
+        "ok": ok,
+        "status": "completed" if ok else "blocked_or_failed",
+        "package_id": str(requirement_summary.get("package_id") or plan.get("package_id") or ""),
+        "requirement_summary": dict(requirement_summary),
+        "multi_step_plan": dict(plan),
+        "step_results": copy.deepcopy(step_results),
+        "observations": copy.deepcopy(observations),
+        "replans": copy.deepcopy(replans),
+        "last_result_bundle": copy.deepcopy(last_bundle),
+        "verification_result": verification_result,
+        "verification_set": {"schema": "zero.engineering_task.multi_step_verification_set.v1", "ok": bool(verification_result.get("ok")), "targets": verification_result.get("targets", [])},
+        "rollback_status": {
+            "schema": "zero.engineering_task.multi_step_rollback_status.v1",
+            "ok": not rollback_performed or all(
+                bool(_as_mapping(_as_mapping(_as_mapping(item.get("result")).get("result_bundle")).get("rollback_status")).get("ok", True))
+                for item in step_results
+            ),
+            "rollback_performed": rollback_performed,
+        },
+        "rollback_performed": rollback_performed,
+        "change_set": change_set,
+        "work_package_result": _as_mapping(last_result.get("work_package_result")),
+        "artifact_paths": _as_mapping(last_bundle.get("artifact_paths")),
+        "stopped_reason": stopped_reason,
+        "execution_path": {
+            "schema": "zero.engineering_task.execution_path.v1",
+            "existing_aer_work_package_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
+            "existing_controlled_edit_path": "WorkPackageIntake._execute_controlled_multi_write -> _apply_controlled_repo_write -> run_repo_edit",
+            "existing_change_set_bundle": bool(change_set.get("step_change_sets")),
+            "existing_transaction_rollback_verification": True,
+            "no_new_runtime_path": True,
+            "direct_write_shortcut": False,
+            "full_file_outputs_only": True,
+        },
+    }
+
+
 def build_result_bundle(
     *,
     requirement_summary: Mapping[str, Any],
@@ -205,16 +499,11 @@ def build_result_bundle(
     }
 
 
-def run_engineering_task(
+def _run_single_engineering_task(
     payload: Mapping[str, Any],
     *,
     repo_root: str | Path,
 ) -> dict[str, Any]:
-    """Run a real engineering task through ZERO's work-package path."""
-
-    if not isinstance(payload, Mapping):
-        raise ValueError("engineering_task_payload_must_be_mapping")
-
     requirement_summary = build_requirement_summary(payload)
     normalized_payload = normalize_engineering_task_payload(payload)
     work_package_payload = _as_mapping(normalized_payload.get("work_package"))
@@ -241,12 +530,135 @@ def run_engineering_task(
     }
 
 
+def run_multi_step_engineering_task(
+    payload: Mapping[str, Any],
+    *,
+    repo_root: str | Path,
+) -> dict[str, Any]:
+    """Run a multi-step engineering task as existing AER work-package executions."""
+
+    requirement_summary = build_requirement_summary(payload)
+    plan = build_multi_step_plan(payload)
+    raw_steps = _raw_step_payloads(payload)
+    step_results: list[dict[str, Any]] = []
+    observations: list[dict[str, Any]] = []
+    replans: list[dict[str, Any]] = []
+    previous_observation: dict[str, Any] | None = None
+    stopped_reason = ""
+
+    for step_index, raw_step in enumerate(raw_steps, start=1):
+        step_payload = _build_step_payload(
+            parent_payload=payload,
+            raw_step=raw_step,
+            step_index=step_index,
+            previous_observation=previous_observation,
+        )
+        derived_from_observation = bool(_as_mapping(step_payload.get("metadata")).get("derived_from_observation"))
+        if derived_from_observation:
+            replans.append(
+                {
+                    "schema": "zero.engineering_task.continuation_plan.v1",
+                    "step_index": step_index,
+                    "decision": "continue",
+                    "replanned": False,
+                    "derived_from_observation": True,
+                    "source_observation_step": previous_observation.get("step_index") if isinstance(previous_observation, Mapping) else None,
+                    "next_step_package_id": step_payload.get("package_id") or step_payload.get("task_id"),
+                }
+            )
+
+        result = _run_single_engineering_task(step_payload, repo_root=repo_root)
+        observation = _observe_step_result(step_index=step_index, step_payload=step_payload, result=result)
+        step_results.append(
+            {
+                "schema": "zero.engineering_task.multi_step_step_result.v1",
+                "step_index": step_index,
+                "package_id": str(result.get("package_id") or step_payload.get("package_id") or step_payload.get("task_id") or ""),
+                "derived_from_observation": derived_from_observation,
+                "step_payload": copy.deepcopy(step_payload),
+                "result": copy.deepcopy(result),
+                "observation": copy.deepcopy(observation),
+            }
+        )
+        observations.append(observation)
+        previous_observation = observation
+
+        if not bool(result.get("ok")):
+            stopped_reason = observation.get("reason") or "step_failed"
+            replans.append(
+                {
+                    "schema": "zero.engineering_task.replan_decision.v1",
+                    "step_index": step_index,
+                    "decision": "stop_safely",
+                    "replanned": False,
+                    "reason": stopped_reason,
+                    "blocked_step_stops_safely": bool(observation.get("blocked")),
+                    "existing_rollback_preserved": True,
+                }
+            )
+            break
+
+    result_bundle = build_multi_step_result_bundle(
+        requirement_summary=requirement_summary,
+        plan=plan,
+        step_results=step_results,
+        observations=observations,
+        replans=replans,
+        stopped_reason=stopped_reason,
+    )
+
+    return {
+        "schema": SCHEMA,
+        "ok": bool(result_bundle.get("ok")),
+        "mode": "engineering_task_runner",
+        "package_id": result_bundle["package_id"],
+        "requirement_summary": requirement_summary,
+        "normalized_payload": {
+            "schema": "zero.engineering_task.multi_step.normalized_payload.v1",
+            "intent": "multi_step_engineering_task",
+            "normalizer": "EngineeringTaskRunner.build_multi_step_plan",
+            "multi_step_plan": plan,
+        },
+        "plan": plan,
+        "result_bundle": result_bundle,
+        "work_package_result": result_bundle["work_package_result"],
+        "verification_result": result_bundle["verification_result"],
+        "change_set": result_bundle["change_set"],
+        "step_results": copy.deepcopy(step_results),
+        "observations": copy.deepcopy(observations),
+        "replans": copy.deepcopy(replans),
+        "final_message": "multi_step_engineering_task_completed" if bool(result_bundle.get("ok")) else stopped_reason or "multi_step_engineering_task_stopped",
+    }
+
+
+def run_engineering_task(
+    payload: Mapping[str, Any],
+    *,
+    repo_root: str | Path,
+) -> dict[str, Any]:
+    """Run a real engineering task through ZERO's work-package path."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("engineering_task_payload_must_be_mapping")
+
+    if _is_multi_step_payload(payload):
+        return run_multi_step_engineering_task(payload, repo_root=repo_root)
+
+    return _run_single_engineering_task(payload, repo_root=repo_root)
+
+
 __all__ = [
     "FINAL_BUNDLE_SCHEMA",
+    "MULTI_STEP_BUNDLE_SCHEMA",
+    "MULTI_STEP_OBSERVATION_SCHEMA",
+    "MULTI_STEP_PLAN_SCHEMA",
     "REQUIREMENT_SUMMARY_SCHEMA",
     "SCHEMA",
     "build_requirement_summary",
+    "build_multi_step_plan",
+    "build_multi_step_result_bundle",
     "build_result_bundle",
     "normalize_engineering_task_payload",
     "run_engineering_task",
+    "run_multi_step_engineering_task",
 ]

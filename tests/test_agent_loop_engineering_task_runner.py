@@ -42,6 +42,69 @@ def _engineering_payload(
     )
 
 
+def _multi_step_payload(repo_root: Path, *, blocked: bool = False) -> str:
+    return json.dumps(
+        {
+            "task_type": "engineering_task",
+            "repo_root": str(repo_root),
+            "task_id": "agent_loop_multi_step_blocked" if blocked else "agent_loop_multi_step_e2e",
+            "goal": "Run a multi-step engineering task through AgentLoop",
+            "mode": "execute",
+            "approval": True,
+            "acceptance": [
+                "multi-step task enters AgentLoop",
+                "first step produces result_bundle",
+                "observation is recorded",
+                "next step is derived from observation",
+                "final result includes all step results",
+                "blocked step stops safely",
+            ],
+            "steps": [
+                {
+                    "package_id": "agent_loop_multi_step_first",
+                    "goal": "Write first full-file output",
+                    "edits": [
+                        {
+                            "operation": "write_file",
+                            "target_path": "workspace/agent_loop_multi_step_first.txt",
+                            "content": "first full-file output\n",
+                            "verify_contains": "first full-file output",
+                        }
+                    ],
+                },
+                {
+                    "package_id": "agent_loop_multi_step_second_blocked" if blocked else "agent_loop_multi_step_second",
+                    "goal": "Write second full-file output from observation",
+                    "derive_from_observation": {
+                        "content_template": "derived from {first_changed_file}\n",
+                        "verify_contains_template": "derived from {first_changed_file}",
+                    },
+                    "edits": [
+                        {
+                            "operation": "write_file",
+                            "target_path": "core/runtime/agent_loop_multi_step_blocked.py" if blocked else "workspace/agent_loop_multi_step_second.txt",
+                            "content": "placeholder replaced by observation\n",
+                            "verify_contains": "placeholder",
+                        }
+                    ],
+                },
+                {
+                    "package_id": "agent_loop_multi_step_never_runs" if blocked else "agent_loop_multi_step_third",
+                    "goal": "This step should not run after a blocked step" if blocked else "Write third full-file output",
+                    "edits": [
+                        {
+                            "operation": "write_file",
+                            "target_path": "workspace/agent_loop_multi_step_never_runs.txt",
+                            "content": "should not exist\n",
+                            "verify_contains": "should not exist",
+                        }
+                    ],
+                },
+            ],
+        }
+    )
+
+
 def test_agent_loop_receives_engineering_task_payload(tmp_path: Path) -> None:
     loop = AgentLoop(repo_root=str(tmp_path))
 
@@ -185,6 +248,81 @@ def test_real_engineering_task_enters_agent_loop_and_returns_verified_aer_bundle
     assert "WorkPackageIntake._execute_controlled_multi_write" in bundle["execution_path"]["existing_controlled_edit_path"]
     assert "WorkPackageScheduler.submit" in bundle["execution_path"]["existing_aer_work_package_path"]
     assert target.read_text(encoding="utf-8") == "verified through aer\n"
+
+
+def test_multi_step_engineering_task_enters_agent_loop_and_completes_with_result_bundle(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(_multi_step_payload(tmp_path))
+
+    assert response["ok"] is True
+    assert response["mode"] == "engineering_task_runner"
+    assert response["agent_loop_runtime_route"] == "engineering_task_runner"
+    assert response["route"]["authority_path"] == (
+        "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake"
+    )
+
+    bundle = response["result_bundle"]
+    assert bundle["schema"] == "zero.engineering_task.multi_step_result_bundle.v1"
+    assert bundle["multi_step_plan"]["schema"] == "zero.engineering_task.multi_step_plan.v1"
+    assert bundle["execution_path"]["no_new_runtime_path"] is True
+    assert bundle["execution_path"]["direct_write_shortcut"] is False
+    assert bundle["execution_path"]["full_file_outputs_only"] is True
+
+    step_results = bundle["step_results"]
+    assert len(step_results) == 3
+    assert step_results[0]["result"]["result_bundle"]["schema"] == "zero.engineering_task.result_bundle.v1"
+    assert step_results[0]["result"]["result_bundle"]["execution_path"]["no_new_runtime_path"] is True
+    assert step_results[0]["result"]["result_bundle"]["execution_path"]["direct_write_shortcut"] is False
+
+    observations = bundle["observations"]
+    assert len(observations) == 3
+    assert observations[0]["schema"] == "zero.engineering_task.step_observation.v1"
+    assert observations[0]["changed_files"] == ["workspace/agent_loop_multi_step_first.txt"]
+
+    second_payload = step_results[1]["step_payload"]
+    assert second_payload["metadata"]["derived_from_observation"] is True
+    assert second_payload["edits"][0]["content"] == "derived from workspace/agent_loop_multi_step_first.txt\n"
+    assert step_results[1]["derived_from_observation"] is True
+    assert bundle["replans"][0]["schema"] == "zero.engineering_task.continuation_plan.v1"
+    assert bundle["replans"][0]["derived_from_observation"] is True
+
+    assert bundle["verification_result"]["ok"] is True
+    assert bundle["change_set"]["successful"] is True
+    assert len(bundle["step_results"]) == 3
+    assert response["step_results"] == bundle["step_results"]
+    assert response["observations"] == bundle["observations"]
+    assert (tmp_path / "workspace/agent_loop_multi_step_first.txt").read_text(encoding="utf-8") == "first full-file output\n"
+    assert (tmp_path / "workspace/agent_loop_multi_step_second.txt").read_text(encoding="utf-8") == (
+        "derived from workspace/agent_loop_multi_step_first.txt\n"
+    )
+    assert (tmp_path / "workspace/agent_loop_multi_step_never_runs.txt").read_text(encoding="utf-8") == "should not exist\n"
+
+
+def test_multi_step_engineering_task_blocked_step_stops_safely(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(_multi_step_payload(tmp_path, blocked=True))
+
+    assert response["ok"] is False
+    assert response["mode"] == "engineering_task_runner"
+    assert response["agent_loop_runtime_route"] == "engineering_task_runner"
+
+    bundle = response["result_bundle"]
+    assert bundle["schema"] == "zero.engineering_task.multi_step_result_bundle.v1"
+    assert len(bundle["step_results"]) == 2
+    assert len(bundle["observations"]) == 2
+    assert bundle["observations"][1]["status"] == "blocked"
+    assert bundle["observations"][1]["next_action"] == "stop_safely"
+    assert bundle["replans"][-1]["decision"] == "stop_safely"
+    assert bundle["replans"][-1]["blocked_step_stops_safely"] is True
+    assert "blocked_target_prefix:core/runtime" in bundle["stopped_reason"]
+    assert bundle["step_results"][1]["result"]["result_bundle"]["rollback_status"]["rollback_performed"] is False
+    assert bundle["execution_path"]["no_new_runtime_path"] is True
+    assert bundle["execution_path"]["direct_write_shortcut"] is False
+    assert (tmp_path / "workspace/agent_loop_multi_step_first.txt").exists()
+    assert not (tmp_path / "core/runtime/agent_loop_multi_step_blocked.py").exists()
+    assert not (tmp_path / "workspace/agent_loop_multi_step_never_runs.txt").exists()
 
 
 def test_agent_loop_engineering_task_blocked_task_still_blocked(tmp_path: Path) -> None:
