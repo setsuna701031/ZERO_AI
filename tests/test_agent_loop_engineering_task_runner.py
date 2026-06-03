@@ -476,6 +476,117 @@ def test_final_result_bundle_includes_generated_tasks_and_iteration_trace(tmp_pa
     assert all(item["full_file_outputs_only"] is True for item in bundle["generated_tasks"])
 
 
+def test_observation_generates_multiple_candidate_tasks_and_selects_one(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(
+        json.dumps(
+            {
+                "task_type": "engineering_task",
+                "repo_root": str(tmp_path),
+                "task_id": "agent_loop_candidate_selection",
+                "goal": "Choose one follow-up task from candidates",
+                "mode": "execute",
+                "approval": True,
+                "steps": [
+                    {
+                        "package_id": "agent_loop_candidate_source",
+                        "goal": "Write candidate source observation",
+                        "edits": [
+                            {
+                                "operation": "write_file",
+                                "target_path": "workspace/candidate_source.txt",
+                                "content": "candidate source\n",
+                                "verify_contains": "candidate source",
+                            }
+                        ],
+                    },
+                    {
+                        "package_id": "agent_loop_candidate_selector",
+                        "goal": "Select the next engineering task",
+                        "candidate_tasks_from_observation": [
+                            {
+                                "package_id": "agent_loop_candidate_blocked",
+                                "goal": "Blocked candidate must not execute",
+                                "metadata": {"selection_priority": 50},
+                                "derive_from_observation": {
+                                    "content_template": "blocked from {first_changed_file}\n",
+                                    "verify_contains_template": "blocked from {first_changed_file}",
+                                },
+                                "edits": [
+                                    {
+                                        "operation": "write_file",
+                                        "target_path": "core/runtime/agent_loop_candidate_blocked.py",
+                                        "content": "blocked placeholder\n",
+                                        "verify_contains": "blocked placeholder",
+                                    }
+                                ],
+                            },
+                            {
+                                "package_id": "agent_loop_candidate_selected",
+                                "goal": "Selected candidate executes",
+                                "metadata": {"selection_priority": 10},
+                                "derive_from_observation": {
+                                    "content_template": "selected from {first_changed_file}\n",
+                                    "verify_contains_template": "selected from {first_changed_file}",
+                                },
+                                "edits": [
+                                    {
+                                        "operation": "write_file",
+                                        "target_path": "workspace/candidate_selected.txt",
+                                        "content": "selected placeholder\n",
+                                        "verify_contains": "selected placeholder",
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                ],
+            }
+        )
+    )
+
+    assert response["ok"] is True
+    bundle = response["result_bundle"]
+    assert len(bundle["candidate_tasks"]) == 2
+    assert {item["package_id"] for item in bundle["candidate_tasks"]} == {
+        "agent_loop_candidate_blocked",
+        "agent_loop_candidate_selected",
+    }
+    assert response["candidate_tasks"] == bundle["candidate_tasks"]
+    assert response["candidate_evaluations"] == bundle["candidate_evaluations"]
+    assert response["selected_task"] == bundle["selected_task"]
+    assert response["selection_reason"] == bundle["selection_reason"]
+
+    blocked_candidate = next(item for item in bundle["candidate_tasks"] if item["package_id"] == "agent_loop_candidate_blocked")
+    selected_candidate = next(item for item in bundle["candidate_tasks"] if item["package_id"] == "agent_loop_candidate_selected")
+    assert blocked_candidate["blocked_without_execution"] is True
+    assert selected_candidate["blocked_without_execution"] is False
+    assert bundle["selected_task"]["package_id"] == "agent_loop_candidate_selected"
+    assert bundle["selected_task"]["selection_reason"] == "selection_priority:10"
+    assert bundle["selection_reason"] == "selection_priority:10"
+    assert any(item["event"] == "candidate_tasks" for item in bundle["iteration_trace"])
+    assert any(item["event"] == "evaluation" for item in bundle["iteration_trace"])
+    assert any(item["event"] == "selected_task" for item in bundle["iteration_trace"])
+
+    second = bundle["step_results"][1]
+    second_bundle = second["result"]["result_bundle"]
+    assert second["package_id"] == "agent_loop_candidate_selected"
+    assert second["step_payload"]["package_id"] == "agent_loop_candidate_selected"
+    assert second_bundle["normalized_payload"]["normalizer"] == "Planner.normalize_aer_execution_intent"
+    assert second_bundle["scheduler_record"]["schema"] == "zero.work_package.scheduler.v5_1"
+    assert second_bundle["work_package_result"]["schema"] == "zero.work_package.intake_result.v6_4"
+    assert second_bundle["change_set"]["files"] == ["workspace/candidate_selected.txt"]
+    assert "WorkPackageScheduler.submit" in second_bundle["execution_path"]["existing_aer_work_package_path"]
+    assert "WorkPackageIntake._execute_controlled_multi_write" in second_bundle["execution_path"]["existing_controlled_edit_path"]
+
+    assert (tmp_path / "workspace/candidate_selected.txt").read_text(encoding="utf-8") == (
+        "selected from workspace/candidate_source.txt\n"
+    )
+    assert not (tmp_path / "core/runtime/agent_loop_candidate_blocked.py").exists()
+    assert not (tmp_path / "workspace/work_packages/agent_loop_candidate_blocked.json").exists()
+
+
 def test_multi_step_engineering_task_failed_observation_stops_before_next_step(tmp_path: Path) -> None:
     loop = AgentLoop(repo_root=str(tmp_path))
 

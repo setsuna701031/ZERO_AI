@@ -35,6 +35,9 @@ MULTI_STEP_STATE_SCHEMA = "zero.engineering_task.multi_step_state.v1"
 TASK_BREAKDOWN_SCHEMA = "zero.engineering_task.task_breakdown.v1"
 GENERATED_TASK_SCHEMA = "zero.engineering_task.generated_task.v1"
 ITERATION_TRACE_SCHEMA = "zero.engineering_task.iteration_trace.v1"
+CANDIDATE_TASK_SCHEMA = "zero.engineering_task.candidate_task.v1"
+CANDIDATE_EVALUATION_SCHEMA = "zero.engineering_task.candidate_evaluation.v1"
+SELECTED_TASK_SCHEMA = "zero.engineering_task.selected_task.v1"
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -488,6 +491,130 @@ def _append_iteration_trace(
     )
 
 
+def _step_target_paths(step_payload: Mapping[str, Any]) -> list[str]:
+    targets: list[str] = []
+    for edit in _raw_edit_payloads(step_payload):
+        target = _normalize_relative_path(edit.get("target_path") or edit.get("path"))
+        if target:
+            targets.append(target)
+    return targets
+
+
+def _candidate_is_blocked_without_execution(step_payload: Mapping[str, Any]) -> bool:
+    return any(path.startswith("core/runtime/") for path in _step_target_paths(step_payload))
+
+
+def _candidate_priority(step_payload: Mapping[str, Any]) -> int:
+    metadata = _as_mapping(step_payload.get("metadata"))
+    raw_value = metadata.get("selection_priority")
+    if raw_value is None:
+        raw_value = step_payload.get("selection_priority")
+    try:
+        return int(raw_value)
+    except Exception:
+        return 0
+
+
+def _candidate_task_record(
+    *,
+    step_index: int,
+    candidate_index: int,
+    step_payload: Mapping[str, Any],
+    previous_observation: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    blocked = _candidate_is_blocked_without_execution(step_payload)
+    return {
+        "schema": CANDIDATE_TASK_SCHEMA,
+        "step_index": int(step_index),
+        "candidate_index": int(candidate_index),
+        "package_id": str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+        "goal": str(step_payload.get("goal") or ""),
+        "generated_from_observation": isinstance(previous_observation, Mapping),
+        "source_observation": {
+            "step_index": previous_observation.get("step_index") if isinstance(previous_observation, Mapping) else None,
+            "package_id": previous_observation.get("package_id") if isinstance(previous_observation, Mapping) else "",
+            "changed_files": list(previous_observation.get("changed_files") or []) if isinstance(previous_observation, Mapping) else [],
+        },
+        "target_paths": _step_target_paths(step_payload),
+        "selection_priority": _candidate_priority(step_payload),
+        "blocked_without_execution": blocked,
+        "full_file_outputs_only": True,
+        "would_enter_existing_engineering_task_runner_path": True,
+        "existing_aer_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
+        "task_payload": copy.deepcopy(dict(step_payload)),
+    }
+
+
+def _raw_candidate_task_payloads(raw_step: Mapping[str, Any]) -> list[dict[str, Any]]:
+    for key in ("candidate_next_tasks", "candidate_tasks", "candidate_tasks_from_observation"):
+        value = raw_step.get(key)
+        if isinstance(value, list):
+            return [dict(item) for item in value if isinstance(item, Mapping)]
+    return []
+
+
+def _evaluate_candidate_tasks(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    evaluations: list[dict[str, Any]] = []
+    for candidate in candidates:
+        priority = int(candidate.get("selection_priority") or 0)
+        blocked = bool(candidate.get("blocked_without_execution"))
+        score = priority - (1000 if blocked else 0)
+        reasons = []
+        if blocked:
+            reasons.append("candidate_target_would_be_blocked_by_existing_work_package_intake")
+        if priority:
+            reasons.append(f"selection_priority:{priority}")
+        if not reasons:
+            reasons.append("default_candidate_priority")
+        evaluations.append(
+            {
+                "schema": CANDIDATE_EVALUATION_SCHEMA,
+                "step_index": candidate.get("step_index"),
+                "candidate_index": candidate.get("candidate_index"),
+                "package_id": str(candidate.get("package_id") or ""),
+                "score": score,
+                "blocked_without_execution": blocked,
+                "reason": "; ".join(reasons),
+                "existing_aer_path_required": True,
+                "direct_write_shortcut": False,
+            }
+        )
+    return evaluations
+
+
+def _select_candidate_task(
+    *,
+    step_index: int,
+    candidates: list[dict[str, Any]],
+    evaluations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if not candidates:
+        return {}
+    evaluation_by_index = {int(item.get("candidate_index") or 0): item for item in evaluations}
+    selected = max(
+        candidates,
+        key=lambda item: (
+            int(evaluation_by_index.get(int(item.get("candidate_index") or 0), {}).get("score") or 0),
+            -int(item.get("candidate_index") or 0),
+        ),
+    )
+    selected_index = int(selected.get("candidate_index") or 0)
+    selected_evaluation = evaluation_by_index.get(selected_index, {})
+    return {
+        "schema": SELECTED_TASK_SCHEMA,
+        "step_index": int(step_index),
+        "candidate_index": selected_index,
+        "package_id": str(selected.get("package_id") or ""),
+        "selected_task": copy.deepcopy(selected),
+        "selection_reason": str(selected_evaluation.get("reason") or "highest_scoring_candidate"),
+        "selection_score": int(selected_evaluation.get("score") or 0),
+        "blocked_without_execution": bool(selected.get("blocked_without_execution")),
+        "only_selected_task_executes": True,
+        "existing_engineering_task_runner_path": "_run_single_engineering_task",
+        "existing_aer_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
+    }
+
+
 def _build_step_payload(
     *,
     parent_payload: Mapping[str, Any],
@@ -526,6 +653,7 @@ def _build_step_payload(
         "expect_contains",
         "edit",
         "edits",
+        "selection_priority",
     ):
         if key in step:
             step_payload[key] = copy.deepcopy(step[key])
@@ -533,6 +661,9 @@ def _build_step_payload(
     step_payload.pop("steps", None)
     step_payload.pop("engineering_steps", None)
     step_payload.pop("task_steps", None)
+    step_payload.pop("candidate_next_tasks", None)
+    step_payload.pop("candidate_tasks", None)
+    step_payload.pop("candidate_tasks_from_observation", None)
     step_payload.pop("derive_from_observation", None)
     step_payload.pop("replan_from_observation", None)
     return step_payload
@@ -716,6 +847,9 @@ def build_multi_step_result_bundle(
     replans: list[dict[str, Any]],
     generated_tasks: list[dict[str, Any]] | None = None,
     iteration_trace: list[dict[str, Any]] | None = None,
+    candidate_tasks: list[dict[str, Any]] | None = None,
+    candidate_evaluations: list[dict[str, Any]] | None = None,
+    selected_tasks: list[dict[str, Any]] | None = None,
     stopped_reason: str = "",
     state_path: str = "",
     resumed: bool = False,
@@ -753,6 +887,11 @@ def build_multi_step_result_bundle(
         "replans": copy.deepcopy(replans),
         "generated_tasks": copy.deepcopy(generated_tasks if isinstance(generated_tasks, list) else []),
         "iteration_trace": copy.deepcopy(iteration_trace if isinstance(iteration_trace, list) else []),
+        "candidate_tasks": copy.deepcopy(candidate_tasks if isinstance(candidate_tasks, list) else []),
+        "candidate_evaluations": copy.deepcopy(candidate_evaluations if isinstance(candidate_evaluations, list) else []),
+        "selected_tasks": copy.deepcopy(selected_tasks if isinstance(selected_tasks, list) else []),
+        "selected_task": copy.deepcopy(selected_tasks[-1]) if isinstance(selected_tasks, list) and selected_tasks else {},
+        "selection_reason": str(_as_mapping(selected_tasks[-1]).get("selection_reason") or "") if isinstance(selected_tasks, list) and selected_tasks else "",
         "resumed": bool(resumed),
         "interrupted": bool(interrupted),
         "state_path": str(state_path or ""),
@@ -892,6 +1031,9 @@ def run_multi_step_engineering_task(
         replans = [dict(item) for item in loaded_state.get("replans", []) if isinstance(item, Mapping)]
         generated_tasks = [dict(item) for item in loaded_state.get("generated_tasks", []) if isinstance(item, Mapping)]
         iteration_trace = [dict(item) for item in loaded_state.get("iteration_trace", []) if isinstance(item, Mapping)]
+        candidate_tasks = [dict(item) for item in loaded_state.get("candidate_tasks", []) if isinstance(item, Mapping)]
+        candidate_evaluations = [dict(item) for item in loaded_state.get("candidate_evaluations", []) if isinstance(item, Mapping)]
+        selected_tasks = [dict(item) for item in loaded_state.get("selected_tasks", []) if isinstance(item, Mapping)]
     else:
         step_results = []
         observations = []
@@ -899,6 +1041,9 @@ def run_multi_step_engineering_task(
         replans = []
         generated_tasks = []
         iteration_trace = []
+        candidate_tasks = []
+        candidate_evaluations = []
+        selected_tasks = []
 
     previous_observation: dict[str, Any] | None = observations[-1] if observations else None
     stopped_reason = ""
@@ -936,6 +1081,9 @@ def run_multi_step_engineering_task(
                 "replans": copy.deepcopy(replans),
                 "generated_tasks": copy.deepcopy(generated_tasks),
                 "iteration_trace": copy.deepcopy(iteration_trace),
+                "candidate_tasks": copy.deepcopy(candidate_tasks),
+                "candidate_evaluations": copy.deepcopy(candidate_evaluations),
+                "selected_tasks": copy.deepcopy(selected_tasks),
                 "updated_at": time.time(),
             },
         )
@@ -952,6 +1100,57 @@ def run_multi_step_engineering_task(
             step_index=step_index,
             previous_observation=previous_observation,
         )
+        raw_candidates = _raw_candidate_task_payloads(raw_step)
+        if raw_candidates:
+            step_candidates: list[dict[str, Any]] = []
+            for candidate_index, raw_candidate in enumerate(raw_candidates, start=1):
+                candidate_payload = _build_step_payload(
+                    parent_payload=payload,
+                    raw_step=raw_candidate,
+                    step_index=step_index,
+                    previous_observation=previous_observation,
+                )
+                step_candidates.append(
+                    _candidate_task_record(
+                        step_index=step_index,
+                        candidate_index=candidate_index,
+                        step_payload=candidate_payload,
+                        previous_observation=previous_observation,
+                    )
+                )
+            evaluations = _evaluate_candidate_tasks(step_candidates)
+            selected_task = _select_candidate_task(
+                step_index=step_index,
+                candidates=step_candidates,
+                evaluations=evaluations,
+            )
+            candidate_tasks.extend(step_candidates)
+            candidate_evaluations.extend(evaluations)
+            selected_tasks.append(selected_task)
+            selected_payload = _as_mapping(_as_mapping(selected_task.get("selected_task")).get("task_payload"))
+            if selected_payload:
+                step_payload = selected_payload
+            _append_iteration_trace(
+                iteration_trace,
+                event="candidate_tasks",
+                step_index=step_index,
+                package_id=str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+                detail={"candidate_tasks": copy.deepcopy(step_candidates)},
+            )
+            _append_iteration_trace(
+                iteration_trace,
+                event="evaluation",
+                step_index=step_index,
+                package_id=str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+                detail={"candidate_evaluations": copy.deepcopy(evaluations)},
+            )
+            _append_iteration_trace(
+                iteration_trace,
+                event="selected_task",
+                step_index=step_index,
+                package_id=str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+                detail={"selected_task": copy.deepcopy(selected_task)},
+            )
         generated_reason = "initial_engineering_task" if previous_observation is None else "generated_from_previous_observation"
         generated_task = _generated_task_record(
             step_index=step_index,
@@ -1085,6 +1284,9 @@ def run_multi_step_engineering_task(
         replans=replans,
         generated_tasks=generated_tasks,
         iteration_trace=iteration_trace,
+        candidate_tasks=candidate_tasks,
+        candidate_evaluations=candidate_evaluations,
+        selected_tasks=selected_tasks,
         stopped_reason=stopped_reason,
         state_path=_display_path(state_path, repo_root),
         resumed=resume_requested,
@@ -1119,6 +1321,11 @@ def run_multi_step_engineering_task(
         "replans": copy.deepcopy(replans),
         "generated_tasks": copy.deepcopy(generated_tasks),
         "iteration_trace": copy.deepcopy(iteration_trace),
+        "candidate_tasks": copy.deepcopy(candidate_tasks),
+        "candidate_evaluations": copy.deepcopy(candidate_evaluations),
+        "selected_tasks": copy.deepcopy(selected_tasks),
+        "selected_task": copy.deepcopy(selected_tasks[-1]) if selected_tasks else {},
+        "selection_reason": str(_as_mapping(selected_tasks[-1]).get("selection_reason") or "") if selected_tasks else "",
         "resumed": resume_requested,
         "interrupted": interrupted,
         "state_path": _display_path(state_path, repo_root),
