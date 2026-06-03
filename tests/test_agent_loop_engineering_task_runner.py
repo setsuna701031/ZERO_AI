@@ -395,6 +395,15 @@ def test_multi_step_engineering_task_replans_next_step_from_observation(tmp_path
     assert response["agent_loop_runtime_route"] == "engineering_task_runner"
     bundle = response["result_bundle"]
     assert bundle["schema"] == "zero.engineering_task.multi_step_result_bundle.v1"
+    assert len(bundle["generated_tasks"]) == 2
+    assert bundle["generated_tasks"][1]["schema"] == "zero.engineering_task.generated_task.v1"
+    assert bundle["generated_tasks"][1]["generated_from_observation"] is True
+    assert bundle["generated_tasks"][1]["replanned_from_observation"] is True
+    assert bundle["generated_tasks"][1]["enters_existing_engineering_task_runner_path"] is True
+    assert bundle["generated_tasks"][1]["existing_aer_path"] == (
+        "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package"
+    )
+    assert any(item["event"] == "generate_next_engineering_task" for item in bundle["iteration_trace"])
     assert bundle["decisions"][0]["decision"] == "replan_next_step"
     assert bundle["decisions"][0]["next_action"] == "replan"
     assert bundle["decisions"][0]["replanned"] is True
@@ -415,6 +424,56 @@ def test_multi_step_engineering_task_replans_next_step_from_observation(tmp_path
         "replanned from workspace/agent_loop_adaptive_source.txt\n"
     )
     assert not (tmp_path / "workspace/agent_loop_adaptive_original_target.txt").exists()
+
+
+def test_generated_next_task_enters_existing_engineering_runner_path(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(_multi_step_payload(tmp_path, task_id="agent_loop_generated_path_probe"))
+
+    assert response["ok"] is True
+    bundle = response["result_bundle"]
+    generated_second = bundle["generated_tasks"][1]
+    second_result_bundle = bundle["step_results"][1]["result"]["result_bundle"]
+    assert generated_second["generated_from_observation"] is True
+    assert generated_second["existing_runner_entrypoint"] == "_run_single_engineering_task"
+    assert generated_second["task_payload"] == bundle["step_results"][1]["step_payload"]
+    assert second_result_bundle["normalized_payload"]["normalizer"] == "Planner.normalize_aer_execution_intent"
+    assert second_result_bundle["scheduler_record"]["schema"] == "zero.work_package.scheduler.v5_1"
+    assert second_result_bundle["work_package_result"]["schema"] == "zero.work_package.intake_result.v6_4"
+    assert "WorkPackageScheduler.submit" in second_result_bundle["execution_path"]["existing_aer_work_package_path"]
+    assert "WorkPackageIntake._execute_controlled_multi_write" in second_result_bundle["execution_path"]["existing_controlled_edit_path"]
+
+
+def test_blocked_generated_task_stops_safely_with_iteration_trace(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(_multi_step_payload(tmp_path, blocked=True, task_id="agent_loop_generated_blocked_trace"))
+
+    assert response["ok"] is False
+    bundle = response["result_bundle"]
+    assert bundle["generated_tasks"][1]["generated_from_observation"] is True
+    assert bundle["observations"][1]["status"] == "blocked"
+    assert bundle["decisions"][1]["decision"] == "stop_safely"
+    assert bundle["replans"][-1]["blocked_step_stops_safely"] is True
+    assert bundle["iteration_trace"][-1]["event"] == "complete"
+    assert bundle["iteration_trace"][-1]["detail"]["status"] == "blocked_or_failed"
+    assert bundle["rollback_status"]["rollback_performed"] is False
+    assert not (tmp_path / "core/runtime/agent_loop_multi_step_blocked.py").exists()
+
+
+def test_final_result_bundle_includes_generated_tasks_and_iteration_trace(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(_multi_step_payload(tmp_path, task_id="agent_loop_iteration_bundle"))
+
+    bundle = response["result_bundle"]
+    assert response["generated_tasks"] == bundle["generated_tasks"]
+    assert response["iteration_trace"] == bundle["iteration_trace"]
+    assert [item["event"] for item in bundle["iteration_trace"][:2]] == ["goal", "task_decomposition"]
+    assert bundle["iteration_trace"][-1]["event"] == "complete"
+    assert len(bundle["generated_tasks"]) == 3
+    assert all(item["full_file_outputs_only"] is True for item in bundle["generated_tasks"])
 
 
 def test_multi_step_engineering_task_failed_observation_stops_before_next_step(tmp_path: Path) -> None:

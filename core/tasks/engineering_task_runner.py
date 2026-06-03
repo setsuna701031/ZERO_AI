@@ -33,6 +33,8 @@ MULTI_STEP_OBSERVATION_SCHEMA = "zero.engineering_task.step_observation.v1"
 MULTI_STEP_DECISION_SCHEMA = "zero.engineering_task.observation_decision.v1"
 MULTI_STEP_STATE_SCHEMA = "zero.engineering_task.multi_step_state.v1"
 TASK_BREAKDOWN_SCHEMA = "zero.engineering_task.task_breakdown.v1"
+GENERATED_TASK_SCHEMA = "zero.engineering_task.generated_task.v1"
+ITERATION_TRACE_SCHEMA = "zero.engineering_task.iteration_trace.v1"
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -435,6 +437,57 @@ def _apply_observation_replan(step_payload: dict[str, Any], observation: Mapping
     return replanned
 
 
+def _generated_task_record(
+    *,
+    step_index: int,
+    step_payload: Mapping[str, Any],
+    previous_observation: Mapping[str, Any] | None,
+    generated_reason: str,
+) -> dict[str, Any]:
+    metadata = _as_mapping(step_payload.get("metadata"))
+    return {
+        "schema": GENERATED_TASK_SCHEMA,
+        "step_index": int(step_index),
+        "package_id": str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+        "goal": str(step_payload.get("goal") or ""),
+        "generated_from_observation": isinstance(previous_observation, Mapping),
+        "source_observation": {
+            "step_index": previous_observation.get("step_index") if isinstance(previous_observation, Mapping) else None,
+            "package_id": previous_observation.get("package_id") if isinstance(previous_observation, Mapping) else "",
+            "changed_files": list(previous_observation.get("changed_files") or []) if isinstance(previous_observation, Mapping) else [],
+            "status": previous_observation.get("status") if isinstance(previous_observation, Mapping) else "",
+        },
+        "generated_reason": str(generated_reason or "initial_engineering_task"),
+        "derived_from_observation": bool(metadata.get("derived_from_observation")),
+        "replanned_from_observation": bool(metadata.get("replanned_from_observation")),
+        "full_file_outputs_only": True,
+        "enters_existing_engineering_task_runner_path": True,
+        "existing_runner_entrypoint": "_run_single_engineering_task",
+        "existing_aer_path": "Planner.normalize_aer_execution_intent -> WorkPackageScheduler.submit -> submit_work_package",
+        "existing_intake_path": "WorkPackageIntake -> change_set",
+        "task_payload": copy.deepcopy(dict(step_payload)),
+    }
+
+
+def _append_iteration_trace(
+    trace: list[dict[str, Any]],
+    *,
+    event: str,
+    step_index: int = 0,
+    package_id: str = "",
+    detail: Mapping[str, Any] | None = None,
+) -> None:
+    trace.append(
+        {
+            "schema": ITERATION_TRACE_SCHEMA,
+            "event": str(event),
+            "step_index": int(step_index or 0),
+            "package_id": str(package_id or ""),
+            "detail": copy.deepcopy(dict(detail)) if isinstance(detail, Mapping) else {},
+        }
+    )
+
+
 def _build_step_payload(
     *,
     parent_payload: Mapping[str, Any],
@@ -661,6 +714,8 @@ def build_multi_step_result_bundle(
     observations: list[dict[str, Any]],
     decisions: list[dict[str, Any]],
     replans: list[dict[str, Any]],
+    generated_tasks: list[dict[str, Any]] | None = None,
+    iteration_trace: list[dict[str, Any]] | None = None,
     stopped_reason: str = "",
     state_path: str = "",
     resumed: bool = False,
@@ -696,6 +751,8 @@ def build_multi_step_result_bundle(
         "observations": copy.deepcopy(observations),
         "decisions": copy.deepcopy(decisions),
         "replans": copy.deepcopy(replans),
+        "generated_tasks": copy.deepcopy(generated_tasks if isinstance(generated_tasks, list) else []),
+        "iteration_trace": copy.deepcopy(iteration_trace if isinstance(iteration_trace, list) else []),
         "resumed": bool(resumed),
         "interrupted": bool(interrupted),
         "state_path": str(state_path or ""),
@@ -833,15 +890,33 @@ def run_multi_step_engineering_task(
         observations = [dict(item) for item in loaded_state.get("observations", []) if isinstance(item, Mapping)]
         decisions = [dict(item) for item in loaded_state.get("decisions", []) if isinstance(item, Mapping)]
         replans = [dict(item) for item in loaded_state.get("replans", []) if isinstance(item, Mapping)]
+        generated_tasks = [dict(item) for item in loaded_state.get("generated_tasks", []) if isinstance(item, Mapping)]
+        iteration_trace = [dict(item) for item in loaded_state.get("iteration_trace", []) if isinstance(item, Mapping)]
     else:
         step_results = []
         observations = []
         decisions = []
         replans = []
+        generated_tasks = []
+        iteration_trace = []
 
     previous_observation: dict[str, Any] | None = observations[-1] if observations else None
     stopped_reason = ""
     interrupted = False
+
+    if not iteration_trace:
+        _append_iteration_trace(
+            iteration_trace,
+            event="goal",
+            package_id=package_id,
+            detail={"goal": plan.get("goal"), "requirement_summary": requirement_summary},
+        )
+        _append_iteration_trace(
+            iteration_trace,
+            event="task_decomposition",
+            package_id=package_id,
+            detail={"step_count": plan.get("step_count"), "task_breakdown": plan.get("task_breakdown")},
+        )
 
     def save_state(status: str, next_step_index: int) -> None:
         _write_json(
@@ -859,6 +934,8 @@ def run_multi_step_engineering_task(
                 "observations": copy.deepcopy(observations),
                 "decisions": copy.deepcopy(decisions),
                 "replans": copy.deepcopy(replans),
+                "generated_tasks": copy.deepcopy(generated_tasks),
+                "iteration_trace": copy.deepcopy(iteration_trace),
                 "updated_at": time.time(),
             },
         )
@@ -875,6 +952,29 @@ def run_multi_step_engineering_task(
             step_index=step_index,
             previous_observation=previous_observation,
         )
+        generated_reason = "initial_engineering_task" if previous_observation is None else "generated_from_previous_observation"
+        generated_task = _generated_task_record(
+            step_index=step_index,
+            step_payload=step_payload,
+            previous_observation=previous_observation,
+            generated_reason=generated_reason,
+        )
+        generated_tasks.append(generated_task)
+        _append_iteration_trace(
+            iteration_trace,
+            event=f"step_{step_index}",
+            step_index=step_index,
+            package_id=str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+            detail={"task_payload": copy.deepcopy(step_payload), "generated_reason": generated_reason},
+        )
+        if previous_observation is not None:
+            _append_iteration_trace(
+                iteration_trace,
+                event="generate_next_engineering_task",
+                step_index=step_index,
+                package_id=str(step_payload.get("package_id") or step_payload.get("task_id") or ""),
+                detail={"generated_task": copy.deepcopy(generated_task)},
+            )
         derived_from_observation = bool(_as_mapping(step_payload.get("metadata")).get("derived_from_observation"))
         if derived_from_observation:
             replans.append(
@@ -903,10 +1003,24 @@ def run_multi_step_engineering_task(
             }
         )
         observations.append(observation)
+        _append_iteration_trace(
+            iteration_trace,
+            event="observation",
+            step_index=step_index,
+            package_id=str(observation.get("package_id") or ""),
+            detail={"observation": copy.deepcopy(observation)},
+        )
         previous_observation = observation
         next_raw_step = raw_steps[step_index] if step_index < len(raw_steps) else None
         decision = _decide_after_observation(observation=observation, next_raw_step=next_raw_step)
         decisions.append(decision)
+        _append_iteration_trace(
+            iteration_trace,
+            event="decision",
+            step_index=step_index,
+            package_id=str(observation.get("package_id") or ""),
+            detail={"decision": copy.deepcopy(decision)},
+        )
 
         if not bool(result.get("ok")):
             stopped_reason = observation.get("reason") or "step_failed"
@@ -920,6 +1034,13 @@ def run_multi_step_engineering_task(
                     "blocked_step_stops_safely": bool(observation.get("blocked")),
                     "existing_rollback_preserved": True,
                 }
+            )
+            _append_iteration_trace(
+                iteration_trace,
+                event="complete",
+                step_index=step_index,
+                package_id=package_id,
+                detail={"status": "blocked_or_failed", "stopped_reason": stopped_reason},
             )
             save_state("blocked_or_failed", step_index + 1)
             break
@@ -947,6 +1068,12 @@ def run_multi_step_engineering_task(
             break
 
     if not stopped_reason and len(step_results) >= len(raw_steps):
+        _append_iteration_trace(
+            iteration_trace,
+            event="complete",
+            package_id=package_id,
+            detail={"status": "completed", "step_count": len(step_results)},
+        )
         save_state("completed", len(raw_steps) + 1)
 
     result_bundle = build_multi_step_result_bundle(
@@ -956,6 +1083,8 @@ def run_multi_step_engineering_task(
         observations=observations,
         decisions=decisions,
         replans=replans,
+        generated_tasks=generated_tasks,
+        iteration_trace=iteration_trace,
         stopped_reason=stopped_reason,
         state_path=_display_path(state_path, repo_root),
         resumed=resume_requested,
@@ -988,6 +1117,8 @@ def run_multi_step_engineering_task(
         "observations": copy.deepcopy(observations),
         "decisions": copy.deepcopy(decisions),
         "replans": copy.deepcopy(replans),
+        "generated_tasks": copy.deepcopy(generated_tasks),
+        "iteration_trace": copy.deepcopy(iteration_trace),
         "resumed": resume_requested,
         "interrupted": interrupted,
         "state_path": _display_path(state_path, repo_root),

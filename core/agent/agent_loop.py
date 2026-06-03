@@ -489,6 +489,8 @@ class AgentLoop:
                 "observations": copy.deepcopy(result.get("observations") if isinstance(result, dict) else []),
                 "decisions": copy.deepcopy(result.get("decisions") if isinstance(result, dict) else []),
                 "replans": copy.deepcopy(result.get("replans") if isinstance(result, dict) else []),
+                "generated_tasks": copy.deepcopy(result.get("generated_tasks") if isinstance(result, dict) else []),
+                "iteration_trace": copy.deepcopy(result.get("iteration_trace") if isinstance(result, dict) else []),
                 "resumed": bool(result.get("resumed")) if isinstance(result, dict) else False,
                 "interrupted": bool(result.get("interrupted")) if isinstance(result, dict) else False,
                 "state_path": str(result.get("state_path") or "") if isinstance(result, dict) else "",
