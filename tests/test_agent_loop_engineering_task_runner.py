@@ -472,6 +472,91 @@ def test_multi_step_engineering_task_failed_observation_stops_before_next_step(t
     assert not (tmp_path / "workspace/agent_loop_adaptive_should_not_run.txt").exists()
 
 
+def test_goal_only_engineering_task_decomposes_into_executable_steps(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(
+        json.dumps(
+            {
+                "task_type": "engineering_task",
+                "repo_root": str(tmp_path),
+                "goal": "Create a generated validation package",
+            }
+        )
+    )
+
+    assert response["ok"] is True
+    assert response["mode"] == "engineering_task_runner"
+    assert response["agent_loop_runtime_route"] == "engineering_task_runner"
+    assert response["route"]["authority_path"] == (
+        "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake"
+    )
+    assert response["requirement_summary"]["schema"] == "zero.engineering_task.requirement_summary.v1"
+
+    breakdown = response["task_breakdown"]
+    assert breakdown["schema"] == "zero.engineering_task.task_breakdown.v1"
+    assert len(response["steps"]) == 2
+    assert response["dependencies"] == [
+        {
+            "step_id": "engineering_goal_result",
+            "depends_on": ["engineering_goal_breakdown"],
+            "reason": "result step uses the first step observation",
+        }
+    ]
+    assert response["acceptance_criteria"]
+    assert response["execution_order"] == ["engineering_goal_breakdown", "engineering_goal_result"]
+
+    bundle = response["result_bundle"]
+    assert bundle["task_breakdown"] == breakdown
+    assert bundle["dependencies"] == response["dependencies"]
+    assert bundle["acceptance_criteria"] == response["acceptance_criteria"]
+    assert bundle["execution_order"] == response["execution_order"]
+    assert len(bundle["step_results"]) == 2
+    assert len(bundle["observations"]) == 2
+    assert bundle["decisions"][0]["decision"] == "replan_next_step"
+    assert bundle["replans"][0]["decision"] == "replan_next_step"
+
+    first_step_bundle = bundle["step_results"][0]["result"]["result_bundle"]
+    second_step_bundle = bundle["step_results"][1]["result"]["result_bundle"]
+    assert first_step_bundle["execution_path"]["no_new_runtime_path"] is True
+    assert second_step_bundle["execution_path"]["no_new_runtime_path"] is True
+    assert second_step_bundle["execution_path"]["direct_write_shortcut"] is False
+    assert second_step_bundle["change_set"]["files"] == ["workspace/generated_engineering/engineering_goal_result.txt"]
+    assert (tmp_path / "workspace/generated_engineering/engineering_goal_breakdown.txt").exists()
+    assert (tmp_path / "workspace/generated_engineering/engineering_goal_result.txt").read_text(encoding="utf-8") == (
+        "Generated result for engineering_goal_breakdown\n"
+        "Observed: workspace/generated_engineering/engineering_goal_breakdown.txt\n"
+    )
+
+
+def test_goal_only_engineering_task_blocked_generated_step_stops_safely(tmp_path: Path) -> None:
+    loop = AgentLoop(repo_root=str(tmp_path))
+
+    response = loop.run(
+        json.dumps(
+            {
+                "task_type": "engineering_task",
+                "repo_root": str(tmp_path),
+                "task_id": "goal_blocked_generated",
+                "goal": "Create a blocked generated step validation",
+            }
+        )
+    )
+
+    assert response["ok"] is False
+    assert response["agent_loop_runtime_route"] == "engineering_task_runner"
+    bundle = response["result_bundle"]
+    assert bundle["task_breakdown"]["schema"] == "zero.engineering_task.task_breakdown.v1"
+    assert len(bundle["step_results"]) == 2
+    assert len(bundle["observations"]) == 2
+    assert bundle["decisions"][0]["decision"] == "replan_next_step"
+    assert bundle["decisions"][1]["decision"] == "stop_safely"
+    assert bundle["replans"][-1]["decision"] == "stop_safely"
+    assert "blocked_target_prefix:core/runtime" in bundle["stopped_reason"]
+    assert bundle["step_results"][1]["result"]["result_bundle"]["rollback_status"]["rollback_performed"] is False
+    assert not (tmp_path / "core/runtime/goal_blocked_generated_blocked_generated_step.py").exists()
+
+
 def test_multi_step_engineering_task_persists_and_resumes_without_rerunning_completed_steps(tmp_path: Path) -> None:
     task_id = "agent_loop_multi_step_resume"
     loop = AgentLoop(repo_root=str(tmp_path))
