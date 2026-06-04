@@ -166,6 +166,7 @@ class EngineeringGoalLifecycle:
                 "failed": [],
                 "cancelled": [],
             },
+            "adaptive_planning_decisions": [],
             "lifecycle_events": [],
             "created_at": time.time(),
             "updated_at": time.time(),
@@ -191,6 +192,7 @@ class EngineeringGoalLifecycle:
             existing["memory_refs"] = _memory_refs(relevant_memory)
             existing["state_path"] = str(self.path)
             existing.setdefault("task_catalog", copy.deepcopy(self.task_summaries))
+            existing.setdefault("adaptive_planning_decisions", [])
             existing.setdefault(
                 "task_buckets",
                 {
@@ -215,14 +217,133 @@ class EngineeringGoalLifecycle:
         _write_json(self.path, state)
         return state
 
+    def record_adaptive_decision(
+        self,
+        *,
+        state: Mapping[str, Any],
+        decision: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Persist an adaptive evaluator decision without planning or executing."""
+
+        mutable = copy.deepcopy(dict(state))
+        decision_record = copy.deepcopy(dict(decision))
+        mutable.setdefault("adaptive_planning_decisions", []).append(decision_record)
+        mutable["latest_adaptive_planning_decision"] = decision_record
+        mutable["updated_at"] = time.time()
+        self._append_event(
+            mutable,
+            "adaptive_planning_evaluated",
+            decision=_clean_text(decision_record.get("decision")),
+            reason=_clean_text(decision_record.get("reason")),
+        )
+        _write_json(self.path, mutable)
+        return mutable
+
+    def apply_adaptive_terminal_decision(
+        self,
+        *,
+        state: Mapping[str, Any],
+        decision: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Persist evaluator-owned terminal intent through lifecycle state."""
+
+        mutable = copy.deepcopy(dict(state))
+        decision_name = _clean_text(decision.get("decision")).lower()
+        reason = _clean_text(decision.get("reason"), "adaptive_planning_decision")
+        if decision_name not in {"block", "complete"}:
+            return self.record_adaptive_decision(state=mutable, decision=decision)
+
+        mutable = self.record_adaptive_decision(state=mutable, decision=decision)
+        all_task_ids = [
+            _clean_text(item.get("task_id"))
+            for item in mutable.get("task_catalog", [])
+            if isinstance(item, Mapping) and _clean_text(item.get("task_id"))
+        ]
+        completed_tasks = [str(item) for item in mutable.get("completed_tasks") or []]
+        blocked_tasks = [str(item) for item in mutable.get("blocked_tasks") or []]
+        failed_tasks = [str(item) for item in mutable.get("failed_tasks") or []]
+        superseded_tasks = [str(item) for item in mutable.get("superseded_tasks") or []]
+        cancelled_tasks = [str(item) for item in mutable.get("cancelled_tasks") or []]
+
+        if decision_name == "complete":
+            for task_id in all_task_ids:
+                if task_id not in completed_tasks and task_id not in superseded_tasks:
+                    completed_tasks.append(task_id)
+            remaining_tasks: list[str] = []
+            goal_state = "completed"
+        else:
+            selected = _as_mapping(mutable.get("selected_task"))
+            selected_task_id = _clean_text(selected.get("task_id"))
+            if selected_task_id and selected_task_id not in blocked_tasks:
+                blocked_tasks.append(selected_task_id)
+            remaining_tasks = [str(item) for item in mutable.get("remaining_tasks") or []]
+            goal_state = "blocked"
+
+        total = len(all_task_ids)
+        resolved_count = len([item for item in completed_tasks if item in set(all_task_ids)]) + len(
+            [item for item in superseded_tasks if item in set(all_task_ids)]
+        )
+        mutable.update(
+            {
+                "goal_state": goal_state,
+                "completed_tasks": completed_tasks,
+                "blocked_tasks": blocked_tasks,
+                "failed_tasks": failed_tasks,
+                "remaining_tasks": remaining_tasks,
+                "adaptive_stop_reason": reason,
+                "goal_summary": {
+                    "goal": self.goal,
+                    "latest_task_id": _clean_text(_as_mapping(mutable.get("selected_task")).get("task_id")),
+                    "latest_status": goal_state,
+                    "task_count": total,
+                },
+                "progress": {
+                    "total_tasks": total,
+                    "completed_count": len(completed_tasks),
+                    "blocked_count": len(blocked_tasks),
+                    "remaining_count": len(remaining_tasks),
+                    "percent_complete": round((resolved_count / total) if total else 1.0, 4),
+                },
+                "updated_at": time.time(),
+            }
+        )
+        buckets = mutable.get("task_buckets") if isinstance(mutable.get("task_buckets"), dict) else {}
+        if decision_name == "complete":
+            mutable["task_buckets"] = {
+                "pending": [],
+                "running": [],
+                "completed": [dict(item) for item in buckets.get("completed", []) if isinstance(item, Mapping)]
+                + [dict(item) for item in buckets.get("pending", []) if isinstance(item, Mapping)]
+                + [dict(item) for item in buckets.get("running", []) if isinstance(item, Mapping)],
+                "blocked": [dict(item) for item in buckets.get("blocked", []) if isinstance(item, Mapping)],
+                "failed": [dict(item) for item in buckets.get("failed", []) if isinstance(item, Mapping)],
+                "cancelled": [dict(item) for item in buckets.get("cancelled", []) if isinstance(item, Mapping)],
+            }
+        else:
+            mutable["task_buckets"] = {
+                "pending": [dict(item) for item in buckets.get("pending", []) if isinstance(item, Mapping)],
+                "running": [],
+                "completed": [dict(item) for item in buckets.get("completed", []) if isinstance(item, Mapping)],
+                "blocked": [dict(item) for item in buckets.get("blocked", []) if isinstance(item, Mapping)]
+                + [dict(item) for item in buckets.get("running", []) if isinstance(item, Mapping)],
+                "failed": [dict(item) for item in buckets.get("failed", []) if isinstance(item, Mapping)],
+                "cancelled": [dict(item) for item in buckets.get("cancelled", []) if isinstance(item, Mapping)],
+            }
+        self._append_event(mutable, f"adaptive_planning_{goal_state}", reason=reason)
+        self._append_event(mutable, goal_state)
+        _write_json(self.path, mutable)
+        return mutable
+
     def select_next_task(self, state: Mapping[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
         mutable = copy.deepcopy(dict(state))
         completed = set(str(item) for item in mutable.get("completed_tasks") or [])
         blocked = set(str(item) for item in mutable.get("blocked_tasks") or [])
         failed = set(str(item) for item in mutable.get("failed_tasks") or [])
+        cancelled = set(str(item) for item in mutable.get("cancelled_tasks") or [])
+        superseded = set(str(item) for item in mutable.get("superseded_tasks") or [])
         for index, step in enumerate(self.raw_steps, start=1):
             task_id = _task_id(step, index)
-            if task_id in completed or task_id in blocked or task_id in failed:
+            if task_id in completed or task_id in blocked or task_id in failed or task_id in cancelled or task_id in superseded:
                 continue
             mutable["goal_state"] = "task_selected"
             mutable["selected_task"] = _task_summary(step, index)
@@ -250,6 +371,110 @@ class EngineeringGoalLifecycle:
             _write_json(self.path, mutable)
             return copy.deepcopy(step), mutable
         return None, mutable
+
+    def append_planned_tasks(
+        self,
+        *,
+        state: Mapping[str, Any],
+        new_steps: list[dict[str, Any]],
+        reason: str,
+        supersede_task_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Persist replanned task buckets without executing them."""
+
+        mutable = copy.deepcopy(dict(state))
+        existing_catalog = [dict(item) for item in mutable.get("task_catalog", []) if isinstance(item, Mapping)]
+        existing_ids = {
+            _clean_text(item.get("task_id"))
+            for item in existing_catalog
+            if _clean_text(item.get("task_id"))
+        }
+        start_index = len(existing_catalog) + 1
+        appended_steps: list[dict[str, Any]] = []
+        appended_summaries: list[dict[str, Any]] = []
+        for offset, step in enumerate(new_steps, start=0):
+            if not isinstance(step, Mapping):
+                continue
+            record = copy.deepcopy(dict(step))
+            task_id = _task_id(record, start_index + offset)
+            if task_id in existing_ids:
+                continue
+            appended_steps.append(record)
+            summary = _task_summary(record, start_index + offset)
+            appended_summaries.append(summary)
+            existing_catalog.append(summary)
+            existing_ids.add(task_id)
+
+        superseded = [str(item) for item in mutable.get("superseded_tasks") or []]
+        blocked_tasks = [str(item) for item in mutable.get("blocked_tasks") or []]
+        for task_id in supersede_task_ids or []:
+            cleaned = _clean_text(task_id)
+            if not cleaned:
+                continue
+            if cleaned not in superseded:
+                superseded.append(cleaned)
+            blocked_tasks = [item for item in blocked_tasks if item != cleaned]
+
+        completed = set(str(item) for item in mutable.get("completed_tasks") or [])
+        failed = set(str(item) for item in mutable.get("failed_tasks") or [])
+        cancelled = set(str(item) for item in mutable.get("cancelled_tasks") or [])
+        terminal = completed | failed | cancelled | set(superseded)
+        all_task_ids = [item["task_id"] for item in existing_catalog if _clean_text(item.get("task_id"))]
+        remaining = [task_id for task_id in all_task_ids if task_id not in terminal and task_id not in set(blocked_tasks)]
+        total = len(all_task_ids)
+        completed_count = len(completed)
+
+        buckets = mutable.get("task_buckets") if isinstance(mutable.get("task_buckets"), dict) else {}
+        pending = [dict(item) for item in buckets.get("pending", []) if isinstance(item, Mapping)]
+        pending_ids = {
+            _clean_text(_as_mapping(item.get("summary")).get("task_id"))
+            for item in pending
+        }
+        for index, step in enumerate(appended_steps, start=start_index):
+            task_id = _task_id(step, index)
+            if task_id not in pending_ids:
+                pending.append(_task_bucket_record(step, index))
+                pending_ids.add(task_id)
+
+        mutable.update(
+            {
+                "goal_state": "running" if appended_steps else _clean_text(mutable.get("goal_state"), "running"),
+                "task_catalog": existing_catalog,
+                "remaining_tasks": remaining,
+                "blocked_tasks": blocked_tasks,
+                "superseded_tasks": superseded,
+                "progress": {
+                    "total_tasks": total,
+                    "completed_count": completed_count,
+                    "blocked_count": len(blocked_tasks),
+                    "remaining_count": len(remaining),
+                    "percent_complete": round((completed_count / total) if total else 1.0, 4),
+                },
+                "task_buckets": {
+                    "pending": pending,
+                    "running": [],
+                    "completed": [dict(item) for item in buckets.get("completed", []) if isinstance(item, Mapping)],
+                    "blocked": [
+                        item
+                        for item in buckets.get("blocked", [])
+                        if isinstance(item, Mapping)
+                        and _clean_text(_as_mapping(item.get("summary")).get("task_id")) not in set(superseded)
+                    ],
+                    "failed": [dict(item) for item in buckets.get("failed", []) if isinstance(item, Mapping)],
+                    "cancelled": [dict(item) for item in buckets.get("cancelled", []) if isinstance(item, Mapping)],
+                },
+                "updated_at": time.time(),
+            }
+        )
+        self._append_event(
+            mutable,
+            "tasks_replanned",
+            reason=_clean_text(reason),
+            appended_tasks=appended_summaries,
+            superseded_tasks=superseded,
+        )
+        _write_json(self.path, mutable)
+        return mutable
 
     def finish_execution(
         self,
@@ -283,16 +508,19 @@ class EngineeringGoalLifecycle:
             failed_tasks.append(task_id)
 
         all_task_ids = [item["task_id"] for item in self.task_summaries]
-        terminal = set(completed_tasks) | set(blocked_tasks) | set(failed_tasks)
+        superseded_tasks = [str(item) for item in mutable.get("superseded_tasks") or []]
+        cancelled_tasks = [str(item) for item in mutable.get("cancelled_tasks") or []]
+        terminal = set(completed_tasks) | set(blocked_tasks) | set(failed_tasks) | set(superseded_tasks) | set(cancelled_tasks)
         remaining_tasks = [item for item in all_task_ids if item not in terminal]
         total = len(all_task_ids)
         completed_count = len(completed_tasks)
+        resolved_count = completed_count + len([item for item in superseded_tasks if item in all_task_ids])
 
         if blocked_tasks:
             goal_state = "blocked"
         elif failed_tasks:
             goal_state = "failed"
-        elif total > 0 and completed_count == total:
+        elif total > 0 and resolved_count >= total:
             goal_state = "completed"
         else:
             goal_state = "next_task_generated"
@@ -309,7 +537,7 @@ class EngineeringGoalLifecycle:
                     "completed_count": completed_count,
                     "blocked_count": len(blocked_tasks),
                     "remaining_count": len(remaining_tasks),
-                    "percent_complete": round((completed_count / total) if total else 1.0, 4),
+                    "percent_complete": round((resolved_count / total) if total else 1.0, 4),
                 },
                 "goal_summary": {
                     "goal": self.goal,
