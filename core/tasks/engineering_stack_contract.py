@@ -10,6 +10,8 @@ ENGINEERING_STACK_CONTRACT_SCHEMA = "zero.engineering_stack.contract.v1"
 
 
 OWNERS = {
+    "dependencies": "core.tasks.engineering_goal_dependency_graph.EngineeringGoalDependencyGraph",
+    "scheduler": "core.tasks.engineering_goal_scheduler.EngineeringGoalScheduler",
     "portfolio": "core.tasks.engineering_goal_portfolio.EngineeringGoalPortfolio",
     "planning": "core.tasks.engineering_planning_loop.EngineeringPlanningLoop",
     "lifecycle": "core.tasks.engineering_goal_lifecycle.EngineeringGoalLifecycle",
@@ -22,6 +24,19 @@ OWNERS = {
 
 
 ALLOWED = {
+    "core.tasks.engineering_goal_dependency_graph": [
+        "Own engineering goal dependency records and relationship validation.",
+        "Represent parent and child goal relationships.",
+        "Evaluate prerequisite goals, blocked-by goals, dependency completion, and dependency cycles.",
+        "Return deterministic dependency graph status output.",
+    ],
+    "core.tasks.engineering_goal_scheduler": [
+        "Own deterministic scheduling order and scheduling actions for engineering goals.",
+        "Pause, resume, cancel, and defer goals by returning updated scheduling metadata.",
+        "Ask EngineeringGoalPortfolio to select runnable goals.",
+        "Route selected goals through the portfolio to an injected EngineeringPlanningLoop.",
+        "Return scheduler decision records with selected_goal_id, action, reason, skipped_goals, and deferred_goals.",
+    ],
     "core.tasks.adaptive_planning_evaluator": [
         "Own deterministic evaluation of latest execution and lifecycle signals.",
         "Return decision-only adaptive planning records: continue, replan, block, or complete.",
@@ -73,6 +88,24 @@ ALLOWED = {
 
 
 FORBIDDEN = {
+    "core.tasks.engineering_goal_dependency_graph": [
+        "Execute work packages or call EngineeringTaskRunner.",
+        "Schedule goals or call EngineeringGoalScheduler.",
+        "Select goals or call EngineeringGoalPortfolio.",
+        "Generate plans or call Planner.",
+        "Own lifecycle state or instantiate EngineeringGoalLifecycle.",
+        "Persist memory or instantiate EngineeringMemoryStore.",
+        "Call AER, WorkPackageScheduler, or work-package execution directly.",
+        "Dispatch through agent_loop.",
+    ],
+    "core.tasks.engineering_goal_scheduler": [
+        "Execute work packages or call EngineeringTaskRunner.",
+        "Generate plans or call Planner.",
+        "Own lifecycle state or instantiate EngineeringGoalLifecycle.",
+        "Persist memory or instantiate EngineeringMemoryStore.",
+        "Call AER, WorkPackageScheduler, or work-package execution directly.",
+        "Dispatch through agent_loop.",
+    ],
     "core.tasks.adaptive_planning_evaluator": [
         "Execute work packages or call EngineeringTaskRunner.",
         "Generate plans or call Planner.",
@@ -128,6 +161,8 @@ FORBIDDEN = {
 
 
 QUESTION_OWNERS = {
+    "Who owns dependencies?": OWNERS["dependencies"],
+    "Who owns scheduling?": OWNERS["scheduler"],
     "Who owns multi-goal selection?": OWNERS["portfolio"],
     "Who owns planning?": OWNERS["planning"],
     "Who owns lifecycle?": OWNERS["lifecycle"],

@@ -1017,3 +1017,108 @@ Return to Scheduler -> Runtime -> Agent Loop -> AER Closure.
 Do not keep expanding work-package contract variants unless a real new authority
 boundary is introduced.
 ```
+
+
+---
+
+## 2026-06-04 - Engineering Goal Portfolio v1
+
+Added a deterministic engineering goal portfolio layer.
+
+Purpose:
+
+```text
+multiple engineering goals
+-> priority selection
+-> runnable-goal filtering
+-> structured portfolio decision
+-> planning loop routing
+```
+
+Completed:
+
+- EngineeringGoalRecord
+- EngineeringGoalPortfolio
+- deterministic highest-priority runnable selection
+- completed/blocked/cancelled goal skipping
+- structured portfolio decision output
+
+Validation:
+
+```text
+python -m pytest tests/test_engineering_goal_portfolio.py -q
+-> 7 passed
+
+python -m pytest tests/test_engineering_stack_boundary.py -q
+-> 10 passed
+
+python -m pytest -q
+-> 4262 passed
+-> 186 subtests passed
+```
+
+Engineering verdict:
+
+```text
+Engineering Goal Portfolio v1: SEALED
+```
+
+---
+
+## 2026-06-04 - Engineering Goal Scheduler v1
+
+Added the Engineering Goal Scheduler layer.
+
+Purpose:
+
+```text
+goal portfolio
+-> scheduler
+-> run-next selection
+-> planning-loop routing
+-> pause/resume/defer/cancel
+```
+
+Completed:
+
+- EngineeringGoalScheduler
+- run-next via EngineeringGoalPortfolio
+- deterministic scheduling order
+- scheduler decision records
+- pause/resume/cancel/defer actions
+
+Boundary decision:
+
+```text
+Scheduler selects goals only.
+Scheduler does not execute.
+Scheduler does not own planning.
+Scheduler does not own lifecycle state.
+Scheduler does not own memory persistence.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_engineering_goal_scheduler.py -q
+-> 9 passed
+
+python -m pytest tests/test_engineering_stack_boundary.py -q
+-> 12 passed
+
+python -m pytest -q
+-> 4273 passed
+-> 186 subtests passed
+```
+
+Showcase artifact:
+
+```text
+docs/images/milestone_engineering_goal_scheduler_v1_4273_passed.png
+```
+
+Engineering verdict:
+
+```text
+Engineering Goal Scheduler v1: SEALED
+```

@@ -9,6 +9,8 @@ from core.tasks.engineering_stack_contract import ALLOWED, FORBIDDEN, OWNERS, QU
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 MODULE_FILES = {
+    "core.tasks.engineering_goal_dependency_graph": REPO_ROOT / "core/tasks/engineering_goal_dependency_graph.py",
+    "core.tasks.engineering_goal_scheduler": REPO_ROOT / "core/tasks/engineering_goal_scheduler.py",
     "core.tasks.engineering_goal_portfolio": REPO_ROOT / "core/tasks/engineering_goal_portfolio.py",
     "core.tasks.adaptive_planning_evaluator": REPO_ROOT / "core/tasks/adaptive_planning_evaluator.py",
     "core.tasks.engineering_planning_loop": REPO_ROOT / "core/tasks/engineering_planning_loop.py",
@@ -69,6 +71,8 @@ def _function_node(tree: ast.AST, name: str) -> ast.FunctionDef:
 
 def test_architecture_contract_answers_ownership_questions() -> None:
     assert QUESTION_OWNERS == {
+        "Who owns dependencies?": "core.tasks.engineering_goal_dependency_graph.EngineeringGoalDependencyGraph",
+        "Who owns scheduling?": "core.tasks.engineering_goal_scheduler.EngineeringGoalScheduler",
         "Who owns multi-goal selection?": "core.tasks.engineering_goal_portfolio.EngineeringGoalPortfolio",
         "Who owns planning?": "core.tasks.engineering_planning_loop.EngineeringPlanningLoop",
         "Who owns lifecycle?": "core.tasks.engineering_goal_lifecycle.EngineeringGoalLifecycle",
@@ -77,9 +81,112 @@ def test_architecture_contract_answers_ownership_questions() -> None:
         "Who owns execution?": "core.tasks.engineering_task_runner",
         "Who owns memory?": "core.tasks.engineering_memory_store.EngineeringMemoryStore",
     }
-    assert set(OWNERS) == {"portfolio", "planning", "lifecycle", "evaluation", "continuation", "execution", "memory", "dispatch"}
+    assert set(OWNERS) == {
+        "dependencies",
+        "scheduler",
+        "portfolio",
+        "planning",
+        "lifecycle",
+        "evaluation",
+        "continuation",
+        "execution",
+        "memory",
+        "dispatch",
+    }
     assert set(ALLOWED) == set(FORBIDDEN) == set(MODULE_FILES)
     assert len(set(OWNERS.values())) == len(OWNERS)
+
+
+def test_stack_boundary_includes_dependency_graph_contract() -> None:
+    assert OWNERS["dependencies"] == "core.tasks.engineering_goal_dependency_graph.EngineeringGoalDependencyGraph"
+    assert "core.tasks.engineering_goal_dependency_graph" in ALLOWED
+    assert "core.tasks.engineering_goal_dependency_graph" in FORBIDDEN
+    assert any("dependency records" in item for item in ALLOWED["core.tasks.engineering_goal_dependency_graph"])
+    assert any("Schedule goals" in item for item in FORBIDDEN["core.tasks.engineering_goal_dependency_graph"])
+
+
+def test_engineering_goal_dependency_graph_owns_relationships_only() -> None:
+    tree = _tree("core.tasks.engineering_goal_dependency_graph")
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    forbidden_imports = {
+        "EngineeringGoalScheduler",
+        "core.tasks.engineering_goal_scheduler",
+        "EngineeringGoalPortfolio",
+        "core.tasks.engineering_goal_portfolio",
+        "Planner",
+        "core.planning.planner",
+        "EngineeringPlanningLoop",
+        "core.tasks.engineering_planning_loop",
+        "EngineeringTaskRunner",
+        "core.tasks.engineering_task_runner",
+        "run_engineering_task",
+        "EngineeringMemoryStore",
+        "core.tasks.engineering_memory_store",
+        "EngineeringGoalLifecycle",
+        "core.tasks.engineering_goal_lifecycle",
+        "WorkPackageScheduler",
+        "core.tasks.work_package_scheduler",
+        "AgentLoop",
+        "core.agent.agent_loop",
+        "EngineeringGoalDependencyGraph",
+        "core.tasks.engineering_goal_dependency_graph",
+    }
+    assert imports.isdisjoint(forbidden_imports)
+    assert "run_engineering_task" not in calls
+    assert "submit_work_package" not in calls
+    assert not any(call.endswith(".submit") for call in calls)
+    assert "save_record" not in calls
+    assert "load_relevant_memory" not in calls
+    assert "EngineeringGoalScheduler" not in calls
+    assert "EngineeringGoalPortfolio" not in calls
+    assert "EngineeringGoalLifecycle" not in calls
+    assert "EngineeringGoalDependencyGraph" not in calls
+    assert "Planner" not in calls
+    assert not any(call.endswith(".plan") for call in calls)
+
+
+def test_stack_boundary_includes_scheduler_contract() -> None:
+    assert OWNERS["scheduler"] == "core.tasks.engineering_goal_scheduler.EngineeringGoalScheduler"
+    assert "core.tasks.engineering_goal_scheduler" in ALLOWED
+    assert "core.tasks.engineering_goal_scheduler" in FORBIDDEN
+    assert any("scheduling order" in item for item in ALLOWED["core.tasks.engineering_goal_scheduler"])
+    assert any("Execute work packages" in item for item in FORBIDDEN["core.tasks.engineering_goal_scheduler"])
+
+
+def test_engineering_goal_scheduler_schedules_only() -> None:
+    tree = _tree("core.tasks.engineering_goal_scheduler")
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    forbidden_imports = {
+        "Planner",
+        "core.planning.planner",
+        "EngineeringTaskRunner",
+        "core.tasks.engineering_task_runner",
+        "run_engineering_task",
+        "EngineeringMemoryStore",
+        "core.tasks.engineering_memory_store",
+        "EngineeringGoalLifecycle",
+        "core.tasks.engineering_goal_lifecycle",
+        "WorkPackageScheduler",
+        "core.tasks.work_package_scheduler",
+        "AgentLoop",
+        "core.agent.agent_loop",
+        "EngineeringGoalDependencyGraph",
+        "core.tasks.engineering_goal_dependency_graph",
+    }
+    assert imports.isdisjoint(forbidden_imports)
+    assert "run_engineering_task" not in calls
+    assert "submit_work_package" not in calls
+    assert not any(call.endswith(".submit") for call in calls)
+    assert "save_record" not in calls
+    assert "load_relevant_memory" not in calls
+    assert "EngineeringGoalLifecycle" not in calls
+    assert "EngineeringGoalDependencyGraph" not in calls
+    assert "Planner" not in calls
+    assert not any(call.endswith(".plan") for call in calls)
 
 
 def test_stack_boundary_includes_portfolio_contract() -> None:
@@ -119,6 +226,16 @@ def test_engineering_goal_portfolio_selects_only() -> None:
     assert "EngineeringGoalLifecycle" not in calls
     assert "Planner" not in calls
     assert not any(call.endswith(".plan") for call in calls)
+
+
+def test_engineering_goal_lifecycle_does_not_own_dependencies() -> None:
+    tree = _tree("core.tasks.engineering_goal_lifecycle")
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    assert "EngineeringGoalDependencyGraph" not in imports
+    assert "core.tasks.engineering_goal_dependency_graph" not in imports
+    assert "EngineeringGoalDependencyGraph" not in calls
 
 
 def test_adaptive_planning_evaluator_decides_only() -> None:
