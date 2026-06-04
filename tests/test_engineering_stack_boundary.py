@@ -21,6 +21,9 @@ MODULE_FILES = {
     "core.agent.agent_loop": REPO_ROOT / "core/agent/agent_loop.py",
 }
 
+APP_FILE = REPO_ROOT / "app.py"
+GOAL_CLI_FILE = REPO_ROOT / "cli/goal_cli.py"
+
 
 def _tree(module_name: str) -> ast.Module:
     return ast.parse(MODULE_FILES[module_name].read_text(encoding="utf-8"))
@@ -397,3 +400,50 @@ def test_agent_loop_imports_no_engineering_state_owners() -> None:
     assert "GoalContinuationCoordinator" not in imports
     assert "EngineeringPlanningLoop" not in imports
     assert "AdaptivePlanningEvaluator" not in imports
+
+
+def test_goal_cli_is_operation_surface_only() -> None:
+    tree = ast.parse(GOAL_CLI_FILE.read_text(encoding="utf-8"))
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    assert "EngineeringGoalScheduler" in imports
+    assert "EngineeringGoalPortfolio" in imports
+    assert "EngineeringGoalDependencyGraph" in imports
+    forbidden_imports = {
+        "EngineeringTaskRunner",
+        "core.tasks.engineering_task_runner",
+        "run_engineering_task",
+        "EngineeringPlanningLoop",
+        "core.tasks.engineering_planning_loop",
+        "EngineeringMemoryStore",
+        "core.tasks.engineering_memory_store",
+        "EngineeringGoalLifecycle",
+        "core.tasks.engineering_goal_lifecycle",
+        "WorkPackageScheduler",
+        "core.tasks.work_package_scheduler",
+        "AgentLoop",
+        "core.agent.agent_loop",
+    }
+    assert imports.isdisjoint(forbidden_imports)
+    assert "run_engineering_task" not in calls
+    assert "submit_work_package" not in calls
+    assert not any(call.endswith(".submit") for call in calls)
+    assert not any(call.endswith(".run") for call in calls)
+
+
+def test_app_py_remains_thin_goal_dispatch() -> None:
+    tree = ast.parse(APP_FILE.read_text(encoding="utf-8"))
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    assert "EngineeringGoalScheduler" not in imports
+    assert "EngineeringGoalPortfolio" not in imports
+    assert "EngineeringGoalDependencyGraph" not in imports
+    assert "EngineeringTaskRunner" not in imports
+    assert "core.tasks.engineering_task_runner" not in imports
+    assert "run_engineering_task" not in imports
+    assert "try_handle_goal_command" in imports
+    assert "_load_goal_cli" in calls
+    assert "run_engineering_task" not in calls
+    assert "submit_work_package" not in calls

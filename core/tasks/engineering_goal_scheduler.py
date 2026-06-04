@@ -80,6 +80,41 @@ class EngineeringGoalScheduler:
     def __init__(self, *, portfolio: EngineeringGoalPortfolio | Any | None = None) -> None:
         self.portfolio = portfolio or EngineeringGoalPortfolio()
 
+    def schedule_next_goal(
+        self,
+        goals: Sequence[EngineeringGoalRecord | Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        records = [_goal_dict(goal) for goal in goals]
+        active_goals, scheduler_skipped, deferred_goals = self._schedulable_records(records)
+        portfolio_decision = self.portfolio.decide_next_goal(active_goals)
+        selected_goal_id = _clean_text(portfolio_decision.get("selected_goal_id"))
+        skipped_goals = [
+            *copy.deepcopy(portfolio_decision.get("skipped_goals") or []),
+            *scheduler_skipped,
+        ]
+        scheduler_decision = _decision(
+            selected_goal_id=selected_goal_id,
+            action="schedule_next_goal" if selected_goal_id else "no_runnable_goal",
+            reason=_clean_text(portfolio_decision.get("reason"), "no_runnable_goals_available"),
+            skipped_goals=skipped_goals,
+            deferred_goals=deferred_goals,
+        )
+        return {
+            "schema": ENGINEERING_GOAL_SCHEDULER_SCHEMA,
+            "ok": bool(selected_goal_id),
+            "mode": "engineering_goal_scheduler",
+            "scheduler_decision": scheduler_decision,
+            "portfolio_decision": portfolio_decision,
+            "goals": records,
+            "execution_path": {
+                "scheduler_schedules_only": True,
+                "portfolio_selects_only": True,
+                "direct_execution": False,
+                "existing_planning_loop_reused": False,
+                "new_execution_path": False,
+            },
+        }
+
     def run_next_goal(
         self,
         goals: Sequence[EngineeringGoalRecord | Mapping[str, Any]],

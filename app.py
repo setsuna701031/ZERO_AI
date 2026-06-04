@@ -33,6 +33,12 @@ def _load_runtime_cli() -> Callable[..., bool]:
     return try_handle_fast_runtime_command
 
 
+def _load_goal_cli() -> Callable[..., bool]:
+    from cli.goal_cli import try_handle_goal_command
+
+    return try_handle_goal_command
+
+
 def _is_help_command(argv: List[str]) -> bool:
     normalized = [str(item).strip().lower() for item in argv if str(item).strip()]
     return len(normalized) == 1 and normalized[0] in {"--help", "-h", "help", "/help"}
@@ -45,6 +51,9 @@ def _print_thin_help() -> None:
     print("  python app.py --help")
     print("  python app.py task list")
     print("  python app.py task run [count]")
+    print("  python app.py goal list")
+    print("  python app.py goal add <summary>")
+    print("  python app.py goal run-next")
     print("  python app.py runtime")
     print("  python app.py health")
     print("  python app.py replay")
@@ -82,6 +91,13 @@ def _try_fast_cli(argv: List[str]) -> bool:
     if _is_help_command(argv):
         _print_thin_help()
         return True
+
+    try:
+        goal_cli = _load_goal_cli()
+        if bool(goal_cli(argv, repo_root=_repo_root())):
+            return True
+    except Exception:
+        pass
 
     try:
         task_cli = _load_task_cli()
