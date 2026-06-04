@@ -13,6 +13,7 @@ MODULE_FILES = {
     "core.tasks.engineering_goal_scheduler": REPO_ROOT / "core/tasks/engineering_goal_scheduler.py",
     "core.tasks.engineering_goal_portfolio": REPO_ROOT / "core/tasks/engineering_goal_portfolio.py",
     "core.tasks.adaptive_planning_evaluator": REPO_ROOT / "core/tasks/adaptive_planning_evaluator.py",
+    "core.tasks.engineering_runtime_orchestrator": REPO_ROOT / "core/tasks/engineering_runtime_orchestrator.py",
     "core.tasks.engineering_planning_loop": REPO_ROOT / "core/tasks/engineering_planning_loop.py",
     "core.tasks.engineering_goal_lifecycle": REPO_ROOT / "core/tasks/engineering_goal_lifecycle.py",
     "core.tasks.goal_continuation_coordinator": REPO_ROOT / "core/tasks/goal_continuation_coordinator.py",
@@ -80,6 +81,7 @@ def test_architecture_contract_answers_ownership_questions() -> None:
         "Who owns planning?": "core.tasks.engineering_planning_loop.EngineeringPlanningLoop",
         "Who owns lifecycle?": "core.tasks.engineering_goal_lifecycle.EngineeringGoalLifecycle",
         "Who owns evaluation?": "core.tasks.adaptive_planning_evaluator.AdaptivePlanningEvaluator",
+        "Who owns runtime orchestration?": "core.tasks.engineering_runtime_orchestrator.EngineeringRuntimeOrchestrator",
         "Who owns continuation?": "core.tasks.goal_continuation_coordinator.GoalContinuationCoordinator",
         "Who owns execution?": "core.tasks.engineering_task_runner",
         "Who owns memory?": "core.tasks.engineering_memory_store.EngineeringMemoryStore",
@@ -91,6 +93,7 @@ def test_architecture_contract_answers_ownership_questions() -> None:
         "planning",
         "lifecycle",
         "evaluation",
+        "runtime_orchestration",
         "continuation",
         "execution",
         "memory",
@@ -272,6 +275,51 @@ def test_adaptive_planning_evaluator_decides_only() -> None:
     assert "Planner" not in calls
     assert not any(call.endswith(".plan") for call in calls)
     assert "submit_work_package" not in calls
+    assert not any(call.endswith(".submit") for call in calls)
+
+
+def test_stack_boundary_includes_runtime_orchestrator_contract() -> None:
+    assert OWNERS["runtime_orchestration"] == "core.tasks.engineering_runtime_orchestrator.EngineeringRuntimeOrchestrator"
+    assert "core.tasks.engineering_runtime_orchestrator" in ALLOWED
+    assert "core.tasks.engineering_runtime_orchestrator" in FORBIDDEN
+    assert any("runtime loop only" in item for item in ALLOWED["core.tasks.engineering_runtime_orchestrator"])
+    assert any("Generate plans" in item for item in FORBIDDEN["core.tasks.engineering_runtime_orchestrator"])
+
+
+def test_engineering_runtime_orchestrator_orchestrates_only() -> None:
+    tree = _tree("core.tasks.engineering_runtime_orchestrator")
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    required_imports = {
+        "EngineeringGoalScheduler",
+        "EngineeringGoalDependencyGraph",
+        "EngineeringPlanningLoop",
+        "AdaptivePlanningEvaluator",
+        "EngineeringGoalLifecycle",
+        "GoalContinuationCoordinator",
+    }
+    assert required_imports.issubset(imports)
+    forbidden_imports = {
+        "Planner",
+        "core.planning.planner",
+        "EngineeringTaskRunner",
+        "core.tasks.engineering_task_runner",
+        "run_engineering_task",
+        "EngineeringMemoryStore",
+        "core.tasks.engineering_memory_store",
+        "WorkPackageScheduler",
+        "core.tasks.work_package_scheduler",
+        "AgentLoop",
+        "core.agent.agent_loop",
+    }
+    assert imports.isdisjoint(forbidden_imports)
+    assert "run_engineering_task" not in calls
+    assert "submit_work_package" not in calls
+    assert "save_record" not in calls
+    assert "load_relevant_memory" not in calls
+    assert "_write_json" not in calls
+    assert "Planner" not in calls
     assert not any(call.endswith(".submit") for call in calls)
 
 
