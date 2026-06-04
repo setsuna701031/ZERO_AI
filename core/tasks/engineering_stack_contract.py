@@ -10,6 +10,7 @@ ENGINEERING_STACK_CONTRACT_SCHEMA = "zero.engineering_stack.contract.v1"
 
 
 OWNERS = {
+    "portfolio": "core.tasks.engineering_goal_portfolio.EngineeringGoalPortfolio",
     "planning": "core.tasks.engineering_planning_loop.EngineeringPlanningLoop",
     "lifecycle": "core.tasks.engineering_goal_lifecycle.EngineeringGoalLifecycle",
     "evaluation": "core.tasks.adaptive_planning_evaluator.AdaptivePlanningEvaluator",
@@ -25,6 +26,12 @@ ALLOWED = {
         "Own deterministic evaluation of latest execution and lifecycle signals.",
         "Return decision-only adaptive planning records: continue, replan, block, or complete.",
         "Use already-provided goal state, task buckets, latest result, and memory summaries as inputs.",
+    ],
+    "core.tasks.engineering_goal_portfolio": [
+        "Own deterministic selection across multiple engineering goals.",
+        "Return portfolio decision records with selected_goal_id, decision, reason, and skipped_goals.",
+        "Route the selected goal payload to an injected EngineeringPlanningLoop.",
+        "Skip completed, blocked, and cancelled goals.",
     ],
     "core.tasks.engineering_planning_loop": [
         "Own initial planning and replan orchestration for engineering goals.",
@@ -74,6 +81,14 @@ FORBIDDEN = {
         "Dispatch through agent_loop.",
         "Call AER, WorkPackageScheduler, or work-package execution directly.",
     ],
+    "core.tasks.engineering_goal_portfolio": [
+        "Execute work packages or call EngineeringTaskRunner.",
+        "Generate plans or call Planner.",
+        "Own lifecycle state or instantiate EngineeringGoalLifecycle.",
+        "Persist memory or instantiate EngineeringMemoryStore.",
+        "Call AER, WorkPackageScheduler, or work-package execution directly.",
+        "Dispatch through agent_loop.",
+    ],
     "core.tasks.engineering_planning_loop": [
         "Execute work packages or call run_engineering_task directly.",
         "Own memory persistence or save memory records.",
@@ -113,6 +128,7 @@ FORBIDDEN = {
 
 
 QUESTION_OWNERS = {
+    "Who owns multi-goal selection?": OWNERS["portfolio"],
     "Who owns planning?": OWNERS["planning"],
     "Who owns lifecycle?": OWNERS["lifecycle"],
     "Who owns evaluation?": OWNERS["evaluation"],

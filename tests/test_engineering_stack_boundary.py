@@ -9,6 +9,7 @@ from core.tasks.engineering_stack_contract import ALLOWED, FORBIDDEN, OWNERS, QU
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 MODULE_FILES = {
+    "core.tasks.engineering_goal_portfolio": REPO_ROOT / "core/tasks/engineering_goal_portfolio.py",
     "core.tasks.adaptive_planning_evaluator": REPO_ROOT / "core/tasks/adaptive_planning_evaluator.py",
     "core.tasks.engineering_planning_loop": REPO_ROOT / "core/tasks/engineering_planning_loop.py",
     "core.tasks.engineering_goal_lifecycle": REPO_ROOT / "core/tasks/engineering_goal_lifecycle.py",
@@ -68,6 +69,7 @@ def _function_node(tree: ast.AST, name: str) -> ast.FunctionDef:
 
 def test_architecture_contract_answers_ownership_questions() -> None:
     assert QUESTION_OWNERS == {
+        "Who owns multi-goal selection?": "core.tasks.engineering_goal_portfolio.EngineeringGoalPortfolio",
         "Who owns planning?": "core.tasks.engineering_planning_loop.EngineeringPlanningLoop",
         "Who owns lifecycle?": "core.tasks.engineering_goal_lifecycle.EngineeringGoalLifecycle",
         "Who owns evaluation?": "core.tasks.adaptive_planning_evaluator.AdaptivePlanningEvaluator",
@@ -75,9 +77,48 @@ def test_architecture_contract_answers_ownership_questions() -> None:
         "Who owns execution?": "core.tasks.engineering_task_runner",
         "Who owns memory?": "core.tasks.engineering_memory_store.EngineeringMemoryStore",
     }
-    assert set(OWNERS) == {"planning", "lifecycle", "evaluation", "continuation", "execution", "memory", "dispatch"}
+    assert set(OWNERS) == {"portfolio", "planning", "lifecycle", "evaluation", "continuation", "execution", "memory", "dispatch"}
     assert set(ALLOWED) == set(FORBIDDEN) == set(MODULE_FILES)
     assert len(set(OWNERS.values())) == len(OWNERS)
+
+
+def test_stack_boundary_includes_portfolio_contract() -> None:
+    assert OWNERS["portfolio"] == "core.tasks.engineering_goal_portfolio.EngineeringGoalPortfolio"
+    assert "core.tasks.engineering_goal_portfolio" in ALLOWED
+    assert "core.tasks.engineering_goal_portfolio" in FORBIDDEN
+    assert any("selection across multiple engineering goals" in item for item in ALLOWED["core.tasks.engineering_goal_portfolio"])
+    assert any("Execute work packages" in item for item in FORBIDDEN["core.tasks.engineering_goal_portfolio"])
+
+
+def test_engineering_goal_portfolio_selects_only() -> None:
+    tree = _tree("core.tasks.engineering_goal_portfolio")
+    imports = _imported_symbols(tree)
+    calls = _called_symbols(tree)
+
+    forbidden_imports = {
+        "Planner",
+        "core.planning.planner",
+        "EngineeringTaskRunner",
+        "core.tasks.engineering_task_runner",
+        "run_engineering_task",
+        "EngineeringMemoryStore",
+        "core.tasks.engineering_memory_store",
+        "EngineeringGoalLifecycle",
+        "core.tasks.engineering_goal_lifecycle",
+        "WorkPackageScheduler",
+        "core.tasks.work_package_scheduler",
+        "AgentLoop",
+        "core.agent.agent_loop",
+    }
+    assert imports.isdisjoint(forbidden_imports)
+    assert "run_engineering_task" not in calls
+    assert "submit_work_package" not in calls
+    assert not any(call.endswith(".submit") for call in calls)
+    assert "save_record" not in calls
+    assert "load_relevant_memory" not in calls
+    assert "EngineeringGoalLifecycle" not in calls
+    assert "Planner" not in calls
+    assert not any(call.endswith(".plan") for call in calls)
 
 
 def test_adaptive_planning_evaluator_decides_only() -> None:
