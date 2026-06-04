@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.planning.planner import Planner
+from core.tasks.engineering_goal_lifecycle import EngineeringGoalLifecycle, lifecycle_enabled
 from core.tasks.engineering_memory_store import (
     EngineeringMemoryStore,
     build_memory_record_from_result_bundle,
@@ -1001,6 +1002,8 @@ def build_multi_step_result_bundle(
     selected_tasks: list[dict[str, Any]] | None = None,
     relevant_memory: Mapping[str, Any] | None = None,
     memory_record: Mapping[str, Any] | None = None,
+    goal_lifecycle: Mapping[str, Any] | None = None,
+    lifecycle_mode: bool = False,
     stopped_reason: str = "",
     state_path: str = "",
     resumed: bool = False,
@@ -1013,11 +1016,14 @@ def build_multi_step_result_bundle(
         for item in step_results
     )
     planned_step_count = int(plan.get("step_count") or 0)
-    ok = (
-        bool(step_results)
-        and len(step_results) == planned_step_count
-        and all(bool(_as_mapping(item.get("result")).get("ok")) for item in step_results)
-    )
+    if lifecycle_mode:
+        ok = bool(step_results) and all(bool(_as_mapping(item.get("result")).get("ok")) for item in step_results)
+    else:
+        ok = (
+            bool(step_results)
+            and len(step_results) == planned_step_count
+            and all(bool(_as_mapping(item.get("result")).get("ok")) for item in step_results)
+        )
     last_result = _as_mapping(step_results[-1].get("result")) if step_results else {}
     last_bundle = _as_mapping(last_result.get("result_bundle"))
     prioritization_data = _build_prioritization_data(
@@ -1054,6 +1060,8 @@ def build_multi_step_result_bundle(
         "relevant_memory": copy.deepcopy(memory),
         "retrieved_memory": copy.deepcopy(memory),
         "memory_record": copy.deepcopy(dict(memory_record)) if isinstance(memory_record, Mapping) else {},
+        "goal_lifecycle": copy.deepcopy(dict(goal_lifecycle)) if isinstance(goal_lifecycle, Mapping) else {},
+        "engineering_goal_lifecycle": copy.deepcopy(dict(goal_lifecycle)) if isinstance(goal_lifecycle, Mapping) else {},
         "resumed": bool(resumed),
         "interrupted": bool(interrupted),
         "state_path": str(state_path or ""),
@@ -1178,7 +1186,8 @@ def run_multi_step_engineering_task(
 
     requirement_summary = build_requirement_summary(payload)
     plan = build_multi_step_plan(payload)
-    raw_steps = _raw_step_payloads(payload)
+    all_raw_steps = _raw_step_payloads(payload)
+    raw_steps = list(all_raw_steps)
     parent = _task_payload(payload)
     package_id = str(plan.get("package_id") or requirement_summary.get("package_id") or "engineering_task")
     state_path = _multi_step_state_path(repo_root, package_id)
@@ -1211,6 +1220,20 @@ def run_multi_step_engineering_task(
         selected_tasks = []
         prioritization_data = {}
         relevant_memory = memory_store.load_relevant_memory(goal=str(plan.get("goal") or requirement_summary.get("goal") or package_id))
+
+    lifecycle = None
+    lifecycle_state: dict[str, Any] = {}
+    lifecycle_active = lifecycle_enabled(parent)
+    if lifecycle_active:
+        lifecycle = EngineeringGoalLifecycle(
+            repo_root=repo_root,
+            payload=payload,
+            plan=plan,
+            raw_steps=all_raw_steps,
+        )
+        lifecycle_state = lifecycle.load_or_create(relevant_memory)
+        selected_raw_step, lifecycle_state = lifecycle.select_next_task(lifecycle_state)
+        raw_steps = [selected_raw_step] if isinstance(selected_raw_step, Mapping) else []
 
     previous_observation: dict[str, Any] | None = observations[-1] if observations else None
     stopped_reason = ""
@@ -1465,6 +1488,8 @@ def run_multi_step_engineering_task(
         candidate_evaluations=candidate_evaluations,
         selected_tasks=selected_tasks,
         relevant_memory=relevant_memory,
+        goal_lifecycle=lifecycle_state,
+        lifecycle_mode=lifecycle_active,
         stopped_reason=stopped_reason,
         state_path=_display_path(state_path, repo_root),
         resumed=resume_requested,
@@ -1474,6 +1499,15 @@ def run_multi_step_engineering_task(
     if bool(result_bundle.get("ok")) and not interrupted:
         memory_record = memory_store.save_record(build_memory_record_from_result_bundle(result_bundle))
         result_bundle["memory_record"] = copy.deepcopy(memory_record)
+    if lifecycle is not None:
+        lifecycle_state = lifecycle.finish_execution(
+            state=lifecycle_state,
+            result_bundle=result_bundle,
+            memory_record=memory_record,
+            relevant_memory=relevant_memory,
+        )
+        result_bundle["goal_lifecycle"] = copy.deepcopy(lifecycle_state)
+        result_bundle["engineering_goal_lifecycle"] = copy.deepcopy(lifecycle_state)
 
     return {
         "schema": SCHEMA,
@@ -1512,6 +1546,8 @@ def run_multi_step_engineering_task(
         "relevant_memory": copy.deepcopy(result_bundle.get("relevant_memory")),
         "retrieved_memory": copy.deepcopy(result_bundle.get("retrieved_memory")),
         "memory_record": copy.deepcopy(memory_record),
+        "goal_lifecycle": copy.deepcopy(lifecycle_state),
+        "engineering_goal_lifecycle": copy.deepcopy(lifecycle_state),
         "resumed": resume_requested,
         "interrupted": interrupted,
         "state_path": _display_path(state_path, repo_root),

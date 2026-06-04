@@ -114,6 +114,48 @@ def _multi_step_payload(
     )
 
 
+def _goal_lifecycle_payload(repo_root: Path, *, goal_id: str = "agent_loop_goal_lifecycle") -> str:
+    return json.dumps(
+        {
+            "task_type": "engineering_task",
+            "repo_root": str(repo_root),
+            "engineering_goal_lifecycle": True,
+            "goal_id": goal_id,
+            "task_id": goal_id,
+            "package_id": goal_id,
+            "goal": "Run engineering goal lifecycle through AgentLoop dispatch",
+            "mode": "execute",
+            "approval": True,
+            "steps": [
+                {
+                    "package_id": f"{goal_id}_first",
+                    "goal": "Write first lifecycle task output",
+                    "edits": [
+                        {
+                            "operation": "write_file",
+                            "target_path": f"workspace/{goal_id}_first.txt",
+                            "content": "first lifecycle output\n",
+                            "verify_contains": "first lifecycle output",
+                        }
+                    ],
+                },
+                {
+                    "package_id": f"{goal_id}_second",
+                    "goal": "Write second lifecycle task output",
+                    "edits": [
+                        {
+                            "operation": "write_file",
+                            "target_path": f"workspace/{goal_id}_second.txt",
+                            "content": "second lifecycle output\n",
+                            "verify_contains": "second lifecycle output",
+                        }
+                    ],
+                },
+            ],
+        }
+    )
+
+
 def test_agent_loop_receives_engineering_task_payload(tmp_path: Path) -> None:
     loop = AgentLoop(repo_root=str(tmp_path))
 
@@ -190,6 +232,74 @@ def test_agent_loop_delegates_to_engineering_task_runner(tmp_path: Path, monkeyp
     assert response["ok"] is True
     assert response["result_bundle"]["schema"] == "zero.engineering_task.result_bundle.v1"
     assert response["plan"]["delegated_to"] == "core.tasks.engineering_task_runner.run_engineering_task"
+
+
+def test_agent_loop_routes_engineering_goal_payload_to_engineering_task_runner(tmp_path: Path, monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def fake_run_engineering_task(payload, *, repo_root):
+        calls.append({"payload": payload, "repo_root": repo_root})
+        return {
+            "schema": "zero.engineering_task_runner.v1",
+            "ok": True,
+            "mode": "engineering_task_runner",
+            "package_id": "agent_loop_goal_lifecycle",
+            "requirement_summary": {"schema": "zero.engineering_task.requirement_summary.v1"},
+            "normalized_payload": {"schema": "zero.engineering_task.multi_step.normalized_payload.v1"},
+            "result_bundle": {
+                "schema": "zero.engineering_task.multi_step_result_bundle.v1",
+                "ok": True,
+                "artifact_paths": {},
+                "goal_lifecycle": {
+                    "schema": "zero.engineering_task.goal_state.v1",
+                    "goal_id": "agent_loop_goal_lifecycle",
+                    "goal_state": "next_task_generated",
+                },
+                "execution_path": {
+                    "no_new_runtime_path": True,
+                    "direct_write_shortcut": False,
+                },
+            },
+            "work_package_result": {"ok": True, "reason": "delegated"},
+            "verification_result": {"ok": True},
+            "change_set": {"change_set_id": "change_set:agent_loop_goal_lifecycle"},
+            "goal_lifecycle": {
+                "schema": "zero.engineering_task.goal_state.v1",
+                "goal_id": "agent_loop_goal_lifecycle",
+                "goal_state": "next_task_generated",
+            },
+            "engineering_goal_lifecycle": {
+                "schema": "zero.engineering_task.goal_state.v1",
+                "goal_id": "agent_loop_goal_lifecycle",
+                "goal_state": "next_task_generated",
+            },
+            "final_message": "delegated",
+        }
+
+    monkeypatch.setattr("core.tasks.engineering_task_runner.run_engineering_task", fake_run_engineering_task)
+
+    loop = AgentLoop(repo_root=str(tmp_path))
+    payload_text = _goal_lifecycle_payload(tmp_path)
+    response = loop.run(payload_text)
+
+    assert calls == [{"payload": json.loads(payload_text), "repo_root": str(tmp_path)}]
+    assert response["ok"] is True
+    assert response["agent_loop_runtime_route"] == "engineering_task_runner"
+    assert response["plan"]["delegated_to"] == "core.tasks.engineering_task_runner.run_engineering_task"
+    assert response["goal_lifecycle"]["goal_state"] == "next_task_generated"
+    assert response["result_bundle"]["goal_lifecycle"]["goal_id"] == "agent_loop_goal_lifecycle"
+    assert response["route"]["authority_path"] == (
+        "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake"
+    )
+
+
+def test_agent_loop_does_not_own_goal_lifecycle_execution_logic() -> None:
+    source = Path("core/agent/agent_loop.py").read_text(encoding="utf-8")
+
+    assert "EngineeringGoalLifecycle" not in source
+    assert "lifecycle_enabled" not in source
+    assert "EngineeringMemoryStore" not in source
+    assert source.count("run_engineering_task(") == 1
 
 
 def test_agent_loop_engineering_task_result_bundle_visible_to_caller(tmp_path: Path) -> None:
@@ -508,7 +618,7 @@ def test_observation_generates_multiple_candidate_tasks_and_selects_one(tmp_path
                             {
                                 "package_id": "agent_loop_candidate_blocked",
                                 "goal": "Blocked candidate must not execute",
-                                "metadata": {"selection_priority": 50},
+                                "metadata": {"risk_score": 1, "cost_score": 1, "value_score": 500},
                                 "derive_from_observation": {
                                     "content_template": "blocked from {first_changed_file}\n",
                                     "verify_contains_template": "blocked from {first_changed_file}",
@@ -525,7 +635,7 @@ def test_observation_generates_multiple_candidate_tasks_and_selects_one(tmp_path
                             {
                                 "package_id": "agent_loop_candidate_selected",
                                 "goal": "Selected candidate executes",
-                                "metadata": {"selection_priority": 10},
+                                "metadata": {"risk_score": 10, "cost_score": 20, "value_score": 100},
                                 "derive_from_observation": {
                                     "content_template": "selected from {first_changed_file}\n",
                                     "verify_contains_template": "selected from {first_changed_file}",
@@ -557,14 +667,41 @@ def test_observation_generates_multiple_candidate_tasks_and_selects_one(tmp_path
     assert response["candidate_evaluations"] == bundle["candidate_evaluations"]
     assert response["selected_task"] == bundle["selected_task"]
     assert response["selection_reason"] == bundle["selection_reason"]
+    assert response["prioritization_data"] == bundle["prioritization_data"]
+    assert bundle["prioritization_data"]["schema"] == "zero.engineering_task.prioritization_data.v1"
+    assert bundle["prioritization_data"]["priority_model"]["blocked_task_can_win"] is False
 
     blocked_candidate = next(item for item in bundle["candidate_tasks"] if item["package_id"] == "agent_loop_candidate_blocked")
     selected_candidate = next(item for item in bundle["candidate_tasks"] if item["package_id"] == "agent_loop_candidate_selected")
     assert blocked_candidate["blocked_without_execution"] is True
     assert selected_candidate["blocked_without_execution"] is False
+    assert blocked_candidate["risk_score"] == 1
+    assert blocked_candidate["cost_score"] == 1
+    assert blocked_candidate["value_score"] == 500
+    assert blocked_candidate["priority_score"] == -9502
+    assert selected_candidate["risk_score"] == 10
+    assert selected_candidate["cost_score"] == 20
+    assert selected_candidate["value_score"] == 100
+    assert selected_candidate["priority_score"] == 70
+
+    blocked_evaluation = next(item for item in bundle["candidate_evaluations"] if item["package_id"] == "agent_loop_candidate_blocked")
+    selected_evaluation = next(item for item in bundle["candidate_evaluations"] if item["package_id"] == "agent_loop_candidate_selected")
+    assert blocked_evaluation["risk_analysis"]["score"] == 1
+    assert blocked_evaluation["cost_analysis"]["score"] == 1
+    assert blocked_evaluation["value_analysis"]["score"] == 500
+    assert blocked_evaluation["priority_score"] == -9502
+    assert selected_evaluation["risk_score"] == 10
+    assert selected_evaluation["cost_score"] == 20
+    assert selected_evaluation["value_score"] == 100
+    assert selected_evaluation["priority_score"] == 70
+
     assert bundle["selected_task"]["package_id"] == "agent_loop_candidate_selected"
-    assert bundle["selected_task"]["selection_reason"] == "selection_priority:10"
-    assert bundle["selection_reason"] == "selection_priority:10"
+    assert bundle["selected_task"]["priority_score"] == 70
+    assert "priority_score:70" in bundle["selected_task"]["selection_reason"]
+    assert "value:100" in bundle["selected_task"]["selection_reason"]
+    assert "risk:10" in bundle["selected_task"]["selection_reason"]
+    assert "cost:20" in bundle["selected_task"]["selection_reason"]
+    assert "priority_score:70" in bundle["selection_reason"]
     assert any(item["event"] == "candidate_tasks" for item in bundle["iteration_trace"])
     assert any(item["event"] == "evaluation" for item in bundle["iteration_trace"])
     assert any(item["event"] == "selected_task" for item in bundle["iteration_trace"])
