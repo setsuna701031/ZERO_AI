@@ -39,6 +39,12 @@ def _load_goal_cli() -> Callable[..., bool]:
     return try_handle_goal_command
 
 
+def _load_portfolio_cli() -> Callable[..., bool]:
+    from cli.portfolio_cli import try_handle_portfolio_command
+
+    return try_handle_portfolio_command
+
+
 def _is_help_command(argv: List[str]) -> bool:
     normalized = [str(item).strip().lower() for item in argv if str(item).strip()]
     return len(normalized) == 1 and normalized[0] in {"--help", "-h", "help", "/help"}
@@ -57,6 +63,11 @@ def _print_thin_help() -> None:
     print("  python app.py goal run <goal_id>")
     print("  python app.py goal loop <goal_id>")
     print("  python app.py goal run-next")
+    print("  python app.py portfolio create <name>")
+    print("  python app.py portfolio list")
+    print("  python app.py portfolio show <portfolio_id>")
+    print("  python app.py portfolio add-goal <portfolio_id> <goal_id>")
+    print("  python app.py portfolio remove-goal <portfolio_id> <goal_id>")
     print("  python app.py runtime")
     print("  python app.py health")
     print("  python app.py replay")
@@ -98,6 +109,13 @@ def _try_fast_cli(argv: List[str]) -> bool:
     try:
         goal_cli = _load_goal_cli()
         if bool(goal_cli(argv, repo_root=_repo_root())):
+            return True
+    except Exception:
+        pass
+
+    try:
+        portfolio_cli = _load_portfolio_cli()
+        if bool(portfolio_cli(argv, repo_root=_repo_root())):
             return True
     except Exception:
         pass
