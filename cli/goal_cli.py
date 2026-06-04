@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
+from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_portfolio import EngineeringGoalPortfolio
+from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+from core.tasks.engineering_goal_runner import EngineeringGoalRunner
 from core.tasks.engineering_goal_scheduler import EngineeringGoalScheduler
 
 
@@ -32,7 +33,22 @@ def _store_path(repo_root: Path) -> Path:
     if override:
         path = Path(override)
         return path if path.is_absolute() else repo_root / path
-    return _workspace_root(repo_root) / "engineering_goals.json"
+    if os.environ.get("ZERO_WORKSPACE"):
+        return _workspace_root(repo_root) / "engineering_goals.json"
+    return repo_root / "runtime" / "goals" / "goals.json"
+
+
+def _repository(repo_root: Path) -> EngineeringGoalRepository:
+    return EngineeringGoalRepository(repo_root, storage_path=_store_path(repo_root))
+
+
+def _runner(repo_root: Path) -> EngineeringGoalRunner:
+    return EngineeringGoalRunner(repo_root=repo_root, repository=_repository(repo_root))
+
+
+def _goal_loop(repo_root: Path) -> EngineeringGoalLoop:
+    repository = _repository(repo_root)
+    return EngineeringGoalLoop(repo_root=repo_root, repository=repository, runner=EngineeringGoalRunner(repo_root=repo_root, repository=repository))
 
 
 def _print_json(data: Any) -> None:
@@ -50,25 +66,18 @@ def _as_mapping(value: Any) -> dict[str, Any]:
 
 def _read_store(repo_root: Path) -> dict[str, Any]:
     path = _store_path(repo_root)
+    goals = _repository(repo_root).list_goals()
+    dependencies: list[dict[str, Any]] = []
     if not path.is_file():
-        return {"schema": GOAL_CLI_SCHEMA, "goals": [], "dependencies": []}
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except Exception:
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    goals = data.get("goals")
-    dependencies = data.get("dependencies")
+        return {"schema": GOAL_CLI_SCHEMA, "goals": goals, "dependencies": dependencies}
+    data = _read_raw_json(path)
+    raw_dependencies = data.get("dependencies") if isinstance(data, Mapping) else []
+    if isinstance(raw_dependencies, list):
+        dependencies = [copy.deepcopy(item) for item in raw_dependencies if isinstance(item, dict)]
     return {
-        "schema": _clean_text(data.get("schema"), GOAL_CLI_SCHEMA),
-        "goals": [copy.deepcopy(item) for item in goals if isinstance(item, dict)] if isinstance(goals, list) else [],
-        "dependencies": (
-            [copy.deepcopy(item) for item in dependencies if isinstance(item, dict)]
-            if isinstance(dependencies, list)
-            else []
-        ),
+        "schema": GOAL_CLI_SCHEMA,
+        "goals": goals,
+        "dependencies": dependencies,
     }
 
 
@@ -82,6 +91,15 @@ def _write_store(repo_root: Path, store: Mapping[str, Any]) -> None:
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _read_raw_json(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        data = {}
+    return data if isinstance(data, dict) else {}
 
 
 def _goal_id(record: Mapping[str, Any]) -> str:
@@ -127,43 +145,36 @@ def _goal_summary(record: Mapping[str, Any]) -> str:
     return _clean_text(record.get("summary") or payload.get("goal") or payload.get("summary"))
 
 
-def _new_goal_id(summary: str, existing_goals: Sequence[Mapping[str, Any]]) -> str:
-    base = "goal_" + hashlib.sha1(summary.encode("utf-8")).hexdigest()[:12]
-    existing = {_goal_id(goal) for goal in existing_goals}
-    if base not in existing:
-        return base
-    suffix = 2
-    while f"{base}_{suffix}" in existing:
-        suffix += 1
-    return f"{base}_{suffix}"
-
-
-def _goal_record(summary: str, existing_goals: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    now = time.time()
-    goal_id = _new_goal_id(summary, existing_goals)
-    return {
-        "goal_id": goal_id,
-        "priority": 0.0,
-        "status": "pending",
-        "created_at": now,
-        "updated_at": now,
-        "last_result_summary": "",
-        "blocked_reason": "",
-        "planning_refs": {"source": "goal_cli"},
-        "lifecycle_refs": {},
-        "payload": {
-            "goal": summary,
-            "goal_id": goal_id,
-            "package_id": goal_id,
-            "task_id": goal_id,
-            "task_type": "engineering_task",
-        },
-        "summary": summary,
-    }
-
-
 def _goal_statuses(goals: Sequence[Mapping[str, Any]]) -> dict[str, str]:
     return {_goal_id(goal): _status(goal) for goal in goals if _goal_id(goal)}
+
+
+def _scheduler_goal_records(goals: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for goal in goals:
+        payload = _as_mapping(goal.get("payload"))
+        goal_id = _goal_id(goal)
+        summary = _goal_summary(goal)
+        records.append(
+            {
+                "goal_id": goal_id,
+                "priority": _priority(goal),
+                "status": _status(goal),
+                "created_at": _created_at(goal),
+                "updated_at": _created_at({"created_at": goal.get("updated_at")}),
+                "payload": {
+                    "goal": summary,
+                    "goal_id": goal_id,
+                },
+                "summary": summary,
+            }
+        )
+        for key in ("parent_goal_ids", "child_goal_ids", "prerequisite_goal_ids", "blocked_by_goal_ids"):
+            if key in goal:
+                records[-1][key] = copy.deepcopy(goal[key])
+            elif key in payload:
+                records[-1][key] = copy.deepcopy(payload[key])
+    return records
 
 
 def _dependency_records_for(goals: Sequence[Mapping[str, Any]], dependencies: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -209,20 +220,149 @@ def _print_goal_list(goals: Sequence[Mapping[str, Any]]) -> None:
     )
 
 
+def _summarize_runner_result(result: Mapping[str, Any]) -> dict[str, Any]:
+    runtime = _as_mapping(result.get("runtime_result"))
+    iterations = runtime.get("iterations") if isinstance(runtime.get("iterations"), list) else []
+    summarized_iterations: list[dict[str, Any]] = []
+    for item in iterations:
+        if not isinstance(item, Mapping):
+            continue
+        continuation = _as_mapping(item.get("continuation_result"))
+        lifecycle = _as_mapping(continuation.get("goal_lifecycle"))
+        summarized_iterations.append(
+            {
+                "iteration": item.get("iteration"),
+                "state": _clean_text(item.get("state")),
+                "goal_id": _clean_text(item.get("goal_id")),
+                "continuation": {
+                    "ok": bool(continuation.get("ok")),
+                    "terminal": bool(continuation.get("terminal")),
+                    "stopped_reason": _clean_text(continuation.get("stopped_reason")),
+                    "cycle_count": int(continuation.get("cycle_count") or 0),
+                    "cycles": [
+                        {
+                            "cycle": cycle.get("cycle"),
+                            "goal_state": _clean_text(cycle.get("goal_state")),
+                            "submitted_to": _clean_text(cycle.get("submitted_to")),
+                            "completed_tasks": copy.deepcopy(cycle.get("completed_tasks"))
+                            if isinstance(cycle.get("completed_tasks"), list)
+                            else [],
+                            "remaining_tasks": copy.deepcopy(cycle.get("remaining_tasks"))
+                            if isinstance(cycle.get("remaining_tasks"), list)
+                            else [],
+                        }
+                        for cycle in continuation.get("cycles", [])
+                        if isinstance(cycle, Mapping)
+                    ],
+                    "goal_lifecycle": {
+                        "goal_id": _clean_text(lifecycle.get("goal_id")),
+                        "goal_state": _clean_text(lifecycle.get("goal_state")),
+                        "completed_tasks": copy.deepcopy(lifecycle.get("completed_tasks"))
+                        if isinstance(lifecycle.get("completed_tasks"), list)
+                        else [],
+                        "remaining_tasks": copy.deepcopy(lifecycle.get("remaining_tasks"))
+                        if isinstance(lifecycle.get("remaining_tasks"), list)
+                        else [],
+                        "failed_tasks": copy.deepcopy(lifecycle.get("failed_tasks"))
+                        if isinstance(lifecycle.get("failed_tasks"), list)
+                        else [],
+                    },
+                },
+            }
+        )
+    request = _as_mapping(result.get("runtime_request"))
+    request_goals = request.get("goals") if isinstance(request.get("goals"), list) else []
+    return {
+        "schema": _clean_text(result.get("schema")),
+        "ok": bool(result.get("ok")),
+        "mode": _clean_text(result.get("mode")),
+        "action": _clean_text(result.get("action")),
+        "goal_id": _clean_text(result.get("goal_id")),
+        "runtime_request": {
+            "schema": _clean_text(request.get("schema")),
+            "mode": _clean_text(request.get("mode")),
+            "selected_goal_id": _clean_text(request.get("selected_goal_id")),
+            "runtime_entrypoint": _clean_text(request.get("runtime_entrypoint")),
+            "goal_count": len(request_goals),
+            "goals": [
+                {
+                    "goal_id": _goal_id(goal),
+                    "summary": _goal_summary(goal),
+                    "status": _status(goal),
+                }
+                for goal in request_goals
+                if isinstance(goal, Mapping)
+            ],
+            "execution_path": copy.deepcopy(request.get("execution_path")) if isinstance(request.get("execution_path"), Mapping) else {},
+        },
+        "runtime_result": {
+            "schema": _clean_text(runtime.get("schema")),
+            "ok": bool(runtime.get("ok")),
+            "mode": _clean_text(runtime.get("mode")),
+            "state": _clean_text(runtime.get("state")),
+            "decision_state": _clean_text(runtime.get("decision_state")),
+            "stop_reason": _clean_text(runtime.get("stop_reason")),
+            "terminal": bool(runtime.get("terminal")),
+            "iterations": summarized_iterations,
+            "execution_path": copy.deepcopy(runtime.get("execution_path")) if isinstance(runtime.get("execution_path"), Mapping) else {},
+        },
+        "runtime_root_cause": copy.deepcopy(result.get("runtime_root_cause")) if isinstance(result.get("runtime_root_cause"), Mapping) else {},
+        "adaptive_decision": copy.deepcopy(result.get("adaptive_decision")) if isinstance(result.get("adaptive_decision"), Mapping) else {},
+        "runtime_stdout": _clean_text(result.get("runtime_stdout")),
+        "execution_path": copy.deepcopy(result.get("execution_path")) if isinstance(result.get("execution_path"), Mapping) else {},
+    }
+
+
+def _summarize_loop_result(result: Mapping[str, Any]) -> dict[str, Any]:
+    cycles = result.get("cycles") if isinstance(result.get("cycles"), list) else []
+    return {
+        "schema": _clean_text(result.get("schema")),
+        "ok": bool(result.get("ok")),
+        "mode": _clean_text(result.get("mode")),
+        "goal_id": _clean_text(result.get("goal_id")),
+        "current_goal_id": _clean_text(result.get("current_goal_id")),
+        "terminal": bool(result.get("terminal")),
+        "stop_reason": _clean_text(result.get("stop_reason")),
+        "max_cycles": int(result.get("max_cycles") or 0),
+        "cycle_count": int(result.get("cycle_count") or len(cycles)),
+        "cycles": [
+            {
+                "cycle_index": int(cycle.get("cycle_index") or 0),
+                "goal_id": _clean_text(cycle.get("goal_id")),
+                "runtime_state": _clean_text(cycle.get("runtime_state")),
+                "adaptive_decision": _clean_text(cycle.get("adaptive_decision")),
+                "adaptive_reason": _clean_text(cycle.get("adaptive_reason")),
+                "continuation_plan": copy.deepcopy(cycle.get("continuation_plan")) if isinstance(cycle.get("continuation_plan"), Mapping) else {},
+                "continuation_work_item": {
+                    "goal_id": _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("goal_id")),
+                    "source_goal_id": _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("source_goal_id")),
+                    "cycle_index": int(_as_mapping(cycle.get("continuation_work_item")).get("cycle_index") or 0),
+                }
+                if isinstance(cycle.get("continuation_work_item"), Mapping)
+                and _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("goal_id"))
+                else {},
+                "root_cause": copy.deepcopy(cycle.get("root_cause")) if isinstance(cycle.get("root_cause"), Mapping) else {},
+            }
+            for cycle in cycles
+            if isinstance(cycle, Mapping)
+        ],
+        "execution_path": copy.deepcopy(result.get("execution_path")) if isinstance(result.get("execution_path"), Mapping) else {},
+    }
+
+
 def _handle_add(argv: list[str], repo_root: Path) -> bool:
-    if len(argv) < 3 or argv[1] != "add":
+    if len(argv) < 2 or argv[1] != "add":
         return False
     summary = " ".join(argv[2:]).strip()
-    if not summary:
-        _print_json({"schema": GOAL_CLI_SCHEMA, "ok": False, "error": "goal_summary_required"})
-        return True
-    store = _read_store(repo_root)
-    goals = _ordered_goals(store["goals"])
-    goal = _goal_record(summary, goals)
-    goals.append(goal)
-    store["goals"] = goals
-    _write_store(repo_root, store)
-    EngineeringGoalPortfolio().decide_next_goal(goals)
+    goal = _repository(repo_root).save_goal(
+        {
+            "summary": summary or "Untitled engineering goal",
+            "status": "pending",
+            "priority": 0.0,
+            "metadata": {"source": "goal_cli"},
+        }
+    )
+    EngineeringGoalPortfolio().decide_next_goal(_repository(repo_root).list_goals())
     _print_json({"schema": GOAL_CLI_SCHEMA, "ok": True, "created": True, "goal": goal})
     return True
 
@@ -230,17 +370,16 @@ def _handle_add(argv: list[str], repo_root: Path) -> bool:
 def _handle_list(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 2 or argv[1] != "list":
         return False
-    store = _read_store(repo_root)
-    EngineeringGoalPortfolio().decide_next_goal(store["goals"])
-    _print_goal_list(store["goals"])
+    goals = _repository(repo_root).list_goals()
+    EngineeringGoalPortfolio().decide_next_goal(goals)
+    _print_goal_list(goals)
     return True
 
 
 def _handle_status(argv: list[str], repo_root: Path) -> bool:
-    if len(argv) != 3 or argv[1] != "status":
+    if len(argv) != 3 or argv[1] not in {"status", "show"}:
         return False
-    store = _read_store(repo_root)
-    goal = _find_goal(store["goals"], argv[2])
+    goal = _repository(repo_root).load_goal(argv[2])
     _print_json({"schema": GOAL_CLI_SCHEMA, "ok": goal is not None, "goal": goal or {}, "goal_id": argv[2]})
     return True
 
@@ -248,9 +387,31 @@ def _handle_status(argv: list[str], repo_root: Path) -> bool:
 def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 2 or argv[1] != "run-next":
         return False
-    store = _read_store(repo_root)
-    result = EngineeringGoalScheduler().schedule_next_goal(store["goals"])
-    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "scheduler_result": result})
+    result = _runner(repo_root).run_next_goal()
+    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
+    return True
+
+
+def _handle_run(argv: list[str], repo_root: Path) -> bool:
+    if len(argv) != 3 or argv[1] != "run":
+        return False
+    result = _runner(repo_root).run_goal(argv[2])
+    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
+    return True
+
+
+def _handle_loop(argv: list[str], repo_root: Path) -> bool:
+    if len(argv) not in {3, 4} or argv[1] != "loop":
+        return False
+    max_cycles = 3
+    if len(argv) == 4:
+        try:
+            max_cycles = int(argv[3])
+        except ValueError:
+            _print_json({"schema": GOAL_CLI_SCHEMA, "ok": False, "error": "invalid_max_cycles", "goal_id": argv[2]})
+            return True
+    result = _goal_loop(repo_root).run_until_terminal(argv[2], max_cycles=max_cycles)
+    _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "cycles_summary": _summarize_loop_result(result)})
     return True
 
 
@@ -261,14 +422,15 @@ def _handle_scheduler_status(argv: list[str], repo_root: Path) -> bool:
     scheduler = EngineeringGoalScheduler()
     command = argv[1]
     goal_id = argv[2]
+    goals = _scheduler_goal_records(store["goals"])
     if command == "pause":
-        result = scheduler.pause_goal(store["goals"], goal_id)
+        result = scheduler.pause_goal(goals, goal_id)
     elif command == "resume":
-        result = scheduler.resume_goal(store["goals"], goal_id)
+        result = scheduler.resume_goal(goals, goal_id)
     elif command == "cancel":
-        result = scheduler.cancel_goal(store["goals"], goal_id)
+        result = scheduler.cancel_goal(goals, goal_id)
     else:
-        result = scheduler.defer_goal(store["goals"], goal_id)
+        result = scheduler.defer_goal(goals, goal_id)
     if result.get("ok"):
         store["goals"] = result.get("goals", store["goals"])
         _write_store(repo_root, store)
@@ -306,6 +468,8 @@ def try_handle_goal_command(argv: list[str], *, repo_root: Path) -> bool:
         _handle_add,
         _handle_list,
         _handle_status,
+        _handle_run,
+        _handle_loop,
         _handle_run_next,
         _handle_scheduler_status,
         _handle_deps,
