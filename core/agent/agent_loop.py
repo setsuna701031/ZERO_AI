@@ -324,9 +324,15 @@ class AgentLoop:
                 result["agent_loop_runtime_route"] = "planner_autonomous_repair"
             return result
 
+        engineering_goal_result = self._try_handle_engineering_goal_route(text)
+        if engineering_goal_result is not None:
+            engineering_goal_result["agent_loop_runtime_route"] = "engineering_goal_stack"
+            return engineering_goal_result
+
         engineering_task_result = self._try_handle_engineering_task_route(text)
         if engineering_task_result is not None:
             engineering_task_result["agent_loop_runtime_route"] = "engineering_task_runner"
+            engineering_task_result["legacy_direct_json_engineering_task_runner"] = True
             return engineering_task_result
 
         work_package_result = self._try_handle_work_package_route(text)
@@ -336,8 +342,178 @@ class AgentLoop:
 
         return None
 
+    def _try_handle_engineering_goal_route(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Route opted-in engineering JSON tasks through persisted Goal Stack."""
+
+        text = str(user_input or "").strip()
+        if not text or not (text.startswith("{") and text.endswith("}")):
+            return None
+
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return None
+        if not isinstance(payload, dict):
+            return None
+
+        task_type = str(payload.get("task_type") or payload.get("type") or "").strip().lower()
+        route = str(payload.get("route") or payload.get("engineering_route") or "").strip().lower()
+        explicit_goal_route = bool(
+            payload.get("engineering_goal_route")
+            or payload.get("adaptive_engineering_goal")
+            or payload.get("adaptive_planning")
+            or route in {"engineering_goal", "engineering_goal_stack", "adaptive_engineering_goal"}
+        )
+        if task_type not in {"engineering_task", "engineering_goal"} or not explicit_goal_route:
+            return None
+
+        package_payload = payload.get("package") if isinstance(payload.get("package"), dict) else dict(payload)
+        repo_root = str(payload.get("repo_root") or package_payload.get("repo_root") or ".")
+        summary = str(
+            payload.get("summary")
+            or payload.get("goal")
+            or package_payload.get("summary")
+            or package_payload.get("goal")
+            or package_payload.get("task_id")
+            or "Untitled engineering goal"
+        ).strip()
+        goal_id = str(payload.get("goal_id") or package_payload.get("goal_id") or "").strip()
+
+        try:
+            from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+            from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+            repository = EngineeringGoalRepository(repo_root)
+            goal_record = {
+                "summary": summary,
+                "status": "pending",
+                "priority": float(payload.get("priority") or package_payload.get("priority") or 0.0),
+                "payload": {
+                    **copy.deepcopy(package_payload),
+                    "goal": summary,
+                    "task_type": "engineering_task",
+                    "engineering_goal_lifecycle": True,
+                },
+                "metadata": {
+                    "source": "agent_loop_engineering_goal_route",
+                    "legacy_direct_json_engineering_task_runner": False,
+                },
+            }
+            if goal_id:
+                goal_record["goal_id"] = goal_id
+            goal = repository.save_goal(goal_record)
+            loop_result = EngineeringGoalLoop(repo_root=repo_root, repository=repository).run_until_terminal(
+                goal["goal_id"],
+                max_cycles=int(payload.get("max_cycles") or 3),
+            )
+        except Exception as exc:
+            goal = {"goal_id": goal_id, "summary": summary}
+            loop_result = {
+                "schema": "zero.engineering_goal.agent_loop_dispatch_error.v1",
+                "ok": False,
+                "mode": "engineering_goal_stack",
+                "goal_id": goal_id,
+                "error": f"engineering goal dispatch failed: {type(exc).__name__}: {exc}",
+                "stop_reason": "engineering_goal_dispatch_error",
+                "cycles": [],
+            }
+
+        ok = bool(loop_result.get("ok")) if isinstance(loop_result, dict) else False
+        resolved_goal_id = str(loop_result.get("goal_id") or goal.get("goal_id") or goal_id or "")
+        stop_reason = str(loop_result.get("stop_reason") or "")
+        final_answer = (
+            f"engineering goal {resolved_goal_id} completed"
+            if ok
+            else f"engineering goal {resolved_goal_id} blocked or failed"
+        )
+        if stop_reason:
+            final_answer += f": {stop_reason}"
+
+        route_record = {
+            "mode": "engineering_goal_stack",
+            "task": True,
+            "forced_route": True,
+            "engineering_task": True,
+            "engineering_goal_route": True,
+            "legacy_direct_json_engineering_task_runner": False,
+            "goal_id": resolved_goal_id,
+            "repo_root": repo_root,
+            "authority_path": "AgentLoop -> EngineeringGoalRepository -> EngineeringGoalLoop -> EngineeringGoalRunner -> EngineeringRuntimeOrchestrator",
+        }
+        plan = {
+            "ok": ok,
+            "planner_mode": "engineering_goal_stack_v1",
+            "intent": "engineering_goal",
+            "delegated_to": "core.tasks.engineering_goal_loop.EngineeringGoalLoop.run_until_terminal",
+            "goal": copy.deepcopy(goal),
+            "loop_result": copy.deepcopy(loop_result),
+            "final_answer": final_answer,
+            "steps": [
+                {
+                    "type": "engineering_goal_loop_run",
+                    "goal_id": resolved_goal_id,
+                }
+            ],
+            "meta": {
+                "fallback_used": False,
+                "step_count": 1,
+                "forced_route": True,
+                "agent_loop_delegates_only": True,
+                "goal_stack_entrypoint": True,
+                "direct_engineering_task_runner": False,
+            },
+        }
+        execution = {
+            "ok": ok,
+            "steps_executed": 1,
+            "results": [
+                {
+                    "step_index": 1,
+                    "step": {"type": "engineering_goal_loop_run", "goal_id": resolved_goal_id},
+                    "result": copy.deepcopy(loop_result),
+                }
+            ],
+            "execution_log": [
+                {
+                    "type": "engineering_goal_loop_run",
+                    "status": "success" if ok else "blocked_or_failed",
+                    "ok": ok,
+                    "data": copy.deepcopy(loop_result),
+                }
+            ],
+            "execution_trace": [
+                {
+                    "type": "engineering_goal_loop_run",
+                    "status": "success" if ok else "blocked_or_failed",
+                    "ok": ok,
+                    "data": copy.deepcopy(loop_result),
+                }
+            ],
+            "last_result": copy.deepcopy(loop_result),
+            "final_answer": final_answer,
+            "error": None if ok else stop_reason or "engineering_goal_failed",
+        }
+        return self._make_agent_response(
+            ok=ok,
+            mode="engineering_goal_stack",
+            context={},
+            route=route_record,
+            plan=plan,
+            execution=execution,
+            final_answer=final_answer,
+            error=None if ok else stop_reason or "engineering_goal_failed",
+            extra={
+                "goal": copy.deepcopy(goal),
+                "goal_id": resolved_goal_id,
+                "loop_result": copy.deepcopy(loop_result),
+                "execution_mode": "engineering_goal_stack",
+                "legacy_direct_json_engineering_task_runner": False,
+                "final_message": final_answer,
+            },
+        )
+
     def _try_handle_engineering_task_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Delegate JSON engineering-task requests to EngineeringTaskRunner."""
+        """Legacy direct JSON engineering-task route to EngineeringTaskRunner."""
 
         text = str(user_input or "").strip()
         if not text:
@@ -400,6 +576,7 @@ class AgentLoop:
             "engineering_task": True,
             "package_id": package_id,
             "repo_root": repo_root,
+            "legacy_direct_json_engineering_task_runner": True,
             "authority_path": "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake",
         }
         plan = {
@@ -426,6 +603,7 @@ class AgentLoop:
                 "forced_route": True,
                 "agent_loop_delegates_only": True,
                 "engineering_task_runner_entrypoint": True,
+                "legacy_direct_json_engineering_task_runner": True,
             },
         }
         execution = {
@@ -506,6 +684,7 @@ class AgentLoop:
                 "evidence_path": evidence_path,
                 "result_path": result_path,
                 "execution_mode": "engineering_task_runner",
+                "legacy_direct_json_engineering_task_runner": True,
                 "final_message": result.get("final_message") if isinstance(result, dict) else final_answer,
             },
         )

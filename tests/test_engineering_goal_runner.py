@@ -6,6 +6,7 @@ from core.tasks.engineering_goal_runner import (
     ENGINEERING_GOAL_RUNTIME_REQUEST_SCHEMA,
     EngineeringGoalRunner,
 )
+from core.tasks.engineering_planning_adapter import EngineeringPlanningOnlyAdapter
 
 
 class SpyRuntimeOrchestrator:
@@ -117,3 +118,11 @@ def test_run_goal_reports_runtime_failure_without_hiding_it(tmp_path) -> None:
     assert result["ok"] is False
     assert result["runtime_result"]["state"] == "replan"
     assert result["runtime_root_cause"]["state"] == "replan"
+
+
+def test_goal_runner_uses_named_planning_only_boundary() -> None:
+    import core.tasks.engineering_goal_runner as runner_module
+
+    assert runner_module.EngineeringPlanningOnlyAdapter is EngineeringPlanningOnlyAdapter
+    assert not hasattr(runner_module, "_PlanningOnlyLoop")
+    assert not hasattr(runner_module, "_NoMemoryStore")
