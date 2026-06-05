@@ -51,6 +51,24 @@ def _load_program_cli() -> Callable[..., bool]:
     return try_handle_program_command
 
 
+def _load_artifact_cli() -> Callable[..., bool]:
+    from cli.artifact_cli import try_handle_artifact_command
+
+    return try_handle_artifact_command
+
+
+def _load_evidence_cli() -> Callable[..., bool]:
+    from cli.evidence_cli import try_handle_evidence_command
+
+    return try_handle_evidence_command
+
+
+def _load_issue_cli() -> Callable[..., bool]:
+    from cli.issue_cli import try_handle_issue_command
+
+    return try_handle_issue_command
+
+
 def _is_help_command(argv: List[str]) -> bool:
     normalized = [str(item).strip().lower() for item in argv if str(item).strip()]
     return len(normalized) == 1 and normalized[0] in {"--help", "-h", "help", "/help"}
@@ -74,6 +92,30 @@ def _print_thin_help() -> None:
     print("  python app.py program show <program_id>")
     print("  python app.py program add-portfolio <program_id> <portfolio_id>")
     print("  python app.py program remove-portfolio <program_id> <portfolio_id>")
+    print("  python app.py program run-next <program_id>")
+    print("  python app.py program cycle <program_id>")
+    print("  python app.py program run-until-idle <program_id>")
+    print("  python app.py program state <program_id>")
+    print("  python app.py program summary <program_id>")
+    print("  python app.py program tree <program_id>")
+    print("  python app.py program observability <program_id>")
+    print("  python app.py artifact list-goal <goal_id>")
+    print("  python app.py artifact list-portfolio <portfolio_id>")
+    print("  python app.py artifact list-program <program_id>")
+    print("  python app.py artifact show <artifact_id>")
+    print("  python app.py artifact state")
+    print("  python app.py artifact summary")
+    print("  python app.py evidence create <name> [--artifact <artifact_id>] [--goal <goal_id>]")
+    print("  python app.py evidence list")
+    print("  python app.py evidence show <evidence_id>")
+    print("  python app.py evidence summary")
+    print("  python app.py evidence state")
+    print("  python app.py evidence list-artifact <artifact_id>")
+    print("  python app.py evidence list-goal <goal_id>")
+    print("  python app.py evidence list-portfolio <portfolio_id>")
+    print("  python app.py evidence list-program <program_id>")
+    print("  python app.py issue list")
+    print("  python app.py issue show <issue_id>")
     print("  python app.py portfolio create <name>")
     print("  python app.py portfolio list")
     print("  python app.py portfolio show <portfolio_id>")
@@ -139,6 +181,27 @@ def _try_fast_cli(argv: List[str]) -> bool:
     try:
         portfolio_cli = _load_portfolio_cli()
         if bool(portfolio_cli(argv, repo_root=_repo_root())):
+            return True
+    except Exception:
+        pass
+
+    try:
+        artifact_cli = _load_artifact_cli()
+        if bool(artifact_cli(argv, repo_root=_repo_root())):
+            return True
+    except Exception:
+        pass
+
+    try:
+        evidence_cli = _load_evidence_cli()
+        if bool(evidence_cli(argv, repo_root=_repo_root())):
+            return True
+    except Exception:
+        pass
+
+    try:
+        issue_cli = _load_issue_cli()
+        if bool(issue_cli(argv, repo_root=_repo_root())):
             return True
     except Exception:
         pass

@@ -12,6 +12,7 @@ from core.tasks.engineering_goal_portfolio import EngineeringGoalPortfolio
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_goal_runner import EngineeringGoalRunner
 from core.tasks.engineering_goal_scheduler import EngineeringGoalScheduler
+from core.tasks.engineering_issue_reporter import EngineeringIssueReporter
 
 
 GOAL_CLI_SCHEMA = "zero.goal_cli.v1"
@@ -38,17 +39,37 @@ def _store_path(repo_root: Path) -> Path:
     return repo_root / "runtime" / "goals" / "goals.json"
 
 
+def _issue_store_path(repo_root: Path) -> Path:
+    override = os.environ.get("ZERO_ISSUE_STORE", "").strip()
+    if override:
+        path = Path(override)
+        return path if path.is_absolute() else repo_root / path
+    if os.environ.get("ZERO_WORKSPACE"):
+        return _workspace_root(repo_root) / "engineering_issues.json"
+    return repo_root / "runtime" / "issues" / "issues.json"
+
+
+def _issue_reporter(repo_root: Path) -> EngineeringIssueReporter:
+    return EngineeringIssueReporter(repo_root, storage_path=_issue_store_path(repo_root))
+
+
 def _repository(repo_root: Path) -> EngineeringGoalRepository:
     return EngineeringGoalRepository(repo_root, storage_path=_store_path(repo_root))
 
 
 def _runner(repo_root: Path) -> EngineeringGoalRunner:
-    return EngineeringGoalRunner(repo_root=repo_root, repository=_repository(repo_root))
+    return EngineeringGoalRunner(repo_root=repo_root, repository=_repository(repo_root), issue_reporter=_issue_reporter(repo_root))
 
 
 def _goal_loop(repo_root: Path) -> EngineeringGoalLoop:
     repository = _repository(repo_root)
-    return EngineeringGoalLoop(repo_root=repo_root, repository=repository, runner=EngineeringGoalRunner(repo_root=repo_root, repository=repository))
+    reporter = _issue_reporter(repo_root)
+    return EngineeringGoalLoop(
+        repo_root=repo_root,
+        repository=repository,
+        runner=EngineeringGoalRunner(repo_root=repo_root, repository=repository, issue_reporter=reporter),
+        issue_reporter=reporter,
+    )
 
 
 def _print_json(data: Any) -> None:
@@ -310,6 +331,10 @@ def _summarize_runner_result(result: Mapping[str, Any]) -> dict[str, Any]:
         "adaptive_decision": copy.deepcopy(result.get("adaptive_decision")) if isinstance(result.get("adaptive_decision"), Mapping) else {},
         "runtime_stdout": _clean_text(result.get("runtime_stdout")),
         "execution_path": copy.deepcopy(result.get("execution_path")) if isinstance(result.get("execution_path"), Mapping) else {},
+        "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
+        "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
+        "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
+        "success_allowed": bool(result.get("success_allowed", True)),
     }
 
 
@@ -347,6 +372,10 @@ def _summarize_loop_result(result: Mapping[str, Any]) -> dict[str, Any]:
             if isinstance(cycle, Mapping)
         ],
         "execution_path": copy.deepcopy(result.get("execution_path")) if isinstance(result.get("execution_path"), Mapping) else {},
+        "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
+        "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
+        "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
+        "success_allowed": bool(result.get("success_allowed", True)),
     }
 
 

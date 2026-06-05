@@ -1122,3 +1122,157 @@ Engineering verdict:
 ```text
 Engineering Goal Scheduler v1: SEALED
 ```
+
+---
+
+## 2026-06-05 - Engineering Issue Reporting Contract
+
+Completed and committed the Engineering Issue Reporting Contract layer.
+
+Purpose:
+
+```text
+AI / engineering task execution
+-> issue detection
+-> mandatory issue summary
+-> result contract validation
+-> success gate
+-> non-mainline issue reporting
+```
+
+This package turns the previously discussed non-mainline issue reporting rule
+into an enforceable engineering contract. ZERO now has a formal path requiring
+engineering results to surface issues instead of silently ignoring them when
+they are outside the current mainline scope.
+
+Completed:
+
+- EngineeringIssueReporter
+- EngineeringIssueSummary
+- EngineeringResultContract
+- EngineeringIssueContract
+- mandatory result fields for issue-aware engineering outputs
+- success gate behavior for blocking issues
+- deferred issue reporting for non-blocking / out-of-scope issues
+- integration checks for Goal / GoalLoop / Program / Portfolio summaries
+
+Contract output fields:
+
+```text
+task_result
+issues_found
+issues_deferred / deferred_issues
+blocking_issues
+success_allowed
+```
+
+Boundary decision:
+
+```text
+Issue reporting is contract-layer enforcement.
+Runtime was not modified.
+Scheduler was not modified.
+Memory was not modified.
+UI was not modified.
+Non-mainline issues must be reported instead of silently skipped.
+Blocking issues must prevent success.
+Deferred issues may be reported without blocking task completion.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_engineering_result_contract.py tests/test_engineering_issue_summary_contract_integration.py -q
+-> 9 passed
+-> 8 passed
+
+python -m pytest tests/test_engineering_issue_summary_integration.py tests/test_engineering_issue_success_gate.py -q
+-> 8 passed
+
+python -m pytest tests/test_engineering_goal_runner.py tests/test_engineering_goal_loop.py tests/test_engineering_program_cycle.py tests/test_engineering_portfolio_cycle.py -q
+-> 21 passed
+```
+
+Commit:
+
+```text
+103c903e Add engineering issue reporting contract
+```
+
+Engineering verdict:
+
+```text
+Engineering Issue Reporting Contract: SEALED
+```
+
+---
+
+## 2026-06-05 - Engineering Program Layer
+
+Completed and committed the Engineering Program Layer.
+
+Purpose:
+
+```text
+program
+-> portfolios
+-> coordinator
+-> state summary
+-> policy
+-> observability
+-> bounded program cycle
+```
+
+This package adds the program-level orchestration layer above engineering
+portfolios while preserving the existing responsibility boundaries. The program
+layer coordinates portfolio progression and summarizes program state; it does
+not take over runtime execution, scheduler ownership, memory persistence, or UI
+behavior.
+
+Completed:
+
+- EngineeringProgramCoordinator
+- EngineeringProgramCycle
+- EngineeringProgramObservability
+- EngineeringProgramPolicy
+- EngineeringProgramState
+- program-level tests for coordinator, state, policy, summary, tree summary,
+  portfolio flow, and auto-cycle behavior
+
+Boundary decision:
+
+```text
+Program coordinates portfolios only.
+Program does not execute tasks directly.
+Program does not own RuntimeOrchestrator.
+Program does not own Scheduler internals.
+Program does not own Memory or UI.
+Program state and observability remain separate from runtime execution.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_engineering_program_coordinator.py tests/test_engineering_program_cycle.py tests/test_engineering_program_state.py tests/test_engineering_program_policy.py tests/test_engineering_program_summary.py tests/test_engineering_program_tree_summary.py tests/test_engineering_program_portfolio_flow.py tests/test_engineering_program_auto_cycle.py -q
+-> 38 passed
+```
+
+Commit:
+
+```text
+7f464072 Add engineering program layer
+```
+
+Engineering verdict:
+
+```text
+Engineering Program Layer: SEALED
+```
+
+Next mainline direction:
+
+```text
+Finish collecting the remaining Evidence and Artifact packages as separate
+commits, then review the modified legacy entry files before connecting anything
+further into Runtime.
+```

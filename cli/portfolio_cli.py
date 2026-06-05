@@ -8,6 +8,8 @@ from typing import Any, Mapping
 
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+from core.tasks.engineering_issue_reporter import EngineeringIssueReporter
+from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoordinator
 from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
@@ -56,6 +58,20 @@ def _goal_store_path(repo_root: Path) -> Path:
     return repo_root / "runtime" / "goals" / "goals.json"
 
 
+def _issue_store_path(repo_root: Path) -> Path:
+    override = os.environ.get("ZERO_ISSUE_STORE", "").strip()
+    if override:
+        path = Path(override)
+        return path if path.is_absolute() else repo_root / path
+    if os.environ.get("ZERO_WORKSPACE"):
+        return _workspace_root(repo_root) / "engineering_issues.json"
+    return repo_root / "runtime" / "issues" / "issues.json"
+
+
+def _issue_reporter(repo_root: Path) -> EngineeringIssueReporter:
+    return EngineeringIssueReporter(repo_root, storage_path=_issue_store_path(repo_root))
+
+
 def _portfolio_repository(repo_root: Path) -> EngineeringPortfolioRepository:
     return EngineeringPortfolioRepository(repo_root, storage_path=_portfolio_store_path(repo_root))
 
@@ -67,18 +83,20 @@ def _goal_repository(repo_root: Path) -> EngineeringGoalRepository:
 def _coordinator(repo_root: Path) -> EngineeringPortfolioCoordinator:
     portfolio_repository = _portfolio_repository(repo_root)
     goal_repository = _goal_repository(repo_root)
+    reporter = _issue_reporter(repo_root)
     return EngineeringPortfolioCoordinator(
         repo_root=repo_root,
         portfolio_repository=portfolio_repository,
         goal_repository=goal_repository,
-        goal_loop=EngineeringGoalLoop(repo_root=repo_root, repository=goal_repository),
+        goal_loop=EngineeringGoalLoop(repo_root=repo_root, repository=goal_repository, issue_reporter=reporter),
     )
 
 
 def _portfolio_cycle(repo_root: Path) -> EngineeringPortfolioCycle:
     portfolio_repository = _portfolio_repository(repo_root)
     goal_repository = _goal_repository(repo_root)
-    goal_loop = EngineeringGoalLoop(repo_root=repo_root, repository=goal_repository)
+    reporter = _issue_reporter(repo_root)
+    goal_loop = EngineeringGoalLoop(repo_root=repo_root, repository=goal_repository, issue_reporter=reporter)
     coordinator = EngineeringPortfolioCoordinator(
         repo_root=repo_root,
         portfolio_repository=portfolio_repository,
@@ -91,6 +109,7 @@ def _portfolio_cycle(repo_root: Path) -> EngineeringPortfolioCycle:
         goal_repository=goal_repository,
         goal_loop=goal_loop,
         coordinator=coordinator,
+        issue_reporter=reporter,
     )
 
 
@@ -135,6 +154,10 @@ def _coordinator_summary(result: Mapping[str, Any]) -> dict[str, Any]:
             ],
         },
         "updated_goal": copy.deepcopy(result.get("updated_goal")) if isinstance(result.get("updated_goal"), Mapping) else {},
+        "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
+        "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
+        "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
+        "success_allowed": bool(result.get("success_allowed", True)),
     }
 
 
@@ -154,6 +177,10 @@ def _cycle_summary(result: Mapping[str, Any]) -> dict[str, Any]:
         "skipped_goal_count": int(result.get("skipped_goal_count") or 0),
         "runs": [copy.deepcopy(dict(run)) for run in runs if isinstance(run, Mapping)],
         "portfolio_state": copy.deepcopy(result.get("portfolio_state")) if isinstance(result.get("portfolio_state"), Mapping) else {},
+        "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
+        "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
+        "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
+        "success_allowed": bool(result.get("success_allowed", True)),
     }
 
 
@@ -173,9 +200,17 @@ def _portfolio_state_summary(result: Mapping[str, Any]) -> dict[str, Any]:
 
 def _portfolio_full_summary(result: Mapping[str, Any]) -> dict[str, Any]:
     state_summary = result.get("portfolio_summary") if isinstance(result.get("portfolio_summary"), Mapping) else {}
+    issue_fields = {
+        "issues_found": copy.deepcopy(result.get("issues_found")) if isinstance(result.get("issues_found"), list) else [],
+        "blocking_issues": copy.deepcopy(result.get("blocking_issues")) if isinstance(result.get("blocking_issues"), list) else [],
+        "deferred_issues": copy.deepcopy(result.get("deferred_issues")) if isinstance(result.get("deferred_issues"), list) else [],
+        "success_allowed": bool(result.get("success_allowed", True)),
+    }
     if state_summary:
-        return copy.deepcopy(dict(state_summary))
-    return {
+        summary = copy.deepcopy(dict(state_summary))
+        summary.update(issue_fields)
+        return summary
+    summary = {
         "schema": _clean_text(result.get("schema")),
         "ok": bool(result.get("ok")),
         "portfolio_id": _clean_text(result.get("portfolio_id")),
@@ -184,6 +219,8 @@ def _portfolio_full_summary(result: Mapping[str, Any]) -> dict[str, Any]:
         "goals": copy.deepcopy(result.get("goals")) if isinstance(result.get("goals"), list) else [],
         "missing_goal_ids": copy.deepcopy(result.get("missing_goal_ids")) if isinstance(result.get("missing_goal_ids"), list) else [],
     }
+    summary.update(issue_fields)
+    return summary
 
 
 def _handle_create(argv: list[str], repo_root: Path) -> bool:
@@ -257,6 +294,7 @@ def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 3 or argv[1] != "run-next":
         return False
     result = _coordinator(repo_root).run_next_goal(argv[2])
+    result = apply_engineering_issue_summary(result, repo_root=repo_root, issue_reporter=_issue_reporter(repo_root))
     _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": bool(result.get("ok")), "coordinator_result": _coordinator_summary(result)})
     return True
 
@@ -304,6 +342,7 @@ def _handle_summary(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 3 or argv[1] != "summary":
         return False
     result = _coordinator(repo_root).summarize_portfolio_state(argv[2])
+    result = apply_engineering_issue_summary(result, repo_root=repo_root, issue_reporter=_issue_reporter(repo_root))
     _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": bool(result.get("ok")), "portfolio_summary": _portfolio_full_summary(result)})
     return True
 

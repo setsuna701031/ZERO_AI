@@ -17,6 +17,7 @@ from typing import Any, Mapping, Sequence
 from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_runtime_orchestrator import EngineeringRuntimeOrchestrator
 
 
@@ -76,11 +77,13 @@ class EngineeringGoalRunner:
         repository: EngineeringGoalRepository | Any | None = None,
         runtime_orchestrator: EngineeringRuntimeOrchestrator | Any | None = None,
         adaptive_planner: EngineeringAdaptivePlanner | Any | None = None,
+        issue_reporter: Any | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.repository = repository or EngineeringGoalRepository(self.repo_root)
         self.runtime_orchestrator = runtime_orchestrator
         self.adaptive_planner = adaptive_planner or EngineeringAdaptivePlanner()
+        self.issue_reporter = issue_reporter
 
     def run_goal(self, goal_id: str) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
@@ -161,7 +164,8 @@ class EngineeringGoalRunner:
         }
 
     def _not_found_result(self, goal_id: str) -> dict[str, Any]:
-        return {
+        return apply_engineering_issue_summary(
+            {
             "schema": ENGINEERING_GOAL_RUNNER_SCHEMA,
             "ok": False,
             "mode": "engineering_goal_runner",
@@ -183,7 +187,10 @@ class EngineeringGoalRunner:
                 "runtime_orchestrator_owns_runtime_loop": False,
                 "direct_execution": False,
             },
-        }
+            },
+            repo_root=self.repo_root,
+            issue_reporter=self.issue_reporter,
+        )
 
     def _run_runtime(self, request: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
         stream = io.StringIO()
@@ -216,7 +223,8 @@ class EngineeringGoalRunner:
         runtime_root_cause: Mapping[str, Any],
         adaptive_decision: Mapping[str, Any],
     ) -> dict[str, Any]:
-        return {
+        return apply_engineering_issue_summary(
+            {
             "schema": ENGINEERING_GOAL_RUNNER_SCHEMA,
             "ok": bool(ok),
             "mode": "engineering_goal_runner",
@@ -237,7 +245,10 @@ class EngineeringGoalRunner:
                 "new_execution_path": False,
             },
             "updated_at": time.time(),
-        }
+            },
+            repo_root=self.repo_root,
+            issue_reporter=self.issue_reporter,
+        )
 
     def _runtime_root_cause(self, runtime_result: Mapping[str, Any]) -> dict[str, Any]:
         iterations = runtime_result.get("iterations") if isinstance(runtime_result.get("iterations"), list) else []

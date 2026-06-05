@@ -15,6 +15,7 @@ from typing import Any, Mapping
 
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoordinator
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
 
@@ -45,11 +46,17 @@ class EngineeringPortfolioCycle:
         portfolio_repository: EngineeringPortfolioRepository | Any | None = None,
         goal_repository: EngineeringGoalRepository | Any | None = None,
         goal_loop: EngineeringGoalLoop | Any | None = None,
+        issue_reporter: Any | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.portfolio_repository = portfolio_repository or EngineeringPortfolioRepository(self.repo_root)
         self.goal_repository = goal_repository or EngineeringGoalRepository(self.repo_root)
-        self.goal_loop = goal_loop or EngineeringGoalLoop(repo_root=self.repo_root, repository=self.goal_repository)
+        self.issue_reporter = issue_reporter
+        self.goal_loop = goal_loop or EngineeringGoalLoop(
+            repo_root=self.repo_root,
+            repository=self.goal_repository,
+            issue_reporter=self.issue_reporter,
+        )
         self.coordinator = coordinator or EngineeringPortfolioCoordinator(
             repo_root=self.repo_root,
             portfolio_repository=self.portfolio_repository,
@@ -151,7 +158,8 @@ class EngineeringPortfolioCycle:
                     if goal_id:
                         skipped_goal_ids.add(goal_id)
 
-        return {
+        return apply_engineering_issue_summary(
+            {
             "schema": ENGINEERING_PORTFOLIO_CYCLE_SUMMARY_SCHEMA,
             "ok": _clean_text(stop_reason) not in {"portfolio_not_found"},
             "portfolio_id": _clean_text(portfolio_id),
@@ -166,7 +174,10 @@ class EngineeringPortfolioCycle:
             "runs": [copy.deepcopy(dict(run)) for run in runs],
             "selections": [copy.deepcopy(dict(selection)) for selection in selections],
             "updated_at": time.time(),
-        }
+            },
+            repo_root=self.repo_root,
+            issue_reporter=self.issue_reporter,
+        )
 
     def _record_terminal_status(self, goal_id: str, loop_result: Mapping[str, Any]) -> dict[str, Any]:
         stop_reason = _clean_text(loop_result.get("stop_reason")).lower()

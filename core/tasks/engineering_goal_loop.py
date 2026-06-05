@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_goal_runner import EngineeringGoalRunner
+from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 
 
 ENGINEERING_GOAL_LOOP_SCHEMA = "zero.engineering_goal_loop.v1"
@@ -39,10 +40,16 @@ class EngineeringGoalLoop:
         repo_root: str | Path,
         repository: EngineeringGoalRepository | Any | None = None,
         runner: EngineeringGoalRunner | Any | None = None,
+        issue_reporter: Any | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.repository = repository or EngineeringGoalRepository(self.repo_root)
-        self.runner = runner or EngineeringGoalRunner(repo_root=self.repo_root, repository=self.repository)
+        self.issue_reporter = issue_reporter
+        self.runner = runner or EngineeringGoalRunner(
+            repo_root=self.repo_root,
+            repository=self.repository,
+            issue_reporter=self.issue_reporter,
+        )
         self._last_cycle: dict[str, Any] = {}
 
     def run_until_terminal(self, goal_id: str, max_cycles: int = 3) -> dict[str, Any]:
@@ -82,7 +89,8 @@ class EngineeringGoalLoop:
             cycle["continuation_work_item"] = work_item
             current_goal_id = _clean_text(work_item.get("goal_id"), current_goal_id)
 
-        return {
+        return apply_engineering_issue_summary(
+            {
             "schema": ENGINEERING_GOAL_LOOP_SCHEMA,
             "ok": terminal and bool(cycles) and _clean_text(cycles[-1].get("adaptive_decision")) != "blocked",
             "mode": "engineering_goal_loop",
@@ -103,7 +111,10 @@ class EngineeringGoalLoop:
                 "unbounded_loop": False,
             },
             "updated_at": time.time(),
-        }
+            },
+            repo_root=self.repo_root,
+            issue_reporter=self.issue_reporter,
+        )
 
     def run_one_cycle(self, goal_id: str, *, cycle_index: int = 0) -> dict[str, Any]:
         runner_result = self.runner.run_goal(_clean_text(goal_id))
