@@ -65,6 +65,7 @@ class EngineeringPortfolio:
     name: str
     goal_ids: list[str] = field(default_factory=list)
     description: str = ""
+    lifecycle_state: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
@@ -82,6 +83,7 @@ class EngineeringPortfolio:
             name=name,
             goal_ids=_clean_goal_refs(value.get("goal_ids")),
             description=_clean_text(value.get("description")),
+            lifecycle_state=_clean_text(value.get("lifecycle_state") or value.get("state")).lower(),
             metadata=_as_mapping(value.get("metadata")),
             created_at=_as_float(value.get("created_at"), time.time()),
             updated_at=_as_float(value.get("updated_at"), time.time()),
@@ -93,6 +95,7 @@ class EngineeringPortfolio:
             "portfolio_id": self.portfolio_id,
             "name": self.name,
             "description": self.description,
+            "lifecycle_state": self.lifecycle_state,
             "goal_ids": _clean_goal_refs(self.goal_ids),
             "metadata": copy.deepcopy(self.metadata),
             "created_at": self.created_at,
