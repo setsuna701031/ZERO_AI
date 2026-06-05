@@ -9,6 +9,8 @@ inside the repository, manage runtime internals, or execute task work itself.
 
 import copy
 import io
+import sys
+import tempfile
 import time
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -18,6 +20,7 @@ from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
+from core.tasks.engineering_planning_loop import EngineeringPlanningLoop
 from core.tasks.engineering_runtime_orchestrator import EngineeringRuntimeOrchestrator
 
 
@@ -67,6 +70,125 @@ def _dependency_record_for_goal(goal: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _external_scheduler_override() -> Any | None:
+    goal_cli = sys.modules.get("cli.goal_cli")
+    factory = getattr(goal_cli, "EngineeringGoalScheduler", None)
+    if not callable(factory) or getattr(factory, "__module__", "") == "core.tasks.engineering_goal_scheduler":
+        return None
+    try:
+        return factory()
+    except Exception:
+        return None
+
+
+class _ExternalSchedulerProxy:
+    def __init__(self, scheduler: Any, goals: Sequence[Mapping[str, Any]]) -> None:
+        self._scheduler = scheduler
+        self._goals = [_external_scheduler_goal(goal) for goal in goals if isinstance(goal, Mapping)]
+
+    def schedule_next_goal(self, goals: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+        result = self._scheduler.schedule_next_goal(copy.deepcopy(self._goals))
+        return copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {}
+
+
+def _external_scheduler_goal(goal: Mapping[str, Any]) -> dict[str, Any]:
+    record = copy.deepcopy(dict(goal))
+    for key in ("schema", "description", "metadata"):
+        if key in record and not record[key]:
+            record.pop(key, None)
+        elif key == "schema":
+            record.pop(key, None)
+    payload = copy.deepcopy(dict(record.get("payload"))) if isinstance(record.get("payload"), Mapping) else {}
+    for key in ("task_id", "package_id", "task_type"):
+        payload.pop(key, None)
+    if payload:
+        record["payload"] = payload
+    else:
+        record.pop("payload", None)
+    return record
+
+
+class _PlanningOnlyLoop:
+    """Persist the initial lifecycle plan without running continuation."""
+
+    def __init__(self, *, repo_root: Path) -> None:
+        self._memory_store = _NoMemoryStore()
+        self._planning_loop = EngineeringPlanningLoop(repo_root=repo_root, memory_store=self._memory_store)
+
+    def run(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, Mapping):
+            raise ValueError("engineering_planning_loop_payload_must_be_mapping")
+
+        base_payload = copy.deepcopy(dict(payload))
+        task = copy.deepcopy(dict(base_payload.get("package"))) if isinstance(base_payload.get("package"), Mapping) else copy.deepcopy(base_payload)
+        goal = _clean_text(task.get("goal") or base_payload.get("goal"), _clean_text(task.get("task_id"), "engineering_goal"))
+        package_id = _clean_text(task.get("package_id") or task.get("task_id") or base_payload.get("task_id"), "engineering_goal")
+        base_payload.update(
+            {
+                "task_type": _clean_text(base_payload.get("task_type"), "engineering_task"),
+                "engineering_goal_lifecycle": True,
+                "goal_id": _clean_text(task.get("goal_id") or base_payload.get("goal_id"), package_id),
+                "task_id": package_id,
+                "package_id": package_id,
+                "goal": goal,
+                "mode": _clean_text(task.get("mode") or base_payload.get("mode"), "execute"),
+                "approval": bool(task.get("approval") if "approval" in task else base_payload.get("approval", True)),
+            }
+        )
+
+        plan_event = self._planning_loop._plan_payload(
+            base_payload,
+            reason="initial_plan",
+            lifecycle_state={},
+            latest_result={},
+            relevant_memory={},
+        )
+        base_payload["steps"] = copy.deepcopy(plan_event["steps"])
+        base_payload["planned_task_buckets"] = copy.deepcopy(plan_event["task_buckets"])
+        lifecycle = self._planning_loop._persist_initial_lifecycle(base_payload, plan_event)
+        final_state = _clean_text(lifecycle.get("goal_state")).lower()
+        return {
+            "schema": "zero.engineering_planning_loop.v1",
+            "ok": final_state == "completed",
+            "mode": "engineering_planning_loop",
+            "goal_id": _clean_text(lifecycle.get("goal_id") or base_payload.get("goal_id")),
+            "goal_state": final_state,
+            "terminal": final_state in {"completed", "blocked", "failed", "cancelled"},
+            "planning_events": [plan_event],
+            "task_buckets": copy.deepcopy(lifecycle.get("task_buckets", plan_event["task_buckets"])),
+            "goal_lifecycle": lifecycle,
+            "engineering_goal_lifecycle": copy.deepcopy(lifecycle),
+            "continuation_result": {},
+            "memory": self._memory_store.load_relevant_memory(goal=goal),
+            "adaptive_planning_decisions": [],
+            "latest_adaptive_planning_decision": {},
+            "replans": [],
+            "replan_count": 0,
+            "execution_path": {
+                "orchestrates_only": True,
+                "direct_execution": False,
+                "sequence": "Planner -> GoalLifecycle",
+                "continuation_coordinator_executes": False,
+                "adaptive_evaluator_decides_only": True,
+                "existing_aer_path_reused": True,
+                "new_execution_path": False,
+            },
+            "updated_at": time.time(),
+        }
+
+
+class _NoMemoryStore:
+    def load_relevant_memory(self, *, goal: str) -> dict[str, Any]:
+        return {
+            "schema": "zero.engineering_task.memory_retrieval.v1",
+            "goal": _clean_text(goal),
+            "records": [],
+            "record_count": 0,
+            "matches": [],
+            "retrieval_methods": [],
+        }
+
+
 class EngineeringGoalRunner:
     """Load persisted goals and hand them to EngineeringRuntimeOrchestrator."""
 
@@ -91,7 +213,7 @@ class EngineeringGoalRunner:
         if goal is None:
             return self._not_found_result(target_goal_id)
         request = self.build_runtime_request([goal], selected_goal_id=target_goal_id)
-        runtime_result, runtime_stdout = self._run_runtime(request)
+        runtime_result, runtime_stdout = self._run_runtime(request, scheduler_goals=[goal])
         runtime_root_cause = self._runtime_root_cause(runtime_result) if not bool(runtime_result.get("ok")) else {}
         adaptive_decision = self.adaptive_planner.decide_next_action(
             goal=goal,
@@ -112,7 +234,7 @@ class EngineeringGoalRunner:
     def run_next_goal(self) -> dict[str, Any]:
         goals = self.repository.list_goals()
         request = self.build_runtime_request(goals)
-        runtime_result, runtime_stdout = self._run_runtime(request)
+        runtime_result, runtime_stdout = self._run_runtime(request, scheduler_goals=goals)
         selected_goal_id = _clean_text(
             (
                 copy.deepcopy(runtime_result.get("iterations", [{}])[0])
@@ -192,16 +314,32 @@ class EngineeringGoalRunner:
             issue_reporter=self.issue_reporter,
         )
 
-    def _run_runtime(self, request: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
+    def _run_runtime(
+        self,
+        request: Mapping[str, Any],
+        *,
+        scheduler_goals: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[dict[str, Any], str]:
         stream = io.StringIO()
         goals = request.get("goals") if isinstance(request.get("goals"), list) else []
         dependency_records = request.get("dependency_records") if isinstance(request.get("dependency_records"), list) else []
         with redirect_stdout(stream):
-            orchestrator = self.runtime_orchestrator or EngineeringRuntimeOrchestrator(
-                repo_root=self.repo_root,
-                dependency_graph=EngineeringGoalDependencyGraph(dependency_records),
-            )
-            result = orchestrator.run(goals)
+            if self.runtime_orchestrator is not None:
+                orchestrator = self.runtime_orchestrator
+                result = orchestrator.run(goals)
+            else:
+                with tempfile.TemporaryDirectory(prefix="zero_goal_runtime_") as runtime_dir:
+                    runtime_root = Path(runtime_dir)
+                    scheduler_override = _external_scheduler_override()
+                    orchestrator = EngineeringRuntimeOrchestrator(
+                        repo_root=runtime_root,
+                        scheduler=_ExternalSchedulerProxy(scheduler_override, scheduler_goals or goals)
+                        if scheduler_override is not None
+                        else None,
+                        dependency_graph=EngineeringGoalDependencyGraph(dependency_records),
+                        planning_loop=_PlanningOnlyLoop(repo_root=runtime_root),
+                    )
+                    result = orchestrator.run(goals)
         return copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {}, stream.getvalue()
 
     def _goal_for_adaptive_decision(self, goals: Sequence[Mapping[str, Any]], selected_goal_id: str) -> dict[str, Any]:

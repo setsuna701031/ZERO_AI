@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_result_contract import validate_engineering_result_contract
 
@@ -74,3 +76,56 @@ def test_apply_issue_summary_defers_not_in_scope_without_blocking(tmp_path):
     assert result["deferred_issues"] == [issue]
     assert result["blocking_issues"] == []
     assert validate_engineering_result_contract(result)["ok"] is True
+
+
+def test_apply_issue_summary_preserves_runtime_semantics_while_attaching_top_level_fields(tmp_path):
+    nested_runtime = {
+        "state": "complete",
+        "ok": True,
+        "iterations": [
+            {
+                "continuation_result": {
+                    "ok": True,
+                    "goal_lifecycle": {
+                        "goal_state": "completed",
+                        "failed_tasks": [],
+                    },
+                }
+            }
+        ],
+    }
+    nested_continuation = {
+        "ok": True,
+        "goal_lifecycle": {
+            "goal_state": "completed",
+            "failed_tasks": [],
+        },
+    }
+    nested_decision = {"decision": "complete", "continuation_plan": {}}
+    nested_lifecycle = {"goal_state": "completed", "failed_tasks": []}
+    original = {
+        "schema": "unit.result.v1",
+        "ok": True,
+        "mode": "unit_test",
+        "runtime_result": nested_runtime,
+        "continuation_result": nested_continuation,
+        "adaptive_decision": nested_decision,
+        "goal_lifecycle": nested_lifecycle,
+    }
+    before = copy.deepcopy(original)
+
+    result = apply_engineering_issue_summary(
+        original,
+        repo_root=tmp_path,
+        issue_reporter=DummyReporter({"issues": [], "blocking_issues": [], "success_allowed": True}),
+    )
+
+    assert result["runtime_result"] == before["runtime_result"]
+    assert result["continuation_result"] == before["continuation_result"]
+    assert result["adaptive_decision"] == before["adaptive_decision"]
+    assert result["goal_lifecycle"] == before["goal_lifecycle"]
+    assert original == before
+    assert result["task_result"]["ok"] is True
+    assert result["issues_found"] == []
+    assert result["blocking_issues"] == []
+    assert result["success_allowed"] is True

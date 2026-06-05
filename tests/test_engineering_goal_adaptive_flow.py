@@ -123,4 +123,11 @@ def test_real_goal_run_complete_is_not_secondarily_continued_or_polluted(tmp_pat
     assert continuation["cycle_count"] == 2
     assert lifecycle["goal_state"] == "completed"
     assert lifecycle["failed_tasks"] == []
+    assert continuation["goal_lifecycle"]["failed_tasks"] == []
     assert result["adaptive_decision"]["decision"] == "complete"
+    assert result["issues_found"] == []
+    assert result["issues_deferred"] == []
+    assert result["deferred_issues"] == []
+    assert result["blocking_issues"] == []
+    assert result["success_allowed"] is True
+    assert result["engineering_result_contract"]["blocking_issue_blocks_success"] is True
