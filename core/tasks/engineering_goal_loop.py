@@ -20,6 +20,7 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 ENGINEERING_GOAL_LOOP_SCHEMA = "zero.engineering_goal_loop.v1"
 ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA = "zero.engineering_goal_loop.cycle.v1"
 ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA = "zero.engineering_goal_loop.continuation_work_item.v1"
+ENGINEERING_REPLAN_RECORD_SCHEMA = "zero.engineering_goal_loop.replan_record.v1"
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -75,6 +76,17 @@ class EngineeringGoalLoop:
                 stop_reason = "blocked"
                 break
 
+            if decision == "replan":
+                cycle["replan_record"] = self.create_replan_record(
+                    goal_id=current_goal_id,
+                    cycle_index=cycle_index,
+                    replan_request=_as_mapping(cycle.get("replan_request")),
+                    runner_result=_as_mapping(cycle.get("runner_result")),
+                )
+                terminal = True
+                stop_reason = "replan"
+                break
+
             if decision != "continue":
                 terminal = True
                 stop_reason = "non_continuable_adaptive_decision"
@@ -89,15 +101,19 @@ class EngineeringGoalLoop:
             cycle["continuation_work_item"] = work_item
             current_goal_id = _clean_text(work_item.get("goal_id"), current_goal_id)
 
+        latest_decision = _as_mapping(cycles[-1].get("adaptive_decision_record")) if cycles else {}
         return apply_engineering_issue_summary(
             {
             "schema": ENGINEERING_GOAL_LOOP_SCHEMA,
-            "ok": terminal and bool(cycles) and _clean_text(cycles[-1].get("adaptive_decision")) != "blocked",
+            "ok": terminal and bool(cycles) and _clean_text(latest_decision.get("decision")) == "complete",
             "mode": "engineering_goal_loop",
             "goal_id": target_goal_id,
             "current_goal_id": current_goal_id,
             "terminal": terminal,
             "stop_reason": stop_reason,
+            "adaptive_decision": copy.deepcopy(latest_decision),
+            "adaptive_reason": _clean_text(latest_decision.get("reason")),
+            "adaptive_confidence": latest_decision.get("confidence", 0.0),
             "max_cycles": cycle_limit,
             "cycle_count": len(cycles),
             "cycles": cycles,
@@ -129,10 +145,14 @@ class EngineeringGoalLoop:
             "ok": bool(runner_result.get("ok")),
             "runtime_state": _clean_text(runtime_result.get("state")),
             "adaptive_decision": decision,
+            "adaptive_decision_record": copy.deepcopy(adaptive),
             "adaptive_reason": _clean_text(adaptive.get("reason")),
+            "adaptive_confidence": adaptive.get("confidence", 0.0),
             "continuation_plan": copy.deepcopy(_as_mapping(adaptive.get("continuation_plan"))),
+            "replan_request": copy.deepcopy(_as_mapping(adaptive.get("replan_request"))),
             "runner_result": copy.deepcopy(dict(runner_result)) if isinstance(runner_result, Mapping) else {},
             "continuation_work_item": {},
+            "replan_record": {},
             "updated_at": time.time(),
         }
         if decision == "blocked":
@@ -190,6 +210,28 @@ class EngineeringGoalLoop:
             "created_at": time.time(),
         }
 
+    def create_replan_record(
+        self,
+        *,
+        goal_id: str = "",
+        cycle_index: int | None = None,
+        replan_request: Mapping[str, Any] | None = None,
+        runner_result: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        last_cycle = _as_mapping(self._last_cycle)
+        request = _as_mapping(replan_request) or _as_mapping(last_cycle.get("replan_request"))
+        source_goal_id = _clean_text(goal_id or last_cycle.get("goal_id") or request.get("goal_id"))
+        resolved_cycle_index = int(cycle_index if cycle_index is not None else last_cycle.get("cycle_index") or 0)
+        return {
+            "schema": ENGINEERING_REPLAN_RECORD_SCHEMA,
+            "goal_id": source_goal_id,
+            "cycle_index": resolved_cycle_index,
+            "reason": _clean_text(request.get("reason"), "recoverable_runtime_failure"),
+            "replan_request": copy.deepcopy(request),
+            "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
+            "created_at": time.time(),
+        }
+
     def stop_on_complete(self, cycle: Mapping[str, Any]) -> bool:
         return _clean_text(cycle.get("adaptive_decision")).lower() == "complete"
 
@@ -210,5 +252,6 @@ __all__ = [
     "ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA",
     "ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA",
     "ENGINEERING_GOAL_LOOP_SCHEMA",
+    "ENGINEERING_REPLAN_RECORD_SCHEMA",
     "EngineeringGoalLoop",
 ]

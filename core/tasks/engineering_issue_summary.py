@@ -172,9 +172,14 @@ def apply_engineering_issue_summary(
     *,
     repo_root: str | Path,
     issue_reporter: EngineeringIssueReporter | Any | None = None,
+    issue_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     updated = copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {}
-    issue_summary = build_engineering_issue_summary(repo_root, issue_reporter=issue_reporter)
+    issue_summary = (
+        copy.deepcopy(dict(issue_summary))
+        if isinstance(issue_summary, Mapping)
+        else build_engineering_issue_summary(repo_root, issue_reporter=issue_reporter)
+    )
     updated.update(
         {
             "issues_found": issue_summary["issues_found"],

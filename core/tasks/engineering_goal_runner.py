@@ -16,10 +16,10 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner
+from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner, normalize_adaptive_decision
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
-from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
+from core.tasks.engineering_issue_summary import apply_engineering_issue_summary, build_engineering_issue_summary
 from core.tasks.engineering_planning_adapter import EngineeringPlanningOnlyAdapter
 from core.tasks.engineering_runtime_orchestrator import EngineeringRuntimeOrchestrator
 
@@ -134,10 +134,12 @@ class EngineeringGoalRunner:
         request = self.build_runtime_request([goal], selected_goal_id=target_goal_id)
         runtime_result, runtime_stdout = self._run_runtime(request, scheduler_goals=[goal])
         runtime_root_cause = self._runtime_root_cause(runtime_result) if not bool(runtime_result.get("ok")) else {}
+        issue_summary = build_engineering_issue_summary(self.repo_root, issue_reporter=self.issue_reporter)
         adaptive_decision = self.adaptive_planner.decide_next_action(
             goal=goal,
             runtime_result=runtime_result,
             runtime_root_cause=runtime_root_cause,
+            issue_summary=issue_summary,
         )
         return self._runner_result(
             ok=bool(runtime_result.get("ok")),
@@ -148,6 +150,7 @@ class EngineeringGoalRunner:
             runtime_stdout=runtime_stdout,
             runtime_root_cause=runtime_root_cause,
             adaptive_decision=adaptive_decision,
+            issue_summary=issue_summary,
         )
 
     def run_next_goal(self) -> dict[str, Any]:
@@ -163,10 +166,12 @@ class EngineeringGoalRunner:
         )
         selected_goal = self._goal_for_adaptive_decision(goals, selected_goal_id)
         runtime_root_cause = self._runtime_root_cause(runtime_result) if not bool(runtime_result.get("ok")) else {}
+        issue_summary = build_engineering_issue_summary(self.repo_root, issue_reporter=self.issue_reporter)
         adaptive_decision = self.adaptive_planner.decide_next_action(
             goal=selected_goal,
             runtime_result=runtime_result,
             runtime_root_cause=runtime_root_cause,
+            issue_summary=issue_summary,
         )
         return self._runner_result(
             ok=bool(runtime_result.get("ok")),
@@ -177,6 +182,7 @@ class EngineeringGoalRunner:
             runtime_stdout=runtime_stdout,
             runtime_root_cause=runtime_root_cause,
             adaptive_decision=adaptive_decision,
+            issue_summary=issue_summary,
         )
 
     def build_runtime_request(
@@ -217,11 +223,16 @@ class EngineeringGoalRunner:
             "runtime_result": {},
             "runtime_stdout": "",
             "runtime_root_cause": {"reason": "engineering_goal_not_found"},
-            "adaptive_decision": {
+            "adaptive_decision": normalize_adaptive_decision({
                 "decision": "blocked",
                 "reason": "engineering_goal_not_found",
+                "confidence": 1.0,
+                "next_action": "stop_with_root_cause",
+                "continuation_plan": {},
+                "replan_request": {},
+                "blocking_issues": [],
                 "root_cause": {"reason": "engineering_goal_not_found"},
-            },
+            }),
             "execution_path": {
                 "repository_persists_only": True,
                 "goal_runner_bridges_only": True,
@@ -279,6 +290,7 @@ class EngineeringGoalRunner:
         runtime_stdout: str,
         runtime_root_cause: Mapping[str, Any],
         adaptive_decision: Mapping[str, Any],
+        issue_summary: Mapping[str, Any],
     ) -> dict[str, Any]:
         return apply_engineering_issue_summary(
             {
@@ -305,6 +317,7 @@ class EngineeringGoalRunner:
             },
             repo_root=self.repo_root,
             issue_reporter=self.issue_reporter,
+            issue_summary=issue_summary,
         )
 
     def _runtime_root_cause(self, runtime_result: Mapping[str, Any]) -> dict[str, Any]:

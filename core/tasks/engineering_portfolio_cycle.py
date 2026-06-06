@@ -107,6 +107,7 @@ class EngineeringPortfolioCycle:
             loop_result = self.goal_loop.run_until_terminal(selected_goal_id, max_cycles=3)
             updated_goal = self._record_terminal_status(selected_goal_id, loop_result)
             current_state = self.coordinator.summarize_portfolio_state(target_portfolio_id)
+            adaptive_decision = _as_mapping(loop_result.get("adaptive_decision"))
             runs.append(
                 {
                     "schema": ENGINEERING_PORTFOLIO_CYCLE_SCHEMA,
@@ -115,6 +116,10 @@ class EngineeringPortfolioCycle:
                     "selected_goal_id": selected_goal_id,
                     "selection": copy.deepcopy(selection),
                     "loop_result": copy.deepcopy(dict(loop_result)),
+                    "adaptive_decision": copy.deepcopy(adaptive_decision),
+                    "adaptive_reason": _clean_text(adaptive_decision.get("reason") or loop_result.get("adaptive_reason")),
+                    "adaptive_confidence": adaptive_decision.get("confidence", loop_result.get("adaptive_confidence", 0.0)),
+                    "stop_reason": _clean_text(loop_result.get("stop_reason")),
                     "updated_goal": updated_goal,
                     "portfolio_state": copy.deepcopy(current_state),
                     "updated_at": time.time(),
@@ -157,6 +162,8 @@ class EngineeringPortfolioCycle:
                     goal_id = _clean_text(item.get("goal_id"))
                     if goal_id:
                         skipped_goal_ids.add(goal_id)
+        latest_run = _as_mapping(runs[-1]) if runs else {}
+        latest_adaptive_decision = _as_mapping(latest_run.get("adaptive_decision"))
 
         return apply_engineering_issue_summary(
             {
@@ -164,6 +171,9 @@ class EngineeringPortfolioCycle:
             "ok": _clean_text(stop_reason) not in {"portfolio_not_found"},
             "portfolio_id": _clean_text(portfolio_id),
             "stop_reason": _clean_text(stop_reason),
+            "adaptive_decision": copy.deepcopy(latest_adaptive_decision),
+            "adaptive_reason": _clean_text(latest_run.get("adaptive_reason") or latest_adaptive_decision.get("reason")),
+            "adaptive_confidence": latest_adaptive_decision.get("confidence", latest_run.get("adaptive_confidence", 0.0)),
             "max_goals": max_goals,
             "cycle_count": len(runs),
             "executed_goal_count": len({_clean_text(run.get("selected_goal_id")) for run in runs if _clean_text(run.get("selected_goal_id"))}),

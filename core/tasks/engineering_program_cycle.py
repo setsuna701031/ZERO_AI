@@ -115,6 +115,7 @@ class EngineeringProgramCycle:
 
             portfolio_result = self.portfolio_cycle.run_until_idle(selected_portfolio_id)
             current_state = self.coordinator.summarize_program_state(target_program_id)
+            adaptive_decision = _as_mapping(portfolio_result.get("adaptive_decision"))
             runs.append(
                 {
                     "schema": ENGINEERING_PROGRAM_CYCLE_SCHEMA,
@@ -123,6 +124,10 @@ class EngineeringProgramCycle:
                     "selected_portfolio_id": selected_portfolio_id,
                     "selection": copy.deepcopy(selection),
                     "portfolio_cycle_result": copy.deepcopy(dict(portfolio_result)),
+                    "adaptive_decision": copy.deepcopy(adaptive_decision),
+                    "adaptive_reason": _clean_text(adaptive_decision.get("reason") or portfolio_result.get("adaptive_reason")),
+                    "adaptive_confidence": adaptive_decision.get("confidence", portfolio_result.get("adaptive_confidence", 0.0)),
+                    "stop_reason": _clean_text(portfolio_result.get("stop_reason")),
                     "program_state": copy.deepcopy(current_state),
                     "updated_at": time.time(),
                 }
@@ -163,6 +168,8 @@ class EngineeringProgramCycle:
                     portfolio_id = _clean_text(item.get("portfolio_id"))
                     if portfolio_id:
                         skipped_portfolio_ids.add(portfolio_id)
+        latest_run = _as_mapping(runs[-1]) if runs else {}
+        latest_adaptive_decision = _as_mapping(latest_run.get("adaptive_decision"))
 
         return apply_engineering_issue_summary(
             {
@@ -170,6 +177,9 @@ class EngineeringProgramCycle:
             "ok": _clean_text(stop_reason) not in {"program_not_found"},
             "program_id": _clean_text(program_id),
             "stop_reason": _clean_text(stop_reason),
+            "adaptive_decision": copy.deepcopy(latest_adaptive_decision),
+            "adaptive_reason": _clean_text(latest_run.get("adaptive_reason") or latest_adaptive_decision.get("reason")),
+            "adaptive_confidence": latest_adaptive_decision.get("confidence", latest_run.get("adaptive_confidence", 0.0)),
             "max_portfolios": max_portfolios,
             "cycle_count": len(runs),
             "executed_portfolio_count": len(

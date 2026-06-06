@@ -5,6 +5,7 @@ from pathlib import Path
 
 from core.tasks.engineering_adaptive_planner import (
     ENGINEERING_ADAPTIVE_DECISION_SCHEMA,
+    ENGINEERING_REPLAN_REQUEST_SCHEMA,
     ENGINEERING_CONTINUATION_PLAN_SCHEMA,
     EngineeringAdaptivePlanner,
 )
@@ -89,13 +90,13 @@ def test_adaptive_planner_continues_incomplete_goal_with_plan() -> None:
     assert plan["execution_path"]["executes_tasks"] is False
 
 
-def test_adaptive_planner_blocks_runtime_failure_with_root_cause() -> None:
-    root_cause = {"stop_reason": "verification_failed", "failed_tasks": ["goal_1_result"]}
+def test_adaptive_planner_replans_recoverable_runtime_failure_with_root_cause() -> None:
+    root_cause = {"stop_reason": "missing_artifact", "failed_tasks": ["goal_1_result"]}
     decision = EngineeringAdaptivePlanner().decide_next_action(
         goal=_goal(),
         runtime_result=_runtime(
             ok=False,
-            state="failed",
+            state="replan",
             goal_state="failed",
             completed=["goal_1_breakdown"],
             failed=["goal_1_result"],
@@ -103,11 +104,46 @@ def test_adaptive_planner_blocks_runtime_failure_with_root_cause() -> None:
         runtime_root_cause=root_cause,
     )
 
+    assert decision["decision"] == "replan"
+    assert decision["terminal"] is False
+    assert decision["root_cause"] == root_cause
+    assert decision["replan_request"]["schema"] == ENGINEERING_REPLAN_REQUEST_SCHEMA
+    assert decision["progress"]["failed_tasks"] == ["goal_1_result"]
+    assert decision["continuation_plan"] == {}
+
+
+def test_adaptive_planner_blocks_critical_failure_with_root_cause() -> None:
+    root_cause = {"stop_reason": "critical_failure", "failed_tasks": ["goal_1_result"]}
+    decision = EngineeringAdaptivePlanner().decide_next_action(
+        goal=_goal(),
+        runtime_result=_runtime(
+            ok=False,
+            state="failed",
+            goal_state="failed",
+            completed=["goal_1_breakdown"],
+            failed=["critical_failure"],
+        ),
+        runtime_root_cause=root_cause,
+    )
+
     assert decision["decision"] == "blocked"
     assert decision["terminal"] is True
     assert decision["root_cause"] == root_cause
-    assert decision["progress"]["failed_tasks"] == ["goal_1_result"]
-    assert decision["continuation_plan"] == {}
+    assert decision["blocking_issues"] == []
+    assert decision["replan_request"] == {}
+
+
+def test_adaptive_planner_blocks_when_issue_summary_has_blocking_issue() -> None:
+    issue = {"issue_id": "blocker-1", "severity": "critical", "blocks_current_task": True}
+    decision = EngineeringAdaptivePlanner().decide_next_action(
+        goal=_goal(),
+        runtime_result=_runtime(ok=True, state="complete", goal_state="completed", completed=["a"]),
+        issue_summary={"blocking_issues": [issue]},
+    )
+
+    assert decision["decision"] == "blocked"
+    assert decision["blocking_issues"] == [issue]
+    assert decision["reason"]
 
 
 def test_adaptive_planner_does_not_import_execution_or_repository_owners() -> None:

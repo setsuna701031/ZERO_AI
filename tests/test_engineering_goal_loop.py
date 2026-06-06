@@ -137,6 +137,32 @@ def test_blocked_goal_stops_and_preserves_root_cause(tmp_path) -> None:
     assert result["cycles"][0]["root_cause"] == root_cause
 
 
+def test_replan_goal_stops_and_creates_replan_record(tmp_path) -> None:
+    replan_request = {"goal_id": "goal_1", "reason": "missing_output", "failed_tasks": ["goal_1_result"]}
+    runner = StubRunner(
+        [
+            {
+                "decision": "replan",
+                "reason": "missing_output",
+                "runtime_state": "replan",
+                "replan_request": replan_request,
+            }
+        ]
+    )
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=_repository(tmp_path), runner=runner).run_until_terminal("goal_1")
+
+    cycle = result["cycles"][0]
+    assert result["ok"] is False
+    assert result["terminal"] is True
+    assert result["stop_reason"] == "replan"
+    assert result["adaptive_decision"]["decision"] == "replan"
+    assert cycle["adaptive_decision"] == "replan"
+    assert cycle["replan_record"]["reason"] == "missing_output"
+    assert cycle["replan_record"]["replan_request"] == replan_request
+    assert cycle["continuation_work_item"] == {}
+
+
 def test_max_cycles_bounds_repeated_continue_decisions(tmp_path) -> None:
     repository = _repository(tmp_path)
     runner = StubRunner(
@@ -158,3 +184,52 @@ def test_max_cycles_bounds_repeated_continue_decisions(tmp_path) -> None:
     assert result["cycle_count"] == 2
     assert [cycle["cycle_index"] for cycle in result["cycles"]] == [0, 1]
     assert len(runner.calls) == 2
+
+
+def test_goal_loop_does_not_mutate_runner_runtime_or_lifecycle_payloads(tmp_path) -> None:
+    runtime_result = {
+        "state": "complete",
+        "iterations": [
+            {
+                "continuation_result": {
+                    "goal_lifecycle": {
+                        "goal_state": "completed",
+                        "completed_tasks": ["goal_1_result"],
+                    }
+                }
+            }
+        ],
+    }
+    runner_result = {
+        "ok": True,
+        "goal_id": "goal_1",
+        "runtime_result": runtime_result,
+        "goal_lifecycle": runtime_result["iterations"][0]["continuation_result"]["goal_lifecycle"],
+        "adaptive_decision": {
+            "decision": "complete",
+            "reason": "goal_completed",
+            "confidence": 0.95,
+            "continuation_plan": {},
+            "replan_request": {},
+            "blocking_issues": [],
+        },
+    }
+
+    class SingleResultRunner:
+        def run_goal(self, goal_id: str) -> dict:
+            return runner_result
+
+    before_runtime = {
+        "runtime_result": runtime_result.copy(),
+        "goal_lifecycle": dict(runner_result["goal_lifecycle"]),
+    }
+
+    result = EngineeringGoalLoop(
+        repo_root=tmp_path,
+        repository=_repository(tmp_path),
+        runner=SingleResultRunner(),
+    ).run_until_terminal("goal_1")
+
+    assert result["stop_reason"] == "complete"
+    assert runner_result["runtime_result"] == before_runtime["runtime_result"]
+    assert runner_result["goal_lifecycle"] == before_runtime["goal_lifecycle"]
