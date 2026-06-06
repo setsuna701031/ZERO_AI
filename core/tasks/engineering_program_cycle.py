@@ -191,6 +191,10 @@ class EngineeringProgramCycle:
         selected_goal = _as_mapping(latest_run.get("selected_goal"))
         selected_portfolio_id = _clean_text(latest_run.get("portfolio_id") or latest_run.get("selected_portfolio_id"))
         selected_goal_id = _clean_text(latest_run.get("goal_id") or selected_goal.get("selected_goal_id"))
+        portfolio_count = int(program_state.get("portfolio_count") or 0)
+        completed_count = int(program_state.get("completed_portfolio_count") or 0)
+        blocked_count = int(program_state.get("blocked_portfolio_count") or 0)
+        remaining_count = max(0, portfolio_count - completed_count - blocked_count)
 
         return apply_engineering_issue_summary(
             {
@@ -229,6 +233,10 @@ class EngineeringProgramCycle:
             ),
             "completed_portfolio_count": int(program_state.get("completed_portfolio_count") or 0),
             "blocked_portfolio_count": int(program_state.get("blocked_portfolio_count") or 0),
+            "completed_count": completed_count,
+            "blocked_count": blocked_count,
+            "remaining_count": remaining_count,
+            "count_scope": "portfolios",
             "skipped_portfolio_count": len(skipped_portfolio_ids),
             "program_state": copy.deepcopy(dict(program_state)) if isinstance(program_state, Mapping) else {},
             "runs": [copy.deepcopy(dict(run)) for run in runs],

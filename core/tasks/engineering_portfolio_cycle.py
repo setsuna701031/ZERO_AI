@@ -107,6 +107,7 @@ class EngineeringPortfolioCycle:
             loop_result = self.goal_loop.run_until_terminal(selected_goal_id, max_cycles=3)
             updated_goal = self._record_terminal_status(selected_goal_id, loop_result)
             current_state = self.coordinator.summarize_portfolio_state(target_portfolio_id)
+            updated_portfolio = self._record_terminal_portfolio_state(target_portfolio_id, current_state)
             adaptive_decision = _as_mapping(loop_result.get("adaptive_decision"))
             runs.append(
                 {
@@ -134,6 +135,7 @@ class EngineeringPortfolioCycle:
                         "runtime_owns_execution": True,
                     },
                     "updated_goal": updated_goal,
+                    "updated_portfolio": updated_portfolio,
                     "portfolio_state": copy.deepcopy(current_state),
                     "updated_at": time.time(),
                 }
@@ -223,6 +225,12 @@ class EngineeringPortfolioCycle:
             return self.goal_repository.update_goal(goal_id, {"status": "complete"})
         if stop_reason == "blocked":
             return self.goal_repository.update_goal(goal_id, {"status": "blocked"})
+        return {}
+
+    def _record_terminal_portfolio_state(self, portfolio_id: str, portfolio_state: Mapping[str, Any]) -> dict[str, Any]:
+        state = _clean_text(portfolio_state.get("state")).lower()
+        if state in {"completed", "blocked"}:
+            return self.portfolio_repository.update_portfolio(portfolio_id, {"lifecycle_state": state})
         return {}
 
 

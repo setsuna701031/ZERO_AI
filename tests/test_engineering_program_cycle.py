@@ -180,6 +180,10 @@ def test_build_cycle_summary_counts_unique_skipped_portfolios() -> None:
     assert summary["completed_portfolio_count"] == 1
     assert summary["blocked_portfolio_count"] == 1
     assert summary["skipped_portfolio_count"] == 2
+    assert summary["completed_count"] == 1
+    assert summary["blocked_count"] == 1
+    assert summary["remaining_count"] == 0
+    assert summary["count_scope"] == "portfolios"
 
 
 def test_program_cycle_boundary_imports_only_allowed_owners() -> None:
