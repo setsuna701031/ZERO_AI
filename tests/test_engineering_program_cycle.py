@@ -98,6 +98,10 @@ def test_program_cycle_delegates_selected_portfolio_to_portfolio_cycle() -> None
     assert result["completed_portfolio_count"] == 1
     assert portfolio_cycle.calls == ["portfolio_1"]
     assert coordinator.selection_calls == ["program_1"]
+    assert result["program_id"] == "program_1"
+    assert result["portfolio_id"] == "portfolio_1"
+    assert result["execution_path"]["program_owns_strategic_sequencing"] is True
+    assert result["execution_path"]["portfolio_owns_goal_selection"] is True
 
 
 def test_run_until_idle_stops_when_no_runnable_portfolio() -> None:

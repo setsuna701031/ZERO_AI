@@ -12,10 +12,13 @@ import time
 from typing import Any, Mapping
 
 
-ENGINEERING_ADAPTIVE_PLANNER_SCHEMA = "zero.engineering_adaptive_planner.v1"
-ENGINEERING_ADAPTIVE_DECISION_SCHEMA = "zero.engineering_adaptive_planner.decision.v1"
-ENGINEERING_CONTINUATION_PLAN_SCHEMA = "zero.engineering_adaptive_planner.continuation_plan.v1"
-ENGINEERING_REPLAN_REQUEST_SCHEMA = "zero.engineering_adaptive_planner.replan_request.v1"
+ENGINEERING_ADAPTIVE_PLANNER_SCHEMA = "zero.engineering_adaptive_planner.v2"
+ENGINEERING_ADAPTIVE_DECISION_SCHEMA = "zero.engineering_adaptive_planner.decision.v2"
+ENGINEERING_CONTINUATION_PLAN_SCHEMA = "zero.engineering_adaptive_planner.continuation_plan.v2"
+ENGINEERING_REPLAN_REQUEST_SCHEMA = "zero.engineering_adaptive_planner.replan_request.v2"
+ENGINEERING_ADAPTIVE_EVIDENCE_SCHEMA = "zero.engineering_adaptive_planner.evidence.v2"
+ENGINEERING_ADAPTIVE_CONFIDENCE_SCHEMA = "zero.engineering_adaptive_planner.confidence.v2"
+ENGINEERING_BLOCKED_ROOT_CAUSE_SCHEMA = "zero.engineering_adaptive_planner.blocked_root_cause.v2"
 
 ALLOWED_ADAPTIVE_DECISIONS = frozenset({"complete", "continue", "replan", "blocked"})
 CONTINUE_ALIASES = frozenset({"retry", "again", "next", "resume", "loop"})
@@ -85,7 +88,7 @@ def _normalize_decision_name(value: Any) -> str:
 
 
 def normalize_adaptive_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the strict Adaptive Planning v1 decision contract."""
+    """Return the strict, backwards-compatible Adaptive Planning v2 contract."""
 
     raw = _as_mapping(decision)
     normalized_decision = _normalize_decision_name(raw.get("decision"))
@@ -102,6 +105,10 @@ def normalize_adaptive_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
         "continuation_plan": copy.deepcopy(_as_mapping(raw.get("continuation_plan"))),
         "replan_request": copy.deepcopy(_as_mapping(raw.get("replan_request"))),
         "blocking_issues": copy.deepcopy(_as_list(raw.get("blocking_issues"))),
+        "decision_reasoning": copy.deepcopy(_as_mapping(raw.get("decision_reasoning"))),
+        "confidence_score": copy.deepcopy(_as_mapping(raw.get("confidence_score"))),
+        "evidence_chain": copy.deepcopy(_as_list(raw.get("evidence_chain"))),
+        "root_cause_report": copy.deepcopy(_as_mapping(raw.get("root_cause_report"))),
     }
 
 
@@ -151,7 +158,7 @@ class EngineeringAdaptivePlanner:
         )
         next_runtime_request = self._next_runtime_request(runtime_result)
         incomplete_with_next_request = runtime_ok and bool(next_runtime_request) and not complete
-        return {
+        progress_record = {
             "schema": ENGINEERING_ADAPTIVE_PLANNER_SCHEMA,
             "goal_id": _goal_id(goal) or _clean_text(lifecycle.get("goal_id")),
             "runtime_ok": runtime_ok,
@@ -172,6 +179,8 @@ class EngineeringAdaptivePlanner:
             "incomplete_with_next_request": incomplete_with_next_request,
             "updated_at": time.time(),
         }
+        progress_record["evidence_chain"] = self._build_evidence_chain(progress_record)
+        return progress_record
 
     def decide_next_action(
         self,
@@ -190,23 +199,32 @@ class EngineeringAdaptivePlanner:
         if progress["complete"]:
             decision = "complete"
             reason = "goal_completed"
-            confidence = 0.95
         elif progress["blocking_failure"]:
             decision = "blocked"
             reason = _clean_text(_as_mapping(runtime_root_cause).get("stop_reason"), "blocking_issue_or_unrecoverable_failure")
-            confidence = 0.9
         elif progress["incomplete_with_next_request"]:
             decision = "continue"
             reason = "next_runtime_request_available"
-            confidence = 0.85
         elif not progress["runtime_ok"] or progress["recoverable_failure"]:
             decision = "replan"
             reason = _clean_text(_as_mapping(runtime_root_cause).get("stop_reason"), "recoverable_runtime_failure")
-            confidence = 0.8
         else:
             decision = "continue"
             reason = "goal_incomplete"
-            confidence = 0.75
+
+        evidence_chain = copy.deepcopy(_as_list(progress.get("evidence_chain")))
+        confidence_score = self._score_confidence(decision=decision, progress=progress, evidence_chain=evidence_chain)
+        root_cause_report = (
+            self._build_root_cause_report(progress=progress, reason=reason, decision=decision)
+            if decision in {"blocked", "replan"}
+            else {}
+        )
+        decision_reasoning = self._build_decision_reasoning(
+            decision=decision,
+            reason=reason,
+            progress=progress,
+            confidence_score=confidence_score,
+        )
 
         continuation_plan = (
             self.build_continuation_plan(goal=goal, runtime_result=runtime_result, progress=progress)
@@ -222,7 +240,10 @@ class EngineeringAdaptivePlanner:
             "schema": ENGINEERING_ADAPTIVE_DECISION_SCHEMA,
             "decision": decision,
             "reason": reason,
-            "confidence": confidence,
+            "confidence": confidence_score["score"],
+            "confidence_score": confidence_score,
+            "decision_reasoning": decision_reasoning,
+            "evidence_chain": evidence_chain,
             "next_action": self._next_action_for_decision(decision),
             "goal_id": progress["goal_id"],
             "terminal": decision in {"complete", "blocked"},
@@ -234,6 +255,7 @@ class EngineeringAdaptivePlanner:
             "replan_request": replan_request,
             "blocking_issues": copy.deepcopy(_as_list(progress.get("blocking_issues"))),
             "root_cause": copy.deepcopy(_as_mapping(runtime_root_cause) if decision in {"blocked", "replan"} else {}),
+            "root_cause_report": root_cause_report,
             "execution_path": {
                 "adaptive_planner_decides_only": True,
                 "executes_tasks": False,
@@ -268,6 +290,23 @@ class EngineeringAdaptivePlanner:
         payload["continuation_requested"] = True
         if remaining_tasks:
             payload["remaining_tasks"] = copy.deepcopy(remaining_tasks)
+        evidence_chain = copy.deepcopy(_as_list(progress_record.get("evidence_chain")))
+        work_item_template = {
+            "objective": _clean_text(payload.get("goal"), f"Continue {goal_id}"),
+            "source_goal_id": goal_id,
+            "task_type": _clean_text(payload.get("task_type"), "engineering_task"),
+            "remaining_tasks": copy.deepcopy(remaining_tasks),
+            "acceptance": {
+                "goal_state": "completed",
+                "remaining_tasks": [],
+                "failed_tasks": [],
+                "blocked_tasks": [],
+            },
+            "provenance": {
+                "source_runtime_state": _clean_text(runtime_result.get("state")),
+                "evidence_ids": [item["evidence_id"] for item in evidence_chain if isinstance(item, Mapping)],
+            },
+        }
         return {
             "schema": ENGINEERING_CONTINUATION_PLAN_SCHEMA,
             "goal_id": goal_id,
@@ -278,6 +317,8 @@ class EngineeringAdaptivePlanner:
                 "payload": payload,
                 "source_runtime_state": _clean_text(runtime_result.get("state")),
             },
+            "work_item_template": work_item_template,
+            "evidence_chain": evidence_chain,
             "execution_path": {
                 "plan_only": True,
                 "executes_tasks": False,
@@ -296,19 +337,158 @@ class EngineeringAdaptivePlanner:
     ) -> dict[str, Any]:
         progress_record = _as_mapping(progress) or self.evaluate_goal_progress(goal=goal, runtime_result=runtime_result)
         goal_id = _goal_id(goal) or _clean_text(progress_record.get("goal_id"))
+        evidence_chain = copy.deepcopy(_as_list(progress_record.get("evidence_chain")))
+        root_cause_report = self._build_root_cause_report(
+            progress=progress_record,
+            reason=_clean_text(reason, "recoverable_runtime_failure"),
+            decision="replan",
+        )
         return {
             "schema": ENGINEERING_REPLAN_REQUEST_SCHEMA,
             "goal_id": goal_id,
             "reason": _clean_text(reason, "recoverable_runtime_failure"),
             "runtime_state": _clean_text(runtime_result.get("state")),
             "failed_tasks": copy.deepcopy(_as_list(progress_record.get("failed_tasks"))),
+            "remaining_tasks": copy.deepcopy(_as_list(progress_record.get("remaining_tasks"))),
             "root_cause": copy.deepcopy(_as_mapping(progress_record.get("root_cause"))),
+            "root_cause_report": root_cause_report,
+            "evidence_chain": evidence_chain,
+            "replan_payload": {
+                "trigger": _clean_text(reason, "recoverable_runtime_failure"),
+                "objective": "produce_a_revised_execution_plan",
+                "preserve": {
+                    "completed_tasks": copy.deepcopy(_as_list(progress_record.get("completed_tasks"))),
+                    "goal_id": goal_id,
+                },
+                "reconsider": {
+                    "failed_tasks": copy.deepcopy(_as_list(progress_record.get("failed_tasks"))),
+                    "remaining_tasks": copy.deepcopy(_as_list(progress_record.get("remaining_tasks"))),
+                },
+                "constraints": {
+                    "planner_decision_only": True,
+                    "execute_tasks": False,
+                    "runtime_ownership": False,
+                },
+            },
             "execution_path": {
                 "request_only": True,
                 "executes_tasks": False,
                 "persists_goal": False,
             },
             "created_at": time.time(),
+        }
+
+    def _build_evidence_chain(self, progress: Mapping[str, Any]) -> list[dict[str, Any]]:
+        evidence: list[dict[str, Any]] = []
+
+        def add(kind: str, source: str, value: Any, supports: list[str]) -> None:
+            if value in ("", None, [], {}, False):
+                return
+            evidence.append({
+                "schema": ENGINEERING_ADAPTIVE_EVIDENCE_SCHEMA,
+                "evidence_id": f"evidence_{len(evidence) + 1}",
+                "kind": kind,
+                "source": source,
+                "value": copy.deepcopy(value),
+                "supports": supports,
+            })
+
+        add("runtime_status", "runtime_result", {
+            "ok": bool(progress.get("runtime_ok")),
+            "state": _clean_text(progress.get("runtime_state")),
+        }, ["complete", "continue", "replan", "blocked"])
+        add("goal_status", "runtime_lifecycle", _clean_text(progress.get("goal_state")), ["complete", "continue"])
+        add("remaining_work", "runtime_lifecycle", _as_list(progress.get("remaining_tasks")), ["continue", "replan"])
+        add("failed_work", "runtime_lifecycle", _as_list(progress.get("failed_tasks")), ["replan", "blocked"])
+        add("blocked_work", "runtime_lifecycle", _as_list(progress.get("blocked_tasks")), ["blocked"])
+        add("root_cause", "runtime_root_cause", _as_mapping(progress.get("root_cause")), ["replan", "blocked"])
+        add("blocking_issues", "issue_summary", _as_list(progress.get("blocking_issues")), ["blocked"])
+        add("next_runtime_request", "runtime_result", _as_mapping(progress.get("next_runtime_request")), ["continue"])
+        return evidence
+
+    def _score_confidence(
+        self,
+        *,
+        decision: str,
+        progress: Mapping[str, Any],
+        evidence_chain: list[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        base = {"complete": 0.72, "continue": 0.62, "replan": 0.66, "blocked": 0.7}[decision]
+        factors: list[dict[str, Any]] = []
+
+        def factor(name: str, adjustment: float, present: bool) -> None:
+            if present:
+                factors.append({"factor": name, "adjustment": adjustment})
+
+        factor("runtime_and_goal_terminal_agree", 0.18, decision == "complete" and bool(progress.get("complete")))
+        factor("explicit_next_runtime_request", 0.16, decision == "continue" and bool(progress.get("next_runtime_request")))
+        factor("remaining_tasks_identified", 0.08, decision == "continue" and bool(progress.get("remaining_tasks")))
+        factor("recoverable_failure_marker", 0.16, decision == "replan" and bool(progress.get("recoverable_failure")))
+        factor("blocking_signal", 0.18, decision == "blocked" and bool(progress.get("blocking_failure")))
+        factor("root_cause_available", 0.08, decision in {"blocked", "replan"} and bool(progress.get("root_cause")))
+        factor("limited_evidence", -0.12, len(evidence_chain) < 2)
+        score = _clamp_confidence(base + sum(float(item["adjustment"]) for item in factors))
+        return {
+            "schema": ENGINEERING_ADAPTIVE_CONFIDENCE_SCHEMA,
+            "score": score,
+            "level": "high" if score >= 0.85 else "medium" if score >= 0.65 else "low",
+            "factors": factors,
+            "evidence_count": len(evidence_chain),
+        }
+
+    def _build_decision_reasoning(
+        self,
+        *,
+        decision: str,
+        reason: str,
+        progress: Mapping[str, Any],
+        confidence_score: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "selected": decision,
+            "reason": reason,
+            "facts": {
+                "runtime_ok": bool(progress.get("runtime_ok")),
+                "runtime_state": _clean_text(progress.get("runtime_state")),
+                "goal_state": _clean_text(progress.get("goal_state")),
+                "remaining_task_count": len(_as_list(progress.get("remaining_tasks"))),
+                "failed_task_count": len(_as_list(progress.get("failed_tasks"))),
+                "blocked_task_count": len(_as_list(progress.get("blocked_tasks"))),
+            },
+            "ruled_out": [
+                candidate for candidate in ("complete", "continue", "replan", "blocked") if candidate != decision
+            ],
+            "confidence_level": _clean_text(confidence_score.get("level")),
+        }
+
+    def _build_root_cause_report(
+        self,
+        *,
+        progress: Mapping[str, Any],
+        reason: str,
+        decision: str,
+    ) -> dict[str, Any]:
+        root_cause = _as_mapping(progress.get("root_cause"))
+        blocked_tasks = _as_list(progress.get("blocked_tasks"))
+        failed_tasks = _as_list(progress.get("failed_tasks"))
+        blocking_issues = _as_list(progress.get("blocking_issues"))
+        primary_cause = _clean_text(
+            root_cause.get("stop_reason") or root_cause.get("reason") or reason,
+            "blocking_issue_or_unrecoverable_failure" if decision == "blocked" else "recoverable_runtime_failure",
+        )
+        return {
+            "schema": ENGINEERING_BLOCKED_ROOT_CAUSE_SCHEMA,
+            "classification": "blocked" if decision == "blocked" else "recoverable",
+            "primary_cause": primary_cause,
+            "affected_tasks": copy.deepcopy(blocked_tasks or failed_tasks),
+            "blocking_issues": copy.deepcopy(blocking_issues),
+            "runtime_root_cause": copy.deepcopy(root_cause),
+            "recommended_action": "stop_and_report" if decision == "blocked" else "revise_plan",
+            "evidence_ids": [
+                item["evidence_id"]
+                for item in _as_list(progress.get("evidence_chain"))
+                if isinstance(item, Mapping) and decision in _as_list(item.get("supports"))
+            ],
         }
 
     def _latest_lifecycle(self, runtime_result: Mapping[str, Any]) -> dict[str, Any]:
@@ -357,7 +537,10 @@ class EngineeringAdaptivePlanner:
 __all__ = [
     "ALLOWED_ADAPTIVE_DECISIONS",
     "ENGINEERING_ADAPTIVE_DECISION_SCHEMA",
+    "ENGINEERING_ADAPTIVE_EVIDENCE_SCHEMA",
+    "ENGINEERING_ADAPTIVE_CONFIDENCE_SCHEMA",
     "ENGINEERING_ADAPTIVE_PLANNER_SCHEMA",
+    "ENGINEERING_BLOCKED_ROOT_CAUSE_SCHEMA",
     "ENGINEERING_CONTINUATION_PLAN_SCHEMA",
     "ENGINEERING_REPLAN_REQUEST_SCHEMA",
     "EngineeringAdaptivePlanner",

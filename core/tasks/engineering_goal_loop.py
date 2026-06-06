@@ -19,8 +19,8 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 
 ENGINEERING_GOAL_LOOP_SCHEMA = "zero.engineering_goal_loop.v1"
 ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA = "zero.engineering_goal_loop.cycle.v1"
-ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA = "zero.engineering_goal_loop.continuation_work_item.v1"
-ENGINEERING_REPLAN_RECORD_SCHEMA = "zero.engineering_goal_loop.replan_record.v1"
+ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA = "zero.engineering_goal_loop.continuation_work_item.v2"
+ENGINEERING_REPLAN_RECORD_SCHEMA = "zero.engineering_goal_loop.replan_record.v2"
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -114,10 +114,17 @@ class EngineeringGoalLoop:
             "adaptive_decision": copy.deepcopy(latest_decision),
             "adaptive_reason": _clean_text(latest_decision.get("reason")),
             "adaptive_confidence": latest_decision.get("confidence", 0.0),
+            "adaptive_confidence_score": copy.deepcopy(_as_mapping(latest_decision.get("confidence_score"))),
+            "adaptive_evidence_chain": copy.deepcopy(latest_decision.get("evidence_chain") or []),
+            "root_cause_report": copy.deepcopy(_as_mapping(latest_decision.get("root_cause_report"))),
             "max_cycles": cycle_limit,
             "cycle_count": len(cycles),
             "cycles": cycles,
             "execution_path": {
+                "route": "Goal -> Adaptive Planner -> Runtime",
+                "program_id": "",
+                "portfolio_id": "",
+                "goal_id": target_goal_id,
                 "goal_loop_owns_long_horizon_cycles": True,
                 "runner_owns_runtime_bridge": True,
                 "adaptive_planner_decides_only": True,
@@ -148,6 +155,9 @@ class EngineeringGoalLoop:
             "adaptive_decision_record": copy.deepcopy(adaptive),
             "adaptive_reason": _clean_text(adaptive.get("reason")),
             "adaptive_confidence": adaptive.get("confidence", 0.0),
+            "adaptive_confidence_score": copy.deepcopy(_as_mapping(adaptive.get("confidence_score"))),
+            "adaptive_evidence_chain": copy.deepcopy(adaptive.get("evidence_chain") or []),
+            "root_cause_report": copy.deepcopy(_as_mapping(adaptive.get("root_cause_report"))),
             "continuation_plan": copy.deepcopy(_as_mapping(adaptive.get("continuation_plan"))),
             "replan_request": copy.deepcopy(_as_mapping(adaptive.get("replan_request"))),
             "runner_result": copy.deepcopy(dict(runner_result)) if isinstance(runner_result, Mapping) else {},
@@ -172,6 +182,7 @@ class EngineeringGoalLoop:
         plan = _as_mapping(continuation_plan) or _as_mapping(last_cycle.get("continuation_plan"))
         next_request = _as_mapping(plan.get("next_runtime_request"))
         payload = _as_mapping(next_request.get("payload"))
+        work_item_template = _as_mapping(plan.get("work_item_template"))
         source_goal_id = _clean_text(goal_id or last_cycle.get("goal_id") or plan.get("goal_id") or next_request.get("goal_id"))
         resolved_cycle_index = int(cycle_index if cycle_index is not None else last_cycle.get("cycle_index") or 0)
         continuation_goal_id = self._continuation_goal_id(source_goal_id, resolved_cycle_index)
@@ -183,6 +194,9 @@ class EngineeringGoalLoop:
         payload["continuation_source_goal_id"] = source_goal_id
         payload["continuation_cycle_index"] = resolved_cycle_index
         payload["continuation_requested"] = True
+        payload["continuation_objective"] = _clean_text(work_item_template.get("objective"), summary)
+        payload["continuation_acceptance"] = _as_mapping(work_item_template.get("acceptance"))
+        payload["adaptive_evidence_chain"] = copy.deepcopy(plan.get("evidence_chain") or [])
 
         record = self.repository.save_goal(
             {
@@ -197,6 +211,8 @@ class EngineeringGoalLoop:
                     "source_goal_id": source_goal_id,
                     "source_cycle_index": resolved_cycle_index,
                     "continuation_plan": plan,
+                    "work_item_template": work_item_template,
+                    "adaptive_evidence_chain": copy.deepcopy(plan.get("evidence_chain") or []),
                     "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
                 },
             }
@@ -229,6 +245,8 @@ class EngineeringGoalLoop:
             "reason": _clean_text(request.get("reason"), "recoverable_runtime_failure"),
             "replan_request": copy.deepcopy(request),
             "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
+            "root_cause_report": _as_mapping(request.get("root_cause_report")),
+            "evidence_chain": copy.deepcopy(request.get("evidence_chain") or []),
             "created_at": time.time(),
         }
 

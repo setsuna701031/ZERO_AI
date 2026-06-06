@@ -326,7 +326,7 @@ class AgentLoop:
 
         engineering_goal_result = self._try_handle_engineering_goal_route(text)
         if engineering_goal_result is not None:
-            engineering_goal_result["agent_loop_runtime_route"] = "engineering_goal_stack"
+            engineering_goal_result["agent_loop_runtime_route"] = "engineering_program_mainline"
             return engineering_goal_result
 
         engineering_task_result = self._try_handle_engineering_task_route(text)
@@ -343,7 +343,7 @@ class AgentLoop:
         return None
 
     def _try_handle_engineering_goal_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Route opted-in engineering JSON tasks through persisted Goal Stack."""
+        """Route persisted engineering goals through Program -> Portfolio -> Goal."""
 
         text = str(user_input or "").strip()
         if not text or not (text.startswith("{") and text.endswith("}")):
@@ -380,10 +380,14 @@ class AgentLoop:
         goal_id = str(payload.get("goal_id") or package_payload.get("goal_id") or "").strip()
 
         try:
-            from core.tasks.engineering_goal_loop import EngineeringGoalLoop
             from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+            from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
+            from core.tasks.engineering_program_cycle import EngineeringProgramCycle
+            from core.tasks.engineering_program_repository import EngineeringProgramRepository
 
-            repository = EngineeringGoalRepository(repo_root)
+            goal_repository = EngineeringGoalRepository(repo_root)
+            portfolio_repository = EngineeringPortfolioRepository(repo_root)
+            program_repository = EngineeringProgramRepository(repo_root)
             goal_record = {
                 "summary": summary,
                 "status": "pending",
@@ -401,56 +405,115 @@ class AgentLoop:
             }
             if goal_id:
                 goal_record["goal_id"] = goal_id
-            goal = repository.save_goal(goal_record)
-            loop_result = EngineeringGoalLoop(repo_root=repo_root, repository=repository).run_until_terminal(
-                goal["goal_id"],
-                max_cycles=int(payload.get("max_cycles") or 3),
+            goal = goal_repository.save_goal(goal_record)
+
+            program_id = str(payload.get("program_id") or package_payload.get("program_id") or f"{goal['goal_id']}__program").strip()
+            portfolio_id = str(
+                payload.get("portfolio_id") or package_payload.get("portfolio_id") or f"{goal['goal_id']}__portfolio"
+            ).strip()
+            program = program_repository.load_program(program_id)
+            if program is None:
+                program = program_repository.create_program(
+                    {
+                        "program_id": program_id,
+                        "name": str(payload.get("program_name") or f"Program for {summary}"),
+                    }
+                )
+            portfolio = portfolio_repository.load_portfolio(portfolio_id)
+            if portfolio is None:
+                portfolio = portfolio_repository.create_portfolio(
+                    {
+                        "portfolio_id": portfolio_id,
+                        "name": str(payload.get("portfolio_name") or f"Portfolio for {summary}"),
+                        "metadata": {"source": "agent_loop_engineering_program_mainline"},
+                    }
+                )
+            portfolio = portfolio_repository.add_goal_to_portfolio(portfolio_id, goal["goal_id"])
+            program = program_repository.add_portfolio(program_id, portfolio_id)
+            program_result = EngineeringProgramCycle(
+                repo_root=repo_root,
+                program_repository=program_repository,
+                portfolio_repository=portfolio_repository,
+            ).run_until_idle(
+                program_id,
+                max_portfolios=int(payload.get("max_portfolios") or 1),
             )
         except Exception as exc:
             goal = {"goal_id": goal_id, "summary": summary}
-            loop_result = {
-                "schema": "zero.engineering_goal.agent_loop_dispatch_error.v1",
+            program_id = str(payload.get("program_id") or package_payload.get("program_id") or "").strip()
+            portfolio_id = str(payload.get("portfolio_id") or package_payload.get("portfolio_id") or "").strip()
+            program = {"program_id": program_id}
+            portfolio = {"portfolio_id": portfolio_id}
+            program_result = {
+                "schema": "zero.engineering_program.agent_loop_dispatch_error.v1",
                 "ok": False,
-                "mode": "engineering_goal_stack",
+                "mode": "engineering_program_mainline",
+                "program_id": program_id,
+                "portfolio_id": portfolio_id,
                 "goal_id": goal_id,
-                "error": f"engineering goal dispatch failed: {type(exc).__name__}: {exc}",
-                "stop_reason": "engineering_goal_dispatch_error",
-                "cycles": [],
+                "error": f"engineering program dispatch failed: {type(exc).__name__}: {exc}",
+                "stop_reason": "engineering_program_dispatch_error",
+                "runs": [],
             }
 
-        ok = bool(loop_result.get("ok")) if isinstance(loop_result, dict) else False
-        resolved_goal_id = str(loop_result.get("goal_id") or goal.get("goal_id") or goal_id or "")
-        stop_reason = str(loop_result.get("stop_reason") or "")
+        ok = bool(program_result.get("ok")) if isinstance(program_result, dict) else False
+        resolved_goal_id = str(program_result.get("goal_id") or goal.get("goal_id") or goal_id or "")
+        resolved_program_id = str(program_result.get("program_id") or program.get("program_id") or program_id or "")
+        resolved_portfolio_id = str(program_result.get("portfolio_id") or portfolio.get("portfolio_id") or portfolio_id or "")
+        stop_reason = str(program_result.get("stop_reason") or "")
+        adaptive_decision = copy.deepcopy(program_result.get("adaptive_decision") or {})
+        selected_goal = copy.deepcopy(program_result.get("selected_goal") or {})
+        execution_path = {
+            "route": "AgentLoop -> Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime",
+            "agent_loop_routes_only": True,
+            "program_owns_strategic_sequencing": True,
+            "portfolio_owns_goal_selection": True,
+            "goal_owns_adaptive_continuation": True,
+            "adaptive_planner_decides_only": True,
+            "runtime_owns_execution": True,
+            "direct_goal_runner_bypass": False,
+            "legacy_direct_engineering_task_route": False,
+        }
         final_answer = (
-            f"engineering goal {resolved_goal_id} completed"
+            f"engineering program {resolved_program_id} completed"
             if ok
-            else f"engineering goal {resolved_goal_id} blocked or failed"
+            else f"engineering program {resolved_program_id} stopped"
         )
         if stop_reason:
             final_answer += f": {stop_reason}"
 
         route_record = {
-            "mode": "engineering_goal_stack",
+            "mode": "engineering_program_mainline",
             "task": True,
             "forced_route": True,
             "engineering_task": True,
             "engineering_goal_route": True,
             "legacy_direct_json_engineering_task_runner": False,
+            "program_id": resolved_program_id,
+            "portfolio_id": resolved_portfolio_id,
             "goal_id": resolved_goal_id,
+            "selected_goal": selected_goal,
+            "adaptive_decision": adaptive_decision,
+            "stop_reason": stop_reason,
+            "execution_path": execution_path,
             "repo_root": repo_root,
-            "authority_path": "AgentLoop -> EngineeringGoalRepository -> EngineeringGoalLoop -> EngineeringGoalRunner -> EngineeringRuntimeOrchestrator",
+            "authority_path": execution_path["route"],
         }
         plan = {
             "ok": ok,
-            "planner_mode": "engineering_goal_stack_v1",
-            "intent": "engineering_goal",
-            "delegated_to": "core.tasks.engineering_goal_loop.EngineeringGoalLoop.run_until_terminal",
+            "planner_mode": "engineering_program_mainline_v1",
+            "intent": "engineering_program",
+            "delegated_to": "core.tasks.engineering_program_cycle.EngineeringProgramCycle.run_until_idle",
+            "program": copy.deepcopy(program),
+            "portfolio": copy.deepcopy(portfolio),
             "goal": copy.deepcopy(goal),
-            "loop_result": copy.deepcopy(loop_result),
+            "program_result": copy.deepcopy(program_result),
             "final_answer": final_answer,
             "steps": [
                 {
-                    "type": "engineering_goal_loop_run",
+                    "type": "engineering_program_cycle_run",
+                    "program_id": resolved_program_id,
+                    "portfolio_id": resolved_portfolio_id,
                     "goal_id": resolved_goal_id,
                 }
             ],
@@ -459,8 +522,9 @@ class AgentLoop:
                 "step_count": 1,
                 "forced_route": True,
                 "agent_loop_delegates_only": True,
-                "goal_stack_entrypoint": True,
+                "program_mainline_entrypoint": True,
                 "direct_engineering_task_runner": False,
+                "direct_goal_runner_bypass": False,
             },
         }
         execution = {
@@ -469,33 +533,33 @@ class AgentLoop:
             "results": [
                 {
                     "step_index": 1,
-                    "step": {"type": "engineering_goal_loop_run", "goal_id": resolved_goal_id},
-                    "result": copy.deepcopy(loop_result),
+                    "step": {"type": "engineering_program_cycle_run", "program_id": resolved_program_id},
+                    "result": copy.deepcopy(program_result),
                 }
             ],
             "execution_log": [
                 {
-                    "type": "engineering_goal_loop_run",
+                    "type": "engineering_program_cycle_run",
                     "status": "success" if ok else "blocked_or_failed",
                     "ok": ok,
-                    "data": copy.deepcopy(loop_result),
+                    "data": copy.deepcopy(program_result),
                 }
             ],
             "execution_trace": [
                 {
-                    "type": "engineering_goal_loop_run",
+                    "type": "engineering_program_cycle_run",
                     "status": "success" if ok else "blocked_or_failed",
                     "ok": ok,
-                    "data": copy.deepcopy(loop_result),
+                    "data": copy.deepcopy(program_result),
                 }
             ],
-            "last_result": copy.deepcopy(loop_result),
+            "last_result": copy.deepcopy(program_result),
             "final_answer": final_answer,
             "error": None if ok else stop_reason or "engineering_goal_failed",
         }
         return self._make_agent_response(
             ok=ok,
-            mode="engineering_goal_stack",
+            mode="engineering_program_mainline",
             context={},
             route=route_record,
             plan=plan,
@@ -504,9 +568,15 @@ class AgentLoop:
             error=None if ok else stop_reason or "engineering_goal_failed",
             extra={
                 "goal": copy.deepcopy(goal),
+                "program_id": resolved_program_id,
+                "portfolio_id": resolved_portfolio_id,
                 "goal_id": resolved_goal_id,
-                "loop_result": copy.deepcopy(loop_result),
-                "execution_mode": "engineering_goal_stack",
+                "selected_goal": selected_goal,
+                "adaptive_decision": adaptive_decision,
+                "stop_reason": stop_reason,
+                "execution_path": execution_path,
+                "program_result": copy.deepcopy(program_result),
+                "execution_mode": "engineering_program_mainline",
                 "legacy_direct_json_engineering_task_runner": False,
                 "final_message": final_answer,
             },
@@ -569,6 +639,13 @@ class AgentLoop:
         if result_path:
             final_answer += f"; result={result_path}"
 
+        legacy_execution_path = {
+            "route": "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake",
+            "legacy_direct_engineering_task_route": True,
+            "program_mainline": False,
+            "persisted_engineering_goal": False,
+            "direct_goal_runner_bypass": False,
+        }
         route = {
             "mode": "engineering_task_runner",
             "task": True,
@@ -577,7 +654,8 @@ class AgentLoop:
             "package_id": package_id,
             "repo_root": repo_root,
             "legacy_direct_json_engineering_task_runner": True,
-            "authority_path": "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake",
+            "execution_path": legacy_execution_path,
+            "authority_path": legacy_execution_path["route"],
         }
         plan = {
             "ok": ok,
@@ -684,6 +762,7 @@ class AgentLoop:
                 "evidence_path": evidence_path,
                 "result_path": result_path,
                 "execution_mode": "engineering_task_runner",
+                "execution_path": legacy_execution_path,
                 "legacy_direct_json_engineering_task_runner": True,
                 "final_message": result.get("final_message") if isinstance(result, dict) else final_answer,
             },

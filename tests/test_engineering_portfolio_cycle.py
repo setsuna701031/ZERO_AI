@@ -75,6 +75,10 @@ def test_portfolio_cycle_can_advance_multiple_goals(tmp_path) -> None:
     assert goal_loop.calls == ["goal_1", "goal_2"]
     assert goal_repository.load_goal("goal_1")["status"] == "complete"
     assert goal_repository.load_goal("goal_2")["status"] == "complete"
+    assert result["portfolio_id"] == "portfolio_1"
+    assert result["goal_id"] == "goal_2"
+    assert result["selected_goal"]["selected_goal_id"] == "goal_2"
+    assert result["execution_path"]["portfolio_owns_goal_selection"] is True
 
 
 def test_blocked_and_completed_goals_are_skipped_and_not_rerun(tmp_path) -> None:

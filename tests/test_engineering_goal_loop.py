@@ -63,6 +63,9 @@ def test_complete_goal_loop_runs_one_cycle_and_stops(tmp_path) -> None:
     assert result["cycle_count"] == 1
     assert result["cycles"][0]["adaptive_decision"] == "complete"
     assert result["cycles"][0]["continuation_work_item"] == {}
+    assert result["execution_path"]["route"] == "Goal -> Adaptive Planner -> Runtime"
+    assert result["execution_path"]["goal_id"] == "goal_1"
+    assert result["execution_path"]["adaptive_planner_decides_only"] is True
     assert runner.calls == ["goal_1"]
 
 

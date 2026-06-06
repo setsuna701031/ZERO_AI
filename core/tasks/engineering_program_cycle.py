@@ -116,18 +116,36 @@ class EngineeringProgramCycle:
             portfolio_result = self.portfolio_cycle.run_until_idle(selected_portfolio_id)
             current_state = self.coordinator.summarize_program_state(target_program_id)
             adaptive_decision = _as_mapping(portfolio_result.get("adaptive_decision"))
+            selected_goal = _as_mapping(portfolio_result.get("selected_goal"))
+            selected_goal_id = _clean_text(portfolio_result.get("goal_id") or selected_goal.get("selected_goal_id"))
             runs.append(
                 {
                     "schema": ENGINEERING_PROGRAM_CYCLE_SCHEMA,
                     "ok": bool(portfolio_result.get("ok")),
                     "program_id": target_program_id,
                     "selected_portfolio_id": selected_portfolio_id,
+                    "portfolio_id": selected_portfolio_id,
+                    "goal_id": selected_goal_id,
+                    "selected_goal": copy.deepcopy(selected_goal),
                     "selection": copy.deepcopy(selection),
                     "portfolio_cycle_result": copy.deepcopy(dict(portfolio_result)),
                     "adaptive_decision": copy.deepcopy(adaptive_decision),
                     "adaptive_reason": _clean_text(adaptive_decision.get("reason") or portfolio_result.get("adaptive_reason")),
                     "adaptive_confidence": adaptive_decision.get("confidence", portfolio_result.get("adaptive_confidence", 0.0)),
+                    "adaptive_confidence_score": copy.deepcopy(_as_mapping(adaptive_decision.get("confidence_score"))),
+                    "adaptive_evidence_chain": copy.deepcopy(adaptive_decision.get("evidence_chain") or []),
+                    "root_cause_report": copy.deepcopy(_as_mapping(adaptive_decision.get("root_cause_report"))),
                     "stop_reason": _clean_text(portfolio_result.get("stop_reason")),
+                    "execution_path": {
+                        "route": "Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime",
+                        "program_id": target_program_id,
+                        "portfolio_id": selected_portfolio_id,
+                        "goal_id": selected_goal_id,
+                        "program_owns_strategic_sequencing": True,
+                        "portfolio_owns_goal_selection": True,
+                        "goal_owns_adaptive_continuation": True,
+                        "runtime_owns_execution": True,
+                    },
                     "program_state": copy.deepcopy(current_state),
                     "updated_at": time.time(),
                 }
@@ -170,16 +188,36 @@ class EngineeringProgramCycle:
                         skipped_portfolio_ids.add(portfolio_id)
         latest_run = _as_mapping(runs[-1]) if runs else {}
         latest_adaptive_decision = _as_mapping(latest_run.get("adaptive_decision"))
+        selected_goal = _as_mapping(latest_run.get("selected_goal"))
+        selected_portfolio_id = _clean_text(latest_run.get("portfolio_id") or latest_run.get("selected_portfolio_id"))
+        selected_goal_id = _clean_text(latest_run.get("goal_id") or selected_goal.get("selected_goal_id"))
 
         return apply_engineering_issue_summary(
             {
             "schema": ENGINEERING_PROGRAM_CYCLE_SUMMARY_SCHEMA,
             "ok": _clean_text(stop_reason) not in {"program_not_found"},
             "program_id": _clean_text(program_id),
+            "portfolio_id": selected_portfolio_id,
+            "goal_id": selected_goal_id,
+            "selected_goal": copy.deepcopy(selected_goal),
             "stop_reason": _clean_text(stop_reason),
             "adaptive_decision": copy.deepcopy(latest_adaptive_decision),
             "adaptive_reason": _clean_text(latest_run.get("adaptive_reason") or latest_adaptive_decision.get("reason")),
             "adaptive_confidence": latest_adaptive_decision.get("confidence", latest_run.get("adaptive_confidence", 0.0)),
+            "adaptive_confidence_score": copy.deepcopy(_as_mapping(latest_adaptive_decision.get("confidence_score"))),
+            "adaptive_evidence_chain": copy.deepcopy(latest_adaptive_decision.get("evidence_chain") or []),
+            "root_cause_report": copy.deepcopy(_as_mapping(latest_adaptive_decision.get("root_cause_report"))),
+            "execution_path": {
+                "route": "Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime",
+                "program_id": _clean_text(program_id),
+                "portfolio_id": selected_portfolio_id,
+                "goal_id": selected_goal_id,
+                "program_owns_strategic_sequencing": True,
+                "portfolio_owns_goal_selection": True,
+                "goal_owns_adaptive_continuation": True,
+                "adaptive_planner_decides_only": True,
+                "runtime_owns_execution": True,
+            },
             "max_portfolios": max_portfolios,
             "cycle_count": len(runs),
             "executed_portfolio_count": len(
