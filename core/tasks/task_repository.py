@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Set
 
 from core.tasks.task_paths import TaskPathManager
+from core.tasks.task_store_lock import atomic_write_json, task_store_lock
+
+
+def _task_store_transaction(method):
+    @functools.wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._store_lock.acquire():
+            return method(self, *args, **kwargs)
+
+    return wrapped
 
 
 class TaskRepository:
@@ -29,6 +40,7 @@ class TaskRepository:
 
     def __init__(self, db_path: str = "workspace/tasks.json") -> None:
         self.db_path = os.path.abspath(db_path)
+        self._store_lock = task_store_lock(self.db_path)
         self.workspace_root = os.path.dirname(self.db_path)
         self.path_manager = TaskPathManager(workspace_root=self.workspace_root)
         self.path_manager.ensure_workspace()
@@ -40,6 +52,7 @@ class TaskRepository:
     # file io
     # ============================================================
 
+    @_task_store_transaction
     def load(self) -> None:
         if not os.path.exists(self.db_path):
             self.tasks = []
@@ -74,6 +87,7 @@ class TaskRepository:
     def reload(self) -> None:
         self.load()
 
+    @_task_store_transaction
     def save(self) -> None:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
 
@@ -88,13 +102,7 @@ class TaskRepository:
                 continue
             normalized.append(copy.deepcopy(task))
 
-        with open(self.db_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {"tasks": normalized},
-                f,
-                ensure_ascii=False,
-                indent=2,
-            )
+        atomic_write_json(self.db_path, {"tasks": normalized})
 
     # ============================================================
     # DAG helpers
@@ -221,6 +229,7 @@ class TaskRepository:
     # basic repo api
     # ============================================================
 
+    @_task_store_transaction
     def list_tasks(self) -> List[Dict[str, Any]]:
         self.reload()
 
@@ -239,6 +248,7 @@ class TaskRepository:
 
         return copy.deepcopy(refreshed)
 
+    @_task_store_transaction
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         self.reload()
 
@@ -255,6 +265,7 @@ class TaskRepository:
 
         return None
 
+    @_task_store_transaction
     def add_task(self, task: Dict[str, Any]) -> bool:
         self.reload()
 
@@ -282,6 +293,7 @@ class TaskRepository:
         self.save()
         return True
 
+    @_task_store_transaction
     def create_task(
         self,
         task: Optional[Dict[str, Any]] = None,
@@ -317,6 +329,7 @@ class TaskRepository:
 
         return self.add_task(raw_task)
 
+    @_task_store_transaction
     def upsert_task(self, task: Dict[str, Any]) -> bool:
         self.reload()
 
@@ -360,6 +373,7 @@ class TaskRepository:
         self.save()
         return True
 
+    @_task_store_transaction
     def delete_task(self, task_id: str) -> bool:
         self.reload()
 
@@ -371,6 +385,7 @@ class TaskRepository:
     # scheduler api
     # ============================================================
 
+    @_task_store_transaction
     def get_ready_tasks(self) -> List[Dict[str, Any]]:
         """
         只回傳依賴已完成且可進入執行的任務
