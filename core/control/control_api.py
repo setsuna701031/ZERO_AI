@@ -370,11 +370,11 @@ class ZeroControlAPI:
                 pass
 
         scheduler = _get_scheduler(system)
-
-        helper = getattr(scheduler, "_get_task_from_repo", None)
-        if callable(helper):
+        repo = getattr(scheduler, "task_repo", None)
+        repo_get_task = getattr(repo, "get_task", None)
+        if callable(repo_get_task):
             try:
-                task = helper(normalized_task_id)
+                task = repo_get_task(normalized_task_id)
                 if isinstance(task, dict):
                     return {
                         "ok": True,
