@@ -3759,6 +3759,21 @@ class Scheduler(RuntimeTaskScheduler):
             "trace_file": trace_file,
             "scheduler_build": SCHEDULER_BUILD,
         }
+        explicit_execution_authority = kwargs.get("execution_authority")
+        if isinstance(explicit_execution_authority, dict) and explicit_execution_authority:
+            task["execution_authority"] = copy.deepcopy(explicit_execution_authority)
+            task["authority_propagation_required"] = True
+        elif bool(kwargs.get("authority_propagation_required", False)):
+            task["authority_propagation_required"] = True
+
+        for authority_key in ("authority_context", "runtime_authority_context"):
+            authority_value = kwargs.get(authority_key)
+            if isinstance(authority_value, dict) and authority_value:
+                task[authority_key] = copy.deepcopy(authority_value)
+
+        operator_session_id = str(kwargs.get("operator_session_id") or "").strip()
+        if operator_session_id:
+            task["operator_session_id"] = operator_session_id
 
         task = refresh_task_public_fields(scheduler=self, task=task, status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
 
@@ -5574,15 +5589,20 @@ class Scheduler(RuntimeTaskScheduler):
         self._save_task_snapshot_safe(task)
 
     def _save_task_snapshot_safe(self, task: Dict[str, Any]) -> None:
+        # Preserve the complete private execution state before building bounded
+        # public views. Later CLI invocations resume previous_result from
+        # runtime_state.json, so writing the compact public result there would
+        # truncate real step output at the display-summary limit.
+        try:
+            self.task_workspace.save_task_snapshot(copy.deepcopy(task))
+        except Exception:
+            pass
+
         task = _zero_safe_task_for_snapshot(task)
         task = self._backfill_replan_decision_fields(task)
         task = self._infer_completion_fields(task)
         task = self._clear_stale_replan_fields(task)
         task = refresh_task_public_fields(scheduler=self, task=task, status_created=STATUS_CREATED, default_max_replans=self.default_max_replans)
-        try:
-            self.task_workspace.save_task_snapshot(task)
-        except Exception:
-            pass
 
         snapshot_file = str(task.get("snapshot_file") or "").strip()
         if snapshot_file:
@@ -9736,6 +9756,37 @@ def _zero_v7335_attach_controlled_mutation_bridge(target: Dict[str, Any]) -> Dic
 _ZERO_V7335_ORIGINAL_SCHEDULER_RUN_ONE_STEP = Scheduler.run_one_step
 
 
+def _zero_v7335_has_approved_execution_authority(task: Any) -> bool:
+    if not isinstance(task, dict):
+        return False
+    authority = task.get("execution_authority")
+    if not isinstance(authority, dict):
+        return False
+    status = str(authority.get("authority_status") or authority.get("status") or "").strip().lower()
+    endpoint = str(
+        authority.get("execution_authority_endpoint")
+        or authority.get("authority_endpoint")
+        or ""
+    ).strip().lower()
+    return status in {"allowed", "allow", "approved"} and endpoint in {"step_executor", "runtime_step_executor"}
+
+
+def _zero_v7335_is_repair_work(task: Any) -> bool:
+    if not isinstance(task, dict):
+        return False
+    if isinstance(task.get("repair_context"), dict) or task.get("failed_file") or task.get("repair_intent"):
+        return True
+    steps = task.get("steps")
+    if not isinstance(steps, list):
+        return False
+    repair_types = {"code_chain_repair", "governed_repair_mutation", "autonomous_repair_chain", "runtime_autonomous_repair_chain"}
+    return any(
+        isinstance(step, dict)
+        and str(step.get("type") or step.get("action") or "").strip().lower() in repair_types
+        for step in steps
+    )
+
+
 def _zero_v7335_scheduler_run_one_step(
     self,
     task: Dict[str, Any],
@@ -9746,6 +9797,8 @@ def _zero_v7335_scheduler_run_one_step(
         task=task,
         current_tick=current_tick,
     )
+    if _zero_v7335_has_approved_execution_authority(task) and not _zero_v7335_is_repair_work(task):
+        return result
     if isinstance(result, dict):
         result = _zero_v7335_attach_controlled_mutation_bridge(result)
         for target in (task, result.get("task"), result.get("runtime_state")):

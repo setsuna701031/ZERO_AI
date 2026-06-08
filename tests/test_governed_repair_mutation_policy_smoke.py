@@ -5,7 +5,7 @@ class _Executor:
     tool_registry = None
 
 
-def test_governed_repair_mutation_defaults_are_conservative_for_core_file():
+def test_governed_repair_mutation_defaults_are_conservative_for_core_file(tmp_path):
     handler = GovernedRepairMutationStepHandler(_Executor())
 
     step = {
@@ -19,7 +19,7 @@ def test_governed_repair_mutation_defaults_are_conservative_for_core_file():
             "target_path": "core/runtime/step_handlers.py",
             "content": "# smoke\n",
         },
-        "workspace_root": ".",
+        "workspace_root": str(tmp_path),
         "dry_run": True,
     }
 
@@ -30,7 +30,7 @@ def test_governed_repair_mutation_defaults_are_conservative_for_core_file():
     assert "not_committed" in result["error"]["message"]
 
 
-def test_governed_repair_mutation_blocks_without_explicit_scope_even_for_docs():
+def test_governed_repair_mutation_blocks_without_explicit_scope_even_for_docs(tmp_path):
     handler = GovernedRepairMutationStepHandler(_Executor())
 
     step = {
@@ -44,7 +44,7 @@ def test_governed_repair_mutation_blocks_without_explicit_scope_even_for_docs():
             "target_path": "docs/repair_policy_smoke.md",
             "content": "# smoke\n",
         },
-        "workspace_root": ".",
+        "workspace_root": str(tmp_path),
         "auto_approve": True,
         "skip_verification": True,
         "dry_run": True,

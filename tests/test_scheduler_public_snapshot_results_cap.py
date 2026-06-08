@@ -3,8 +3,8 @@ from __future__ import annotations
 from core.tasks.scheduler import Scheduler
 
 
-def test_normalize_task_schema_caps_results_without_deep_runtime_payload() -> None:
-    scheduler = Scheduler(workspace_dir="workspace_test_public_snapshot_cap")
+def test_normalize_task_schema_caps_results_without_deep_runtime_payload(tmp_path) -> None:
+    scheduler = Scheduler(workspace_dir=str(tmp_path / "workspace"))
 
     huge_nested = {
         "runtime_execution_result": {
@@ -49,8 +49,8 @@ def test_normalize_task_schema_caps_results_without_deep_runtime_payload() -> No
     assert "runtime_execution_result" not in results[-1]
 
 
-def test_normalize_task_schema_result_summary_keeps_blocked_error_signal() -> None:
-    scheduler = Scheduler(workspace_dir="workspace_test_public_snapshot_cap")
+def test_normalize_task_schema_result_summary_keeps_blocked_error_signal(tmp_path) -> None:
+    scheduler = Scheduler(workspace_dir=str(tmp_path / "workspace"))
 
     task = {
         "task_id": "task_public_snapshot_blocked",

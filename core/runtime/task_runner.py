@@ -4753,8 +4753,6 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         authority_chain = copy.deepcopy(incoming["authority_chain"])
 
     controlled_document_write = _zero_boundary_document_pipeline_allowed(task, step)
-    if controlled_document_write and not execution_authority:
-        execution_authority = _zero_boundary_build_document_execution_authority(task, state, step)
 
     if not execution_authority:
         return {
@@ -4775,15 +4773,15 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
     authority_source = _zero_boundary_norm_text(
         execution_authority.get("authority_source") or execution_authority.get("source")
     )
-    authority_role = "bounded_document_authority" if controlled_document_write else "propagation"
-    authority_phase = "taskrunner_document_pipeline" if controlled_document_write else "taskrunner_propagation"
-    authority_policy = "bounded_workspace_shared_document_write" if controlled_document_write else "propagate_without_escalation"
+    authority_role = "propagation"
+    authority_phase = "taskrunner_propagation"
+    authority_policy = "propagate_without_escalation"
 
     authority_chain.append({
         "layer": "task_runner",
         "authority_role": authority_role,
-        "execution_authority_granted": bool(controlled_document_write),
-        "can_execute_privileged_step": bool(controlled_document_write),
+        "execution_authority_granted": False,
+        "can_execute_privileged_step": False,
     })
 
     return {
@@ -4793,8 +4791,8 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         "authority_source": authority_source,
         "authority_policy": authority_policy,
         "authority_propagation_required": True,
-        "execution_authority_granted": bool(controlled_document_write),
-        "can_execute_privileged_step": bool(controlled_document_write),
+        "execution_authority_granted": False,
+        "can_execute_privileged_step": False,
         "escalated": False,
         "execution_authority": copy.deepcopy(execution_authority),
         "received_authority": copy.deepcopy(incoming),

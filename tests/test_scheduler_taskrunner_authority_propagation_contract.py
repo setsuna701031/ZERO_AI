@@ -28,6 +28,47 @@ def test_scheduler_authority_context_is_orchestration_only(tmp_path: Path) -> No
     assert context["authority_chain"][-1]["execution_authority_granted"] is False
 
 
+def test_scheduler_task_intake_preserves_explicit_execution_authority(tmp_path: Path) -> None:
+    scheduler = _make_scheduler(tmp_path)
+    authority = _execution_authority(action_type="mutation")
+
+    result = scheduler._create_task_record(
+        "authority intake :: step=write_file:shared/intake.txt|authorized",
+        initial_status="queued",
+        execution_authority=authority,
+        authority_propagation_required=True,
+        operator_session_id="operator-authority-intake",
+    )
+
+    task = scheduler._get_task_from_repo(result["task"]["task_id"])
+    assert task["execution_authority"] == authority
+    assert task["authority_propagation_required"] is True
+    assert task["operator_session_id"] == "operator-authority-intake"
+
+
+def test_approved_non_repair_scheduler_task_completes_without_new_review(tmp_path: Path) -> None:
+    scheduler = _make_scheduler(tmp_path)
+    authority = _execution_authority(action_type="mutation")
+    result = scheduler._create_task_record(
+        "authorized completion :: step=write_file:shared/completion.txt|authorized :: step=verify:contains=authorized",
+        initial_status="queued",
+        execution_authority=authority,
+        authority_propagation_required=True,
+    )
+    task_id = result["task"]["task_id"]
+
+    for _ in range(4):
+        scheduler.tick()
+        task = scheduler._get_task_from_repo(task_id)
+        if task["status"] == "finished":
+            break
+
+    assert task["status"] == "finished"
+    assert task["current_step_index"] == 2
+    assert task["requires_review"] is False
+    assert task["replan_count"] == 0
+
+
 def test_taskrunner_propagates_authority_without_escalation(tmp_path: Path) -> None:
     from core.runtime.task_runner import TaskRunner
 

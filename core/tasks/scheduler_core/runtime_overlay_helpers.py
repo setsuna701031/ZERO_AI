@@ -121,12 +121,17 @@ def scheduler_direct_step(scheduler: Any, task: Any, current_tick: Any) -> dict[
             step=copy.deepcopy(step),
             task=copy.deepcopy(task),
             context=context,
-            previous_result=None,
+            previous_result=copy.deepcopy(task.get("last_step_result")),
             step_index=index,
             step_count=len(steps),
         )
     except TypeError:
-        step_result = execute_step(copy.deepcopy(step), task=copy.deepcopy(task), context=context)
+        step_result = execute_step(
+            copy.deepcopy(step),
+            task=copy.deepcopy(task),
+            context=context,
+            previous_result=copy.deepcopy(task.get("last_step_result")),
+        )
 
     if not isinstance(step_result, dict):
         step_result = {"ok": bool(step_result), "raw_result": step_result}
@@ -144,6 +149,30 @@ def _direct_step_success_payload(
     step_result: dict[str, Any],
 ) -> dict[str, Any]:
     updated_task = copy.deepcopy(task)
+    normalized_step_result = {
+        "ok": True,
+        "step_index": index,
+        "step": copy.deepcopy(steps[index]),
+        "result": copy.deepcopy(step_result),
+    }
+    results = copy.deepcopy(updated_task.get("results")) if isinstance(updated_task.get("results"), list) else []
+    results.append(normalized_step_result)
+    execution_log = (
+        copy.deepcopy(updated_task.get("execution_log"))
+        if isinstance(updated_task.get("execution_log"), list)
+        else []
+    )
+    execution_log.append({
+        "tick": current_tick if (current_tick := getattr(scheduler, "current_tick", None)) is not None else 0,
+        "step_index": index,
+        "step": copy.deepcopy(steps[index]),
+        "ok": True,
+        "result": copy.deepcopy(step_result),
+    })
+    updated_task["results"] = results
+    updated_task["step_results"] = copy.deepcopy(results)
+    updated_task["last_step_result"] = copy.deepcopy(normalized_step_result)
+    updated_task["execution_log"] = execution_log
     updated_task["current_step_index"] = min(index + 1, len(steps))
     if index + 1 >= len(steps):
         updated_task["status"] = "finished"
@@ -161,9 +190,12 @@ def _direct_step_success_payload(
         "task": updated_task,
         "runtime_state": copy.deepcopy(runtime_state),
         "result": copy.deepcopy(step_result),
-        "step_result": copy.deepcopy(step_result),
-        "last_step_result": copy.deepcopy(step_result),
+        "step_result": copy.deepcopy(normalized_step_result),
+        "last_step_result": copy.deepcopy(normalized_step_result),
         "executed_results": [copy.deepcopy(step_result)],
+        "results": copy.deepcopy(results),
+        "step_results": copy.deepcopy(results),
+        "execution_log": copy.deepcopy(execution_log),
         "current_step_index": updated_task["current_step_index"],
         "step_count": len(steps),
         "steps_total": len(steps),

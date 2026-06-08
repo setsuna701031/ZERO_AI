@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.runtime.workflow_runtime_session import WorkflowRuntimeSessionManager, build_workflow_runtime_session
 from core.runtime.runtime_replay_engine import build_replayable_workflow_runtime_session, build_governance_storage_lifecycle_replay_validation, build_governance_kernel_consolidation_replay_validation

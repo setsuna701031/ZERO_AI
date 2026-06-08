@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from core.tasks.task_store_lock import atomic_write_json, task_store_lock
+
 
 def workspace_dir() -> str:
     return os.environ.get("ZERO_WORKSPACE", "workspace")
@@ -18,19 +20,19 @@ def workspace_root(repo_root: Path) -> Path:
 
 
 def read_json_file(path: Path) -> Any:
-    if not path.is_file():
-        return None
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
+    with task_store_lock(path).acquire():
+        if not path.is_file():
+            return None
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return None
 
 
 def write_json_file(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+    with task_store_lock(path).acquire():
+        atomic_write_json(path, data, default=str)
 
 
 def tasks_json_path(repo_root: Path) -> Path:
@@ -59,12 +61,14 @@ def read_tasks_index(repo_root: Path) -> List[Dict[str, Any]]:
 
 
 def write_tasks_index(repo_root: Path, tasks: List[Dict[str, Any]]) -> None:
-    existing = read_json_file(tasks_json_path(repo_root))
-    if isinstance(existing, dict):
-        existing["tasks"] = tasks
-        write_json_file(tasks_json_path(repo_root), existing)
-    else:
-        write_json_file(tasks_json_path(repo_root), tasks)
+    path = tasks_json_path(repo_root)
+    with task_store_lock(path).acquire():
+        existing = read_json_file(path)
+        if isinstance(existing, dict):
+            existing["tasks"] = tasks
+            write_json_file(path, existing)
+        else:
+            write_json_file(path, tasks)
 
 
 def read_scheduler_state(repo_root: Path) -> Dict[str, Any]:

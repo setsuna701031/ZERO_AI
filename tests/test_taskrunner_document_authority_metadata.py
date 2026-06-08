@@ -3,7 +3,7 @@ from __future__ import annotations
 from core.runtime.task_runner import TaskRunner
 
 
-def test_document_pipeline_shared_write_gets_closure_compatible_authority_metadata() -> None:
+def test_document_pipeline_shared_write_does_not_synthesize_authority_metadata() -> None:
     runner = TaskRunner()
 
     task = {
@@ -28,20 +28,40 @@ def test_document_pipeline_shared_write_gets_closure_compatible_authority_metada
         upstream_context={},
     )
 
-    authority = context.get("execution_authority")
+    assert context.get("execution_authority_granted") is False
+    assert context.get("can_execute_privileged_step") is False
+    assert context.get("execution_authority") == {}
 
-    assert context.get("execution_authority_granted") is True
-    assert context.get("can_execute_privileged_step") is True
-    assert authority["task_id"] == "task_doc_authority_smoke"
-    assert authority["step_id"] == "step_write_summary"
-    assert authority["authority_source"] == "operator_cli"
-    assert authority["authority_status"] == "allowed"
-    assert authority["execution_authority_endpoint"] == "step_executor"
-    assert authority["action_type"] == "mutation"
-    assert authority["approval_state"] == "approved"
-    assert authority["approval_mode"] == "controlled_document_pipeline"
-    assert authority["policy_result"]["allowed"] is True
-    assert authority["trace_id"]
+
+def test_document_pipeline_shared_write_propagates_explicit_authority() -> None:
+    runner = TaskRunner()
+    authority = {
+        "task_id": "task_doc_authority_smoke",
+        "step_id": "approved_demo_flow",
+        "trace_id": "trace:doc",
+        "runtime_session": "session:doc",
+        "authority_source": "operator_cli",
+        "authority_status": "allowed",
+        "execution_authority_endpoint": "step_executor",
+        "action_type": "execute_or_mutation",
+        "approval_state": "approved",
+        "policy_result": {"allowed": True},
+    }
+    context = runner._build_taskrunner_authority_context(
+        task={
+            "task_id": "task_doc_authority_smoke",
+            "task_type": "document",
+            "execution_authority": authority,
+            "authority_propagation_required": True,
+        },
+        state={},
+        step={"type": "write_file", "path": "workspace/shared/summary.txt"},
+        upstream_context={},
+    )
+
+    assert context["execution_authority"] == authority
+    assert context["authority_role"] == "propagation"
+    assert context["execution_authority_granted"] is False
 
 
 def test_non_document_write_does_not_get_bounded_authority_metadata() -> None:

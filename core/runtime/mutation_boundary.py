@@ -6,7 +6,7 @@ import json
 import os
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -830,10 +830,10 @@ class MutationBoundary:
             return False
 
     def _new_mutation_id(self) -> str:
-        return f"mutation_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"mutation_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _new_snapshot_id(self) -> str:
-        return f"snapshot_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        return f"snapshot_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _normalize_mutation_id(self, mutation_id: str) -> str:
         text = str(mutation_id or "").strip()
@@ -844,7 +844,7 @@ class MutationBoundary:
         return text
 
     def _now(self) -> str:
-        return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def create_mutation_boundary(

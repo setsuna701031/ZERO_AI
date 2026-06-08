@@ -294,6 +294,7 @@ class RuntimeExecutionResult:
     risk_level: str = ""
     risk_metadata: dict[str, Any] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
+    plan_result: dict[str, Any] = field(default_factory=dict)
 
     def __init__(
         self,
@@ -329,6 +330,7 @@ class RuntimeExecutionResult:
         risk_level: str = "",
         risk_metadata: dict[str, Any] | None = None,
         evidence: dict[str, Any] | None = None,
+        plan_result: dict[str, Any] | None = None,
         executed: bool | None = None,
         failed: bool | None = None,
         verification_passed: bool | None = None,
@@ -367,6 +369,7 @@ class RuntimeExecutionResult:
             "risk_level": risk_level,
             "risk_metadata": copy.deepcopy(risk_metadata or {}),
             "evidence": copy.deepcopy(evidence or {}),
+            "plan_result": copy.deepcopy(plan_result or {}),
             "verification_passed": (
                 bool(verification_passed) if verification_passed is not None else None
             ),
@@ -436,6 +439,7 @@ class RuntimeExecutionResult:
                 else _copy_mapping(canonical.get("risk_metadata"))
             ),
             "evidence": _copy_mapping(canonical.get("evidence")),
+            "plan_result": _copy_mapping(plan_result),
         }
         for key, value in values.items():
             object.__setattr__(self, key, value)
@@ -492,6 +496,7 @@ class RuntimeExecutionResult:
             ok=bool(canonical.get("ok", False)),
             blocked=bool(canonical.get("blocked", False)),
         )
+        canonical.update(copy.deepcopy(self.plan_result))
         return canonical
 
     @classmethod
@@ -558,6 +563,7 @@ class RuntimeExecutionResult:
             risk_level=str(raw.get("risk_level") or ""),
             risk_metadata=_copy_mapping(raw.get("risk_metadata")),
             evidence=_copy_mapping(canonical.get("evidence")),
+            plan_result=_copy_mapping(raw.get("plan_result")),
         )
 
     @classmethod
@@ -620,6 +626,18 @@ class RuntimeExecutionResult:
             "metadata": _merge_metadata(metadata, extra),
         }
         canonical = _canonical_payload(payload)
+        plan_result = {
+            key: copy.deepcopy(legacy[key])
+            for key in (
+                "needs_correction",
+                "rounds",
+                "final_round_result",
+                "final_verify_result",
+                "replan_history",
+                "replan_rounds_used",
+            )
+            if key in legacy
+        }
         return cls(
             ok=bool(canonical.get("ok", False)),
             execution_id=execution_id,
@@ -643,6 +661,7 @@ class RuntimeExecutionResult:
             risk_metadata=copy.deepcopy(risk_metadata or {}),
             metadata=_merge_metadata(canonical.get("metadata"), metadata, extra),
             evidence=_copy_mapping(canonical.get("evidence")),
+            plan_result=plan_result,
         )
 
 

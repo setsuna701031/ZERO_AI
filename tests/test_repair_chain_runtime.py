@@ -1815,7 +1815,8 @@ def test_boundary_verify_forever_failure_exhausts_strategy_without_infinite_loop
             backup.unlink()
 
 
-def test_boundary_recursive_repair_goal_is_fingerprint_suppressed() -> None:
+def test_boundary_recursive_repair_goal_is_fingerprint_suppressed(monkeypatch) -> None:
+    monkeypatch.setattr("core.tasks.scheduler.time.time", lambda: 1_700_000_000.0)
     workspace = TEST_ROOT / "boundary_recursive_scheduler"
     shared = workspace / "shared"
     shared.mkdir(parents=True, exist_ok=True)

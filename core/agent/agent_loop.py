@@ -27,6 +27,7 @@ from core.agent.agent_route_policy import (
     should_force_planner_document_flow,
 )
 from core.agent.document_flow_trace_writer import maybe_write_document_flow_trace
+from core.agent.agent_loop_route_marker import mark_agent_loop_route
 from core.memory.context_builder import build_context
 from core.runtime.task_runner import TaskRunner
 from core.runtime.code_chain_patch_restore import request_code_chain_patch_restore
@@ -985,25 +986,7 @@ class AgentLoop:
         return _zero_v827_agent_try_planner_owned_code_chain(self, user_input)
 
     def _mark_agent_loop_route(self, response: Dict[str, Any], route_name: str) -> Dict[str, Any]:
-        if not isinstance(response, dict):
-            return {
-                "ok": False,
-                "mode": "agent_loop_invalid_response",
-                "context": {},
-                "route": None,
-                "plan": None,
-                "execution": None,
-                "final_answer": "",
-                "error": "agent loop produced non-dict response",
-                "raw_response": copy.deepcopy(response),
-                "agent_loop_runtime_route": str(route_name or "unknown"),
-                "agent_loop_route_marker": True,
-            }
-        marker = str(route_name or response.get("agent_loop_runtime_route") or response.get("mode") or "unknown")
-        response["agent_loop_runtime_route"] = marker
-        response["agent_loop_route_marker"] = True
-        response.setdefault("agent_loop_main_path", "AgentLoop.run -> _try_agent_loop_pre_routes -> _run_default_agent_route")
-        return response
+        return mark_agent_loop_route(response, route_name)
 
 
     def _analyze_scheduler_self_edit_candidate(self, user_input: str) -> Dict[str, Any]:
