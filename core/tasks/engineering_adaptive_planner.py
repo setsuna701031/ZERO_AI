@@ -11,6 +11,8 @@ import copy
 import time
 from typing import Any, Mapping
 
+from core.tasks.adaptive_planning_foundation import evaluate_runtime_outcome
+
 
 ENGINEERING_ADAPTIVE_PLANNER_SCHEMA = "zero.engineering_adaptive_planner.v2"
 ENGINEERING_ADAPTIVE_DECISION_SCHEMA = "zero.engineering_adaptive_planner.decision.v2"
@@ -189,6 +191,10 @@ class EngineeringAdaptivePlanner:
         runtime_result: Mapping[str, Any],
         runtime_root_cause: Mapping[str, Any] | None = None,
         issue_summary: Mapping[str, Any] | None = None,
+        replan_count: int = 0,
+        continuation_count: int = 0,
+        max_replans: int = 1,
+        max_continuations: int = 3,
     ) -> dict[str, Any]:
         progress = self.evaluate_goal_progress(
             goal=goal,
@@ -236,6 +242,16 @@ class EngineeringAdaptivePlanner:
             if decision == "replan"
             else {}
         )
+        adaptive_planning_record = evaluate_runtime_outcome(
+            runtime_result,
+            progress=progress,
+            previous_goal=progress["goal_id"],
+            previous_step=copy.deepcopy(progress["completed_tasks"][-1]) if progress["completed_tasks"] else None,
+            replan_count=replan_count,
+            continuation_count=continuation_count,
+            max_replans=max_replans,
+            max_continuations=max_continuations,
+        )
         normalized = normalize_adaptive_decision({
             "schema": ENGINEERING_ADAPTIVE_DECISION_SCHEMA,
             "decision": decision,
@@ -256,6 +272,9 @@ class EngineeringAdaptivePlanner:
             "blocking_issues": copy.deepcopy(_as_list(progress.get("blocking_issues"))),
             "root_cause": copy.deepcopy(_as_mapping(runtime_root_cause) if decision in {"blocked", "replan"} else {}),
             "root_cause_report": root_cause_report,
+            "outcome_class": adaptive_planning_record["outcome_class"],
+            "decision_reason": adaptive_planning_record["decision_reason"],
+            "adaptive_planning_record": adaptive_planning_record,
             "execution_path": {
                 "adaptive_planner_decides_only": True,
                 "executes_tasks": False,
