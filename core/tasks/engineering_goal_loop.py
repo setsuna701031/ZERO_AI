@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.evidence.decision_evidence import DecisionEvidenceRepository, build_decision_evidence
+from core.tasks.adaptive_planning_foundation import ADAPTIVE_PLANNING_RECORD_SCHEMA
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_goal_runner import EngineeringGoalRunner
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
@@ -42,10 +44,12 @@ class EngineeringGoalLoop:
         repository: EngineeringGoalRepository | Any | None = None,
         runner: EngineeringGoalRunner | Any | None = None,
         issue_reporter: Any | None = None,
+        decision_evidence_repository: DecisionEvidenceRepository | Any | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.repository = repository or EngineeringGoalRepository(self.repo_root)
         self.issue_reporter = issue_reporter
+        self.decision_evidence_repository = decision_evidence_repository or DecisionEvidenceRepository(self.repo_root)
         self.runner = runner or EngineeringGoalRunner(
             repo_root=self.repo_root,
             repository=self.repository,
@@ -53,13 +57,25 @@ class EngineeringGoalLoop:
         )
         self._last_cycle: dict[str, Any] = {}
 
-    def run_until_terminal(self, goal_id: str, max_cycles: int = 3) -> dict[str, Any]:
+    def run_until_terminal(
+        self,
+        goal_id: str,
+        max_cycles: int = 3,
+        *,
+        max_replans: int = 1,
+        max_continuations: int | None = None,
+    ) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
         cycle_limit = max(1, int(max_cycles or 1))
+        replan_limit = max(0, int(max_replans or 0))
+        continuation_limit = cycle_limit if max_continuations is None else max(0, int(max_continuations or 0))
         cycles: list[dict[str, Any]] = []
         current_goal_id = target_goal_id
         terminal = False
         stop_reason = "max_cycles_reached"
+        refusal_reason = ""
+        replan_count = 0
+        continuation_count = 0
 
         for cycle_index in range(cycle_limit):
             cycle = self.run_one_cycle(current_goal_id, cycle_index=cycle_index)
@@ -69,14 +85,42 @@ class EngineeringGoalLoop:
             if self.stop_on_complete(cycle):
                 terminal = True
                 stop_reason = "complete"
+                self._persist_adaptive_record(
+                    cycle,
+                    replan_count=replan_count,
+                    continuation_count=continuation_count,
+                    max_replans=replan_limit,
+                    max_continuations=continuation_limit,
+                )
                 break
 
             if self.stop_on_blocked(cycle):
                 terminal = True
                 stop_reason = "blocked"
+                self._persist_adaptive_record(
+                    cycle,
+                    replan_count=replan_count,
+                    continuation_count=continuation_count,
+                    max_replans=replan_limit,
+                    max_continuations=continuation_limit,
+                )
                 break
 
             if decision == "replan":
+                if replan_count >= replan_limit:
+                    refusal_reason = "max_replans_exhausted"
+                    self._refuse_adaptive_continuation(cycle, refusal_reason)
+                    terminal = True
+                    stop_reason = refusal_reason
+                    self._persist_adaptive_record(
+                        cycle,
+                        replan_count=replan_count,
+                        continuation_count=continuation_count,
+                        max_replans=replan_limit,
+                        max_continuations=continuation_limit,
+                    )
+                    break
+                replan_count += 1
                 cycle["replan_record"] = self.create_replan_record(
                     goal_id=current_goal_id,
                     cycle_index=cycle_index,
@@ -85,11 +129,41 @@ class EngineeringGoalLoop:
                 )
                 terminal = True
                 stop_reason = "replan"
+                self._persist_adaptive_record(
+                    cycle,
+                    replan_count=replan_count,
+                    continuation_count=continuation_count,
+                    max_replans=replan_limit,
+                    max_continuations=continuation_limit,
+                )
                 break
 
             if decision != "continue":
                 terminal = True
                 stop_reason = "non_continuable_adaptive_decision"
+                refusal_reason = stop_reason
+                self._refuse_adaptive_continuation(cycle, refusal_reason)
+                self._persist_adaptive_record(
+                    cycle,
+                    replan_count=replan_count,
+                    continuation_count=continuation_count,
+                    max_replans=replan_limit,
+                    max_continuations=continuation_limit,
+                )
+                break
+
+            if continuation_count >= continuation_limit:
+                refusal_reason = "max_continuations_exhausted"
+                self._refuse_adaptive_continuation(cycle, refusal_reason)
+                terminal = True
+                stop_reason = refusal_reason
+                self._persist_adaptive_record(
+                    cycle,
+                    replan_count=replan_count,
+                    continuation_count=continuation_count,
+                    max_replans=replan_limit,
+                    max_continuations=continuation_limit,
+                )
                 break
 
             work_item = self.create_continuation_work_item(
@@ -99,6 +173,14 @@ class EngineeringGoalLoop:
                 runner_result=_as_mapping(cycle.get("runner_result")),
             )
             cycle["continuation_work_item"] = work_item
+            continuation_count += 1
+            self._persist_adaptive_record(
+                cycle,
+                replan_count=replan_count,
+                continuation_count=continuation_count,
+                max_replans=replan_limit,
+                max_continuations=continuation_limit,
+            )
             current_goal_id = _clean_text(work_item.get("goal_id"), current_goal_id)
 
         latest_decision = _as_mapping(cycles[-1].get("adaptive_decision_record")) if cycles else {}
@@ -118,6 +200,11 @@ class EngineeringGoalLoop:
             "adaptive_evidence_chain": copy.deepcopy(latest_decision.get("evidence_chain") or []),
             "root_cause_report": copy.deepcopy(_as_mapping(latest_decision.get("root_cause_report"))),
             "max_cycles": cycle_limit,
+            "max_replans": replan_limit,
+            "max_continuations": continuation_limit,
+            "replan_count": replan_count,
+            "continuation_count": continuation_count,
+            "adaptive_refusal_reason": refusal_reason,
             "cycle_count": len(cycles),
             "cycles": cycles,
             "execution_path": {
@@ -163,6 +250,7 @@ class EngineeringGoalLoop:
             "runner_result": copy.deepcopy(dict(runner_result)) if isinstance(runner_result, Mapping) else {},
             "continuation_work_item": {},
             "replan_record": {},
+            "adaptive_planning_record": copy.deepcopy(_as_mapping(adaptive.get("adaptive_planning_record"))),
             "updated_at": time.time(),
         }
         if decision == "blocked":
@@ -214,6 +302,9 @@ class EngineeringGoalLoop:
                     "work_item_template": work_item_template,
                     "adaptive_evidence_chain": copy.deepcopy(plan.get("evidence_chain") or []),
                     "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
+                    "adaptive_planning_record": _as_mapping(
+                        _as_mapping(_as_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
+                    ),
                 },
             }
         )
@@ -245,6 +336,9 @@ class EngineeringGoalLoop:
             "reason": _clean_text(request.get("reason"), "recoverable_runtime_failure"),
             "replan_request": copy.deepcopy(request),
             "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
+            "adaptive_planning_record": _as_mapping(
+                _as_mapping(_as_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
+            ),
             "root_cause_report": _as_mapping(request.get("root_cause_report")),
             "evidence_chain": copy.deepcopy(request.get("evidence_chain") or []),
             "created_at": time.time(),
@@ -255,6 +349,80 @@ class EngineeringGoalLoop:
 
     def stop_on_blocked(self, cycle: Mapping[str, Any]) -> bool:
         return _clean_text(cycle.get("adaptive_decision")).lower() == "blocked"
+
+    def _refuse_adaptive_continuation(self, cycle: dict[str, Any], reason: str) -> None:
+        record = _as_mapping(cycle.get("adaptive_planning_record"))
+        record.update({
+            "next_action": "stop",
+            "decision_reason": _clean_text(reason),
+            "refused": True,
+            "refusal_reason": _clean_text(reason),
+        })
+        cycle["adaptive_planning_record"] = record
+        cycle["adaptive_refusal_reason"] = _clean_text(reason)
+        cycle["decision_reason"] = _clean_text(reason)
+
+    def _persist_adaptive_record(
+        self,
+        cycle: dict[str, Any],
+        *,
+        replan_count: int,
+        continuation_count: int,
+        max_replans: int,
+        max_continuations: int,
+    ) -> None:
+        record = _as_mapping(cycle.get("adaptive_planning_record"))
+        adaptive = _as_mapping(cycle.get("adaptive_decision_record"))
+        record.update({
+            "schema": _clean_text(record.get("schema"), ADAPTIVE_PLANNING_RECORD_SCHEMA),
+            "previous_goal": _clean_text(record.get("previous_goal"), _clean_text(cycle.get("goal_id"))),
+            "previous_step": copy.deepcopy(record.get("previous_step")),
+            "outcome_class": _clean_text(record.get("outcome_class"), _clean_text(adaptive.get("outcome_class"))),
+            "decision_reason": _clean_text(
+                record.get("decision_reason"),
+                _clean_text(cycle.get("decision_reason") or adaptive.get("decision_reason") or adaptive.get("reason")),
+            ),
+            "next_action": _clean_text(record.get("next_action"), _clean_text(adaptive.get("next_action"), "stop")),
+            "replan_count": int(replan_count),
+            "continuation_count": int(continuation_count),
+            "max_replans": int(max_replans),
+            "max_continuations": int(max_continuations),
+        })
+        cycle["adaptive_planning_record"] = record
+        cycle["outcome_class"] = record["outcome_class"]
+        cycle["decision_reason"] = record["decision_reason"]
+        cycle["replan_count"] = int(replan_count)
+        cycle["continuation_count"] = int(continuation_count)
+        update_goal = getattr(self.repository, "update_goal", None)
+        if callable(update_goal):
+            update_goal(_clean_text(cycle.get("goal_id")), {"metadata": {"adaptive_planning_record": record}})
+        decision_evidence = build_decision_evidence(
+            cycle=cycle,
+            continuation_work_item=_as_mapping(cycle.get("continuation_work_item")),
+            replan_record=_as_mapping(cycle.get("replan_record")),
+        )
+        save_evidence = getattr(self.decision_evidence_repository, "save", None)
+        if callable(save_evidence):
+            decision_evidence = save_evidence(decision_evidence)
+        cycle["decision_evidence"] = copy.deepcopy(decision_evidence)
+        decision_id = _clean_text(decision_evidence.get("decision_id"))
+        if callable(update_goal) and decision_id:
+            goal = self.repository.load_goal(_clean_text(cycle.get("goal_id"))) or {}
+            metadata = _as_mapping(goal.get("metadata"))
+            decision_ids = [
+                _clean_text(item)
+                for item in metadata.get("decision_evidence_ids", [])
+                if _clean_text(item)
+            ] if isinstance(metadata.get("decision_evidence_ids"), list) else []
+            if decision_id not in decision_ids:
+                decision_ids.append(decision_id)
+            update_goal(_clean_text(cycle.get("goal_id")), {"metadata": {"decision_evidence_ids": decision_ids}})
+            continuation_goal_id = _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("goal_id"))
+            if continuation_goal_id:
+                update_goal(continuation_goal_id, {"metadata": {"decision_evidence_id": decision_id}})
+                cycle["continuation_work_item"]["decision_evidence_id"] = decision_id
+            if cycle.get("replan_record"):
+                cycle["replan_record"]["decision_evidence_id"] = decision_id
 
     def _continuation_goal_id(self, source_goal_id: str, cycle_index: int) -> str:
         base = f"{_clean_text(source_goal_id, 'goal')}__continuation_{int(cycle_index) + 1}"
