@@ -4,6 +4,16 @@ from core.tasks.engineering_goal_loop import ENGINEERING_GOAL_LOOP_SCHEMA, Engin
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 
 
+GOAL_COMPLETION_AUTHORITY_RESULT = {
+    "accepted": True,
+    "completed": True,
+    "from_state": "active",
+    "to_state": "completed",
+    "reason": "validated_evidence_and_subgoals_ready",
+    "evidence_refs": [{"evidence_id": "e1", "validation_state": "validated"}],
+}
+
+
 class StubRunner:
     def __init__(self, decisions: list[dict]) -> None:
         self.decisions = list(decisions)
@@ -16,6 +26,11 @@ class StubRunner:
         adaptive_decision.setdefault("reason", f"{adaptive_decision['decision']}_reason")
         adaptive_decision.setdefault("continuation_plan", {})
         adaptive_decision.setdefault("root_cause", {})
+        if adaptive_decision.get("decision") == "complete":
+            adaptive_decision.setdefault(
+                "goal_completion_authority_result",
+                dict(GOAL_COMPLETION_AUTHORITY_RESULT),
+            )
         return {
             "ok": adaptive_decision["decision"] != "blocked",
             "goal_id": goal_id,
@@ -63,7 +78,8 @@ def test_complete_goal_loop_runs_one_cycle_and_stops(tmp_path) -> None:
     assert result["cycle_count"] == 1
     assert result["cycles"][0]["adaptive_decision"] == "complete"
     assert result["cycles"][0]["continuation_work_item"] == {}
-    assert result["execution_path"]["route"] == "Goal -> Adaptive Planner -> Runtime"
+    assert result["goal_completion_authority_result"]["accepted"] is True
+    assert result["execution_path"]["route"] == "Goal -> Adaptive Planner -> GoalCompletionAuthority -> Runtime"
     assert result["execution_path"]["goal_id"] == "goal_1"
     assert result["execution_path"]["adaptive_planner_decides_only"] is True
     assert runner.calls == ["goal_1"]
@@ -94,28 +110,6 @@ def test_continue_goal_creates_next_continuation_work_item(tmp_path) -> None:
     assert work_item["goal_id"] == "goal_1__continuation_1"
     assert repository.load_goal(work_item["goal_id"])["payload"]["continuation_requested"] is True
     assert runner.calls == ["goal_1", "goal_1__continuation_1"]
-
-
-def test_create_continuation_work_item_can_use_last_cycle(tmp_path) -> None:
-    repository = _repository(tmp_path)
-    runner = StubRunner(
-        [
-            {
-                "decision": "continue",
-                "reason": "goal_incomplete",
-                "runtime_state": "running",
-                "continuation_plan": _continue_plan(),
-            }
-        ]
-    )
-    loop = EngineeringGoalLoop(repo_root=tmp_path, repository=repository, runner=runner)
-
-    cycle = loop.run_one_cycle("goal_1")
-    work_item = loop.create_continuation_work_item()
-
-    assert cycle["adaptive_decision"] == "continue"
-    assert work_item["goal_id"] == "goal_1__continuation_1"
-    assert repository.load_goal(work_item["goal_id"])["metadata"]["source_cycle_index"] == 0
 
 
 def test_blocked_goal_stops_and_preserves_root_cause(tmp_path) -> None:
@@ -215,6 +209,7 @@ def test_goal_loop_does_not_mutate_runner_runtime_or_lifecycle_payloads(tmp_path
             "continuation_plan": {},
             "replan_request": {},
             "blocking_issues": [],
+            "goal_completion_authority_result": dict(GOAL_COMPLETION_AUTHORITY_RESULT),
         },
     }
 
