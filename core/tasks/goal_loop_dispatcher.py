@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-"""Dispatch loop decisions to continuation/replan coordinators.
-
-GoalLoopDispatcher is the last orchestration boundary between passive
-GoalLoopDecision records and concrete continuation/replan coordinators.  It does
-not execute runtime work, persist adaptive records, write evidence, mutate
-memory, or decide adaptive actions.
-"""
+"""Dispatch loop decisions to continuation/replan coordinators."""
 
 import copy
 from dataclasses import dataclass
@@ -33,8 +27,6 @@ def _text(value: Any, default: str = "") -> str:
 
 @dataclass(frozen=True)
 class GoalLoopDispatchResult:
-    """Result of dispatching one loop decision."""
-
     action: str
     cycle: Mapping[str, Any]
     current_goal_id: str
@@ -91,8 +83,6 @@ class GoalLoopDispatcher:
         continuation_runtime: ContinuationRuntime,
         replan_runtime: ReplanRuntime,
     ) -> GoalLoopDispatchResult:
-        """Dispatch one loop decision to the correct coordinator."""
-
         decision = _mapping(loop_decision)
         updated_cycle = _mapping(cycle)
         action = _text(decision.get("action"), "terminal")
@@ -140,6 +130,24 @@ class GoalLoopDispatcher:
 
         stop_reason = _text(decision.get("stop_reason"), "stop")
         refusal_reason = _text(decision.get("refusal_reason"))
+
+        if self._is_complete_terminal(decision=decision, cycle=updated_cycle) and not self._completion_authority_accepted(updated_cycle):
+            updated_cycle["goal_loop_dispatcher"] = self._marker(
+                action="terminal_blocked",
+                reason="goal_completion_authority_required",
+            )
+            updated_cycle["goal_completion_authority_required"] = True
+            return GoalLoopDispatchResult(
+                action="terminal_blocked",
+                cycle=updated_cycle,
+                current_goal_id=current_goal_id,
+                terminal=False,
+                stop_reason="goal_completion_authority_required",
+                refusal_reason=refusal_reason,
+                continuation_runtime=continuation_runtime,
+                replan_runtime=replan_runtime,
+            )
+
         updated_cycle["goal_loop_dispatcher"] = self._marker(action="terminal")
         return GoalLoopDispatchResult(
             action="terminal",
@@ -153,10 +161,45 @@ class GoalLoopDispatcher:
         )
 
     @staticmethod
-    def _marker(*, action: str) -> dict[str, Any]:
-        return {
+    def _is_complete_terminal(*, decision: Mapping[str, Any], cycle: Mapping[str, Any]) -> bool:
+        action = _text(decision.get("action"), "terminal")
+        stop_reason = _text(decision.get("stop_reason")).lower()
+        decision_name = _text(decision.get("decision") or cycle.get("adaptive_decision")).lower()
+        adaptive_record = _mapping(cycle.get("adaptive_decision_record"))
+        adaptive_decision = _text(adaptive_record.get("decision")).lower()
+
+        return (
+            action == "terminal"
+            and (
+                stop_reason == "complete"
+                or decision_name == "complete"
+                or adaptive_decision == "complete"
+            )
+        )
+
+    @staticmethod
+    def _completion_authority_accepted(cycle: Mapping[str, Any]) -> bool:
+        result = _mapping(cycle.get("goal_completion_authority_result"))
+        if result:
+            return bool(result.get("accepted") is True and result.get("completed") is not False)
+
+        adaptive_record = _mapping(cycle.get("adaptive_decision_record"))
+        nested = _mapping(adaptive_record.get("goal_completion_authority_result"))
+        if nested:
+            return bool(nested.get("accepted") is True and nested.get("completed") is not False)
+
+        transition = _mapping(adaptive_record.get("required_transition"))
+        return bool(
+            _text(transition.get("completion_authority")) == "GoalCompletionAuthority"
+            and transition.get("to_state") == "completed"
+        )
+
+    @staticmethod
+    def _marker(*, action: str, reason: str = "") -> dict[str, Any]:
+        marker = {
             "schema": GOAL_LOOP_DISPATCHER_SCHEMA,
             "dispatched_action": action,
+            "requires_goal_completion_authority_for_complete_terminal": True,
             "execution_path": {
                 "dispatcher_only": True,
                 "executes_tasks": False,
@@ -167,6 +210,9 @@ class GoalLoopDispatcher:
                 "mutates_memory": False,
             },
         }
+        if reason:
+            marker["reason"] = reason
+        return marker
 
 
 __all__ = ["GOAL_LOOP_DISPATCHER_SCHEMA", "GoalLoopDispatcher", "GoalLoopDispatchResult"]
