@@ -9,6 +9,7 @@ from core.adaptive.adaptive_plan import AdaptivePlan
 from core.adaptive.adaptive_policy import AdaptivePolicy
 from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_record import EvidenceRecord
+from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition, GoalTransitionResult
 
@@ -18,9 +19,13 @@ class AdaptivePlanner:
         self,
         *,
         state_machine: GoalStateMachine | None = None,
+        completion_authority: GoalCompletionAuthority | None = None,
         policy: AdaptivePolicy | None = None,
     ) -> None:
         self.state_machine = state_machine or GoalStateMachine()
+        self.completion_authority = completion_authority or GoalCompletionAuthority(
+            state_machine=self.state_machine
+        )
         self.policy = policy or AdaptivePolicy()
 
     def decide(
@@ -50,9 +55,21 @@ class AdaptivePlanner:
 
         if goal_state == "completed":
             if self.policy.require_evidence_for_completion and not evidence:
-                return self._plan(goal_id, None, "request_evidence", "completed_goal_requires_evidence", evidence_required=["completion_evidence"])
+                return self._plan(
+                    goal_id,
+                    None,
+                    "request_evidence",
+                    "completed_goal_requires_evidence",
+                    evidence_required=["completion_evidence"],
+                )
             if self.policy.require_all_subgoals_completed and not all_completed:
-                return self._plan(goal_id, self._first_incomplete_id(normalized_subgoals), "no_action", "completed_goal_has_incomplete_subgoals", review=True)
+                return self._plan(
+                    goal_id,
+                    self._first_incomplete_id(normalized_subgoals),
+                    "no_action",
+                    "completed_goal_has_incomplete_subgoals",
+                    review=True,
+                )
             return self._plan(goal_id, None, "no_action", "goal_already_completed")
 
         if goal_state == "active" and all_completed:
@@ -64,30 +81,35 @@ class AdaptivePlanner:
                     "goal_completion_requires_validated_evidence",
                     evidence_required=["completion_evidence"],
                 )
-            transition = GoalTransition(
-                "goal",
-                goal_id,
-                "active",
-                "completed",
-                "complete",
-                "validated_evidence_and_subgoals_ready",
+
+            result = self.completion_authority.complete_goal(
+                goal_id=goal_id,
+                from_state="active",
                 evidence_refs=evidence,
+                all_subgoals_completed=True,
+                reason="validated_evidence_and_subgoals_ready",
             )
-            result = self.state_machine.transition(transition, all_subgoals_completed=True)
             if not result.accepted:
-                return self._plan(goal_id, None, "no_action", result.blocked_reason or result.reason, review=True)
+                return self._plan(
+                    goal_id,
+                    None,
+                    "no_action",
+                    result.blocked_reason or result.reason,
+                    review=result.requires_user_review,
+                )
             return self._plan(
                 goal_id,
                 None,
                 "no_action",
                 "goal_completion_transition_ready",
-                transition=transition,
+                transition=self._completion_transition_dict(goal_id, result),
                 review=result.requires_user_review,
             )
 
         selected = self._select_subgoal(normalized_subgoals)
         if selected is None:
             return self._plan(goal_id, None, "no_action", "no_actionable_subgoal")
+
         subgoal_id = self._required_id(selected, "subgoal_id")
         subgoal_state = self._state(None, selected)
 
@@ -96,7 +118,14 @@ class AdaptivePlanner:
 
         blocker_reason = self._blocker_reason(blocker_summary, selected)
         if blocker_reason:
-            transition = GoalTransition("subgoal", subgoal_id, subgoal_state, "blocked", "block", blocker_reason)
+            transition = GoalTransition(
+                "subgoal",
+                subgoal_id,
+                subgoal_state,
+                "blocked",
+                "block",
+                blocker_reason,
+            )
             result = self.state_machine.transition(transition)
             if not result.accepted:
                 return self._rejected(goal_id, subgoal_id, result)
@@ -141,6 +170,7 @@ class AdaptivePlanner:
                 transition=transition,
                 review=self.policy.require_review_for_resume or result.requires_user_review,
             )
+
         if self.policy.prevent_runtime_bypass:
             return self._plan(
                 goal_id,
@@ -149,6 +179,7 @@ class AdaptivePlanner:
                 "resumable_activation_requires_runtime_adaptive",
                 review=True,
             )
+
         return self._plan(
             goal_id,
             subgoal_id,
@@ -181,12 +212,23 @@ class AdaptivePlanner:
         return str(value or record.get("status") or record.get("state") or "").strip().lower()
 
     @staticmethod
+    def _validated_ref(evidence_id: Any) -> dict[str, Any]:
+        return {
+            "evidence_id": str(evidence_id),
+            "validation_state": "validated",
+        }
+
+    @staticmethod
     def _evidence_status(
         summary: EvidenceChain | Mapping[str, Any] | Sequence[Any] | None,
         goal: Mapping[str, Any],
     ) -> tuple[list[Any], int]:
         if isinstance(summary, EvidenceChain):
-            return copy.deepcopy(summary.validated_evidence_ids), summary.rejected_count
+            return (
+                [AdaptivePlanner._validated_ref(item) for item in summary.validated_evidence_ids],
+                summary.rejected_count,
+            )
+
         if isinstance(summary, Mapping):
             values = summary.get("records") or summary.get("evidence") or summary.get("items") or []
             validation_summary = summary.get("validation_summary")
@@ -202,24 +244,28 @@ class AdaptivePlanner:
                 or validation_summary.get("validated", 0)
             )
             if not values and has_validated:
-                return copy.deepcopy(
-                    list(validated_ids or summary.get("evidence_ids") or [])
-                ), rejected_count
+                ids = list(validated_ids or summary.get("evidence_ids") or [])
+                return [AdaptivePlanner._validated_ref(item) for item in ids], rejected_count
         else:
             values = summary
             rejected_count = 0
+
         candidates = list(values if values is not None else goal.get("evidence_refs") or [])
         validated: list[Any] = []
+
         for item in candidates:
             if isinstance(item, EvidenceRecord):
                 if item.validation_state == "validated":
-                    validated.append(item.evidence_id)
+                    validated.append(AdaptivePlanner._validated_ref(item.evidence_id))
                 elif item.validation_state == "rejected":
                     rejected_count += 1
-            elif isinstance(item, Mapping) and str(item.get("validation_state") or "").lower() == "validated":
-                validated.append(copy.deepcopy(item.get("evidence_id") or dict(item)))
-            elif isinstance(item, Mapping) and str(item.get("validation_state") or "").lower() == "rejected":
-                rejected_count += 1
+            elif isinstance(item, Mapping):
+                validation_state = str(item.get("validation_state") or "").strip().lower()
+                if validation_state == "validated":
+                    validated.append(copy.deepcopy(dict(item)))
+                elif validation_state == "rejected":
+                    rejected_count += 1
+
         return validated, rejected_count
 
     @staticmethod
@@ -248,7 +294,9 @@ class AdaptivePlanner:
         return str(value).strip() or None if value else None
 
     @staticmethod
-    def _transition_dict(transition: GoalTransition) -> dict[str, Any]:
+    def _transition_dict(transition: GoalTransition | Mapping[str, Any]) -> dict[str, Any]:
+        if isinstance(transition, Mapping):
+            return copy.deepcopy(dict(transition))
         return {
             "target_type": transition.target_type,
             "target_id": transition.target_id,
@@ -259,6 +307,21 @@ class AdaptivePlanner:
             "resume_point": copy.deepcopy(transition.resume_point),
             "evidence_refs": copy.deepcopy(transition.evidence_refs),
             "requires_user_review": transition.requires_user_review,
+        }
+
+    @staticmethod
+    def _completion_transition_dict(goal_id: str, result: Any) -> dict[str, Any]:
+        return {
+            "target_type": "goal",
+            "target_id": goal_id,
+            "from_state": result.from_state,
+            "to_state": result.to_state,
+            "action": "complete",
+            "reason": result.reason,
+            "resume_point": None,
+            "evidence_refs": copy.deepcopy(result.evidence_refs),
+            "requires_user_review": result.requires_user_review,
+            "completion_authority": "GoalCompletionAuthority",
         }
 
     def _rejected(self, goal_id: str, subgoal_id: str, result: GoalTransitionResult) -> AdaptivePlan:
@@ -277,7 +340,7 @@ class AdaptivePlanner:
         decision_type: str,
         reason: str,
         *,
-        transition: GoalTransition | None = None,
+        transition: GoalTransition | Mapping[str, Any] | None = None,
         review: bool = False,
         evidence_required: list[Any] | None = None,
     ) -> AdaptivePlan:

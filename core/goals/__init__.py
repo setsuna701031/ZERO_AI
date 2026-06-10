@@ -1,3 +1,4 @@
+from core.goals.goal_completion_authority import GoalCompletionAuthority, GoalCompletionResult
 from core.goals.goal_contract import GoalStatus
 from core.goals.goal_execution_context import GoalExecutionContext
 from core.goals.goal_execution_decision import GoalExecutionPlanDecision
@@ -15,6 +16,8 @@ from core.goals.goal_transition import GoalTransition, GoalTransitionResult
 from core.goals.persistent_goal import PersistentGoal, PersistentSubgoal
 
 __all__ = [
+    "GoalCompletionAuthority",
+    "GoalCompletionResult",
     "GoalProgress",
     "GoalExecutionContext",
     "GoalExecutionPlan",

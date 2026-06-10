@@ -3,6 +3,7 @@ from __future__ import annotations
 """Validation rules for the sealed goal lifecycle contract."""
 
 from dataclasses import dataclass, field
+from typing import Any, Mapping
 
 from core.goals.goal_state import TERMINAL_GOAL_STATES, TERMINAL_SUBGOAL_STATES
 from core.goals.goal_transition import GoalTransition
@@ -14,6 +15,27 @@ class GoalStateValidationResult:
     reason: str
     violations: list[str] = field(default_factory=list)
     requires_user_review: bool = False
+
+
+def _evidence_ref_validation_state(ref: Any) -> str:
+    """Return the validation state carried by an evidence ref, if present.
+
+    Evidence refs may be dictionaries from EvidenceRecord.to_dict(), objects
+    with a validation_state attribute, or plain IDs from legacy callers.  Plain
+    IDs prove that evidence was referenced, but they do not prove validation.
+    Goal completion therefore accepts only refs that explicitly carry
+    validation_state="validated".
+    """
+
+    if isinstance(ref, Mapping):
+        return str(ref.get("validation_state") or "").strip().lower()
+    return str(getattr(ref, "validation_state", "") or "").strip().lower()
+
+
+def _all_evidence_refs_validated(evidence_refs: list[Any]) -> bool:
+    if not evidence_refs:
+        return False
+    return all(_evidence_ref_validation_state(ref) == "validated" for ref in evidence_refs)
 
 
 class GoalStateValidator:
@@ -66,6 +88,8 @@ class GoalStateValidator:
         if transition.target_type == "goal" and transition.to_state == "completed":
             if not transition.evidence_refs:
                 violations.append("completed_goal_requires_evidence")
+            elif not _all_evidence_refs_validated(transition.evidence_refs):
+                violations.append("completed_goal_requires_validated_evidence")
             if all_subgoals_completed is not True:
                 violations.append("completed_goal_requires_completed_subgoals")
         if transition.from_state == "resumable" and transition.to_state == "active":
@@ -81,4 +105,7 @@ class GoalStateValidator:
         return GoalStateValidationResult(valid=True, reason="goal_lifecycle_transition_valid")
 
 
-__all__ = ["GoalStateValidationResult", "GoalStateValidator"]
+__all__ = [
+    "GoalStateValidationResult",
+    "GoalStateValidator",
+]
