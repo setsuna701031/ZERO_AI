@@ -36,6 +36,9 @@ NON_TERMINAL_STATUSES = {
     "waiting_blocker",
     "retrying",
     "replanning",
+    "needs_observation",
+    "needs_resume",
+    "recoverable",
     "paused",
 }
 
@@ -381,10 +384,22 @@ class TaskRuntime:
         state["updated_at"] = self._now()
 
         if next_index >= len(steps):
-            state["status"] = "finished"
-            state["finished_at_tick"] = current_tick
-            state["finished_tick"] = current_tick
-            state["finished_at"] = self._now()
+            if bool(state.get("terminal_validation_required")):
+                state["status"] = "needs_observation"
+                state["next_action"] = "observe_terminal_result"
+                state["terminal_validation"] = {
+                    "execution_succeeded": True,
+                    "observation_completed": False,
+                    "artifact_validation_passed": False,
+                    "evidence_persisted": False,
+                    "deviation_detected": False,
+                    "confirmed_finished": False,
+                }
+            else:
+                state["status"] = "finished"
+                state["finished_at_tick"] = current_tick
+                state["finished_tick"] = current_tick
+                state["finished_at"] = self._now()
 
             final_answer = self._extract_final_answer_from_step_result(step_result)
             if final_answer:
@@ -592,6 +607,20 @@ class TaskRuntime:
         state = self._sync_loop_fields_from_task(task, state)
         state = self._stamp_runtime_ownership(state, owner="task_runtime", action="mark_finished")
 
+        validation = state.get("terminal_validation") if isinstance(state.get("terminal_validation"), dict) else {}
+        if bool(state.get("terminal_validation_required")) and not self._terminal_validation_ready(validation):
+            state["status"] = "needs_observation"
+            state["next_action"] = "observe_terminal_result"
+            state = self.save_runtime_state(task, state)
+            self._sync_task_from_runtime_state(task, state)
+            return {
+                "ok": True,
+                "status": "needs_observation",
+                "action": "terminal_validation_pending",
+                "task": copy.deepcopy(task),
+                "runtime_state": state,
+            }
+
         state["status"] = "finished"
         state["current_step_index"] = int(state.get("steps_total", 0) or 0)
         state["finished_at_tick"] = current_tick
@@ -663,6 +692,113 @@ class TaskRuntime:
         }
         self._emit_task_runtime_evidence("completed", task=task, state=state)
         return result
+
+    def begin_terminal_validation(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        state = self.load_runtime_state(task)
+        state["terminal_validation_required"] = True
+        validation = state.get("terminal_validation") if isinstance(state.get("terminal_validation"), dict) else {}
+        validation.setdefault("execution_succeeded", False)
+        validation.setdefault("observation_completed", False)
+        validation.setdefault("artifact_validation_passed", False)
+        validation.setdefault("evidence_persisted", False)
+        validation.setdefault("deviation_detected", False)
+        validation.setdefault("confirmed_finished", False)
+        state["terminal_validation"] = validation
+        state = self.save_runtime_state(task, state)
+        self._sync_task_from_runtime_state(task, state)
+        return state
+
+    def record_terminal_observation(
+        self,
+        task: Dict[str, Any],
+        *,
+        deviation_report: Dict[str, Any],
+        evidence_persisted: bool,
+        current_tick: int = 0,
+        deviation_step_index: int = 0,
+        blocked: bool = False,
+    ) -> Dict[str, Any]:
+        state = self.load_runtime_state(task)
+        report = copy.deepcopy(deviation_report if isinstance(deviation_report, dict) else {})
+        deviation_detected = bool(report.get("deviation_detected"))
+        validation = state.get("terminal_validation") if isinstance(state.get("terminal_validation"), dict) else {}
+        validation.update({
+            "execution_succeeded": bool(validation.get("execution_succeeded", True)),
+            "observation_completed": True,
+            "artifact_validation_passed": not deviation_detected,
+            "evidence_persisted": bool(evidence_persisted),
+            "deviation_detected": deviation_detected,
+            "deviation_reason": str(report.get("reason") or ""),
+            "confirmed_finished": False,
+        })
+        state["terminal_validation_required"] = True
+        state["terminal_validation"] = validation
+
+        if deviation_detected:
+            status = "blocked" if blocked or not bool(report.get("recoverable", True)) else "needs_resume"
+            state["status"] = status
+            state["current_step_index"] = max(0, int(deviation_step_index))
+            state["next_action"] = "wait_for_external_event" if status == "blocked" else "run_next_tick"
+            state["last_error"] = str(report.get("reason") or "terminal_deviation")
+            for key in ("finished_at", "finished_tick", "finished_at_tick", "final_result", "terminal_reason"):
+                state.pop(key, None)
+            self._synchronize_terminal_subgoal_state(state, status=status, reason=state["last_error"])
+            state = self.save_runtime_state(task, state)
+            self._sync_task_from_runtime_state(task, state)
+            return {"ok": status != "blocked", "status": status, "task": copy.deepcopy(task), "runtime_state": state}
+
+        validation["confirmed_finished"] = self._terminal_validation_ready(validation)
+        state["terminal_validation"] = validation
+        state = self.save_runtime_state(task, state)
+        self._sync_task_from_runtime_state(task, state)
+        return self.mark_finished(
+            task=task,
+            current_tick=current_tick,
+            final_result=state.get("last_step_result", {}).get("result")
+            if isinstance(state.get("last_step_result"), dict)
+            else None,
+        )
+
+    @staticmethod
+    def _terminal_validation_ready(validation: Dict[str, Any]) -> bool:
+        return all(
+            bool(validation.get(key))
+            for key in (
+                "execution_succeeded",
+                "observation_completed",
+                "artifact_validation_passed",
+                "evidence_persisted",
+            )
+        ) and not bool(validation.get("deviation_detected"))
+
+    def _synchronize_terminal_subgoal_state(self, state: Dict[str, Any], *, status: str, reason: str) -> None:
+        context = self._normalize_repair_context_for_task(state.get("repair_context"), task=state, state=state)
+        goal_state = context.get("engineering_goal_state") if isinstance(context.get("engineering_goal_state"), dict) else {}
+        current_subgoal_id = str(goal_state.get("current_subgoal_id") or "")
+        if not current_subgoal_id:
+            steps = state.get("steps") if isinstance(state.get("steps"), list) else []
+            subgoal = self._subgoal_for_step_index(
+                goal_state,
+                steps,
+                self._safe_int(state.get("current_step_index"), 0),
+            )
+            current_subgoal_id = str(subgoal.get("subgoal_id") or "") if isinstance(subgoal, dict) else ""
+            if current_subgoal_id:
+                goal_state["current_subgoal_id"] = current_subgoal_id
+        if current_subgoal_id:
+            self._set_subgoal_status(goal_state, current_subgoal_id, status, reason=reason)
+        goal_state["status"] = status
+        context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status=status)
+        session = context.get("repair_session") if isinstance(context.get("repair_session"), dict) else {}
+        if session:
+            session["status"] = status
+            session.pop("finished_at", None)
+            terminal = session.get("terminal_node_id")
+            if terminal:
+                session["previous_terminal_node_id"] = terminal
+                session["terminal_node_id"] = ""
+            context["repair_session"] = session
+        state["repair_context"] = context
 
 
     # ============================================================
@@ -1156,6 +1292,13 @@ class TaskRuntime:
         task_steps = task.get("steps", [])
         if not isinstance(task_steps, list):
             task_steps = []
+        terminal_validation_required = bool(task.get("terminal_validation_required")) or any(
+            isinstance(step, dict) and (
+                bool(step.get("expected_artifacts"))
+                or isinstance(step.get("expected"), dict)
+            )
+            for step in task_steps
+        )
 
         state = {
             "task_name": self._task_name(task),
@@ -1195,6 +1338,10 @@ class TaskRuntime:
             "blockers": self._normalize_blockers(task.get("blockers", [])),
             "active_blocker_count": 0,
             "waiting_reason": str(task.get("waiting_reason") or ""),
+            "terminal_validation_required": terminal_validation_required,
+            "terminal_validation": copy.deepcopy(task.get("terminal_validation", {}))
+            if isinstance(task.get("terminal_validation"), dict)
+            else {},
         }
         operator_session_id = self._operator_bridge_session_id(task=task, state=state)
         if operator_session_id:
@@ -1967,7 +2114,7 @@ class TaskRuntime:
                     if text:
                         normalized_steps.append(text)
             status = str(item.get("status") or "pending").strip().lower()
-            if status not in {"pending", "running", "finished", "failed", "blocked", "skipped"}:
+            if status not in {"pending", "running", "needs_observation", "needs_resume", "recoverable", "finished", "failed", "blocked", "skipped"}:
                 status = "pending"
             normalized_subgoals.append(
                 {
@@ -1999,7 +2146,7 @@ class TaskRuntime:
                 current_subgoal_id = pending["subgoal_id"] if pending else (normalized_subgoals[-1]["subgoal_id"] if normalized_subgoals else "")
 
         status = str(source.get("status") or "").strip().lower()
-        if status not in {"running", "finished", "failed", "blocked"}:
+        if status not in {"running", "needs_observation", "needs_resume", "recoverable", "finished", "failed", "blocked"}:
             if failed:
                 status = "failed"
             elif blocked:
@@ -2092,7 +2239,8 @@ class TaskRuntime:
             break
 
         if idx >= len(steps):
-            context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status="finished")
+            pending_status = "needs_observation" if bool(state.get("terminal_validation_required")) else "finished"
+            context["engineering_goal_state"] = self._refresh_goal_state_summary(goal_state, final_status=pending_status)
             state["repair_context"] = context
             state = self.apply_runtime_transition(
                 task,
@@ -2101,11 +2249,11 @@ class TaskRuntime:
                 action="subgoal_flow_finished",
                 updates={
                     "current_step_index": len(steps),
-                    "status": "finished",
+                    "status": pending_status,
                 },
                 save=True,
             )
-            return {"ok": True, "status": "finished", "runtime_state": state, "task": copy.deepcopy(task)}
+            return {"ok": True, "status": pending_status, "runtime_state": state, "task": copy.deepcopy(task)}
 
         subgoal = self._subgoal_for_step_index(goal_state, steps, idx)
         subgoal_id = str(subgoal.get("subgoal_id") or "") if isinstance(subgoal, dict) else ""
@@ -2479,7 +2627,10 @@ class TaskRuntime:
         indices = self._subgoal_step_indices(subgoal, steps)
         next_index = self._safe_int(state.get("current_step_index"), step_index + 1)
         if indices and all(index < next_index for index in indices):
-            self._set_subgoal_status(goal_state, subgoal_id, "finished", result_summary="subgoal steps completed")
+            if bool(state.get("terminal_validation_required")) and next_index >= len(steps):
+                self._set_subgoal_status(goal_state, subgoal_id, "needs_observation", result_summary="subgoal execution completed; terminal validation pending")
+            else:
+                self._set_subgoal_status(goal_state, subgoal_id, "finished", result_summary="subgoal steps completed")
         else:
             self._set_subgoal_status(goal_state, subgoal_id, "running")
         goal_state["current_subgoal_id"] = subgoal_id

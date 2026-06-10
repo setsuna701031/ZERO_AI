@@ -95,6 +95,20 @@ class AgentLoop:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
         self.llm_client = llm_client
+        self.memory_repository = kwargs.get("memory_repository")
+        if self.memory_repository is not None:
+            for planner_component in (self.planner, self.llm_planner):
+                setter = getattr(planner_component, "set_memory_repository", None)
+                if callable(setter):
+                    setter(self.memory_repository)
+        self.goal_repository = kwargs.get("goal_repository")
+        self.goal_orchestrator = kwargs.get("goal_orchestrator")
+        self.goal_execution_planner = kwargs.get("goal_execution_planner")
+        if self.goal_repository is not None:
+            for planner_component in (self.planner, self.llm_planner):
+                setter = getattr(planner_component, "set_goal_repository", None)
+                if callable(setter):
+                    setter(self.goal_repository)
         self.tool_registry = kwargs.get("tool_registry") or getattr(self.step_executor, "tool_registry", None)
         if self.tool_registry is None:
             self.tool_registry = ToolRegistry(workspace_dir=kwargs.get("workspace_dir", "workspace"))

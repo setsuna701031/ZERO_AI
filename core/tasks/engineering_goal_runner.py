@@ -20,6 +20,7 @@ from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner, 
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary, build_engineering_issue_summary
+from core.tasks.engineering_runtime_contract import build_engineering_runtime_contract
 from core.tasks.engineering_planning_adapter import EngineeringPlanningOnlyAdapter
 from core.tasks.engineering_runtime_orchestrator import EngineeringRuntimeOrchestrator
 
@@ -292,6 +293,17 @@ class EngineeringGoalRunner:
         adaptive_decision: Mapping[str, Any],
         issue_summary: Mapping[str, Any],
     ) -> dict[str, Any]:
+        runtime_contract = build_engineering_runtime_contract(
+            goal_id=goal_id,
+            action=action,
+            ok=bool(ok),
+            runtime_request=runtime_request,
+            runtime_result=runtime_result,
+            runtime_stdout=runtime_stdout,
+            runtime_root_cause=runtime_root_cause,
+            adaptive_decision=adaptive_decision,
+            issue_summary=issue_summary,
+        )
         return apply_engineering_issue_summary(
             {
             "schema": ENGINEERING_GOAL_RUNNER_SCHEMA,
@@ -299,6 +311,7 @@ class EngineeringGoalRunner:
             "mode": "engineering_goal_runner",
             "action": action,
             "goal_id": goal_id,
+            "engineering_runtime_contract": runtime_contract,
             "runtime_request": copy.deepcopy(dict(runtime_request)),
             "runtime_result": copy.deepcopy(dict(runtime_result)) if isinstance(runtime_result, Mapping) else {},
             "runtime_stdout": str(runtime_stdout or ""),
@@ -307,6 +320,7 @@ class EngineeringGoalRunner:
             "execution_path": {
                 "repository_persists_only": True,
                 "goal_runner_bridges_only": True,
+                "runner_produces_runtime_contract": True,
                 "runtime_orchestrator_owns_runtime_loop": True,
                 "adaptive_planner_after_runtime": True,
                 "goal_repository_in_orchestrator": False,

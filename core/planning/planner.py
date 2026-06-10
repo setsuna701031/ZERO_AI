@@ -29,6 +29,8 @@ from core.planning.planner_rule_parser import (
     resolve_read_path,
 )
 from core.runtime.trace_logger import ensure_trace_logger
+from core.planning.memory_aware_planner import inject_memory_context
+from core.planning.memory_context import MemoryContext, MemoryContextBuilder
 
 
 class Planner:
@@ -70,6 +72,13 @@ class Planner:
         workspace_root: Optional[str] = None,
         debug: bool = False,
         trace_logger: Optional[Any] = None,
+        memory_repository: Any = None,
+        memory_context_builder: Optional[MemoryContextBuilder] = None,
+        goal_repository: Any = None,
+        goal_context: Optional[Dict[str, Any]] = None,
+        goal_execution_context: Any = None,
+        goal_execution_plan: Any = None,
+        planner_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
@@ -78,6 +87,14 @@ class Planner:
         self.workspace_dir = workspace_root or workspace_dir or "workspace"
         self.debug = debug
         self.trace_logger = ensure_trace_logger(trace_logger)
+        self.memory_context_builder = memory_context_builder or (
+            MemoryContextBuilder(memory_repository) if memory_repository is not None else None
+        )
+        self.goal_repository = goal_repository
+        self.goal_context = dict(goal_context) if isinstance(goal_context, dict) else None
+        self.goal_execution_context = goal_execution_context
+        self.goal_execution_plan = goal_execution_plan
+        self.planner_context = dict(planner_context) if isinstance(planner_context, dict) else None
 
         if not Planner._banner_printed:
             print("### USING PLANNER v35.3 (CODE CHAIN DIFF ROUTING + SEMANTIC ROUTING + ACTION LAYER) ###")
@@ -92,9 +109,41 @@ class Planner:
         context: Optional[Dict[str, Any]] = None,
         user_input: str = "",
         route: Any = None,
+        memory_context: MemoryContext | Dict[str, Any] | None = None,
+        goal_context: Optional[Dict[str, Any]] = None,
+        goal_execution_context: Any = None,
+        goal_execution_plan: Any = None,
+        planner_context: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        context = context or {}
+        context = inject_memory_context(
+            context,
+            user_input=user_input,
+            memory_context=memory_context,
+            memory_context_builder=self.memory_context_builder,
+        )
+        effective_goal_execution_context = (
+            goal_execution_context if goal_execution_context is not None else self.goal_execution_context
+        )
+        if effective_goal_execution_context is not None and hasattr(effective_goal_execution_context, "to_dict"):
+            effective_goal_execution_context = effective_goal_execution_context.to_dict()
+        if isinstance(effective_goal_execution_context, dict):
+            context = dict(context)
+            context["goal_execution_context"] = dict(effective_goal_execution_context)
+        effective_goal_context = goal_context if goal_context is not None else self.goal_context
+        if isinstance(effective_goal_context, dict):
+            context = dict(context)
+            context["goal_context"] = dict(effective_goal_context)
+        effective_goal_execution_plan = goal_execution_plan if goal_execution_plan is not None else self.goal_execution_plan
+        if effective_goal_execution_plan is not None and hasattr(effective_goal_execution_plan, "to_dict"):
+            effective_goal_execution_plan = effective_goal_execution_plan.to_dict()
+        if isinstance(effective_goal_execution_plan, dict):
+            context = dict(context)
+            context["goal_execution_plan"] = dict(effective_goal_execution_plan)
+        effective_planner_context = planner_context if planner_context is not None else self.planner_context
+        if isinstance(effective_planner_context, dict):
+            context = dict(context)
+            context["planner_context"] = dict(effective_planner_context)
         text = str(user_input or context.get("user_input") or "").strip()
 
         self.trace_logger.log_decision(
@@ -264,6 +313,12 @@ class Planner:
 
     def run(self, *args, **kwargs):
         return self.plan(*args, **kwargs)
+
+    def set_memory_repository(self, repository: Any) -> None:
+        self.memory_context_builder = MemoryContextBuilder(repository) if repository is not None else None
+
+    def set_goal_repository(self, repository: Any) -> None:
+        self.goal_repository = repository
 
     def normalize_aer_execution_intent(
         self,

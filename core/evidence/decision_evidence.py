@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-"""Durable decision evidence persistence with no execution capability."""
+"""Decision evidence projection onto the unified evidence authority.
+
+Decision evidence is no longer an independent persistence authority.  The
+DecisionEvidenceRepository name is retained as a compatibility projection/view,
+but writes are routed through EvidenceAuthority into EvidenceRepository.
+"""
 
 import copy
 import hashlib
@@ -10,9 +15,17 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.evidence.decision_evidence_models import DecisionEvidenceRecord
+from core.evidence.evidence_authority import (
+    DECISION_EVIDENCE_SOURCE,
+    EvidenceAuthority,
+)
+from core.evidence.evidence_chain import EvidenceChain
+from core.evidence.evidence_record import EvidenceRecord
+from core.evidence.evidence_repository import EvidenceRepository
 
 
-DECISION_EVIDENCE_STORE_SCHEMA = "zero.decision_evidence.store.v1"
+DECISION_EVIDENCE_STORE_SCHEMA = "zero.decision_evidence.projection.v2"
+DECISION_EVIDENCE_BRIDGE_SOURCE = DECISION_EVIDENCE_SOURCE
 
 
 def _text(value: Any, default: str = "") -> str:
@@ -109,45 +122,48 @@ def build_decision_evidence(
     ).to_dict()
 
 
-class DecisionEvidenceRepository:
-    """Persist and query decision judgments only."""
+def decision_evidence_to_evidence_record(record: Mapping[str, Any]) -> EvidenceRecord:
+    return EvidenceAuthority.decision_evidence_to_record(record)
 
-    def __init__(self, repo_root: str | Path, *, storage_path: str | Path | None = None) -> None:
+
+class DecisionEvidenceRepository:
+    """Compatibility projection backed by EvidenceAuthority.
+
+    The class keeps the old query API so existing callers do not break, but it
+    does not maintain a separate decision-evidence store.  save() registers a
+    decision evidence projection with EvidenceAuthority, which persists through
+    EvidenceRepository.
+    """
+
+    def __init__(
+        self,
+        repo_root: str | Path,
+        *,
+        storage_path: str | Path | None = None,
+        evidence_repository: EvidenceRepository | Any | None = None,
+        evidence_authority: EvidenceAuthority | Any | None = None,
+    ) -> None:
         self.repo_root = Path(repo_root)
-        self.storage_path = (
-            Path(storage_path)
-            if storage_path is not None
-            else self.repo_root / "runtime" / "evidence" / "decision_evidence.json"
+        self.storage_path = Path(storage_path) if storage_path is not None else None
+        self.evidence_repository = evidence_repository or EvidenceRepository(self.repo_root)
+        self.evidence_authority = evidence_authority or EvidenceAuthority(
+            self.repo_root,
+            evidence_repository=self.evidence_repository,
         )
-        if not self.storage_path.is_absolute():
-            self.storage_path = self.repo_root / self.storage_path
 
     def save(self, record: Mapping[str, Any]) -> dict[str, Any]:
         normalized = copy.deepcopy(dict(record))
         decision_id = _text(normalized.get("decision_id"))
         if not decision_id:
             raise ValueError("decision_evidence_requires_decision_id")
-        records = self.list_records()
-        by_id = {_text(item.get("decision_id")): item for item in records}
-        by_id[decision_id] = normalized
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "schema": DECISION_EVIDENCE_STORE_SCHEMA,
-            "records": sorted(by_id.values(), key=lambda item: (float(item.get("created_at") or 0), _text(item.get("decision_id")))),
-            "updated_at": time.time(),
-        }
-        self.storage_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return copy.deepcopy(normalized)
+        register = getattr(self.evidence_authority, "register_decision_evidence", None)
+        if not callable(register):
+            raise TypeError("decision_evidence_projection_requires_evidence_authority")
+        return copy.deepcopy(register(normalized))
 
     def list_records(self) -> list[dict[str, Any]]:
-        if not self.storage_path.is_file():
-            return []
-        try:
-            payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
-        except Exception:
-            return []
-        records = payload.get("records") if isinstance(payload, Mapping) else []
-        return [copy.deepcopy(dict(item)) for item in records if isinstance(item, Mapping)] if isinstance(records, list) else []
+        records = self._decision_evidence_records()
+        return [self._record_to_decision_dict(record) for record in records]
 
     def find_by_task_id(self, task_id: str) -> list[dict[str, Any]]:
         target = _text(task_id)
@@ -157,9 +173,43 @@ class DecisionEvidenceRepository:
         target = _text(goal_id)
         return [record for record in self.list_records() if _text(record.get("goal_id")) == target]
 
+    def evidence_chain_for_goal(self, goal_id: str) -> EvidenceChain:
+        get_decision_chain = getattr(self.evidence_authority, "get_decision_chain", None)
+        if callable(get_decision_chain):
+            return get_decision_chain(goal_id)
+        return EvidenceChain.from_records(goal_id, self._decision_evidence_records())
+
+    def _decision_evidence_records(self) -> list[EvidenceRecord]:
+        list_records = getattr(self.evidence_repository, "list_records", None)
+        if not callable(list_records):
+            return []
+        return [record for record in list_records() if getattr(record, "source", "") == DECISION_EVIDENCE_SOURCE]
+
+    @staticmethod
+    def _record_to_decision_dict(record: EvidenceRecord) -> dict[str, Any]:
+        metadata = _mapping(getattr(record, "metadata", {}))
+        decision_id = _text(metadata.get("decision_id"), getattr(record, "evidence_id", ""))
+        return {
+            "schema": DECISION_EVIDENCE_STORE_SCHEMA,
+            "decision_id": decision_id,
+            "evidence_id": getattr(record, "evidence_id", decision_id),
+            "goal_id": getattr(record, "goal_id", ""),
+            "task_id": metadata.get("task_id") or getattr(record, "subgoal_id", ""),
+            "source_stage": metadata.get("source_stage", ""),
+            "decision": "projected",
+            "decision_reason": getattr(record, "summary", ""),
+            "next_action": metadata.get("next_action", ""),
+            "evidence_refs": _list(metadata.get("evidence_refs")),
+            "created_at": getattr(record, "timestamp", 0.0),
+            "links": _mapping(metadata.get("links")),
+            "projection_only": True,
+        }
+
 
 __all__ = [
+    "DECISION_EVIDENCE_BRIDGE_SOURCE",
     "DECISION_EVIDENCE_STORE_SCHEMA",
     "DecisionEvidenceRepository",
     "build_decision_evidence",
+    "decision_evidence_to_evidence_record",
 ]

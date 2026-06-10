@@ -57,7 +57,7 @@ class RuntimeState:
         status = str(data.get("runtime_status") or "idle").strip().lower()
         failure = data.get("failure_state")
 
-        degraded = bool(failure) or status in {"degraded", "failed", "error", "blocked"}
+        degraded = bool(failure) or status in {"degraded", "failed", "error", "blocked", "needs_resume", "recoverable"}
 
         return {
             "ok": not degraded,

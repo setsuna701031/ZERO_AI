@@ -37,6 +37,8 @@ RESUME_TO_QUEUE_STATUSES = {
     "running",
     "retry",
     "retrying",
+    "needs_resume",
+    "recoverable",
 }
 
 WAITING_STATUSES = {
@@ -46,6 +48,7 @@ WAITING_STATUSES = {
     "waiting_review",
     "waiting_blocker",
     "paused",
+    "needs_observation",
 }
 
 TERMINAL_STATUSES = {
@@ -1193,10 +1196,20 @@ def run_persistent_runtime_orchestrator(
     )
 
 
+def run_adaptive_runtime_resume(*, task_runner: Any, task: Dict[str, Any], execution_contract: Any, current_tick: int = 0) -> Dict[str, Any]:
+    """Delegate a completed adaptive execution contract to TaskRunner."""
+    return task_runner.run_task_adaptive(
+        task=task,
+        execution_contract=execution_contract,
+        current_tick=current_tick,
+    )
+
+
 __all__ = [
     "SCHEMA",
     "PersistentRuntimeOrchestrator",
     "should_route_persistent_runtime",
     "resume_last_persistent_runtime_session",
+    "run_adaptive_runtime_resume",
     "run_persistent_runtime_orchestrator",
 ]

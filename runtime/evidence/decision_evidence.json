@@ -1,0 +1,1434 @@
+{
+  "records": [
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780825927.7446408,
+      "decision": "complete",
+      "decision_id": "decision_d255484da531567bed4a",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_a24c0af77593",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_a24c0af77593_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780825929.64709,
+      "decision": "complete",
+      "decision_id": "decision_503b9e901068f511d1f9",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_076300b8dcc4",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_076300b8dcc4_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780825929.9010503,
+      "decision": "complete",
+      "decision_id": "decision_63a4270fe078bd992106",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_141a62db0dea",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_141a62db0dea_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780887355.4280558,
+      "decision": "complete",
+      "decision_id": "decision_093d8db291d625ee001b",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_2fa6c4cf997e",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_2fa6c4cf997e_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780887357.3072488,
+      "decision": "complete",
+      "decision_id": "decision_ae50e020ebbd6effad0f",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_7b08b25a2f8a",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_7b08b25a2f8a_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780887357.5643575,
+      "decision": "complete",
+      "decision_id": "decision_187267916c30279560b8",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_732806b4635f",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_732806b4635f_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780895319.0998125,
+      "decision": "complete",
+      "decision_id": "decision_c5aeed21b37175ed9b81",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_520ebafa4f61",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_520ebafa4f61_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780895321.0238624,
+      "decision": "complete",
+      "decision_id": "decision_fd422ee3d01b115a5950",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_068ecf90bba4",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_068ecf90bba4_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780895321.2888644,
+      "decision": "complete",
+      "decision_id": "decision_90fef037ac971e0f3294",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_6950c5f18bd7",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_6950c5f18bd7_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780910303.1597972,
+      "decision": "complete",
+      "decision_id": "decision_1e3352ac19081733421e",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_189449cf95f2",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_189449cf95f2_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780910305.1479707,
+      "decision": "complete",
+      "decision_id": "decision_c96ad5e335fe292a47e7",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_b7747734c617",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_b7747734c617_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780910305.4211283,
+      "decision": "complete",
+      "decision_id": "decision_e0a86e0dcc0f96063604",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_a3d2bea2d0c0",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_a3d2bea2d0c0_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780912493.0888417,
+      "decision": "complete",
+      "decision_id": "decision_a552d90b2cc05dc55d11",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_e2c3035d7982",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_e2c3035d7982_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780912495.0536091,
+      "decision": "complete",
+      "decision_id": "decision_5f39ecb733d7a7ed2f72",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_40df1d8c9f8c",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_40df1d8c9f8c_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780912495.3146093,
+      "decision": "complete",
+      "decision_id": "decision_c5cce701165eaaf3334e",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_97877f2789f3",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_97877f2789f3_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780973606.5431252,
+      "decision": "complete",
+      "decision_id": "decision_6cf717fb945c829b65fc",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_96dbbfd490a0",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_96dbbfd490a0_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780973608.5302324,
+      "decision": "complete",
+      "decision_id": "decision_98453da1f0a781a260f8",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_6b083a4f1a8a",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_6b083a4f1a8a_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780973608.7939732,
+      "decision": "complete",
+      "decision_id": "decision_2ec41883fd693978f0b7",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_04f0317ff881",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_04f0317ff881_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780974757.8845718,
+      "decision": "complete",
+      "decision_id": "decision_e678fcd1634bc6abbbd4",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_01d6b1f03d6c",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_01d6b1f03d6c_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780974759.891605,
+      "decision": "complete",
+      "decision_id": "decision_8e6be903b724e2212d05",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_9adb89dbd493",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_9adb89dbd493_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780974760.1921256,
+      "decision": "complete",
+      "decision_id": "decision_6630877921588c613d98",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_331bcd737481",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_331bcd737481_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780976553.4753819,
+      "decision": "complete",
+      "decision_id": "decision_30d0cfc77a3e13689706",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_87a5e79e846d",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_87a5e79e846d_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780976555.3377998,
+      "decision": "complete",
+      "decision_id": "decision_ea62ec0d9e134cde938b",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_e0b90a446f89",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_e0b90a446f89_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780976555.5911222,
+      "decision": "complete",
+      "decision_id": "decision_f19cff94a1871c1fc2b2",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_c18823b9681e",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_c18823b9681e_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780978274.6397705,
+      "decision": "complete",
+      "decision_id": "decision_1da255776752eca0bc1f",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_6a3b2af5129c",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_6a3b2af5129c_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780978276.6741362,
+      "decision": "complete",
+      "decision_id": "decision_c94a205453c00e437ca2",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_542f92e7231b",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_542f92e7231b_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780978276.9426975,
+      "decision": "complete",
+      "decision_id": "decision_06d375dc0a827060e114",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_aca49dec18a2",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_aca49dec18a2_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780980501.2424018,
+      "decision": "complete",
+      "decision_id": "decision_c350c21aa0c350461c11",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_f81c31d8956c",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_f81c31d8956c_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780980503.200568,
+      "decision": "complete",
+      "decision_id": "decision_802e050bdb41672a7aaa",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_70212005f534",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_70212005f534_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780980503.455811,
+      "decision": "complete",
+      "decision_id": "decision_b6e45044e61b14bdc0d6",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_c6e7f1a2d76d",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_c6e7f1a2d76d_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780982124.2569065,
+      "decision": "complete",
+      "decision_id": "decision_0eeab7c8515883b09a92",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_acf7baa47311",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_acf7baa47311_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780982126.2947268,
+      "decision": "complete",
+      "decision_id": "decision_1ca1dc8945e7556c51cd",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_ae6bc5a3557b",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_ae6bc5a3557b_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780982126.5786338,
+      "decision": "complete",
+      "decision_id": "decision_6b2a19f884bf3501c371",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_23acdec533f4",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_23acdec533f4_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780983753.7291598,
+      "decision": "complete",
+      "decision_id": "decision_4c1192154f684ce3777c",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_2b87e8555f8e",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_2b87e8555f8e_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780983755.7399414,
+      "decision": "complete",
+      "decision_id": "decision_a5d6d87dd26d7eff12ae",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_13e5129b231f",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_13e5129b231f_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780983756.0068493,
+      "decision": "complete",
+      "decision_id": "decision_a0492e9cea62c32a8e7a",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_bfefe455659f",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_bfefe455659f_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780985915.713417,
+      "decision": "complete",
+      "decision_id": "decision_53f807d89b6f3c1c07f5",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_0ffa479f1d6f",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_0ffa479f1d6f_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780985917.6816046,
+      "decision": "complete",
+      "decision_id": "decision_b18d8b2c5f3adb195ea6",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_bd39265032b0",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_bd39265032b0_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780985917.9486063,
+      "decision": "complete",
+      "decision_id": "decision_511edd7f79aac525b2ea",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_3e8d5bdc20a5",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_3e8d5bdc20a5_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780987719.335167,
+      "decision": "complete",
+      "decision_id": "decision_d05456aa989e1b090b8d",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_039287e4f78f",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_039287e4f78f_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780987721.337249,
+      "decision": "complete",
+      "decision_id": "decision_87bad18705a63fc263ec",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_62d61915b125",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_62d61915b125_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780987721.6079688,
+      "decision": "complete",
+      "decision_id": "decision_00d350a4dbae9f1a0540",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_e95a9a28b133",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_e95a9a28b133_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780988941.877095,
+      "decision": "complete",
+      "decision_id": "decision_441d3a2dc48726b01014",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_d979a39ed600",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_d979a39ed600_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780988943.8900106,
+      "decision": "complete",
+      "decision_id": "decision_6b90b62535b3a9ab3e04",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_36d64da51f1f",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_36d64da51f1f_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780988944.157408,
+      "decision": "complete",
+      "decision_id": "decision_cb118cfd32cf4c3dfa71",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_81a5d3a83666",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_81a5d3a83666_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780990491.987212,
+      "decision": "complete",
+      "decision_id": "decision_b33bbf7c21e19027def7",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_9b86dc7f0cb3",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_9b86dc7f0cb3_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780990493.9972956,
+      "decision": "complete",
+      "decision_id": "decision_7ee00d0a99781e122a8a",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_eacd38d6de31",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_eacd38d6de31_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780990494.2672966,
+      "decision": "complete",
+      "decision_id": "decision_cb7e0f93c156db8a3983",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_b0c1715c73b1",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_b0c1715c73b1_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780992208.0444417,
+      "decision": "complete",
+      "decision_id": "decision_48dc92b56862f7a0fbb3",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_39b0e67d7d83",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_39b0e67d7d83_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780992210.1572697,
+      "decision": "complete",
+      "decision_id": "decision_28290b1d651b548f63a3",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_498118302f35",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_498118302f35_result"
+    },
+    {
+      "confidence": 0.8999999999999999,
+      "created_at": 1780992210.420587,
+      "decision": "complete",
+      "decision_id": "decision_c76bd4cc38fc54cc846f",
+      "decision_reason": "runtime_outcome_success",
+      "evidence_refs": [
+        "evidence_1",
+        "evidence_2"
+      ],
+      "goal_id": "goal_build_demo_system_13459bf250dd",
+      "links": {
+        "continuation_goal_id": "",
+        "cycle_index": 0,
+        "replan_goal_id": ""
+      },
+      "next_action": "stop",
+      "observed_event": {
+        "failed_tasks": [],
+        "goal_state": "completed",
+        "runtime_state": "complete",
+        "runtime_stop_reason": "complete"
+      },
+      "outcome_class": "success",
+      "schema": "zero.decision_evidence.v1",
+      "source_stage": "engineering_goal_loop",
+      "task_id": "goal_build_demo_system_13459bf250dd_result"
+    }
+  ],
+  "schema": "zero.decision_evidence.store.v1",
+  "updated_at": 1780992210.4215941
+}

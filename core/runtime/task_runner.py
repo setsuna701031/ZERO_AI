@@ -734,6 +734,16 @@ class TaskRunner:
                         "blockers": copy.deepcopy(blockers),
                     })
 
+            if status == "needs_observation":
+                return self._finalize_public_result({
+                    "ok": True,
+                    "action": "terminal_validation_pending",
+                    "task": copy.deepcopy(task),
+                    "runtime_state": state,
+                    "status": status,
+                    "next_action": "observe_terminal_result",
+                })
+
             if status in {"finished", "done", "success", "completed"}:
                 return self._finalize_public_result({
                     "ok": True,
@@ -827,6 +837,7 @@ class TaskRunner:
                     "waiting_blocker",
                     "waiting_review",
                     "paused",
+                    "needs_observation",
                 }:
                     break
 
@@ -4801,3 +4812,30 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
 
 
 TaskRunner._build_taskrunner_authority_context = _zero_boundary_build_taskrunner_authority_context
+
+
+def _zero_run_task_adaptive(self, task, execution_contract, current_tick=0):
+    """Consume a completed adaptive execution contract without making decisions."""
+    from core.adaptive.adaptive_execution_contract import AdaptiveExecutionContract
+
+    if not isinstance(execution_contract, AdaptiveExecutionContract):
+        raise TypeError("run_task_adaptive_requires_adaptive_execution_contract")
+    if not execution_contract.runtime_allowed:
+        return {
+            "ok": False,
+            "status": "blocked",
+            "action": execution_contract.action_type,
+            "runtime_allowed": False,
+            "blocked_reason": "adaptive_execution_contract_disallows_runtime",
+        }
+    if execution_contract.action_type == "execute_next_step":
+        return self.run_task(task, current_tick=current_tick)
+    return {
+        "ok": True,
+        "status": "accepted",
+        "action": execution_contract.action_type,
+        "runtime_allowed": True,
+    }
+
+
+TaskRunner.run_task_adaptive = _zero_run_task_adaptive

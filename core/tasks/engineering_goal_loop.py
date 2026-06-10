@@ -12,11 +12,26 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.evidence.decision_evidence import DecisionEvidenceRepository, build_decision_evidence
-from core.tasks.adaptive_planning_foundation import ADAPTIVE_PLANNING_RECORD_SCHEMA
+from core.evidence.decision_evidence import DecisionEvidenceRepository
+from core.evidence.evidence_authority import EvidenceAuthority
+from core.evidence.evidence_repository import EvidenceRepository
+from core.tasks.adaptive_persistence_gateway import AdaptivePersistenceGateway
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_goal_runner import EngineeringGoalRunner
+from core.tasks.engineering_runtime_contract import build_engineering_runtime_contract_from_result
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
+from core.tasks.adaptive_loop_coordinator import AdaptiveLoopCoordinator
+from core.tasks.goal_loop_coordinator import GoalLoopCoordinator
+from core.tasks.lifecycle_coordinator import LifecycleCoordinator
+from core.session.session_coordinator import SessionCoordinator
+from core.program.program_coordinator import ProgramCoordinator
+from core.session.session_progression_coordinator import SessionProgressionCoordinator
+from core.adaptive.continuation_runtime import ContinuationRuntime
+from core.adaptive.replan_runtime import ReplanRuntime
+from core.adaptive.continuation_coordinator import ContinuationCoordinator
+from core.adaptive.replan_coordinator import ReplanCoordinator
+from core.tasks.goal_loop_dispatcher import GoalLoopDispatcher
+from core.tasks.goal_loop_terminal_coordinator import GoalLoopTerminalCoordinator
 
 
 ENGINEERING_GOAL_LOOP_SCHEMA = "zero.engineering_goal_loop.v1"
@@ -45,11 +60,84 @@ class EngineeringGoalLoop:
         runner: EngineeringGoalRunner | Any | None = None,
         issue_reporter: Any | None = None,
         decision_evidence_repository: DecisionEvidenceRepository | Any | None = None,
+        evidence_repository: EvidenceRepository | Any | None = None,
+        evidence_authority: EvidenceAuthority | Any | None = None,
+        adaptive_persistence_gateway: AdaptivePersistenceGateway | Any | None = None,
+        adaptive_loop_coordinator: AdaptiveLoopCoordinator | Any | None = None,
+        lifecycle_coordinator: LifecycleCoordinator | Any | None = None,
+        goal_loop_coordinator: GoalLoopCoordinator | Any | None = None,
+        adaptive_replan_state_machine: Any | None = None,
+        engineering_lifecycle_state_machine: Any | None = None,
+        session_coordinator: SessionCoordinator | Any | None = None,
+        engineering_session_state_machine: Any | None = None,
+        program_coordinator: ProgramCoordinator | Any | None = None,
+        engineering_program_state_machine: Any | None = None,
+        session_progression_coordinator: SessionProgressionCoordinator | Any | None = None,
+        continuation_coordinator: ContinuationCoordinator | Any | None = None,
+        replan_coordinator: ReplanCoordinator | Any | None = None,
+        goal_loop_dispatcher: GoalLoopDispatcher | Any | None = None,
+        goal_loop_terminal_coordinator: GoalLoopTerminalCoordinator | Any | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
         self.repository = repository or EngineeringGoalRepository(self.repo_root)
         self.issue_reporter = issue_reporter
-        self.decision_evidence_repository = decision_evidence_repository or DecisionEvidenceRepository(self.repo_root)
+        self.evidence_repository = evidence_repository or EvidenceRepository(self.repo_root)
+        self.evidence_authority = evidence_authority or EvidenceAuthority(
+            self.repo_root,
+            evidence_repository=self.evidence_repository,
+        )
+        self.decision_evidence_repository = decision_evidence_repository or DecisionEvidenceRepository(
+            self.repo_root,
+            evidence_repository=self.evidence_repository,
+            evidence_authority=self.evidence_authority,
+        )
+        self.adaptive_persistence_gateway = adaptive_persistence_gateway or AdaptivePersistenceGateway(
+            repo_root=self.repo_root,
+            repository=self.repository,
+            decision_evidence_repository=self.decision_evidence_repository,
+            evidence_repository=self.evidence_repository,
+            evidence_authority=self.evidence_authority,
+        )
+        self.adaptive_loop_coordinator = adaptive_loop_coordinator or AdaptiveLoopCoordinator(
+            repo_root=self.repo_root,
+            adaptive_replan_state_machine=adaptive_replan_state_machine,
+        )
+        self.lifecycle_coordinator = lifecycle_coordinator or LifecycleCoordinator(
+            repo_root=self.repo_root,
+            engineering_lifecycle_state_machine=engineering_lifecycle_state_machine,
+        )
+        self.goal_loop_coordinator = goal_loop_coordinator or GoalLoopCoordinator()
+        self.session_coordinator = session_coordinator or SessionCoordinator(
+            repo_root=self.repo_root,
+            engineering_session_state_machine=engineering_session_state_machine,
+        )
+        self.program_coordinator = program_coordinator or ProgramCoordinator(
+            repo_root=self.repo_root,
+            engineering_program_state_machine=engineering_program_state_machine,
+        )
+        self.session_progression_coordinator = session_progression_coordinator or SessionProgressionCoordinator(
+            repo_root=self.repo_root,
+            adaptive_loop_coordinator=self.adaptive_loop_coordinator,
+            lifecycle_coordinator=self.lifecycle_coordinator,
+            session_coordinator=self.session_coordinator,
+            program_coordinator=self.program_coordinator,
+            goal_loop_coordinator=self.goal_loop_coordinator,
+        )
+        self.continuation_coordinator = continuation_coordinator or ContinuationCoordinator(
+            repo_root=self.repo_root,
+            repository=self.repository,
+        )
+        self.replan_coordinator = replan_coordinator or ReplanCoordinator(repo_root=self.repo_root)
+        self.goal_loop_dispatcher = goal_loop_dispatcher or GoalLoopDispatcher(
+            repo_root=self.repo_root,
+            continuation_coordinator=self.continuation_coordinator,
+            replan_coordinator=self.replan_coordinator,
+        )
+        self.goal_loop_terminal_coordinator = goal_loop_terminal_coordinator or GoalLoopTerminalCoordinator(
+            repo_root=self.repo_root,
+            issue_reporter=self.issue_reporter,
+            evidence_chain_summary=self._evidence_chain_summary,
+        )
         self.runner = runner or EngineeringGoalRunner(
             repo_root=self.repo_root,
             repository=self.repository,
@@ -70,174 +158,104 @@ class EngineeringGoalLoop:
         replan_limit = max(0, int(max_replans or 0))
         continuation_limit = cycle_limit if max_continuations is None else max(0, int(max_continuations or 0))
         cycles: list[dict[str, Any]] = []
-        current_goal_id = target_goal_id
         terminal = False
         stop_reason = "max_cycles_reached"
         refusal_reason = ""
-        replan_count = 0
-        continuation_count = 0
+
+        session_runtime = self.session_progression_coordinator.start_runtime(
+            target_goal_id,
+            max_cycles=cycle_limit,
+            max_replans=replan_limit,
+            max_continuations=continuation_limit,
+        )
+        continuation_runtime = ContinuationRuntime.start(
+            target_goal_id,
+            continuation_count=0,
+            max_continuations=continuation_limit,
+        )
+        replan_runtime = ReplanRuntime.start(
+            replan_count=0,
+            max_replans=replan_limit,
+        )
 
         for cycle_index in range(cycle_limit):
-            cycle = self.run_one_cycle(current_goal_id, cycle_index=cycle_index)
-            cycles.append(cycle)
-            decision = _clean_text(cycle.get("adaptive_decision")).lower()
-
-            if self.stop_on_complete(cycle):
-                terminal = True
-                stop_reason = "complete"
-                self._persist_adaptive_record(
-                    cycle,
-                    replan_count=replan_count,
-                    continuation_count=continuation_count,
-                    max_replans=replan_limit,
-                    max_continuations=continuation_limit,
-                )
-                break
-
-            if self.stop_on_blocked(cycle):
-                terminal = True
-                stop_reason = "blocked"
-                self._persist_adaptive_record(
-                    cycle,
-                    replan_count=replan_count,
-                    continuation_count=continuation_count,
-                    max_replans=replan_limit,
-                    max_continuations=continuation_limit,
-                )
-                break
-
-            if decision == "replan":
-                if replan_count >= replan_limit:
-                    refusal_reason = "max_replans_exhausted"
-                    self._refuse_adaptive_continuation(cycle, refusal_reason)
-                    terminal = True
-                    stop_reason = refusal_reason
-                    self._persist_adaptive_record(
-                        cycle,
-                        replan_count=replan_count,
-                        continuation_count=continuation_count,
-                        max_replans=replan_limit,
-                        max_continuations=continuation_limit,
-                    )
-                    break
-                replan_count += 1
-                cycle["replan_record"] = self.create_replan_record(
-                    goal_id=current_goal_id,
-                    cycle_index=cycle_index,
-                    replan_request=_as_mapping(cycle.get("replan_request")),
-                    runner_result=_as_mapping(cycle.get("runner_result")),
-                )
-                terminal = True
-                stop_reason = "replan"
-                self._persist_adaptive_record(
-                    cycle,
-                    replan_count=replan_count,
-                    continuation_count=continuation_count,
-                    max_replans=replan_limit,
-                    max_continuations=continuation_limit,
-                )
-                break
-
-            if decision != "continue":
-                terminal = True
-                stop_reason = "non_continuable_adaptive_decision"
-                refusal_reason = stop_reason
-                self._refuse_adaptive_continuation(cycle, refusal_reason)
-                self._persist_adaptive_record(
-                    cycle,
-                    replan_count=replan_count,
-                    continuation_count=continuation_count,
-                    max_replans=replan_limit,
-                    max_continuations=continuation_limit,
-                )
-                break
-
-            if continuation_count >= continuation_limit:
-                refusal_reason = "max_continuations_exhausted"
-                self._refuse_adaptive_continuation(cycle, refusal_reason)
-                terminal = True
-                stop_reason = refusal_reason
-                self._persist_adaptive_record(
-                    cycle,
-                    replan_count=replan_count,
-                    continuation_count=continuation_count,
-                    max_replans=replan_limit,
-                    max_continuations=continuation_limit,
-                )
-                break
-
-            work_item = self.create_continuation_work_item(
-                goal_id=current_goal_id,
+            cycle = self.run_one_cycle(session_runtime.current_goal_id, cycle_index=cycle_index)
+            cycle, session_runtime = self.session_progression_coordinator.attach_cycle_progression(
+                cycle,
+                runtime=session_runtime.replace(
+                    replan_count=replan_runtime.replan_count,
+                    continuation_count=continuation_runtime.continuation_count,
+                    current_goal_id=session_runtime.current_goal_id,
+                ),
                 cycle_index=cycle_index,
-                continuation_plan=_as_mapping(cycle.get("continuation_plan")),
-                runner_result=_as_mapping(cycle.get("runner_result")),
             )
-            cycle["continuation_work_item"] = work_item
-            continuation_count += 1
+            dispatch_result = self.goal_loop_dispatcher.dispatch(
+                loop_decision=_as_mapping(cycle.get("goal_loop_decision")),
+                cycle=cycle,
+                current_goal_id=session_runtime.current_goal_id,
+                cycle_index=cycle_index,
+                continuation_runtime=continuation_runtime,
+                replan_runtime=replan_runtime,
+            )
+            cycle = _as_mapping(dispatch_result.cycle)
+            continuation_runtime = dispatch_result.continuation_runtime or continuation_runtime
+            replan_runtime = dispatch_result.replan_runtime or replan_runtime
+
+            if dispatch_result.refusal_reason:
+                self._refuse_adaptive_continuation(cycle, dispatch_result.refusal_reason)
+
             self._persist_adaptive_record(
                 cycle,
-                replan_count=replan_count,
-                continuation_count=continuation_count,
+                replan_count=replan_runtime.replan_count,
+                continuation_count=continuation_runtime.continuation_count,
                 max_replans=replan_limit,
                 max_continuations=continuation_limit,
             )
-            current_goal_id = _clean_text(work_item.get("goal_id"), current_goal_id)
+            cycles.append(cycle)
+            session_runtime = session_runtime.replace(
+                current_goal_id=_clean_text(dispatch_result.current_goal_id, session_runtime.current_goal_id),
+                replan_count=replan_runtime.replan_count,
+                continuation_count=continuation_runtime.continuation_count,
+                terminal=bool(dispatch_result.terminal),
+                stop_reason=_clean_text(dispatch_result.stop_reason, stop_reason),
+                refusal_reason=_clean_text(dispatch_result.refusal_reason),
+            )
 
-        latest_decision = _as_mapping(cycles[-1].get("adaptive_decision_record")) if cycles else {}
-        return apply_engineering_issue_summary(
-            {
-            "schema": ENGINEERING_GOAL_LOOP_SCHEMA,
-            "ok": terminal and bool(cycles) and _clean_text(latest_decision.get("decision")) == "complete",
-            "mode": "engineering_goal_loop",
-            "goal_id": target_goal_id,
-            "current_goal_id": current_goal_id,
-            "terminal": terminal,
-            "stop_reason": stop_reason,
-            "adaptive_decision": copy.deepcopy(latest_decision),
-            "adaptive_reason": _clean_text(latest_decision.get("reason")),
-            "adaptive_confidence": latest_decision.get("confidence", 0.0),
-            "adaptive_confidence_score": copy.deepcopy(_as_mapping(latest_decision.get("confidence_score"))),
-            "adaptive_evidence_chain": copy.deepcopy(latest_decision.get("evidence_chain") or []),
-            "root_cause_report": copy.deepcopy(_as_mapping(latest_decision.get("root_cause_report"))),
-            "max_cycles": cycle_limit,
-            "max_replans": replan_limit,
-            "max_continuations": continuation_limit,
-            "replan_count": replan_count,
-            "continuation_count": continuation_count,
-            "adaptive_refusal_reason": refusal_reason,
-            "cycle_count": len(cycles),
-            "cycles": cycles,
-            "execution_path": {
-                "route": "Goal -> Adaptive Planner -> Runtime",
-                "program_id": "",
-                "portfolio_id": "",
-                "goal_id": target_goal_id,
-                "goal_loop_owns_long_horizon_cycles": True,
-                "runner_owns_runtime_bridge": True,
-                "adaptive_planner_decides_only": True,
-                "runtime_orchestrator_embedded_here": False,
-                "direct_execution": False,
-                "memory_persistence_owned_here": False,
-                "unbounded_loop": False,
-            },
-            "updated_at": time.time(),
-            },
-            repo_root=self.repo_root,
-            issue_reporter=self.issue_reporter,
+            if dispatch_result.terminal:
+                terminal = True
+                stop_reason = _clean_text(dispatch_result.stop_reason, "stop")
+                refusal_reason = _clean_text(dispatch_result.refusal_reason)
+                break
+
+        return self.goal_loop_terminal_coordinator.build_result(
+            target_goal_id=target_goal_id,
+            current_goal_id=session_runtime.current_goal_id,
+            terminal=terminal,
+            stop_reason=stop_reason,
+            refusal_reason=refusal_reason,
+            cycles=cycles,
+            max_cycles=cycle_limit,
+            max_replans=replan_limit,
+            max_continuations=continuation_limit,
+            session_runtime=session_runtime,
+            continuation_runtime=continuation_runtime,
+            replan_runtime=replan_runtime,
         )
 
     def run_one_cycle(self, goal_id: str, *, cycle_index: int = 0) -> dict[str, Any]:
         runner_result = self.runner.run_goal(_clean_text(goal_id))
-        runtime_result = _as_mapping(runner_result.get("runtime_result"))
-        adaptive = _as_mapping(runner_result.get("adaptive_decision"))
+        runtime_contract = build_engineering_runtime_contract_from_result(runner_result)
+        runtime_result = _as_mapping(runtime_contract.get("runtime_result"))
+        adaptive = _as_mapping(runtime_contract.get("adaptive_decision"))
         decision = _clean_text(adaptive.get("decision"))
-        root_cause = _as_mapping(adaptive.get("root_cause") or runner_result.get("runtime_root_cause"))
+        root_cause = _as_mapping(adaptive.get("root_cause") or runtime_contract.get("runtime_root_cause"))
         cycle = {
             "schema": ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA,
             "cycle_index": int(cycle_index),
-            "goal_id": _clean_text(runner_result.get("goal_id"), _clean_text(goal_id)),
-            "ok": bool(runner_result.get("ok")),
+            "goal_id": _clean_text(runtime_contract.get("goal_id"), _clean_text(goal_id)),
+            "ok": bool(runtime_contract.get("ok")),
             "runtime_state": _clean_text(runtime_result.get("state")),
+            "engineering_runtime_contract": copy.deepcopy(runtime_contract),
             "adaptive_decision": decision,
             "adaptive_decision_record": copy.deepcopy(adaptive),
             "adaptive_reason": _clean_text(adaptive.get("reason")),
@@ -251,6 +269,15 @@ class EngineeringGoalLoop:
             "continuation_work_item": {},
             "replan_record": {},
             "adaptive_planning_record": copy.deepcopy(_as_mapping(adaptive.get("adaptive_planning_record"))),
+            "adaptive_replan_contract": {},
+            "adaptive_replan_state": {},
+            "adaptive_observation": {},
+            "adaptive_delta": {},
+            "adaptive_loop_contract": {},
+            "engineering_lifecycle_state": {},
+            "engineering_session_state": {},
+            "engineering_program_state": {},
+            "goal_loop_decision": {},
             "updated_at": time.time(),
         }
         if decision == "blocked":
@@ -266,56 +293,23 @@ class EngineeringGoalLoop:
         continuation_plan: Mapping[str, Any] | None = None,
         runner_result: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        last_cycle = _as_mapping(self._last_cycle)
-        plan = _as_mapping(continuation_plan) or _as_mapping(last_cycle.get("continuation_plan"))
-        next_request = _as_mapping(plan.get("next_runtime_request"))
-        payload = _as_mapping(next_request.get("payload"))
-        work_item_template = _as_mapping(plan.get("work_item_template"))
-        source_goal_id = _clean_text(goal_id or last_cycle.get("goal_id") or plan.get("goal_id") or next_request.get("goal_id"))
-        resolved_cycle_index = int(cycle_index if cycle_index is not None else last_cycle.get("cycle_index") or 0)
-        continuation_goal_id = self._continuation_goal_id(source_goal_id, resolved_cycle_index)
-        summary = _clean_text(payload.get("goal") or plan.get("reason"), f"Continue {source_goal_id}")
-        payload["goal_id"] = continuation_goal_id
-        payload["task_id"] = continuation_goal_id
-        payload["package_id"] = continuation_goal_id
-        payload["source_goal_id"] = source_goal_id
-        payload["continuation_source_goal_id"] = source_goal_id
-        payload["continuation_cycle_index"] = resolved_cycle_index
-        payload["continuation_requested"] = True
-        payload["continuation_objective"] = _clean_text(work_item_template.get("objective"), summary)
-        payload["continuation_acceptance"] = _as_mapping(work_item_template.get("acceptance"))
-        payload["adaptive_evidence_chain"] = copy.deepcopy(plan.get("evidence_chain") or [])
+        """Backward-compatible wrapper around ContinuationCoordinator."""
 
-        record = self.repository.save_goal(
-            {
-                "schema": ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA,
-                "goal_id": continuation_goal_id,
-                "summary": summary,
-                "status": "pending",
-                "priority": 0.0,
-                "payload": payload,
-                "metadata": {
-                    "source": "engineering_goal_loop",
-                    "source_goal_id": source_goal_id,
-                    "source_cycle_index": resolved_cycle_index,
-                    "continuation_plan": plan,
-                    "work_item_template": work_item_template,
-                    "adaptive_evidence_chain": copy.deepcopy(plan.get("evidence_chain") or []),
-                    "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
-                    "adaptive_planning_record": _as_mapping(
-                        _as_mapping(_as_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
-                    ),
-                },
-            }
+        last_cycle = _as_mapping(self._last_cycle)
+        runtime = ContinuationRuntime.start(
+            _clean_text(goal_id or last_cycle.get("goal_id"), "goal"),
+            continuation_count=0,
+            max_continuations=1,
         )
-        return {
-            "schema": ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA,
-            "goal_id": record["goal_id"],
-            "source_goal_id": source_goal_id,
-            "cycle_index": resolved_cycle_index,
-            "record": record,
-            "created_at": time.time(),
-        }
+        work_item, _ = self.continuation_coordinator.create_work_item(
+            runtime=runtime,
+            cycle=last_cycle,
+            goal_id=goal_id,
+            cycle_index=cycle_index,
+            continuation_plan=continuation_plan,
+            runner_result=runner_result,
+        )
+        return work_item
 
     def create_replan_record(
         self,
@@ -325,24 +319,19 @@ class EngineeringGoalLoop:
         replan_request: Mapping[str, Any] | None = None,
         runner_result: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """Backward-compatible wrapper around ReplanCoordinator."""
+
         last_cycle = _as_mapping(self._last_cycle)
-        request = _as_mapping(replan_request) or _as_mapping(last_cycle.get("replan_request"))
-        source_goal_id = _clean_text(goal_id or last_cycle.get("goal_id") or request.get("goal_id"))
-        resolved_cycle_index = int(cycle_index if cycle_index is not None else last_cycle.get("cycle_index") or 0)
-        return {
-            "schema": ENGINEERING_REPLAN_RECORD_SCHEMA,
-            "goal_id": source_goal_id,
-            "cycle_index": resolved_cycle_index,
-            "reason": _clean_text(request.get("reason"), "recoverable_runtime_failure"),
-            "replan_request": copy.deepcopy(request),
-            "runner_adaptive_decision": _as_mapping(_as_mapping(runner_result).get("adaptive_decision")),
-            "adaptive_planning_record": _as_mapping(
-                _as_mapping(_as_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
-            ),
-            "root_cause_report": _as_mapping(request.get("root_cause_report")),
-            "evidence_chain": copy.deepcopy(request.get("evidence_chain") or []),
-            "created_at": time.time(),
-        }
+        runtime = ReplanRuntime.start(replan_count=0, max_replans=1)
+        record, _ = self.replan_coordinator.create_replan_record(
+            runtime=runtime,
+            cycle=last_cycle,
+            goal_id=goal_id,
+            cycle_index=cycle_index,
+            replan_request=replan_request,
+            runner_result=runner_result,
+        )
+        return record
 
     def stop_on_complete(self, cycle: Mapping[str, Any]) -> bool:
         return _clean_text(cycle.get("adaptive_decision")).lower() == "complete"
@@ -371,58 +360,24 @@ class EngineeringGoalLoop:
         max_replans: int,
         max_continuations: int,
     ) -> None:
-        record = _as_mapping(cycle.get("adaptive_planning_record"))
-        adaptive = _as_mapping(cycle.get("adaptive_decision_record"))
-        record.update({
-            "schema": _clean_text(record.get("schema"), ADAPTIVE_PLANNING_RECORD_SCHEMA),
-            "previous_goal": _clean_text(record.get("previous_goal"), _clean_text(cycle.get("goal_id"))),
-            "previous_step": copy.deepcopy(record.get("previous_step")),
-            "outcome_class": _clean_text(record.get("outcome_class"), _clean_text(adaptive.get("outcome_class"))),
-            "decision_reason": _clean_text(
-                record.get("decision_reason"),
-                _clean_text(cycle.get("decision_reason") or adaptive.get("decision_reason") or adaptive.get("reason")),
-            ),
-            "next_action": _clean_text(record.get("next_action"), _clean_text(adaptive.get("next_action"), "stop")),
-            "replan_count": int(replan_count),
-            "continuation_count": int(continuation_count),
-            "max_replans": int(max_replans),
-            "max_continuations": int(max_continuations),
-        })
-        cycle["adaptive_planning_record"] = record
-        cycle["outcome_class"] = record["outcome_class"]
-        cycle["decision_reason"] = record["decision_reason"]
-        cycle["replan_count"] = int(replan_count)
-        cycle["continuation_count"] = int(continuation_count)
-        update_goal = getattr(self.repository, "update_goal", None)
-        if callable(update_goal):
-            update_goal(_clean_text(cycle.get("goal_id")), {"metadata": {"adaptive_planning_record": record}})
-        decision_evidence = build_decision_evidence(
-            cycle=cycle,
-            continuation_work_item=_as_mapping(cycle.get("continuation_work_item")),
-            replan_record=_as_mapping(cycle.get("replan_record")),
+        persist_cycle = getattr(self.adaptive_persistence_gateway, "persist_cycle", None)
+        if not callable(persist_cycle):
+            raise TypeError("engineering_goal_loop_requires_adaptive_persistence_gateway")
+        persist_cycle(
+            cycle,
+            replan_count=replan_count,
+            continuation_count=continuation_count,
+            max_replans=max_replans,
+            max_continuations=max_continuations,
         )
-        save_evidence = getattr(self.decision_evidence_repository, "save", None)
-        if callable(save_evidence):
-            decision_evidence = save_evidence(decision_evidence)
-        cycle["decision_evidence"] = copy.deepcopy(decision_evidence)
-        decision_id = _clean_text(decision_evidence.get("decision_id"))
-        if callable(update_goal) and decision_id:
-            goal = self.repository.load_goal(_clean_text(cycle.get("goal_id"))) or {}
-            metadata = _as_mapping(goal.get("metadata"))
-            decision_ids = [
-                _clean_text(item)
-                for item in metadata.get("decision_evidence_ids", [])
-                if _clean_text(item)
-            ] if isinstance(metadata.get("decision_evidence_ids"), list) else []
-            if decision_id not in decision_ids:
-                decision_ids.append(decision_id)
-            update_goal(_clean_text(cycle.get("goal_id")), {"metadata": {"decision_evidence_ids": decision_ids}})
-            continuation_goal_id = _clean_text(_as_mapping(cycle.get("continuation_work_item")).get("goal_id"))
-            if continuation_goal_id:
-                update_goal(continuation_goal_id, {"metadata": {"decision_evidence_id": decision_id}})
-                cycle["continuation_work_item"]["decision_evidence_id"] = decision_id
-            if cycle.get("replan_record"):
-                cycle["replan_record"]["decision_evidence_id"] = decision_id
+
+
+    def _evidence_chain_summary(self, goal_id: str) -> dict[str, Any]:
+        evidence_chain_summary = getattr(self.adaptive_persistence_gateway, "evidence_chain_summary", None)
+        if not callable(evidence_chain_summary):
+            return {}
+        return evidence_chain_summary(_clean_text(goal_id))
+
 
     def _continuation_goal_id(self, source_goal_id: str, cycle_index: int) -> str:
         base = f"{_clean_text(source_goal_id, 'goal')}__continuation_{int(cycle_index) + 1}"

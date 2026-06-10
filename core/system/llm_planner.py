@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import copy
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
+
+from core.planning.memory_aware_planner import inject_memory_context
+from core.planning.memory_context import MemoryContext, MemoryContextBuilder
 
 
 class LLMPlanner:
@@ -25,10 +29,15 @@ class LLMPlanner:
         llm_client: Any,
         debug: bool = False,
         max_steps: int = 5,
+        memory_repository: Any = None,
+        memory_context_builder: Optional[MemoryContextBuilder] = None,
     ) -> None:
         self.llm_client = llm_client
         self.debug = debug
         self.max_steps = max_steps
+        self.memory_context_builder = memory_context_builder or (
+            MemoryContextBuilder(memory_repository) if memory_repository is not None else None
+        )
 
 
 
@@ -50,9 +59,15 @@ class LLMPlanner:
         context: Optional[Dict[str, Any]] = None,
         user_input: str = "",
         route: Any = None,
+        memory_context: MemoryContext | Dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        context = context or {}
+        context = inject_memory_context(
+            context,
+            user_input=user_input,
+            memory_context=memory_context,
+            memory_context_builder=self.memory_context_builder,
+        )
         text = str(user_input or context.get("user_input") or "").strip()
 
         if not text:
@@ -111,6 +126,9 @@ class LLMPlanner:
 
     def run(self, *args, **kwargs):
         return self.plan(*args, **kwargs)
+
+    def set_memory_repository(self, repository: Any) -> None:
+        self.memory_context_builder = MemoryContextBuilder(repository) if repository is not None else None
 
     # ============================================================
     # deterministic guard
@@ -878,6 +896,9 @@ class LLMPlanner:
             "user_input": user_input,
             "route": route if isinstance(route, dict) else {},
             "memory_keys": list(context.keys()) if isinstance(context, dict) else [],
+            "memory_context": copy.deepcopy(context.get("memory_context"))
+            if isinstance(context, dict) and isinstance(context.get("memory_context"), dict)
+            else {},
         }
 
         return f"""

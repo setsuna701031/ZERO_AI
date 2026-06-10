@@ -8,9 +8,75 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from core.memory.memory_contract import (
+    MEMORY_SCHEMA,
+    MemoryType,
+    clean_optional_text,
+    clean_required_text,
+    copy_evidence_refs,
+)
+
 
 def _utc_now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+@dataclass(frozen=True)
+class TaskMemory:
+    """Append-only task history record; it has no runtime behavior."""
+
+    task_id: str
+    goal: str
+    plan_id: Optional[str]
+    start_time: str
+    end_time: Optional[str]
+    result: Any
+    evidence_refs: List[Any] = field(default_factory=list)
+    memory_type: MemoryType = field(default=MemoryType.TASK, init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "task_id", clean_required_text(self.task_id, "task_id"))
+        object.__setattr__(self, "goal", clean_required_text(self.goal, "goal"))
+        object.__setattr__(self, "plan_id", clean_optional_text(self.plan_id))
+        object.__setattr__(self, "start_time", clean_required_text(self.start_time, "start_time"))
+        object.__setattr__(self, "end_time", clean_optional_text(self.end_time))
+        object.__setattr__(self, "result", deepcopy(self.result))
+        object.__setattr__(self, "evidence_refs", copy_evidence_refs(self.evidence_refs))
+
+    @property
+    def record_id(self) -> str:
+        return self.task_id
+
+    @property
+    def timestamp(self) -> str:
+        return self.end_time or self.start_time
+
+    @classmethod
+    def from_mapping(cls, data: Dict[str, Any]) -> "TaskMemory":
+        return cls(
+            task_id=data.get("task_id") or data.get("record_id"),
+            goal=data.get("goal"),
+            plan_id=data.get("plan_id"),
+            start_time=data.get("start_time") or data.get("timestamp"),
+            end_time=data.get("end_time"),
+            result=data.get("result"),
+            evidence_refs=data.get("evidence_refs") or [],
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "schema": MEMORY_SCHEMA,
+            "memory_type": self.memory_type.value,
+            "record_id": self.record_id,
+            "task_id": self.task_id,
+            "goal": self.goal,
+            "plan_id": self.plan_id,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "result": deepcopy(self.result),
+            "evidence_refs": deepcopy(self.evidence_refs),
+            "timestamp": self.timestamp,
+        }
 
 
 @dataclass
