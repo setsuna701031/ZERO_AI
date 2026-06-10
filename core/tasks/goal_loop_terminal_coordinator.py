@@ -2,9 +2,13 @@ from __future__ import annotations
 
 """Terminal result builder for EngineeringGoalLoop.
 
-GoalLoopTerminalCoordinator owns only final result assembly.  It does not run
+GoalLoopTerminalCoordinator owns only final result assembly. It does not run
 cycles, dispatch coordinators, persist records, mutate goals, write evidence, or
 write memory.
+
+EngineeringGoalLoop may only return ok=True when the latest cycle carries an
+accepted GoalCompletionAuthority result. A terminal/complete adaptive decision
+alone is not enough to declare Engineering Goal Loop success.
 """
 
 import copy
@@ -61,22 +65,35 @@ class GoalLoopTerminalCoordinator:
         cycle_records = [copy.deepcopy(dict(cycle)) for cycle in cycles or [] if isinstance(cycle, Mapping)]
         latest_cycle = _mapping(cycle_records[-1]) if cycle_records else {}
         latest_decision = _mapping(latest_cycle.get("adaptive_decision_record"))
+        goal_completion_authority_result = self._goal_completion_authority_result(latest_cycle)
+
         continuation_runtime_record = self._to_dict(continuation_runtime)
         replan_runtime_record = self._to_dict(replan_runtime)
         session_runtime_record = self._to_dict(session_runtime)
+
         replan_count = int(replan_runtime_record.get("replan_count") or latest_cycle.get("replan_count") or 0)
         continuation_count = int(
             continuation_runtime_record.get("continuation_count") or latest_cycle.get("continuation_count") or 0
         )
+
+        adaptive_complete = _text(latest_decision.get("decision")) == "complete"
+        completion_authority_accepted = self._completion_authority_accepted(goal_completion_authority_result)
+        ok = bool(terminal and cycle_records and adaptive_complete and completion_authority_accepted)
+
+        effective_stop_reason = _text(stop_reason, "stop")
+        if terminal and cycle_records and adaptive_complete and not completion_authority_accepted:
+            effective_stop_reason = "goal_completion_authority_required"
+
         payload = {
             "schema": ENGINEERING_GOAL_LOOP_SCHEMA,
-            "ok": bool(terminal and cycle_records and _text(latest_decision.get("decision")) == "complete"),
+            "ok": ok,
             "mode": "engineering_goal_loop",
             "goal_id": _text(target_goal_id),
             "current_goal_id": _text(current_goal_id, _text(target_goal_id)),
             "terminal": bool(terminal),
-            "stop_reason": _text(stop_reason, "stop"),
+            "stop_reason": effective_stop_reason,
             "adaptive_decision": copy.deepcopy(latest_decision),
+            "goal_completion_authority_result": copy.deepcopy(goal_completion_authority_result),
             "adaptive_replan_contract": copy.deepcopy(_mapping(latest_cycle.get("adaptive_replan_contract"))),
             "adaptive_replan_state": copy.deepcopy(_mapping(latest_cycle.get("adaptive_replan_state"))),
             "adaptive_observation": copy.deepcopy(_mapping(latest_cycle.get("adaptive_observation"))),
@@ -106,6 +123,8 @@ class GoalLoopTerminalCoordinator:
             "goal_loop_terminal_coordinator": {
                 "schema": GOAL_LOOP_TERMINAL_COORDINATOR_SCHEMA,
                 "built_terminal_result": True,
+                "requires_goal_completion_authority": True,
+                "goal_completion_authority_accepted": completion_authority_accepted,
                 "execution_path": {
                     "terminal_assembly_only": True,
                     "executes_tasks": False,
@@ -117,7 +136,7 @@ class GoalLoopTerminalCoordinator:
                 },
             },
             "execution_path": {
-                "route": "Goal -> Adaptive Planner -> Runtime",
+                "route": "Goal -> Adaptive Planner -> GoalCompletionAuthority -> Runtime",
                 "program_id": "",
                 "portfolio_id": "",
                 "goal_id": _text(target_goal_id),
@@ -143,6 +162,7 @@ class GoalLoopTerminalCoordinator:
                 "goal_loop_uses_replan_coordinator": True,
                 "goal_loop_uses_goal_loop_dispatcher": True,
                 "goal_loop_uses_terminal_coordinator": True,
+                "goal_loop_requires_goal_completion_authority": True,
                 "goal_loop_owns_continuation_creation": False,
                 "goal_loop_owns_replan_creation": False,
                 "goal_loop_owns_terminal_result_assembly": False,
@@ -166,6 +186,38 @@ class GoalLoopTerminalCoordinator:
             return copy.deepcopy(dict(self.evidence_chain_summary(goal_id)))
         except Exception:
             return {}
+
+    @staticmethod
+    def _goal_completion_authority_result(cycle: Mapping[str, Any]) -> dict[str, Any]:
+        direct = _mapping(cycle.get("goal_completion_authority_result"))
+        if direct:
+            return direct
+
+        decision = _mapping(cycle.get("adaptive_decision_record"))
+        nested = _mapping(decision.get("goal_completion_authority_result"))
+        if nested:
+            return nested
+
+        transition = _mapping(decision.get("required_transition"))
+        transition_authority = _text(transition.get("completion_authority"))
+        if transition_authority == "GoalCompletionAuthority":
+            return {
+                "accepted": True,
+                "completed": transition.get("to_state") == "completed",
+                "from_state": transition.get("from_state"),
+                "to_state": transition.get("to_state"),
+                "reason": transition.get("reason"),
+                "evidence_refs": copy.deepcopy(transition.get("evidence_refs") or []),
+                "source": "adaptive_decision_required_transition",
+            }
+
+        return {}
+
+    @staticmethod
+    def _completion_authority_accepted(result: Mapping[str, Any]) -> bool:
+        if not isinstance(result, Mapping):
+            return False
+        return bool(result.get("accepted") is True and result.get("completed") is not False)
 
     @staticmethod
     def _to_dict(value: Any) -> dict[str, Any]:
