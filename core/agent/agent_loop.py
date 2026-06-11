@@ -346,8 +346,12 @@ class AgentLoop:
 
         engineering_task_result = self._try_handle_engineering_task_route(text)
         if engineering_task_result is not None:
-            engineering_task_result["agent_loop_runtime_route"] = "engineering_task_runner"
-            engineering_task_result["legacy_direct_json_engineering_task_runner"] = True
+            engineering_task_result["agent_loop_runtime_route"] = "runtime_admission_engineering_task"
+            engineering_task_result["legacy_direct_json_engineering_task_runner"] = False
+            engineering_task_result["governed_runtime_route"] = True
+            engineering_task_result["runtime_owns_execution"] = True
+            engineering_task_result["direct_execution"] = False
+            engineering_task_result["agent_loop_owns_execution"] = False
             return engineering_task_result
 
         work_package_result = self._try_handle_work_package_route(text)
@@ -598,7 +602,12 @@ class AgentLoop:
         )
 
     def _try_handle_engineering_task_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Legacy direct JSON engineering-task route to EngineeringTaskRunner."""
+        """Admit legacy JSON engineering-task payloads through governed runtime.
+
+        This route intentionally does not execute EngineeringTaskRunner directly.
+        It preserves JSON engineering_task compatibility as a runtime admission
+        envelope only, so AgentLoop remains orchestration-only.
+        """
 
         text = str(user_input or "").strip()
         if not text:
@@ -617,171 +626,75 @@ class AgentLoop:
         if task_type != "engineering_task":
             return None
 
-        package_payload = payload.get("package") if isinstance(payload.get("package"), dict) else dict(payload)
-        repo_root = str(payload.get("repo_root") or package_payload.get("repo_root") or ".")
+        package_id = str(payload.get("package_id") or payload.get("id") or "engineering-task").strip()
+        repo_root = str(payload.get("repo_root") or payload.get("workspace_root") or "").strip()
+        requirements = payload.get("requirements")
+        target_files = payload.get("target_files")
 
-        try:
-            from core.tasks.engineering_task_runner import run_engineering_task
-
-            result = run_engineering_task(payload, repo_root=repo_root)
-        except Exception as exc:
-            result = {
-                "schema": "zero.engineering_task_runner.agent_loop_dispatch_error.v1",
-                "ok": False,
-                "mode": "engineering_task_runner",
-                "package_id": str(package_payload.get("package_id") or package_payload.get("task_id") or "engineering_task"),
-                "error": f"engineering task dispatch failed: {type(exc).__name__}: {exc}",
-                "result_bundle": {},
-                "work_package_result": {},
-                "verification_result": {},
-                "change_set": {},
-                "final_message": "",
-            }
-
-        ok = bool(result.get("ok")) if isinstance(result, dict) else False
-        package_id = str(result.get("package_id") or package_payload.get("package_id") or package_payload.get("task_id") or "engineering_task")
-        bundle = result.get("result_bundle") if isinstance(result.get("result_bundle"), dict) else {}
-        work_package_result = result.get("work_package_result") if isinstance(result.get("work_package_result"), dict) else {}
-        artifact_paths = bundle.get("artifact_paths") if isinstance(bundle.get("artifact_paths"), dict) else {}
-        result_path = str(artifact_paths.get("result_path") or work_package_result.get("result_path") or "")
-        evidence_path = str(artifact_paths.get("evidence_path") or work_package_result.get("evidence_path") or "")
-        report_path = str(artifact_paths.get("report_path") or work_package_result.get("report_path") or "")
-        reason = str(work_package_result.get("reason") or result.get("error") or result.get("final_message") or "")
-
-        final_answer = f"engineering task {package_id} completed" if ok else f"engineering task {package_id} blocked or failed"
-        if reason:
-            final_answer += f": {reason}"
-        if result_path:
-            final_answer += f"; result={result_path}"
-
-        legacy_execution_path = {
-            "route": "AgentLoop -> EngineeringTaskRunner -> Planner -> WorkPackageScheduler -> WorkPackageIntake",
-            "legacy_direct_engineering_task_route": True,
+        authority_path = (
+            "AgentLoop -> Runtime Admission -> AgentExecutionRuntime "
+            "-> TaskRunner -> StepExecutor"
+        )
+        execution_path = {
+            "route": authority_path,
+            "legacy_direct_engineering_task_route": False,
             "program_mainline": False,
             "persisted_engineering_goal": False,
             "direct_goal_runner_bypass": False,
+            "direct_execution": False,
+            "agent_loop_owns_execution": False,
+            "runtime_owns_execution": True,
+            "governed_runtime_route": True,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
         }
         route = {
-            "mode": "engineering_task_runner",
+            "mode": "runtime_admission_engineering_task",
             "task": True,
             "forced_route": True,
             "engineering_task": True,
             "package_id": package_id,
             "repo_root": repo_root,
-            "legacy_direct_json_engineering_task_runner": True,
-            "execution_path": legacy_execution_path,
-            "authority_path": legacy_execution_path["route"],
-        }
-        plan = {
-            "ok": ok,
-            "planner_mode": "engineering_task_runner_v1",
-            "intent": "engineering_task",
-            "delegated_to": "core.tasks.engineering_task_runner.run_engineering_task",
-            "requirement_summary": copy.deepcopy(result.get("requirement_summary") if isinstance(result, dict) else {}),
-            "normalized_payload": copy.deepcopy(result.get("normalized_payload") if isinstance(result, dict) else {}),
-            "result_bundle": copy.deepcopy(bundle),
-            "final_answer": final_answer,
-            "steps": [
-                {
-                    "type": "engineering_task_runner_submit",
-                    "package_id": package_id,
-                    "report_path": report_path,
-                    "evidence_path": evidence_path,
-                    "result_path": result_path,
-                }
-            ],
-            "meta": {
-                "fallback_used": False,
-                "step_count": 1,
-                "forced_route": True,
-                "agent_loop_delegates_only": True,
-                "engineering_task_runner_entrypoint": True,
-                "legacy_direct_json_engineering_task_runner": True,
-            },
-        }
-        execution = {
-            "ok": ok,
-            "steps_executed": 1,
-            "results": [
-                {
-                    "step_index": 1,
-                    "step": {
-                        "type": "engineering_task_runner_submit",
-                        "package_id": package_id,
-                    },
-                    "result": copy.deepcopy(result),
-                }
-            ],
-            "execution_log": [
-                {
-                    "type": "engineering_task_runner_submit",
-                    "status": "success" if ok else "blocked_or_failed",
-                    "ok": ok,
-                    "data": copy.deepcopy(result),
-                }
-            ],
-            "execution_trace": [
-                {
-                    "type": "engineering_task_runner_submit",
-                    "status": "success" if ok else "blocked_or_failed",
-                    "ok": ok,
-                    "data": copy.deepcopy(result),
-                }
-            ],
-            "last_result": copy.deepcopy(result),
-            "result_bundle": copy.deepcopy(bundle),
-            "final_answer": final_answer,
-            "error": None if ok else reason or "engineering_task_failed",
-        }
-
-        return self._make_agent_response(
-            ok=ok,
-            mode="engineering_task_runner",
-            context={},
-            route=route,
-            plan=plan,
-            execution=execution,
-            final_answer=final_answer,
-            error=None if ok else reason or "engineering_task_failed",
-            extra={
+            "legacy_direct_json_engineering_task_runner": False,
+            "governed_runtime_route": True,
+            "runtime_owns_execution": True,
+            "direct_execution": False,
+            "agent_loop_owns_execution": False,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
+            "execution_path": copy.deepcopy(execution_path),
+            "authority_path": authority_path,
+            "runtime_admission_payload": {
+                "task_type": "engineering_task",
                 "package_id": package_id,
-                "engineering_task_result": copy.deepcopy(result),
-                "result_bundle": copy.deepcopy(bundle),
-                "requirement_summary": copy.deepcopy(result.get("requirement_summary") if isinstance(result, dict) else {}),
-                "task_breakdown": copy.deepcopy(result.get("task_breakdown") if isinstance(result, dict) else {}),
-                "steps": copy.deepcopy(result.get("steps") if isinstance(result, dict) else []),
-                "dependencies": copy.deepcopy(result.get("dependencies") if isinstance(result, dict) else []),
-                "acceptance_criteria": copy.deepcopy(result.get("acceptance_criteria") if isinstance(result, dict) else []),
-                "execution_order": copy.deepcopy(result.get("execution_order") if isinstance(result, dict) else []),
-                "work_package_result": copy.deepcopy(work_package_result),
-                "verification_result": copy.deepcopy(result.get("verification_result") if isinstance(result, dict) else {}),
-                "change_set": copy.deepcopy(result.get("change_set") if isinstance(result, dict) else {}),
-                "step_results": copy.deepcopy(result.get("step_results") if isinstance(result, dict) else []),
-                "observations": copy.deepcopy(result.get("observations") if isinstance(result, dict) else []),
-                "decisions": copy.deepcopy(result.get("decisions") if isinstance(result, dict) else []),
-                "replans": copy.deepcopy(result.get("replans") if isinstance(result, dict) else []),
-                "generated_tasks": copy.deepcopy(result.get("generated_tasks") if isinstance(result, dict) else []),
-                "iteration_trace": copy.deepcopy(result.get("iteration_trace") if isinstance(result, dict) else []),
-                "candidate_tasks": copy.deepcopy(result.get("candidate_tasks") if isinstance(result, dict) else []),
-                "candidate_evaluations": copy.deepcopy(result.get("candidate_evaluations") if isinstance(result, dict) else []),
-                "selected_tasks": copy.deepcopy(result.get("selected_tasks") if isinstance(result, dict) else []),
-                "selected_task": copy.deepcopy(result.get("selected_task") if isinstance(result, dict) else {}),
-                "selection_reason": str(result.get("selection_reason") or "") if isinstance(result, dict) else "",
-                "prioritization_data": copy.deepcopy(result.get("prioritization_data") if isinstance(result, dict) else {}),
-                "goal_lifecycle": copy.deepcopy(result.get("goal_lifecycle") if isinstance(result, dict) else {}),
-                "engineering_goal_lifecycle": copy.deepcopy(result.get("engineering_goal_lifecycle") if isinstance(result, dict) else {}),
-                "resumed": bool(result.get("resumed")) if isinstance(result, dict) else False,
-                "interrupted": bool(result.get("interrupted")) if isinstance(result, dict) else False,
-                "state_path": str(result.get("state_path") or "") if isinstance(result, dict) else "",
-                "report_path": report_path,
-                "evidence_path": evidence_path,
-                "result_path": result_path,
-                "execution_mode": "engineering_task_runner",
-                "execution_path": legacy_execution_path,
-                "legacy_direct_json_engineering_task_runner": True,
-                "final_message": result.get("final_message") if isinstance(result, dict) else final_answer,
+                "repo_root": repo_root,
+                "requirements": copy.deepcopy(requirements),
+                "target_files": copy.deepcopy(target_files),
+                "source_payload": copy.deepcopy(payload),
+                "governed_runtime_route": True,
+                "runtime_owns_execution": True,
+                "direct_execution": False,
+                "agent_loop_owns_execution": False,
             },
+        }
+        final_answer = (
+            f"engineering task {package_id} admitted to governed runtime route; "
+            "direct EngineeringTaskRunner execution is disabled"
         )
+        return {
+            "ok": True,
+            "status": "admitted",
+            "route": route,
+            "result": copy.deepcopy(route),
+            "execution_path": copy.deepcopy(execution_path),
+            "authority_path": authority_path,
+            "legacy_direct_json_engineering_task_runner": False,
+            "governed_runtime_route": True,
+            "runtime_owns_execution": True,
+            "direct_execution": False,
+            "agent_loop_owns_execution": False,
+            "final_answer": final_answer,
+        }
 
     def _try_handle_work_package_route(self, user_input: str) -> Optional[Dict[str, Any]]:
         """Dispatch JSON AER/work-package requests through the package scheduler.
