@@ -18,6 +18,8 @@ from core.runtime.trace_runtime import TraceRuntime
 from core.runtime.execution_cycle_runtime import ExecutionCycleRuntime
 from core.runtime.repair_chain_reader import RepairChainReader
 from core.runtime.step_executor import StepExecutor
+from core.runtime.task_runner import TaskRunner
+from core.runtime.task_runtime import TaskRuntime
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
@@ -334,6 +336,12 @@ class Scheduler(RuntimeTaskScheduler):
                 runtime_store=runtime_store,
                 tool_registry=tool_registry,
                 llm_client=self.llm_client,
+                debug=debug,
+            )
+        if self.task_runner is None:
+            self.task_runner = TaskRunner(
+                step_executor=self.step_executor,
+                task_runtime=self.task_runtime,
                 debug=debug,
             )
 
@@ -1048,6 +1056,7 @@ class Scheduler(RuntimeTaskScheduler):
         aggregate["executed_rounds"] = len(executed_results)
         aggregate["executed_results"] = executed_results
         aggregate["task"] = copy.deepcopy(final_task) if isinstance(final_task, dict) else {}
+        aggregate["runtime_state"] = copy.deepcopy(final_task) if isinstance(final_task, dict) else {}
 
         aggregate = self._attach_orchestration_summary_to_runner_result(task=final_task if isinstance(final_task, dict) else live_task, runner_result=aggregate)
         return self._compact_runner_result(aggregate)
@@ -1199,7 +1208,96 @@ class Scheduler(RuntimeTaskScheduler):
                     compact[key] = copy.deepcopy(result.get(key))
             if "task" in result and "task" not in compact and isinstance(result.get("task"), dict):
                 compact["task"] = copy.deepcopy(result.get("task"))
-        return compact
+            if "runtime_state" in result and "runtime_state" not in compact and isinstance(result.get("runtime_state"), dict):
+                compact["runtime_state"] = copy.deepcopy(result.get("runtime_state"))
+        return self._attach_scheduler_execution_path(compact)
+
+    @staticmethod
+    def _scheduler_execution_path() -> Dict[str, Any]:
+        return {
+            "direct_execution": False,
+            "scheduler_owns_execution": False,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
+            "authority_path": "Scheduler -> TaskRunner -> StepExecutor",
+        }
+
+    def _attach_scheduler_execution_path(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(payload, dict):
+            return payload
+        enriched = copy.deepcopy(payload)
+        path = enriched.get("execution_path")
+        if not isinstance(path, dict):
+            path = {}
+        path.update(self._scheduler_execution_path())
+        enriched["execution_path"] = path
+        return enriched
+
+    def _run_step_via_task_runner(
+        self,
+        *,
+        task: Dict[str, Any],
+        step: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Formal Scheduler execution boundary: TaskRunner owns step execution."""
+        task_id = self._extract_task_id(task) or "scheduler-task"
+        try:
+            step_index = int(task.get("current_step_index", 0) or 0)
+        except Exception:
+            step_index = 0
+        boundary_id = f"{task_id}-scheduler-boundary-{step_index}"
+        boundary_root = Path(self.workspace_dir) / "scheduler_taskrunner_boundary"
+        boundary_task_dir = boundary_root / boundary_id
+        scheduler_authority = self._build_scheduler_authority_context(task)
+        runtime_identity: Dict[str, Any] = {}
+        runtime = getattr(self, "task_runtime", None)
+        if runtime is not None and hasattr(runtime, "load_runtime_state"):
+            try:
+                loaded_state = runtime.load_runtime_state(task)
+                if isinstance(loaded_state, dict):
+                    for key in ("operator_session_id", "persistent_operator_session_id", "session_id"):
+                        if loaded_state.get(key):
+                            runtime_identity[key] = copy.deepcopy(loaded_state.get(key))
+            except Exception:
+                pass
+        boundary_task = {
+            "task_id": boundary_id,
+            "task_name": boundary_id,
+            "goal": str(task.get("goal") or task_id),
+            "status": "queued",
+            "task_dir": str(boundary_task_dir),
+            "runtime_state_file": str(boundary_task_dir / "runtime_state.json"),
+            "steps": [copy.deepcopy(step)],
+            "current_step_index": 0,
+            "results": copy.deepcopy(task.get("results", [])) if isinstance(task.get("results"), list) else [],
+            "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results"), list) else [],
+            "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log"), list) else [],
+            "execution_trace": copy.deepcopy(task.get("execution_trace", [])) if isinstance(task.get("execution_trace"), list) else [],
+            "authority_context": scheduler_authority,
+            "runtime_authority_context": scheduler_authority,
+            "execution_authority": copy.deepcopy(scheduler_authority.get("execution_authority", {})),
+            "authority_propagation_required": bool(
+                scheduler_authority.get("authority_propagation_required")
+                or scheduler_authority.get("execution_authority")
+            ),
+            "scheduler_step_context": copy.deepcopy(context or {}),
+            **runtime_identity,
+        }
+        runner = getattr(self, "task_runner", None)
+        if runner is None:
+            runner = TaskRunner(
+                step_executor=self.step_executor,
+                task_runtime=TaskRuntime(workspace_root=str(boundary_root)),
+                debug=bool(getattr(self, "debug", False)),
+            )
+        runner_result = runner.run_task(boundary_task, current_tick=step_index)
+        runtime_state = runner_result.get("runtime_state") if isinstance(runner_result, dict) else {}
+        endpoint_result = runtime_state.get("final_result") if isinstance(runtime_state, dict) else {}
+        if isinstance(endpoint_result, dict) and endpoint_result:
+            return self._attach_scheduler_execution_path(endpoint_result)
+        fallback = copy.deepcopy(runner_result) if isinstance(runner_result, dict) else {"ok": False, "raw_result": runner_result}
+        return self._attach_scheduler_execution_path(fallback)
 
     def _simple_step_progress_snapshot(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Return a compact progress snapshot for scheduler-owned simple steps.
@@ -2322,7 +2420,7 @@ class Scheduler(RuntimeTaskScheduler):
             if step_executor is not None:
                 scheduler_authority = self._build_scheduler_authority_context(task)
 
-                executor_result = step_executor.execute_step(
+                executor_result = self._run_step_via_task_runner(
                     step=step,
                     task=task,
                     context={
@@ -2339,15 +2437,7 @@ class Scheduler(RuntimeTaskScheduler):
                             )
                             or ""
                         ).strip(),
-                        "authority_context": scheduler_authority,
-                        "runtime_authority_context": scheduler_authority,
-                        "execution_authority": copy.deepcopy(
-                            scheduler_authority.get("execution_authority", {})
-                        ),
-                        "authority_propagation_required": bool(
-                            scheduler_authority.get("authority_propagation_required")
-                            or scheduler_authority.get("execution_authority")
-                        ),
+                        "scheduler_authority_context": scheduler_authority,
                     },
                 )
 
@@ -6290,27 +6380,18 @@ class Scheduler(RuntimeTaskScheduler):
         patch_step: Dict[str, Any],
         task_dir: str,
     ) -> Dict[str, Any]:
-        step_executor = getattr(self, "step_executor", None)
-        if step_executor is None:
+        if getattr(self, "step_executor", None) is None:
             raise RuntimeError("step_executor unavailable for code_edit delegation")
 
         scheduler_authority = self._build_scheduler_authority_context(task)
-        execute_step = getattr(step_executor, "execute_step", None)
-        if not callable(execute_step):
-            raise RuntimeError("step executor missing execute_step")
-
-        return execute_step(
+        return self._run_step_via_task_runner(
             step=patch_step,
             task=task,
             context={
                 "task_dir": task_dir,
                 "scheduler_code_edit_bridge": True,
                 "original_step": copy.deepcopy(original_step),
-                "authority_context": scheduler_authority,
-                "runtime_authority_context": scheduler_authority,
-                "authority_propagation_required": bool(
-                    scheduler_authority.get("authority_propagation_required")
-                ),
+                "scheduler_authority_context": scheduler_authority,
             },
         )
 
@@ -7484,31 +7565,15 @@ def _zero_v702_scheduler_execute_simple_step(self, task: Dict[str, Any], step: D
     step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
     if step_type in {"code_chain_repair", "autonomous_code_repair"}:
         try:
-            executor = getattr(self, "step_executor", None)
-            if executor is None:
-                try:
-                    executor = StepExecutor(workspace_root=getattr(self, "workspace_dir", "workspace"), debug=bool(getattr(self, "debug", False)))
-                except TypeError:
-                    executor = StepExecutor()
-            execute_step = getattr(executor, "execute_step", None)
-            if not callable(execute_step):
-                raise RuntimeError("step executor missing execute_step")
             scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
-            return execute_step(
+            return self._run_step_via_task_runner(
                 step=copy.deepcopy(step),
                 task=copy.deepcopy(task) if isinstance(task, dict) else {},
                 context={
                     "cwd": self.workspace_dir,
                     "repair_step_preserved": True,
-                    "authority_context": scheduler_authority,
-                    "runtime_authority_context": scheduler_authority,
-                    "authority_propagation_required": bool(
-                        scheduler_authority.get("authority_propagation_required")
-                    ),
+                    "scheduler_authority_context": scheduler_authority,
                 },
-                previous_result=None,
-                step_index=self._safe_int(task.get("current_step_index", 0), 0) if isinstance(task, dict) else 0,
-                step_count=len(task.get("steps", [])) if isinstance(task, dict) and isinstance(task.get("steps"), list) else 1,
             )
         except Exception as exc:
             final = f"code_chain_repair failed before execution: {type(exc).__name__}: {exc}"
@@ -7550,39 +7615,26 @@ _ZERO_V7335_PREVIOUS_SCHEDULER_EXECUTE_SIMPLE_STEP = Scheduler._execute_simple_s
 
 
 def _zero_v7335_scheduler_execute_simple_step_no_direct_mutation(self, task: Dict[str, Any], step: Dict[str, Any]) -> Dict[str, Any]:
-    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
-    if step_type in {"code_chain_repair", "autonomous_code_repair"}:
-        executor = getattr(self, "step_executor", None)
-        if executor is None:
-            executor = StepExecutor(
-                workspace_root=getattr(self, "workspace_dir", "workspace"),
-                debug=bool(getattr(self, "debug", False)),
-            )
-        execute_step = getattr(executor, "execute_step", None)
-        if not callable(execute_step):
-            raise RuntimeError("step executor missing execute_step")
-        scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
-        try:
-            step_index = int(task.get("current_step_index", 0)) if isinstance(task, dict) else 0
-        except Exception:
-            step_index = 0
-        return execute_step(
-            step=copy.deepcopy(step),
-            task=copy.deepcopy(task) if isinstance(task, dict) else {},
-            context={
-                "cwd": self.workspace_dir,
-                "repair_step_preserved": True,
-                "authority_context": scheduler_authority,
-                "runtime_authority_context": scheduler_authority,
-                "authority_propagation_required": bool(
-                    scheduler_authority.get("authority_propagation_required")
-                ),
-            },
-            previous_result=None,
-            step_index=step_index,
-            step_count=len(task.get("steps", [])) if isinstance(task, dict) and isinstance(task.get("steps"), list) else 1,
-        )
-    return _ZERO_V7335_PREVIOUS_SCHEDULER_EXECUTE_SIMPLE_STEP(self, task=task, step=step)
+    if not hasattr(self, "workspace_dir") or not hasattr(self, "step_executor"):
+        diagnostic = _ZERO_V7335_PREVIOUS_SCHEDULER_EXECUTE_SIMPLE_STEP(self, task=task, step=step)
+        if isinstance(diagnostic, dict):
+            diagnostic = copy.deepcopy(diagnostic)
+            diagnostic["legacy_bridge"] = True
+            diagnostic["diagnostic_only"] = True
+            diagnostic["formal_execution_path"] = False
+            diagnostic = self._attach_scheduler_execution_path(diagnostic)
+        return diagnostic
+    scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
+    return self._run_step_via_task_runner(
+        step=copy.deepcopy(step),
+        task=copy.deepcopy(task) if isinstance(task, dict) else {},
+        context={
+            "cwd": self.workspace_dir,
+            "formal_scheduler_execution_boundary": True,
+            "legacy_bridge": False,
+            "scheduler_authority_context": scheduler_authority,
+        },
+    )
 
 
 Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation

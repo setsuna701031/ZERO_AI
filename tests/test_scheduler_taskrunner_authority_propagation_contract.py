@@ -134,9 +134,7 @@ def test_scheduler_side_effect_dispatch_delegates_to_step_executor(
     assert result["source"] == "step_executor"
     assert recorder.calls
     assert recorder.calls[0]["step"]["type"] == "write_file"
-    assert recorder.calls[0]["context"]["authority_context"]["authority_layer"] == (
-        "scheduler"
-    )
+    assert recorder.calls[0]["context"]["authority_context"]["authority_layer"] == "task_runner"
     assert recorder.calls[0]["context"]["authority_context"][
         "execution_authority_granted"
     ] is False

@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from core.agent.code_chain_repair_evidence import export_code_chain_repair_evidence
 from core.agent.code_chain_repair_report import normalize_code_chain_repair_report
+from core.runtime.agent_execution_runtime import agent_execution_path
 
 
 CODE_CHAIN_ROUTE_VALUES = {
@@ -53,7 +54,8 @@ def run_planner_owned_code_chain_bridge(
         "task": True,
         "forced_route": True,
         "planner_runtime_dispatch": True,
-        "step_executor_bridge": True,
+        "runtime_execution_required": True,
+        "authority_path": agent_execution_path()["authority_path"],
         "planner_owned_intent_routing": True,
     }
 
@@ -115,9 +117,9 @@ def run_planner_owned_code_chain_bridge(
             },
         )
 
-    step_executor = step_executor_from_agent(agent, repo_root)
-    if step_executor is None:
-        failure_reason = "StepExecutor unavailable for controlled mutation execution"
+    execution_runtime = runtime_owner_from_agent(agent)
+    if execution_runtime is None:
+        failure_reason = "Runtime unavailable for controlled mutation execution"
         execution = _execution_failure(failure_reason)
         review = reviewable_result(
             ok=False,
@@ -152,7 +154,7 @@ def run_planner_owned_code_chain_bridge(
         )
 
     first_attempt = execute_code_chain_attempt(
-        step_executor=step_executor,
+        execution_runtime=execution_runtime,
         repo_root=repo_root,
         task_id=task_id,
         planner_result=planner_result,
@@ -200,7 +202,7 @@ def run_planner_owned_code_chain_bridge(
         ]
         if repair_controlled_steps:
             repair_attempt = execute_code_chain_attempt(
-                step_executor=step_executor,
+                execution_runtime=execution_runtime,
                 repo_root=repo_root,
                 task_id=task_id,
                 planner_result=repair_planner_result,
@@ -306,9 +308,13 @@ def run_planner_owned_code_chain_bridge(
                 "agent_loop_routes_on_planner_metadata": True,
                 "agent_loop_keyword_detection_is_fallback_only": True,
                 "planner_produces_plan": True,
+                "runtime_owns_execution": True,
+                "taskrunner_required": True,
                 "step_executor_executes": True,
+                "step_executor_endpoint_only": True,
                 "runtime_file_service_required": True,
                 "runtime_mutation_gateway_required": True,
+                "authority_path": agent_execution_path()["authority_path"],
             },
         },
         execution=execution,
@@ -381,7 +387,7 @@ def planner_code_chain_route_decision(planner_result: dict[str, Any]) -> dict[st
 
 def execute_code_chain_attempt(
     *,
-    step_executor: Any,
+    execution_runtime: Any,
     repo_root: Path,
     task_id: str,
     planner_result: dict[str, Any],
@@ -391,7 +397,7 @@ def execute_code_chain_attempt(
     attempt_index: int,
     attempt_kind: str,
 ) -> dict[str, Any]:
-    executable_steps = adapt_steps_for_step_executor(step_executor, raw_steps)
+    executable_steps = prepare_steps_for_runtime(raw_steps)
     task = {
         "id": task_id,
         "task_id": task_id,
@@ -411,15 +417,11 @@ def execute_code_chain_attempt(
         "attempt_kind": str(attempt_kind),
     }
     try:
-        execute_steps = getattr(step_executor, "execute_steps", None)
-        if callable(execute_steps):
-            execution_result = execute_steps(
-                steps=copy.deepcopy(executable_steps),
-                task=copy.deepcopy(task),
-                context=attempt_context,
-            )
-        else:
-            raise RuntimeError("StepExecutor has no execute_steps method")
+        execution_result = execution_runtime.run_steps(
+            steps=copy.deepcopy(executable_steps),
+            task=copy.deepcopy(task),
+            context=attempt_context,
+        )
     except Exception as exc:
         execution_result = _execution_failure(f"{type(exc).__name__}: {exc}")
 
@@ -548,40 +550,18 @@ def is_controlled_edit_step(step: dict[str, Any]) -> bool:
     return False
 
 
-def adapt_steps_for_step_executor(step_executor: Any, steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    adapter = None
-    try:
-        from core.runtime.planner_step_executor_adapter import PlannerStepExecutorAdapter
-
-        adapter = PlannerStepExecutorAdapter(step_executor=step_executor)
-    except Exception:
-        adapter = None
-
+def prepare_steps_for_runtime(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
     adapted: list[dict[str, Any]] = []
     for raw_step in steps:
         step = normalize_controlled_step(raw_step)
-        normalizer = getattr(adapter, "_normalize_planner_step_for_step_executor", None)
-        if callable(normalizer):
-            try:
-                step = normalizer(step)
-            except Exception:
-                step = copy.deepcopy(step)
         step["code_chain_controlled_self_edit_bridge"] = True
-        step.setdefault("planner_step_executor_adapter", True)
+        step.setdefault("runtime_handoff_prepared", True)
         adapted.append(step)
     return adapted
 
 
-def step_executor_from_agent(agent: Any, repo_root: Path) -> Any:
-    step_executor = getattr(agent, "step_executor", None)
-    if step_executor is not None:
-        return step_executor
-    try:
-        from core.runtime.step_executor import StepExecutor
-
-        return StepExecutor(workspace_root=repo_root / "workspace", debug=bool(getattr(agent, "debug", False)))
-    except Exception:
-        return None
+def runtime_owner_from_agent(agent: Any) -> Any:
+    return getattr(agent, "execution_runtime", None)
 
 
 def reviewable_result(
@@ -790,10 +770,13 @@ def _make_response(
     review: dict[str, Any],
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    execution_payload = copy.deepcopy(execution)
+    execution_payload["execution_path"] = agent_execution_path()
     payload_extra = {
         "reviewable_result": copy.deepcopy(review),
         "code_chain_controlled_self_edit_bridge": True,
         "planner_runtime_dispatch": True,
+        "execution_path": agent_execution_path(),
     }
     if extra:
         payload_extra.update(extra)
@@ -805,7 +788,7 @@ def _make_response(
             context=context,
             route=route,
             plan=plan,
-            execution=execution,
+            execution=execution_payload,
             final_answer=final_answer,
             error=error,
             extra=payload_extra,
@@ -817,7 +800,7 @@ def _make_response(
         "route": route,
         "planner_result": copy.deepcopy(planner_result),
         "plan": plan,
-        "execution": execution,
+        "execution": execution_payload,
         "final_answer": final_answer,
         "error": error,
         **payload_extra,

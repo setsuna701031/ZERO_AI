@@ -4,6 +4,23 @@ import time
 from pathlib import Path
 from typing import Any, Dict
 
+from core.runtime.agent_execution_runtime import AgentExecutionRuntime, agent_execution_path
+
+
+def _run_mutation_step_through_runtime(
+    *,
+    workspace_root: Path,
+    step: Dict[str, Any],
+    task: Dict[str, Any],
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    runtime = AgentExecutionRuntime(workspace_root=workspace_root)
+    return runtime.run_step(step=step, task=task, context=context)
+
+
+def _runtime_boundary() -> Dict[str, Any]:
+    return agent_execution_path()
+
 
 def _workspace_relative_path(repo_root: Path, raw_path: str) -> str:
     text = str(raw_path or "").strip().strip('"').strip("'")
@@ -76,12 +93,12 @@ def execute_controlled_mutation_probe(
     goal: str,
     target_path: str,
 ) -> Dict[str, Any]:
-    """Execute a safe controlled-mutation probe through StepExecutor.
+    """Execute a safe controlled-mutation probe through the runtime owner.
 
     This is intentionally not a real code edit yet.  It is the first controlled
     mutation ownership bridge:
 
-    CLI/thin bridge -> StepExecutor governed execution surface
+    ControlledMutationBridge -> AgentExecutionRuntime -> TaskRunner -> StepExecutor
 
     The probe proves that future code mutation payloads can enter the governed
     execution endpoint without moving authority into CLI or bypassing review.
@@ -95,10 +112,8 @@ def execute_controlled_mutation_probe(
     )
 
     try:
-        from core.runtime.step_executor import StepExecutor
-
-        executor = StepExecutor(workspace_root=str(repo_root / "workspace"))
-        step_result = executor.execute_step(
+        step_result = _run_mutation_step_through_runtime(
+            workspace_root=repo_root / "workspace",
             step=step,
             task={
                 "task_id": task_id,
@@ -117,7 +132,7 @@ def execute_controlled_mutation_probe(
                 "shared_dir": str(repo_root / "workspace" / "shared"),
                 "task_dir": str(repo_root / "workspace" / "tasks" / task_id),
                 "controlled_mutation_probe": True,
-                "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+                "runtime_execution_required": True,
             },
         )
         proof_path = repo_root / "workspace" / step["path"]
@@ -136,7 +151,8 @@ def execute_controlled_mutation_probe(
             "mutation_probe_executed": True,
             "requires_review_before_real_source_edit": True,
             "execution_authority_endpoint": "step_executor",
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
+            "execution_path": _runtime_boundary(),
             "step": step,
             "step_result": step_result,
             "proof_artifact_path": str(proof_path),
@@ -162,7 +178,8 @@ def execute_controlled_mutation_probe(
             "mutation_probe_executed": False,
             "requires_review_before_real_source_edit": True,
             "execution_authority_endpoint": "step_executor",
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
+            "execution_path": _runtime_boundary(),
             "step": step,
             "target_path": step.get("mutation_target_path"),
             "error": {
@@ -344,12 +361,12 @@ def execute_controlled_source_mutation(
     goal: str,
     target_path: str,
 ) -> Dict[str, Any]:
-    """Execute a small controlled source mutation through StepExecutor.
+    """Execute a small controlled source mutation through the runtime owner.
 
     v2 is intentionally narrow:
     - allowed roots only;
     - snapshot before edit;
-    - StepExecutor write_file owns the write;
+    - AgentExecutionRuntime routes the write through TaskRunner;
     - verification is recorded;
     - rollback content/path is recorded, but rollback is not auto-applied unless a
       later runtime policy decides to use it.
@@ -407,10 +424,8 @@ def execute_controlled_source_mutation(
     }
 
     try:
-        from core.runtime.step_executor import StepExecutor
-
-        executor = StepExecutor(workspace_root=str(repo_root))
-        step_result = executor.execute_step(
+        step_result = _run_mutation_step_through_runtime(
+            workspace_root=repo_root,
             step=step,
             task={
                 "task_id": task_id,
@@ -427,7 +442,7 @@ def execute_controlled_source_mutation(
                 "repo_root": str(repo_root),
                 "workspace_root": str(repo_root),
                 "controlled_source_mutation": True,
-                "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+                "runtime_execution_required": True,
             },
         )
 
@@ -448,7 +463,8 @@ def execute_controlled_source_mutation(
             "target_path": rel_path,
             "allowed_target": allowed,
             "execution_authority_endpoint": "step_executor",
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
+            "execution_path": _runtime_boundary(),
             "step": step,
             "step_result": step_result,
             "verification": verify_result,
@@ -477,6 +493,7 @@ def execute_controlled_source_mutation(
             "target_path": rel_path,
             "allowed_target": allowed,
             "step": step,
+            "execution_path": _runtime_boundary(),
             "rollback": rollback_record,
             "snapshot_path": str(snapshot_path),
             "error": {"type": exc.__class__.__name__, "message": str(exc)},
@@ -595,7 +612,7 @@ def execute_controlled_mutation_transaction(
     Seal v1 is intentionally one-file only.  It closes the whole transaction
     lifecycle in one unit:
 
-    allowed_roots -> snapshot -> StepExecutor write -> verify -> rollback on
+    allowed_roots -> snapshot -> Runtime -> TaskRunner -> StepExecutor write -> verify -> rollback on
     failed verification -> journal/result.
     """
 
@@ -678,10 +695,8 @@ def execute_controlled_mutation_transaction(
 
     step_result: Dict[str, Any]
     try:
-        from core.runtime.step_executor import StepExecutor
-
-        executor = StepExecutor(workspace_root=str(repo_root))
-        step_result = executor.execute_step(
+        step_result = _run_mutation_step_through_runtime(
+            workspace_root=repo_root,
             step=step,
             task={
                 "task_id": task_id,
@@ -700,7 +715,7 @@ def execute_controlled_mutation_transaction(
                 "workspace_root": str(repo_root),
                 "controlled_mutation_transaction_seal": True,
                 "transaction_id": transaction_id,
-                "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+                "runtime_execution_required": True,
             },
         )
     except Exception as exc:
@@ -780,7 +795,8 @@ def execute_controlled_mutation_transaction(
             "journal_path": str(journal_path),
             "transaction_dir": str(txn_dir),
             "execution_authority_endpoint": "step_executor",
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
+            "execution_path": _runtime_boundary(),
         }
     )
 
@@ -828,4 +844,3 @@ def attach_controlled_mutation_transaction_seal(
     )
 
     return result
-

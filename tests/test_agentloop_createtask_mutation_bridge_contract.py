@@ -99,9 +99,7 @@ def test_code_chain_bridge_delegates_to_step_executor_with_scheduler_context(
 
     assert result["source"] == "step_executor"
     assert recorder.calls[0]["step"]["type"] == "code_chain_repair"
-    assert recorder.calls[0]["context"]["authority_context"]["authority_layer"] == (
-        "scheduler"
-    )
+    assert recorder.calls[0]["context"]["authority_context"]["authority_layer"] == "task_runner"
     assert recorder.calls[0]["context"]["authority_context"][
         "execution_authority_granted"
     ] is False

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_native_execution_authority import runtime_native_execution_path
 
 
 SCHEDULER_STATUS_QUEUED = "queued"
@@ -87,6 +88,10 @@ class RuntimeNativeScheduleItem:
             "recovery_ref": copy.deepcopy(self.recovery_ref),
             "authority_ref": copy.deepcopy(self.authority_ref),
             "metadata": copy.deepcopy(self.metadata),
+            "execution_path": runtime_native_execution_path(
+                entrypoint="runtime_native_scheduler.run_item",
+                delegation_only=True,
+            ),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

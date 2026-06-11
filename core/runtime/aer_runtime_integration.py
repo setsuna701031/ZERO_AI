@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.runtime.task_runner import TaskRunner
+from core.runtime.task_runtime import TaskRuntime
+
 
 AER_INTEGRATION_STATUS_READY = "ready"
 AER_INTEGRATION_STATUS_RUNNING = "running"
@@ -175,6 +178,33 @@ PlannerFn = Callable[[str, dict[str, Any]], dict[str, Any]]
 StepRunnerFn = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
 
+class _AERStepExecutorEndpoint:
+    """Adapt an injected endpoint to the StepExecutor contract owned by TaskRunner."""
+
+    def __init__(self, *, step_runner: StepRunnerFn | None, step_executor: Any, context: dict[str, Any]) -> None:
+        self.step_runner = step_runner
+        self.step_executor = step_executor
+        self.context = copy.deepcopy(context)
+
+    def execute_step(self, **kwargs: Any) -> dict[str, Any]:
+        step = copy.deepcopy(kwargs.get("step")) if isinstance(kwargs.get("step"), dict) else {}
+        context = {
+            **copy.deepcopy(kwargs.get("context") or {}),
+            **copy.deepcopy(self.context),
+        }
+        if self.step_runner is not None:
+            result = self.step_runner(step, context)
+            return result if isinstance(result, dict) else {"ok": True, "result": copy.deepcopy(result)}
+
+        if self.step_executor is not None:
+            method = getattr(self.step_executor, "execute_step", None)
+            if callable(method):
+                result = method(**kwargs)
+                return result if isinstance(result, dict) else {"ok": True, "result": copy.deepcopy(result)}
+
+        return {"ok": True, "status": "completed", "step": step}
+
+
 class AERRuntimeIntegration:
     """
     Integration adapter that connects ZERO's planner/scheduler/executor mainline
@@ -187,7 +217,7 @@ class AERRuntimeIntegration:
           -> planner adapter creates steps
           -> ownership authorize
           -> execution fabric start
-          -> step runner executes under checkpointing
+          -> TaskRunner executes through a StepExecutor-compatible endpoint
           -> failure queues recovery
           -> recovery builds continuation
           -> resume remaining execution
@@ -715,19 +745,71 @@ class AERRuntimeIntegration:
             "step_index": step_index,
             "execution_id": task.execution_id,
         }
-
-        if step_runner is not None:
-            result = step_runner(copy.deepcopy(step), copy.deepcopy(context))
-            return result if isinstance(result, dict) else {"ok": True, "result": copy.deepcopy(result)}
-
-        if self.step_executor is not None:
-            for method_name in ("execute_step", "execute", "run_step"):
-                method = getattr(self.step_executor, method_name, None)
-                if callable(method):
-                    result = method(copy.deepcopy(step), context=copy.deepcopy(context))
-                    return result if isinstance(result, dict) else {"ok": True, "result": copy.deepcopy(result)}
-
-        return {"ok": True, "status": "completed", "step": copy.deepcopy(step)}
+        boundary_id = "aer-taskrunner-" + stable_aer_fingerprint(
+            {
+                "task_id": task.task_id,
+                "execution_id": task.execution_id,
+                "step_index": step_index,
+                "event_count": len(self._events),
+            }
+        )[:16]
+        boundary_root = (
+            self.storage_path.parent / "task_runner_boundary"
+            if self.storage_path is not None
+            else Path("workspace") / "aer_runtime_integration" / "task_runner_boundary"
+        )
+        boundary_task_dir = boundary_root / boundary_id
+        boundary_task = {
+            "task_id": boundary_id,
+            "task_name": boundary_id,
+            "goal": task.goal,
+            "status": "queued",
+            "task_dir": str(boundary_task_dir),
+            "runtime_state_file": str(boundary_task_dir / "runtime_state.json"),
+            "steps": [copy.deepcopy(step)],
+            "current_step_index": 0,
+            "results": [],
+            "step_results": [],
+            "execution_log": [],
+            "execution_trace": [],
+            "authority_path": "AERRuntimeIntegration -> TaskRunner -> StepExecutor",
+        }
+        endpoint = _AERStepExecutorEndpoint(
+            step_runner=step_runner,
+            step_executor=self.step_executor,
+            context=context,
+        )
+        task_runner_result = TaskRunner(
+            step_executor=endpoint,
+            task_runtime=TaskRuntime(workspace_root=str(boundary_root)),
+        ).run_task(boundary_task, current_tick=step_index)
+        runtime_state = _copy_dict(task_runner_result.get("runtime_state"))
+        final_result = _copy_dict(runtime_state.get("final_result"))
+        if final_result:
+            final_result.setdefault(
+                "execution_path",
+                {
+                    "authority_path": "AERRuntimeIntegration -> TaskRunner -> StepExecutor",
+                    "direct_execution": False,
+                    "runtime_owns_execution": True,
+                    "taskrunner_required": True,
+                    "step_executor_endpoint_only": True,
+                },
+            )
+            return final_result
+        return {
+            "ok": bool(task_runner_result.get("ok")),
+            "failed": not bool(task_runner_result.get("ok")),
+            "status": str(task_runner_result.get("status") or ""),
+            "error": copy.deepcopy(task_runner_result.get("error")),
+            "execution_path": {
+                "authority_path": "AERRuntimeIntegration -> TaskRunner -> StepExecutor",
+                "direct_execution": False,
+                "runtime_owns_execution": True,
+                "taskrunner_required": True,
+                "step_executor_endpoint_only": True,
+            },
+        }
 
     def _authorize_task_execution(self, task: AERRuntimeTask) -> None:
         if self.ownership_fabric is None or not task.runtime_id:

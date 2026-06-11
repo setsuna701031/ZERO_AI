@@ -11,6 +11,7 @@ from typing import Any, Callable
 from core.runtime.aer_runtime_integration import AERRuntimeIntegration
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_native_agent_loop import RuntimeNativeAgentLoop
+from core.runtime.runtime_native_execution_authority import runtime_native_execution_path
 from core.runtime.runtime_ownership_isolation_fabric import (
     CAPABILITY_EXECUTE,
     CAPABILITY_READ,
@@ -153,6 +154,10 @@ class RuntimeNativeMainlineRunResult:
             "authority_decision": copy.deepcopy(self.authority_decision),
             "recovery_tickets": copy.deepcopy(self.recovery_tickets),
             "metadata": copy.deepcopy(self.metadata),
+            "execution_path": runtime_native_execution_path(
+                entrypoint="runtime_native_mainline.run_goal",
+                delegation_only=False,
+            ),
             "created_at": self.created_at,
         }
 

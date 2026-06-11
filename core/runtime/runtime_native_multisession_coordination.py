@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_native_execution_authority import runtime_native_execution_path
 
 
 RUNTIME_NODE_ACTIVE = "active"
@@ -511,6 +512,10 @@ class RuntimeNativeMultiSessionCoordination:
         resume_runner: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
         current_tick: int = 2,
     ) -> dict[str, Any]:
+        execution_path = runtime_native_execution_path(
+            entrypoint="runtime_native_multisession_coordination.dispatch_between_nodes",
+            delegation_only=True,
+        )
         signal = self.send_signal(
             source_node_id=source_node_id,
             target_node_id=target_node_id,
@@ -518,7 +523,7 @@ class RuntimeNativeMultiSessionCoordination:
             payload={"goal": goal},
         )
         if signal.status == SIGNAL_STATUS_BLOCKED:
-            return {"ok": False, "status": "blocked", "signal": signal.to_dict()}
+            return {"ok": False, "status": "blocked", "signal": signal.to_dict(), "execution_path": execution_path}
 
         delivered = self.deliver_signal(signal.signal_id)
         target = self.get_node(target_node_id)
@@ -536,7 +541,7 @@ class RuntimeNativeMultiSessionCoordination:
                 metadata={"coordination_signal_id": signal.signal_id},
             )
             result_payload = result.to_dict() if hasattr(result, "to_dict") else copy.deepcopy(result)
-            return {"ok": result_payload.get("status") == "completed", "status": result_payload.get("status"), "signal": delivered.to_dict(), "dispatch": result_payload}
+            return {"ok": result_payload.get("status") == "completed", "status": result_payload.get("status"), "signal": delivered.to_dict(), "dispatch": result_payload, "execution_path": execution_path}
 
         if self.mainline is not None and hasattr(self.mainline, "run_goal"):
             result = self.mainline.run_goal(
@@ -548,9 +553,9 @@ class RuntimeNativeMultiSessionCoordination:
                 metadata={"coordination_signal_id": signal.signal_id},
             )
             result_payload = result.to_dict() if hasattr(result, "to_dict") else copy.deepcopy(result)
-            return {"ok": result_payload.get("status") == "completed", "status": result_payload.get("status"), "signal": delivered.to_dict(), "mainline": result_payload}
+            return {"ok": result_payload.get("status") == "completed", "status": result_payload.get("status"), "signal": delivered.to_dict(), "mainline": result_payload, "execution_path": execution_path}
 
-        return {"ok": False, "status": "no_dispatch_target", "signal": delivered.to_dict()}
+        return {"ok": False, "status": "no_dispatch_target", "signal": delivered.to_dict(), "execution_path": execution_path}
 
     def get_node(self, node_id: str) -> RuntimeFederationNode:
         node_id = self._validate_text("node_id", node_id)

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_native_execution_authority import runtime_native_execution_path
 
 
 DISPATCH_STATUS_CREATED = "created"
@@ -168,6 +169,10 @@ class RuntimeDispatchRecord:
             "authority_ref": copy.deepcopy(self.authority_ref),
             "final_result": copy.deepcopy(self.final_result),
             "metadata": copy.deepcopy(self.metadata),
+            "execution_path": runtime_native_execution_path(
+                entrypoint="runtime_native_execution_dispatch.run_dispatch",
+                delegation_only=True,
+            ),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

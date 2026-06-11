@@ -87,4 +87,6 @@ def test_scheduler_llm_step_falls_back_to_legacy_when_gateway_raises(monkeypatch
         },
     )
 
-    assert result == legacy_result
+    assert {key: result[key] for key in legacy_result} == legacy_result
+    assert result["legacy_bridge"] is True
+    assert result["diagnostic_only"] is True

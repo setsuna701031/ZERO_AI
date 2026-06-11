@@ -13,7 +13,6 @@ from core.agent.agent_component_invoker import (
     call_llm_planner,
     call_planner,
     call_router,
-    call_step_executor,
     run_safety_guard,
     run_verifier,
 )
@@ -29,7 +28,7 @@ from core.agent.agent_route_policy import (
 from core.agent.document_flow_trace_writer import maybe_write_document_flow_trace
 from core.agent.agent_loop_route_marker import mark_agent_loop_route
 from core.memory.context_builder import build_context
-from core.runtime.task_runner import TaskRunner
+from core.runtime.agent_execution_runtime import AgentExecutionRuntime, agent_execution_path
 from core.runtime.code_chain_patch_restore import request_code_chain_patch_restore
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.agent.loop_decision import observe_and_decide
@@ -89,7 +88,6 @@ class AgentLoop:
         self.router = router
         self.planner = planner
         self.llm_planner = llm_planner
-        self.step_executor = step_executor
         self.verifier = verifier
         self.safety_guard = safety_guard
         self.memory_store = memory_store
@@ -109,7 +107,7 @@ class AgentLoop:
                 setter = getattr(planner_component, "set_goal_repository", None)
                 if callable(setter):
                     setter(self.goal_repository)
-        self.tool_registry = kwargs.get("tool_registry") or getattr(self.step_executor, "tool_registry", None)
+        self.tool_registry = kwargs.get("tool_registry") or getattr(step_executor, "tool_registry", None)
         if self.tool_registry is None:
             self.tool_registry = ToolRegistry(workspace_dir=kwargs.get("workspace_dir", "workspace"))
 
@@ -126,8 +124,8 @@ class AgentLoop:
         self.operator_session_bootstrap = kwargs.get("operator_session_bootstrap")
         operator_bridge = kwargs.get("operator_bridge")
         operator_runtime = kwargs.get("operator_runtime")
-        if operator_bridge is None and self.step_executor is not None:
-            operator_bridge = getattr(self.step_executor, "operator_bridge", None)
+        if operator_bridge is None and step_executor is not None:
+            operator_bridge = getattr(step_executor, "operator_bridge", None)
         if self.operator_session_bootstrap is None and (operator_bridge is not None or operator_runtime is not None):
             try:
                 from core.runtime.operator_session_bootstrap import OperatorSessionBootstrap
@@ -140,16 +138,18 @@ class AgentLoop:
             except Exception:
                 self.operator_session_bootstrap = None
         if operator_bridge is not None:
-            for runtime_obj in (self.step_executor, self.task_runtime):
+            for runtime_obj in (step_executor, self.task_runtime):
                 if runtime_obj is not None and getattr(runtime_obj, "operator_bridge", None) is None:
                     try:
                         setattr(runtime_obj, "operator_bridge", operator_bridge)
                     except Exception:
                         pass
 
-        self.task_runner = task_runner or TaskRunner(
+        self.execution_runtime = kwargs.get("execution_runtime") or AgentExecutionRuntime(
+            task_runner=task_runner,
             task_runtime=self.task_runtime,
-            step_executor=self.step_executor,
+            step_executor=step_executor,
+            workspace_root=kwargs.get("workspace_dir", "workspace"),
             replanner=self.replanner,
             verifier=self.verifier,
             debug=self.debug,
@@ -1529,6 +1529,7 @@ class AgentLoop:
             "last_result": copy.deepcopy(scheduler_result or result_payload),
             "final_answer": final_answer,
             "error": error,
+            "execution_path": agent_execution_path(),
         }
 
         route = {
@@ -3180,20 +3181,20 @@ class AgentLoop:
                 effective_task["steps"] = self._extract_steps_from_plan(original_plan)
                 effective_task["steps_total"] = len(effective_task["steps"])
 
-        runner = self.task_runner
-        if runner is None:
+        runtime = self.execution_runtime
+        if runtime is None:
             return {
                 "ok": False,
                 "mode": "task_loop",
-                "action": "task_runner_missing",
+                "action": "execution_runtime_missing",
                 "status": "failed",
                 "final_answer": "",
-                "error": "task_runner missing",
+                "error": "execution runtime missing",
                 "task": copy.deepcopy(effective_task),
                 "execution": None,
             }
 
-        runner_result = runner.run_task(
+        runner_result = runtime.run_task(
             task=effective_task,
             current_tick=current_tick,
             user_input=user_input,
@@ -4206,6 +4207,7 @@ class AgentLoop:
         normalized["execution"] = self._normalize_execution_result(normalized.get("execution"))
         normalized["final_answer"] = str(normalized.get("final_answer") or "")
         normalized["error"] = normalized.get("error")
+        normalized["execution_path"] = agent_execution_path()
         return normalized
 
     def _normalize_plan_result(self, plan: Any) -> Optional[Dict[str, Any]]:
@@ -4945,7 +4947,7 @@ class AgentLoop:
         user_input: str,
         route: Any,
     ) -> Dict[str, Any]:
-        if not self.step_executor:
+        if not self.execution_runtime or not self.execution_runtime.has_endpoint:
             return {
                 "ok": False,
                 "error": "step_executor missing",
@@ -5112,7 +5114,7 @@ class AgentLoop:
         user_input: str,
         route: Any,
     ) -> Dict[str, Any]:
-        if not self.step_executor:
+        if not self.execution_runtime or not self.execution_runtime.has_endpoint:
             return {
                 "ok": False,
                 "error": "step_executor missing",
@@ -5199,7 +5201,7 @@ class AgentLoop:
             steps=steps,
             execution_result=execution_result,
             llm_client=self.llm_client,
-            step_executor=self.step_executor,
+            step_executor=self.execution_runtime,
             debug=self.debug,
         )
 
@@ -6021,15 +6023,17 @@ class AgentLoop:
         step_index: Optional[int] = None,
         step_count: Optional[int] = None,
     ) -> Any:
-        return call_step_executor(
-            step_executor=self.step_executor,
-            step=step,
-            context=context,
-            user_input=user_input,
-            route=route,
-            previous_result=previous_result,
-            step_index=step_index,
-            step_count=step_count,
+        return self.execution_runtime.run_step(
+            step=copy.deepcopy(step) if isinstance(step, dict) else {"value": copy.deepcopy(step)},
+            task={
+                "goal": user_input,
+                "route": copy.deepcopy(route),
+                "previous_result": copy.deepcopy(previous_result),
+                "step_index": step_index,
+                "step_count": step_count,
+            },
+            context=copy.deepcopy(context),
+            current_tick=int(step_index or 0),
         )
 
     # ============================================================
@@ -7610,10 +7614,10 @@ except Exception:  # pragma: no cover
 def _zero_v825_build_planner_step_executor_adapter(self):
     if _zero_v825_PlannerStepExecutorAdapter is None:
         return None
-    step_executor = getattr(self, "step_executor", None)
-    if step_executor is None:
+    execution_runtime = getattr(self, "execution_runtime", None)
+    if execution_runtime is None:
         return None
-    return _zero_v825_PlannerStepExecutorAdapter(step_executor=step_executor)
+    return _zero_v825_PlannerStepExecutorAdapter(step_executor=execution_runtime)
 
 
 def _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input: str) -> Optional[Dict[str, Any]]:
@@ -7891,16 +7895,8 @@ def _zero_v826_repo_root_from_agent(self) -> Path:
     return Path(".").resolve()
 
 
-def _zero_v826_step_executor_from_agent(self, repo_root: Path):
-    step_executor = getattr(self, "step_executor", None)
-    if step_executor is not None:
-        return step_executor
-    try:
-        from core.runtime.step_executor import StepExecutor
-
-        return StepExecutor(workspace_root=repo_root / "workspace", debug=bool(getattr(self, "debug", False)))
-    except Exception:
-        return None
+def _zero_v826_execution_runtime_from_agent(self):
+    return getattr(self, "execution_runtime", None)
 
 
 def _zero_v826_adapt_steps_for_step_executor(self, steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -8107,7 +8103,8 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
         "task": True,
         "forced_route": True,
         "planner_runtime_dispatch": True,
-        "step_executor_bridge": True,
+        "runtime_execution_required": True,
+        "authority_path": "AgentLoop -> Runtime -> TaskRunner -> StepExecutor",
     }
 
     planner_result = call_planner(
@@ -8153,9 +8150,9 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
             },
         )
 
-    step_executor = _zero_v826_step_executor_from_agent(self, repo_root)
-    if step_executor is None:
-        failure_reason = "StepExecutor unavailable for controlled mutation execution"
+    execution_runtime = _zero_v826_execution_runtime_from_agent(self)
+    if execution_runtime is None:
+        failure_reason = "Runtime unavailable for controlled mutation execution"
         execution = {
             "ok": False,
             "summary": failure_reason,
@@ -8189,12 +8186,7 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
             },
         )
 
-    original_step_executor = getattr(self, "step_executor", None)
-    self.step_executor = step_executor
-    try:
-        executable_steps = _zero_v826_adapt_steps_for_step_executor(self, raw_steps)
-    finally:
-        self.step_executor = original_step_executor
+    executable_steps = _zero_v826_adapt_steps_for_step_executor(self, raw_steps)
 
     task = {
         "id": task_id,
@@ -8208,15 +8200,11 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
     }
 
     try:
-        execute_steps = getattr(step_executor, "execute_steps", None)
-        if callable(execute_steps):
-            execution_result = execute_steps(
-                steps=copy.deepcopy(executable_steps),
-                task=copy.deepcopy(task),
-                context=copy.deepcopy(context),
-            )
-        else:
-            raise RuntimeError("StepExecutor has no execute_steps method")
+        execution_result = execution_runtime.run_steps(
+            steps=copy.deepcopy(executable_steps),
+            task=copy.deepcopy(task),
+            context=copy.deepcopy(context),
+        )
     except Exception as exc:
         execution_result = {
             "ok": False,
@@ -8243,6 +8231,7 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
     execution = copy.deepcopy(execution_result) if isinstance(execution_result, dict) else {"ok": False}
     execution["reviewable_result"] = copy.deepcopy(review)
     execution["code_chain_controlled_self_edit_bridge"] = True
+    execution["execution_path"] = agent_execution_path()
 
     return self._make_agent_response(
         ok=ok,

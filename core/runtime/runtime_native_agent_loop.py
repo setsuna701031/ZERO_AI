@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_native_execution_authority import runtime_native_execution_path
 
 
 LOOP_STATUS_CREATED = "created"
@@ -165,6 +166,10 @@ class RuntimeNativeAgentLoopRecord:
             "cycles": [cycle.to_dict() for cycle in self.cycles],
             "final_result": copy.deepcopy(self.final_result),
             "metadata": copy.deepcopy(self.metadata),
+            "execution_path": runtime_native_execution_path(
+                entrypoint="runtime_native_agent_loop.run_goal",
+                delegation_only=True,
+            ),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
