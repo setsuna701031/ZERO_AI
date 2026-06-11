@@ -21,6 +21,20 @@ class EngineeringSessionState(str, Enum):
     ARCHIVED = "archived"
 
 
+INITIAL_ENGINEERING_SESSION_STATES = frozenset({
+    EngineeringSessionState.CREATED.value,
+})
+
+ACTIVE_ENGINEERING_SESSION_STATES = frozenset({
+    EngineeringSessionState.ACTIVE.value,
+    EngineeringSessionState.PAUSED.value,
+})
+
+BLOCKED_REVIEW_ENGINEERING_SESSION_STATES = frozenset({
+    EngineeringSessionState.WAITING_USER.value,
+    EngineeringSessionState.BLOCKED.value,
+})
+
 TERMINAL_ENGINEERING_SESSION_STATES = frozenset({
     EngineeringSessionState.COMPLETED.value,
     EngineeringSessionState.FAILED.value,
@@ -37,7 +51,10 @@ def clean_engineering_session_state(value: EngineeringSessionState | str | Any) 
 
 
 __all__ = [
+    "ACTIVE_ENGINEERING_SESSION_STATES",
+    "BLOCKED_REVIEW_ENGINEERING_SESSION_STATES",
     "EngineeringSessionState",
+    "INITIAL_ENGINEERING_SESSION_STATES",
     "TERMINAL_ENGINEERING_SESSION_STATES",
     "clean_engineering_session_state",
 ]

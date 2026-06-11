@@ -10,9 +10,9 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from core.session.engineering_session_state import TERMINAL_ENGINEERING_SESSION_STATES
+from core.session.engineering_session_state import TERMINAL_ENGINEERING_SESSION_STATES, clean_engineering_session_state
 from core.session.engineering_session_transition import EngineeringSessionTransition
-from core.session.engineering_session_validator import EngineeringSessionValidator
+from core.session.engineering_session_validator import ALLOWED_SESSION_TRANSITIONS, EngineeringSessionValidator
 
 
 ENGINEERING_SESSION_STATE_MACHINE_SCHEMA = "zero.engineering_session_state_machine.v1"
@@ -37,6 +37,7 @@ class EngineeringSessionStateResult:
     reason: str
     blocked_reason: str = ""
     lifecycle_state: Mapping[str, Any] | None = None
+    transition_record: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -49,6 +50,7 @@ class EngineeringSessionStateResult:
             "reason": self.reason,
             "blocked_reason": self.blocked_reason,
             "lifecycle_state": copy.deepcopy(dict(self.lifecycle_state or {})),
+            "transition_record": copy.deepcopy(dict(self.transition_record or {})),
             "execution_path": {
                 "state_machine_only": True,
                 "executes_tasks": False,
@@ -79,10 +81,11 @@ class EngineeringSessionStateMachine:
                 from_state=from_state,
                 to_state=to_state,
                 session_state=from_state or "failed",
-                terminal=True,
+                terminal=from_state in TERMINAL_ENGINEERING_SESSION_STATES,
                 reason=_text(validation_record.get("reason"), "engineering_session_transition_rejected"),
                 blocked_reason=_text(validation_record.get("blocked_reason")),
                 lifecycle_state=lifecycle_state,
+                transition_record=record,
             )
         return EngineeringSessionStateResult(
             accepted=True,
@@ -92,7 +95,61 @@ class EngineeringSessionStateMachine:
             terminal=to_state in TERMINAL_ENGINEERING_SESSION_STATES,
             reason=_text(record.get("reason"), _text(validation_record.get("reason"), f"engineering_session_{to_state}")),
             lifecycle_state=lifecycle_state,
+            transition_record=record,
         )
+
+    @staticmethod
+    def current_state(session: Mapping[str, Any] | str) -> str:
+        if isinstance(session, str):
+            return clean_engineering_session_state(session)
+        record = _mapping(session)
+        state = record.get("session_state") or record.get("current_state") or record.get("to_state")
+        return clean_engineering_session_state(state)
+
+    @staticmethod
+    def can_transition(from_state: str, to_state: str) -> bool:
+        try:
+            pair = (clean_engineering_session_state(from_state), clean_engineering_session_state(to_state))
+        except ValueError:
+            return False
+        return pair in ALLOWED_SESSION_TRANSITIONS
+
+    @staticmethod
+    def is_terminal(state: Mapping[str, Any] | str) -> bool:
+        try:
+            return EngineeringSessionStateMachine.current_state(state) in TERMINAL_ENGINEERING_SESSION_STATES
+        except ValueError:
+            return False
+
+    @staticmethod
+    def build_transition_record(
+        *,
+        from_state: str,
+        to_state: str,
+        reason: str,
+        trigger: str,
+        evidence: Mapping[str, Any],
+        source: str,
+        session_id: str = "",
+        task_id: str = "",
+        created_at: str = "",
+        lifecycle_state: Mapping[str, Any] | None = None,
+        cycle: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return EngineeringSessionTransition(
+            from_state=from_state,
+            to_state=to_state,
+            action=to_state,
+            reason=reason,
+            trigger=trigger,
+            evidence=evidence,
+            source=source,
+            session_id=session_id,
+            task_id=task_id,
+            created_at=created_at,
+            lifecycle_state=lifecycle_state,
+            cycle=cycle,
+        ).to_dict()
 
     def evaluate_lifecycle(
         self,
@@ -102,15 +159,43 @@ class EngineeringSessionStateMachine:
         cycle: Mapping[str, Any] | None = None,
     ) -> EngineeringSessionStateResult:
         lifecycle = _mapping(lifecycle_state)
+        cycle_record = _mapping(cycle)
+        identity_sources = (cycle_record, lifecycle)
+        session_id = next((_text(item.get("session_id")) for item in identity_sources if _text(item.get("session_id"))), "")
+        task_id = next(
+            (
+                _text(item.get("task_id") or item.get("goal_id"))
+                for item in identity_sources
+                if _text(item.get("task_id") or item.get("goal_id"))
+            ),
+            "",
+        )
+        if not lifecycle:
+            return self.transition({
+                "from_state": from_state,
+                "to_state": from_state,
+                "reason": "missing_engineering_lifecycle_record",
+                "trigger": "evaluate_lifecycle",
+                "evidence": {},
+                "source": "engineering_session_state_machine",
+                "session_id": session_id,
+                "task_id": task_id,
+                "lifecycle_state": {},
+                "cycle": cycle_record,
+            })
         target = self.target_state_for_lifecycle(lifecycle)
         return self.transition(
-            EngineeringSessionTransition(
+            self.build_transition_record(
                 from_state=from_state,
                 to_state=target,
-                action=target,
                 reason=_text(lifecycle.get("reason"), f"engineering_session_{target}"),
+                trigger=_text(lifecycle.get("trigger"), "engineering_lifecycle_evaluation"),
+                evidence=_mapping(lifecycle.get("evidence")) or {"lifecycle_state": copy.deepcopy(lifecycle)},
+                source=_text(lifecycle.get("source"), "engineering_session_state_machine"),
+                session_id=session_id,
+                task_id=task_id,
                 lifecycle_state=lifecycle,
-                cycle=cycle,
+                cycle=cycle_record,
             )
         )
 
