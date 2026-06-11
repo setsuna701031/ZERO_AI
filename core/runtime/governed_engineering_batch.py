@@ -63,7 +63,7 @@ def _make_default_batch_targets(repo_root: Path) -> List[str]:
     ]
 
 
-def _execute_step_executor_write(
+def _execute_runtime_owned_write(
     *,
     repo_root: Path,
     task_id: str,
@@ -86,10 +86,10 @@ def _execute_step_executor_write(
     }
 
     try:
-        from core.runtime.step_executor import StepExecutor
+        from core.runtime.agent_execution_runtime import AgentExecutionRuntime
 
-        executor = StepExecutor(workspace_root=str(repo_root))
-        step_result = executor.execute_step(
+        runtime = AgentExecutionRuntime(workspace_root=str(repo_root))
+        step_result = runtime.run_step(
             step=step,
             task={
                 "task_id": task_id,
@@ -101,6 +101,9 @@ def _execute_step_executor_write(
                 "task_dir": str(repo_root / "workspace" / "tasks" / task_id),
                 "batch_id": batch_id,
                 "execution_authority_handoff": task.get("execution_authority_handoff"),
+                "execution_authority": task.get("execution_authority"),
+                "authority_context": task.get("authority_context"),
+                "runtime_authority_context": task.get("runtime_authority_context"),
                 "runtime_ownership": task.get("runtime_ownership"),
             },
             context={
@@ -108,13 +111,22 @@ def _execute_step_executor_write(
                 "workspace_root": str(repo_root),
                 "governed_engineering_transaction_batch": True,
                 "batch_id": batch_id,
-                "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+                "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
+                "direct_execution": False,
+                "runtime_owns_execution": True,
+                "taskrunner_required": True,
+                "step_executor_endpoint_only": True,
             },
         )
         return {
             "ok": bool(step_result.get("ok", False)) if isinstance(step_result, dict) else False,
             "step": step,
             "step_result": step_result,
+            "direct_execution": False,
+            "runtime_owns_execution": True,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
+            "authority_path": "GovernedEngineeringBatch -> AgentExecutionRuntime -> TaskRunner -> StepExecutor",
         }
     except Exception as exc:
         return {
@@ -122,9 +134,17 @@ def _execute_step_executor_write(
             "step": step,
             "step_result": {
                 "ok": False,
-                "error": {"type": exc.__class__.__name__, "message": str(exc)},
+                "error": {
+                    "type": exc.__class__.__name__,
+                    "message": str(exc),
+                },
             },
+            "direct_execution": False,
+            "runtime_owns_execution": True,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
         }
+
 
 
 def execute_governed_engineering_transaction_batch(
@@ -142,7 +162,7 @@ def execute_governed_engineering_transaction_batch(
     - multi-file target list;
     - allowed_roots check for every target before any write;
     - snapshot every target before any write;
-    - StepExecutor writes every mutated file;
+    - AgentExecutionRuntime delegates every mutated file through TaskRunner to StepExecutor;
     - verify every target;
     - if any write/verification fails, rollback all changed targets;
     - journal + runtime incident are persisted.
@@ -225,7 +245,7 @@ def execute_governed_engineering_transaction_batch(
     for rel_path in rel_paths:
         original = _read_source_text(repo_root / rel_path)
         mutation = _build_mutated_text(original, task_id=f"{batch_id}_{_safe_target_name(rel_path)}", goal=goal, target_path=rel_path)
-        write_record = _execute_step_executor_write(
+        write_record = _execute_runtime_owned_write(
             repo_root=repo_root,
             task_id=task_id,
             goal=goal,
@@ -314,8 +334,8 @@ def execute_governed_engineering_transaction_batch(
             },
             "journal_path": str(journal_path),
             "transaction_dir": str(batch_dir),
-            "execution_authority_endpoint": "step_executor",
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "execution_authority_endpoint": "runtime_owner",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
         }
     )
 

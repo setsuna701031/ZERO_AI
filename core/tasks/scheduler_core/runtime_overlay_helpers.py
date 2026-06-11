@@ -81,64 +81,7 @@ def scheduler_direct_step(scheduler: Any, task: Any, current_tick: Any) -> dict[
     if not isinstance(step, dict):
         return None
 
-    executor = getattr(scheduler, "step_executor", None)
-    if executor is None:
-        try:
-            from core.runtime.step_executor import StepExecutor
-
-            executor = StepExecutor(workspace_root=getattr(scheduler, "workspace_dir", "workspace"))
-            scheduler.step_executor = executor
-        except Exception:
-            return None
-
-    authority_context = {}
-    try:
-        authority_context = scheduler._build_scheduler_authority_context(task)
-    except Exception:
-        authority_context = {}
-
-    context = {
-        "cwd": getattr(scheduler, "workspace_dir", "workspace"),
-        "authority_context": authority_context,
-        "runtime_authority_context": authority_context,
-        "execution_authority": copy.deepcopy(authority_context.get("execution_authority", {})),
-        "authority_propagation_required": bool(
-            task.get("authority_propagation_required")
-            or task.get("execution_authority")
-            or authority_context
-        ),
-    }
-    for key in ("operator_session_id", "operator_runtime_id", "operator_session"):
-        if task.get(key):
-            context[key] = copy.deepcopy(task[key])
-
-    execute_step = getattr(executor, "execute_step", None)
-    if not callable(execute_step):
-        return None
-
-    try:
-        step_result = execute_step(
-            step=copy.deepcopy(step),
-            task=copy.deepcopy(task),
-            context=context,
-            previous_result=copy.deepcopy(task.get("last_step_result")),
-            step_index=index,
-            step_count=len(steps),
-        )
-    except TypeError:
-        step_result = execute_step(
-            copy.deepcopy(step),
-            task=copy.deepcopy(task),
-            context=context,
-            previous_result=copy.deepcopy(task.get("last_step_result")),
-        )
-
-    if not isinstance(step_result, dict):
-        step_result = {"ok": bool(step_result), "raw_result": step_result}
-
-    if bool(step_result.get("ok")):
-        return _direct_step_success_payload(scheduler, task, steps, index, step_result)
-    return _direct_step_failure_payload(scheduler, task, steps, index, step_result)
+    return None
 
 
 def _direct_step_success_payload(

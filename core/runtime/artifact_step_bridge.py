@@ -70,12 +70,12 @@ def execute_artifact_step_via_step_executor(
     task_id: str,
     goal: str,
 ) -> Dict[str, Any]:
-    """Execute the artifact write through StepExecutor.
+    """Execute the artifact write through the runtime owner.
 
     v1.1 fixes the path handoff:
     - thin artifact payload is still prepared before this bridge;
-    - StepExecutor receives a workspace-relative write_file path;
-    - the record is only marked ok when StepExecutor reports ok or the governed
+    - AgentExecutionRuntime receives a workspace-relative write_file path;
+    - the record is only marked ok when the runtime-owned endpoint reports ok or the governed
       file write surface leaves the expected artifact in place.
     """
 
@@ -94,9 +94,9 @@ def execute_artifact_step_via_step_executor(
         }
 
     try:
-        from core.runtime.step_executor import StepExecutor
+        from core.runtime.agent_execution_runtime import AgentExecutionRuntime
 
-        executor = StepExecutor(workspace_root=str(repo_root / "workspace"))
+        runtime = AgentExecutionRuntime(workspace_root=str(repo_root / "workspace"))
         step_task = {
             "task_id": task_id,
             "task_name": task_id,
@@ -106,6 +106,9 @@ def execute_artifact_step_via_step_executor(
             "shared_dir": str(repo_root / "workspace" / "shared"),
             "task_dir": str(repo_root / "workspace" / "tasks" / task_id),
             "execution_authority_handoff": task.get("execution_authority_handoff"),
+            "execution_authority": task.get("execution_authority"),
+            "authority_context": task.get("authority_context"),
+            "runtime_authority_context": task.get("runtime_authority_context"),
             "runtime_ownership": task.get("runtime_ownership"),
         }
         step_context = {
@@ -114,9 +117,13 @@ def execute_artifact_step_via_step_executor(
             "shared_dir": str(repo_root / "workspace" / "shared"),
             "task_dir": str(repo_root / "workspace" / "tasks" / task_id),
             "artifact_step_bridge": True,
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
+            "direct_execution": False,
+            "runtime_owns_execution": True,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
         }
-        step_result = executor.execute_step(
+        step_result = runtime.run_step(
             step=step,
             task=step_task,
             context=step_context,
@@ -124,22 +131,27 @@ def execute_artifact_step_via_step_executor(
         ok = _step_result_ok(step_result, artifact_path)
         return {
             "ok": ok,
-            "schema": "zero.aer.step_executor_artifact_step_bridge.v1_1",
+            "schema": "zero.aer.runtime_owned_artifact_step_bridge.v1",
             "created_at": time.time(),
             "task_id": task_id,
             "goal": goal,
             "handoff_executed": True,
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
             "step": step,
             "step_result": step_result,
-            "execution_authority_endpoint": "step_executor",
+            "execution_authority_endpoint": "runtime_owner",
             "thin_writer_payload_reused": True,
             "artifact_path": artifact_path,
             "artifact_type": artifact.get("artifact_type"),
+            "direct_execution": False,
+            "runtime_owns_execution": True,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
+            "authority_path": "ArtifactStepBridge -> AgentExecutionRuntime -> TaskRunner -> StepExecutor",
             "boundary": {
                 "cli_is_not_execution_owner": True,
                 "thin_bridge_is_compatibility_layer": True,
-                "step_executor_performed_artifact_write": ok,
+                "runtime_owner_performed_artifact_write": ok,
                 "artifact_output_is_not_execution_evidence": True,
                 "no_hidden_mutation_shortcut": True,
             },
@@ -152,7 +164,7 @@ def execute_artifact_step_via_step_executor(
             "task_id": task_id,
             "goal": goal,
             "handoff_executed": False,
-            "formal_execution_endpoint": "core.runtime.step_executor.StepExecutor.execute_step",
+            "formal_execution_endpoint": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
             "step": step,
             "error": {
                 "type": exc.__class__.__name__,
