@@ -1290,6 +1290,17 @@ class Scheduler(RuntimeTaskScheduler):
         boundary_root = Path(self.workspace_dir) / "scheduler_taskrunner_boundary"
         boundary_task_dir = boundary_root / boundary_id
         scheduler_authority = self._build_scheduler_authority_context(task)
+        from core.tasks.scheduler_runtime_contract import seal_scheduler_runtime_contract
+
+        scheduler_runtime_contract = seal_scheduler_runtime_contract(
+            task,
+            lifecycle_state="executing",
+            dispatch_path="Scheduler -> TaskRunner -> StepExecutor",
+            require_authority_metadata=bool(
+                task.get("authority_propagation_required")
+                or scheduler_authority.get("execution_authority")
+            ),
+        )
         runtime_identity: Dict[str, Any] = {}
         runtime = getattr(self, "task_runtime", None)
         if runtime is not None and hasattr(runtime, "load_runtime_state"):
@@ -1314,6 +1325,11 @@ class Scheduler(RuntimeTaskScheduler):
             "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results"), list) else [],
             "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log"), list) else [],
             "execution_trace": copy.deepcopy(task.get("execution_trace", [])) if isinstance(task.get("execution_trace"), list) else [],
+            "last_step_result": copy.deepcopy(task.get("last_step_result")),
+            "package_id": str(task.get("package_id") or ""),
+            "session_id": str(task.get("session_id") or runtime_identity.get("session_id") or ""),
+            "scheduler_task_id": task_id,
+            "scheduler_runtime_contract": scheduler_runtime_contract,
             "authority_context": scheduler_authority,
             "runtime_authority_context": scheduler_authority,
             "execution_authority": copy.deepcopy(scheduler_authority.get("execution_authority", {})),
