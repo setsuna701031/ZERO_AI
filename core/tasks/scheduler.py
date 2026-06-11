@@ -1286,11 +1286,7 @@ class Scheduler(RuntimeTaskScheduler):
         }
         runner = getattr(self, "task_runner", None)
         if runner is None:
-            runner = TaskRunner(
-                step_executor=self.step_executor,
-                task_runtime=TaskRuntime(workspace_root=str(boundary_root)),
-                debug=bool(getattr(self, "debug", False)),
-            )
+            raise RuntimeError("task_runner unavailable for scheduler delegation")
         runner_result = runner.run_task(boundary_task, current_tick=step_index)
         runtime_state = runner_result.get("runtime_state") if isinstance(runner_result, dict) else {}
         endpoint_result = runtime_state.get("final_result") if isinstance(runtime_state, dict) else {}
