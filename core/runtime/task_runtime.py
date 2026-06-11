@@ -102,7 +102,7 @@ class TaskRuntime:
         for source in (state or {}, task or {}):
             if not isinstance(source, dict):
                 continue
-            for key in ("operator_session_id", "persistent_operator_session_id", "session_id"):
+            for key in ("operator_session_id", "persistent_operator_session_id"):
                 value = str(source.get(key) or "").strip()
                 if value:
                     return value
@@ -1343,6 +1343,23 @@ class TaskRuntime:
             if isinstance(task.get("terminal_validation"), dict)
             else {},
         }
+        for key in (
+            "lifecycle",
+            "lifecycle_state",
+            "engineering_session_state",
+            "transition_history",
+            "last_transition",
+            "session_id",
+            "operator_runtime_id",
+            "evidence",
+            "reason",
+            "trigger",
+            "source",
+            "schema",
+            "timestamp",
+        ):
+            if key in task:
+                state[key] = copy.deepcopy(task.get(key))
         operator_session_id = self._operator_bridge_session_id(task=task, state=state)
         if operator_session_id:
             state["operator_session_id"] = operator_session_id
@@ -1363,6 +1380,26 @@ class TaskRuntime:
 
     def _normalize_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         normalized = copy.deepcopy(state if isinstance(state, dict) else {})
+
+        # Lifecycle/session payload is durable resume evidence. Runtime state is
+        # authoritative once present; otherwise preserve the inbound task value.
+        for key in (
+            "lifecycle",
+            "lifecycle_state",
+            "engineering_session_state",
+            "transition_history",
+            "last_transition",
+            "session_id",
+            "operator_runtime_id",
+            "evidence",
+            "reason",
+            "trigger",
+            "source",
+            "schema",
+            "timestamp",
+        ):
+            if key not in normalized and key in task:
+                normalized[key] = copy.deepcopy(task.get(key))
 
         normalized["task_name"] = normalized.get("task_name") or self._task_name(task)
         normalized["task_id"] = normalized.get("task_id") or self._task_id(task)
@@ -1679,6 +1716,23 @@ class TaskRuntime:
         task["failure_type"] = safe_state.get("failure_type")
         task["failure_message"] = safe_state.get("failure_message")
         task["failure_decision"] = copy.deepcopy(safe_state.get("failure_decision"))
+        for key in (
+            "lifecycle",
+            "lifecycle_state",
+            "engineering_session_state",
+            "transition_history",
+            "last_transition",
+            "session_id",
+            "operator_runtime_id",
+            "evidence",
+            "reason",
+            "trigger",
+            "source",
+            "schema",
+            "timestamp",
+        ):
+            if key in safe_state:
+                task[key] = copy.deepcopy(safe_state.get(key))
         operator_session_id = self._operator_bridge_session_id(task=task, state=safe_state)
         if operator_session_id:
             task["operator_session_id"] = operator_session_id

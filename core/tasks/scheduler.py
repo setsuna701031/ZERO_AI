@@ -1065,13 +1065,23 @@ class Scheduler(RuntimeTaskScheduler):
         self,
         task: Dict[str, Any],
     ) -> Dict[str, Any]:
-        return {
+        result = {
             "ok": True,
             "action": "terminal_skip",
             "task_id": self._extract_task_id(task),
             "status": str(task.get("status") or "").strip().lower(),
             "final_answer": task.get("final_answer", ""),
+            "task": copy.deepcopy(task),
         }
+        runtime = getattr(self, "task_runtime", None)
+        if runtime is not None and hasattr(runtime, "load_runtime_state"):
+            try:
+                runtime_state = runtime.load_runtime_state(task)
+                if isinstance(runtime_state, dict):
+                    result["runtime_state"] = copy.deepcopy(runtime_state)
+            except Exception:
+                pass
+        return result
 
     def _read_repair_chain_orchestration_summary(
         self,
@@ -1210,6 +1220,26 @@ class Scheduler(RuntimeTaskScheduler):
                 compact["task"] = copy.deepcopy(result.get("task"))
             if "runtime_state" in result and "runtime_state" not in compact and isinstance(result.get("runtime_state"), dict):
                 compact["runtime_state"] = copy.deepcopy(result.get("runtime_state"))
+        if isinstance(compact, dict):
+            runtime_state = compact.get("runtime_state")
+            task = compact.get("task")
+            payload = runtime_state if isinstance(runtime_state, dict) else task if isinstance(task, dict) else {}
+            lifecycle_keys = (
+                "lifecycle",
+                "lifecycle_state",
+                "engineering_session_state",
+                "transition_history",
+                "last_transition",
+            )
+            present = [key for key in lifecycle_keys if key in payload]
+            preserved = bool(present)
+            preservation = {
+                "schema": "zero.scheduler.lifecycle_payload_preservation.v1",
+                "preserved": preserved,
+                "present_fields": present,
+                "warning": "" if preserved else "missing_lifecycle_payload",
+            }
+            compact["lifecycle_payload_preservation"] = preservation
         return self._attach_scheduler_execution_path(compact)
 
     @staticmethod
@@ -1246,7 +1276,17 @@ class Scheduler(RuntimeTaskScheduler):
             step_index = int(task.get("current_step_index", 0) or 0)
         except Exception:
             step_index = 0
-        boundary_id = f"{task_id}-scheduler-boundary-{step_index}"
+        boundary_seed = {
+            "step": step,
+            "step_index": step_index,
+            "retry_count": task.get("retry_count", 0),
+            "result_count": len(task.get("results", [])) if isinstance(task.get("results"), list) else 0,
+            "step_result_count": len(task.get("step_results", [])) if isinstance(task.get("step_results"), list) else 0,
+        }
+        boundary_fingerprint = hashlib.sha256(
+            json.dumps(boundary_seed, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()[:12]
+        boundary_id = f"{task_id}-scheduler-boundary-{step_index}-{boundary_fingerprint}"
         boundary_root = Path(self.workspace_dir) / "scheduler_taskrunner_boundary"
         boundary_task_dir = boundary_root / boundary_id
         scheduler_authority = self._build_scheduler_authority_context(task)
@@ -5172,6 +5212,12 @@ class Scheduler(RuntimeTaskScheduler):
             if isinstance(task.get("operator"), dict)
             else None
         )
+        explicit_resume_requested = (
+            str(task.get("next_action") or "").strip().lower() == "run_next_tick"
+            and str(task.get("status") or "").strip().lower() in {"queued", "ready", "running", "retry", "retrying"}
+            and not bool(task.get("requires_review", False))
+            and not task.get("blockers")
+        )
 
         task_id = self._extract_task_id(hydrated)
         if not task_id:
@@ -5283,9 +5329,33 @@ class Scheduler(RuntimeTaskScheduler):
                     "authority_context",
                     "runtime_authority_context",
                     "authority_propagation_required",
+                    "lifecycle",
+                    "lifecycle_state",
+                    "engineering_session_state",
+                    "transition_history",
+                    "last_transition",
+                    "session_id",
+                    "operator_runtime_id",
+                    "evidence",
+                    "reason",
+                    "trigger",
+                    "source",
+                    "schema",
+                    "timestamp",
                 ):
                     if key in runtime_data:
                         hydrated[key] = copy.deepcopy(runtime_data.get(key))
+
+        if explicit_resume_requested:
+            hydrated["next_action"] = "run_next_tick"
+            hydrated["requires_review"] = False
+            hydrated["review_status"] = ""
+            hydrated["review_id"] = ""
+            hydrated["review_payload"] = {}
+            hydrated["blockers"] = []
+            hydrated["active_blocker_count"] = 0
+            hydrated["blocked_reason"] = ""
+            hydrated["waiting_reason"] = ""
 
         # Runtime resume gate lives in scheduler_core.runtime_resume_gate.
         # Hydration owns state reconstruction; the helper owns the deterministic

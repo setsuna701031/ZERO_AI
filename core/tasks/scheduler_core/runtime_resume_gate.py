@@ -16,6 +16,7 @@ RESUMABLE_PERSISTED_STATUSES = {
     "waiting_blocker",
     "waiting_review",
     "blocked",
+    "failed",
 }
 
 
