@@ -84,6 +84,7 @@ def _collect_modified_files(record: Mapping[str, Any]) -> list[str]:
 
 def _evidence_summary(record: Mapping[str, Any]) -> dict[str, Any]:
     evidence = _list(record.get("execution_evidence"))
+    replan_history = _list(record.get("replan_history"))
     return {
         "evidence_count": len(evidence),
         "successful_steps": sum(1 for item in evidence if isinstance(item, Mapping) and item.get("ok")),
@@ -91,6 +92,15 @@ def _evidence_summary(record: Mapping[str, Any]) -> dict[str, Any]:
         "step_indexes": [
             item.get("step_index") for item in evidence if isinstance(item, Mapping)
         ],
+        "replan_count": len(replan_history),
+        "replan_request_ids": [
+            item.get("request_id") for item in replan_history if isinstance(item, Mapping)
+        ],
+        "replan_appended_steps": sum(
+            int(item.get("appended_step_count") or 0)
+            for item in replan_history
+            if isinstance(item, Mapping)
+        ),
     }
 
 

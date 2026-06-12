@@ -14,6 +14,7 @@ from core.tasks.work_package_model import WorkPackage
 
 
 WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA = "zero.work_package.adaptive_plan.v1"
+WORK_PACKAGE_REPLAN_SCHEMA = "zero.work_package.adaptive_replan.v1"
 
 
 def _now() -> str:
@@ -115,6 +116,29 @@ class WorkPackagePlannerBridge:
                 planner_result={},
                 memory_context_used=memory_context_used,
             )
+
+    def replan_package(
+        self,
+        package: Mapping[str, Any],
+        replan_request: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        record = copy.deepcopy(dict(package))
+        request = copy.deepcopy(dict(replan_request))
+        record["replan_request"] = request
+        record["failure_type"] = str(request.get("root_cause") or "")
+        record["root_cause"] = str(request.get("root_cause") or record.get("root_cause") or "")
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), Mapping) else {}
+        record["metadata"] = {
+            **copy.deepcopy(dict(metadata)),
+            "adaptive_replan": True,
+            "replan_request_id": request.get("request_id"),
+        }
+        snapshot = self.plan_package(record)
+        snapshot["schema"] = WORK_PACKAGE_REPLAN_SCHEMA
+        snapshot["replan_request"] = request
+        snapshot["preserves_previous_evidence"] = True
+        snapshot["append_only_steps"] = True
+        return snapshot
 
     def _related_memory_context(self, package: Mapping[str, Any]) -> list[dict[str, Any]]:
         objective = " ".join(
@@ -254,4 +278,8 @@ class WorkPackagePlannerBridge:
         }
 
 
-__all__ = ["WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA", "WorkPackagePlannerBridge"]
+__all__ = [
+    "WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA",
+    "WORK_PACKAGE_REPLAN_SCHEMA",
+    "WorkPackagePlannerBridge",
+]

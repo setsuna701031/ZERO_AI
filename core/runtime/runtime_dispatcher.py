@@ -16,6 +16,7 @@ from core.tasks.scheduler_runtime_contract import (
 
 
 RUNTIME_DISPATCH_SCHEMA = "zero.runtime.work_package_dispatch.v1"
+RUNTIME_REPLAN_REQUEST_SCHEMA = "zero.runtime.work_package_replan_request.v1"
 RUNTIME_LIFECYCLE_STATES = frozenset(
     {"planned", "claimed", "executing", "paused", "blocked", "failed", "completed"}
 )
@@ -40,11 +41,13 @@ class RuntimeDispatcher:
         queue: RuntimePackageQueue,
         task_runner: Any = None,
         workspace_root: str | Path = "workspace",
+        planner_bridge: Any = None,
         llm_client: Any = None,
     ) -> None:
         self.queue = queue
         self.workspace_root = Path(workspace_root)
         self.llm_client = llm_client
+        self.planner_bridge = planner_bridge
         self.task_runner = task_runner or TaskRunner(
             task_runtime=TaskRuntime(workspace_root=str(self.workspace_root)),
             llm_client=llm_client,
@@ -65,9 +68,8 @@ class RuntimeDispatcher:
         record = self.queue.claim(package_id)
         task = self._execution_task(record)
         session = self.queue.start_execution_session(package_id, task=task)
-        steps = task["steps"]
-
-        for tick in range(len(steps)):
+        tick = 0
+        while tick < len(task.get("steps") or []):
             current = self.queue.status(package_id)
             if current.get("status") == "paused":
                 return current
@@ -85,6 +87,32 @@ class RuntimeDispatcher:
             feedback = self._step_feedback(task=task, result=result, tick=tick)
             record = self.queue.record_step_feedback(package_id, feedback)
             if not feedback["ok"]:
+                if feedback["next_action"] == "replan":
+                    replan_result = self._replan(
+                        package_id=package_id,
+                        record=record,
+                        task=task,
+                        feedback=feedback,
+                    )
+                    if replan_result.get("ok"):
+                        task = self._append_replan_task(
+                            task,
+                            replan_result.get("appended_steps") or [],
+                            feedback,
+                        )
+                        tick = int(feedback.get("current_step") or tick + 1)
+                        continue
+                    root_cause = str(
+                        replan_result.get("root_cause")
+                        or feedback["root_cause"]
+                        or "runtime_replan_failed"
+                    )
+                    return self.queue.record_runtime_failure(
+                        package_id,
+                        root_cause=root_cause,
+                        evidence=replan_result,
+                        blocked=False,
+                    )
                 blocked = feedback["runtime_status"] in {"blocked", "waiting", "paused"}
                 return self.queue.record_runtime_failure(
                     package_id,
@@ -93,6 +121,7 @@ class RuntimeDispatcher:
                     blocked=blocked,
                 )
             task = self._next_task(task, result, feedback)
+            tick += 1
 
         return self.queue.record_runtime_completed(package_id)
 
@@ -178,18 +207,142 @@ class RuntimeDispatcher:
         status = str(payload.get("status") or state.get("status") or "").lower()
         ok = bool(payload.get("ok")) and status not in {"failed", "blocked", "cancelled"}
         error = payload.get("error") or state.get("last_error")
+        steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+        step = steps[tick] if tick < len(steps) and isinstance(steps[tick], Mapping) else {}
+        explicit_next_action = str(
+            payload.get("next_action")
+            or state.get("next_action")
+            or (payload.get("engineering_replan_candidate") and "replan")
+            or ""
+        ).strip().lower()
+        if ok:
+            next_action = "complete" if current >= len(steps) else "continue"
+        elif status in {"blocked", "waiting", "paused"}:
+            next_action = "block"
+        elif explicit_next_action in {
+            "replan",
+            "retry",
+            "manual_or_planner_replan",
+            "retry_with_replan",
+            "request_replan",
+        }:
+            next_action = "replan"
+        else:
+            next_action = "fail"
+        output_summary = RuntimeDispatcher._output_summary(payload)
         return {
             "schema": RUNTIME_DISPATCH_SCHEMA,
             "timestamp": _now(),
             "tick": tick,
             "step_index": max(0, current - 1 if current else tick),
+            "step_id": str(step.get("id") or step.get("step_id") or f"step-{tick}"),
+            "step_type": str(step.get("type") or step.get("action") or ""),
             "current_step": current,
             "ok": ok,
+            "failed": not ok and next_action not in {"block"},
+            "blocked": next_action == "block",
             "runtime_status": status or ("executing" if ok else "failed"),
             "root_cause": "" if ok else str(error or "runtime_step_failed"),
             "evidence": payload,
+            "output_summary": output_summary,
+            "next_action": next_action,
             "authority": copy.deepcopy(task.get("execution_authority")),
         }
+
+    @staticmethod
+    def _output_summary(payload: Mapping[str, Any]) -> str:
+        for source in (
+            payload,
+            payload.get("result") if isinstance(payload.get("result"), Mapping) else {},
+            payload.get("runtime_state") if isinstance(payload.get("runtime_state"), Mapping) else {},
+        ):
+            for key in ("output_summary", "summary", "message", "final_answer", "output_text", "text"):
+                value = source.get(key) if isinstance(source, Mapping) else None
+                if isinstance(value, str) and value.strip():
+                    return value.strip()[:500]
+        return ""
+
+    def _replan(
+        self,
+        *,
+        package_id: str,
+        record: Mapping[str, Any],
+        task: Mapping[str, Any],
+        feedback: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        replan_count = len(record.get("replan_requests") or [])
+        metadata = record.get("metadata") if isinstance(record.get("metadata"), Mapping) else {}
+        max_replans = max(0, int(metadata.get("max_replans") or record.get("max_replans") or 1))
+        if replan_count >= max_replans:
+            return {
+                "ok": False,
+                "root_cause": f"runtime_replan_limit_reached:{replan_count}/{max_replans}",
+            }
+        request = {
+            "schema": RUNTIME_REPLAN_REQUEST_SCHEMA,
+            "request_id": f"{package_id}:replan:{replan_count + 1}",
+            "package_id": package_id,
+            "task_id": record.get("task_id"),
+            "failed_step_index": feedback.get("step_index"),
+            "failed_step_id": feedback.get("step_id"),
+            "failed_step_type": feedback.get("step_type"),
+            "root_cause": feedback.get("root_cause"),
+            "previous_evidence": copy.deepcopy(feedback.get("evidence")),
+            "requested_at": _now(),
+            "append_only": True,
+            "preserve_lifecycle_history": True,
+            "replan_count": replan_count + 1,
+            "max_replans": max_replans,
+        }
+        recorded = self.queue.record_replan_request(package_id, request)
+        method = getattr(self.planner_bridge, "replan_package", None)
+        if not callable(method):
+            return {
+                "ok": False,
+                "root_cause": "runtime_replan_provider_missing",
+                "replan_request": request,
+            }
+        snapshot = method(recorded, request)
+        steps = (
+            snapshot.get("executable_steps")
+            if isinstance(snapshot, Mapping) and isinstance(snapshot.get("executable_steps"), list)
+            else []
+        )
+        if not steps:
+            errors = snapshot.get("errors") if isinstance(snapshot, Mapping) else []
+            return {
+                "ok": False,
+                "root_cause": str((errors or ["runtime_replan_produced_no_steps"])[0]),
+                "replan_request": request,
+                "replan_snapshot": copy.deepcopy(snapshot),
+            }
+        appended = self.queue.append_replan_steps(
+            package_id,
+            request=request,
+            steps=steps,
+            replan_snapshot=snapshot,
+        )
+        return {
+            "ok": True,
+            "replan_request": request,
+            "appended_steps": copy.deepcopy(appended.get("last_replan_appended_steps") or []),
+        }
+
+    @staticmethod
+    def _append_replan_task(
+        task: Mapping[str, Any],
+        appended_steps: list[Any],
+        feedback: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        next_task = copy.deepcopy(dict(task))
+        next_task["steps"] = [
+            *copy.deepcopy(list(task.get("steps") or [])),
+            *copy.deepcopy(appended_steps),
+        ]
+        next_task["current_step_index"] = int(feedback.get("current_step") or 0)
+        next_task["status"] = "running"
+        next_task["replan_count"] = int(task.get("replan_count") or 0) + 1
+        return next_task
 
     @staticmethod
     def _next_task(
@@ -207,6 +360,7 @@ class RuntimeDispatcher:
 
 __all__ = [
     "RUNTIME_DISPATCH_SCHEMA",
+    "RUNTIME_REPLAN_REQUEST_SCHEMA",
     "RUNTIME_LIFECYCLE_STATES",
     "RUNTIME_TERMINAL_STATES",
     "RuntimeDispatcher",

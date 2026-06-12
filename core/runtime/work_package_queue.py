@@ -327,6 +327,7 @@ class RuntimePackageQueue:
         snapshot = copy.deepcopy(dict(planning_snapshot))
         record["planning_snapshot"] = snapshot
         record["planning_status"] = str(snapshot.get("planning_status") or "failed")
+        record["task_graph"] = copy.deepcopy(snapshot.get("task_graph") or {})
         record["task_graph_summary"] = copy.deepcopy(snapshot.get("task_graph_summary") or {})
         record["memory_context_used"] = copy.deepcopy(snapshot.get("memory_context_used") or [])
         record["runtime_queue_item"] = copy.deepcopy(snapshot.get("runtime_queue_item"))
@@ -389,7 +390,14 @@ class RuntimePackageQueue:
         record.setdefault("execution_evidence", []).append(
             {
                 "step_index": item.get("step_index"),
+                "step_id": item.get("step_id"),
+                "step_type": item.get("step_type"),
                 "ok": bool(item.get("ok")),
+                "failed": bool(item.get("failed")),
+                "blocked": bool(item.get("blocked")),
+                "root_cause": item.get("root_cause"),
+                "output_summary": item.get("output_summary"),
+                "next_action": item.get("next_action"),
                 "timestamp": item.get("timestamp") or _now(),
                 "evidence": evidence,
                 "authority": copy.deepcopy(item.get("authority")),
@@ -421,6 +429,114 @@ class RuntimePackageQueue:
         record["progress_snapshot"] = self._progress_snapshot(record)
         return self._write(record)
 
+    def record_replan_request(
+        self,
+        package_id: str,
+        request: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        record = self._read(package_id)
+        if record.get("runtime_lifecycle_state") != "executing":
+            raise RuntimePackageQueueError("replan_request_requires_executing_package")
+        item = copy.deepcopy(dict(request))
+        record.setdefault("replan_requests", []).append(item)
+        record["active_replan_request"] = item
+        record["updated_at"] = _now()
+        return self._write(record)
+
+    def append_replan_steps(
+        self,
+        package_id: str,
+        *,
+        request: Mapping[str, Any],
+        steps: list[Any],
+        replan_snapshot: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        record = self._read(package_id)
+        if record.get("runtime_lifecycle_state") != "executing":
+            raise RuntimePackageQueueError("replan_append_requires_executing_package")
+        queue_item = copy.deepcopy(record.get("runtime_queue_item") or {})
+        original_steps = copy.deepcopy(queue_item.get("steps") or [])
+        replan_number = len(record.get("replan_history") or []) + 1
+        appended_steps: list[dict[str, Any]] = []
+        for offset, raw_step in enumerate(steps, start=1):
+            if not isinstance(raw_step, Mapping):
+                continue
+            step = copy.deepcopy(dict(raw_step))
+            original_id = str(step.get("id") or step.get("step_id") or f"step-{offset}")
+            step["id"] = f"replan-{replan_number}:{original_id}"
+            step["replan_origin_id"] = original_id
+            step["replan_request_id"] = request.get("request_id")
+            appended_steps.append(step)
+        if not appended_steps:
+            raise RuntimePackageQueueError("replan_append_requires_steps")
+        merged_steps = [*original_steps, *appended_steps]
+        queue_item["steps"] = merged_steps
+        record["runtime_queue_item"] = queue_item
+        task_graph = copy.deepcopy(record.get("task_graph_summary") or {})
+        step_types = [str(step.get("type") or "") for step in merged_steps if isinstance(step, Mapping)]
+        task_graph.update(
+            {
+                "node_count": len(merged_steps),
+                "edge_count": max(0, len(merged_steps) - 1),
+                "step_types": step_types,
+            }
+        )
+        record["task_graph_summary"] = task_graph
+        nodes: list[dict[str, Any]] = []
+        edges: list[dict[str, str]] = []
+        previous = ""
+        for index, step in enumerate(merged_steps):
+            node_id = str(step.get("id") or step.get("step_id") or f"step-{index}")
+            nodes.append(
+                {
+                    "node_id": node_id,
+                    "task_id": record.get("task_id"),
+                    "step_index": index,
+                    "step_type": str(step.get("type") or step.get("action") or ""),
+                    "depends_on": [previous] if previous else [],
+                }
+            )
+            if previous:
+                edges.append({"from": previous, "to": node_id})
+            previous = node_id
+        record["task_graph"] = {"nodes": nodes, "edges": edges}
+        event = {
+            "request_id": request.get("request_id"),
+            "root_cause": request.get("root_cause"),
+            "original_step_count": len(original_steps),
+            "appended_step_count": len(appended_steps),
+            "appended_step_ids": [step["id"] for step in appended_steps],
+            "previous_evidence_preserved": True,
+            "lifecycle_history_preserved": True,
+            "timestamp": _now(),
+            "replan_snapshot_summary": {
+                "schema": replan_snapshot.get("schema"),
+                "planning_status": replan_snapshot.get("planning_status"),
+                "errors": copy.deepcopy(replan_snapshot.get("errors") or []),
+            },
+        }
+        record.setdefault("replan_history", []).append(event)
+        record["last_replan_appended_steps"] = appended_steps
+        progress = copy.deepcopy(record.get("progress") or {})
+        progress["step_count"] = len(merged_steps)
+        progress["remaining_steps"] = max(
+            0,
+            len(merged_steps)
+            - int(progress.get("completed_steps") or 0)
+            - int(progress.get("failed_steps") or 0),
+        )
+        record["progress"] = progress
+        runtime_state = copy.deepcopy(record.get("runtime_state") or {})
+        runtime_task = copy.deepcopy(runtime_state.get("task") or {})
+        runtime_task["steps"] = merged_steps
+        runtime_state["task"] = runtime_task
+        runtime_state["steps"] = merged_steps
+        runtime_state["status"] = "executing"
+        record["runtime_state"] = runtime_state
+        record["updated_at"] = _now()
+        record["progress_snapshot"] = self._progress_snapshot(record)
+        return self._write(record)
+
     def record_runtime_failure(
         self,
         package_id: str,
@@ -433,7 +549,18 @@ class RuntimePackageQueue:
         target = "blocked" if blocked else "failed"
         record["root_cause"] = str(root_cause or "runtime_failure")
         record["blocked_reason"] = record["root_cause"]
-        record.setdefault("execution_evidence", []).append(copy.deepcopy(dict(evidence)))
+        last_feedback = (
+            record.get("step_feedback")[-1]
+            if isinstance(record.get("step_feedback"), list) and record.get("step_feedback")
+            else {}
+        )
+        evidence_already_recorded = bool(
+            isinstance(last_feedback, Mapping)
+            and evidence.get("step_index") == last_feedback.get("step_index")
+            and evidence.get("timestamp") == last_feedback.get("timestamp")
+        )
+        if not evidence_already_recorded:
+            record.setdefault("execution_evidence", []).append(copy.deepcopy(dict(evidence)))
         record = self._runtime_transition(record, target, reason=record["root_cause"])
         if target == "blocked":
             return self._transition(record, "blocked", reason=record["root_cause"])
@@ -444,11 +571,13 @@ class RuntimePackageQueue:
         record = self._runtime_transition(record, "completed", reason="all_runtime_steps_completed")
         progress = dict(record.get("progress") or {})
         total = int(progress.get("step_count") or 0)
+        failed = int(progress.get("failed_steps") or 0)
+        completed = int(progress.get("completed_steps") or 0)
         progress.update(
             {
                 "current_step": total,
-                "completed_steps": total,
-                "failed_steps": 0,
+                "completed_steps": max(completed, total - failed),
+                "failed_steps": failed,
                 "remaining_steps": 0,
                 "completion_percent": 100,
             }

@@ -47,8 +47,11 @@ class RuntimeWorkPackageOperator:
         self.dispatcher = dispatcher or RuntimeDispatcher(
             queue=self.queue,
             workspace_root=self.repo_root / "workspace",
+            planner_bridge=self.planner_bridge,
             llm_client=llm_client,
         )
+        if getattr(self.dispatcher, "planner_bridge", None) is None:
+            self.dispatcher.planner_bridge = self.planner_bridge
         if llm_client is not None and getattr(self.dispatcher, "llm_client", None) is None:
             try:
                 self.dispatcher.llm_client = llm_client
