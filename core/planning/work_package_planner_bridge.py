@@ -100,7 +100,7 @@ class WorkPackagePlannerBridge:
                     "steps": copy.deepcopy(steps),
                     "current_step_index": 0,
                     "results": [],
-                    "runtime_owner": "AgentExecutionRuntime",
+                    "runtime_owner": "RuntimeDispatcher",
                     "taskrunner_required": True,
                     "step_executor_endpoint_only": True,
                     "direct_execution": False,

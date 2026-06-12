@@ -226,7 +226,7 @@ class RuntimeDispatcher:
         task["scheduler_runtime_contract"] = seal_scheduler_runtime_contract(
             task,
             lifecycle_state="claimed",
-            dispatch_path="RuntimeDispatcher -> TaskRunner -> Scheduler -> step_executor",
+            dispatch_path="RuntimeDispatcher -> TaskRunner -> StepExecutor",
             require_package_identity=True,
             require_session_identity=True,
             require_authority_metadata=True,

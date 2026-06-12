@@ -44,7 +44,7 @@ def test_submit_package_creates_queued_package_with_stable_id(tmp_path: Path) ->
     assert first["execution_path"]["step_executor_endpoint_only"] is True
     assert first["execution_path"]["authority_path"] == (
         "WorkPackageIntake -> RuntimePackageQueue -> "
-        "AgentExecutionRuntime -> TaskRunner -> StepExecutor"
+        "RuntimeDispatcher -> TaskRunner -> StepExecutor"
     )
 
 

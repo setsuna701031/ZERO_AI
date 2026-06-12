@@ -78,7 +78,7 @@ def test_runtime_dispatcher_contract_preserves_identity_authority_and_path(tmp_p
     assert contract["session_id"] == task["session_id"]
     assert contract["task_id"] == task["task_id"]
     assert contract["authority"] == task["execution_authority"]
-    assert contract["dispatch_path"] == "RuntimeDispatcher -> TaskRunner -> Scheduler -> step_executor"
+    assert contract["dispatch_path"] == "RuntimeDispatcher -> TaskRunner -> StepExecutor"
 
 
 def test_scheduler_boundary_preserves_previous_evidence_and_parent_identity(tmp_path: Path) -> None:

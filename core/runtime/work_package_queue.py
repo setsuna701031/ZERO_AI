@@ -36,9 +36,9 @@ def work_package_execution_path() -> dict[str, Any]:
         "step_executor_endpoint_only": True,
         "authority_path": (
             "WorkPackageIntake -> RuntimePackageQueue -> "
-            "AgentExecutionRuntime -> TaskRunner -> StepExecutor"
+            "RuntimeDispatcher -> TaskRunner -> StepExecutor"
         ),
-        "runtime_endpoint": "AgentExecutionRuntime.run_task",
+        "runtime_endpoint": "RuntimeDispatcher.dispatch",
     }
 
 
