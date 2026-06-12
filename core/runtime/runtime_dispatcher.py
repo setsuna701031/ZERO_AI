@@ -40,12 +40,26 @@ class RuntimeDispatcher:
         queue: RuntimePackageQueue,
         task_runner: Any = None,
         workspace_root: str | Path = "workspace",
+        llm_client: Any = None,
     ) -> None:
         self.queue = queue
         self.workspace_root = Path(workspace_root)
+        self.llm_client = llm_client
         self.task_runner = task_runner or TaskRunner(
-            task_runtime=TaskRuntime(workspace_root=str(self.workspace_root))
+            task_runtime=TaskRuntime(workspace_root=str(self.workspace_root)),
+            llm_client=llm_client,
         )
+        if llm_client is not None and getattr(self.task_runner, "llm_client", None) is None:
+            try:
+                self.task_runner.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
+        step_executor = getattr(self.task_runner, "step_executor", None)
+        if llm_client is not None and getattr(step_executor, "llm_client", None) is None:
+            try:
+                step_executor.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
 
     def dispatch(self, package_id: str) -> dict[str, Any]:
         record = self.queue.claim(package_id)
@@ -134,8 +148,8 @@ class RuntimeDispatcher:
                     {
                         "layer": "runtime_dispatcher",
                         "authority_role": "runtime_owner",
-                        "execution_authority_granted": False,
-                        "can_execute_privileged_step": False,
+                        "execution_authority_granted": True,
+                        "can_execute_privileged_step": True,
                     }
                 ],
             },

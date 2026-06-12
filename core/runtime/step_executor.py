@@ -9146,6 +9146,8 @@ def _zero_boundary_authority_decision(step, context):
         "agent_loop",
         "core.agent.agent_loop",
         "agent_loop_test",
+        "runtime_dispatcher",
+        "core.runtime.runtime_dispatcher",
     }
     valid = bool(authority) and authority_source in allowed_sources and authority_status in {"allowed", "approved", "granted", "ok", ""}
     return {
@@ -9155,7 +9157,7 @@ def _zero_boundary_authority_decision(step, context):
         "authority_source": authority_source,
         "authority_status": authority_status or "allowed",
         "action_type": action_type,
-        "sealed": False,
+        "sealed": valid,
         "reason": "valid_execution_authority" if valid else "missing_or_invalid_execution_authority",
     }
 

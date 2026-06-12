@@ -93,6 +93,7 @@ class AgentLoop:
         self.memory_store = memory_store
         self.runtime_store = runtime_store
         self.llm_client = llm_client
+        self.work_package_operator = kwargs.get("work_package_operator")
         self.memory_repository = kwargs.get("memory_repository")
         if self.memory_repository is not None:
             for planner_component in (self.planner, self.llm_planner):
@@ -356,7 +357,7 @@ class AgentLoop:
 
         work_package_result = self._try_handle_work_package_route(text)
         if work_package_result is not None:
-            work_package_result["agent_loop_runtime_route"] = "work_package_scheduler"
+            work_package_result["agent_loop_runtime_route"] = "work_package_runtime_operator"
             return work_package_result
 
         return None
@@ -697,13 +698,13 @@ class AgentLoop:
         }
 
     def _try_handle_work_package_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Dispatch JSON AER/work-package requests through the package scheduler.
+        """Dispatch JSON AER/work-package requests through the runtime operator.
 
         Work Package boundary:
         - AgentLoop is only the entry point.
         - Planner normalizes the operator intent.
-        - WorkPackageScheduler owns queue/status/result records.
-        - Work package validation/execution stays in core.tasks.work_package_intake.
+        - RuntimeWorkPackageOperator owns queue/status/result records.
+        - RuntimeDispatcher -> TaskRunner -> StepExecutor owns execution.
         - JSON payloads only, so natural chat text is not misrouted.
         - Explore/Plan/Verify remain read-only; Execute requires approval by contract.
         """
@@ -748,20 +749,27 @@ class AgentLoop:
                 raise ValueError("planner did not produce a work package")
             work_package_payload.pop("repo_root", None)
 
-            from core.tasks.work_package_scheduler import WorkPackageScheduler
+            operator = self.work_package_operator
+            operator_root = str(getattr(operator, "repo_root", "") or "")
+            if operator is None or (repo_root and operator_root and Path(operator_root).resolve() != Path(repo_root).resolve()):
+                from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 
-            scheduler = WorkPackageScheduler(repo_root=repo_root)
-            schedule_record = scheduler.submit(work_package_payload, execute=True)
-            result = schedule_record.get("result") if isinstance(schedule_record.get("result"), dict) else {}
-            if not result:
-                result = {
-                    "ok": False,
-                    "package_id": str(work_package_payload.get("package_id") or "work_package"),
-                    "kind": str(work_package_payload.get("kind") or "unknown"),
-                    "mode": str(work_package_payload.get("mode") or "unknown"),
-                    "report_path": str(work_package_payload.get("report_path") or ""),
-                    "error": str(schedule_record.get("error") or "work_package_scheduler_failed"),
-                }
+                operator = RuntimeWorkPackageOperator(repo_root=repo_root, llm_client=self.llm_client)
+            submitted = operator.submit_package(work_package_payload)
+            if submitted.get("planning_status") == "planned":
+                result = operator.run_package(str(submitted.get("package_id") or ""))
+            else:
+                result = submitted
+            result = copy.deepcopy(result)
+            result["ok"] = str(
+                result.get("runtime_lifecycle_state") or result.get("status") or ""
+            ).lower() == "completed"
+            schedule_record = {
+                "schema": "zero.runtime.work_package_agent_dispatch.v1",
+                "package_id": result.get("package_id"),
+                "status": result.get("status"),
+                "result": copy.deepcopy(result),
+            }
         except Exception as exc:
             normalized_intent = {
                 "ok": False,
@@ -810,7 +818,10 @@ class AgentLoop:
             "work_package_mode": mode,
             "package_id": package_id,
             "repo_root": repo_root,
-            "authority_path": "AgentLoop -> Planner -> WorkPackageScheduler -> WorkPackageIntake",
+            "authority_path": (
+                "AgentLoop -> RuntimeWorkPackageOperator -> RuntimeDispatcher "
+                "-> TaskRunner -> StepExecutor"
+            ),
         }
         plan = {
             "ok": ok,
@@ -820,7 +831,7 @@ class AgentLoop:
             "final_answer": final_answer,
             "steps": [
                 {
-                    "type": "work_package_scheduler_submit",
+                    "type": "runtime_work_package_operator_submit",
                     "mode": mode,
                     "package_id": package_id,
                     "report_path": report_path,
@@ -845,7 +856,7 @@ class AgentLoop:
                 {
                     "step_index": 1,
                     "step": {
-                        "type": "work_package_scheduler_submit",
+                        "type": "runtime_work_package_operator_submit",
                         "mode": mode,
                         "package_id": package_id,
                     },
@@ -854,7 +865,7 @@ class AgentLoop:
             ],
             "execution_log": [
                 {
-                    "type": "work_package_scheduler_submit",
+                    "type": "runtime_work_package_operator_submit",
                     "status": "success" if ok else "blocked_or_failed",
                     "ok": ok,
                     "data": copy.deepcopy(result),
@@ -862,7 +873,7 @@ class AgentLoop:
             ],
             "execution_trace": [
                 {
-                    "type": "work_package_scheduler_submit",
+                    "type": "runtime_work_package_operator_submit",
                     "status": "success" if ok else "blocked_or_failed",
                     "ok": ok,
                     "data": copy.deepcopy(result),

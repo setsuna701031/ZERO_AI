@@ -27,6 +27,8 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("package_id")
     progress = sub.add_parser("progress")
     progress.add_argument("package_id")
+    summary = sub.add_parser("summary")
+    summary.add_argument("package_id")
     memory = sub.add_parser("memory")
     memory.add_argument("package_id")
     sub.add_parser("memory-status")
@@ -57,6 +59,9 @@ def main(argv: list[str] | None = None) -> int:
             result = operator.run_package(args.package_id)
         elif args.command == "progress":
             result = operator.package_progress(args.package_id)
+        elif args.command == "summary":
+            _print_json(operator.package_summary(args.package_id))
+            return 0
         elif args.command == "memory":
             result = operator.package_memory(args.package_id)
         elif args.command == "memory-status":

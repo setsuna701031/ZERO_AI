@@ -127,6 +127,39 @@ def test_default_bridge_produces_real_nonempty_plan(tmp_path: Path) -> None:
     assert result["planning_snapshot"]["executable_steps"]
 
 
+def test_force_read_file_only_generates_read_file_steps(tmp_path: Path) -> None:
+    payload = _payload("readonly-plan")
+    payload["target_files"] = [
+        "core/runtime/work_package_operator.py",
+        "core/planning/work_package_planner_bridge.py",
+    ]
+    payload["metadata"] = {"force_read_file_only": True}
+
+    operator = RuntimeWorkPackageOperator(
+        repo_root=tmp_path,
+        planner_bridge=WorkPackagePlannerBridge(planner=_Planner()),
+    )
+    result = operator.submit_package(payload)
+
+    assert result["planning_status"] == "planned"
+    steps = result["planning_snapshot"]["executable_steps"]
+    assert [step["type"] for step in steps] == ["read_file", "read_file"]
+    assert [step["path"] for step in steps] == payload["target_files"]
+    assert result["planning_snapshot"]["task_graph_summary"]["step_types"] == ["read_file", "read_file"]
+    assert result["runtime_queue_item"]["steps"] == steps
+
+
+def test_force_read_file_only_does_not_affect_normal_packages(tmp_path: Path) -> None:
+    operator = RuntimeWorkPackageOperator(
+        repo_root=tmp_path,
+        planner_bridge=WorkPackagePlannerBridge(planner=_Planner()),
+    )
+    result = operator.submit_package(_payload("normal-plan"))
+
+    assert result["planning_status"] == "planned"
+    assert [step["type"] for step in result["planning_snapshot"]["executable_steps"]] == ["llm", "llm"]
+
+
 def test_cli_status_is_json_and_contains_planning_summary(tmp_path: Path) -> None:
     package_file = tmp_path / "package.json"
     package_file.write_text(json.dumps(_payload()), encoding="utf-8")

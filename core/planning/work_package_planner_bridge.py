@@ -50,6 +50,7 @@ class WorkPackagePlannerBridge:
             steps = copy.deepcopy(
                 planner_result.get("steps") if isinstance(planner_result.get("steps"), list) else []
             )
+            steps = self._apply_readonly_contract(record, steps)
             validation = validate_step_contracts(steps)
             errors = list(validation.get("errors") or [])
             if planner_result.get("error"):
@@ -168,6 +169,24 @@ class WorkPackagePlannerBridge:
         if not isinstance(result, Mapping):
             raise TypeError("work_package_planner_result_must_be_mapping")
         return copy.deepcopy(dict(result))
+
+    @staticmethod
+    def _apply_readonly_contract(package: Mapping[str, Any], steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        metadata = package.get("metadata") if isinstance(package.get("metadata"), Mapping) else {}
+        if not bool(metadata.get("force_read_file_only")):
+            return steps
+
+        target_files = [str(item).strip() for item in package.get("target_files") or [] if str(item).strip()]
+        return [
+            {
+                "id": f"readonly_read_file_{index}",
+                "type": "read_file",
+                "path": path,
+                "planner_contract_version": "planner_step_contract.v2",
+                "legacy_plan_contract": False,
+            }
+            for index, path in enumerate(target_files, start=1)
+        ]
 
     @staticmethod
     def _planner_request(package: Mapping[str, Any]) -> str:

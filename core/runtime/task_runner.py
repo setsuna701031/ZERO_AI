@@ -57,13 +57,20 @@ class TaskRunner:
         debug: bool = False,
         task_runtime: Optional[TaskRuntime] = None,
         reflection_engine: Optional[StepReflectionEngine] = None,
+        llm_client: Any = None,
     ) -> None:
         self.runtime = task_runtime if task_runtime else TaskRuntime(debug=debug)
         self.persistence_service = RuntimePersistenceService(
             workspace_root=getattr(self.runtime, "workspace_root", "workspace"),
             source="task_runner",
         )
-        self.step_executor = step_executor if step_executor else StepExecutor()
+        self.llm_client = llm_client
+        self.step_executor = step_executor if step_executor else StepExecutor(llm_client=llm_client)
+        if llm_client is not None and getattr(self.step_executor, "llm_client", None) is None:
+            try:
+                self.step_executor.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
         self.replanner = replanner
         self.verifier = verifier
         self.debug = debug
@@ -4784,15 +4791,34 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
     authority_source = _zero_boundary_norm_text(
         execution_authority.get("authority_source") or execution_authority.get("source")
     )
+    authority_status = _zero_boundary_norm_text(
+        execution_authority.get("authority_status") or execution_authority.get("status")
+    ).lower()
+    approval_state = _zero_boundary_norm_text(
+        execution_authority.get("approval_state")
+    ).lower()
+    authority_endpoint = _zero_boundary_norm_text(
+        execution_authority.get("execution_authority_endpoint")
+        or execution_authority.get("authority_endpoint")
+    ).lower()
+    upstream_execution_authority_granted = bool(
+        authority_status in {"allowed", "approved", "granted", "ok"}
+        and approval_state == "approved"
+        and authority_endpoint == "step_executor"
+    )
     authority_role = "propagation"
     authority_phase = "taskrunner_propagation"
-    authority_policy = "propagate_without_escalation"
+    authority_policy = (
+        "propagate_valid_upstream_execution_authority"
+        if upstream_execution_authority_granted
+        else "propagate_without_escalation"
+    )
 
     authority_chain.append({
         "layer": "task_runner",
         "authority_role": authority_role,
-        "execution_authority_granted": False,
-        "can_execute_privileged_step": False,
+        "execution_authority_granted": upstream_execution_authority_granted,
+        "can_execute_privileged_step": upstream_execution_authority_granted,
     })
 
     return {
@@ -4802,8 +4828,8 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         "authority_source": authority_source,
         "authority_policy": authority_policy,
         "authority_propagation_required": True,
-        "execution_authority_granted": False,
-        "can_execute_privileged_step": False,
+        "execution_authority_granted": upstream_execution_authority_granted,
+        "can_execute_privileged_step": upstream_execution_authority_granted,
         "escalated": False,
         "execution_authority": copy.deepcopy(execution_authority),
         "received_authority": copy.deepcopy(incoming),

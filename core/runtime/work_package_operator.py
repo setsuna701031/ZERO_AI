@@ -23,8 +23,10 @@ class RuntimeWorkPackageOperator:
         planner_bridge: WorkPackagePlannerBridge | None = None,
         dispatcher: RuntimeDispatcher | None = None,
         memory_store: WorkPackageMemoryStore | None = None,
+        llm_client: Any = None,
     ) -> None:
         self.repo_root = Path(repo_root)
+        self.llm_client = llm_client
         injected_queue_store = getattr(queue, "memory_store", None)
         self.memory_store = (
             memory_store
@@ -45,7 +47,25 @@ class RuntimeWorkPackageOperator:
         self.dispatcher = dispatcher or RuntimeDispatcher(
             queue=self.queue,
             workspace_root=self.repo_root / "workspace",
+            llm_client=llm_client,
         )
+        if llm_client is not None and getattr(self.dispatcher, "llm_client", None) is None:
+            try:
+                self.dispatcher.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
+        task_runner = getattr(self.dispatcher, "task_runner", None)
+        if llm_client is not None and getattr(task_runner, "llm_client", None) is None:
+            try:
+                task_runner.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
+        step_executor = getattr(task_runner, "step_executor", None)
+        if llm_client is not None and getattr(step_executor, "llm_client", None) is None:
+            try:
+                step_executor.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
 
     def submit_package(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         record = self.queue.enqueue(build_package_record(payload))
@@ -67,6 +87,37 @@ class RuntimeWorkPackageOperator:
 
     def package_progress(self, package_id: str) -> dict[str, Any]:
         return self.dispatcher.progress(package_id)
+
+    def package_summary(self, package_id: str) -> dict[str, Any]:
+        progress = self.queue.runtime_progress(package_id)
+        task_graph = progress.get("task_graph_summary")
+        last_transition = progress.get("last_transition")
+        step_types = (
+            list(task_graph.get("step_types") or [])
+            if isinstance(task_graph, Mapping)
+            else []
+        )
+        completed_steps = int(progress.get("completed_steps") or 0)
+        failed_steps = int(progress.get("failed_steps") or 0)
+        remaining_steps = int(progress.get("remaining_steps") or 0)
+        if step_types and completed_steps == 0 and failed_steps == 0:
+            remaining_steps = len(step_types)
+        return {
+            "ok": True,
+            "package_id": str(progress.get("package_id") or package_id),
+            "lifecycle_state": progress.get("lifecycle_state"),
+            "planning_status": progress.get("planning_status"),
+            "completed_steps": completed_steps,
+            "failed_steps": failed_steps,
+            "remaining_steps": remaining_steps,
+            "percent": progress.get("percent") or 0,
+            "root_cause": progress.get("root_cause"),
+            "last_transition_reason": (
+                last_transition.get("reason") if isinstance(last_transition, Mapping) else None
+            ),
+            "memory_status": progress.get("memory_status"),
+            "step_types": step_types,
+        }
 
     def pause_package(self, package_id: str) -> dict[str, Any]:
         return self.queue.pause(package_id)
@@ -110,6 +161,10 @@ def package_progress(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).package_progress(package_id)
 
 
+def package_summary(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).package_summary(package_id)
+
+
 def pause_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).pause_package(package_id)
 
@@ -138,6 +193,7 @@ __all__ = [
     "list_packages",
     "package_status",
     "package_progress",
+    "package_summary",
     "package_memory",
     "plan_package",
     "pause_package",

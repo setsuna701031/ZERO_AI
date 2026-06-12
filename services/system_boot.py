@@ -41,6 +41,11 @@ def _lazy_task_runtime_class() -> Type[Any]:
     return TaskRuntime
 
 
+def _lazy_work_package_operator_class() -> Type[Any]:
+    from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+    return RuntimeWorkPackageOperator
+
+
 def _lazy_scheduler_class() -> Type[Any]:
     from core.tasks.scheduler import Scheduler
     return Scheduler
@@ -283,6 +288,7 @@ class ZeroSystem:
         self.replanner = None
         self.task_runner = None
         self.task_workspace = None
+        self.work_package_operator = None
 
         self._runtime_booted = False
         self._real_scheduler = None
@@ -583,7 +589,16 @@ class ZeroSystem:
             step_executor=self.step_executor,
             replanner=self.replanner,
             task_runtime=self.task_runtime,
+            llm_client=self.llm_client,
             debug=False,
+        )
+
+    def _ensure_work_package_operator(self) -> None:
+        if self.work_package_operator is not None:
+            return
+        self.work_package_operator = _lazy_work_package_operator_class()(
+            repo_root=os.path.dirname(self.workspace),
+            llm_client=self.llm_client,
         )
 
     def _ensure_agent_loop(self) -> None:
@@ -611,6 +626,7 @@ class ZeroSystem:
         self._ensure_llm_planner()
         self._ensure_replanner()
         self._ensure_task_runner()
+        self._ensure_work_package_operator()
 
         if self._real_scheduler is None:
             self._real_scheduler = _lazy_scheduler_class()(
@@ -671,6 +687,7 @@ class ZeroSystem:
                 task_runner=self.task_runner,
                 replanner=self.replanner,
                 llm_client=self.llm_client,
+                work_package_operator=self.work_package_operator,
                 debug=False,
             )
         except TypeError as e:
@@ -696,6 +713,7 @@ class ZeroSystem:
                 task_runner=self.task_runner,
                 replanner=self.replanner,
                 llm_client=self.llm_client,
+                work_package_operator=self.work_package_operator,
                 debug=False,
             )
         except Exception as e:

@@ -329,10 +329,25 @@ class BaseStepHandler:
         if not clean or os.path.isabs(clean):
             return ""
         lowered = clean.lower()
-        if not (lowered == "workspace" or lowered.startswith("workspace/")):
-            return ""
 
         candidates = []
+
+        repo_relative_prefixes = (
+            "core/",
+            "tests/",
+            "services/",
+            "cli/",
+            "docs/",
+            "runtime/",
+        )
+
+        if any(lowered.startswith(prefix) for prefix in repo_relative_prefixes):
+            repo_root = os.path.abspath(os.path.join(os.getcwd()))
+            candidate = os.path.abspath(os.path.join(repo_root, clean))
+            return candidate
+
+        if not (lowered == "workspace" or lowered.startswith("workspace/")):
+            return ""
 
         workspace_root = getattr(self.executor, "workspace_root", "")
         if isinstance(workspace_root, str) and workspace_root.strip():
