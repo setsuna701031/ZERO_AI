@@ -126,6 +126,7 @@ class WorkPackageMemoryRecord:
     task_graph_summary: dict[str, Any]
     runtime_lifecycle_history: list[dict[str, Any]]
     execution_evidence_summary: dict[str, Any]
+    session_resume_summary: dict[str, Any]
     final_status: str
     root_cause: str
     warnings: list[Any]
@@ -170,6 +171,16 @@ class WorkPackageMemoryRecord:
             task_graph_summary=_mapping(record.get("task_graph_summary")),
             runtime_lifecycle_history=_list(record.get("runtime_lifecycle_history")),
             execution_evidence_summary=_evidence_summary(record),
+            session_resume_summary={
+                "resume_count": int(record.get("session_resume_count") or 0),
+                "last_session_resumed_at": record.get("last_session_resumed_at"),
+                "cursor": int(progress.get("current_step") or record.get("current_step") or 0),
+                "contract_schema": (
+                    (record.get("session_resume_contract") or {}).get("schema")
+                    if isinstance(record.get("session_resume_contract"), Mapping)
+                    else None
+                ),
+            },
             final_status=final_status,
             root_cause=str(record.get("root_cause") or record.get("blocked_reason") or ""),
             warnings=[*_list(record.get("warnings")), *_list(planning.get("warnings"))],

@@ -294,6 +294,7 @@ class ZeroSystem:
         self._real_scheduler = None
         self.persistent_runtime_orchestrator = None
         self.persistent_runtime_resume_result: Dict[str, Any] = {}
+        self.work_package_session_resume_result: Dict[str, Any] = {}
 
         # Keep app.py compatible: _get_scheduler(system) reads system.scheduler.
         # This lightweight proxy avoids full runtime boot when the queue is empty.
@@ -309,6 +310,7 @@ class ZeroSystem:
         self._ensure_persistent_runtime_orchestrator()
         self._resume_persistent_runtime_on_boot()
         self._ensure_runtime_components()
+        self._resume_work_package_sessions_on_boot()
 
     def _ensure_persistent_runtime_orchestrator(self) -> None:
         if self.persistent_runtime_orchestrator is not None:
@@ -373,7 +375,43 @@ class ZeroSystem:
             }
         status = self.persistent_runtime_orchestrator.status()
         status["resume_result"] = copy.deepcopy(self.persistent_runtime_resume_result)
+        status["work_package_session_resume_result"] = copy.deepcopy(
+            self.work_package_session_resume_result
+        )
+        status["session_ownership"] = {
+            "engineering_session": "mirror_only",
+            "legacy_task_resume": "RuntimeSessionResume/PersistentRuntimeOrchestrator",
+            "work_package_graph_resume": "RuntimePackageQueue",
+            "execution_continuation": "RuntimeDispatcher -> TaskRunner -> StepExecutor",
+            "memory": "WorkPackageMemoryStore",
+        }
         return status
+
+    def _resume_work_package_sessions_on_boot(self) -> Dict[str, Any]:
+        if self.work_package_session_resume_result:
+            return self.work_package_session_resume_result
+        if self.work_package_operator is None:
+            self.work_package_session_resume_result = {
+                "ok": False,
+                "action": "work_package_runtime_unavailable",
+            }
+            return self.work_package_session_resume_result
+        try:
+            self.work_package_session_resume_result = (
+                self.work_package_operator.resume_interrupted_packages()
+            )
+        except Exception as e:
+            self.work_package_session_resume_result = {
+                "ok": False,
+                "action": "work_package_session_resume_failed",
+                "error": f"{e.__class__.__name__}: {e}",
+            }
+            self.boot_errors["work_package_session_resume"] = {
+                "stage": "resume_on_boot",
+                "error": f"{e.__class__.__name__}: {e}",
+                "traceback": traceback.format_exc(),
+            }
+        return self.work_package_session_resume_result
 
     def _build_fast_idle_tick_result(self) -> Dict[str, Any]:
         self.tick_count += 1

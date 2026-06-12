@@ -64,12 +64,49 @@ class RuntimeDispatcher:
             except (AttributeError, TypeError):
                 pass
 
-    def dispatch(self, package_id: str) -> dict[str, Any]:
+    def dispatch(self, package_id: str, *, max_steps: int | None = None) -> dict[str, Any]:
         record = self.queue.claim(package_id)
         task = self._execution_task(record)
-        session = self.queue.start_execution_session(package_id, task=task)
-        tick = 0
+        self.queue.start_execution_session(package_id, task=task)
+        return self._continue_execution(package_id, task=task, tick=0, max_steps=max_steps)
+
+    def resume(self, package_id: str, *, max_steps: int | None = None) -> dict[str, Any]:
+        contract = self.queue.load_session_resume(package_id)
+        active_graph = contract.get("active_graph") if isinstance(contract.get("active_graph"), Mapping) else {}
+        runtime_state = (
+            contract.get("last_runtime_state")
+            if isinstance(contract.get("last_runtime_state"), Mapping)
+            else {}
+        )
+        task = copy.deepcopy(runtime_state.get("task") or {})
+        steps = copy.deepcopy(active_graph.get("steps") or [])
+        if not isinstance(task, dict) or not steps:
+            raise RuntimePackageQueueError("work_package_resume_contract_missing_active_graph")
+        task["steps"] = steps
+        task["current_step_index"] = int(active_graph.get("cursor") or 0)
+        task["status"] = "running"
+        self.queue.mark_session_resumed(package_id)
+        return self._continue_execution(
+            package_id,
+            task=task,
+            tick=int(active_graph.get("cursor") or 0),
+            max_steps=max_steps,
+        )
+
+    def _continue_execution(
+        self,
+        package_id: str,
+        *,
+        task: dict[str, Any],
+        tick: int,
+        max_steps: int | None,
+    ) -> dict[str, Any]:
+        executed = 0
+        task_cursor = task.get("current_step_index")
+        tick = int(task_cursor if task_cursor is not None else tick)
         while tick < len(task.get("steps") or []):
+            if max_steps is not None and executed >= max(0, int(max_steps)):
+                return self.queue.capture_session_resume(package_id, reason="bounded_dispatch_interrupted")
             current = self.queue.status(package_id)
             if current.get("status") == "paused":
                 return current
@@ -101,6 +138,7 @@ class RuntimeDispatcher:
                             feedback,
                         )
                         tick = int(feedback.get("current_step") or tick + 1)
+                        executed += 1
                         continue
                     root_cause = str(
                         replan_result.get("root_cause")
@@ -122,6 +160,7 @@ class RuntimeDispatcher:
                 )
             task = self._next_task(task, result, feedback)
             tick += 1
+            executed += 1
 
         return self.queue.record_runtime_completed(package_id)
 

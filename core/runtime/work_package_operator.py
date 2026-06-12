@@ -88,6 +88,20 @@ class RuntimeWorkPackageOperator:
     def run_package(self, package_id: str) -> dict[str, Any]:
         return self.dispatcher.dispatch(package_id)
 
+    def resume_session(self, package_id: str) -> dict[str, Any]:
+        return self.dispatcher.resume(package_id)
+
+    def resume_interrupted_packages(self) -> dict[str, Any]:
+        results = []
+        for contract in self.queue.list_resumable_sessions():
+            results.append(self.resume_session(str(contract.get("package_id") or "")))
+        return {
+            "ok": True,
+            "action": "work_package_sessions_resumed" if results else "nothing_to_resume",
+            "resumed_count": len(results),
+            "results": results,
+        }
+
     def package_progress(self, package_id: str) -> dict[str, Any]:
         return self.dispatcher.progress(package_id)
 
@@ -126,6 +140,9 @@ class RuntimeWorkPackageOperator:
         return self.queue.pause(package_id)
 
     def resume_package(self, package_id: str) -> dict[str, Any]:
+        record = self.queue.status(package_id)
+        if record.get("status") == "running" and record.get("runtime_lifecycle_state") == "executing":
+            return self.resume_session(package_id)
         return self.queue.resume(package_id)
 
     def cancel_package(self, package_id: str) -> dict[str, Any]:

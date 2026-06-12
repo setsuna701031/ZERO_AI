@@ -15,6 +15,7 @@ from core.tasks.scheduler_runtime_contract import (
 
 
 QUEUE_SCHEMA = "zero.runtime.work_package_queue.v1"
+SESSION_RESUME_SCHEMA = "zero.runtime.work_package_session_resume.v1"
 ACTIVE_STATUSES = frozenset({"queued", "running", "paused", "blocked"})
 RUNTIME_TRANSITIONS = SCHEDULER_RUNTIME_TRANSITIONS
 
@@ -83,6 +84,71 @@ class RuntimePackageQueue:
             encoding="utf-8",
         )
         return payload
+
+    def _session_resume_contract(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        progress = record.get("progress") if isinstance(record.get("progress"), Mapping) else {}
+        runtime_state = (
+            copy.deepcopy(dict(record.get("runtime_state")))
+            if isinstance(record.get("runtime_state"), Mapping)
+            else {}
+        )
+        queue_item = (
+            copy.deepcopy(dict(record.get("runtime_queue_item")))
+            if isinstance(record.get("runtime_queue_item"), Mapping)
+            else {}
+        )
+        active_steps = copy.deepcopy(queue_item.get("steps") or runtime_state.get("steps") or [])
+        feedback = record.get("step_feedback") if isinstance(record.get("step_feedback"), list) else []
+        completed_step_ids = [
+            str(item.get("step_id") or "")
+            for item in feedback
+            if isinstance(item, Mapping) and item.get("ok") and str(item.get("step_id") or "")
+        ]
+        failed_step_ids = [
+            str(item.get("step_id") or "")
+            for item in feedback
+            if isinstance(item, Mapping) and not item.get("ok") and str(item.get("step_id") or "")
+        ]
+        return {
+            "schema": SESSION_RESUME_SCHEMA,
+            "session_id": record.get("session_id"),
+            "task_id": record.get("task_id"),
+            "package_id": record.get("package_id"),
+            "active_graph": {
+                "task_graph": copy.deepcopy(record.get("task_graph") or {}),
+                "steps": active_steps,
+                "cursor": int(progress.get("current_step") or record.get("current_step") or 0),
+            },
+            "completed_steps": {
+                "count": int(progress.get("completed_steps") or 0),
+                "step_ids": completed_step_ids,
+            },
+            "failed_steps": {
+                "count": int(progress.get("failed_steps") or 0),
+                "step_ids": failed_step_ids,
+            },
+            "replan_history": copy.deepcopy(record.get("replan_history") or []),
+            "memory_summary": {
+                "status": record.get("memory_status") or "pending",
+                "memory_record_id": record.get("memory_record_id"),
+                "evidence_count": len(record.get("execution_evidence") or []),
+                "replan_count": len(record.get("replan_history") or []),
+            },
+            "last_runtime_state": runtime_state,
+            "captured_at": _now(),
+            "resume_policy": {
+                "queue_is_session_owner": True,
+                "do_not_replan": True,
+                "do_not_recreate_package": True,
+                "do_not_repeat_completed_steps": True,
+                "preserve_evidence": True,
+            },
+        }
+
+    def _checkpoint_session(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        result = copy.deepcopy(dict(record))
+        result["session_resume_contract"] = self._session_resume_contract(result)
+        return result
 
     def _commit_terminal_memory(self, record: Mapping[str, Any]) -> dict[str, Any]:
         result = copy.deepcopy(dict(record))
@@ -378,7 +444,7 @@ class RuntimePackageQueue:
             "remaining_steps": len(task.get("steps") or []),
         }
         record["progress_snapshot"] = self._progress_snapshot(record)
-        return self._write(record)
+        return self._write(self._checkpoint_session(record))
 
     def record_step_feedback(self, package_id: str, feedback: Mapping[str, Any]) -> dict[str, Any]:
         record = self._read(package_id)
@@ -425,9 +491,18 @@ class RuntimePackageQueue:
             "status": "executing" if item.get("ok") else item.get("runtime_status") or "failed",
             "last_step_feedback": item,
         }
+        runtime_task = copy.deepcopy(record["runtime_state"].get("task") or {})
+        runtime_task["steps"] = copy.deepcopy(
+            (record.get("runtime_queue_item") or {}).get("steps") or runtime_task.get("steps") or []
+        )
+        runtime_task["current_step_index"] = current
+        runtime_task["status"] = "running"
+        record["runtime_state"]["task"] = runtime_task
+        record["runtime_state"]["steps"] = copy.deepcopy(runtime_task["steps"])
+        record["runtime_state"]["current_step_index"] = current
         record = self._runtime_transition(record, "executing", reason="runtime_step_feedback_recorded")
         record["progress_snapshot"] = self._progress_snapshot(record)
-        return self._write(record)
+        return self._write(self._checkpoint_session(record))
 
     def record_replan_request(
         self,
@@ -441,7 +516,7 @@ class RuntimePackageQueue:
         record.setdefault("replan_requests", []).append(item)
         record["active_replan_request"] = item
         record["updated_at"] = _now()
-        return self._write(record)
+        return self._write(self._checkpoint_session(record))
 
     def append_replan_steps(
         self,
@@ -535,7 +610,42 @@ class RuntimePackageQueue:
         record["runtime_state"] = runtime_state
         record["updated_at"] = _now()
         record["progress_snapshot"] = self._progress_snapshot(record)
-        return self._write(record)
+        return self._write(self._checkpoint_session(record))
+
+    def capture_session_resume(self, package_id: str, *, reason: str = "runtime_interrupted") -> dict[str, Any]:
+        record = self._read(package_id)
+        if record.get("runtime_lifecycle_state") != "executing":
+            raise RuntimePackageQueueError("session_resume_capture_requires_executing_package")
+        record["session_resume_reason"] = str(reason or "runtime_interrupted")
+        record["session_resume_count"] = int(record.get("session_resume_count") or 0)
+        record["updated_at"] = _now()
+        return self._write(self._checkpoint_session(record))
+
+    def load_session_resume(self, package_id: str) -> dict[str, Any]:
+        record = self._read(package_id)
+        if record.get("runtime_lifecycle_state") != "executing" or record.get("status") != "running":
+            raise RuntimePackageQueueError("work_package_session_not_resumable")
+        contract = record.get("session_resume_contract")
+        if not isinstance(contract, Mapping):
+            record = self._write(self._checkpoint_session(record))
+            contract = record.get("session_resume_contract")
+        return copy.deepcopy(dict(contract or {}))
+
+    def mark_session_resumed(self, package_id: str) -> dict[str, Any]:
+        record = self._read(package_id)
+        if record.get("runtime_lifecycle_state") != "executing" or record.get("status") != "running":
+            raise RuntimePackageQueueError("work_package_session_not_resumable")
+        record["session_resume_count"] = int(record.get("session_resume_count") or 0) + 1
+        record["last_session_resumed_at"] = _now()
+        record["updated_at"] = record["last_session_resumed_at"]
+        return self._write(self._checkpoint_session(record))
+
+    def list_resumable_sessions(self) -> list[dict[str, Any]]:
+        return [
+            self._session_resume_contract(record)
+            for record in self.list_packages(status="running")
+            if record.get("runtime_lifecycle_state") == "executing"
+        ]
 
     def record_runtime_failure(
         self,
@@ -563,8 +673,10 @@ class RuntimePackageQueue:
             record.setdefault("execution_evidence", []).append(copy.deepcopy(dict(evidence)))
         record = self._runtime_transition(record, target, reason=record["root_cause"])
         if target == "blocked":
-            return self._transition(record, "blocked", reason=record["root_cause"])
-        return self._transition(record, "failed", reason=record["root_cause"])
+            result = self._transition(record, "blocked", reason=record["root_cause"])
+        else:
+            result = self._transition(record, "failed", reason=record["root_cause"])
+        return self._write(self._checkpoint_session(result))
 
     def record_runtime_completed(self, package_id: str) -> dict[str, Any]:
         record = self._read(package_id)
@@ -587,7 +699,8 @@ class RuntimePackageQueue:
             **copy.deepcopy(record.get("runtime_state") or {}),
             "status": "completed",
         }
-        return self._transition(record, "completed", reason="all_runtime_steps_completed")
+        result = self._transition(record, "completed", reason="all_runtime_steps_completed")
+        return self._write(self._checkpoint_session(result))
 
     def runtime_progress(self, package_id: str) -> dict[str, Any]:
         return self._progress_snapshot(self._read(package_id))
@@ -665,6 +778,7 @@ class RuntimePackageQueue:
 __all__ = [
     "ACTIVE_STATUSES",
     "QUEUE_SCHEMA",
+    "SESSION_RESUME_SCHEMA",
     "RuntimePackageQueue",
     "RuntimePackageQueueError",
     "work_package_execution_path",
