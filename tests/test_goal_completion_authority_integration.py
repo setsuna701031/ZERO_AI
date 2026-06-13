@@ -27,6 +27,7 @@ def test_goal_completion_authority_accepts_validated_evidence_and_completed_subg
     assert result.completed is True
     assert result.blocked_reason is None
     assert result.evidence_refs == VALIDATED_EVIDENCE
+    assert result.to_dict()["authority_owner"].endswith(".GoalCompletionAuthority")
 
 
 def test_goal_completion_authority_rejects_missing_evidence() -> None:

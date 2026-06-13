@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.goals.goal_completion_authority import (
+    GOAL_COMPLETION_AUTHORITY_OWNER,
+    GOAL_COMPLETION_RESULT_SCHEMA,
+)
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 
 
@@ -49,12 +53,14 @@ class FakeRunner:
         }
         if decision == "complete":
             adaptive_decision["goal_completion_authority_result"] = {
+                "schema": GOAL_COMPLETION_RESULT_SCHEMA,
+                "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
                 "accepted": True,
                 "completed": True,
                 "from_state": "active",
                 "to_state": "completed",
                 "reason": "validated_completion",
-                "evidence_refs": [{"evidence_id": "validated-demo"}],
+                "evidence_refs": [{"evidence_id": "validated-demo", "validation_state": "validated"}],
             }
         return {
             "goal_id": goal_id,

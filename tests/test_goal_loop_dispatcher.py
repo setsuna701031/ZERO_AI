@@ -1,3 +1,7 @@
+from core.goals.goal_completion_authority import (
+    GOAL_COMPLETION_AUTHORITY_OWNER,
+    GOAL_COMPLETION_RESULT_SCHEMA,
+)
 from core.tasks.goal_loop_dispatcher import GoalLoopDispatcher
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_runtime import ReplanRuntime
@@ -65,8 +69,12 @@ def test_dispatcher_allows_complete_terminal_when_authority_accepts() -> None:
             "goal_id": "goal_a",
             "adaptive_decision_record": {"decision": "complete"},
             "goal_completion_authority_result": {
+                "schema": GOAL_COMPLETION_RESULT_SCHEMA,
+                "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
                 "accepted": True,
                 "completed": True,
+                "to_state": "completed",
+                "evidence_refs": [{"evidence_id": "e1", "validation_state": "validated"}],
             },
         },
         current_goal_id="goal_a",
@@ -97,3 +105,75 @@ def test_dispatcher_blocks_complete_terminal_without_authority() -> None:
     assert result.action == "terminal_blocked"
     assert result.stop_reason == "goal_completion_authority_required"
     assert result.cycle["goal_completion_authority_required"] is True
+
+
+def test_dispatcher_blocks_accepted_authority_without_evidence() -> None:
+    result = _dispatcher().dispatch(
+        loop_decision={"action": "terminal", "stop_reason": "complete"},
+        cycle={
+            "goal_id": "goal_a",
+            "adaptive_decision_record": {"decision": "complete"},
+            "goal_completion_authority_result": {
+                "schema": GOAL_COMPLETION_RESULT_SCHEMA,
+                "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
+                "accepted": True,
+                "completed": True,
+                "to_state": "completed",
+                "evidence_refs": [],
+            },
+        },
+        current_goal_id="goal_a",
+        cycle_index=0,
+        continuation_runtime=ContinuationRuntime.start("goal_a", max_continuations=2),
+        replan_runtime=ReplanRuntime.start(max_replans=1),
+    )
+
+    assert result.terminal is False
+    assert result.action == "terminal_blocked"
+
+
+def test_dispatcher_blocks_authority_shaped_payload_without_owner_provenance() -> None:
+    result = _dispatcher().dispatch(
+        loop_decision={"action": "terminal", "stop_reason": "complete"},
+        cycle={
+            "goal_id": "goal_a",
+            "adaptive_decision_record": {"decision": "complete"},
+            "goal_completion_authority_result": {
+                "accepted": True,
+                "completed": True,
+                "to_state": "completed",
+                "evidence_refs": [{"evidence_id": "e1", "validation_state": "validated"}],
+            },
+        },
+        current_goal_id="goal_a",
+        cycle_index=0,
+        continuation_runtime=ContinuationRuntime.start("goal_a", max_continuations=2),
+        replan_runtime=ReplanRuntime.start(max_replans=1),
+    )
+
+    assert result.terminal is False
+    assert result.action == "terminal_blocked"
+
+
+def test_dispatcher_blocks_marker_only_completion_authority() -> None:
+    result = _dispatcher().dispatch(
+        loop_decision={"action": "terminal", "stop_reason": "complete"},
+        cycle={
+            "goal_id": "goal_a",
+            "adaptive_decision_record": {
+                "decision": "complete",
+                "required_transition": {
+                    "completion_authority": "GoalCompletionAuthority",
+                    "to_state": "completed",
+                    "evidence_refs": [{"evidence_id": "e1"}],
+                },
+            },
+        },
+        current_goal_id="goal_a",
+        cycle_index=0,
+        continuation_runtime=ContinuationRuntime.start("goal_a", max_continuations=2),
+        replan_runtime=ReplanRuntime.start(max_replans=1),
+    )
+
+    assert result.terminal is False
+    assert result.action == "terminal_blocked"

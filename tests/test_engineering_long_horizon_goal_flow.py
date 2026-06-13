@@ -13,19 +13,20 @@ from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_real_goal_loop_complete_goal_stops_after_one_cycle(tmp_path) -> None:
+def test_real_goal_loop_does_not_complete_without_goal_completion_authority(tmp_path) -> None:
     repository = EngineeringGoalRepository(tmp_path)
     goal = repository.save_goal({"summary": "Build demo system"})
 
     result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(goal["goal_id"])
 
-    assert result["ok"] is True
+    assert result["ok"] is False
     assert result["terminal"] is True
-    assert result["stop_reason"] == "complete"
+    assert result["stop_reason"] == "goal_completion_authority_required"
     assert result["cycle_count"] == 1
     assert result["cycles"][0]["runtime_state"] == "complete"
     assert result["cycles"][0]["adaptive_decision"] == "complete"
     assert result["cycles"][0]["continuation_work_item"] == {}
+    assert result["goal_completion_authority_result"] == {}
 
 
 def test_goal_loop_cli_smoke_outputs_cycles_summary(tmp_path) -> None:
@@ -55,10 +56,10 @@ def test_goal_loop_cli_smoke_outputs_cycles_summary(tmp_path) -> None:
     payload = json.loads(loop.stdout)
     summary = payload["cycles_summary"]
 
-    assert payload["ok"] is True
+    assert payload["ok"] is False
     assert summary["goal_id"] == goal_id
     assert summary["terminal"] is True
-    assert summary["stop_reason"] == "complete"
+    assert summary["stop_reason"] == "goal_completion_authority_required"
     assert summary["cycle_count"] == 1
     assert summary["cycles"][0]["cycle_index"] == 0
     assert summary["cycles"][0]["adaptive_decision"] == "complete"

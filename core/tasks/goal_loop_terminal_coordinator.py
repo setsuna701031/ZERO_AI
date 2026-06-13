@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 from core.tasks.adaptive_planning_contract import adaptive_planning_ownership_contract
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 
@@ -200,26 +201,13 @@ class GoalLoopTerminalCoordinator:
         if nested:
             return nested
 
-        transition = _mapping(decision.get("required_transition"))
-        transition_authority = _text(transition.get("completion_authority"))
-        if transition_authority == "GoalCompletionAuthority":
-            return {
-                "accepted": True,
-                "completed": transition.get("to_state") == "completed",
-                "from_state": transition.get("from_state"),
-                "to_state": transition.get("to_state"),
-                "reason": transition.get("reason"),
-                "evidence_refs": copy.deepcopy(transition.get("evidence_refs") or []),
-                "source": "adaptive_decision_required_transition",
-            }
-
         return {}
 
     @staticmethod
     def _completion_authority_accepted(result: Mapping[str, Any]) -> bool:
         if not isinstance(result, Mapping):
             return False
-        return bool(result.get("accepted") is True and result.get("completed") is not False)
+        return is_accepted_goal_completion_result(result)
 
     @staticmethod
     def _to_dict(value: Any) -> dict[str, Any]:

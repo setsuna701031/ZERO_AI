@@ -1,4 +1,10 @@
-from core.goals.goal_completion_authority import GoalCompletionAuthority, GoalCompletionResult
+from core.goals.goal_completion_authority import (
+    GOAL_COMPLETION_AUTHORITY_OWNER,
+    GOAL_COMPLETION_RESULT_SCHEMA,
+    GoalCompletionAuthority,
+    GoalCompletionResult,
+    is_accepted_goal_completion_result,
+)
 from core.goals.goal_contract import GoalStatus
 from core.goals.goal_execution_context import GoalExecutionContext
 from core.goals.goal_execution_decision import GoalExecutionPlanDecision
@@ -18,6 +24,9 @@ from core.goals.persistent_goal import PersistentGoal, PersistentSubgoal
 __all__ = [
     "GoalCompletionAuthority",
     "GoalCompletionResult",
+    "GOAL_COMPLETION_AUTHORITY_OWNER",
+    "GOAL_COMPLETION_RESULT_SCHEMA",
+    "is_accepted_goal_completion_result",
     "GoalProgress",
     "GoalExecutionContext",
     "GoalExecutionPlan",

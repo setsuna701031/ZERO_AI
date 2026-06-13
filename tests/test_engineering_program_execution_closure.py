@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
@@ -22,19 +23,26 @@ class DecisionRunner:
     def run_goal(self, goal_id: str) -> dict:
         self.calls.append(goal_id)
         decision = self.decisions.get(goal_id, "complete")
+        adaptive_decision = {
+            "decision": decision,
+            "reason": f"{decision}_reason",
+            "confidence": 0.9,
+            "continuation_plan": {},
+            "replan_request": {},
+            "blocking_issues": [],
+            "root_cause": {"stop_reason": "blocked_dependency"} if decision == "blocked" else {},
+        }
+        if decision == "complete":
+            adaptive_decision["goal_completion_authority_result"] = GoalCompletionAuthority().complete_goal(
+                goal_id=goal_id,
+                evidence_refs=[{"evidence_id": f"{goal_id}-evidence", "validation_state": "validated"}],
+                all_subgoals_completed=True,
+            ).to_dict()
         return {
             "ok": decision == "complete",
             "goal_id": goal_id,
             "runtime_result": {"state": decision},
-            "adaptive_decision": {
-                "decision": decision,
-                "reason": f"{decision}_reason",
-                "confidence": 0.9,
-                "continuation_plan": {},
-                "replan_request": {},
-                "blocking_issues": [],
-                "root_cause": {"stop_reason": "blocked_dependency"} if decision == "blocked" else {},
-            },
+            "adaptive_decision": adaptive_decision,
         }
 
 

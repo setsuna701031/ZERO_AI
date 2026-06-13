@@ -9,6 +9,10 @@ from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition
 
 
+GOAL_COMPLETION_AUTHORITY_OWNER = "core.goals.goal_completion_authority.GoalCompletionAuthority"
+GOAL_COMPLETION_RESULT_SCHEMA = "zero.goal_completion_authority.result.v1"
+
+
 @dataclass(frozen=True)
 class GoalCompletionResult:
     accepted: bool
@@ -19,10 +23,44 @@ class GoalCompletionResult:
     blocked_reason: str | None = None
     requires_user_review: bool = False
     evidence_refs: list[Any] = field(default_factory=list)
+    authority_owner: str = GOAL_COMPLETION_AUTHORITY_OWNER
+    schema: str = GOAL_COMPLETION_RESULT_SCHEMA
 
     @property
     def completed(self) -> bool:
         return self.accepted and self.to_state == "completed"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "authority_owner": self.authority_owner,
+            "accepted": self.accepted,
+            "completed": self.completed,
+            "goal_id": self.goal_id,
+            "from_state": self.from_state,
+            "to_state": self.to_state,
+            "reason": self.reason,
+            "blocked_reason": self.blocked_reason,
+            "requires_user_review": self.requires_user_review,
+            "evidence_refs": list(self.evidence_refs),
+        }
+
+
+def is_accepted_goal_completion_result(value: Any) -> bool:
+    if isinstance(value, GoalCompletionResult):
+        result = value.to_dict()
+    elif isinstance(value, dict):
+        result = value
+    else:
+        return False
+    return bool(
+        result.get("schema") == GOAL_COMPLETION_RESULT_SCHEMA
+        and result.get("authority_owner") == GOAL_COMPLETION_AUTHORITY_OWNER
+        and result.get("accepted") is True
+        and result.get("completed") is True
+        and result.get("to_state") == "completed"
+        and result.get("evidence_refs")
+    )
 
 
 class GoalCompletionAuthority:
@@ -74,4 +112,10 @@ class GoalCompletionAuthority:
         )
 
 
-__all__ = ["GoalCompletionAuthority", "GoalCompletionResult"]
+__all__ = [
+    "GOAL_COMPLETION_AUTHORITY_OWNER",
+    "GOAL_COMPLETION_RESULT_SCHEMA",
+    "GoalCompletionAuthority",
+    "GoalCompletionResult",
+    "is_accepted_goal_completion_result",
+]

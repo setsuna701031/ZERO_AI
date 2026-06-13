@@ -11,6 +11,7 @@ from core.adaptive.continuation_coordinator import ContinuationCoordinator
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_coordinator import ReplanCoordinator
 from core.adaptive.replan_runtime import ReplanRuntime
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 
 
 GOAL_LOOP_DISPATCHER_SCHEMA = "zero.goal_loop_dispatcher.v1"
@@ -181,18 +182,11 @@ class GoalLoopDispatcher:
     def _completion_authority_accepted(cycle: Mapping[str, Any]) -> bool:
         result = _mapping(cycle.get("goal_completion_authority_result"))
         if result:
-            return bool(result.get("accepted") is True and result.get("completed") is not False)
+            return is_accepted_goal_completion_result(result)
 
         adaptive_record = _mapping(cycle.get("adaptive_decision_record"))
         nested = _mapping(adaptive_record.get("goal_completion_authority_result"))
-        if nested:
-            return bool(nested.get("accepted") is True and nested.get("completed") is not False)
-
-        transition = _mapping(adaptive_record.get("required_transition"))
-        return bool(
-            _text(transition.get("completion_authority")) == "GoalCompletionAuthority"
-            and transition.get("to_state") == "completed"
-        )
+        return is_accepted_goal_completion_result(nested)
 
     @staticmethod
     def _marker(*, action: str, reason: str = "") -> dict[str, Any]:

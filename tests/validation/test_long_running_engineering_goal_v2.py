@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from core.control.task_lifecycle_monitor import TaskLifecycleMonitor
 from core.evidence.decision_evidence import DecisionEvidenceRepository
+from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
@@ -91,6 +92,7 @@ class SchedulerBackedValidationRunner:
         self.repository = repository
         self.task_specs = copy.deepcopy(task_specs)
         self.planner = EngineeringAdaptivePlanner()
+        self.completion_authority = GoalCompletionAuthority()
         self.task_ids: list[str] = []
         self.result_history: list[dict[str, Any]] = []
         self._index = 0
@@ -159,6 +161,19 @@ class SchedulerBackedValidationRunner:
             runtime_result=runtime_result,
             runtime_root_cause=root_cause,
         )
+        if decision["decision"] == "complete":
+            decision["goal_completion_authority_result"] = self.completion_authority.complete_goal(
+                goal_id=goal_id,
+                evidence_refs=[
+                    {
+                        "evidence_id": completed_task_id,
+                        "validation_state": "validated",
+                    }
+                    for completed_task_id in completed
+                ],
+                all_subgoals_completed=not remaining and not recoverable_failure,
+                reason="long_running_validation_tasks_completed",
+            ).to_dict()
         history_record = {
             "task_id": task_id,
             "ok": not recoverable_failure,
@@ -381,6 +396,9 @@ def test_long_running_engineering_goal_v2(tmp_path: Path) -> None:
 
     assert phase_three["ok"] is True
     assert phase_three["stop_reason"] == "complete"
+    assert phase_three["goal_completion_authority_result"]["accepted"] is True
+    assert phase_three["goal_completion_authority_result"]["completed"] is True
+    assert phase_three["goal_completion_authority_result"]["evidence_refs"]
     assert len(task_ids) == 8
     assert len(failed_records) == 2
     assert replan_count == 2

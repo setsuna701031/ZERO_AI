@@ -302,20 +302,9 @@ class EngineeringGoalLoop:
             "goal_loop_decision": {},
             "updated_at": time.time(),
         }
-        if decision == "complete":
-            completion_authority_result = {
-                "accepted": True,
-                "completed": True,
-                "from_state": _clean_text(runtime_result.get("state"), "running"),
-                "to_state": "completed",
-                "reason": _clean_text(adaptive.get("reason"), "adaptive_complete"),
-                "evidence_refs": copy.deepcopy(adaptive.get("evidence_chain") or []),
-                "source": "engineering_goal_loop_complete_decision_bridge",
-            }
-            cycle["goal_completion_authority_result"] = completion_authority_result
-            adaptive_with_authority = _as_mapping(cycle.get("adaptive_decision_record"))
-            adaptive_with_authority["goal_completion_authority_result"] = copy.deepcopy(completion_authority_result)
-            cycle["adaptive_decision_record"] = adaptive_with_authority
+        completion_authority_result = _as_mapping(adaptive.get("goal_completion_authority_result"))
+        if completion_authority_result:
+            cycle["goal_completion_authority_result"] = copy.deepcopy(completion_authority_result)
 
         if decision == "blocked":
             cycle["root_cause"] = root_cause

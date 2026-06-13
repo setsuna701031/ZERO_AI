@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+from core.goals.goal_completion_authority import (
+    GOAL_COMPLETION_AUTHORITY_OWNER,
+    GOAL_COMPLETION_RESULT_SCHEMA,
+)
 from core.tasks.engineering_goal_loop import ENGINEERING_GOAL_LOOP_SCHEMA, EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 
 
 GOAL_COMPLETION_AUTHORITY_RESULT = {
+    "schema": GOAL_COMPLETION_RESULT_SCHEMA,
+    "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
     "accepted": True,
     "completed": True,
     "from_state": "active",
@@ -83,6 +89,55 @@ def test_complete_goal_loop_runs_one_cycle_and_stops(tmp_path) -> None:
     assert result["execution_path"]["goal_id"] == "goal_1"
     assert result["execution_path"]["adaptive_planner_decides_only"] is True
     assert runner.calls == ["goal_1"]
+
+
+def test_rejected_completion_authority_remains_rejected(tmp_path) -> None:
+    rejected = {
+        **GOAL_COMPLETION_AUTHORITY_RESULT,
+        "accepted": False,
+        "completed": False,
+        "blocked_reason": "completed_goal_requires_validated_evidence",
+    }
+    runner = StubRunner([
+        {
+            "decision": "complete",
+            "runtime_state": "complete",
+            "goal_completion_authority_result": rejected,
+        }
+    ])
+
+    result = EngineeringGoalLoop(
+        repo_root=tmp_path,
+        repository=_repository(tmp_path),
+        runner=runner,
+    ).run_until_terminal("goal_1")
+
+    assert result["ok"] is False
+    assert result["stop_reason"] == "goal_completion_authority_required"
+    assert result["goal_completion_authority_result"] == rejected
+    assert result["cycles"][0]["goal_completion_authority_result"] == rejected
+
+
+def test_complete_decision_does_not_create_accepted_authority_result(tmp_path) -> None:
+    class CompleteWithoutAuthorityRunner:
+        def run_goal(self, goal_id: str) -> dict:
+            return {
+                "ok": True,
+                "goal_id": goal_id,
+                "runtime_result": {"state": "complete"},
+                "adaptive_decision": {"decision": "complete", "reason": "claimed_complete"},
+            }
+
+    result = EngineeringGoalLoop(
+        repo_root=tmp_path,
+        repository=_repository(tmp_path),
+        runner=CompleteWithoutAuthorityRunner(),
+    ).run_until_terminal("goal_1")
+
+    assert result["ok"] is False
+    assert result["stop_reason"] == "goal_completion_authority_required"
+    assert result["goal_completion_authority_result"] == {}
+    assert "goal_completion_authority_result" not in result["cycles"][0]
 
 
 def test_continue_goal_creates_next_continuation_work_item(tmp_path) -> None:
