@@ -101,6 +101,7 @@ def test_decision_evidence_persists_required_fields_and_explicit_missing_confide
     }
     assert required.issubset(persisted)
     assert DecisionEvidenceRepository(tmp_path).find_by_task_id("task_1") == [persisted]
+    assert DecisionEvidenceRepository(tmp_path).list_records()[0]["next_action"] == "request_replan"
 
 
 def test_goal_loop_persists_replan_and_links_continuation_decision_evidence(tmp_path) -> None:
@@ -158,4 +159,3 @@ def test_lifecycle_monitor_exposes_persisted_decision_evidence_read_only(tmp_pat
     assert "core.runtime" not in source
     assert "core.tools" not in source
     assert ".execute(" not in source
-

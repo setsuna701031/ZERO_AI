@@ -9,6 +9,7 @@ from core.planning.work_package_planner_bridge import WorkPackagePlannerBridge
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.work_package_queue import RuntimePackageQueue
 from core.tasks.work_package_runtime_intake import build_package_record
+from core.reports.engineering_report_contract import attach_engineering_report
 
 
 class RuntimeWorkPackageOperator:
@@ -52,21 +53,15 @@ class RuntimeWorkPackageOperator:
         )
         if getattr(self.dispatcher, "planner_bridge", None) is None:
             self.dispatcher.planner_bridge = self.planner_bridge
-        if llm_client is not None and getattr(self.dispatcher, "llm_client", None) is None:
+        configure_llm_client = getattr(self.dispatcher, "configure_llm_client", None)
+        if llm_client is not None and callable(configure_llm_client):
+            try:
+                configure_llm_client(llm_client)
+            except (AttributeError, TypeError):
+                pass
+        elif llm_client is not None and getattr(self.dispatcher, "llm_client", None) is None:
             try:
                 self.dispatcher.llm_client = llm_client
-            except (AttributeError, TypeError):
-                pass
-        task_runner = getattr(self.dispatcher, "task_runner", None)
-        if llm_client is not None and getattr(task_runner, "llm_client", None) is None:
-            try:
-                task_runner.llm_client = llm_client
-            except (AttributeError, TypeError):
-                pass
-        step_executor = getattr(task_runner, "step_executor", None)
-        if llm_client is not None and getattr(step_executor, "llm_client", None) is None:
-            try:
-                step_executor.llm_client = llm_client
             except (AttributeError, TypeError):
                 pass
 
@@ -136,6 +131,9 @@ class RuntimeWorkPackageOperator:
             "step_types": step_types,
         }
 
+    def package_report(self, package_id: str) -> dict[str, Any]:
+        return attach_engineering_report(self.package_summary(package_id), report_type="work_package")
+
     def pause_package(self, package_id: str) -> dict[str, Any]:
         return self.queue.pause(package_id)
 
@@ -185,6 +183,10 @@ def package_summary(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).package_summary(package_id)
 
 
+def package_report(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).package_report(package_id)
+
+
 def pause_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).pause_package(package_id)
 
@@ -213,6 +215,7 @@ __all__ = [
     "list_packages",
     "package_status",
     "package_progress",
+    "package_report",
     "package_summary",
     "package_memory",
     "plan_package",

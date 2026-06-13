@@ -29,6 +29,8 @@ def _parser() -> argparse.ArgumentParser:
     progress.add_argument("package_id")
     summary = sub.add_parser("summary")
     summary.add_argument("package_id")
+    report = sub.add_parser("report")
+    report.add_argument("package_id")
     memory = sub.add_parser("memory")
     memory.add_argument("package_id")
     sub.add_parser("memory-status")
@@ -62,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "summary":
             _print_json(operator.package_summary(args.package_id))
             return 0
+        elif args.command == "report":
+            result = operator.package_report(args.package_id)
         elif args.command == "memory":
             result = operator.package_memory(args.package_id)
         elif args.command == "memory-status":

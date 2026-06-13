@@ -3,7 +3,7 @@ from __future__ import annotations
 """Immutable evidence records produced outside Runtime and Memory."""
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 
@@ -25,6 +25,7 @@ class EvidenceRecord:
     summary: Any
     timestamp: str
     validation_state: EvidenceValidationState | str = EvidenceValidationState.PENDING
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         state = (
@@ -43,6 +44,11 @@ class EvidenceRecord:
         object.__setattr__(self, "summary", copy.deepcopy(self.summary))
         object.__setattr__(self, "timestamp", clean_required_text(self.timestamp, "evidence_timestamp"))
         object.__setattr__(self, "validation_state", state)
+        object.__setattr__(
+            self,
+            "metadata",
+            copy.deepcopy(dict(self.metadata)) if isinstance(self.metadata, Mapping) else {},
+        )
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "EvidenceRecord":
@@ -54,6 +60,7 @@ class EvidenceRecord:
             summary=value.get("summary"),
             timestamp=value.get("timestamp"),
             validation_state=value.get("validation_state") or EvidenceValidationState.PENDING,
+            metadata=value.get("metadata") if isinstance(value.get("metadata"), Mapping) else {},
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,6 +72,7 @@ class EvidenceRecord:
             "summary": copy.deepcopy(self.summary),
             "timestamp": self.timestamp,
             "validation_state": self.validation_state,
+            "metadata": copy.deepcopy(dict(self.metadata)),
         }
 
 

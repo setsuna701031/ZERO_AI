@@ -202,3 +202,31 @@ def test_summary_cli_is_parseable_short_projection_without_large_payloads(tmp_pa
     assert "file_content" not in process.stdout
     assert "full_progress_payload" not in process.stdout
     assert len(process.stdout) < 1000
+
+
+def test_report_cli_exposes_full_engineering_report_explicitly(tmp_path: Path) -> None:
+    operator = RuntimeWorkPackageOperator(repo_root=tmp_path)
+    operator.submit_package(_payload())
+
+    process = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "cli.work_package_cli",
+            "--repo-root",
+            str(tmp_path),
+            "report",
+            "summary-package",
+        ],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    payload = json.loads(process.stdout)
+    assert process.returncode == 0
+    assert payload["ok"] is True
+    assert payload["result"]["engineering_report"]["report_type"] == "work_package"
+    assert payload["result"]["engineering_report_markdown"].startswith("# ZERO Engineering Report")
