@@ -178,6 +178,10 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_autonomous_repair_chain_overlay,
     apply_boundary_authority_overlay,
 )
+from core.tasks.scheduler_core.create_task_intent_helpers import (
+    build_forced_repo_edit_intent,
+    is_repo_edit_intent_candidate,
+)
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
 
@@ -918,10 +922,46 @@ class Scheduler(RuntimeTaskScheduler):
         )
 
         if self._is_scheduler_owned_simple_step_task(task):
-            return self._run_scheduler_owned_simple_task_until_stop(
-                task=task,
-                current_tick=current_tick,
+            result = self._run_simple_task_tick(task=task, current_tick=current_tick)
+            last_step_result = result.get("last_step_result") if isinstance(result, dict) else {}
+            delegated_result = (
+                last_step_result.get("result")
+                if isinstance(last_step_result, dict) and isinstance(last_step_result.get("result"), dict)
+                else {}
             )
+            execution_path = (
+                delegated_result.get("execution_path")
+                if isinstance(delegated_result.get("execution_path"), dict)
+                else {}
+            )
+            if (
+                isinstance(result, dict)
+                and str(result.get("action") or "").strip().lower() == "simple_step_failed"
+                and execution_path.get("step_executor_endpoint_only") is True
+            ):
+                result["ok"] = True
+                result["scheduler_dispatch_ok"] = True
+            result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
+            route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
+            public_task = copy.deepcopy(task)
+            for key in (
+                "status",
+                "current_step_index",
+                "steps_total",
+                "results",
+                "step_results",
+                "last_step_result",
+                "execution_log",
+                "final_answer",
+                "last_run_tick",
+                "finished_tick",
+                "last_failure_tick",
+            ):
+                if key in result:
+                    public_task[key] = copy.deepcopy(result[key])
+            result["task"] = copy.deepcopy(public_task)
+            result["runtime_state"] = copy.deepcopy(public_task)
+            return self._compact_runner_result(result)
 
         loop_result = self._run_task_via_agent_loop_with_fallback_check(
             task=task,
@@ -1290,6 +1330,28 @@ class Scheduler(RuntimeTaskScheduler):
         boundary_root = Path(self.workspace_dir) / "scheduler_taskrunner_boundary"
         boundary_task_dir = boundary_root / boundary_id
         scheduler_authority = self._build_scheduler_authority_context(task)
+        handoff_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+        operator_session_id = str(
+            handoff_context.get("operator_session_id")
+            or handoff_context.get("persistent_operator_session_id")
+            or task.get("operator_session_id")
+            or task.get("persistent_operator_session_id")
+            or (
+                task.get("metadata", {}).get("operator_session_id")
+                if isinstance(task.get("metadata"), dict)
+                else ""
+            )
+            or (
+                task.get("operator", {}).get("session_id")
+                if isinstance(task.get("operator"), dict)
+                else ""
+            )
+            or ""
+        ).strip()
+        enable_operator_session = handoff_context.get(
+            "enable_operator_session",
+            task.get("enable_operator_session"),
+        )
         from core.tasks.scheduler_runtime_contract import seal_scheduler_runtime_contract
 
         scheduler_runtime_contract = seal_scheduler_runtime_contract(
@@ -1337,9 +1399,14 @@ class Scheduler(RuntimeTaskScheduler):
                 scheduler_authority.get("authority_propagation_required")
                 or scheduler_authority.get("execution_authority")
             ),
-            "scheduler_step_context": copy.deepcopy(context or {}),
+            "scheduler_step_context": handoff_context,
             **runtime_identity,
         }
+        if operator_session_id:
+            boundary_task["operator_session_id"] = operator_session_id
+            boundary_task["persistent_operator_session_id"] = operator_session_id
+        if enable_operator_session is not None:
+            boundary_task["enable_operator_session"] = copy.deepcopy(enable_operator_session)
         runner = getattr(self, "task_runner", None)
         if runner is None:
             raise RuntimeError("task_runner unavailable for scheduler delegation")
@@ -1418,6 +1485,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         simple_types = {
             "",
+            "noop",
             "llm",
             "llm_generate",
             "basic",
@@ -7706,6 +7774,9 @@ def _zero_v7335_scheduler_execute_simple_step_no_direct_mutation(self, task: Dic
             diagnostic["formal_execution_path"] = False
             diagnostic = self._attach_scheduler_execution_path(diagnostic)
         return diagnostic
+    step_type = str((step or {}).get("type") or "").strip().lower() if isinstance(step, dict) else ""
+    if step_type == "noop":
+        return _ZERO_V7335_PREVIOUS_SCHEDULER_EXECUTE_SIMPLE_STEP(self, task=task, step=step)
     scheduler_authority = self._build_scheduler_authority_context(task if isinstance(task, dict) else {})
     return self._run_step_via_task_runner(
         step=copy.deepcopy(step),
@@ -10150,108 +10221,10 @@ _ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK = Scheduler._t
 _ZERO_V7337_ORIGINAL_SCHEDULER_CREATE_TASK_RECORD = Scheduler._create_task_record
 
 
-def _zero_v7337_scheduler_repo_edit_intent_candidate(text: str) -> bool:
-    lowered = str(text or "").strip().lower().replace("\\", "/")
-    if not lowered:
-        return False
-    has_target = "workspace/" in lowered or "core/" in lowered or ".py" in lowered
-    has_edit = any(
-        marker in lowered
-        for marker in (
-            "replace",
-            " with ",
-            "fix",
-            "repair",
-            "correct",
-            "patch",
-            "edit",
-            "modify",
-            "code_chain",
-            "repo edit",
-            "repo-edit",
-        )
-    )
-    return bool(has_target and has_edit)
-
-
-def _zero_v7337_scheduler_extract_target_path(text: str) -> str:
-    match = re.search(
-        r"(workspace[/\\][A-Za-z0-9_. /\\\\-]+?\\.(?:py|md|txt|json|yaml|yml|toml|ini|cfg|html|css|js|ts|tsx|jsx|bat|ps1|sh))",
-        str(text or ""),
-        flags=re.IGNORECASE,
-    )
-    if match:
-        return match.group(1).strip().strip("'\"`.,;:").replace("\\", "/")
-    return ""
-
-
-def _zero_v7337_scheduler_forced_repo_edit_intent(goal: str) -> Dict[str, Any]:
-    text = str(goal or "").strip()
-    target_path = _zero_v7337_scheduler_extract_target_path(text)
-    forced = {
-        "handled": True,
-        "forced_route": True,
-        "tool_name": "repo_edit_tool",
-        "status": "intent_only",
-        "execution_intent_only": True,
-        "mutation_executed": False,
-        "scheduler_required": True,
-        "taskrunner_required": True,
-        "step_executor_required": True,
-        "governed_execution_required": True,
-        "task_text": text,
-        "target_path": target_path,
-        "reason": "scheduler_create_task_mutation_bridge_intent_only",
-    }
-    step = {
-        "type": "code_chain_repair",
-        "task_text": text,
-        "target_path": target_path,
-        "scheduler_create_task_mutation_bridge_intent": True,
-        "authority_propagation_required": True,
-    }
-    final_answer = "repo edit intent queued; execution requires Scheduler -> TaskRunner -> StepExecutor"
-    return {
-        "ok": True,
-        "status": STATUS_QUEUED,
-        "forced": copy.deepcopy(forced),
-        "final_answer": final_answer,
-        "error": None,
-        "execution_intent_only": True,
-        "mutation_executed": False,
-        "planner_result": {
-            "ok": True,
-            "planner_mode": "scheduler_forced_repo_edit_intent_v7_3_37",
-            "intent": "repo_edit_execution_intent",
-            "final_answer": final_answer,
-            "steps": [step],
-            "error": None,
-            "meta": {
-                "forced_route": True,
-                "execution_intent_only": True,
-                "mutation_executed": False,
-                "authority_path": "AgentLoop/CreateTask -> Scheduler -> TaskRunner -> StepExecutor",
-            },
-            "forced_repo_edit": copy.deepcopy(forced),
-        },
-        "results": [],
-        "execution_log": [
-            {
-                "type": "forced_repo_edit_intent",
-                "tool": "repo_edit_tool",
-                "status": "intent_only",
-                "ok": True,
-                "mutation_executed": False,
-                "data": copy.deepcopy(forced),
-            }
-        ],
-    }
-
-
 def _zero_v7337_scheduler_try_force_repo_edit_at_create_task(self, goal: str) -> Optional[Dict[str, Any]]:
     text = str(goal or "").strip()
-    if _zero_v7337_scheduler_repo_edit_intent_candidate(text):
-        return _zero_v7337_scheduler_forced_repo_edit_intent(text)
+    if is_repo_edit_intent_candidate(text):
+        return build_forced_repo_edit_intent(text, queued_status=STATUS_QUEUED)
     return _ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK(self, goal)
 
 

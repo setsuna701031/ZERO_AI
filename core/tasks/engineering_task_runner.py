@@ -27,6 +27,7 @@ from core.tasks.engineering_memory_store import (
     build_memory_record_from_result_bundle,
 )
 from core.tasks.work_package_scheduler import WorkPackageScheduler
+from core.reports.engineering_report_contract import attach_engineering_report
 
 
 SCHEMA = "zero.engineering_task_runner.v1"
@@ -1566,12 +1567,15 @@ def run_engineering_task(
         raise ValueError("engineering_task_payload_must_be_mapping")
 
     if not _has_executable_payload(payload):
-        return run_multi_step_engineering_task(decompose_engineering_goal(payload), repo_root=repo_root)
+        result = run_multi_step_engineering_task(decompose_engineering_goal(payload), repo_root=repo_root)
+        return attach_engineering_report(result, report_type="engineering")
 
     if _is_multi_step_payload(payload):
-        return run_multi_step_engineering_task(payload, repo_root=repo_root)
+        result = run_multi_step_engineering_task(payload, repo_root=repo_root)
+        return attach_engineering_report(result, report_type="engineering")
 
-    return _run_single_engineering_task(payload, repo_root=repo_root)
+    result = _run_single_engineering_task(payload, repo_root=repo_root)
+    return attach_engineering_report(result, report_type="engineering")
 
 
 __all__ = [

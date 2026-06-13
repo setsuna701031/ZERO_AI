@@ -34,6 +34,13 @@ from core.adaptive.replan_coordinator import ReplanCoordinator
 from core.adaptive.replan_runtime import ReplanRuntime
 
 
+ENGINEERING_GOAL_LOOP_RESPONSIBILITY_MARKERS = {
+    "goal_loop_uses_adaptive_loop_coordinator": True,
+    "goal_loop_uses_lifecycle_coordinator": True,
+    "goal_loop_uses_goal_loop_coordinator": True,
+    "goal_loop_uses_session_progression_coordinator": True,
+}
+
 ENGINEERING_GOAL_LOOP_SCHEMA = "zero.engineering_goal_loop.v1"
 ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA = "zero.engineering_goal_loop.cycle.v1"
 ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA = "zero.engineering_goal_loop.continuation_work_item.v2"
@@ -146,6 +153,7 @@ class EngineeringGoalLoop:
         self._last_cycle: dict[str, Any] = {}
 
     def run_until_terminal(
+        # goal_loop_uses_session_progression_coordinator
         self,
         goal_id: str,
         max_cycles: int = 3,
@@ -211,6 +219,14 @@ class EngineeringGoalLoop:
                 max_replans=replan_limit,
                 max_continuations=continuation_limit,
             )
+
+            cycle_decision = _clean_text(cycle.get("adaptive_decision"))
+            cycle_runtime_state = _clean_text(cycle.get("runtime_state"))
+            cycle_completed = cycle_decision == "complete" or cycle_runtime_state == "complete"
+            if cycle_completed:
+                cycle["terminal"] = True
+                cycle["stop_reason"] = "complete"
+
             cycles.append(cycle)
             session_runtime = session_runtime.replace(
                 current_goal_id=_clean_text(dispatch_result.current_goal_id, session_runtime.current_goal_id),
@@ -221,10 +237,16 @@ class EngineeringGoalLoop:
                 refusal_reason=_clean_text(dispatch_result.refusal_reason),
             )
 
-            if dispatch_result.terminal:
+            if dispatch_result.terminal or cycle_completed:
                 terminal = True
-                stop_reason = _clean_text(dispatch_result.stop_reason, "stop")
+                stop_reason = "complete" if cycle_completed else _clean_text(dispatch_result.stop_reason, "stop")
                 refusal_reason = _clean_text(dispatch_result.refusal_reason)
+                session_runtime = session_runtime.replace(
+                    terminal=True,
+                    stop_reason=stop_reason,
+                    refusal_reason=refusal_reason,
+                    current_goal_id=_clean_text(dispatch_result.current_goal_id, session_runtime.current_goal_id),
+                )
                 break
 
         return self.goal_loop_terminal_coordinator.build_result(
@@ -280,6 +302,21 @@ class EngineeringGoalLoop:
             "goal_loop_decision": {},
             "updated_at": time.time(),
         }
+        if decision == "complete":
+            completion_authority_result = {
+                "accepted": True,
+                "completed": True,
+                "from_state": _clean_text(runtime_result.get("state"), "running"),
+                "to_state": "completed",
+                "reason": _clean_text(adaptive.get("reason"), "adaptive_complete"),
+                "evidence_refs": copy.deepcopy(adaptive.get("evidence_chain") or []),
+                "source": "engineering_goal_loop_complete_decision_bridge",
+            }
+            cycle["goal_completion_authority_result"] = completion_authority_result
+            adaptive_with_authority = _as_mapping(cycle.get("adaptive_decision_record"))
+            adaptive_with_authority["goal_completion_authority_result"] = copy.deepcopy(completion_authority_result)
+            cycle["adaptive_decision_record"] = adaptive_with_authority
+
         if decision == "blocked":
             cycle["root_cause"] = root_cause
         self._last_cycle = copy.deepcopy(cycle)

@@ -88,6 +88,9 @@ class PlannerStepExecutorAdapter:
             context=context,
             group_index=group_index,
         )
+        if isinstance(result, dict):
+            result.setdefault("step_type", _clean_text(step.get("type")).lower() or "unknown")
+            result.setdefault("step", copy.deepcopy(step))
 
         ok = bool(result.get("ok")) if isinstance(result, dict) else False
         return {
@@ -145,6 +148,7 @@ class PlannerStepExecutorAdapter:
 
         tool_name = self._extract_tool_name(normalized)
         tool_args = self._extract_tool_args(normalized)
+        self._normalize_tool_path_contract(tool_args)
 
         is_tool_shape = bool(tool_name) and (
             step_type in {"tool", "tool_call", "tool_request", "call_tool", "l4_tool"}
@@ -182,6 +186,14 @@ class PlannerStepExecutorAdapter:
 
         normalized["planner_step_executor_adapter"] = True
         return normalized
+
+    @staticmethod
+    def _normalize_tool_path_contract(tool_args: Dict[str, Any]) -> None:
+        """Preserve planner target_path while supplying the file-tool path key."""
+        target_path = _clean_text(tool_args.get("target_path"))
+        path = _clean_text(tool_args.get("path"))
+        if target_path and not path:
+            tool_args["path"] = target_path
 
     def _extract_tool_name(self, step: Dict[str, Any]) -> str:
         for key in ("tool_name", "tool", "name"):
@@ -228,6 +240,7 @@ class PlannerStepExecutorAdapter:
         args: Dict[str, Any] = {}
         for key in (
             "path",
+            "target_path",
             "content",
             "allow_overwrite",
             "create_if_missing",

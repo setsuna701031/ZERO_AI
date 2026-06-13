@@ -7,7 +7,11 @@ from typing import Any, Mapping
 
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
-from core.runtime.work_package_queue import RuntimePackageQueue, RuntimePackageQueueError
+from core.runtime.work_package_queue import (
+    RuntimePackageQueue,
+    RuntimePackageQueueError,
+    runtime_dispatch_contract_path,
+)
 from core.tasks.scheduler_runtime_contract import (
     SCHEDULER_RUNTIME_TRANSITIONS,
     seal_scheduler_runtime_contract,
@@ -52,15 +56,27 @@ class RuntimeDispatcher:
             task_runtime=TaskRuntime(workspace_root=str(self.workspace_root)),
             llm_client=llm_client,
         )
-        if llm_client is not None and getattr(self.task_runner, "llm_client", None) is None:
+        configure_llm_client = getattr(self.task_runner, "configure_llm_client", None)
+        if llm_client is not None and callable(configure_llm_client):
+            try:
+                configure_llm_client(llm_client)
+            except (AttributeError, TypeError):
+                pass
+        elif llm_client is not None and getattr(self.task_runner, "llm_client", None) is None:
             try:
                 self.task_runner.llm_client = llm_client
             except (AttributeError, TypeError):
                 pass
-        step_executor = getattr(self.task_runner, "step_executor", None)
-        if llm_client is not None and getattr(step_executor, "llm_client", None) is None:
+
+    def configure_llm_client(self, llm_client: Any) -> None:
+        """Configure runtime planning and delegate execution configuration."""
+        self.llm_client = llm_client
+        configure_task_runner = getattr(self.task_runner, "configure_llm_client", None)
+        if callable(configure_task_runner):
+            configure_task_runner(llm_client)
+        elif llm_client is not None and getattr(self.task_runner, "llm_client", None) is None:
             try:
-                step_executor.llm_client = llm_client
+                self.task_runner.llm_client = llm_client
             except (AttributeError, TypeError):
                 pass
 
@@ -226,7 +242,7 @@ class RuntimeDispatcher:
         task["scheduler_runtime_contract"] = seal_scheduler_runtime_contract(
             task,
             lifecycle_state="claimed",
-            dispatch_path="RuntimeDispatcher -> TaskRunner -> StepExecutor",
+            dispatch_path=runtime_dispatch_contract_path(),
             require_package_identity=True,
             require_session_identity=True,
             require_authority_metadata=True,

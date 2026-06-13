@@ -51,6 +51,12 @@ def test_aer_controlled_repo_edit_success_appends_readme(tmp_path: Path) -> None
     result = response["work_package_result"]
     assert response["ok"] is True
     assert result["ok"] is True
+    assert response["agent_loop_runtime_route"] == "controlled_work_package_intake"
+    assert response["route"]["work_package_gateway"] == "controlled_mutation_gateway"
+    assert result["controlled_mutation_gateway"]["legal_gateway"] is True
+    assert result["controlled_mutation_gateway"]["authority_scope"] == "controlled_repo_edit_only"
+    assert result["controlled_mutation_gateway"]["work_package_mainline_authority"] is False
+    assert result["controlled_mutation_gateway"]["legacy_engineering_goal_route"] is False
     assert result["task_id"] == "phase1_readme_append"
     assert result["package_id"] == "phase1_readme_append"
     assert result["target_file"] == "README.md"

@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from core.tasks.adaptive_planning_contract import adaptive_planning_ownership_contract
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 
 
@@ -137,6 +138,7 @@ class GoalLoopTerminalCoordinator:
             },
             "execution_path": {
                 "route": "Goal -> Adaptive Planner -> GoalCompletionAuthority -> Runtime",
+                "adaptive_planning_ownership_contract": adaptive_planning_ownership_contract(),
                 "program_id": "",
                 "portfolio_id": "",
                 "goal_id": _text(target_goal_id),

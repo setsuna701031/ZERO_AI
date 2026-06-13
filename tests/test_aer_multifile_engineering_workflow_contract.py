@@ -65,7 +65,7 @@ class MultiFileEngineeringPlanner:
                     "description": "write fixed module B through ToolRegistry",
                     "tool": "write_file",
                     "input": {
-                        "path": "shared/fixed_module_b.py",
+                        "target_path": "shared/fixed_module_b.py",
                         "content": "def multiply(a, b):\n    return a * b\n",
                         "allow_overwrite": True,
                     },
@@ -176,6 +176,8 @@ def test_aer_multifile_engineering_workflow_read_write_verify_artifact(tmp_path:
     assert fixed_a.exists()
     assert fixed_b.exists()
     assert summary.exists()
+    assert not (tmp_path / "shared" / "fixed_module_a.py").exists()
+    assert not (tmp_path / "shared" / "fixed_module_b.py").exists()
 
     namespace_a = _load_module_namespace(fixed_a)
     namespace_b = _load_module_namespace(fixed_b)
@@ -213,6 +215,8 @@ def test_aer_multifile_engineering_workflow_read_write_verify_artifact(tmp_path:
 
     assert all(step["planner_step_executor_adapter"] is True for step in steps)
     assert all("tool_input" in step for step in steps)
+    assert steps[3]["tool_input"]["target_path"] == "shared/fixed_module_b.py"
+    assert steps[3]["tool_input"]["path"] == "shared/fixed_module_b.py"
 
     for checkpoint in checkpoints:
         assert checkpoint["result"]["ok"] is True
@@ -265,3 +269,46 @@ def test_aer_multifile_engineering_workflow_write_failure_recovers(tmp_path: Pat
     assert failed_cycle["runtime"]["status"] == "recoverable_failure"
     assert closure["status"] == "closed"
     assert closure["ok"] is True
+
+
+def test_aer_multifile_engineering_workflow_rejects_shared_path_escape(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    shared = workspace / "shared"
+    shared.mkdir(parents=True, exist_ok=True)
+
+    class EscapingPlanner(MultiFileEngineeringPlanner):
+        def plan(self, context=None, user_input="", route=None, **kwargs):
+            plan = super().plan(context=context, user_input=user_input, route=route, **kwargs)
+            plan["steps"] = [
+                {
+                    "type": "tool_call",
+                    "description": "attempt shared path escape",
+                    "tool": "write_file",
+                    "input": {
+                        "target_path": "../escaped.py",
+                        "content": "escaped = True\n",
+                        "allow_overwrite": True,
+                    },
+                }
+            ]
+            return plan
+
+    loop = AgentLoop(
+        planner=EscapingPlanner(),
+        step_executor=StepExecutor(
+            tool_registry=ToolRegistry(workspace_dir=str(workspace)),
+            workspace_root=str(workspace),
+            debug=False,
+        ),
+        repo_root=str(tmp_path),
+        debug=False,
+    )
+
+    result = loop.run(
+        "Use planner runtime dispatch for Persistent Autonomous Engineering Runtime multi-file engineering workflow"
+    )
+
+    runtime = result["persistent_runtime_orchestrator"]["multi_cycle_engineering_loop"]["cycle_results"][0]["runtime"]
+    assert runtime["status"] == "recoverable_failure"
+    assert not (tmp_path / "escaped.py").exists()
+    assert not (workspace / "escaped.py").exists()

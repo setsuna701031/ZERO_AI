@@ -14,6 +14,31 @@ from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition, GoalTransitionResult
 
 
+
+def _adaptive_evidence_ref_ids(value):
+    refs = []
+    for item in value or []:
+        if isinstance(item, dict):
+            evidence_id = str(item.get("evidence_id") or item.get("id") or "").strip()
+            if evidence_id:
+                refs.append(evidence_id)
+        elif item not in (None, ""):
+            refs.append(str(item))
+    return refs
+
+
+def _evidence_ref_ids(value):
+    refs = []
+    for item in value or []:
+        if isinstance(item, dict):
+            evidence_id = str(item.get("evidence_id") or item.get("id") or "").strip()
+            if evidence_id:
+                refs.append(evidence_id)
+        elif item not in (None, ""):
+            refs.append(str(item))
+    return refs
+
+
 class AdaptivePlanner:
     def __init__(
         self,
@@ -305,7 +330,7 @@ class AdaptivePlanner:
             "action": transition.action,
             "reason": transition.reason,
             "resume_point": copy.deepcopy(transition.resume_point),
-            "evidence_refs": copy.deepcopy(transition.evidence_refs),
+            "evidence_refs": _evidence_ref_ids(transition.evidence_refs),
             "requires_user_review": transition.requires_user_review,
         }
 
@@ -319,7 +344,7 @@ class AdaptivePlanner:
             "action": "complete",
             "reason": result.reason,
             "resume_point": None,
-            "evidence_refs": copy.deepcopy(result.evidence_refs),
+            "evidence_refs": _evidence_ref_ids(result.evidence_refs),
             "requires_user_review": result.requires_user_review,
             "completion_authority": "GoalCompletionAuthority",
         }

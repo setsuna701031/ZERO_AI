@@ -135,7 +135,25 @@ class AdaptivePersistenceGateway:
     def persist_goal_adaptive_metadata(self, cycle: Mapping[str, Any], record: Mapping[str, Any]) -> None:
         update_goal = getattr(self.repository, "update_goal", None)
         if callable(update_goal):
-            update_goal(_clean_text(cycle.get("goal_id")), {"metadata": {"adaptive_planning_record": copy.deepcopy(dict(record))}})
+            goal_id = _clean_text(cycle.get("goal_id"))
+            load_goal = getattr(self.repository, "load_goal", None)
+            goal = load_goal(goal_id) if callable(load_goal) else {}
+            metadata = _as_mapping(_as_mapping(goal).get("metadata"))
+            history = [
+                copy.deepcopy(dict(item))
+                for item in metadata.get("adaptive_planning_history", [])
+                if isinstance(item, Mapping)
+            ] if isinstance(metadata.get("adaptive_planning_history"), list) else []
+            history.append(copy.deepcopy(dict(record)))
+            update_goal(
+                goal_id,
+                {
+                    "metadata": {
+                        "adaptive_planning_record": copy.deepcopy(dict(record)),
+                        "adaptive_planning_history": history,
+                    }
+                },
+            )
 
     def register_decision_evidence(self, cycle: Mapping[str, Any]) -> dict[str, Any]:
         decision_evidence = build_decision_evidence(

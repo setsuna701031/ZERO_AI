@@ -36,6 +36,26 @@ class FakeRunner:
             "failed_tasks": [],
             "blocked_tasks": [],
         }
+        adaptive_decision = {
+            "decision": decision,
+            "reason": f"{decision}_reason",
+            "progress": progress,
+            "continuation_plan": {
+                "goal_id": goal_id,
+                "next_runtime_request": {"payload": {"goal": "continue demo"}},
+                "work_item_template": {"objective": "continue demo", "acceptance": {}},
+            } if decision == "continue" else {},
+            "adaptive_planning_record": {},
+        }
+        if decision == "complete":
+            adaptive_decision["goal_completion_authority_result"] = {
+                "accepted": True,
+                "completed": True,
+                "from_state": "active",
+                "to_state": "completed",
+                "reason": "validated_completion",
+                "evidence_refs": [{"evidence_id": "validated-demo"}],
+            }
         return {
             "goal_id": goal_id,
             "action": "run_goal",
@@ -46,17 +66,7 @@ class FakeRunner:
                 "action": "run_goal",
                 "ok": True,
                 "runtime_result": {"state": "completed" if decision == "complete" else "running", "ok": True},
-                "adaptive_decision": {
-                    "decision": decision,
-                    "reason": f"{decision}_reason",
-                    "progress": progress,
-                    "continuation_plan": {
-                        "goal_id": goal_id,
-                        "next_runtime_request": {"payload": {"goal": "continue demo"}},
-                        "work_item_template": {"objective": "continue demo", "acceptance": {}},
-                    } if decision == "continue" else {},
-                    "adaptive_planning_record": {},
-                },
+                "adaptive_decision": adaptive_decision,
                 "runtime_root_cause": {},
                 "runtime_request": {},
                 "runtime_stdout": "",
@@ -88,3 +98,18 @@ def test_engineering_goal_loop_records_observation_delta_and_loop_contract(tmp_p
     assert result["cycles"][1]["adaptive_loop_contract"]["loop_state"] == "terminal"
     assert result["cycles"][1]["adaptive_delta"]["has_progress"] is True
     assert result["execution_path"]["goal_loop_consumes_adaptive_loop_contract"] is True
+
+
+def test_non_terminal_feedback_is_not_misclassified_as_terminal(tmp_path) -> None:
+    runner = FakeRunner()
+    runner.decisions = ["continue"]
+    result = EngineeringGoalLoop(
+        repo_root=tmp_path,
+        repository=FakeRepository(),
+        runner=runner,
+        adaptive_persistence_gateway=FakePersistenceGateway(),
+    ).run_until_terminal("goal-1", max_cycles=1)
+
+    assert result["terminal"] is False
+    assert result["stop_reason"] == "max_cycles_reached"
+    assert result["cycles"][0]["adaptive_loop_contract"]["next_cycle_allowed"] is True

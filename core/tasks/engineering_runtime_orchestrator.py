@@ -353,6 +353,9 @@ class EngineeringRuntimeOrchestrator:
             "runtime_trace": trace,
             "execution_path": {
                 "orchestrator_owns_runtime_loop_only": True,
+                "legacy_isolated": True,
+                "work_package_mainline": False,
+                "work_package_execution_authority": False,
                 "scheduler_schedules_only": True,
                 "dependency_graph_validates_only": True,
                 "planning_loop_owns_planning": True,

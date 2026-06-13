@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -709,6 +711,23 @@ class ToolRegistry:
         return {"result": raw_result}
 
     def _success_result(self, tool: str, tool_input: Dict[str, Any], output: Any) -> Dict[str, Any]:
+        if isinstance(output, dict) and output.get("ok") is False:
+            error = output.get("error")
+            if isinstance(error, dict):
+                error_payload = copy.deepcopy(error)
+            else:
+                error_payload = {
+                    "type": str(output.get("status") or "tool_error"),
+                    "message": str(error or "tool returned failure"),
+                    "retryable": False,
+                }
+            return {
+                "ok": False,
+                "tool": tool,
+                "input": tool_input,
+                "output": output,
+                "error": error_payload,
+            }
         return {
             "ok": True,
             "tool": tool,

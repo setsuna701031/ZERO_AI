@@ -31,6 +31,7 @@ from core.tasks.work_package_execution_guard import WorkPackageExecutionRejected
 from core.tasks.work_package_mode import WorkPackageMode
 from core.tasks.work_package_plan import build_work_package_plan
 from core.repo_sandbox.tool import run_repo_edit
+from core.reports.engineering_report_contract import attach_engineering_report
 
 
 SCHEMA = "zero.work_package.intake_result.v6_4"
@@ -121,6 +122,7 @@ def _finalize_artifacts(repo_root: Path, request: WorkPackageRequest, response: 
     response.setdefault("execution_mode", request.mode.value)
     response.setdefault("task_id", request.package_id)
     response["final_message"] = _final_message(response)
+    response = attach_engineering_report(response, report_type="work_package")
 
     evidence_payload = response.get("evidence")
     if not isinstance(evidence_payload, Mapping):

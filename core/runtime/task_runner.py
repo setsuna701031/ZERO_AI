@@ -80,6 +80,15 @@ class TaskRunner:
         self.repair_step_injector = RepairStepInjector()
         self.mutation_runtime = self._build_mutation_runtime_integration()
 
+    def configure_llm_client(self, llm_client: Any) -> None:
+        """Configure TaskRunner and its owned execution endpoint."""
+        self.llm_client = llm_client
+        if llm_client is not None and getattr(self.step_executor, "llm_client", None) is None:
+            try:
+                self.step_executor.llm_client = llm_client
+            except (AttributeError, TypeError):
+                pass
+
     # ============================================================
     # mutation boundary integration
     # ============================================================
@@ -4801,7 +4810,7 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         execution_authority.get("execution_authority_endpoint")
         or execution_authority.get("authority_endpoint")
     ).lower()
-    upstream_execution_authority_granted = bool(
+    execution_authority_propagated = bool(
         authority_status in {"allowed", "approved", "granted", "ok"}
         and approval_state == "approved"
         and authority_endpoint == "step_executor"
@@ -4810,15 +4819,16 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
     authority_phase = "taskrunner_propagation"
     authority_policy = (
         "propagate_valid_upstream_execution_authority"
-        if upstream_execution_authority_granted
+        if execution_authority_propagated
         else "propagate_without_escalation"
     )
 
     authority_chain.append({
         "layer": "task_runner",
         "authority_role": authority_role,
-        "execution_authority_granted": upstream_execution_authority_granted,
-        "can_execute_privileged_step": upstream_execution_authority_granted,
+        "execution_authority_propagated": execution_authority_propagated,
+        "execution_authority_granted": False,
+        "can_execute_privileged_step": False,
     })
 
     return {
@@ -4828,8 +4838,9 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         "authority_source": authority_source,
         "authority_policy": authority_policy,
         "authority_propagation_required": True,
-        "execution_authority_granted": upstream_execution_authority_granted,
-        "can_execute_privileged_step": upstream_execution_authority_granted,
+        "execution_authority_propagated": execution_authority_propagated,
+        "execution_authority_granted": False,
+        "can_execute_privileged_step": False,
         "escalated": False,
         "execution_authority": copy.deepcopy(execution_authority),
         "received_authority": copy.deepcopy(incoming),

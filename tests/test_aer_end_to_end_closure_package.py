@@ -44,7 +44,7 @@ def test_aer_task_converts_to_work_package_and_runs_controlled_chain(tmp_path: P
 
     assert response["ok"] is True
     assert response["mode"] == "work_package"
-    assert response["agent_loop_runtime_route"] == "work_package_scheduler"
+    assert response["agent_loop_runtime_route"] == "controlled_work_package_intake"
     assert response["package_id"] == "aer_closure_ok"
     assert response["execution_mode"] == "execute"
 
@@ -70,14 +70,13 @@ def test_aer_task_converts_to_work_package_and_runs_controlled_chain(tmp_path: P
     audit = json.loads((tmp_path / result["audit_path"]).read_text(encoding="utf-8"))
     evidence = json.loads((tmp_path / result["evidence_path"]).read_text(encoding="utf-8"))
     final = json.loads((tmp_path / result["result_path"]).read_text(encoding="utf-8"))
-    scheduler_record = json.loads((tmp_path / "workspace/work_packages/aer_closure_ok.json").read_text(encoding="utf-8"))
+    legacy_scheduler_record = tmp_path / "workspace/work_packages/aer_closure_ok.json"
 
     assert audit["status"] == "ok"
     assert evidence["target_path"] == "workspace/aer_closure.txt"
     assert final["status"] == "ok"
     assert final["final_message"] == "controlled_workspace_execution_completed"
-    assert scheduler_record["status"] == "completed"
-    assert scheduler_record["result"]["result_path"] == result["result_path"]
+    assert not legacy_scheduler_record.exists()
     assert response["execution"]["last_result"]["result_path"] == result["result_path"]
 
 
@@ -112,14 +111,13 @@ def test_aer_task_blocks_unsafe_path_and_still_returns_readable_result(tmp_path:
 
     audit = json.loads((tmp_path / result["audit_path"]).read_text(encoding="utf-8"))
     final = json.loads((tmp_path / result["result_path"]).read_text(encoding="utf-8"))
-    scheduler_record = json.loads((tmp_path / "workspace/work_packages/aer_closure_blocked.json").read_text(encoding="utf-8"))
+    legacy_scheduler_record = tmp_path / "workspace/work_packages/aer_closure_blocked.json"
 
     assert audit["status"] == "failed"
     assert audit["blocked"] is True
     assert final["status"] == "failed"
     assert final["result"]["reason"] == result["reason"]
-    assert scheduler_record["status"] == "failed"
-    assert scheduler_record["result"]["result_path"] == result["result_path"]
+    assert not legacy_scheduler_record.exists()
 
 
 def test_aer_task_reads_input_and_writes_summary_and_action_items(tmp_path: Path) -> None:

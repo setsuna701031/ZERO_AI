@@ -10,6 +10,7 @@ from core.runtime.persistent_runtime_orchestrator import (
     run_persistent_runtime_orchestrator,
     should_route_persistent_runtime,
 )
+from core.reports.engineering_report_contract import attach_engineering_report
 
 
 SCHEMA = "zero.aer.planner_runtime_dispatch.v1"
@@ -364,15 +365,24 @@ class PlannerRuntimeDispatcher:
             user_input=user_input,
             planner_result=planner_result,
         )
+        workspace_root = self.repo_root / "workspace"
+        task["repo_root"] = str(self.repo_root)
+        task["workspace_root"] = str(workspace_root)
+        task["workspace_dir"] = str(workspace_root)
+        task["shared_dir"] = str(workspace_root / "shared")
 
         orchestrator_payload = run_persistent_runtime_orchestrator(
             repo_root=self.repo_root,
+            workspace_dir=workspace_root,
             task=task,
             context={
                 **(copy.deepcopy(context) if isinstance(context, dict) else {}),
                 "source": "planner_runtime_dispatch",
                 "planner_runtime_dispatch": True,
                 "persistent_runtime": True,
+                "repo_root": str(self.repo_root),
+                "workspace_root": str(workspace_root),
+                "shared_dir": str(workspace_root / "shared"),
             },
             result={},
             executor=executor,
@@ -400,6 +410,7 @@ class PlannerRuntimeDispatcher:
                 "does_not_modify_execution_gateway": True,
             },
         }
+        record = attach_engineering_report(record, report_type="aer")
 
         log = self._load_log()
         log.setdefault("dispatches", []).append(record)

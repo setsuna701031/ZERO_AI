@@ -39,7 +39,7 @@ def test_agent_loop_dispatches_work_package_explore_mode(tmp_path: Path) -> None
 
     assert response["ok"] is True
     assert response["mode"] == "work_package"
-    assert response["agent_loop_runtime_route"] == "work_package_scheduler"
+    assert response["agent_loop_runtime_route"] == "controlled_work_package_intake"
     assert response["work_package_mode"] == "explore"
     assert response["report_path"] == "workspace/agent_loop_legacy_audit.md"
     assert response["work_package_result"]["mutation_allowed"] is False

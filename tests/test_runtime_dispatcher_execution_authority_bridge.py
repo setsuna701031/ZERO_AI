@@ -57,7 +57,8 @@ def test_runtime_dispatcher_authority_is_accepted_and_sealed_by_step_executor(
     assert result["authority_decision"]["sealed"] is True
 
 
-def test_taskrunner_preserves_valid_upstream_execution_authority() -> None:
+def test_taskrunner_propagates_valid_upstream_execution_authority_without_granting() -> None:
+    """TaskRunner preserves the runtime-owner grant without claiming it."""
     authority = _authority()
     task = {
         "task_id": "runtime-task",
@@ -80,9 +81,15 @@ def test_taskrunner_preserves_valid_upstream_execution_authority() -> None:
         step={"id": "runtime-step", "type": "noop"},
     )
 
-    assert context["execution_authority_granted"] is True
-    assert context["can_execute_privileged_step"] is True
-    assert context["authority_chain"][-1]["execution_authority_granted"] is True
+    assert context["execution_authority"] == authority
+    assert context["execution_authority_propagated"] is True
+    assert context["execution_authority_granted"] is False
+    assert context["can_execute_privileged_step"] is False
+    assert context["authority_chain"][0]["layer"] == "runtime_dispatcher"
+    assert context["authority_chain"][0]["execution_authority_granted"] is True
+    assert context["authority_chain"][-1]["layer"] == "task_runner"
+    assert context["authority_chain"][-1]["execution_authority_propagated"] is True
+    assert context["authority_chain"][-1]["execution_authority_granted"] is False
 
 
 def test_step_executor_still_blocks_missing_authority(tmp_path: Path) -> None:

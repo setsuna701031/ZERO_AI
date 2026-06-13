@@ -11,7 +11,6 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Dict, Optional
 
 from core.runtime.execution_gateway import safe_subprocess_run
-from core.tools.tool_router import ToolRouter
 from core.runtime.governed_repair_api import execute_governed_repair_mutation
 from core.runtime.mutation_boundary import MutationBoundary
 from core.runtime.mutation_session import MutationApprovalMode, MutationRiskLevel, MutationVerificationRequirement
@@ -721,13 +720,11 @@ class ToolStepHandler(BaseStepHandler):
         attempt: int,
     ) -> Dict[str, Any]:
         try:
-            route_payload = copy.deepcopy(tool_input)
-            route_payload.setdefault("tool_name", tool_name)
-            result = ToolRouter(self.executor.tool_registry).dispatch(route_payload)
+            # A planner/StepExecutor tool step already names its tool. ToolRouter
+            # is heuristic intent inference and must not override that contract.
+            result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
             if is_dataclass(result):
                 result = asdict(result)
-            if result is None:
-                result = self.executor.tool_registry.execute_tool(tool_name, copy.deepcopy(tool_input))
         except Exception as e:
             return self._error(
                 error_type="tool_execute_exception",

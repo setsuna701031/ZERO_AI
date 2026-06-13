@@ -42,6 +42,12 @@ def work_package_execution_path() -> dict[str, Any]:
     }
 
 
+def runtime_dispatch_contract_path() -> str:
+    """Return the queue-owned runtime dispatch trace for sealed contracts."""
+    authority_path = str(work_package_execution_path()["authority_path"])
+    return authority_path.removeprefix("WorkPackageIntake -> RuntimePackageQueue -> ")
+
+
 class RuntimePackageQueue:
     def __init__(
         self,

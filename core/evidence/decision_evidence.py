@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 """Decision evidence projection onto the unified evidence authority.
 
-Decision evidence is no longer an independent persistence authority.  The
+Decision evidence is no longer an independent persistence authority. The
 DecisionEvidenceRepository name is retained as a compatibility projection/view,
 but writes are routed through EvidenceAuthority into EvidenceRepository.
 """
@@ -74,17 +74,20 @@ def build_decision_evidence(
         or adaptive.get("reason"),
         "decision_reason_unavailable",
     )
+
     evidence_refs = []
     for item in _list(adaptive.get("evidence_chain")):
         if isinstance(item, Mapping):
             evidence_refs.append(_text(item.get("evidence_id")) or copy.deepcopy(dict(item)))
         elif item not in (None, ""):
             evidence_refs.append(copy.deepcopy(item))
+
     links = {
         "continuation_goal_id": _text(_mapping(continuation_work_item).get("goal_id")),
         "replan_goal_id": _text(_mapping(replan_record).get("goal_id")),
         "cycle_index": cycle_index,
     }
+
     seed = json.dumps(
         {
             "goal_id": goal_id,
@@ -96,9 +99,11 @@ def build_decision_evidence(
         sort_keys=True,
     )
     decision_id = f"decision_{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:20]}"
+
     confidence = adaptive.get("confidence")
     if confidence in (None, ""):
         confidence = None
+
     return DecisionEvidenceRecord(
         decision_id=decision_id,
         goal_id=goal_id,
@@ -129,10 +134,8 @@ def decision_evidence_to_evidence_record(record: Mapping[str, Any]) -> EvidenceR
 class DecisionEvidenceRepository:
     """Compatibility projection backed by EvidenceAuthority.
 
-    The class keeps the old query API so existing callers do not break, but it
-    does not maintain a separate decision-evidence store.  save() registers a
-    decision evidence projection with EvidenceAuthority, which persists through
-    EvidenceRepository.
+    save() returns the same projection shape that list/find APIs return, so the
+    repository preserves round-trip identity for compatibility callers.
     """
 
     def __init__(
@@ -156,10 +159,22 @@ class DecisionEvidenceRepository:
         decision_id = _text(normalized.get("decision_id"))
         if not decision_id:
             raise ValueError("decision_evidence_requires_decision_id")
+
         register = getattr(self.evidence_authority, "register_decision_evidence", None)
         if not callable(register):
             raise TypeError("decision_evidence_projection_requires_evidence_authority")
-        return copy.deepcopy(register(normalized))
+
+        registered = register(normalized)
+        evidence_id = _text(registered.get("evidence_id") if isinstance(registered, Mapping) else "", decision_id)
+        stored = self.evidence_repository.get_record(evidence_id)
+
+        if stored is None:
+            records = self.find_by_task_id(_text(normalized.get("task_id")))
+            if records:
+                return copy.deepcopy(records[-1])
+            return self._projection_from_decision_dict(normalized)
+
+        return self._record_to_decision_dict(stored)
 
     def list_records(self) -> list[dict[str, Any]]:
         records = self._decision_evidence_records()
@@ -186,9 +201,49 @@ class DecisionEvidenceRepository:
         return [record for record in list_records() if getattr(record, "source", "") == DECISION_EVIDENCE_SOURCE]
 
     @staticmethod
+    def _projection_from_decision_dict(record: Mapping[str, Any]) -> dict[str, Any]:
+        normalized = _mapping(record)
+        decision_id = _text(normalized.get("decision_id"), _text(normalized.get("evidence_id")))
+        return {
+            "schema": DECISION_EVIDENCE_STORE_SCHEMA,
+            "decision_id": decision_id,
+            "evidence_id": _text(normalized.get("evidence_id"), decision_id),
+            "goal_id": _text(normalized.get("goal_id")),
+            "task_id": _text(normalized.get("task_id")),
+            "source_stage": _text(normalized.get("source_stage")),
+            "observed_event": _mapping(normalized.get("observed_event")),
+            "outcome_class": _text(normalized.get("outcome_class")),
+            "decision": _text(normalized.get("decision"), "unavailable"),
+            "decision_reason": _text(normalized.get("decision_reason"), "decision_reason_unavailable"),
+            "confidence": copy.deepcopy(normalized.get("confidence")),
+            "confidence_unavailable_reason": _text(normalized.get("confidence_unavailable_reason")),
+            "next_action": _text(normalized.get("next_action")),
+            "evidence_refs": _list(normalized.get("evidence_refs")),
+            "created_at": float(normalized.get("created_at") or 0.0),
+            "links": _mapping(normalized.get("links")),
+            "evidence_source": DECISION_EVIDENCE_SOURCE,
+            "evidence_authority_schema": "zero.evidence_authority.v1",
+            "projection_only": True,
+        }
+
+    @staticmethod
     def _record_to_decision_dict(record: EvidenceRecord) -> dict[str, Any]:
         metadata = _mapping(getattr(record, "metadata", {}))
         decision_id = _text(metadata.get("decision_id"), getattr(record, "evidence_id", ""))
+        summary = _text(getattr(record, "summary", ""))
+
+        decision = "unavailable"
+        outcome_class = "unavailable"
+        decision_reason = summary
+        for part in summary.split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == "decision":
+                decision = _text(value, decision)
+            elif key == "outcome":
+                outcome_class = _text(value, outcome_class)
+            elif key == "reason":
+                decision_reason = _text(value, decision_reason)
+
         return {
             "schema": DECISION_EVIDENCE_STORE_SCHEMA,
             "decision_id": decision_id,
@@ -196,12 +251,18 @@ class DecisionEvidenceRepository:
             "goal_id": getattr(record, "goal_id", ""),
             "task_id": metadata.get("task_id") or getattr(record, "subgoal_id", ""),
             "source_stage": metadata.get("source_stage", ""),
-            "decision": "projected",
-            "decision_reason": getattr(record, "summary", ""),
+            "observed_event": _mapping(metadata.get("observed_event")),
+            "outcome_class": outcome_class,
+            "decision": decision,
+            "decision_reason": decision_reason,
+            "confidence": copy.deepcopy(metadata.get("confidence")),
+            "confidence_unavailable_reason": _text(metadata.get("confidence_unavailable_reason")),
             "next_action": metadata.get("next_action", ""),
             "evidence_refs": _list(metadata.get("evidence_refs")),
             "created_at": getattr(record, "timestamp", 0.0),
             "links": _mapping(metadata.get("links")),
+            "evidence_source": DECISION_EVIDENCE_SOURCE,
+            "evidence_authority_schema": "zero.evidence_authority.v1",
             "projection_only": True,
         }
 

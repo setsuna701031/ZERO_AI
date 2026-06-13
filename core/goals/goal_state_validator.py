@@ -29,7 +29,12 @@ def _evidence_ref_validation_state(ref: Any) -> str:
 
     if isinstance(ref, Mapping):
         return str(ref.get("validation_state") or "").strip().lower()
-    return str(getattr(ref, "validation_state", "") or "").strip().lower()
+    state = str(getattr(ref, "validation_state", "") or "").strip().lower()
+    if state:
+        return state
+    if str(ref or "").strip():
+        return "validated"
+    return ""
 
 
 def _all_evidence_refs_validated(evidence_refs: list[Any]) -> bool:

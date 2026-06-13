@@ -172,6 +172,9 @@ class GoalContinuationCoordinator:
                 "orchestrates_only": True,
                 "sequence": "GoalLifecycle -> EngineeringTaskRunner -> GoalLifecycle",
                 "existing_aer_path_reused": True,
+                "legacy_isolated": True,
+                "work_package_mainline": False,
+                "work_package_execution_authority": False,
                 "new_execution_path": False,
             },
         }

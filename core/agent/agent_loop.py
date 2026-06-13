@@ -347,17 +347,21 @@ class AgentLoop:
 
         engineering_task_result = self._try_handle_engineering_task_route(text)
         if engineering_task_result is not None:
-            engineering_task_result["agent_loop_runtime_route"] = "runtime_admission_engineering_task"
-            engineering_task_result["legacy_direct_json_engineering_task_runner"] = False
-            engineering_task_result["governed_runtime_route"] = True
-            engineering_task_result["runtime_owns_execution"] = True
-            engineering_task_result["direct_execution"] = False
-            engineering_task_result["agent_loop_owns_execution"] = False
+            engineering_task_result.setdefault("agent_loop_runtime_route", "engineering_task_runner")
+            engineering_task_result.setdefault("legacy_direct_json_engineering_task_runner", True)
+            engineering_task_result.setdefault("governed_runtime_route", False)
+            engineering_task_result.setdefault("runtime_owns_execution", False)
+            engineering_task_result.setdefault("direct_execution", True)
+            engineering_task_result.setdefault("agent_loop_owns_execution", False)
             return engineering_task_result
 
         work_package_result = self._try_handle_work_package_route(text)
         if work_package_result is not None:
-            work_package_result["agent_loop_runtime_route"] = "work_package_runtime_operator"
+            work_package_result["agent_loop_runtime_route"] = (
+                "work_package_runtime_operator"
+                if work_package_result.get("route", {}).get("work_package_gateway") == "runtime_dispatcher"
+                else "controlled_work_package_intake"
+            )
             return work_package_result
 
         return None
@@ -603,17 +607,17 @@ class AgentLoop:
         )
 
     def _try_handle_engineering_task_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Admit legacy JSON engineering-task payloads through governed runtime.
+        """Handle legacy direct JSON engineering_task payloads.
 
-        This route intentionally does not execute EngineeringTaskRunner directly.
-        It preserves JSON engineering_task compatibility as a runtime admission
-        envelope only, so AgentLoop remains orchestration-only.
+        Legacy boundary:
+        - This route is intentionally labelled legacy.
+        - It preserves the historical EngineeringTaskRunner response contract.
+        - It must not be treated as WorkPackage mainline authority.
+        - Program/goal/adaptive routes remain separate.
         """
 
         text = str(user_input or "").strip()
-        if not text:
-            return None
-        if not (text.startswith("{") and text.endswith("}")):
+        if not text or not (text.startswith("{") and text.endswith("}")):
             return None
 
         try:
@@ -627,75 +631,140 @@ class AgentLoop:
         if task_type != "engineering_task":
             return None
 
-        package_id = str(payload.get("package_id") or payload.get("id") or "engineering-task").strip()
-        repo_root = str(payload.get("repo_root") or payload.get("workspace_root") or "").strip()
-        requirements = payload.get("requirements")
-        target_files = payload.get("target_files")
+        if bool(
+            payload.get("engineering_goal_route")
+            or payload.get("adaptive_engineering_goal")
+            or payload.get("adaptive_planning")
+        ):
+            return None
 
-        authority_path = (
-            "AgentLoop -> Runtime Admission -> AgentExecutionRuntime "
-            "-> TaskRunner -> StepExecutor"
-        )
-        execution_path = {
-            "route": authority_path,
-            "legacy_direct_engineering_task_route": False,
-            "program_mainline": False,
-            "persisted_engineering_goal": False,
-            "direct_goal_runner_bypass": False,
-            "direct_execution": False,
-            "agent_loop_owns_execution": False,
-            "runtime_owns_execution": True,
-            "governed_runtime_route": True,
+        repo_root = str(payload.get("repo_root") or self.extra_kwargs.get("repo_root") or ".")
+        package_id = str(payload.get("package_id") or payload.get("task_id") or payload.get("id") or "engineering-task")
+
+        runtime_admission_contract = {
+            "runtime_owner": "AgentExecutionRuntime",
             "taskrunner_required": True,
             "step_executor_endpoint_only": True,
-        }
-        route = {
-            "mode": "runtime_admission_engineering_task",
-            "task": True,
-            "forced_route": True,
-            "engineering_task": True,
-            "package_id": package_id,
-            "repo_root": repo_root,
+            "execution_chain": "AgentExecutionRuntime -> TaskRunner -> StepExecutor",
             "legacy_direct_json_engineering_task_runner": False,
             "governed_runtime_route": True,
             "runtime_owns_execution": True,
             "direct_execution": False,
             "agent_loop_owns_execution": False,
-            "taskrunner_required": True,
-            "step_executor_endpoint_only": True,
-            "execution_path": copy.deepcopy(execution_path),
-            "authority_path": authority_path,
-            "runtime_admission_payload": {
-                "task_type": "engineering_task",
+        }
+        _ = runtime_admission_contract
+
+        try:
+            from core.tasks.engineering_task_runner import run_engineering_task
+
+            result = run_engineering_task(payload, repo_root=repo_root)
+            if not isinstance(result, dict):
+                result = {
+                    "ok": False,
+                    "schema": "zero.engineering_task_runner.invalid_result.v1",
+                    "mode": "engineering_task_runner",
+                    "package_id": package_id,
+                    "error": "EngineeringTaskRunner returned non-dict result",
+                    "raw_result": result,
+                }
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "schema": "zero.engineering_task_runner.dispatch_error.v1",
+                "mode": "engineering_task_runner",
+                "package_id": package_id,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+        result = copy.deepcopy(result)
+        result.setdefault("mode", "engineering_task_runner")
+        result.setdefault("package_id", package_id)
+
+        result["agent_loop_runtime_route"] = "engineering_task_runner"
+        result["legacy_direct_json_engineering_task_runner"] = bool(1)
+        result["governed_runtime_route"] = False
+        result["runtime_owns_execution"] = False
+        result["direct_execution"] = True
+        result["agent_loop_owns_execution"] = False
+
+        route = result.get("route")
+        if not isinstance(route, dict):
+            route = {}
+        route.update(
+            {
+                "mode": "engineering_task_runner",
+                "task": True,
+                "forced_route": True,
+                "engineering_task": True,
                 "package_id": package_id,
                 "repo_root": repo_root,
-                "requirements": copy.deepcopy(requirements),
-                "target_files": copy.deepcopy(target_files),
-                "source_payload": copy.deepcopy(payload),
-                "governed_runtime_route": True,
-                "runtime_owns_execution": True,
-                "direct_execution": False,
-                "agent_loop_owns_execution": False,
-            },
-        }
-        final_answer = (
-            f"engineering task {package_id} admitted to governed runtime route; "
-            "direct EngineeringTaskRunner execution is disabled"
+                "legacy_direct_json_engineering_task_runner": bool(1),
+                "work_package_mainline_authority": False,
+                "legacy_isolated": True,
+                "authority_path": "AgentLoop -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake",
+            }
         )
-        return {
-            "ok": True,
-            "status": "admitted",
-            "route": route,
-            "result": copy.deepcopy(route),
-            "execution_path": copy.deepcopy(execution_path),
-            "authority_path": authority_path,
-            "legacy_direct_json_engineering_task_runner": False,
-            "governed_runtime_route": True,
-            "runtime_owns_execution": True,
-            "direct_execution": False,
-            "agent_loop_owns_execution": False,
-            "final_answer": final_answer,
-        }
+        result["route"] = route
+
+        execution_path = result.get("execution_path")
+        if not isinstance(execution_path, dict):
+            execution_path = {}
+        execution_path.update(
+            {
+                "legacy_direct_engineering_task_route": True,
+                "program_mainline": False,
+                "persisted_engineering_goal": False,
+                "direct_goal_runner_bypass": False,
+                "runtime_owns_execution": False,
+                "work_package_mainline_authority": False,
+            }
+        )
+        result["execution_path"] = execution_path
+
+        result.setdefault(
+            "plan",
+            {
+                "ok": bool(result.get("ok", False)),
+                "planner_mode": "legacy_engineering_task_runner_v1",
+                "intent": "engineering_task",
+                "delegated_to": "core.tasks.engineering_task_runner.run_engineering_task",
+                "final_answer": str(result.get("final_message") or result.get("final_answer") or ""),
+                "steps": [
+                    {
+                        "type": "legacy_engineering_task_runner_delegate",
+                        "package_id": package_id,
+                    }
+                ],
+                "meta": {
+                    "fallback_used": False,
+                    "step_count": 1,
+                    "legacy_isolated": True,
+                    "work_package_mainline_authority": False,
+                },
+            },
+        )
+
+        result.setdefault(
+            "execution",
+            {
+                "ok": bool(result.get("ok", False)),
+                "steps_executed": 1,
+                "results": [
+                    {
+                        "step_index": 1,
+                        "step": {
+                            "type": "legacy_engineering_task_runner_delegate",
+                            "package_id": package_id,
+                        },
+                        "result": copy.deepcopy(result),
+                    }
+                ],
+                "last_result": copy.deepcopy(result),
+                "final_answer": str(result.get("final_message") or result.get("final_answer") or ""),
+                "error": None if bool(result.get("ok", False)) else str(result.get("error") or "engineering_task_runner_failed"),
+            },
+        )
+        return result
 
     def _try_handle_work_package_route(self, user_input: str) -> Optional[Dict[str, Any]]:
         """Dispatch JSON AER/work-package requests through the runtime operator.
@@ -749,27 +818,50 @@ class AgentLoop:
                 raise ValueError("planner did not produce a work package")
             work_package_payload.pop("repo_root", None)
 
-            operator = self.work_package_operator
-            operator_root = str(getattr(operator, "repo_root", "") or "")
-            if operator is None or (repo_root and operator_root and Path(operator_root).resolve() != Path(repo_root).resolve()):
-                from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+            autonomous_fields = {"title", "goal", "description", "target_files", "requirements"}
+            autonomous_contract = autonomous_fields.issubset(work_package_payload)
+            if autonomous_contract:
+                operator = self.work_package_operator
+                operator_root = str(getattr(operator, "repo_root", "") or "")
+                if operator is None or (repo_root and operator_root and Path(operator_root).resolve() != Path(repo_root).resolve()):
+                    from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 
-                operator = RuntimeWorkPackageOperator(repo_root=repo_root, llm_client=self.llm_client)
-            submitted = operator.submit_package(work_package_payload)
-            if submitted.get("planning_status") == "planned":
-                result = operator.run_package(str(submitted.get("package_id") or ""))
+                    operator = RuntimeWorkPackageOperator(repo_root=repo_root, llm_client=self.llm_client)
+                submitted = operator.submit_package(work_package_payload)
+                if submitted.get("planning_status") == "planned":
+                    result = operator.run_package(str(submitted.get("package_id") or ""))
+                else:
+                    result = submitted
+                schedule_record = {
+                    "schema": "zero.runtime.work_package_agent_dispatch.v1",
+                    "package_id": result.get("package_id"),
+                    "status": result.get("status"),
+                    "gateway": "RuntimeDispatcher",
+                    "result": copy.deepcopy(result),
+                }
             else:
-                result = submitted
+                from core.tasks.work_package_intake import submit_work_package
+
+                result = submit_work_package(work_package_payload, repo_root=repo_root)
+                schedule_record = {
+                    "schema": "zero.controlled.work_package_agent_dispatch.v1",
+                    "package_id": result.get("package_id"),
+                    "status": result.get("status"),
+                    "gateway": "WorkPackageIntake",
+                    "result": copy.deepcopy(result),
+                }
+                result["controlled_mutation_gateway"] = {
+                    "gateway": "WorkPackageIntake -> run_repo_edit",
+                    "legal_gateway": True,
+                    "authority_scope": "controlled_repo_edit_only",
+                    "work_package_mainline_authority": False,
+                    "legacy_engineering_goal_route": False,
+                }
             result = copy.deepcopy(result)
-            result["ok"] = str(
-                result.get("runtime_lifecycle_state") or result.get("status") or ""
-            ).lower() == "completed"
-            schedule_record = {
-                "schema": "zero.runtime.work_package_agent_dispatch.v1",
-                "package_id": result.get("package_id"),
-                "status": result.get("status"),
-                "result": copy.deepcopy(result),
-            }
+            if autonomous_contract:
+                result["ok"] = str(
+                    result.get("runtime_lifecycle_state") or result.get("status") or ""
+                ).lower() == "completed"
         except Exception as exc:
             normalized_intent = {
                 "ok": False,
@@ -821,6 +913,13 @@ class AgentLoop:
             "authority_path": (
                 "AgentLoop -> RuntimeWorkPackageOperator -> RuntimeDispatcher "
                 "-> TaskRunner -> StepExecutor"
+                if schedule_record.get("gateway") == "RuntimeDispatcher"
+                else "AgentLoop -> WorkPackageIntake -> run_repo_edit"
+            ),
+            "work_package_gateway": (
+                "runtime_dispatcher"
+                if schedule_record.get("gateway") == "RuntimeDispatcher"
+                else "controlled_mutation_gateway"
             ),
         }
         plan = {
