@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from core.goals.goal_completion_authority import (
+    GoalCompletionAuthority,
     GOAL_COMPLETION_AUTHORITY_OWNER,
     GOAL_COMPLETION_RESULT_SCHEMA,
 )
+from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.goal_loop_terminal_coordinator import GoalLoopTerminalCoordinator
 
 
@@ -13,6 +15,11 @@ class Runtime:
 
     def to_dict(self):
         return dict(self.data)
+
+
+def _attestation():
+    evidence = EvidenceValidator().validate(EvidenceRecord("e1", "goal_a", None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id="goal_a", evidence_refs=[evidence], all_subgoals_completed=True)
 
 
 def test_terminal_coordinator_builds_result(tmp_path) -> None:
@@ -29,16 +36,8 @@ def test_terminal_coordinator_builds_result(tmp_path) -> None:
         cycles=[
             {
                 "adaptive_decision_record": {"decision": "complete"},
-                "goal_completion_authority_result": {
-                    "schema": GOAL_COMPLETION_RESULT_SCHEMA,
-                    "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
-                    "accepted": True,
-                    "completed": True,
-                    "from_state": "active",
-                    "to_state": "completed",
-                    "reason": "validated_evidence_and_subgoals_ready",
-                    "evidence_refs": [{"evidence_id": "e1", "validation_state": "validated"}],
-                },
+                "goal_completion_attestation": _attestation(),
+                "goal_completion_authority_result": _attestation().to_dict(),
             }
         ],
         max_cycles=1,

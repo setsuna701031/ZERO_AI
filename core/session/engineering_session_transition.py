@@ -40,6 +40,7 @@ class EngineeringSessionTransition:
     session_id: str = ""
     task_id: str = ""
     created_at: str = field(default_factory=_timestamp)
+    completion_attestation: Any = None
 
     def __post_init__(self) -> None:
         if self.evidence is not None and not isinstance(self.evidence, Mapping):

@@ -180,13 +180,7 @@ class GoalLoopDispatcher:
 
     @staticmethod
     def _completion_authority_accepted(cycle: Mapping[str, Any]) -> bool:
-        result = _mapping(cycle.get("goal_completion_authority_result"))
-        if result:
-            return is_accepted_goal_completion_result(result)
-
-        adaptive_record = _mapping(cycle.get("adaptive_decision_record"))
-        nested = _mapping(adaptive_record.get("goal_completion_authority_result"))
-        return is_accepted_goal_completion_result(nested)
+        return is_accepted_goal_completion_result(cycle.get("goal_completion_attestation"))
 
     @staticmethod
     def _marker(*, action: str, reason: str = "") -> dict[str, Any]:

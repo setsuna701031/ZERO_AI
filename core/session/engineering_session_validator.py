@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from core.session.engineering_session_state import TERMINAL_ENGINEERING_SESSION_STATES, clean_engineering_session_state
 from core.session.engineering_session_transition import ENGINEERING_SESSION_TRANSITION_SCHEMA, EngineeringSessionTransition
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 
 
 ENGINEERING_SESSION_VALIDATION_SCHEMA = "zero.engineering_session_validation.v1"
@@ -144,6 +145,17 @@ class EngineeringSessionValidator:
                 to_state=to_state,
                 reason="engineering_session_transition_rejected",
                 blocked_reason="session_identity_required",
+            )
+        if to_state == "completed" and (
+            not isinstance(transition, EngineeringSessionTransition)
+            or not is_accepted_goal_completion_result(transition.completion_attestation)
+        ):
+            return EngineeringSessionValidationResult(
+                accepted=False,
+                from_state=from_state,
+                to_state=to_state,
+                reason="engineering_session_transition_rejected",
+                blocked_reason="canonical_completion_attestation_required",
             )
         return EngineeringSessionValidationResult(
             accepted=True,

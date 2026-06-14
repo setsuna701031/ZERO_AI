@@ -9,6 +9,7 @@ from core.adaptive.adaptive_plan import AdaptivePlan
 from core.adaptive.adaptive_policy import AdaptivePolicy
 from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_record import EvidenceRecord
+from core.evidence.evidence_validator import is_provenance_validated_evidence
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition, GoalTransitionResult
@@ -22,6 +23,8 @@ def _adaptive_evidence_ref_ids(value):
             evidence_id = str(item.get("evidence_id") or item.get("id") or "").strip()
             if evidence_id:
                 refs.append(evidence_id)
+        elif isinstance(item, EvidenceRecord):
+            refs.append(item.evidence_id)
         elif item not in (None, ""):
             refs.append(str(item))
     return refs
@@ -34,6 +37,8 @@ def _evidence_ref_ids(value):
             evidence_id = str(item.get("evidence_id") or item.get("id") or "").strip()
             if evidence_id:
                 refs.append(evidence_id)
+        elif isinstance(item, EvidenceRecord):
+            refs.append(item.evidence_id)
         elif item not in (None, ""):
             refs.append(str(item))
     return refs
@@ -249,10 +254,7 @@ class AdaptivePlanner:
         goal: Mapping[str, Any],
     ) -> tuple[list[Any], int]:
         if isinstance(summary, EvidenceChain):
-            return (
-                [AdaptivePlanner._validated_ref(item) for item in summary.validated_evidence_ids],
-                summary.rejected_count,
-            )
+            return (list(summary.validated_evidence_refs), summary.rejected_count)
 
         if isinstance(summary, Mapping):
             values = summary.get("records") or summary.get("evidence") or summary.get("items") or []
@@ -269,8 +271,7 @@ class AdaptivePlanner:
                 or validation_summary.get("validated", 0)
             )
             if not values and has_validated:
-                ids = list(validated_ids or summary.get("evidence_ids") or [])
-                return [AdaptivePlanner._validated_ref(item) for item in ids], rejected_count
+                return [], rejected_count
         else:
             values = summary
             rejected_count = 0
@@ -280,15 +281,12 @@ class AdaptivePlanner:
 
         for item in candidates:
             if isinstance(item, EvidenceRecord):
-                if item.validation_state == "validated":
-                    validated.append(AdaptivePlanner._validated_ref(item.evidence_id))
+                if is_provenance_validated_evidence(item):
+                    validated.append(item)
                 elif item.validation_state == "rejected":
                     rejected_count += 1
             elif isinstance(item, Mapping):
-                validation_state = str(item.get("validation_state") or "").strip().lower()
-                if validation_state == "validated":
-                    validated.append(copy.deepcopy(dict(item)))
-                elif validation_state == "rejected":
+                if str(item.get("validation_state") or "").strip().lower() == "rejected":
                     rejected_count += 1
 
         return validated, rejected_count

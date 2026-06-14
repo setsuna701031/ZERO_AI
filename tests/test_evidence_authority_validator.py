@@ -20,8 +20,8 @@ def test_validator_returns_validated_or_rejected_copy_only() -> None:
     record = _pending_record()
     validator = EvidenceValidator()
 
-    accepted = validator.validate(record, accepted=True)
-    rejected = validator.validate(record, accepted=False)
+    accepted = validator.validate(record)
+    rejected = validator.reject(record)
 
     assert record.validation_state == "pending"
     assert accepted.validation_state == "validated"

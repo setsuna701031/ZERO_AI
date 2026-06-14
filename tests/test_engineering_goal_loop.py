@@ -3,7 +3,9 @@ from __future__ import annotations
 from core.goals.goal_completion_authority import (
     GOAL_COMPLETION_AUTHORITY_OWNER,
     GOAL_COMPLETION_RESULT_SCHEMA,
+    GoalCompletionAuthority,
 )
+from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.engineering_goal_loop import ENGINEERING_GOAL_LOOP_SCHEMA, EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 
@@ -18,6 +20,11 @@ GOAL_COMPLETION_AUTHORITY_RESULT = {
     "reason": "validated_evidence_and_subgoals_ready",
     "evidence_refs": [{"evidence_id": "e1", "validation_state": "validated"}],
 }
+
+
+def _completion_attestation(goal_id: str = "goal_1"):
+    evidence = EvidenceValidator().validate(EvidenceRecord("e1", goal_id, None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
 
 
 class StubRunner:
@@ -35,7 +42,7 @@ class StubRunner:
         if adaptive_decision.get("decision") == "complete":
             adaptive_decision.setdefault(
                 "goal_completion_authority_result",
-                dict(GOAL_COMPLETION_AUTHORITY_RESULT),
+                _completion_attestation(goal_id),
             )
         return {
             "ok": adaptive_decision["decision"] != "blocked",
@@ -264,7 +271,7 @@ def test_goal_loop_does_not_mutate_runner_runtime_or_lifecycle_payloads(tmp_path
             "continuation_plan": {},
             "replan_request": {},
             "blocking_issues": [],
-            "goal_completion_authority_result": dict(GOAL_COMPLETION_AUTHORITY_RESULT),
+            "goal_completion_authority_result": _completion_attestation(),
         },
     }
 

@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition
+from core.goals.goal_completion_authority import GoalCompletionAuthority
+from core.evidence import EvidenceRecord, EvidenceValidator
+
+
+def _evidence():
+    return EvidenceValidator().validate(EvidenceRecord("evidence_a", "goal_a", None, "test", "ok", "now"))
 
 
 def test_goal_completion_requires_completed_subgoals() -> None:
-    result = GoalStateMachine().transition(
-        GoalTransition(
-            target_type="goal",
-            target_id="goal_a",
-            from_state="active",
-            to_state="completed",
-            action="complete",
-            reason="subgoals_not_done",
-            evidence_refs=[{"evidence_id": "evidence_a", "validation_state": "validated"}],
-        ),
+    result = GoalCompletionAuthority().complete_goal(
+        goal_id="goal_a",
+        reason="subgoals_not_done",
+        evidence_refs=[_evidence()],
         all_subgoals_completed=False,
     )
 
@@ -23,16 +23,10 @@ def test_goal_completion_requires_completed_subgoals() -> None:
 
 
 def test_goal_completion_requires_explicit_subgoal_completion_flag() -> None:
-    result = GoalStateMachine().transition(
-        GoalTransition(
-            target_type="goal",
-            target_id="goal_a",
-            from_state="active",
-            to_state="completed",
-            action="complete",
-            reason="missing_subgoal_flag",
-            evidence_refs=[{"evidence_id": "evidence_a", "validation_state": "validated"}],
-        )
+    result = GoalCompletionAuthority().complete_goal(
+        goal_id="goal_a",
+        reason="missing_subgoal_flag",
+        evidence_refs=[_evidence()],
     )
 
     assert result.accepted is False

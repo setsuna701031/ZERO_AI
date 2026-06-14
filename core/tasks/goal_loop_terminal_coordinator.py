@@ -68,6 +68,7 @@ class GoalLoopTerminalCoordinator:
         latest_cycle = _mapping(cycle_records[-1]) if cycle_records else {}
         latest_decision = _mapping(latest_cycle.get("adaptive_decision_record"))
         goal_completion_authority_result = self._goal_completion_authority_result(latest_cycle)
+        goal_completion_attestation = latest_cycle.get("goal_completion_attestation")
 
         continuation_runtime_record = self._to_dict(continuation_runtime)
         replan_runtime_record = self._to_dict(replan_runtime)
@@ -79,7 +80,7 @@ class GoalLoopTerminalCoordinator:
         )
 
         adaptive_complete = _text(latest_decision.get("decision")) == "complete"
-        completion_authority_accepted = self._completion_authority_accepted(goal_completion_authority_result)
+        completion_authority_accepted = self._completion_authority_accepted(goal_completion_attestation)
         ok = bool(terminal and cycle_records and adaptive_complete and completion_authority_accepted)
 
         effective_stop_reason = _text(stop_reason, "stop")
@@ -204,9 +205,7 @@ class GoalLoopTerminalCoordinator:
         return {}
 
     @staticmethod
-    def _completion_authority_accepted(result: Mapping[str, Any]) -> bool:
-        if not isinstance(result, Mapping):
-            return False
+    def _completion_authority_accepted(result: Any) -> bool:
         return is_accepted_goal_completion_result(result)
 
     @staticmethod

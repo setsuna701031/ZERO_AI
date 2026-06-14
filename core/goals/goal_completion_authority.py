@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.goals.goal_state_machine import GoalStateMachine
+from core.evidence.evidence_validator import is_provenance_validated_evidence
+from core.goals.goal_state_machine import GoalStateMachine, _GOAL_COMPLETION_AUTHORITY_TOKEN
 from core.goals.goal_transition import GoalTransition
 
 
 GOAL_COMPLETION_AUTHORITY_OWNER = "core.goals.goal_completion_authority.GoalCompletionAuthority"
 GOAL_COMPLETION_RESULT_SCHEMA = "zero.goal_completion_authority.result.v1"
+_ISSUED_COMPLETION_ATTESTATIONS: dict[int, "GoalCompletionResult"] = {}
 
 
 @dataclass(frozen=True)
@@ -42,24 +44,27 @@ class GoalCompletionResult:
             "reason": self.reason,
             "blocked_reason": self.blocked_reason,
             "requires_user_review": self.requires_user_review,
-            "evidence_refs": list(self.evidence_refs),
+            "evidence_refs": [
+                ref.to_dict() if callable(getattr(ref, "to_dict", None)) else ref
+                for ref in self.evidence_refs
+            ],
         }
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "GoalCompletionResult":
+        return self
 
 
 def is_accepted_goal_completion_result(value: Any) -> bool:
-    if isinstance(value, GoalCompletionResult):
-        result = value.to_dict()
-    elif isinstance(value, dict):
-        result = value
-    else:
+    if not isinstance(value, GoalCompletionResult):
         return False
     return bool(
-        result.get("schema") == GOAL_COMPLETION_RESULT_SCHEMA
-        and result.get("authority_owner") == GOAL_COMPLETION_AUTHORITY_OWNER
-        and result.get("accepted") is True
-        and result.get("completed") is True
-        and result.get("to_state") == "completed"
-        and result.get("evidence_refs")
+        _ISSUED_COMPLETION_ATTESTATIONS.get(id(value)) is value
+        and value.schema == GOAL_COMPLETION_RESULT_SCHEMA
+        and value.authority_owner == GOAL_COMPLETION_AUTHORITY_OWNER
+        and value.accepted is True
+        and value.completed is True
+        and value.to_state == "completed"
+        and value.evidence_refs
     )
 
 
@@ -98,9 +103,10 @@ class GoalCompletionAuthority:
         result = self.state_machine.transition(
             transition,
             all_subgoals_completed=all_subgoals_completed,
+            completion_authority_token=_GOAL_COMPLETION_AUTHORITY_TOKEN,
         )
 
-        return GoalCompletionResult(
+        completion = GoalCompletionResult(
             accepted=result.accepted,
             goal_id=goal_id,
             from_state=result.from_state,
@@ -110,6 +116,17 @@ class GoalCompletionAuthority:
             requires_user_review=result.requires_user_review,
             evidence_refs=result.evidence_refs,
         )
+        if (
+            type(self.state_machine) is GoalStateMachine
+            and completion.accepted
+            and completion.from_state == "active"
+            and completion.to_state == "completed"
+            and all_subgoals_completed is True
+            and completion.evidence_refs
+            and all(is_provenance_validated_evidence(ref) for ref in completion.evidence_refs)
+        ):
+            _ISSUED_COMPLETION_ATTESTATIONS[id(completion)] = completion
+        return completion
 
 
 __all__ = [

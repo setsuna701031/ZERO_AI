@@ -147,7 +147,7 @@ class EvidenceAuthority:
                 "source": DECISION_EVIDENCE_SOURCE,
                 "summary": summary,
                 "timestamp": float(normalized.get("created_at") or time.time()),
-                "validation_state": "validated",
+                "validation_state": "pending",
                 "metadata": {
                     "decision_id": decision_id,
                     "task_id": task_id,

@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from core.evidence.evidence_record import EvidenceRecord
+from core.evidence.evidence_validator import is_provenance_validated_evidence
 from core.goals.goal_contract import clean_optional_text, clean_required_text, copy_text_list
 
 
@@ -21,6 +22,7 @@ class EvidenceChain:
     rejected_count: int = 0
     pending_count: int = 0
     evidence_sources: Mapping[str, int] = field(default_factory=dict)
+    validated_evidence_refs: list[EvidenceRecord] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
         summary_source = self.validation_summary if isinstance(self.validation_summary, Mapping) else {}
@@ -47,6 +49,7 @@ class EvidenceChain:
             "evidence_sources",
             {str(key): int(value) for key, value in source_summary.items() if str(key).strip()},
         )
+        object.__setattr__(self, "validated_evidence_refs", list(self.validated_evidence_refs))
 
     @classmethod
     def from_records(
@@ -80,6 +83,7 @@ class EvidenceChain:
             ],
             validation_summary=counts,
             evidence_sources=sources,
+            validated_evidence_refs=[record for record in selected if is_provenance_validated_evidence(record)],
         )
 
     @classmethod

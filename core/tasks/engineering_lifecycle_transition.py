@@ -25,6 +25,7 @@ class EngineeringLifecycleTransition:
     reason: str = ""
     adaptive_loop_contract: Mapping[str, Any] | None = None
     adaptive_replan_state: Mapping[str, Any] | None = None
+    completion_attestation: Any = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "from_state", clean_engineering_lifecycle_state(self.from_state))

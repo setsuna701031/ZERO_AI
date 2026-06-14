@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from core.control.task_lifecycle_monitor import TaskLifecycleMonitor
 from core.evidence.decision_evidence import DecisionEvidenceRepository
 from core.goals.goal_completion_authority import GoalCompletionAuthority
+from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
@@ -165,15 +166,14 @@ class SchedulerBackedValidationRunner:
             decision["goal_completion_authority_result"] = self.completion_authority.complete_goal(
                 goal_id=goal_id,
                 evidence_refs=[
-                    {
-                        "evidence_id": completed_task_id,
-                        "validation_state": "validated",
-                    }
+                    EvidenceValidator().validate(
+                        EvidenceRecord(completed_task_id, goal_id, None, "validation", "completed", "now")
+                    )
                     for completed_task_id in completed
                 ],
                 all_subgoals_completed=not remaining and not recoverable_failure,
                 reason="long_running_validation_tasks_completed",
-            ).to_dict()
+            )
         history_record = {
             "task_id": task_id,
             "ok": not recoverable_failure,

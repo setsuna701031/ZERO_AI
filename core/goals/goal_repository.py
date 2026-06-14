@@ -11,6 +11,7 @@ from core.goals.goal_contract import GOAL_EVENT_SCHEMA, clean_required_text, cle
 from core.goals.goal_progress import GoalProgress, GoalResumePoint
 from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition
+from core.goals.goal_completion_authority import GoalCompletionResult, is_accepted_goal_completion_result
 from core.goals.persistent_goal import PersistentGoal, PersistentSubgoal, utc_now
 
 
@@ -51,12 +52,18 @@ class GoalRepository:
         reason: str | None = None,
         resume_point: Any = None,
         action: str | None = None,
+        completion_attestation: GoalCompletionResult | None = None,
     ) -> dict[str, Any]:
         existing = self.get_goal(goal_id)
         if existing is None:
             raise KeyError(clean_required_text(goal_id, "goal_id"))
         target_status = clean_status(status)
-        if self.state_machine is not None:
+        if target_status == "completed" and (
+            not is_accepted_goal_completion_result(completion_attestation)
+            or completion_attestation.goal_id != goal_id
+        ):
+            raise ValueError("canonical_completion_attestation_required")
+        if self.state_machine is not None and target_status != "completed":
             self._validate_transition(
                 GoalTransition(
                     "goal",

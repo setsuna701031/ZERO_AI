@@ -6,6 +6,9 @@ from core.goals.goal_state_validator import GoalStateValidator
 from core.goals.goal_transition import GoalTransition, GoalTransitionResult
 
 
+_GOAL_COMPLETION_AUTHORITY_TOKEN = object()
+
+
 class GoalStateMachine:
     def __init__(self, *, validator: GoalStateValidator | None = None) -> None:
         self.validator = validator or GoalStateValidator()
@@ -15,7 +18,22 @@ class GoalStateMachine:
         transition: GoalTransition,
         *,
         all_subgoals_completed: bool | None = None,
+        completion_authority_token: object | None = None,
     ) -> GoalTransitionResult:
+        if (
+            transition.target_type == "goal"
+            and transition.to_state == "completed"
+            and completion_authority_token is not _GOAL_COMPLETION_AUTHORITY_TOKEN
+        ):
+            return GoalTransitionResult(
+                accepted=False,
+                from_state=transition.from_state,
+                to_state=transition.to_state,
+                reason="goal_lifecycle_contract_violation",
+                blocked_reason="canonical_completion_authority_required",
+                requires_user_review=True,
+                evidence_refs=transition.evidence_refs,
+            )
         validation = self.validator.validate(
             transition,
             all_subgoals_completed=all_subgoals_completed,

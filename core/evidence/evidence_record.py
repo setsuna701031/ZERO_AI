@@ -75,5 +75,8 @@ class EvidenceRecord:
             "metadata": copy.deepcopy(dict(self.metadata)),
         }
 
+    def __deepcopy__(self, memo: dict[int, Any]) -> "EvidenceRecord":
+        return self
+
 
 __all__ = ["EvidenceRecord", "EvidenceValidationState"]

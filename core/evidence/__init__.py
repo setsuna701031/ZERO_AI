@@ -5,7 +5,7 @@ from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_contract import EvidenceContract
 from core.evidence.evidence_record import EvidenceRecord, EvidenceValidationState
 from core.evidence.evidence_repository import EvidenceRepository
-from core.evidence.evidence_validator import EvidenceValidator
+from core.evidence.evidence_validator import EvidenceValidator, is_provenance_validated_evidence
 
 __all__ = [
     "EvidenceChain",
@@ -15,4 +15,5 @@ __all__ = [
     "EvidenceRepository",
     "EvidenceValidationState",
     "EvidenceValidator",
+    "is_provenance_validated_evidence",
 ]

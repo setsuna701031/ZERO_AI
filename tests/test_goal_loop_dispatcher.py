@@ -1,7 +1,9 @@
 from core.goals.goal_completion_authority import (
+    GoalCompletionAuthority,
     GOAL_COMPLETION_AUTHORITY_OWNER,
     GOAL_COMPLETION_RESULT_SCHEMA,
 )
+from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.goal_loop_dispatcher import GoalLoopDispatcher
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_runtime import ReplanRuntime
@@ -30,6 +32,11 @@ def _dispatcher() -> GoalLoopDispatcher:
         continuation_coordinator=FakeContinuationCoordinator(),
         replan_coordinator=FakeReplanCoordinator(),
     )
+
+
+def _attestation():
+    evidence = EvidenceValidator().validate(EvidenceRecord("e1", "goal_a", None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id="goal_a", evidence_refs=[evidence], all_subgoals_completed=True)
 
 
 def test_dispatcher_delegates_continuation() -> None:
@@ -68,14 +75,8 @@ def test_dispatcher_allows_complete_terminal_when_authority_accepts() -> None:
         cycle={
             "goal_id": "goal_a",
             "adaptive_decision_record": {"decision": "complete"},
-            "goal_completion_authority_result": {
-                "schema": GOAL_COMPLETION_RESULT_SCHEMA,
-                "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
-                "accepted": True,
-                "completed": True,
-                "to_state": "completed",
-                "evidence_refs": [{"evidence_id": "e1", "validation_state": "validated"}],
-            },
+            "goal_completion_attestation": _attestation(),
+            "goal_completion_authority_result": _attestation().to_dict(),
         },
         current_goal_id="goal_a",
         cycle_index=0,
@@ -153,6 +154,19 @@ def test_dispatcher_blocks_authority_shaped_payload_without_owner_provenance() -
 
     assert result.terminal is False
     assert result.action == "terminal_blocked"
+
+
+def test_dispatcher_blocks_forged_authority_dict_with_owner_provenance() -> None:
+    forged = _attestation().to_dict()
+    result = _dispatcher().dispatch(
+        loop_decision={"action": "terminal", "stop_reason": "complete"},
+        cycle={"adaptive_decision_record": {"decision": "complete"}, "goal_completion_authority_result": forged},
+        current_goal_id="goal_a",
+        cycle_index=0,
+        continuation_runtime=ContinuationRuntime.start("goal_a"),
+        replan_runtime=ReplanRuntime.start(),
+    )
+    assert result.terminal is False
 
 
 def test_dispatcher_blocks_marker_only_completion_authority() -> None:

@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 from core.goals.goal_completion_authority import GoalCompletionAuthority
+from core.evidence import EvidenceRecord, EvidenceValidator
 
 
-VALIDATED_EVIDENCE = [
-    {
-        "id": "evidence-1",
-        "validation_state": "validated",
-    }
-]
+def _validated_evidence():
+    return [EvidenceValidator().validate(EvidenceRecord("evidence-1", "goal-1", None, "test", "ok", "now"))]
 
 
 def test_aer_final_closure_path_requires_goal_completion_authority() -> None:
@@ -17,7 +14,7 @@ def test_aer_final_closure_path_requires_goal_completion_authority() -> None:
     terminal_result = authority.complete_goal(
         goal_id="goal-1",
         from_state="active",
-        evidence_refs=VALIDATED_EVIDENCE,
+        evidence_refs=_validated_evidence(),
         all_subgoals_completed=True,
         reason="aer_final_closure",
     )
@@ -26,7 +23,7 @@ def test_aer_final_closure_path_requires_goal_completion_authority() -> None:
     assert terminal_result.completed is True
     assert terminal_result.reason == "aer_final_closure"
     assert terminal_result.blocked_reason is None
-    assert terminal_result.evidence_refs == VALIDATED_EVIDENCE
+    assert terminal_result.evidence_refs == _validated_evidence()
 
 
 def test_aer_final_closure_rejects_without_validated_evidence() -> None:
@@ -56,7 +53,7 @@ def test_aer_final_closure_rejects_without_completed_subgoals() -> None:
     terminal_result = authority.complete_goal(
         goal_id="goal-1",
         from_state="active",
-        evidence_refs=VALIDATED_EVIDENCE,
+        evidence_refs=_validated_evidence(),
         all_subgoals_completed=False,
         reason="aer_final_closure",
     )
@@ -88,7 +85,7 @@ def test_aer_final_closure_rejects_illegal_state_transition() -> None:
     terminal_result = authority.complete_goal(
         goal_id="goal-1",
         from_state="created",
-        evidence_refs=VALIDATED_EVIDENCE,
+        evidence_refs=_validated_evidence(),
         all_subgoals_completed=True,
         reason="illegal_direct_completion_attempt",
     )

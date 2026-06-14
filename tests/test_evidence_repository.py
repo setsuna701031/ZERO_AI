@@ -20,7 +20,7 @@ def test_repository_queries_latest_validated_evidence_by_goal_and_subgoal(tmp_pa
     repository = EvidenceRepository(tmp_path)
     pending = _record("e-1")
     repository.add_record(pending)
-    validated = EvidenceValidator().validate(pending, accepted=True)
+    validated = EvidenceValidator().validate(pending)
     repository.add_record(validated)
     repository.add_record(_record("e-2"))
     assert repository.list_validated_by_goal("goal-1") == [validated]

@@ -13,7 +13,7 @@ def test_goal_completion_without_validated_evidence_is_blocked() -> None:
 
 def test_validated_evidence_allows_completion_suggestion() -> None:
     pending = EvidenceRecord("e-1", "goal-1", None, "scanner", "complete", "2026-06-09T00:00:00Z")
-    validated = EvidenceValidator().validate(pending, accepted=True)
+    validated = EvidenceValidator().validate(pending)
     plan = AdaptivePlanner().decide(
         current_goal={"goal_id": "goal-1", "status": "active"},
         subgoals=[{"subgoal_id": "sub-1", "status": "completed"}],

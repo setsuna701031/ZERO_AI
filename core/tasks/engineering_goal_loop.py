@@ -302,9 +302,14 @@ class EngineeringGoalLoop:
             "goal_loop_decision": {},
             "updated_at": time.time(),
         }
-        completion_authority_result = _as_mapping(adaptive.get("goal_completion_authority_result"))
-        if completion_authority_result:
-            cycle["goal_completion_authority_result"] = copy.deepcopy(completion_authority_result)
+        completion_attestation = adaptive.get("goal_completion_authority_result")
+        if completion_attestation is not None:
+            cycle["goal_completion_attestation"] = completion_attestation
+            to_dict = getattr(completion_attestation, "to_dict", None)
+            if callable(to_dict):
+                cycle["goal_completion_authority_result"] = copy.deepcopy(to_dict())
+            elif isinstance(completion_attestation, Mapping):
+                cycle["goal_completion_authority_result"] = copy.deepcopy(dict(completion_attestation))
 
         if decision == "blocked":
             cycle["root_cause"] = root_cause

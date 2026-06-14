@@ -3,8 +3,9 @@ from __future__ import annotations
 """Validation rules for the sealed goal lifecycle contract."""
 
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
+from core.evidence.evidence_validator import is_provenance_validated_evidence
 from core.goals.goal_state import TERMINAL_GOAL_STATES, TERMINAL_SUBGOAL_STATES
 from core.goals.goal_transition import GoalTransition
 
@@ -17,30 +18,10 @@ class GoalStateValidationResult:
     requires_user_review: bool = False
 
 
-def _evidence_ref_validation_state(ref: Any) -> str:
-    """Return the validation state carried by an evidence ref, if present.
-
-    Evidence refs may be dictionaries from EvidenceRecord.to_dict(), objects
-    with a validation_state attribute, or plain IDs from legacy callers.  Plain
-    IDs prove that evidence was referenced, but they do not prove validation.
-    Goal completion therefore accepts only refs that explicitly carry
-    validation_state="validated".
-    """
-
-    if isinstance(ref, Mapping):
-        return str(ref.get("validation_state") or "").strip().lower()
-    state = str(getattr(ref, "validation_state", "") or "").strip().lower()
-    if state:
-        return state
-    if str(ref or "").strip():
-        return "validated"
-    return ""
-
-
 def _all_evidence_refs_validated(evidence_refs: list[Any]) -> bool:
     if not evidence_refs:
         return False
-    return all(_evidence_ref_validation_state(ref) == "validated" for ref in evidence_refs)
+    return all(is_provenance_validated_evidence(ref) for ref in evidence_refs)
 
 
 class GoalStateValidator:

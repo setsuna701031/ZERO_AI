@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 from core.goals.goal_completion_authority import GoalCompletionAuthority
+from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
@@ -33,11 +34,14 @@ class DecisionRunner:
             "root_cause": {"stop_reason": "blocked_dependency"} if decision == "blocked" else {},
         }
         if decision == "complete":
+            evidence = EvidenceValidator().validate(
+                EvidenceRecord(f"{goal_id}-evidence", goal_id, None, "test", "ok", "now")
+            )
             adaptive_decision["goal_completion_authority_result"] = GoalCompletionAuthority().complete_goal(
                 goal_id=goal_id,
-                evidence_refs=[{"evidence_id": f"{goal_id}-evidence", "validation_state": "validated"}],
+                evidence_refs=[evidence],
                 all_subgoals_completed=True,
-            ).to_dict()
+            )
         return {
             "ok": decision == "complete",
             "goal_id": goal_id,

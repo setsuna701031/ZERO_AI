@@ -70,7 +70,7 @@ class EngineeringSessionStateMachine:
 
     def transition(self, transition: EngineeringSessionTransition | Mapping[str, Any]) -> EngineeringSessionStateResult:
         record = transition.to_dict() if isinstance(transition, EngineeringSessionTransition) else _mapping(transition)
-        validation = self.validator.validate(record)
+        validation = self.validator.validate(transition)
         validation_record = validation.to_dict()
         from_state = _text(validation_record.get("from_state"))
         to_state = _text(validation_record.get("to_state"))
@@ -135,6 +135,7 @@ class EngineeringSessionStateMachine:
         created_at: str = "",
         lifecycle_state: Mapping[str, Any] | None = None,
         cycle: Mapping[str, Any] | None = None,
+        completion_attestation: Any = None,
     ) -> dict[str, Any]:
         return EngineeringSessionTransition(
             from_state=from_state,
@@ -149,6 +150,7 @@ class EngineeringSessionStateMachine:
             created_at=created_at,
             lifecycle_state=lifecycle_state,
             cycle=cycle,
+            completion_attestation=completion_attestation,
         ).to_dict()
 
     def evaluate_lifecycle(
@@ -157,6 +159,7 @@ class EngineeringSessionStateMachine:
         *,
         from_state: str = "created",
         cycle: Mapping[str, Any] | None = None,
+        completion_attestation: Any = None,
     ) -> EngineeringSessionStateResult:
         lifecycle = _mapping(lifecycle_state)
         cycle_record = _mapping(cycle)
@@ -185,9 +188,10 @@ class EngineeringSessionStateMachine:
             })
         target = self.target_state_for_lifecycle(lifecycle)
         return self.transition(
-            self.build_transition_record(
+            EngineeringSessionTransition(
                 from_state=from_state,
                 to_state=target,
+                action=target,
                 reason=_text(lifecycle.get("reason"), f"engineering_session_{target}"),
                 trigger=_text(lifecycle.get("trigger"), "engineering_lifecycle_evaluation"),
                 evidence=_mapping(lifecycle.get("evidence")) or {"lifecycle_state": copy.deepcopy(lifecycle)},
@@ -196,6 +200,7 @@ class EngineeringSessionStateMachine:
                 task_id=task_id,
                 lifecycle_state=lifecycle,
                 cycle=cycle_record,
+                completion_attestation=completion_attestation,
             )
         )
 
@@ -205,6 +210,7 @@ class EngineeringSessionStateMachine:
             _mapping(record.get("engineering_lifecycle_state")),
             from_state=from_state,
             cycle=record,
+            completion_attestation=record.get("goal_completion_attestation"),
         )
 
     @staticmethod

@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from core.tasks.engineering_lifecycle_state import clean_engineering_lifecycle_state
 from core.tasks.engineering_lifecycle_transition import EngineeringLifecycleTransition
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 
 
 ENGINEERING_LIFECYCLE_VALIDATION_SCHEMA = "zero.engineering_lifecycle_validation.v1"
@@ -89,6 +90,17 @@ class EngineeringLifecycleValidator:
                 to_state=to_state,
                 reason="engineering_lifecycle_transition_rejected",
                 blocked_reason=f"illegal_transition:{from_state}->{to_state}",
+            )
+        if to_state == "completed" and (
+            not isinstance(transition, EngineeringLifecycleTransition)
+            or not is_accepted_goal_completion_result(transition.completion_attestation)
+        ):
+            return EngineeringLifecycleValidationResult(
+                accepted=False,
+                from_state=from_state,
+                to_state=to_state,
+                reason="engineering_lifecycle_transition_rejected",
+                blocked_reason="canonical_completion_attestation_required",
             )
         return EngineeringLifecycleValidationResult(
             accepted=True,

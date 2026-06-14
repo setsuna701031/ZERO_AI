@@ -71,7 +71,7 @@ class EngineeringLifecycleStateMachine:
 
     def transition(self, transition: EngineeringLifecycleTransition | Mapping[str, Any]) -> EngineeringLifecycleStateResult:
         record = transition.to_dict() if isinstance(transition, EngineeringLifecycleTransition) else _mapping(transition)
-        validation = self.validator.validate(record)
+        validation = self.validator.validate(transition)
         validation_record = validation.to_dict()
         from_state = _text(validation_record.get("from_state"))
         to_state = _text(validation_record.get("to_state"))
@@ -106,6 +106,7 @@ class EngineeringLifecycleStateMachine:
         *,
         adaptive_replan_state: Mapping[str, Any] | None = None,
         from_state: str = "created",
+        completion_attestation: Any = None,
     ) -> EngineeringLifecycleStateResult:
         loop_contract = _mapping(adaptive_loop_contract)
         replan_state = _mapping(adaptive_replan_state) or _mapping(loop_contract.get("adaptive_replan_state"))
@@ -118,6 +119,7 @@ class EngineeringLifecycleStateMachine:
                 reason=_text(loop_contract.get("reason") or replan_state.get("reason"), f"engineering_lifecycle_{target}"),
                 adaptive_loop_contract=loop_contract,
                 adaptive_replan_state=replan_state,
+                completion_attestation=completion_attestation,
             )
         )
 
@@ -127,6 +129,7 @@ class EngineeringLifecycleStateMachine:
             _mapping(record.get("adaptive_loop_contract")),
             adaptive_replan_state=_mapping(record.get("adaptive_replan_state")),
             from_state=from_state,
+            completion_attestation=record.get("goal_completion_attestation"),
         )
 
     @staticmethod

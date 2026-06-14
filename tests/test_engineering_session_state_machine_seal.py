@@ -128,6 +128,12 @@ def test_missing_lifecycle_record_does_not_fake_success() -> None:
     assert result.reason == "engineering_session_transition_rejected"
 
 
+def test_session_completion_requires_canonical_attestation() -> None:
+    result = EngineeringSessionStateMachine().transition(_record("active", "completed"))
+    assert result.accepted is False
+    assert result.blocked_reason == "canonical_completion_attestation_required"
+
+
 def test_lifecycle_transition_preserves_session_identity_and_evidence() -> None:
     result = EngineeringSessionStateMachine().evaluate_lifecycle(
         {

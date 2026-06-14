@@ -5,7 +5,9 @@ from typing import Any
 from core.goals.goal_completion_authority import (
     GOAL_COMPLETION_AUTHORITY_OWNER,
     GOAL_COMPLETION_RESULT_SCHEMA,
+    GoalCompletionAuthority,
 )
+from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 
 
@@ -52,16 +54,12 @@ class FakeRunner:
             "adaptive_planning_record": {},
         }
         if decision == "complete":
-            adaptive_decision["goal_completion_authority_result"] = {
-                "schema": GOAL_COMPLETION_RESULT_SCHEMA,
-                "authority_owner": GOAL_COMPLETION_AUTHORITY_OWNER,
-                "accepted": True,
-                "completed": True,
-                "from_state": "active",
-                "to_state": "completed",
-                "reason": "validated_completion",
-                "evidence_refs": [{"evidence_id": "validated-demo", "validation_state": "validated"}],
-            }
+            evidence = EvidenceValidator().validate(EvidenceRecord("validated-demo", goal_id, None, "test", "ok", "now"))
+            adaptive_decision["goal_completion_authority_result"] = GoalCompletionAuthority().complete_goal(
+                goal_id=goal_id,
+                evidence_refs=[evidence],
+                all_subgoals_completed=True,
+            )
         return {
             "goal_id": goal_id,
             "action": "run_goal",

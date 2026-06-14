@@ -20,8 +20,7 @@ def test_completed_goal_without_evidence_requests_evidence() -> None:
 
 def test_goal_with_active_subgoal_cannot_be_treated_as_completed() -> None:
     evidence = EvidenceValidator().validate(
-        EvidenceRecord("e-1", "goal-1", None, "scanner", "complete", "2026-06-09T00:00:00Z"),
-        accepted=True,
+        EvidenceRecord("e-1", "goal-1", None, "scanner", "complete", "2026-06-09T00:00:00Z")
     )
     plan = AdaptivePlanner().decide(
         current_goal={"goal_id": "goal-1", "status": "completed"},

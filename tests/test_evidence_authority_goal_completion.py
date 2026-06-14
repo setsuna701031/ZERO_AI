@@ -37,7 +37,7 @@ def test_goal_completion_requires_validated_evidence_summary(tmp_path: Path) -> 
     assert pending_chain.validated_count == 0
     assert pending_chain.pending_count == 1
 
-    validated = EvidenceValidator().validate(pending, accepted=True)
+    validated = EvidenceValidator().validate(pending)
     repository.add_record(validated)
     validated_chain = authority.get_goal_chain("goal_a")
 
@@ -96,5 +96,6 @@ def test_decision_evidence_repository_routes_through_evidence_authority(tmp_path
     assert saved["evidence_authority_schema"] == "zero.evidence_authority.v1"
     assert saved["evidence_source"] == "decision_evidence"
     assert saved["evidence_id"] in chain.evidence_ids
-    assert chain.has_validated_evidence is True
+    assert chain.has_validated_evidence is False
+    assert chain.pending_count == 1
     assert not hasattr(decision_repository, "complete_goal")
