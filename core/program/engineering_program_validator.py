@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from core.program.engineering_program_state import clean_engineering_program_state
 from core.program.engineering_program_transition import EngineeringProgramTransition
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 
 
 ENGINEERING_PROGRAM_VALIDATION_SCHEMA = "zero.engineering_program_validation.v1"
@@ -76,6 +77,18 @@ class EngineeringProgramValidator:
                 to_state=to_state,
                 reason="engineering_program_transition_rejected",
                 blocked_reason=f"illegal_transition:{from_state}->{to_state}",
+            )
+        if to_state == "completed" and (
+            not isinstance(transition, EngineeringProgramTransition)
+            or not transition.goal_id
+            or not is_accepted_goal_completion_result(transition.completion_attestation, goal_id=transition.goal_id)
+        ):
+            return EngineeringProgramValidationResult(
+                accepted=False,
+                from_state=from_state,
+                to_state=to_state,
+                reason="engineering_program_transition_rejected",
+                blocked_reason="canonical_completion_attestation_required",
             )
         return EngineeringProgramValidationResult(
             accepted=True,

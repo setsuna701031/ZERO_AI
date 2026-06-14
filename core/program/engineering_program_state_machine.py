@@ -68,7 +68,7 @@ class EngineeringProgramStateMachine:
 
     def transition(self, transition: EngineeringProgramTransition | Mapping[str, Any]) -> EngineeringProgramStateResult:
         record = transition.to_dict() if isinstance(transition, EngineeringProgramTransition) else _mapping(transition)
-        validation = self.validator.validate(record)
+        validation = self.validator.validate(transition)
         validation_record = validation.to_dict()
         from_state = _text(validation_record.get("from_state"))
         to_state = _text(validation_record.get("to_state"))
@@ -100,6 +100,8 @@ class EngineeringProgramStateMachine:
         *,
         from_state: str = "created",
         cycle: Mapping[str, Any] | None = None,
+        goal_id: str = "",
+        completion_attestation: Any = None,
     ) -> EngineeringProgramStateResult:
         session = _mapping(session_state)
         target = self.target_state_for_session(session)
@@ -111,6 +113,8 @@ class EngineeringProgramStateMachine:
                 reason=_text(session.get("reason"), f"engineering_program_{target}"),
                 session_state=session,
                 cycle=cycle,
+                goal_id=_text(goal_id),
+                completion_attestation=completion_attestation,
             )
         )
 
@@ -120,6 +124,8 @@ class EngineeringProgramStateMachine:
             _mapping(record.get("engineering_session_state")),
             from_state=from_state,
             cycle=record,
+            goal_id=_text(record.get("goal_id")),
+            completion_attestation=record.get("goal_completion_attestation"),
         )
 
     @staticmethod

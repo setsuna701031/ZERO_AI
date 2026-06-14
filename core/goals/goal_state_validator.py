@@ -18,10 +18,10 @@ class GoalStateValidationResult:
     requires_user_review: bool = False
 
 
-def _all_evidence_refs_validated(evidence_refs: list[Any]) -> bool:
+def _all_evidence_refs_validated(evidence_refs: list[Any], *, goal_id: str) -> bool:
     if not evidence_refs:
         return False
-    return all(is_provenance_validated_evidence(ref) for ref in evidence_refs)
+    return all(is_provenance_validated_evidence(ref, goal_id=goal_id) for ref in evidence_refs)
 
 
 class GoalStateValidator:
@@ -74,7 +74,7 @@ class GoalStateValidator:
         if transition.target_type == "goal" and transition.to_state == "completed":
             if not transition.evidence_refs:
                 violations.append("completed_goal_requires_evidence")
-            elif not _all_evidence_refs_validated(transition.evidence_refs):
+            elif not _all_evidence_refs_validated(transition.evidence_refs, goal_id=transition.target_id):
                 violations.append("completed_goal_requires_validated_evidence")
             if all_subgoals_completed is not True:
                 violations.append("completed_goal_requires_completed_subgoals")

@@ -12,7 +12,6 @@ from core.goals.goal_transition import GoalTransition
 
 GOAL_COMPLETION_AUTHORITY_OWNER = "core.goals.goal_completion_authority.GoalCompletionAuthority"
 GOAL_COMPLETION_RESULT_SCHEMA = "zero.goal_completion_authority.result.v1"
-_ISSUED_COMPLETION_ATTESTATIONS: dict[int, "GoalCompletionResult"] = {}
 
 
 @dataclass(frozen=True)
@@ -54,79 +53,79 @@ class GoalCompletionResult:
         return self
 
 
-def is_accepted_goal_completion_result(value: Any) -> bool:
-    if not isinstance(value, GoalCompletionResult):
-        return False
-    return bool(
-        _ISSUED_COMPLETION_ATTESTATIONS.get(id(value)) is value
-        and value.schema == GOAL_COMPLETION_RESULT_SCHEMA
-        and value.authority_owner == GOAL_COMPLETION_AUTHORITY_OWNER
-        and value.accepted is True
-        and value.completed is True
-        and value.to_state == "completed"
-        and value.evidence_refs
-    )
+def _build_completion_attestation_boundary():
+    issued_attestations: dict[int, GoalCompletionResult] = {}
 
-
-class GoalCompletionAuthority:
-    """The only legal Goal Completed declaration authority.
-
-    This authority does not duplicate validator rules.
-    It only creates the completion transition and delegates the decision to
-    GoalStateMachine / GoalStateValidator.
-    """
-
-    def __init__(self, *, state_machine: GoalStateMachine | None = None) -> None:
-        self.state_machine = state_machine or GoalStateMachine()
-
-    def complete_goal(
-        self,
-        *,
-        goal_id: str,
-        from_state: str = "active",
-        evidence_refs: list[Any] | None = None,
-        all_subgoals_completed: bool = False,
-        reason: str | None = None,
-    ) -> GoalCompletionResult:
-        refs = list(evidence_refs or [])
-
-        transition = GoalTransition(
-            target_type="goal",
-            target_id=goal_id,
-            from_state=from_state,
-            to_state="completed",
-            action="complete",
-            reason=reason or "goal_completion_authority_requested",
-            evidence_refs=refs,
+    def is_accepted_goal_completion_result(value: Any, *, goal_id: str | None = None) -> bool:
+        return bool(
+            isinstance(value, GoalCompletionResult)
+            and issued_attestations.get(id(value)) is value
+            and value.schema == GOAL_COMPLETION_RESULT_SCHEMA
+            and value.authority_owner == GOAL_COMPLETION_AUTHORITY_OWNER
+            and value.accepted is True
+            and value.completed is True
+            and value.to_state == "completed"
+            and value.evidence_refs
+            and (goal_id is None or value.goal_id == goal_id)
         )
 
-        result = self.state_machine.transition(
-            transition,
-            all_subgoals_completed=all_subgoals_completed,
-            completion_authority_token=_GOAL_COMPLETION_AUTHORITY_TOKEN,
-        )
+    class GoalCompletionAuthority:
+        """The only legal Goal Completed declaration authority."""
 
-        completion = GoalCompletionResult(
-            accepted=result.accepted,
-            goal_id=goal_id,
-            from_state=result.from_state,
-            to_state=result.to_state,
-            reason=result.reason,
-            blocked_reason=result.blocked_reason,
-            requires_user_review=result.requires_user_review,
-            evidence_refs=result.evidence_refs,
-        )
-        if (
-            type(self.state_machine) is GoalStateMachine
-            and completion.accepted
-            and completion.from_state == "active"
-            and completion.to_state == "completed"
-            and all_subgoals_completed is True
-            and completion.evidence_refs
-            and all(is_provenance_validated_evidence(ref) for ref in completion.evidence_refs)
-        ):
-            _ISSUED_COMPLETION_ATTESTATIONS[id(completion)] = completion
-        return completion
+        def __init__(self, *, state_machine: GoalStateMachine | None = None) -> None:
+            self.state_machine = state_machine or GoalStateMachine()
+
+        def complete_goal(
+            self,
+            *,
+            goal_id: str,
+            from_state: str = "active",
+            evidence_refs: list[Any] | None = None,
+            all_subgoals_completed: bool = False,
+            reason: str | None = None,
+        ) -> GoalCompletionResult:
+            refs = list(evidence_refs or [])
+            transition = GoalTransition(
+                target_type="goal",
+                target_id=goal_id,
+                from_state=from_state,
+                to_state="completed",
+                action="complete",
+                reason=reason or "goal_completion_authority_requested",
+                evidence_refs=refs,
+            )
+            result = self.state_machine.transition(
+                transition,
+                all_subgoals_completed=all_subgoals_completed,
+                completion_authority_token=_GOAL_COMPLETION_AUTHORITY_TOKEN,
+            )
+            completion = GoalCompletionResult(
+                accepted=result.accepted,
+                goal_id=goal_id,
+                from_state=result.from_state,
+                to_state=result.to_state,
+                reason=result.reason,
+                blocked_reason=result.blocked_reason,
+                requires_user_review=result.requires_user_review,
+                evidence_refs=result.evidence_refs,
+            )
+            if (
+                type(self.state_machine) is GoalStateMachine
+                and completion.accepted
+                and completion.from_state == "active"
+                and completion.to_state == "completed"
+                and all_subgoals_completed is True
+                and completion.evidence_refs
+                and all(is_provenance_validated_evidence(ref, goal_id=goal_id) for ref in completion.evidence_refs)
+            ):
+                issued_attestations[id(completion)] = completion
+            return completion
+
+    return GoalCompletionAuthority, is_accepted_goal_completion_result
+
+
+GoalCompletionAuthority, is_accepted_goal_completion_result = _build_completion_attestation_boundary()
+del _build_completion_attestation_boundary
 
 
 __all__ = [

@@ -16,6 +16,11 @@ from core.tasks.engineering_program_repository import EngineeringProgramReposito
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _attestation(goal_id: str):
+    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+
+
 class DecisionRunner:
     def __init__(self, decisions: dict[str, str]) -> None:
         self.decisions = decisions
@@ -60,7 +65,10 @@ def test_program_advances_multiple_portfolios_and_reports_blocked_path(tmp_path)
         ("portfolio_2_done", "complete"),
         ("portfolio_2_ready", "pending"),
     ):
-        goal_repository.save_goal({"goal_id": goal_id, "summary": goal_id, "status": status})
+        goal_repository.save_goal(
+            {"goal_id": goal_id, "summary": goal_id, "status": status},
+            completion_attestation=_attestation(goal_id) if status in {"complete", "completed"} else None,
+        )
 
     portfolio_repository.create_portfolio(
         {"portfolio_id": "portfolio_1", "name": "Blocked path", "goal_ids": ["portfolio_1_blocked"]}

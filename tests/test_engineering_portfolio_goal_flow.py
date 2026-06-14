@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from core.evidence import EvidenceRecord, EvidenceValidator
+from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoordinator
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
@@ -14,11 +16,19 @@ from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepo
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def _attestation(goal_id: str):
+    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+
+
 def test_real_portfolio_run_next_selects_first_runnable_and_delegates_to_goal_loop(tmp_path) -> None:
     portfolio_repository = EngineeringPortfolioRepository(tmp_path)
     goal_repository = EngineeringGoalRepository(tmp_path)
     portfolio_repository.create_portfolio({"portfolio_id": "portfolio_1", "name": "Runtime portfolio"})
-    goal_repository.save_goal({"goal_id": "goal_done", "summary": "Already done", "status": "complete"})
+    goal_repository.save_goal(
+        {"goal_id": "goal_done", "summary": "Already done", "status": "complete"},
+        completion_attestation=_attestation("goal_done"),
+    )
     goal_repository.save_goal({"goal_id": "goal_ready", "summary": "Build demo system", "status": "pending"})
     portfolio_repository.add_goal_to_portfolio("portfolio_1", "goal_done")
     portfolio_repository.add_goal_to_portfolio("portfolio_1", "goal_ready")
@@ -41,7 +51,10 @@ def test_real_portfolio_cycle_reports_no_runnable_goal_after_complete(tmp_path) 
     portfolio_repository = EngineeringPortfolioRepository(tmp_path)
     goal_repository = EngineeringGoalRepository(tmp_path)
     portfolio_repository.create_portfolio({"portfolio_id": "portfolio_1", "name": "Runtime portfolio"})
-    goal_repository.save_goal({"goal_id": "goal_done", "summary": "Already done", "status": "complete"})
+    goal_repository.save_goal(
+        {"goal_id": "goal_done", "summary": "Already done", "status": "complete"},
+        completion_attestation=_attestation("goal_done"),
+    )
     portfolio_repository.add_goal_to_portfolio("portfolio_1", "goal_done")
 
     result = EngineeringPortfolioCoordinator(

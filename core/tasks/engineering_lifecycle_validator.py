@@ -93,7 +93,8 @@ class EngineeringLifecycleValidator:
             )
         if to_state == "completed" and (
             not isinstance(transition, EngineeringLifecycleTransition)
-            or not is_accepted_goal_completion_result(transition.completion_attestation)
+            or not transition.goal_id
+            or not is_accepted_goal_completion_result(transition.completion_attestation, goal_id=transition.goal_id)
         ):
             return EngineeringLifecycleValidationResult(
                 accepted=False,

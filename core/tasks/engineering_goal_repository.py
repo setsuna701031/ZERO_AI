@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.goals.goal_completion_authority import GoalCompletionResult, is_accepted_goal_completion_result
 
 ENGINEERING_GOAL_REPOSITORY_SCHEMA = "zero.engineering_goal_repository.v1"
 ENGINEERING_GOAL_RECORD_SCHEMA = "zero.engineering_goal_record.v1"
@@ -124,11 +125,22 @@ class EngineeringGoalRepository:
     def storage_dir(self) -> Path:
         return self.storage_path.parent
 
-    def save_goal(self, goal: Mapping[str, Any] | EngineeringGoal | str, **fields: Any) -> dict[str, Any]:
+    def save_goal(
+        self,
+        goal: Mapping[str, Any] | EngineeringGoal | str,
+        *,
+        completion_attestation: GoalCompletionResult | None = None,
+        **fields: Any,
+    ) -> dict[str, Any]:
         records = self._read_records()
         raw_goal = self._coerce_goal_input(goal, records, fields)
         goal_record = EngineeringGoal.from_mapping(raw_goal).as_dict()
         goal_id = goal_record["goal_id"]
+        if goal_record["status"] in {"complete", "completed"} and not is_accepted_goal_completion_result(
+            completion_attestation,
+            goal_id=goal_id,
+        ):
+            raise ValueError("canonical_completion_attestation_required")
         if goal_id in records:
             raise ValueError(f"engineering_goal_already_exists:{goal_id}")
         records[goal_id] = goal_record
@@ -139,7 +151,13 @@ class EngineeringGoalRepository:
         record = self._read_records().get(_clean_text(goal_id))
         return copy.deepcopy(record) if record else None
 
-    def update_goal(self, goal_id: str, updates: Mapping[str, Any]) -> dict[str, Any]:
+    def update_goal(
+        self,
+        goal_id: str,
+        updates: Mapping[str, Any],
+        *,
+        completion_attestation: GoalCompletionResult | None = None,
+    ) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
         if not target_goal_id:
             raise ValueError("engineering_goal_update_requires_goal_id")
@@ -149,6 +167,12 @@ class EngineeringGoalRepository:
         existing = records.get(target_goal_id)
         if existing is None:
             raise KeyError(target_goal_id)
+        target_status = _clean_text(updates.get("status")).lower()
+        if target_status in {"complete", "completed"} and not is_accepted_goal_completion_result(
+            completion_attestation,
+            goal_id=target_goal_id,
+        ):
+            raise ValueError("canonical_completion_attestation_required")
         merged = copy.deepcopy(existing)
         for key, value in updates.items():
             if key in {"schema", "goal_id", "created_at"}:

@@ -26,6 +26,7 @@ class EngineeringLifecycleTransition:
     adaptive_loop_contract: Mapping[str, Any] | None = None
     adaptive_replan_state: Mapping[str, Any] | None = None
     completion_attestation: Any = None
+    goal_id: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "from_state", clean_engineering_lifecycle_state(self.from_state))
@@ -42,6 +43,7 @@ class EngineeringLifecycleTransition:
             "adaptive_replan_state",
             copy.deepcopy(dict(self.adaptive_replan_state)) if isinstance(self.adaptive_replan_state, Mapping) else {},
         )
+        object.__setattr__(self, "goal_id", _text(self.goal_id))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +54,7 @@ class EngineeringLifecycleTransition:
             "reason": self.reason,
             "adaptive_loop_contract": copy.deepcopy(dict(self.adaptive_loop_contract or {})),
             "adaptive_replan_state": copy.deepcopy(dict(self.adaptive_replan_state or {})),
+            "goal_id": self.goal_id,
             "execution_path": {
                 "contract_only": True,
                 "executes_tasks": False,

@@ -26,11 +26,11 @@ def test_chain_is_read_only_summary() -> None:
         ],
     )
 
-    assert chain.validated_count == 1
+    assert chain.validated_count == 0
     assert chain.rejected_count == 1
     assert chain.pending_count == 1
-    assert chain.has_validated_evidence is True
-    assert chain.validated_evidence_ids == ["evidence_validated"]
+    assert chain.has_validated_evidence is False
+    assert chain.validated_evidence_ids == []
 
 
 def test_chain_has_no_write_or_completion_authority() -> None:

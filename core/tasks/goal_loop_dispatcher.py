@@ -132,7 +132,10 @@ class GoalLoopDispatcher:
         stop_reason = _text(decision.get("stop_reason"), "stop")
         refusal_reason = _text(decision.get("refusal_reason"))
 
-        if self._is_complete_terminal(decision=decision, cycle=updated_cycle) and not self._completion_authority_accepted(updated_cycle):
+        if self._is_complete_terminal(decision=decision, cycle=updated_cycle) and not self._completion_authority_accepted(
+            updated_cycle,
+            goal_id=current_goal_id,
+        ):
             updated_cycle["goal_loop_dispatcher"] = self._marker(
                 action="terminal_blocked",
                 reason="goal_completion_authority_required",
@@ -179,8 +182,8 @@ class GoalLoopDispatcher:
         )
 
     @staticmethod
-    def _completion_authority_accepted(cycle: Mapping[str, Any]) -> bool:
-        return is_accepted_goal_completion_result(cycle.get("goal_completion_attestation"))
+    def _completion_authority_accepted(cycle: Mapping[str, Any], *, goal_id: str) -> bool:
+        return is_accepted_goal_completion_result(cycle.get("goal_completion_attestation"), goal_id=goal_id)
 
     @staticmethod
     def _marker(*, action: str, reason: str = "") -> dict[str, Any]:

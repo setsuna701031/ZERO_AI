@@ -29,6 +29,8 @@ class EngineeringProgramTransition:
     reason: str = ""
     session_state: Mapping[str, Any] | None = None
     cycle: Mapping[str, Any] | None = None
+    goal_id: str = ""
+    completion_attestation: Any = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "from_state", clean_engineering_program_state(self.from_state))
@@ -37,6 +39,7 @@ class EngineeringProgramTransition:
         object.__setattr__(self, "reason", _text(self.reason, f"engineering_program_{self.action}"))
         object.__setattr__(self, "session_state", _mapping(self.session_state))
         object.__setattr__(self, "cycle", _mapping(self.cycle))
+        object.__setattr__(self, "goal_id", _text(self.goal_id))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +50,7 @@ class EngineeringProgramTransition:
             "reason": self.reason,
             "session_state": copy.deepcopy(dict(self.session_state or {})),
             "cycle": copy.deepcopy(dict(self.cycle or {})),
+            "goal_id": self.goal_id,
             "execution_path": {
                 "transition_only": True,
                 "executes_tasks": False,

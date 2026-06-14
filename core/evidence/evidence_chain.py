@@ -66,9 +66,11 @@ class EvidenceChain:
             record = value if isinstance(value, EvidenceRecord) else EvidenceRecord.from_mapping(value)
             if record.goal_id == target_goal and (target_subgoal is None or record.subgoal_id == target_subgoal):
                 selected.append(record)
+        validated = [record for record in selected if is_provenance_validated_evidence(record, goal_id=target_goal)]
         counts = {
-            state: sum(record.validation_state == state for record in selected)
-            for state in ("validated", "rejected", "pending")
+            "validated": len(validated),
+            "rejected": sum(record.validation_state == "rejected" for record in selected),
+            "pending": sum(record.validation_state == "pending" for record in selected),
         }
         sources: dict[str, int] = {}
         for record in selected:
@@ -78,26 +80,22 @@ class EvidenceChain:
             goal_id=target_goal,
             subgoal_id=target_subgoal,
             evidence_ids=[record.evidence_id for record in selected],
-            validated_evidence_ids=[
-                record.evidence_id for record in selected if record.validation_state == "validated"
-            ],
+            validated_evidence_ids=[record.evidence_id for record in validated],
             validation_summary=counts,
             evidence_sources=sources,
-            validated_evidence_refs=[record for record in selected if is_provenance_validated_evidence(record)],
+            validated_evidence_refs=validated,
         )
 
     @classmethod
     def from_summary(cls, summary: Mapping[str, Any]) -> "EvidenceChain":
-        validation_summary = summary.get("validation_summary") if isinstance(summary.get("validation_summary"), Mapping) else {}
         return cls(
             goal_id=summary.get("goal_id"),
             subgoal_id=summary.get("subgoal_id"),
             evidence_ids=summary.get("evidence_ids") or [],
-            validated_evidence_ids=summary.get("validated_evidence_ids") or [],
             validation_summary={
-                "validated": int(summary.get("validated_count") or validation_summary.get("validated", 0)),
-                "rejected": int(summary.get("rejected_count") or validation_summary.get("rejected", 0)),
-                "pending": int(summary.get("pending_count") or validation_summary.get("pending", 0)),
+                "validated": 0,
+                "rejected": int(summary.get("rejected_count") or 0),
+                "pending": int(summary.get("pending_count") or 0),
             },
             evidence_sources=summary.get("evidence_sources") or {},
         )

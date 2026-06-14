@@ -148,7 +148,8 @@ class EngineeringSessionValidator:
             )
         if to_state == "completed" and (
             not isinstance(transition, EngineeringSessionTransition)
-            or not is_accepted_goal_completion_result(transition.completion_attestation)
+            or not transition.task_id
+            or not is_accepted_goal_completion_result(transition.completion_attestation, goal_id=transition.task_id)
         ):
             return EngineeringSessionValidationResult(
                 accepted=False,

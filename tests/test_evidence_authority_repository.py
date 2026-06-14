@@ -25,7 +25,7 @@ def test_repository_persists_and_queries_without_validating(tmp_path: Path) -> N
 
     assert pending.validation_state == "pending"
     assert validated.validation_state == "validated"
-    assert [record.evidence_id for record in repository.list_validated_by_goal("goal_a")] == ["evidence_validated"]
+    assert repository.list_validated_by_goal("goal_a") == []
 
 
 def test_repository_has_no_validation_or_goal_completion_authority(tmp_path: Path) -> None:

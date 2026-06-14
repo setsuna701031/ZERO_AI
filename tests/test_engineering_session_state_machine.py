@@ -10,12 +10,12 @@ def _attestation():
 
 def test_session_state_machine_maps_lifecycle():
     machine = EngineeringSessionStateMachine()
-    assert machine.evaluate_lifecycle({"lifecycle_state": "continuing", "task_id": "task-1"}, from_state="created").session_state == "active"
-    assert machine.evaluate_lifecycle({"lifecycle_state": "waiting_evidence", "task_id": "task-1"}, from_state="active").session_state == "waiting_user"
-    rejected = machine.evaluate_lifecycle({"lifecycle_state": "completed", "task_id": "task-1"}, from_state="active")
+    assert machine.evaluate_lifecycle({"lifecycle_state": "continuing", "task_id": "goal-1"}, from_state="created").session_state == "active"
+    assert machine.evaluate_lifecycle({"lifecycle_state": "waiting_evidence", "task_id": "goal-1"}, from_state="active").session_state == "waiting_user"
+    rejected = machine.evaluate_lifecycle({"lifecycle_state": "completed", "task_id": "goal-1"}, from_state="active")
     assert rejected.accepted is False
     completed = machine.evaluate_lifecycle(
-        {"lifecycle_state": "completed", "task_id": "task-1"},
+        {"lifecycle_state": "completed", "task_id": "goal-1"},
         from_state="active",
         completion_attestation=_attestation(),
     )

@@ -59,8 +59,7 @@ class GoalRepository:
             raise KeyError(clean_required_text(goal_id, "goal_id"))
         target_status = clean_status(status)
         if target_status == "completed" and (
-            not is_accepted_goal_completion_result(completion_attestation)
-            or completion_attestation.goal_id != goal_id
+            not is_accepted_goal_completion_result(completion_attestation, goal_id=goal_id)
         ):
             raise ValueError("canonical_completion_attestation_required")
         if self.state_machine is not None and target_status != "completed":

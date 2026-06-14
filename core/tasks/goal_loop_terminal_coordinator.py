@@ -80,7 +80,10 @@ class GoalLoopTerminalCoordinator:
         )
 
         adaptive_complete = _text(latest_decision.get("decision")) == "complete"
-        completion_authority_accepted = self._completion_authority_accepted(goal_completion_attestation)
+        completion_authority_accepted = self._completion_authority_accepted(
+            goal_completion_attestation,
+            goal_id=_text(current_goal_id, _text(target_goal_id)),
+        )
         ok = bool(terminal and cycle_records and adaptive_complete and completion_authority_accepted)
 
         effective_stop_reason = _text(stop_reason, "stop")
@@ -205,8 +208,8 @@ class GoalLoopTerminalCoordinator:
         return {}
 
     @staticmethod
-    def _completion_authority_accepted(result: Any) -> bool:
-        return is_accepted_goal_completion_result(result)
+    def _completion_authority_accepted(result: Any, *, goal_id: str) -> bool:
+        return is_accepted_goal_completion_result(result, goal_id=goal_id)
 
     @staticmethod
     def _to_dict(value: Any) -> dict[str, Any]:

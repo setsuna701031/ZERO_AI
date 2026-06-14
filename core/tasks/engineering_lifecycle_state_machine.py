@@ -107,6 +107,7 @@ class EngineeringLifecycleStateMachine:
         adaptive_replan_state: Mapping[str, Any] | None = None,
         from_state: str = "created",
         completion_attestation: Any = None,
+        goal_id: str = "",
     ) -> EngineeringLifecycleStateResult:
         loop_contract = _mapping(adaptive_loop_contract)
         replan_state = _mapping(adaptive_replan_state) or _mapping(loop_contract.get("adaptive_replan_state"))
@@ -120,6 +121,7 @@ class EngineeringLifecycleStateMachine:
                 adaptive_loop_contract=loop_contract,
                 adaptive_replan_state=replan_state,
                 completion_attestation=completion_attestation,
+                goal_id=_text(goal_id or loop_contract.get("goal_id") or replan_state.get("goal_id")),
             )
         )
 
@@ -130,6 +132,7 @@ class EngineeringLifecycleStateMachine:
             adaptive_replan_state=_mapping(record.get("adaptive_replan_state")),
             from_state=from_state,
             completion_attestation=record.get("goal_completion_attestation"),
+            goal_id=_text(record.get("goal_id")),
         )
 
     @staticmethod

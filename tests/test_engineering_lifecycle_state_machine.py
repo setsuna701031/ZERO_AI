@@ -6,6 +6,7 @@ from core.goals.goal_completion_authority import GoalCompletionAuthority
 def _loop(action, **extra):
     replan = {"loop_action": action, **extra}
     return {
+        "goal_id": "goal-1",
         "loop_state": "terminal" if action in {"complete", "blocked", "refuse", "stop"} else "progressing",
         "adaptive_replan_state": replan,
         "terminal": action in {"complete", "blocked", "refuse", "stop"},

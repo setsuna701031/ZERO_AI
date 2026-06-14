@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_record import EvidenceRecord
+from core.evidence.evidence_validator import is_provenance_validated_evidence
 from core.goals.goal_contract import clean_required_text
 
 
@@ -27,6 +28,7 @@ class EvidenceRepository:
     def __init__(self, repo_root: str | Path, *, storage_path: str | Path | None = None) -> None:
         self.repo_root = Path(repo_root)
         self.storage_path = Path(storage_path) if storage_path is not None else Path("runtime/evidence/evidence_records.jsonl")
+        self._live_records: dict[str, EvidenceRecord] = {}
         if not self.storage_path.is_absolute():
             self.storage_path = self.repo_root / self.storage_path
 
@@ -46,7 +48,8 @@ class EvidenceRepository:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         with self.storage_path.open("a", encoding="utf-8") as stream:
             stream.write(encoded + "\n")
-        return EvidenceRecord.from_mapping(evidence.to_dict())
+        self._live_records[evidence.evidence_id] = evidence
+        return evidence
 
     def add_records(self, records: Sequence[EvidenceRecord | Mapping[str, Any]]) -> list[EvidenceRecord]:
         return [self.add_record(record) for record in records]
@@ -70,10 +73,10 @@ class EvidenceRepository:
         return self._matching(lambda record: record.source == target)
 
     def list_validated_by_goal(self, goal_id: str) -> list[EvidenceRecord]:
-        return [record for record in self.list_by_goal(goal_id) if record.validation_state == "validated"]
+        return [record for record in self.list_by_goal(goal_id) if is_provenance_validated_evidence(record, goal_id=goal_id)]
 
     def list_validated_by_subgoal(self, subgoal_id: str) -> list[EvidenceRecord]:
-        return [record for record in self.list_by_subgoal(subgoal_id) if record.validation_state == "validated"]
+        return [record for record in self.list_by_subgoal(subgoal_id) if is_provenance_validated_evidence(record)]
 
     def build_chain(self, goal_id: str, *, subgoal_id: str | None = None) -> EvidenceChain:
         records = self.list_by_goal(goal_id)
@@ -101,6 +104,7 @@ class EvidenceRepository:
         latest: dict[str, EvidenceRecord] = {}
         for record in self._load_records():
             latest[record.evidence_id] = record
+        latest.update(self._live_records)
         return latest
 
     def _load_records(self) -> list[EvidenceRecord]:

@@ -15,6 +15,7 @@ from typing import Any, Mapping, Sequence
 
 from core.program.engineering_program_state_machine import EngineeringProgramStateMachine
 from core.program.engineering_program_transition import EngineeringProgramTransition
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 
 
 PROGRAM_COORDINATOR_SCHEMA = "zero.program_coordinator.v1"
@@ -99,7 +100,13 @@ class ProgramCoordinator:
         }
         return updated
 
-    def aggregate_sessions(self, session_states: Sequence[Mapping[str, Any]] | Any) -> dict[str, Any]:
+    def aggregate_sessions(
+        self,
+        session_states: Sequence[Mapping[str, Any]] | Any,
+        *,
+        goal_id: str = "",
+        completion_attestation: Any = None,
+    ) -> dict[str, Any]:
         """Return one passive Program summary from many session records.
 
         Priority is intentionally conservative:
@@ -122,8 +129,10 @@ class ProgramCoordinator:
             program_state, reason = "active", "one_or_more_sessions_active"
         elif counts["paused"]:
             program_state, reason = "paused", "one_or_more_sessions_paused"
-        elif counts["completed"]:
+        elif counts["completed"] and is_accepted_goal_completion_result(completion_attestation, goal_id=_text(goal_id)):
             program_state, reason = "completed", "all_sessions_completed_or_archived"
+        elif counts["completed"]:
+            program_state, reason = "active", "canonical_completion_attestation_required"
         elif counts["archived"] == len(states):
             program_state, reason = "archived", "all_sessions_archived"
         else:
@@ -157,7 +166,13 @@ class ProgramCoordinator:
         """Attach Program state using multi-session aggregation semantics."""
 
         updated = _mapping(cycle)
-        summary = self.aggregate_sessions(session_states)
+        goal_id = _text(updated.get("goal_id"))
+        completion_attestation = updated.get("goal_completion_attestation")
+        summary = self.aggregate_sessions(
+            session_states,
+            goal_id=goal_id,
+            completion_attestation=completion_attestation,
+        )
         transition = EngineeringProgramTransition(
             from_state=_text(from_state, "created"),
             to_state=_text(summary.get("program_state"), "active"),
@@ -165,6 +180,8 @@ class ProgramCoordinator:
             reason=_text(summary.get("reason"), "program_session_aggregation"),
             session_state=summary,
             cycle=updated,
+            goal_id=goal_id,
+            completion_attestation=completion_attestation,
         )
         result = self.engineering_program_state_machine.transition(transition)
         updated["engineering_program_session_summary"] = copy.deepcopy(summary)

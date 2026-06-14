@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from core.evidence import EvidenceRecord, EvidenceValidator
+from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
 from core.tasks.engineering_program_observability import EngineeringProgramObservability
@@ -11,6 +13,11 @@ from core.tasks.engineering_program_repository import EngineeringProgramReposito
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OBSERVABILITY_FILE = REPO_ROOT / "core/tasks/engineering_program_observability.py"
+
+
+def _attestation(goal_id: str):
+    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
+    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
 
 
 def _fixture(tmp_path: Path) -> EngineeringProgramObservability:
@@ -25,7 +32,10 @@ def _fixture(tmp_path: Path) -> EngineeringProgramObservability:
     for portfolio_id in ("portfolio_done", "portfolio_blocked", "portfolio_active"):
         program_repository.add_portfolio("program_1", portfolio_id)
 
-    goal_repository.save_goal({"goal_id": "goal_done", "summary": "Finished goal", "status": "complete"})
+    goal_repository.save_goal(
+        {"goal_id": "goal_done", "summary": "Finished goal", "status": "complete"},
+        completion_attestation=_attestation("goal_done"),
+    )
     goal_repository.save_goal({"goal_id": "goal_blocked_1", "summary": "Blocked goal 1", "status": "blocked"})
     goal_repository.save_goal({"goal_id": "goal_blocked_2", "summary": "Blocked goal 2", "status": "blocked"})
     goal_repository.save_goal({"goal_id": "goal_active", "summary": "Active goal", "status": "pending"})

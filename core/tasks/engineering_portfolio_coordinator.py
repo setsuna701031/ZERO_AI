@@ -240,7 +240,13 @@ class EngineeringPortfolioCoordinator:
     def _record_loop_terminal_status(self, goal_id: str, loop_result: Mapping[str, Any]) -> dict[str, Any]:
         stop_reason = _clean_text(loop_result.get("stop_reason")).lower()
         if stop_reason == "complete":
-            return self.goal_repository.update_goal(goal_id, {"status": "complete"})
+            cycles = loop_result.get("cycles") if isinstance(loop_result.get("cycles"), list) else []
+            latest_cycle = cycles[-1] if cycles and isinstance(cycles[-1], Mapping) else {}
+            return self.goal_repository.update_goal(
+                goal_id,
+                {"status": "complete"},
+                completion_attestation=latest_cycle.get("goal_completion_attestation"),
+            )
         if stop_reason == "blocked":
             return self.goal_repository.update_goal(goal_id, {"status": "blocked"})
         return {}
