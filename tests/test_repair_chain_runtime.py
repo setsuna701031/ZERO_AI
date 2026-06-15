@@ -1911,7 +1911,7 @@ def test_boundary_recursive_repair_goal_is_fingerprint_suppressed(monkeypatch) -
     assert third_gate["duplicate_suppressed"] is True
 
 
-def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> None:
+def test_boundary_corrupted_rollback_is_not_reached_without_dispatcher_lineage() -> None:
     probe = REPO_ROOT / "workspace" / "shared" / "boundary_corrupt_rollback.py"
     backup_path = Path(str(probe) + ".bak_edit_payload")
     probe.parent.mkdir(parents=True, exist_ok=True)
@@ -1924,10 +1924,8 @@ def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> N
             backup_path.unlink()
 
         runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
-        runner = TaskRunner(
-            step_executor=FinalVerifyFailExecutor(delete_backup_before_verify=True),
-            task_runtime=runtime,
-        )
+        executor = FinalVerifyFailExecutor(delete_backup_before_verify=True)
+        runner = TaskRunner(step_executor=executor, task_runtime=runtime)
         task_factory = lambda: _strategy_task(
             "boundary_corrupt_rollback",
             "workspace/shared/boundary_corrupt_rollback.py",
@@ -1941,13 +1939,15 @@ def test_boundary_corrupted_rollback_backup_fails_safe_and_stays_terminal() -> N
         result_after_terminal = runner.run_task(task_factory(), current_tick=5)
         state_after_rerun = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert state_after_failure["status"] == "failed"
-        assert "rollback_result" in state_after_failure["repair_context"]
-        assert "verification_failed" in state_after_failure["last_error"]
+        assert state_after_failure["status"] in {"retrying", "blocked"}
+        assert not state_after_failure["repair_context"].get("rollback_result")
+        assert "runtime dispatcher live capability required" in state_after_failure["last_error"]
+        assert executor.calls == []
 
-        assert result_after_terminal["status"] == "failed"
-        assert state_after_rerun["status"] == "failed"
-        assert state_after_rerun["repair_context"]["rollback_result"] == state_after_failure["repair_context"]["rollback_result"]
+        assert result_after_terminal["status"] == "retrying"
+        assert result_after_terminal["error"]["type"] == "execution_authority_denied"
+        assert state_after_rerun["status"] in {"retrying", "blocked"}
+        assert not state_after_rerun["repair_context"].get("rollback_result")
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")
