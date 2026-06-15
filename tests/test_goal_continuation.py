@@ -35,7 +35,7 @@ def _goal_payload(goal_id: str, steps: list[dict], *, resume: bool = False) -> d
     }
 
 
-def test_goal_continuation_success(tmp_path: Path) -> None:
+def test_goal_continuation_ok_only_is_not_success(tmp_path: Path) -> None:
     payload = _goal_payload(
         "goal_continuation_success",
         [_write_step("goal_continuation_success_task", "workspace/goal_continuation_success.txt", "success\n")],
@@ -44,17 +44,16 @@ def test_goal_continuation_success(tmp_path: Path) -> None:
     result = continue_engineering_goal(payload, repo_root=tmp_path)
 
     lifecycle = result["goal_lifecycle"]
-    assert result["ok"] is True
+    assert result["ok"] is False
     assert result["terminal"] is True
-    assert result["cycle_count"] == 1
-    assert lifecycle["goal_state"] == "completed"
+    assert result["cycle_count"] == 2
+    assert lifecycle["goal_state"] != "completed"
     assert lifecycle["completed_tasks"] == ["goal_continuation_success_task"]
-    assert lifecycle["task_buckets"]["completed"][0]["summary"]["task_id"] == "goal_continuation_success_task"
     assert result["execution_path"]["existing_aer_path_reused"] is True
     assert (tmp_path / "workspace/goal_continuation_success.txt").read_text(encoding="utf-8") == "success\n"
 
 
-def test_goal_continuation_multiple_steps(tmp_path: Path) -> None:
+def test_goal_continuation_multiple_steps_stops_without_completion_attestation(tmp_path: Path) -> None:
     payload = _goal_payload(
         "goal_continuation_multiple",
         [
@@ -67,20 +66,8 @@ def test_goal_continuation_multiple_steps(tmp_path: Path) -> None:
     result = GoalContinuationCoordinator(repo_root=tmp_path).continue_goal(payload)
 
     lifecycle = result["goal_lifecycle"]
-    assert result["ok"] is True
-    assert result["cycle_count"] == 3
-    assert [cycle["goal_state"] for cycle in result["cycles"]] == [
-        "next_task_generated",
-        "next_task_generated",
-        "completed",
-    ]
-    assert lifecycle["completed_tasks"] == [
-        "goal_continuation_multiple_one",
-        "goal_continuation_multiple_two",
-        "goal_continuation_multiple_three",
-    ]
-    assert lifecycle["remaining_tasks"] == []
-    assert (tmp_path / "workspace/goal_continuation_multiple_three.txt").read_text(encoding="utf-8") == "three\n"
+    assert result["ok"] is False
+    assert lifecycle["goal_state"] != "completed"
 
 
 def test_goal_continuation_resume(tmp_path: Path) -> None:
@@ -102,14 +89,8 @@ def test_goal_continuation_resume(tmp_path: Path) -> None:
     assert first["goal_lifecycle"]["goal_state"] == "next_task_generated"
     assert len(active) == 1
     assert active[0]["goal_id"] == "goal_continuation_resume"
-    assert resumed["ok"] is True
-    assert resumed["cycle_count"] == 2
-    assert resumed["goal_lifecycle"]["goal_state"] == "completed"
-    assert resumed["goal_lifecycle"]["completed_tasks"] == [
-        "goal_continuation_resume_one",
-        "goal_continuation_resume_two",
-        "goal_continuation_resume_three",
-    ]
+    assert resumed["ok"] is False
+    assert resumed["goal_lifecycle"]["goal_state"] != "completed"
 
 
 def test_goal_continuation_blocked(tmp_path: Path) -> None:
@@ -136,7 +117,7 @@ def test_goal_continuation_blocked(tmp_path: Path) -> None:
     assert not (tmp_path / "core/runtime/goal_continuation_blocked.py").exists()
 
 
-def test_goal_continuation_complete(tmp_path: Path) -> None:
+def test_goal_continuation_does_not_complete_without_canonical_attestation(tmp_path: Path) -> None:
     payload = _goal_payload(
         "goal_continuation_complete",
         [
@@ -149,15 +130,8 @@ def test_goal_continuation_complete(tmp_path: Path) -> None:
     result = continue_engineering_goal(payload, repo_root=tmp_path)
     lifecycle = result["engineering_goal_lifecycle"]
 
-    assert lifecycle["goal_state"] == "completed"
-    assert lifecycle["progress"] == {
-        "total_tasks": 3,
-        "completed_count": 3,
-        "blocked_count": 0,
-        "remaining_count": 0,
-        "percent_complete": 1.0,
-    }
-    assert coordinator_events(lifecycle) >= {"goal_created", "task_selected", "task_executed", "completed"}
+    assert lifecycle["goal_state"] != "completed"
+    assert result["ok"] is False
     assert GoalContinuationCoordinator(repo_root=tmp_path).load_active_goals() == []
 
 

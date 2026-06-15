@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 from core.tasks.engineering_goal_lifecycle import GOAL_STATE_SCHEMA, lifecycle_enabled
 from core.tasks.engineering_task_runner import run_engineering_task
 
@@ -134,6 +135,17 @@ class GoalContinuationCoordinator:
             )
             latest_state = copy.deepcopy(lifecycle_state if isinstance(lifecycle_state, dict) else {})
             goal_state = _clean_text(latest_state.get("goal_state"), "unknown").lower()
+            completion_attestation = (
+                latest_result.get("goal_completion_authority_result")
+                or result_bundle.get("goal_completion_authority_result")
+            )
+            if goal_state == "completed" and not is_accepted_goal_completion_result(
+                completion_attestation,
+                goal_id=_clean_text(latest_state.get("goal_id")),
+            ):
+                goal_state = "blocked"
+                latest_state["goal_state"] = goal_state
+                latest_state["completion_rejected_reason"] = "canonical_goal_completion_attestation_required"
             cycles.append(
                 {
                     "cycle": cycle_index,

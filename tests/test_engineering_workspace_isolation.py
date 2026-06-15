@@ -30,10 +30,10 @@ def test_fresh_goal_run_ignores_dirty_repo_root_workspace_and_poison_memory(tmp_
     runtime = result["runtime_result"]
     continuation = runtime["iterations"][0]["continuation_result"]
     lifecycle = continuation["goal_lifecycle"]
-    assert result["ok"] is True
-    assert runtime["state"] == "complete"
-    assert lifecycle["goal_state"] == "completed"
-    assert lifecycle["failed_tasks"] == []
+    assert result["ok"] is False
+    assert runtime["state"] == "replan"
+    assert lifecycle["goal_state"] == "failed"
+    assert lifecycle["completion_rejected"] is True
     assert "poison_task" not in repr(runtime)
 
 
@@ -51,7 +51,7 @@ def test_fresh_goal_run_does_not_read_large_repo_root_memory_store(tmp_path: Pat
 
     result = EngineeringGoalRunner(repo_root=tmp_path, repository=repository).run_goal(goal["goal_id"])
 
-    assert result["ok"] is True
-    assert result["runtime_result"]["state"] == "complete"
+    assert result["ok"] is False
+    assert result["runtime_result"]["state"] == "replan"
     assert memory_path.exists()
     assert memory_path.stat().st_size > 50000

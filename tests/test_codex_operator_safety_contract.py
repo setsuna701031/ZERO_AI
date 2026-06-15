@@ -49,13 +49,15 @@ def test_verification_runner_cannot_call_subprocess_directly() -> None:
     assert "subprocess.run" not in source
 
 
-def test_operator_apply_edit_creates_transaction() -> None:
+def test_operator_apply_edit_requires_runtime_dispatcher_migration() -> None:
     before = {tx.transaction_id for tx in list_transactions()}
     run = apply_operator_edit_plan(_planned("task-op-tx"), authority=_authority("task-op-tx"))
     after = {tx.transaction_id for tx in list_transactions()}
 
-    assert run.transaction_refs
-    assert after - before
+    assert run.final_state is CodexOperatorState.BLOCKED
+    assert not run.transaction_refs
+    assert after == before
+    assert run.steps[-1].reason == "legacy_runtime_dispatcher_migration_required"
 
 
 def test_failed_verification_invokes_repair_loop_only_when_allowed() -> None:
@@ -96,7 +98,7 @@ def test_memory_cannot_approve_operator_edit() -> None:
 def test_operator_preserves_runtime_invariants() -> None:
     run = apply_operator_edit_plan(_planned("task-op-invariants"), authority=_authority("task-op-invariants"))
 
-    assert run.final_state is CodexOperatorState.EDITS_APPLIED
+    assert run.final_state is CodexOperatorState.BLOCKED
     assert_simulation_invariant({"branch_id": "operator-readonly", "parent_trace_id": run.operator_run_id})
 
 

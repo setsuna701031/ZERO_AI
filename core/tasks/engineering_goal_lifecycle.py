@@ -496,6 +496,7 @@ class EngineeringGoalLifecycle:
         result_bundle: Mapping[str, Any],
         memory_record: Mapping[str, Any],
         relevant_memory: Mapping[str, Any],
+        completion_attestation: Any = None,
     ) -> dict[str, Any]:
         mutable = copy.deepcopy(dict(state))
         selected = _as_mapping(mutable.get("selected_task"))
@@ -534,7 +535,14 @@ class EngineeringGoalLifecycle:
         elif failed_tasks:
             goal_state = "failed"
         elif total > 0 and resolved_count >= total:
-            goal_state = "completed"
+            from core.goals.goal_completion_authority import is_accepted_goal_completion_result
+
+            if not is_accepted_goal_completion_result(completion_attestation, goal_id=self.goal_id):
+                goal_state = "completion_rejected"
+                mutable["completion_rejected"] = True
+                mutable["completion_rejected_reason"] = "canonical_completion_attestation_required"
+            else:
+                goal_state = "completed"
         else:
             goal_state = "next_task_generated"
 

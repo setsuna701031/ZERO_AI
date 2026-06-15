@@ -86,28 +86,39 @@ def _make_scheduler(tmp_path: Path, step_executor: Any | None = None):
     )
 
 
-def test_governed_code_chain_path_reaches_step_executor(
+def test_legacy_scheduler_code_chain_path_cannot_rebind_live_dispatcher_capability(
     tmp_path: Path,
 ) -> None:
+    from core.runtime.runtime_dispatcher import RuntimeDispatcher
+
     recorder = _RecordingStepExecutor()
     scheduler = _make_scheduler(tmp_path, step_executor=recorder)
+    task = {
+        "task_id": "governed-code-chain",
+        "package_id": "governed-code-chain-package",
+        "session_id": "governed-code-chain-session",
+        "task_dir": str(tmp_path / "tasks" / "governed-code-chain"),
+        "execution_authority": _execution_authority(),
+        "authority_propagation_required": True,
+    }
+    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
 
     result = scheduler._execute_simple_step(
-        task={
-            "task_id": "governed-code-chain",
-            "task_dir": str(tmp_path / "tasks" / "governed-code-chain"),
-            "execution_authority": _execution_authority(),
-            "authority_propagation_required": True,
-        },
+        task=task,
         step={
             "type": "code_chain_repair",
             "instruction": "fix runtime mutation path",
         },
     )
 
-    assert recorder.calls
-    assert recorder.calls[0]["step"]["type"] == "code_chain_repair"
-    assert result["source"] == "step_executor"
+    assert recorder.calls == []
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["executed"] is False
+    assert result["finished"] is False
+    assert result["completed"] is False
+    assert result["status"] == "migration_required"
+    assert result["error"] == "legacy_runtime_dispatcher_migration_required"
 
 
 def test_scheduler_remains_orchestration_only(
@@ -118,7 +129,7 @@ def test_scheduler_remains_orchestration_only(
 
     target = tmp_path / "workspace" / "shared" / "illegal.txt"
 
-    scheduler._execute_simple_step(
+    result = scheduler._execute_simple_step(
         task={
             "task_id": "scheduler-orchestration",
             "task_dir": str(tmp_path / "tasks" / "scheduler-orchestration"),
@@ -132,7 +143,11 @@ def test_scheduler_remains_orchestration_only(
         },
     )
 
-    assert recorder.calls
+    assert recorder.calls == []
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["executed"] is False
+    assert result["error"] == "runtime_dispatcher_live_capability_required"
     assert not target.exists()
 
 
@@ -195,9 +210,16 @@ def test_missing_authority_blocks_before_mutation(
 def test_successful_governed_mutation_emits_sealed_runtime_evidence(
     tmp_path: Path,
 ) -> None:
+    from core.runtime.runtime_dispatcher import RuntimeDispatcher
     from core.runtime.task_runner import TaskRunner
 
     recorder = _RecordingStepExecutor()
+    task = {
+        "task_id": "sealed-runtime-evidence",
+        "package_id": "sealed-runtime-evidence-package",
+        "session_id": "sealed-runtime-evidence-session",
+    }
+    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
 
     result = TaskRunner(step_executor=recorder).execute_owned_step(
         {
@@ -206,7 +228,7 @@ def test_successful_governed_mutation_emits_sealed_runtime_evidence(
             "old_text": "before",
             "new_text": "after",
         },
-        task={"task_id": "sealed-runtime-evidence"},
+        task=task,
         context={"execution_authority": _execution_authority()},
     )
 

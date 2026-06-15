@@ -296,16 +296,23 @@ def _simulate_persistent_runtime_orchestrator_contract(
                 }
             )
 
+    runtime_ok = all(
+        bool(cycle_result.get("runtime", {}).get("ok"))
+        and all(bool(group.get("ok")) for group in cycle_result.get("group_results", []))
+        for cycle_result in cycle_results
+    )
+    runtime_status = "finished" if runtime_ok else "recoverable_failure"
+    terminal_status = runtime_status
     loop = {
-        "ok": True,
-        "status": "finished",
+        "ok": runtime_ok,
+        "status": terminal_status,
         "cycle_results": cycle_results,
         "closure_results": closure_results,
     }
     orchestrator = {
-        "ok": True,
+        "ok": runtime_ok,
         "schema": SCHEMA,
-        "status": "finished",
+        "status": terminal_status,
         "routed": True,
         "task_id": task_id,
         "cycle_count": len(cycles),
@@ -317,13 +324,13 @@ def _simulate_persistent_runtime_orchestrator_contract(
     }
     record = {
         "schema": SCHEMA,
-        "status": "finished",
+        "status": terminal_status,
         "task_id": task_id,
         "boundary": boundary,
         "multi_cycle_engineering_loop": loop,
     }
     _write_json(session_record_path, record)
-    return {"ok": True, "persistent_runtime_orchestrator": orchestrator}
+    return {"ok": runtime_ok, "persistent_runtime_orchestrator": orchestrator}
 
 
 def _execute_persistent_runtime_task_with_executor(
@@ -466,9 +473,10 @@ def _execute_persistent_runtime_task_with_executor(
             }
         )
 
+    terminal_status = "finished" if runtime_ok and runtime_status == "finished" else runtime_status
     loop = {
-        "ok": True,
-        "status": "finished",
+        "ok": runtime_ok,
+        "status": terminal_status,
         "cycle_results": [cycle_result],
         "closure_results": closure_results,
         "closure_count": len(closure_results),
@@ -477,9 +485,9 @@ def _execute_persistent_runtime_task_with_executor(
     }
 
     orchestrator = {
-        "ok": True,
+        "ok": runtime_ok,
         "schema": SCHEMA,
-        "status": "finished",
+        "status": terminal_status,
         "routed": True,
         "task_id": task_id,
         "cycle_count": 1,
@@ -493,14 +501,14 @@ def _execute_persistent_runtime_task_with_executor(
 
     record = {
         "schema": SCHEMA,
-        "status": "finished",
+        "status": terminal_status,
         "task_id": task_id,
         "boundary": boundary,
         "multi_cycle_engineering_loop": loop,
         "persistent_runtime_orchestrator": orchestrator,
     }
     _write_json(session_record_path, record)
-    return {"ok": True, "persistent_runtime_orchestrator": orchestrator}
+    return {"ok": runtime_ok, "persistent_runtime_orchestrator": orchestrator}
 
 
 class PersistentRuntimeOrchestrator:

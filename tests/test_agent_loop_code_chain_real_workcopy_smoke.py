@@ -52,7 +52,7 @@ class WorkcopyCodeFixPlanner:
         }
 
 
-def test_agent_loop_code_chain_real_workcopy_governed_edit(tmp_path: Path) -> None:
+def test_agent_loop_code_chain_real_workcopy_requires_dispatcher_lineage(tmp_path: Path) -> None:
     repo_root = tmp_path
     workspace_root = repo_root / "workspace"
     target_path = "workspace/shared/workcopy/real_failure.py"
@@ -72,7 +72,9 @@ def test_agent_loop_code_chain_real_workcopy_governed_edit(tmp_path: Path) -> No
 
     result = loop.run("fix the failing workcopy code using the planner-owned Code Chain route")
 
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["status"] == "migration_required"
+    assert result["blocked"] is True
     assert result["mode"] == "code_chain_controlled_self_edit_bridge"
     assert result["code_chain_controlled_self_edit_bridge"] is True
     assert result["planner_owned_intent_routing"] is True
@@ -88,32 +90,19 @@ def test_agent_loop_code_chain_real_workcopy_governed_edit(tmp_path: Path) -> No
     assert plan["steps"][0]["type"] == "apply_patch"
 
     execution = result["execution"]
-    edit_step_result = execution["results"][0]["result"]
-    command_result = execution["results"][1]["result"]["result"]
-    assert edit_step_result["transaction_ok"] is True
-    assert edit_step_result["verification_ok"] is True
-    assert edit_step_result["runtime_transaction_id"]
-    assert edit_step_result["runtime_transaction"]["surface"] == "apply_patch"
-    assert target_path in edit_step_result["runtime_transaction"]["affected_files"]
-    assert edit_step_result["canonical_evidence"]["evidence_refs"]
-    assert command_result["returncode"] == 0
+    assert execution["ok"] is False
+    assert execution["executed"] is False
+    assert execution["blocked"] is True
+    assert execution["error"] == "legacy_runtime_dispatcher_migration_required"
 
-    assert target.read_text(encoding="utf-8") == 'def status():\n    return "passing"\n'
+    assert target.read_text(encoding="utf-8") == 'def status():\n    return "failing"\n'
     assert untouched.read_text(encoding="utf-8") == 'def status():\n    return "untouched"\n'
 
     review = result["reviewable_result"]
-    assert review["ok"] is True
-    assert review["status"] == "ok"
-    assert target_path in review["changed_files"]
-    assert review["changed_file_reasons"] == [
-        {
-            "path": target_path,
-            "reason": "change workcopy status from failing to passing",
-        }
-    ]
-    assert "py_compile" in review["verification_command"]
-    assert "returncode=0" in review["verification_output_summary"]
+    assert review["ok"] is False
+    assert review["status"] == "blocked"
+    assert review["changed_files"] == []
     assert "review_required" in review
-    assert review["review_required"] is False
-    assert review["human_review_required"] is False
-    assert review["failure_reason"] == ""
+    assert review["review_required"] is True
+    assert review["human_review_required"] is True
+    assert review["failure_reason"] == "legacy_runtime_dispatcher_migration_required"

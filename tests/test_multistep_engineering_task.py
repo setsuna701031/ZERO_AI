@@ -13,7 +13,6 @@ from core.runtime.multistep_task_report import (
 from core.runtime.runtime_contract_seal import build_runtime_contract_seal
 from core.runtime.runtime_evidence_surface import list_evidence, register_evidence
 from core.runtime.step_executor import StepExecutor
-from core.runtime.task_runner import TaskRunner
 from tests.authority_test_support import owned_step_executor
 from core.tasks.task_repository import TaskRepository
 
@@ -137,16 +136,13 @@ def test_multistep_engineering_task_runs_real_planner_runtime_and_artifacts(
             "completion_report_path": evidence["evidence_path"],
         },
     }
-    completion_authority = TaskRunner().complete_task(
-        {"task_id": task_id, "steps": []}
-    )["task_completion_authority"]
-    repo.upsert_task(finished_task, completion_authority=completion_authority)
+    repo.upsert_task({**finished_task, "status": "running"})
     stored = repo.get_task(task_id)
     indexed = list_evidence(task_id, repo_root=tmp_path)
     completion_payload = json.loads(Path(evidence["evidence_path"]).read_text(encoding="utf-8"))
 
     assert stored is not None
-    assert stored["status"] == "finished"
+    assert stored["status"] == "running"
     assert stored["steps_total"] == len(steps)
     assert stored["current_step_index"] == len(steps)
     assert stored["artifacts"] == artifacts

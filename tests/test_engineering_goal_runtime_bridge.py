@@ -79,11 +79,12 @@ def test_goal_cli_run_command_invokes_runner(tmp_path, monkeypatch, capsys) -> N
     ) is True
     payload = json.loads(capsys.readouterr().out)
 
-    assert payload["ok"] is True
+    assert payload["ok"] is False
     assert payload["runner_result"]["action"] == "run_goal"
     assert payload["runner_result"]["runtime_request"]["goals"][0]["goal_id"] == created["goal"]["goal_id"]
     assert payload["runner_result"]["runtime_request"]["runtime_entrypoint"].endswith("EngineeringRuntimeOrchestrator.run")
     assert payload["runner_result"]["runtime_result"]["mode"] == "engineering_runtime_orchestrator"
+    assert payload["runner_result"]["runtime_result"]["state"] != "complete"
 
 
 def test_goal_cli_run_next_command_invokes_runner(tmp_path, monkeypatch, capsys) -> None:
@@ -94,7 +95,8 @@ def test_goal_cli_run_next_command_invokes_runner(tmp_path, monkeypatch, capsys)
     assert goal_cli.try_handle_goal_command(["goal", "run-next"], repo_root=REPO_ROOT) is True
     payload = json.loads(capsys.readouterr().out)
 
-    assert payload["ok"] is True
+    assert payload["ok"] is False
     assert payload["runner_result"]["action"] == "run_next_goal"
     assert payload["runner_result"]["runtime_request"]["goals"]
     assert payload["runner_result"]["execution_path"]["runtime_orchestrator_owns_runtime_loop"] is True
+    assert payload["runner_result"]["runtime_result"]["state"] != "complete"

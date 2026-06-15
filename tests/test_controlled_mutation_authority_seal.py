@@ -55,7 +55,10 @@ def test_controlled_mutation_probe_returns_runtime_owned_execution_path(tmp_path
         target_path="workspace/shared/target.py",
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result.get("finished") is not True
+    assert result.get("completed") is not True
+    assert not (tmp_path / "workspace" / "shared" / "target.py").exists()
     path = result["execution_path"]
     assert path["direct_execution"] is False
     assert path["runtime_owns_execution"] is True

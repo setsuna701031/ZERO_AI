@@ -56,7 +56,7 @@ def test_adaptive_resume_injects_context_without_memory_write(tmp_path: Path) ->
         task=_task(tmp_path, task_id="adaptive-task", step={"id": "produce", "expected_artifacts": ["report.txt"]}),
     )
 
-    assert result["status"] == "finished"
+    assert result["status"] == "blocked"
     assert isinstance(adaptive.replanner, MemoryAwareReplanner)
     assert adaptive.replanner.last_memory_context.related_issues[0].memory_id == "issue-1"
     assert repository.storage_path.read_bytes() == before
@@ -78,7 +78,7 @@ def test_query_failure_does_not_interrupt_transient_retry(tmp_path: Path) -> Non
         task=_task(tmp_path, task_id="retry-task", step={"id": "retry-step"}),
     )
 
-    assert result["status"] == "finished"
+    assert result["status"] == "blocked"
     assert adaptive.replanner.last_memory_context.warnings
     assert repository.storage_path.read_bytes() == before
 

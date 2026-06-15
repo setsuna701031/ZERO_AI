@@ -83,66 +83,27 @@ class RepairEvidencePlanner:
         }
 
 
-def test_repair_result_report_is_exported_to_task_evidence_surface(tmp_path: Path) -> None:
+def test_migration_block_does_not_export_success_evidence(tmp_path: Path) -> None:
     result, _target, planner = _run_repaired_code_chain(tmp_path)
 
-    assert result["ok"] is True
-    assert len(planner.calls) == 2
-
-    evidence = result["repair_result_evidence"]
-    evidence_path = Path(evidence["evidence_path"])
-    assert evidence_path.exists()
-    assert evidence_path.parent == tmp_path / "workspace" / "evidence" / "code_chain_repair"
-    assert result["repair_result_report"]["evidence_path"] == str(evidence_path)
-    assert result["repair_result_report"]["artifact_path"] == str(evidence_path)
-    assert result["execution"]["repair_result_evidence"]["artifact_path"] == str(evidence_path)
-    assert result["reviewable_result"]["repair_result_evidence"]["evidence_path"] == str(evidence_path)
-
-    exported = json.loads(evidence_path.read_text(encoding="utf-8"))
-    assert exported["schema"] == "code_chain_repair_result_report_v1"
-    assert exported["final_status"] == "ok"
-    assert exported["repair_attempted"] is True
-    assert exported["repair_succeeded"] is True
-    assert exported["attempt_count"] == 2
-    assert [attempt["attempt_kind"] for attempt in exported["attempt_history"]] == [
-        "initial",
-        "repair",
-    ]
-    assert [item["ok"] for item in exported["verification_history"]] == [False, True]
-
-    indexed = list_evidence(result["reviewable_result"]["task_id"], repo_root=tmp_path)
-    assert indexed == [
-        {
-            "task_id": result["reviewable_result"]["task_id"],
-            "evidence_type": "code_chain_repair_report",
-            "path": str(evidence_path),
-            "metadata": {
-                "artifact_path": str(evidence_path),
-                "evidence_path": str(evidence_path),
-                "schema": "code_chain_repair_result_report_v1",
-            },
-        }
-    ]
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["status"] == "migration_required"
+    assert result["execution"]["executed"] is False
+    assert result["execution"]["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert len(planner.calls) == 1
+    assert "repair_result_evidence" not in result
+    assert list_evidence(result["reviewable_result"]["task_id"], repo_root=tmp_path) == []
 
 
-def test_exported_report_preserves_original_failure_and_repaired_success(tmp_path: Path) -> None:
+def test_migration_block_preserves_workcopy_without_repair_success(tmp_path: Path) -> None:
     result, target, _planner = _run_repaired_code_chain(tmp_path)
 
-    assert target.read_text(encoding="utf-8") == 'def status():\n    return "fixed"\n'
-
-    exported = json.loads(
-        Path(result["repair_result_evidence"]["artifact_path"]).read_text(encoding="utf-8")
-    )
-    original_failure = exported["original_failure"]
-
-    assert result["ok"] is True
-    assert original_failure["ok"] is False
-    assert "verify_contains failed" in (
-        original_failure.get("message") or original_failure.get("final_answer") or ""
-    )
-    assert exported["attempt_history"][0]["ok"] is False
-    assert exported["attempt_history"][1]["ok"] is True
-    assert "verify_contains failed" in exported["attempt_history"][0]["failure_reason"]
+    assert target.read_text(encoding="utf-8") == 'def status():\n    return "broken"\n'
+    assert result["ok"] is False
+    assert result["execution"]["executed"] is False
+    assert result.get("finished") is not True
+    assert result.get("completed") is not True
 
 
 def test_evidence_export_helper_is_reporting_only(tmp_path: Path) -> None:

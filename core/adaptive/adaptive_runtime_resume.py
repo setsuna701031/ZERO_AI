@@ -38,7 +38,14 @@ class AdaptiveRuntimeResume:
         self.evidence = evidence or AdaptiveEvidenceChain()
         self.max_cycles = max(1, int(max_cycles))
 
-    def run(self, *, task_runner: Any, task: dict[str, Any], current_tick: int = 0) -> dict[str, Any]:
+    def run(
+        self,
+        *,
+        task_runner: Any,
+        task: dict[str, Any],
+        current_tick: int = 0,
+        terminal_evidence: Any = None,
+    ) -> dict[str, Any]:
         runtime = task_runner.runtime
         state = runtime.load_runtime_state(task)
         original_steps = copy.deepcopy(state.get("steps", []))
@@ -83,6 +90,7 @@ class AdaptiveRuntimeResume:
                     evidence_persisted=True,
                     current_tick=current_tick + cycle,
                     deviation_step_index=step_index,
+                    terminal_evidence=terminal_evidence,
                 )
                 state = copy.deepcopy(observed.get("runtime_state") or runtime.load_runtime_state(task))
                 self._persist(runtime, task, state, chain, counters)
@@ -110,6 +118,7 @@ class AdaptiveRuntimeResume:
                     current_tick=current_tick + cycle,
                     deviation_step_index=step_index,
                     blocked=True,
+                    terminal_evidence=terminal_evidence,
                 )
                 state = copy.deepcopy(observed.get("runtime_state") or runtime.load_runtime_state(task))
                 state["adaptive_block_reason"] = last_decision.reason
@@ -141,6 +150,7 @@ class AdaptiveRuntimeResume:
                 evidence_persisted=True,
                 current_tick=current_tick + cycle,
                 deviation_step_index=resume_index,
+                terminal_evidence=terminal_evidence,
             )
             state = copy.deepcopy(observed.get("runtime_state") or runtime.load_runtime_state(task))
             state["last_error"] = None

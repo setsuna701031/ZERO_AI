@@ -166,7 +166,7 @@ def test_goal_runner_non_blocking_issue_does_not_block_complete(tmp_path) -> Non
     assert result["blocking_issues"] == []
 
 
-def test_real_goal_run_complete_is_not_secondarily_continued_or_polluted(tmp_path) -> None:
+def test_real_goal_run_without_completion_attestation_is_not_completed(tmp_path) -> None:
     repository = EngineeringGoalRepository(tmp_path)
     goal = repository.save_goal({"summary": "Build demo system"})
 
@@ -175,15 +175,11 @@ def test_real_goal_run_complete_is_not_secondarily_continued_or_polluted(tmp_pat
     runtime = result["runtime_result"]
     continuation = runtime["iterations"][0]["continuation_result"]
     lifecycle = continuation["goal_lifecycle"]
-    assert runtime["state"] == "complete"
-    assert continuation["cycle_count"] == 2
-    assert lifecycle["goal_state"] == "completed"
-    assert lifecycle["failed_tasks"] == []
-    assert continuation["goal_lifecycle"]["failed_tasks"] == []
-    assert result["adaptive_decision"]["decision"] == "complete"
-    assert result["issues_found"] == []
-    assert result["issues_deferred"] == []
-    assert result["deferred_issues"] == []
-    assert result["blocking_issues"] == []
+    assert runtime["state"] == "replan"
+    assert continuation["ok"] is False
+    assert lifecycle["goal_state"] == "failed"
+    assert lifecycle["completion_rejected"] is True
+    assert lifecycle["completion_rejected_reason"] == "canonical_completion_attestation_required"
+    assert result["adaptive_decision"]["decision"] != "complete"
     assert result["success_allowed"] is True
     assert result["engineering_result_contract"]["blocking_issue_blocks_success"] is True

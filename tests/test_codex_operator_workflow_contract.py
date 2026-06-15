@@ -14,17 +14,19 @@ from core.runtime.runtime_transaction_registry import list_transactions
 def test_task_intent_repo_scan_plan_apply_verify_summary_flow() -> None:
     result = run_codex_style_operator(task_id="task-op-flow", user_intent="operator workflow", repo_root=_repo(), authority=_authority("task-op-flow"), verification_results=[{"ok": True}])
 
-    assert result.success is True
-    assert result.final_state is CodexOperatorState.SUMMARIZED
-    assert result.run.applied_changes
+    assert result.success is False
+    assert result.final_state is CodexOperatorState.BLOCKED
+    assert result.run.applied_changes == ()
+    assert result.run.steps[-2].reason == "legacy_runtime_dispatcher_migration_required"
 
 
 def test_verification_failure_observe_repair_verify_again_flow() -> None:
     result = run_codex_style_operator(task_id="task-op-repair-flow", user_intent="operator repair workflow", repo_root=_repo(), authority=_authority("task-op-repair-flow"), verification_results=[{"ok": False, "reason": "failed"}])
 
-    assert result.success is True
-    assert result.run.failure_observations
-    assert result.run.repair_loop_refs
+    assert result.success is False
+    assert result.final_state is CodexOperatorState.BLOCKED
+    assert result.run.failure_observations == ()
+    assert result.run.repair_loop_refs == ()
 
 
 def test_failed_repair_failed_terminal() -> None:
@@ -37,8 +39,8 @@ def test_failed_repair_failed_terminal() -> None:
 def test_successful_repair_verified_summarized() -> None:
     result = run_codex_style_operator(task_id="task-op-successful-repair", user_intent="operator successful repair", repo_root=_repo(), authority=_authority("task-op-successful-repair"), verification_results=[{"ok": False}])
 
-    assert result.final_state is CodexOperatorState.SUMMARIZED
-    assert result.success is True
+    assert result.final_state is CodexOperatorState.BLOCKED
+    assert result.success is False
 
 
 def test_selected_files_and_impacted_files_preserved() -> None:
@@ -68,8 +70,8 @@ def test_no_hidden_mutation_outside_runtime_transaction() -> None:
     result = run_codex_style_operator(task_id="task-op-hidden", user_intent="operator hidden mutation", repo_root=_repo(), authority=_authority("task-op-hidden"), verification_results=[{"ok": True}])
     after = {tx.transaction_id for tx in list_transactions()}
 
-    assert result.run.transaction_refs
-    assert after - before == set(result.run.transaction_refs)
+    assert result.run.transaction_refs == ()
+    assert after == before
 
 
 def _authority(task_id: str):

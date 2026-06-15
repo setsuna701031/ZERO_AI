@@ -9129,13 +9129,25 @@ def _zero_boundary_extract_execution_authority(context):
     return {}
 
 
-def _zero_boundary_authority_decision(step, context):
+def _zero_boundary_authority_decision(step, task, context):
     from core.runtime.runtime_authority_seal import is_taskrunner_execution_capability
 
     authority_context = context.get("authority_context") if isinstance(context.get("authority_context"), dict) else {}
     capability = context.get("runtime_execution_capability") or authority_context.get("runtime_execution_capability")
-    step_id = _zero_boundary_norm_text(step.get("id") or step.get("step_id"))
-    valid = is_taskrunner_execution_capability(capability, step_id=step_id or None)
+    task = task if isinstance(task, dict) else {}
+    task_id = _zero_boundary_norm_text(task.get("task_id") or task.get("id") or task.get("task_name"))
+    package_id = _zero_boundary_norm_text(task.get("package_id") or task.get("work_package_id"))
+    session_id = _zero_boundary_norm_text(task.get("session_id") or task.get("runtime_session"))
+    step_id = _zero_boundary_norm_text(
+        step.get("id") or step.get("step_id") or f"{task_id}:step"
+    )
+    valid = is_taskrunner_execution_capability(
+        capability,
+        task_id=task_id,
+        step_id=step_id,
+        package_id=package_id,
+        session_id=session_id,
+    )
     step_type = _zero_boundary_step_type(step)
     authority_required = bool(
         is_side_effect_surface(step_type)
@@ -9392,7 +9404,7 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
     if authority_context and "authority_context" not in context:
         context["authority_context"] = copy.deepcopy(authority_context)
 
-    decision = _zero_boundary_authority_decision(step, context)
+    decision = _zero_boundary_authority_decision(step, task, context)
     side_effect_steps = {
         "command", "run_python", "write_file", "workspace_write", "append_file",
         "workspace_append", "apply_patch", "apply_unified_diff", "mutation",

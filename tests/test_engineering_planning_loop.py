@@ -125,11 +125,17 @@ def test_goal_plan_task_buckets(tmp_path: Path) -> None:
     result = EngineeringPlanningLoop(repo_root=tmp_path, planner=planner).run(_payload("planning_loop_bucket"))
 
     lifecycle = result["goal_lifecycle"]
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result.get("completed") is not True
+    assert result.get("finished") is not True
     assert planner.calls
     assert result["planning_events"][0]["planner_called"] is True
     assert result["planning_events"][0]["task_buckets"]["pending"][0]["summary"]["task_id"] == "planning_loop_bucket_task"
-    assert lifecycle["task_buckets"]["completed"][0]["summary"]["task_id"] == "planning_loop_bucket_task"
+    assert lifecycle["goal_state"] == "failed"
+    assert lifecycle["completion_rejected"] is True
+    assert lifecycle["completion_rejected_reason"] == "canonical_completion_attestation_required"
+    assert lifecycle["latest_adaptive_planning_decision"]["decision"] == "replan"
+    assert lifecycle["task_buckets"]["failed"][0]["summary"]["task_id"] == "planning_loop_bucket_task"
     assert Path(lifecycle["state_path"]).exists()
     assert (tmp_path / "workspace/planning_loop_bucket.txt").read_text(encoding="utf-8") == "bucket\n"
 
@@ -164,11 +170,12 @@ def test_continuation_coordinator_remains_execution_orchestrator(tmp_path: Path)
     result = EngineeringPlanningLoop(repo_root=tmp_path, planner=FakePlanner([[step]])).run(_payload("planning_loop_orchestrator"))
 
     continuation_path = result["continuation_result"]["execution_path"]
-    nested_path = result["continuation_result"]["latest_result"]["result_bundle"]["step_results"][0]["result"]["result_bundle"]["execution_path"]
     assert continuation_path["sequence"] == "GoalLifecycle -> EngineeringTaskRunner -> GoalLifecycle"
     assert continuation_path["existing_aer_path_reused"] is True
-    assert nested_path["no_new_runtime_path"] is True
-    assert nested_path["direct_write_shortcut"] is False
+    assert result["continuation_result"]["latest_result"]["result_bundle"]["step_results"] == []
+    assert result["ok"] is False
+    assert result.get("completed") is not True
+    assert result.get("finished") is not True
 
 
 def test_replan_after_blocked_task(tmp_path: Path) -> None:
@@ -182,10 +189,14 @@ def test_replan_after_blocked_task(tmp_path: Path) -> None:
     ).run(_payload("planning_loop_blocked"))
 
     lifecycle = result["goal_lifecycle"]
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result.get("completed") is not True
+    assert result.get("finished") is not True
     assert result["replan_count"] == 1
     assert result["replans"][0]["reason"] == "blocked_task"
-    assert lifecycle["goal_state"] == "completed"
+    assert lifecycle["goal_state"] == "failed"
+    assert lifecycle["completion_rejected"] is True
+    assert lifecycle["completion_rejected_reason"] == "canonical_completion_attestation_required"
     assert lifecycle["superseded_tasks"] == ["planning_loop_blocked_task"]
     assert lifecycle["completed_tasks"] == ["planning_loop_replanned_task"]
     assert not (tmp_path / "core/runtime/planning_loop_blocked.py").exists()
@@ -292,7 +303,7 @@ def test_planning_loop_uses_evaluator_before_replan(tmp_path: Path) -> None:
     assert result["goal_lifecycle"]["latest_adaptive_planning_decision"]["decision"] == "complete"
 
 
-def test_completed_goal_stops_cleanly(tmp_path: Path) -> None:
+def test_goal_without_completion_attestation_replans_to_limit(tmp_path: Path) -> None:
     planner = FakePlanner(
         [
             [
@@ -305,10 +316,14 @@ def test_completed_goal_stops_cleanly(tmp_path: Path) -> None:
 
     result = EngineeringPlanningLoop(repo_root=tmp_path, planner=planner, max_replans=2).run(_payload("planning_loop_complete"))
 
-    assert result["ok"] is True
-    assert result["goal_state"] == "completed"
-    assert result["replan_count"] == 0
-    assert len(planner.calls) == 1
+    assert result["ok"] is False
+    assert result["goal_state"] == "failed"
+    assert result.get("completed") is not True
+    assert result.get("finished") is not True
+    assert result["replan_count"] == 2
+    assert len(planner.calls) == 3
+    assert result["goal_lifecycle"]["completion_rejected"] is True
+    assert result["goal_lifecycle"]["completion_rejected_reason"] == "canonical_completion_attestation_required"
     assert result["goal_lifecycle"]["remaining_tasks"] == []
     assert (tmp_path / "workspace/planning_loop_complete_two.txt").read_text(encoding="utf-8") == "two\n"
-    assert not (tmp_path / "workspace/planning_loop_complete_unwanted.txt").exists()
+    assert (tmp_path / "workspace/planning_loop_complete_unwanted.txt").read_text(encoding="utf-8") == "unwanted\n"

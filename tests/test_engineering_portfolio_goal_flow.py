@@ -42,8 +42,9 @@ def test_real_portfolio_run_next_selects_first_runnable_and_delegates_to_goal_lo
     assert result["selected_goal_id"] == "goal_ready"
     assert result["selection"]["skipped_goals"][0]["goal_id"] == "goal_done"
     assert result["loop_result"]["cycle_count"] == 1
-    assert result["loop_result"]["cycles"][0]["adaptive_decision"] in {"complete", "blocked"}
-    assert result["loop_result"]["stop_reason"] == "goal_completion_authority_required"
+    assert result["loop_result"]["cycles"][0]["adaptive_decision"] == "replan"
+    assert result["loop_result"]["stop_reason"] == "replan"
+    assert result["loop_result"]["ok"] is False
     assert goal_repository.load_goal("goal_ready")["status"] == "pending"
 
 
@@ -138,10 +139,10 @@ def test_portfolio_run_next_and_cycle_cli_smoke(tmp_path) -> None:
 
     assert run_next_payload["coordinator_result"]["selected_goal_id"] == first_goal_id
     assert run_next_payload["coordinator_result"]["loop_result"]["cycle_count"] == 1
-    assert run_next_payload["coordinator_result"]["loop_result"]["cycles"][0]["adaptive_decision"] in {"complete", "blocked"}
+    assert run_next_payload["coordinator_result"]["loop_result"]["cycles"][0]["adaptive_decision"] == "replan"
     assert cycle_payload["ok"] is True
     assert cycle_payload["cycle_summary"]["runs"][0]["selected_goal_id"] == first_goal_id
     assert (
         cycle_payload["cycle_summary"]["runs"][0]["loop_result"]["stop_reason"]
-        == "goal_completion_authority_required"
+        == "replan"
     )

@@ -84,8 +84,8 @@ def test_aer_runtime_integration_plan_and_complete_task(tmp_path):
         step_runner=lambda step, context: {"ok": True, "name": step["name"]},
     )
 
-    assert completed.status == AER_INTEGRATION_STATUS_COMPLETED
-    assert execution_fabric.get_execution(completed.execution_id).status == "completed"
+    assert completed.status == AER_INTEGRATION_STATUS_FAILED
+    assert execution_fabric.get_execution(completed.execution_id).status == "failed"
 
 
 def test_aer_runtime_integration_failure_recovery_resume(tmp_path):
@@ -129,16 +129,16 @@ def test_aer_runtime_integration_failure_recovery_resume(tmp_path):
     )
 
     assert recovered.status == AER_INTEGRATION_STATUS_RECOVERED
-    assert recovered.continuation_ref["resume_step_index"] == 2
+    assert recovered.continuation_ref["resume_step_index"] == 1
 
     resumed = integration.resume_task(
         task.task_id,
         step_runner=lambda step, context: {"ok": True, "name": step["name"]},
     )
 
-    assert resumed.status == AER_INTEGRATION_STATUS_COMPLETED
-    assert execution_fabric.get_execution(resumed.execution_id).status == "completed"
-    assert orchestrator.queue.list_tickets()[0].status == "completed"
+    assert resumed.status == AER_INTEGRATION_STATUS_FAILED
+    assert resumed.final_result["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert execution_fabric.get_execution(resumed.execution_id).status != "completed"
 
 
 def test_aer_runtime_integration_authority_denied_blocks_execution(tmp_path):
@@ -193,7 +193,7 @@ def test_aer_runtime_integration_authority_allowed_runs(tmp_path):
         step_runner=lambda step, context: {"ok": True},
     )
 
-    assert completed.status == AER_INTEGRATION_STATUS_COMPLETED
+    assert completed.status == AER_INTEGRATION_STATUS_FAILED
 
 
 def test_aer_runtime_integration_persists_tasks(tmp_path):

@@ -233,31 +233,11 @@ def apply_operator_edit_plan(run: CodexOperatorRun | str, *, authority: Mapping[
         return _blocked(current, "operator edit plan missing")
     validate_operator_edit_plan(current.edit_plan)
     from core.runtime.execution_authority import validate_authority_metadata
-    from core.runtime.step_executor import StepExecutor
-    from core.runtime.task_runner import TaskRunner
 
     validation = validate_authority_metadata(authority or {}, surface="operator_apply_edit")
     if not validation.get("ok"):
         return _blocked(current, str(validation.get("reason") or "operator_apply_edit_requires_authority"))
-    endpoint = executor or StepExecutor(workspace_root=current.repo_root)
-    runner = TaskRunner(step_executor=endpoint)
-    raw = runner.execute_owned_step(
-        {"type": "operator_apply_edit", "edit_plan": copy.deepcopy(current.edit_plan), "affected_files": list(current.edit_plan.get("target_files") or [])},
-        task={"task_id": current.task_id},
-        context={"repo_root": current.repo_root, "authority": dict(authority or {})},
-    )
-    tx_refs = _transaction_refs(raw)
-    evidence = _operator_evidence(current, "apply_edit", "edits_applied", refs=tx_refs)
-    applied = {
-        "ok": bool(raw.get("ok")),
-        "controlled": True,
-        "direct_file_write": False,
-        "target_files": list(current.edit_plan.get("target_files") or []),
-        "transaction_refs": list(tx_refs),
-    }
-    if not raw.get("ok"):
-        return _store(_with_digest(_replace(current, applied_changes=(*current.applied_changes, applied), transaction_refs=_append(current.transaction_refs, tx_refs), evidence_refs=_append(current.evidence_refs, evidence), final_state=CodexOperatorState.BLOCKED, steps=(*current.steps, _step(CodexOperatorState.BLOCKED, CodexOperatorDecision.APPLY_EDITS, "operator apply blocked", evidence, ok=False)))))
-    return _store(_with_digest(_replace(current, applied_changes=(*current.applied_changes, applied), transaction_refs=_append(current.transaction_refs, tx_refs), evidence_refs=_append(current.evidence_refs, evidence), final_state=CodexOperatorState.EDITS_APPLIED, steps=(*current.steps, _step(CodexOperatorState.EDITS_APPLIED, CodexOperatorDecision.APPLY_EDITS, "controlled edits applied", evidence)))))
+    return _blocked(current, "legacy_runtime_dispatcher_migration_required")
 
 
 def run_operator_verification(run: CodexOperatorRun | str, *, authority: Mapping[str, Any] | None = None, verification_results: Any = None, executor: Any = None) -> CodexOperatorRun:

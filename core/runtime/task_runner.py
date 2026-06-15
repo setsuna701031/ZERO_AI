@@ -20,7 +20,9 @@ from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.runtime_authority_seal import (
     _TASK_RUNNER_ISSUER_TOKEN,
     delegate_taskrunner_execution_capability,
+    issue_terminal_execution_evidence,
     is_task_completion_authority,
+    is_taskrunner_execution_capability,
     issue_task_completion_authority,
 )
 from core.runtime.audit_log import AuditLogger
@@ -95,6 +97,64 @@ class TaskRunner:
             except (AttributeError, TypeError):
                 pass
 
+    def _pre_execution_authority_denial(
+        self,
+        *,
+        task: Dict[str, Any],
+        step: Any,
+        authority_context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        step = step if isinstance(step, dict) else {}
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "").strip()
+        package_id = str(task.get("package_id") or task.get("work_package_id") or "").strip()
+        session_id = str(task.get("session_id") or task.get("runtime_session") or "").strip()
+        step_id = str(step.get("id") or step.get("step_id") or f"{task_id}:step").strip()
+        capability = authority_context.get("runtime_execution_capability")
+        if is_taskrunner_execution_capability(
+            capability,
+            task_id=task_id,
+            package_id=package_id,
+            session_id=session_id,
+            step_id=step_id,
+        ):
+            return None
+        step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+        decision = {
+            "authority_phase": "pre_execution",
+            "authority_layer": "task_runner",
+            "authority_policy": "owner_issued_runtime_execution_capability",
+            "authority_required": True,
+            "decision": "denied",
+            "authority_source": "",
+            "authority_status": "denied",
+            "step_type": step_type,
+            "sealed": False,
+            "reason": "runtime_dispatcher_live_capability_required",
+        }
+        return {
+            "ok": False,
+            "executed": False,
+            "blocked": True,
+            "action": step_type or "execute_step",
+            "step_type": step_type,
+            "step": copy.deepcopy(step),
+            "error": {
+                "type": "execution_authority_denied",
+                "message": "runtime dispatcher live capability required before step execution",
+                "retryable": False,
+            },
+            "authority_decision": decision,
+            "runtime_transaction": {"state": "blocked", "surface": step_type},
+            "runtime_execution_result": {
+                "ok": False,
+                "status": "blocked",
+                "metadata": {
+                    "blocked_reason": "runtime_dispatcher_live_capability_required",
+                    "authority_decision": copy.deepcopy(decision),
+                },
+            },
+        }
+
     def execute_owned_step(
         self,
         step: Dict[str, Any],
@@ -121,6 +181,13 @@ class TaskRunner:
             step=step,
             upstream_context=owned_context,
         )
+        denial = self._pre_execution_authority_denial(
+            task=owned_task,
+            step=step,
+            authority_context=authority_context,
+        )
+        if denial is not None:
+            return denial
         return self.step_executor.execute_step(
             step=step,
             task=owned_task,
@@ -155,12 +222,23 @@ class TaskRunner:
             or "taskrunner-owned-batch"
         ).strip()
         owned_task.setdefault("task_id", task_id)
-        capability = delegate_taskrunner_execution_capability(
-            _TASK_RUNNER_ISSUER_TOKEN,
-            owned_task.get("runtime_execution_capability"),
-            task_id=task_id,
-            step_id="",
-        )
+        try:
+            capability = delegate_taskrunner_execution_capability(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                owned_task.get("runtime_execution_capability"),
+                task_id=task_id,
+                step_id="",
+            )
+        except PermissionError:
+            return {
+                "ok": False,
+                "executed": False,
+                "blocked": True,
+                "status": "blocked",
+                "decision": "rejected",
+                "error": "runtime_dispatcher_live_capability_required",
+                "results": [],
+            }
         authority_context = {
             "authority_phase": "taskrunner_delegation",
             "authority_layer": "task_runner",
@@ -1051,7 +1129,11 @@ class TaskRunner:
         current_tick: int = 0,
         final_answer: str = "",
         final_result: Optional[Dict[str, Any]] = None,
+        terminal_evidence: Any = None,
     ) -> Dict[str, Any]:
+        task_id = str(task.get("task_id") or task.get("id") or "")
+        package_id = str(task.get("package_id") or task.get("work_package_id") or "")
+        session_id = str(task.get("session_id") or task.get("runtime_session") or "")
         return self.runtime.mark_finished(
             task=task,
             current_tick=current_tick,
@@ -1059,8 +1141,47 @@ class TaskRunner:
             final_result=final_result,
             completion_authority=issue_task_completion_authority(
                 _TASK_RUNNER_ISSUER_TOKEN,
-                task_id=str(task.get("task_id") or task.get("id") or ""),
+                task_id=task_id,
+                package_id=package_id,
+                session_id=session_id,
+                evidence=terminal_evidence,
             ),
+        )
+
+    def _terminal_completion_authority(
+        self,
+        *,
+        task: Dict[str, Any],
+        step: Any,
+        result: Any,
+    ) -> Any:
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise PermissionError("successful_terminal_execution_evidence_required")
+        task_id = str(task.get("task_id") or task.get("id") or "")
+        package_id = str(task.get("package_id") or task.get("work_package_id") or "")
+        session_id = str(task.get("session_id") or task.get("runtime_session") or "")
+        step = step if isinstance(step, dict) else {}
+        step_id = str(step.get("id") or step.get("step_id") or f"{task_id}:step")
+        capability = delegate_taskrunner_execution_capability(
+            _TASK_RUNNER_ISSUER_TOKEN,
+            task.get("runtime_execution_capability"),
+            task_id=task_id,
+            step_id=step_id,
+        )
+        evidence = issue_terminal_execution_evidence(
+            _TASK_RUNNER_ISSUER_TOKEN,
+            capability,
+            task_id=task_id,
+            package_id=package_id,
+            session_id=session_id,
+            step_id=step_id,
+        )
+        return issue_task_completion_authority(
+            _TASK_RUNNER_ISSUER_TOKEN,
+            task_id=task_id,
+            package_id=package_id,
+            session_id=session_id,
+            evidence=evidence,
         )
 
     def record_terminal_observation(
@@ -1068,14 +1189,35 @@ class TaskRunner:
         task: Dict[str, Any],
         **kwargs: Any,
     ) -> Dict[str, Any]:
-        return self.runtime.record_terminal_observation(
-            task,
-            **kwargs,
-            completion_authority=issue_task_completion_authority(
+        terminal_evidence = kwargs.pop("terminal_evidence", None)
+        task_id = str(task.get("task_id") or task.get("id") or "")
+        package_id = str(task.get("package_id") or task.get("work_package_id") or "")
+        session_id = str(task.get("session_id") or task.get("runtime_session") or "")
+        try:
+            completion_authority = issue_task_completion_authority(
                 _TASK_RUNNER_ISSUER_TOKEN,
-                task_id=str(task.get("task_id") or task.get("id") or ""),
-            ),
-        )
+                task_id=task_id,
+                package_id=package_id,
+                session_id=session_id,
+                evidence=terminal_evidence,
+            )
+        except PermissionError:
+            completion_authority = None
+        try:
+            return self.runtime.record_terminal_observation(
+                task,
+                **kwargs,
+                completion_authority=completion_authority,
+            )
+        except PermissionError:
+            return {
+                "ok": False,
+                "status": "completion_rejected",
+                "blocked": True,
+                "executed": False,
+                "error": "terminal_execution_evidence_required",
+                "task": copy.deepcopy(task),
+            }
 
     # ============================================================
     # capability execution
@@ -1167,14 +1309,16 @@ class TaskRunner:
         final_answer = self._format_capability_final_answer(result_payload)
 
         if execution_result.ok:
+            completion_authority = self._terminal_completion_authority(
+                task=task,
+                step={"id": f"{task.get('task_id')}:capability", "type": "capability"},
+                result={"ok": True},
+            )
             finish_result = self.runtime.mark_finished(
                 task=task,
                 current_tick=current_tick,
                 final_answer=final_answer,
-                completion_authority=issue_task_completion_authority(
-                    _TASK_RUNNER_ISSUER_TOKEN,
-                    task_id=str(task.get("task_id") or task.get("id") or ""),
-                ),
+                completion_authority=completion_authority,
                 final_result={
                     "ok": True,
                     "step_type": "capability",
@@ -1885,14 +2029,18 @@ class TaskRunner:
             steps = []
 
         if idx >= len(steps):
+            last_result = task.get("last_step_result") or state.get("last_step_result")
+            last_payload = last_result.get("result") if isinstance(last_result, dict) else {}
+            last_step = last_result.get("step") if isinstance(last_result, dict) else {}
             finish_result = self.runtime.mark_finished(
                 task=task,
                 current_tick=current_tick,
                 final_answer=str(task.get("final_answer") or state.get("final_answer") or ""),
                 final_result=copy.deepcopy(task.get("last_step_result") or state.get("last_step_result")),
-                completion_authority=issue_task_completion_authority(
-                    _TASK_RUNNER_ISSUER_TOKEN,
-                    task_id=str(task.get("task_id") or task.get("id") or ""),
+                completion_authority=self._terminal_completion_authority(
+                    task=task,
+                    step=last_step,
+                    result=last_payload,
                 ),
             )
             runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
@@ -2023,22 +2171,28 @@ class TaskRunner:
             upstream_context=target_context,
         )
 
-        result = self.step_executor.execute_step(
+        result = self._pre_execution_authority_denial(
             task=task,
             step=step,
-            context={
-                **target_context,
-                "runtime_mode": runtime_mode,
-                "authority_context": authority_context,
-                "runtime_authority_context": authority_context,
-                "authority_propagation_required": bool(
-                    authority_context.get("authority_propagation_required")
-                ),
-            },
-            previous_result=self._get_previous_result(state),
-            step_index=idx,
-            step_count=len(steps),
+            authority_context=authority_context,
         )
+        if result is None:
+            result = self.step_executor.execute_step(
+                task=task,
+                step=step,
+                context={
+                    **target_context,
+                    "runtime_mode": runtime_mode,
+                    "authority_context": authority_context,
+                    "runtime_authority_context": authority_context,
+                    "authority_propagation_required": bool(
+                        authority_context.get("authority_propagation_required")
+                    ),
+                },
+                previous_result=self._get_previous_result(state),
+                step_index=idx,
+                step_count=len(steps),
+            )
 
         if not isinstance(result, dict):
             result = {
@@ -2051,15 +2205,22 @@ class TaskRunner:
 
         result["runtime_mode"] = runtime_mode
         result = self._ensure_step_execution_trace(step=step, step_result=result, step_index=idx)
-        result = self._attach_mutation_boundary_after_step(
-            task=task,
-            state=state,
-            step=step,
-            step_result=result,
-            step_index=idx,
-            current_tick=current_tick,
-            trace_tick=trace_tick,
+        error_payload = result.get("error") if isinstance(result, dict) else None
+        authority_denied_before_execution = bool(
+            isinstance(error_payload, dict)
+            and error_payload.get("type") == "execution_authority_denied"
+            and result.get("executed") is False
         )
+        if not authority_denied_before_execution:
+            result = self._attach_mutation_boundary_after_step(
+                task=task,
+                state=state,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+            )
 
         self._append_step_result_trace_json(
             task=task,
@@ -2164,6 +2325,43 @@ class TaskRunner:
                 "review_id": runtime_state.get("review_id", review_id),
                 "review_payload": copy.deepcopy(runtime_state.get("review_payload", review_payload)),
                 "blockers": copy.deepcopy(runtime_state.get("blockers", [])),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
+
+        authority_denied = bool(
+            isinstance(error_payload, dict)
+            and error_payload.get("type") == "execution_authority_denied"
+            and result.get("executed") is False
+        )
+        if authority_denied:
+            failure_record_result = self.runtime.record_step_failure(
+                task=task,
+                step=step,
+                step_result=result,
+                current_tick=current_tick,
+                status="retrying",
+            )
+            runtime_state = copy.deepcopy(failure_record_result.get("runtime_state", {}))
+            self._safe_block_engineering_action(
+                task=task,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+                reason="runtime_dispatcher_live_capability_required",
+            )
+            self._ensure_execution_trace_defaults(task, runtime_state)
+            return {
+                "ok": False,
+                "action": "retry",
+                "failure_type": "execution_authority_denied",
+                "failure_decision": {"retry": True, "replan": False, "fail": False, "wait": False},
+                "error": copy.deepcopy(error_payload),
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": "retrying",
+                "last_result": copy.deepcopy(result),
                 "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
             }
 
@@ -2536,14 +2734,16 @@ class TaskRunner:
         new_status = str(new_state.get("status") or advance_result.get("status") or "running").strip().lower()
 
         if new_status == "finished":
+            terminal_step = step if isinstance(step, dict) else {}
             finish_result = self.runtime.mark_finished(
                 task=task,
                 current_tick=current_tick,
                 final_answer=self._extract_final_answer_from_step_result(result),
                 final_result=result,
-                completion_authority=issue_task_completion_authority(
-                    _TASK_RUNNER_ISSUER_TOKEN,
-                    task_id=str(task.get("task_id") or task.get("id") or ""),
+                completion_authority=self._terminal_completion_authority(
+                    task=task,
+                    step=terminal_step,
+                    result=result,
                 ),
             )
             runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))

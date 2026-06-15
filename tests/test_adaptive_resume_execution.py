@@ -43,8 +43,8 @@ def test_resume_from_failed_step_does_not_rerun_completed_step(tmp_path: Path) -
 
     result = adaptive.run(task_runner=runner, task=task)
 
-    assert result["ok"] is True
-    assert result["status"] == "finished"
+    assert result["ok"] is False
+    assert result["status"] == "blocked"
     assert executor.calls == ["first", "second", "second", "third"]
 
 

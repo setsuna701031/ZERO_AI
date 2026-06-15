@@ -78,7 +78,7 @@ def test_create_task_records_forced_repo_edit_as_queued_execution_intent(
     assert task["authority_context"]["authority_role"] == "orchestration"
 
 
-def test_code_chain_bridge_delegates_to_step_executor_with_scheduler_context(
+def test_code_chain_bridge_without_dispatcher_lineage_is_blocked_with_scheduler_context(
     tmp_path: Path,
 ) -> None:
     recorder = _RecordingStepExecutor()
@@ -97,12 +97,17 @@ def test_code_chain_bridge_delegates_to_step_executor_with_scheduler_context(
         },
     )
 
-    assert result["source"] == "step_executor"
-    assert recorder.calls[0]["step"]["type"] == "code_chain_repair"
-    assert recorder.calls[0]["context"]["authority_context"]["authority_layer"] == "task_runner"
-    assert recorder.calls[0]["context"]["authority_context"][
-        "execution_authority_granted"
-    ] is False
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["executed"] is False
+    assert result["finished"] is False
+    assert result["completed"] is False
+    assert result["error"] == "runtime_dispatcher_live_capability_required"
+    assert result["step"]["type"] == "code_chain_repair"
+    assert result["task"]["task_id"] == "task-code-chain-agentloop-bridge"
+    assert result["scheduler_authority_context"]["authority_layer"] == "scheduler"
+    assert result["scheduler_authority_context"]["execution_authority_granted"] is False
+    assert recorder.calls == []
 
 
 def test_missing_authority_blocks_before_mutation_handler_execution(
@@ -179,10 +184,11 @@ def test_taskrunner_remains_pass_through_only_for_agentloop_bridge(
         upstream_context={},
     )
 
-    assert context["authority_role"] == "canonical_delegation"
+    assert context["authority_role"] == "propagation"
     assert context["execution_authority_granted"] is False
-    assert context["can_execute_privileged_step"] is True
-    assert context["execution_authority"]["descriptive_only"] is True
+    assert context["can_execute_privileged_step"] is False
+    assert context["execution_authority"] == {}
+    assert context.get("runtime_execution_capability") is None
 
 
 def _make_scheduler(tmp_path: Path, step_executor: Any | None = None) -> Any:

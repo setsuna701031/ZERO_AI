@@ -115,8 +115,11 @@ def test_goal_run_next_routes_through_scheduler(tmp_path, monkeypatch, capsys) -
 
     result = _run_goal_cli(["goal", "run-next"], tmp_path, monkeypatch, capsys)
 
-    assert result["ok"] is True
-    assert spy.calls == [("schedule_next_goal", None, [_goal("goal_1")])]
+    assert result["ok"] is False
+    assert result.get("completed") is not True
+    assert result.get("finished") is not True
+    assert spy.calls
+    assert all(call == ("schedule_next_goal", None, [_goal("goal_1")]) for call in spy.calls)
 
 
 def test_goal_state_commands_route_through_scheduler(tmp_path, monkeypatch, capsys) -> None:
@@ -196,4 +199,3 @@ def test_goal_cli_does_not_import_task_runner_or_call_execution_paths() -> None:
     assert "submit_work_package" not in calls
     assert not any(call.endswith(".submit") for call in calls)
     assert not any("AER" in literal for literal in literals)
-

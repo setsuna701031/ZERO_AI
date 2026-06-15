@@ -314,7 +314,7 @@ def test_aer_engineering_task_chain_verify_failure_recovery_closure(tmp_path: Pa
 
     result = loop.run("Use planner runtime dispatch for Persistent Autonomous Engineering Runtime engineering task chain")
 
-    assert result["ok"] is True
+    assert result["ok"] is False
 
     orchestrator = result["persistent_runtime_orchestrator"]
     multi = orchestrator["multi_cycle_engineering_loop"]

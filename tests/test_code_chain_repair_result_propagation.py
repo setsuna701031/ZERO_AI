@@ -87,7 +87,7 @@ class RepairPropagationPlanner:
         }
 
 
-def test_repair_result_report_propagates_attempt_history_to_task_result(tmp_path: Path) -> None:
+def test_migration_block_does_not_propagate_successful_repair_history(tmp_path: Path) -> None:
     repo_root = tmp_path
     workspace_root = repo_root / "workspace"
     target_path = "workspace/shared/workcopy/repair_report_target.py"
@@ -105,34 +105,16 @@ def test_repair_result_report_propagates_attempt_history_to_task_result(tmp_path
 
     result = loop.run("fix the workcopy failure and report autonomous repair attempts")
 
-    assert result["ok"] is True
-    assert len(planner.calls) == 2
-    assert planner.calls[1]["context"]["previous_failure"]["ok"] is False
-    assert target.read_text(encoding="utf-8") == 'def status():\n    return "fixed"\n'
-
-    report = result["repair_result_report"]
-    execution_report = result["execution"]["repair_result_report"]
-    review_report = result["reviewable_result"]["repair_result_report"]
-
-    assert report == execution_report == review_report
-    assert report["ok"] is True
-    assert report["status"] == "ok"
-    assert report["final_result"] == "passed"
-    assert report["attempt_count"] == 2
-    assert report["first_attempt_failed"] is True
-    assert report["repair_attempt_executed"] is True
-    assert report["verification_passed"] is True
-    assert report["original_failure"]["ok"] is False
-    assert "verify_contains failed" in report["failure_reason"]
-    assert [attempt["attempt_kind"] for attempt in report["attempt_history"]] == [
-        "initial",
-        "repair",
-    ]
-    assert report["attempt_history"][0]["ok"] is False
-    assert report["attempt_history"][1]["ok"] is True
-    assert report["verification_history"][0]["ok"] is False
-    assert report["verification_history"][1]["ok"] is True
-    assert "py_compile" in report["verification_history"][1]["verification_command"]
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["status"] == "migration_required"
+    assert result["execution"]["executed"] is False
+    assert result["execution"]["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert len(planner.calls) == 1
+    assert target.read_text(encoding="utf-8") == 'def status():\n    return "broken"\n'
+    assert "repair_result_report" not in result
+    assert result.get("finished") is not True
+    assert result.get("completed") is not True
 
 
 def test_repair_report_helper_normalizes_existing_fields_without_agentloop_ownership() -> None:

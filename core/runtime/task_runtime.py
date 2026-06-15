@@ -605,7 +605,12 @@ class TaskRuntime:
         completion_authority: Any = None,
     ) -> Dict[str, Any]:
         task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
-        if not is_task_completion_authority(completion_authority, task_id=task_id):
+        if not is_task_completion_authority(
+            completion_authority,
+            task_id=task_id,
+            package_id=str(task.get("package_id") or task.get("work_package_id") or ""),
+            session_id=str(task.get("session_id") or task.get("runtime_session") or ""),
+        ):
             raise PermissionError("taskrunner_completion_authority_required")
         state = self.load_runtime_state(task)
         state = self._sync_steps_from_task(task, state)

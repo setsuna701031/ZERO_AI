@@ -32,8 +32,9 @@ def test_evidence_chain_traces_replan_and_resume(tmp_path: Path) -> None:
     chain = result["evidence_chain"]
     kinds = [record["kind"] for record in chain]
 
-    assert result["status"] == "finished"
-    assert kinds == ["original_plan", "deviation", "decision", "revised_plan", "resume_result"]
+    assert result["status"] == "blocked"
+    assert result["ok"] is False
+    assert kinds[:4] == ["original_plan", "deviation", "decision", "revised_plan"]
     assert AdaptiveEvidenceChain().validate(chain)["ok"] is True
     assert chain[1]["payload"]["reason"] == "artifact_missing"
     assert chain[2]["payload"]["resume_from_step_id"] == "produce"

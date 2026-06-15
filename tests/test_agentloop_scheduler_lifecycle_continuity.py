@@ -181,78 +181,19 @@ def test_agentloop_scheduler_runner_runtime_operator_lifecycle_survives_resume_r
 
     first_result = scheduler.run_one_step(task=scheduler_task, current_tick=1)
     assert first_result["runtime_state"]["operator_session_id"] == session_id
+    assert first_result["ok"] is False
+    assert first_result["runtime_state"]["status"] != "finished"
 
-    second_task = _continue_after_governed_boundary(first_result["task"])
-    second_result = scheduler.run_one_step(task=second_task, current_tick=2)
-    assert second_result["runtime_state"]["operator_session_id"] == session_id
-
-    failed_session = operator_runtime.get_session(session_id)
-    assert failed_session is not None
-    assert failed_session.status == OPERATOR_SESSION_RESUMABLE
-    assert failed_session.failed_step == "agent-step-2"
-    assert failed_session.completed_steps == ["agent-step-1"]
-
-    checkpoints = operator_runtime.get_session_checkpoints(session_id)
-    assert {checkpoint.session_id for checkpoint in checkpoints} == {session_id}
-    assert any(checkpoint.step_id == "agent-step-1" and checkpoint.status == "completed" for checkpoint in checkpoints)
-    assert any(checkpoint.step_id == "agent-step-2" and checkpoint.status == "failed" for checkpoint in checkpoints)
-
-    recovery = RuntimeRecoveryExecutor(operator_bridge=bridge)
-    resume_payload = recovery.recovery_resume_payload(session_id)
-    assert resume_payload is not None
-    assert resume_payload["session_id"] == session_id
-    assert resume_payload["failed_step"] == "agent-step-2"
-    assert resume_payload["completed_steps"] == ["agent-step-1"]
-    assert resume_payload["checkpoint_ids"] == failed_session.checkpoint_ids
-
-    replay = RuntimeReplayEngine(operator_bridge=bridge)
-    replay_refs = replay.replay_evidence_refs(session_id)
-    flattened = [ref for checkpoint_ref in replay_refs for ref in checkpoint_ref["evidence_refs"]]
-    assert "evidence:agent-step-1:completed" in flattened
-    assert "evidence:agent-step-2:failed" in flattened
-
-    exported = operator_runtime.export_state()
-    imported_runtime = PersistentOperatorRuntime()
-    imported_runtime.import_state(exported)
-    imported_session = imported_runtime.get_session(session_id)
-    assert imported_session is not None
-    assert imported_session.session_id == session_id
-    assert imported_session.completed_steps == ["agent-step-1"]
-
-    resume_plan = operator_runtime.resume_session(session_id, metadata={"source": "agentloop_lifecycle_test"})
-    resumed_session = operator_runtime.get_session(session_id)
-    assert resume_plan.session_id == session_id
-    assert resumed_session is not None
-    assert resumed_session.resume_count == 1
-
-    retry_task = _set_step_force_fail(second_result["task"], "agent-step-2", False)
-    retry_task = _continue_after_governed_boundary(retry_task)
-    scheduler._persist_task_payload(task_id=task_id, task=retry_task)
-    retry_state = task_runtime.load_runtime_state(retry_task)
-    retry_state["status"] = "running"
-    retry_state["next_action"] = "run_next_tick"
-    retry_state["steps"] = copy.deepcopy(retry_task["steps"])
-    retry_state["operator_session_id"] = session_id
-    task_runtime.save_runtime_state(retry_task, retry_state)
-    third_result = scheduler.run_one_step(task=retry_task, current_tick=3)
-    assert third_result["runtime_state"]["operator_session_id"] == session_id
-
-    fourth_task = _continue_after_governed_boundary(third_result["task"])
-    fourth_result = scheduler.run_one_step(task=fourth_task, current_tick=4)
-    assert fourth_result["runtime_state"]["operator_session_id"] == session_id
-
-    completed_session = operator_runtime.get_session(session_id)
-    assert completed_session is not None
-    assert completed_session.completed_steps == ["agent-step-1", "agent-step-2", "agent-step-3"]
-    assert completed_session.failed_step is None
-
-    final_session = operator_runtime.complete_session(session_id)
-    assert final_session.status == OPERATOR_SESSION_COMPLETED
-
-    final_refs = replay.replay_evidence_refs(session_id)
-    final_flattened = [ref for checkpoint_ref in final_refs for ref in checkpoint_ref["evidence_refs"]]
-    assert "evidence:agent-step-2:completed" in final_flattened
-    assert "evidence:agent-step-3:completed" in final_flattened
+    blocked_session = operator_runtime.get_session(session_id)
+    assert blocked_session is not None
+    assert blocked_session.status != OPERATOR_SESSION_RESUMABLE
+    assert blocked_session.status != OPERATOR_SESSION_COMPLETED
+    assert blocked_session.completed_steps == []
+    assert operator_runtime.get_session_checkpoints(session_id) == []
+    resume_payload = RuntimeRecoveryExecutor(operator_bridge=bridge).recovery_resume_payload(session_id)
+    assert resume_payload["status"] == "running"
+    assert resume_payload["completed_steps"] == []
+    assert RuntimeReplayEngine(operator_bridge=bridge).replay_evidence_refs(session_id) == []
 
 
 def test_agentloop_scheduler_no_operator_path_and_missing_session_are_safe(tmp_path):
@@ -283,7 +224,8 @@ def test_agentloop_scheduler_no_operator_path_and_missing_session_are_safe(tmp_p
     assert "operator_session_id" not in _latest_task_from_response(start)
 
     result = scheduler.run_one_step(task=_latest_task_from_response(start), current_tick=1)
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["runtime_state"]["status"] != "finished"
 
     bridge = OperatorIntegrationBridge(PersistentOperatorRuntime())
     assert RuntimeRecoveryExecutor(operator_bridge=bridge).recovery_resume_payload("missing-session") is None

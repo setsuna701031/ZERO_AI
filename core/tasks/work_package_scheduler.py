@@ -27,8 +27,7 @@ from typing import Any, Mapping
 from core.tasks.work_package_contract import WorkPackageRequest, validate_work_package_request
 from core.tasks.work_package_intake import submit_work_package
 from core.runtime.runtime_authority_seal import (
-    _WORK_PACKAGE_SCHEDULER_ISSUER_TOKEN,
-    issue_work_package_completion_authority,
+    is_work_package_completion_authority,
 )
 
 
@@ -180,26 +179,7 @@ class WorkPackageScheduler:
         return self.state_dir / f"{_safe_package_id(package_id)}.json"
 
     def _completion_authority(self, package_id: str, result: Mapping[str, Any]) -> Any:
-        if not bool(result.get("ok", False)):
-            return None
-        if _safe_package_id(result.get("package_id")) != package_id:
-            return None
-        artifact_paths = [
-            _owned_artifact_path(self.repo_root, result.get(key))
-            for key in ("audit_path", "evidence_path", "result_path")
-        ]
-        if any(path is None or not path.is_file() for path in artifact_paths):
-            return None
-        result_payload = _read_json(artifact_paths[-1])
-        if (
-            _safe_package_id(result_payload.get("package_id")) != package_id
-            or result_payload.get("ok") is not True
-        ):
-            return None
-        return issue_work_package_completion_authority(
-            _WORK_PACKAGE_SCHEDULER_ISSUER_TOKEN,
-            package_id=package_id,
-        )
+        return None
 
     def submit(
         self,
@@ -234,7 +214,7 @@ class WorkPackageScheduler:
 
         return self.run(package_id)
 
-    def run(self, package_id: str) -> dict[str, Any]:
+    def run(self, package_id: str, *, completion_authority: Any = None) -> dict[str, Any]:
         """Run a queued work package."""
 
         safe_id = _safe_package_id(package_id)
@@ -261,13 +241,22 @@ class WorkPackageScheduler:
 
         try:
             result = submit_work_package(running.request, repo_root=self.repo_root)
-            completion_authority = self._completion_authority(running.package_id, result)
+            completion_authorized = is_work_package_completion_authority(
+                completion_authority,
+                package_id=running.package_id,
+            )
             completed = WorkPackageScheduleRecord(
                 package_id=running.package_id,
-                status=STATUS_COMPLETED if completion_authority is not None else STATUS_FAILED,
+                status=STATUS_COMPLETED if completion_authorized else STATUS_FAILED,
                 request=running.request,
                 result=dict(result),
-                error=None if bool(result.get("ok", False)) else str(result.get("error") or result.get("reason") or "work_package_failed"),
+                error=(
+                    None
+                    if completion_authorized
+                    else "work_package_completion_authority_required"
+                    if bool(result.get("ok", False))
+                    else str(result.get("error") or result.get("reason") or "work_package_failed")
+                ),
                 created_at=running.created_at,
                 updated_at=_now(),
             )

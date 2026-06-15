@@ -80,11 +80,11 @@ def test_taskrunner_rejects_serialized_upstream_execution_authority() -> None:
         step={"id": "runtime-step", "type": "noop"},
     )
 
-    assert context["execution_authority"]["descriptive_only"] is True
+    assert context["execution_authority"] == {}
     assert context["authority_propagation_required"] is True
     assert context["execution_authority_granted"] is False
-    assert context["can_execute_privileged_step"] is True
-    assert context["authority_chain"][-1]["layer"] == "task_runner"
+    assert context["can_execute_privileged_step"] is False
+    assert context["authority_chain"] == []
 
 
 def test_step_executor_still_blocks_missing_authority(tmp_path: Path) -> None:

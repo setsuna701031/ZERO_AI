@@ -79,7 +79,7 @@ class GenericPlanner:
         }
 
 
-def test_agent_loop_code_fix_routes_to_governed_controlled_mutation(tmp_path: Path) -> None:
+def test_agent_loop_code_fix_without_dispatcher_lineage_is_migration_blocked(tmp_path: Path) -> None:
     repo_root = tmp_path
     workspace_root = repo_root / "workspace"
     target = workspace_root / "shared" / "sandbox_failure.py"
@@ -97,7 +97,9 @@ def test_agent_loop_code_fix_routes_to_governed_controlled_mutation(tmp_path: Pa
 
     result = loop.run("fix a code failure in a sandbox/workcopy file")
 
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["status"] == "migration_required"
+    assert result["blocked"] is True
     assert result["mode"] == "code_chain_controlled_self_edit_bridge"
     assert result["code_chain_controlled_self_edit_bridge"] is True
     assert result["controlled_mutation_plan_produced"] is True
@@ -105,38 +107,29 @@ def test_agent_loop_code_fix_routes_to_governed_controlled_mutation(tmp_path: Pa
 
     plan = result["plan"]
     assert plan["controlled_mutation_plan"][0]["type"] == "apply_patch"
-    assert plan["boundary"]["step_executor_executes"] is True
+    assert plan["boundary"]["step_executor_executes"] is False
+    assert plan["boundary"]["runtime_dispatcher_required"] is True
     assert plan["boundary"]["runtime_file_service_required"] is True
     assert plan["boundary"]["runtime_mutation_gateway_required"] is True
 
     execution = result["execution"]
-    assert execution["ok"] is True
-    assert execution["results"][0]["step"]["type"] == "apply_patch"
-    assert execution["results"][0]["result"]["transaction_ok"] is True
-    assert execution["results"][0]["result"]["verification_ok"] is True
-    assert execution["results"][1]["step"]["type"] == "command"
-    assert execution["results"][1]["result"]["result"]["returncode"] == 0
+    assert execution["ok"] is False
+    assert execution["executed"] is False
+    assert execution["blocked"] is True
+    assert execution["status"] == "migration_required"
+    assert execution["error"] == "legacy_runtime_dispatcher_migration_required"
 
     review = result["reviewable_result"]
-    assert review["ok"] is True
-    assert review["status"] == "ok"
+    assert review["ok"] is False
+    assert review["status"] != "ok"
     assert review["task_id"]
-    assert "workspace/shared/sandbox_failure.py" in review["changed_files"]
-    assert review["changed_file_reasons"] == [
-        {
-            "path": "workspace/shared/sandbox_failure.py",
-            "reason": "replace failing return value with passing value",
-        }
-    ]
-    assert "py_compile" in review["verification_command"]
-    assert "returncode=0" in review["verification_output_summary"]
-    assert review["human_review_required"] is False
-    assert review["failure_reason"] == ""
+    assert review["changed_files"] == []
+    assert review["failure_reason"] == "legacy_runtime_dispatcher_migration_required"
 
-    assert target.read_text(encoding="utf-8") == "def status():\n    return 'fixed'\n"
+    assert target.read_text(encoding="utf-8") == "def status():\n    return 'broken'\n"
 
 
-def test_agent_loop_code_chain_prefers_planner_owned_route_metadata(tmp_path: Path) -> None:
+def test_agent_loop_planner_owned_code_chain_without_dispatcher_lineage_is_blocked(tmp_path: Path) -> None:
     repo_root = tmp_path
     workspace_root = repo_root / "workspace"
     target = workspace_root / "shared" / "planner_owned.py"
@@ -153,14 +146,17 @@ def test_agent_loop_code_chain_prefers_planner_owned_route_metadata(tmp_path: Pa
 
     result = loop.run("please handle ticket 123")
 
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["status"] == "migration_required"
+    assert result["blocked"] is True
     assert result["mode"] == "code_chain_controlled_self_edit_bridge"
     assert result["planner_owned_intent_routing"] is True
     assert result["code_chain_v1_fallback_used"] is False
     assert result["plan"]["route_decision"]["source"] == "planner_route_metadata"
     assert result["plan"]["route_decision"]["task_kind"] == "code_fix"
-    assert "workspace/shared/planner_owned.py" in result["reviewable_result"]["changed_files"]
-    assert target.read_text(encoding="utf-8") == "def status():\n    return 'fixed'\n"
+    assert result["execution"]["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert result["reviewable_result"]["changed_files"] == []
+    assert target.read_text(encoding="utf-8") == "def status():\n    return 'broken'\n"
 
 
 def test_agent_loop_non_code_planner_route_does_not_enter_code_chain(tmp_path: Path) -> None:

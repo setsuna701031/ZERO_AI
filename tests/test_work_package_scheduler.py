@@ -39,9 +39,10 @@ def test_work_package_scheduler_submit_runs_package(tmp_path: Path) -> None:
 
     result = scheduler.submit(_payload("audit_submit"))
 
-    assert result["status"] == STATUS_COMPLETED
+    assert result["status"] == STATUS_FAILED
     assert result["result"]["ok"] is True
     assert result["result"]["package_id"] == "audit_submit"
+    assert result["error"] == "work_package_completion_authority_required"
     assert (tmp_path / "workspace/audit_submit.md").exists()
 
 
@@ -56,7 +57,7 @@ def test_work_package_scheduler_can_queue_without_execution(tmp_path: Path) -> N
     assert not (tmp_path / "workspace/audit_queue.md").exists()
 
     ran = scheduler.run("audit_queue")
-    assert ran["status"] == STATUS_COMPLETED
+    assert ran["status"] == STATUS_FAILED
     assert (tmp_path / "workspace/audit_queue.md").exists()
 
 
@@ -71,7 +72,7 @@ def test_work_package_scheduler_status_and_list(tmp_path: Path) -> None:
     two = scheduler.status("audit_two")
     all_records = scheduler.list()
 
-    assert one["status"] == STATUS_COMPLETED
+    assert one["status"] == STATUS_FAILED
     assert two["status"] == STATUS_QUEUED
     assert [record["package_id"] for record in all_records] == ["audit_one", "audit_two"]
 
@@ -83,7 +84,7 @@ def test_work_package_scheduler_resume_completed_metadata(tmp_path: Path) -> Non
     scheduler.submit(_payload("audit_resume_done"))
     resumed = scheduler.resume("audit_resume_done")
 
-    assert resumed["status"] == STATUS_COMPLETED
+    assert resumed["status"] == STATUS_FAILED
     assert resumed["resumed"] is True
     assert resumed["resume_mode"] == "metadata"
 
@@ -95,7 +96,7 @@ def test_work_package_scheduler_resume_queued_runs_package(tmp_path: Path) -> No
     scheduler.submit(_payload("audit_resume_queue"), execute=False)
     resumed = scheduler.resume("audit_resume_queue")
 
-    assert resumed["status"] == STATUS_COMPLETED
+    assert resumed["status"] == STATUS_FAILED
     assert resumed["resumed"] is True
     assert resumed["resume_mode"] == "run_queued"
     assert (tmp_path / "workspace/audit_resume_queue.md").exists()

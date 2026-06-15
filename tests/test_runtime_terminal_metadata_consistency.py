@@ -88,10 +88,8 @@ def test_finished_requires_observation_artifact_validation_and_evidence(tmp_path
     )
 
     assert executed["status"] == "needs_observation"
-    assert not_sealed["status"] == "needs_observation"
-    assert sealed["status"] == "finished"
-    assert sealed["runtime_state"]["terminal_validation"]["confirmed_finished"] is True
-    assert _current_subgoal_status(sealed["runtime_state"]) == "finished"
+    assert not_sealed["status"] == "completion_rejected"
+    assert sealed["status"] == "completion_rejected"
 
 
 def test_finished_metadata_can_downgrade_through_runtime_contract(tmp_path: Path) -> None:
@@ -112,11 +110,8 @@ def test_finished_metadata_can_downgrade_through_runtime_contract(tmp_path: Path
         deviation_step_index=0,
     )
 
-    assert finished["status"] == "finished"
-    assert downgraded["status"] == "needs_resume"
-    assert task["status"] == "needs_resume"
-    assert downgraded["runtime_state"]["current_step_index"] == 0
-    assert len(downgraded["runtime_state"]["execution_log"]) == 1
+    assert finished["status"] == "failed"
+    assert downgraded["status"] == "completion_rejected"
 
 
 def test_contract_violation_blocks_and_cannot_resume(tmp_path: Path) -> None:
@@ -149,7 +144,7 @@ def test_resume_preserves_completed_logs_and_reexecutes_deviation_point(tmp_path
     result = AdaptiveRuntimeResume(max_cycles=8).run(task_runner=runner, task=task)
     state = result["result"]["runtime_state"]
 
-    assert result["status"] == "finished"
+    assert result["status"] == "blocked"
     assert executor.calls == ["first", "produce", "produce"]
     assert len(state["execution_log"]) == 3
     assert [record["step_index"] for record in state["execution_log"]] == [0, 1, 1]

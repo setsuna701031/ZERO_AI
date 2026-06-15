@@ -13,7 +13,7 @@ from core.tasks.engineering_goal_runner import EngineeringGoalRunner
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_goal_run_reaches_completed_task_runner_state(tmp_path) -> None:
+def test_goal_run_task_completion_does_not_complete_goal_without_attestation(tmp_path) -> None:
     repository = EngineeringGoalRepository(tmp_path)
     goal = repository.save_goal({"summary": "Build demo system"})
 
@@ -25,14 +25,14 @@ def test_goal_run_reaches_completed_task_runner_state(tmp_path) -> None:
     lifecycle = continuation["goal_lifecycle"]
     completed = set(lifecycle["completed_tasks"])
 
-    assert result["ok"] is True
-    assert runtime["state"] == "complete"
-    assert continuation["stopped_reason"] == "completed"
-    assert lifecycle["goal_state"] == "completed"
+    assert result["ok"] is False
+    assert runtime["state"] == "replan"
+    assert continuation["stopped_reason"] == "failed"
+    assert lifecycle["goal_state"] == "failed"
+    assert lifecycle["completion_rejected"] is True
     assert completed == {f"{goal['goal_id']}_breakdown", f"{goal['goal_id']}_result"}
     assert any(cycle["submitted_to"] == "core.tasks.engineering_task_runner.run_engineering_task" for cycle in continuation["cycles"])
-    assert all(cycle["goal_state"] in {"next_task_generated", "completed"} for cycle in continuation["cycles"])
-    assert result["runtime_root_cause"] == {}
+    assert result["runtime_root_cause"]["decision_state"] == "replan"
 
 
 def test_repeated_summary_goal_uses_fresh_runtime_identity(tmp_path) -> None:
@@ -43,12 +43,12 @@ def test_repeated_summary_goal_uses_fresh_runtime_identity(tmp_path) -> None:
     second_result = EngineeringGoalRunner(repo_root=tmp_path, repository=repository).run_goal(second["goal_id"])
 
     assert first["goal_id"] != second["goal_id"]
-    assert first_result["runtime_result"]["state"] == "complete"
-    assert second_result["runtime_result"]["state"] == "complete"
-    assert second_result["runtime_root_cause"] == {}
+    assert first_result["runtime_result"]["state"] == "replan"
+    assert second_result["runtime_result"]["state"] == "replan"
+    assert second_result["runtime_root_cause"]["decision_state"] == "replan"
 
 
-def test_goal_run_cli_smoke_completes_without_failed_task_or_replan(tmp_path) -> None:
+def test_goal_run_cli_smoke_rejects_completion_without_attestation(tmp_path) -> None:
     store = tmp_path / "goals.json"
     env = {**dict(os.environ), "ZERO_GOAL_STORE": str(store), "PYTHONPATH": str(REPO_ROOT)}
     python = sys.executable
@@ -75,9 +75,9 @@ def test_goal_run_cli_smoke_completes_without_failed_task_or_replan(tmp_path) ->
     payload = json.loads(run.stdout)
     runtime = payload["runner_result"]["runtime_result"]
 
-    assert payload["ok"] is True
-    assert runtime["state"] == "complete"
-    assert runtime["decision_state"] == "complete"
-    assert runtime["iterations"][0]["state"] != "replan"
-    assert runtime["iterations"][0]["continuation"]["goal_lifecycle"]["failed_tasks"] == []
-    assert payload["runner_result"]["runtime_root_cause"] == {}
+    assert payload["ok"] is False
+    assert runtime["state"] == "replan"
+    assert runtime["decision_state"] == "replan"
+    assert runtime["iterations"][0]["state"] == "replan"
+    assert runtime["iterations"][0]["continuation"]["goal_lifecycle"]["goal_state"] != "completed"
+    assert payload["runner_result"]["runtime_root_cause"]["decision_state"] == "replan"

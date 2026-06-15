@@ -4,8 +4,12 @@ from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from core.runtime.runtime_authority_seal import (
+    _RUNTIME_DISPATCHER_ISSUER_TOKEN,
     _TASK_RUNNER_ISSUER_TOKEN,
+    delegate_taskrunner_execution_capability,
+    issue_dispatch_execution_capability,
     issue_task_completion_authority,
+    issue_terminal_execution_evidence,
 )
 from core.tasks.scheduler_core.dispatch_finalize import (
     _extract_dispatch_failure_error,
@@ -65,6 +69,39 @@ class FinalizeScheduler:
     def _can_requeue_task(self, task_id: str) -> bool:
         self.calls.append({"method": "_can_requeue_task", "task_id": task_id})
         return self.can_requeue
+
+
+def _completion_authority(task_id: str) -> Any:
+    package_id = "package-1"
+    session_id = "session-1"
+    step_id = "step-1"
+    dispatch = issue_dispatch_execution_capability(
+        _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+    )
+    delegated = delegate_taskrunner_execution_capability(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        dispatch,
+        task_id=task_id,
+        step_id=step_id,
+    )
+    evidence = issue_terminal_execution_evidence(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        delegated,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+        step_id=step_id,
+    )
+    return issue_task_completion_authority(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+        evidence=evidence,
+    )
 
 
 def test_extract_effective_status_prefers_runner_result() -> None:
@@ -167,10 +204,7 @@ def test_extract_effective_status_does_not_use_effective_status_key_yet() -> Non
 
 
 def test_build_finalize_decision_returns_finish_action_without_writes() -> None:
-    completion_authority = issue_task_completion_authority(
-        _TASK_RUNNER_ISSUER_TOKEN,
-        task_id="task-1",
-    )
+    completion_authority = _completion_authority("task-1")
     decision = build_finalize_decision(
         original_task={"task_id": "task-1", "status": "queued", "final_answer": "original"},
         refreshed_task={"task_id": "task-1", "status": "running", "final_answer": "refreshed"},
@@ -327,10 +361,7 @@ def test_build_finalize_decision_does_not_use_effective_status_key_yet() -> None
 
 def test_apply_finalize_decision_dispatches_finish_side_effects() -> None:
     scheduler = FinalizeScheduler()
-    completion_authority = issue_task_completion_authority(
-        _TASK_RUNNER_ISSUER_TOKEN,
-        task_id="task-1",
-    )
+    completion_authority = _completion_authority("task-1")
 
     apply_finalize_decision(
         scheduler=scheduler,

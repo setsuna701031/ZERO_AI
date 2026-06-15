@@ -37,29 +37,16 @@ def run_verification_command(
     executor: Any = None,
 ) -> OperatorVerificationResult:
     from core.runtime.execution_authority import validate_authority_metadata
-    from core.runtime.step_executor import StepExecutor
-    from core.runtime.task_runner import TaskRunner
 
     validation = validate_authority_metadata(authority or {}, surface="operator_verification")
     if not validation.get("ok"):
         return _result(command, ok=False, returncode=1, stderr=str(validation.get("reason") or "operator_verification_requires_authority"), authority_valid=False)
-    endpoint = executor or StepExecutor(workspace_root=str((context or {}).get("repo_root") or "."))
-    runner = TaskRunner(step_executor=endpoint)
-    raw = runner.execute_owned_step(
-        {"type": "operator_verification", "command": str(command or ""), "surface": "operator_verification"},
-        task=dict(task or {}),
-        context={**dict(context or {}), "authority": dict(authority or {})},
-    )
-    payload = raw.get("result") if isinstance(raw, Mapping) and isinstance(raw.get("result"), Mapping) else raw if isinstance(raw, Mapping) else {}
-    ok = bool(raw.get("ok")) if isinstance(raw, Mapping) else bool(payload.get("ok"))
     return _result(
         command,
-        ok=ok,
-        returncode=int(payload.get("returncode") or (0 if ok else 1)),
-        stdout=str(payload.get("stdout") or raw.get("message") if isinstance(raw, Mapping) else ""),
-        stderr=str(payload.get("stderr") or ""),
+        ok=False,
+        returncode=1,
+        stderr="legacy_runtime_dispatcher_migration_required",
         authority_valid=True,
-        evidence_refs=(raw.get("canonical_evidence") or {}).get("evidence_refs") if isinstance(raw, Mapping) and isinstance(raw.get("canonical_evidence"), Mapping) else (),
     )
 
 

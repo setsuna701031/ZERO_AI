@@ -21,11 +21,10 @@ def test_real_goal_loop_does_not_complete_without_goal_completion_authority(tmp_
 
     assert result["ok"] is False
     assert result["terminal"] is True
-    assert result["stop_reason"] == "goal_completion_authority_required"
+    assert result["stop_reason"] == "replan"
     assert result["cycle_count"] == 1
-    assert result["cycles"][0]["runtime_state"] == "complete"
-    assert result["cycles"][0]["adaptive_decision"] == "complete"
-    assert result["cycles"][0]["continuation_work_item"] == {}
+    assert result["cycles"][0]["runtime_state"] == "replan"
+    assert result["cycles"][0]["adaptive_decision"] == "replan"
     assert result["goal_completion_authority_result"] == {}
 
 
@@ -59,7 +58,7 @@ def test_goal_loop_cli_smoke_outputs_cycles_summary(tmp_path) -> None:
     assert payload["ok"] is False
     assert summary["goal_id"] == goal_id
     assert summary["terminal"] is True
-    assert summary["stop_reason"] == "goal_completion_authority_required"
+    assert summary["stop_reason"] == "replan"
     assert summary["cycle_count"] == 1
     assert summary["cycles"][0]["cycle_index"] == 0
-    assert summary["cycles"][0]["adaptive_decision"] == "complete"
+    assert summary["cycles"][0]["adaptive_decision"] == "replan"

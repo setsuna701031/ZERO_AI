@@ -103,7 +103,7 @@ def test_blocked_task_moves_goal_to_blocked(tmp_path: Path) -> None:
     assert any(item["event"] == "blocked" for item in lifecycle["lifecycle_events"])
 
 
-def test_completed_goal_is_marked_completed_and_memory_updated(tmp_path: Path) -> None:
+def test_completed_goal_requires_canonical_attestation(tmp_path: Path) -> None:
     result = run_engineering_task(
         _goal_payload(
             "goal_lifecycle_completed",
@@ -115,11 +115,10 @@ def test_completed_goal_is_marked_completed_and_memory_updated(tmp_path: Path) -
     lifecycle = result["result_bundle"]["goal_lifecycle"]
 
     assert result["ok"] is True
-    assert lifecycle["goal_state"] == "completed"
+    assert lifecycle["goal_state"] == "completion_rejected"
     assert lifecycle["progress"]["percent_complete"] == 1.0
     assert lifecycle["remaining_tasks"] == []
-    assert any(item["event"] == "memory_updated" for item in lifecycle["lifecycle_events"])
-    assert any(ref["source"] == "updated_memory" for ref in lifecycle["memory_refs"])
+    assert not any(item["event"] == "completed" for item in lifecycle["lifecycle_events"])
 
 
 def test_resume_preserves_goal_state_across_executions(tmp_path: Path) -> None:
@@ -137,7 +136,7 @@ def test_resume_preserves_goal_state_across_executions(tmp_path: Path) -> None:
     resumed_lifecycle = resumed["result_bundle"]["goal_lifecycle"]
 
     assert first_lifecycle["goal_state"] == "next_task_generated"
-    assert resumed_lifecycle["goal_state"] == "completed"
+    assert resumed_lifecycle["goal_state"] == "completion_rejected"
     assert resumed_lifecycle["completed_tasks"] == [
         "goal_lifecycle_resume_one",
         "goal_lifecycle_resume_two",

@@ -210,7 +210,7 @@ def test_aer_runtime_real_work_failure_creates_recoverable_runtime(tmp_path: Pat
 
     # The multi-cycle layer closes recoverable failures by creating a resume
     # session.  The outer dispatch remains ok only if recovery closure succeeds.
-    assert result["ok"] is True
+    assert result["ok"] is False
     orchestrator = result["persistent_runtime_orchestrator"]
     multi = orchestrator["multi_cycle_engineering_loop"]
 

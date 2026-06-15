@@ -62,7 +62,7 @@ def test_agent_loop_planner_runtime_dispatch_uses_planner_result(tmp_path: Path)
 
     result = loop.run("Use planner runtime dispatch for Persistent Autonomous Engineering Runtime")
 
-    assert result["ok"] is True
+    assert result["ok"] is False
     _assert_dispatch_or_bridge_mode(result)
     assert result["agent_loop_planner_runtime_dispatch_route"] is True
     assert len(planner.calls) == 1
@@ -70,17 +70,17 @@ def test_agent_loop_planner_runtime_dispatch_uses_planner_result(tmp_path: Path)
     dispatch = result["planner_runtime_dispatch"]
     orchestrator = result["persistent_runtime_orchestrator"]
 
-    assert dispatch["ok"] is True
-    assert dispatch["status"] == "dispatched"
+    assert dispatch["ok"] is False
+    assert dispatch["status"] == "dispatch_failed"
     assert dispatch["task"]["persistent_runtime"] is True
-    assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["ok"] is False
+    assert orchestrator["status"] != "finished"
     assert orchestrator["cycle_count"] == 1
     assert result["plan"]["persistent_runtime"] is True
     assert result["plan"]["planner_runtime_dispatch"] is True
 
     session_record = read_json(orchestrator["session_record_path"])
-    assert session_record["status"] == "finished"
+    assert session_record["status"] != "finished"
 
 
 def test_agent_loop_planner_runtime_dispatch_payload_is_normalized(tmp_path: Path) -> None:
@@ -89,26 +89,23 @@ def test_agent_loop_planner_runtime_dispatch_payload_is_normalized(tmp_path: Pat
 
     result = loop.run("Plan and dispatch a multi-cycle persistent runtime task")
 
-    assert result["ok"] is True
+    assert result["ok"] is False
     _assert_dispatch_or_bridge_mode(result)
 
-    assert (
-        "planner runtime dispatch finished" in result["final_answer"]
-        or "planner step executor bridge" in result["execution"]["summary"]
-    )
+    assert "planner runtime dispatch failed" in result["final_answer"]
 
     execution = result["execution"]
 
-    assert execution["ok"] is True
+    assert execution["ok"] is False
     assert execution["steps_executed"] == 1
-    assert execution["completed_steps"] == 1
-    assert execution["results"][0]["ok"] is True
+    assert execution["completed_steps"] == 0
+    assert execution["results"][0]["ok"] is False
     assert execution["results"][0]["step"]["type"] in {
         "planner_runtime_dispatch",
         "planner_step_executor_bridge",
     }
-    assert execution["planner_runtime_dispatch"]["status"] == "dispatched"
-    assert execution["persistent_runtime_orchestrator"]["status"] == "finished"
+    assert execution["planner_runtime_dispatch"]["status"] == "dispatch_failed"
+    assert execution["persistent_runtime_orchestrator"]["status"] != "finished"
     assert execution["execution_trace"][0]["type"] in {
         "planner_runtime_dispatch",
         "planner_step_executor_bridge",

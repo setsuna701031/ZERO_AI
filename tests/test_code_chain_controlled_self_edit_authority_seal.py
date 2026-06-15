@@ -60,7 +60,7 @@ def test_bridge_does_not_read_agent_execution_endpoints() -> None:
     assert violations == []
 
 
-def test_bridge_returns_runtime_owned_execution_audit_payload(tmp_path: Path) -> None:
+def test_bridge_without_dispatcher_lineage_returns_migration_audit_payload(tmp_path: Path) -> None:
     runtime = _RecordingRuntime()
     agent = _Agent(runtime=runtime, repo_root=tmp_path)
 
@@ -77,7 +77,14 @@ def test_bridge_returns_runtime_owned_execution_audit_payload(tmp_path: Path) ->
     )
 
     assert result is not None
-    assert runtime.calls
+    assert runtime.calls == []
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["status"] == "migration_required"
+    assert result["execution"]["executed"] is False
+    assert result["execution"]["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert result.get("finished") is not True
+    assert result.get("completed") is not True
     path = result["execution_path"]
     assert path["direct_execution"] is False
     assert path["runtime_owns_execution"] is True

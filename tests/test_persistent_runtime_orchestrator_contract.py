@@ -97,8 +97,8 @@ def test_persistent_runtime_orchestrator_failure_recovery_resume_continue(tmp_pa
     orchestrator = result["persistent_runtime_orchestrator"]
     loop = orchestrator["multi_cycle_engineering_loop"]
 
-    assert result["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert result["ok"] is False
+    assert orchestrator["status"] == "recoverable_failure"
     assert orchestrator["cycle_count"] == 3
     assert orchestrator["closure_count"] == 1
 
@@ -111,7 +111,7 @@ def test_persistent_runtime_orchestrator_failure_recovery_resume_continue(tmp_pa
     assert loop["cycle_results"][2]["runtime"]["status"] == "finished"
 
     session_record = read_json(orchestrator["session_record_path"])
-    assert session_record["status"] == "finished"
+    assert session_record["status"] == "recoverable_failure"
     assert session_record["boundary"]["delegates_to_multi_cycle_engineering_loop"] is True
 
 

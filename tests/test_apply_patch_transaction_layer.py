@@ -9,6 +9,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.tasks.execution_guard import ExecutionGuard
 
 
@@ -23,7 +24,13 @@ class _OwnedStepExecutor:
         self.runner = TaskRunner(step_executor=endpoint)
 
     def execute_step(self, step: dict, task: dict | None = None, **kwargs):
-        return self.runner.execute_owned_step(step, task=task, **kwargs)
+        owned = dict(task or {})
+        task_id = str(owned.get("task_id") or "apply-patch-transaction-test")
+        package_id = str(owned.get("package_id") or "apply-patch-transaction-package")
+        session_id = str(owned.get("session_id") or "apply-patch-transaction-session")
+        owned.update({"task_id": task_id, "package_id": package_id, "session_id": session_id})
+        owned["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(owned)
+        return self.runner.execute_owned_step(step, task=owned, **kwargs)
 
     def has_handler(self, step_type: str) -> bool:
         return self.endpoint.has_handler(step_type)

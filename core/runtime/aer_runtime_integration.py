@@ -8,8 +8,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from core.runtime.task_runner import TaskRunner
-from core.runtime.task_runtime import TaskRuntime
 
 
 AER_INTEGRATION_STATUS_READY = "ready"
@@ -547,28 +545,25 @@ class AERRuntimeIntegration:
         if not continuation_id:
             raise AERRuntimeIntegrationRejected("task_has_no_continuation_ref")
 
-        completed = self.execution_fabric.resume_from_continuation(
-            continuation_id,
-            runner=step_runner,
-        )
         updated = AERRuntimeTask.from_dict(
             {
                 **task.to_dict(),
-                "status": AER_INTEGRATION_STATUS_COMPLETED if getattr(completed, "status", "") == "completed" else AER_INTEGRATION_STATUS_RUNNING,
+                "status": AER_INTEGRATION_STATUS_FAILED,
                 "final_result": {
-                    "ok": getattr(completed, "status", "") == "completed",
+                    "ok": False,
                     "execution_id": task.execution_id,
-                    "execution_status": getattr(completed, "status", ""),
+                    "execution_status": "blocked",
+                    "error": "legacy_runtime_dispatcher_migration_required",
                 },
                 "updated_at": utc_timestamp(),
             }
         )
         self._tasks[task_id] = updated
         self._append_event(
-            AER_EVENT_TASK_COMPLETED,
+            AER_EVENT_FAILURE_DETECTED,
             task_id=task.task_id,
             execution_id=task.execution_id,
-            payload={"task": updated.to_dict(), "execution": completed.to_dict() if hasattr(completed, "to_dict") else copy.deepcopy(completed)},
+            payload={"task": updated.to_dict(), "reason": "legacy_runtime_dispatcher_migration_required"},
         )
         self.save()
         return copy.deepcopy(updated)
@@ -740,74 +735,16 @@ class AERRuntimeIntegration:
         step_index: int,
         step_runner: StepRunnerFn | None,
     ) -> dict[str, Any]:
-        context = {
-            "task": task.to_dict(),
-            "step_index": step_index,
-            "execution_id": task.execution_id,
-        }
-        boundary_id = "aer-taskrunner-" + stable_aer_fingerprint(
-            {
-                "task_id": task.task_id,
-                "execution_id": task.execution_id,
-                "step_index": step_index,
-                "event_count": len(self._events),
-            }
-        )[:16]
-        boundary_root = (
-            self.storage_path.parent / "task_runner_boundary"
-            if self.storage_path is not None
-            else Path("workspace") / "aer_runtime_integration" / "task_runner_boundary"
-        )
-        boundary_task_dir = boundary_root / boundary_id
-        boundary_task = {
-            "task_id": boundary_id,
-            "task_name": boundary_id,
-            "goal": task.goal,
-            "status": "queued",
-            "task_dir": str(boundary_task_dir),
-            "runtime_state_file": str(boundary_task_dir / "runtime_state.json"),
-            "steps": [copy.deepcopy(step)],
-            "current_step_index": 0,
-            "results": [],
-            "step_results": [],
-            "execution_log": [],
-            "execution_trace": [],
-            "authority_path": "AERRuntimeIntegration -> TaskRunner -> StepExecutor",
-        }
-        endpoint = _AERStepExecutorEndpoint(
-            step_runner=step_runner,
-            step_executor=self.step_executor,
-            context=context,
-        )
-        task_runner_result = TaskRunner(
-            step_executor=endpoint,
-            task_runtime=TaskRuntime(workspace_root=str(boundary_root)),
-        ).run_task(boundary_task, current_tick=step_index)
-        runtime_state = _copy_dict(task_runner_result.get("runtime_state"))
-        final_result = _copy_dict(runtime_state.get("final_result"))
-        if final_result:
-            final_result.setdefault(
-                "execution_path",
-                {
-                    "authority_path": "AERRuntimeIntegration -> TaskRunner -> StepExecutor",
-                    "direct_execution": False,
-                    "runtime_owns_execution": True,
-                    "taskrunner_required": True,
-                    "step_executor_endpoint_only": True,
-                },
-            )
-            return final_result
         return {
-            "ok": bool(task_runner_result.get("ok")),
-            "failed": not bool(task_runner_result.get("ok")),
-            "status": str(task_runner_result.get("status") or ""),
-            "error": copy.deepcopy(task_runner_result.get("error")),
+            "ok": False,
+            "failed": True,
+            "status": "blocked",
+            "error": "legacy_runtime_dispatcher_migration_required",
             "execution_path": {
-                "authority_path": "AERRuntimeIntegration -> TaskRunner -> StepExecutor",
+                "authority_path": "AERRuntimeIntegration -> RuntimeDispatcher migration required",
                 "direct_execution": False,
-                "runtime_owns_execution": True,
-                "taskrunner_required": True,
-                "step_executor_endpoint_only": True,
+                "runtime_dispatcher_required": True,
+                "legacy_migration_required": True,
             },
         }
 

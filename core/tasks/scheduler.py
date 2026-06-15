@@ -1312,6 +1312,38 @@ class Scheduler(RuntimeTaskScheduler):
     ) -> Dict[str, Any]:
         """Formal Scheduler execution boundary: TaskRunner owns step execution."""
         task_id = self._extract_task_id(task) or "scheduler-task"
+        from core.runtime.runtime_authority_seal import is_dispatch_execution_capability
+
+        capability = task.get("runtime_execution_capability")
+        has_dispatcher_lineage = is_dispatch_execution_capability(
+            capability,
+            task_id=task_id,
+        )
+        scheduler_authority = self._build_scheduler_authority_context(task)
+        error = (
+            "legacy_runtime_dispatcher_migration_required"
+            if has_dispatcher_lineage
+            else "runtime_dispatcher_live_capability_required"
+        )
+        return self._attach_scheduler_execution_path(
+            {
+                "ok": False,
+                "executed": False,
+                "blocked": True,
+                "finished": False,
+                "completed": False,
+                "status": "migration_required" if has_dispatcher_lineage else "blocked",
+                "action": "scheduler_runtime_dispatcher_migration_blocked",
+                "error": error,
+                "task": copy.deepcopy(task),
+                "step": copy.deepcopy(step),
+                "scheduler_authority_context": scheduler_authority,
+                "runtime_dispatcher_required": True,
+            }
+        )
+
+        # Legacy boundary construction below is retained for migration context,
+        # but is unreachable until Scheduler can preserve dispatcher lineage.
         try:
             step_index = int(task.get("current_step_index", 0) or 0)
         except Exception:
@@ -1329,7 +1361,6 @@ class Scheduler(RuntimeTaskScheduler):
         boundary_id = f"{task_id}-scheduler-boundary-{step_index}-{boundary_fingerprint}"
         boundary_root = Path(self.workspace_dir) / "scheduler_taskrunner_boundary"
         boundary_task_dir = boundary_root / boundary_id
-        scheduler_authority = self._build_scheduler_authority_context(task)
         handoff_context = copy.deepcopy(context) if isinstance(context, dict) else {}
         operator_session_id = str(
             handoff_context.get("operator_session_id")

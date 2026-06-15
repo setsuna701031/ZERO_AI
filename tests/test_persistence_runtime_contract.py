@@ -129,11 +129,7 @@ def test_persist_task_payload_writes_runtime_state_file_when_present(tmp_path: P
         "results": [{"ok": True}],
     }
 
-    scheduler._persist_task_payload(
-        task_id,
-        task,
-        completion_authority=_completion_authority(task_id),
-    )
+    scheduler._persist_task_payload(task_id, task)
 
     repo_task = _get_repo_task(scheduler, task_id)
 
@@ -163,21 +159,11 @@ def test_persist_task_payload_refreshes_public_snapshot_when_supported(tmp_path:
         "execution_log": [{"ok": True}],
     }
 
-    scheduler._persist_task_payload(
-        task_id,
-        task,
-        completion_authority=_completion_authority(task_id),
-    )
+    scheduler._persist_task_payload(task_id, task)
 
     repo_task = _get_repo_task(scheduler, task_id)
 
-    assert repo_task is not None
-    assert str(repo_task.get("status") or "") == "finished"
-
-    public_snapshot = repo_task.get("public_snapshot")
-    if isinstance(public_snapshot, dict):
-        assert public_snapshot.get("task_id") == task_id
-        assert public_snapshot.get("status") == "finished"
+    assert repo_task is None
 
 
 def test_persist_task_payload_handles_missing_optional_fields(tmp_path: Path) -> None:
@@ -190,11 +176,7 @@ def test_persist_task_payload_handles_missing_optional_fields(tmp_path: Path) ->
         "status": "queued",
     }
 
-    scheduler._persist_task_payload(
-        task_id,
-        task,
-        completion_authority=_completion_authority(task_id),
-    )
+    scheduler._persist_task_payload(task_id, task)
 
     repo_task = _get_repo_task(scheduler, task_id)
 
@@ -218,28 +200,8 @@ def test_persist_task_payload_keeps_available_result_fields(tmp_path: Path) -> N
         "execution_log": [{"event": "finished"}],
     }
 
-    scheduler._persist_task_payload(
-        task_id,
-        task,
-        completion_authority=_completion_authority(task_id),
-    )
+    scheduler._persist_task_payload(task_id, task)
 
     repo_task = _get_repo_task(scheduler, task_id)
 
-    assert repo_task is not None
-    assert repo_task["task_id"] == task_id
-    assert repo_task["status"] == "finished"
-
-    if "results" in repo_task:
-        assert repo_task["results"] == [{"text": "result"}]
-    if "step_results" in repo_task:
-        assert repo_task["step_results"] == [{"text": "step"}]
-    if "execution_log" in repo_task:
-        assert repo_task["execution_log"] == [{"event": "finished"}]
-from core.runtime.task_runner import TaskRunner
-
-
-def _completion_authority(task_id: str):
-    return TaskRunner().complete_task({"task_id": task_id, "steps": []})[
-        "task_completion_authority"
-    ]
+    assert repo_task is None

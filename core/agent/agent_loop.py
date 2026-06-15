@@ -8173,85 +8173,33 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
             },
         )
 
-    execution_runtime = _zero_v826_execution_runtime_from_agent(self)
-    if execution_runtime is None:
-        failure_reason = "Runtime unavailable for controlled mutation execution"
-        execution = {
-            "ok": False,
-            "summary": failure_reason,
-            "message": failure_reason,
-            "final_answer": failure_reason,
-            "error": failure_reason,
-            "results": [],
-            "last_result": {},
-            "execution_trace": [],
-        }
-        review = _zero_v826_reviewable_result(
-            ok=False,
-            task_id=task_id,
-            goal=text,
-            steps=controlled_steps,
-            execution_result=execution,
-            failure_reason=failure_reason,
-        )
-        return self._make_agent_response(
-            ok=False,
-            mode="code_chain_controlled_self_edit_bridge",
-            context=context,
-            route=route,
-            plan={"ok": False, "planner_result": copy.deepcopy(planner_result), "steps": controlled_steps},
-            execution=execution,
-            final_answer=failure_reason,
-            error=failure_reason,
-            extra={
-                "reviewable_result": review,
-                "code_chain_controlled_self_edit_bridge": True,
-            },
-        )
-
     executable_steps = _zero_v826_adapt_steps_for_step_executor(self, raw_steps)
-
-    task = {
-        "id": task_id,
-        "task_id": task_id,
-        "goal": _zero_v826_text(planner_result.get("goal")) or text,
-        "repo_root": str(repo_root),
-        "target_repo_root": str(repo_root),
-        "workspace_dir": str(repo_root / "workspace"),
-        "planner_result": copy.deepcopy(planner_result),
-        "steps": copy.deepcopy(executable_steps),
+    failure_reason = "legacy_runtime_dispatcher_migration_required"
+    execution_result = {
+        "ok": False,
+        "executed": False,
+        "blocked": True,
+        "status": "migration_required",
+        "summary": failure_reason,
+        "message": failure_reason,
+        "final_answer": failure_reason,
+        "error": failure_reason,
+        "results": [],
+        "last_result": {},
+        "execution_trace": [],
+        "runtime_dispatcher_required": True,
     }
-
-    try:
-        execution_result = execution_runtime.run_steps(
-            steps=copy.deepcopy(executable_steps),
-            task=copy.deepcopy(task),
-            context=copy.deepcopy(context),
-        )
-    except Exception as exc:
-        execution_result = {
-            "ok": False,
-            "summary": "controlled mutation execution failed",
-            "message": f"{type(exc).__name__}: {exc}",
-            "final_answer": f"{type(exc).__name__}: {exc}",
-            "error": f"{type(exc).__name__}: {exc}",
-            "results": [],
-            "last_result": {},
-            "execution_trace": [],
-        }
-
-    ok = bool(execution_result.get("ok")) if isinstance(execution_result, dict) else False
-    final_answer = _zero_v826_text(
-        execution_result.get("final_answer") if isinstance(execution_result, dict) else ""
-    ) or ("controlled code fix completed" if ok else "controlled code fix failed")
+    ok = False
+    final_answer = failure_reason
     review = _zero_v826_reviewable_result(
         ok=ok,
         task_id=task_id,
-        goal=task["goal"],
+        goal=_zero_v826_text(planner_result.get("goal")) or text,
         steps=executable_steps,
-        execution_result=execution_result if isinstance(execution_result, dict) else {},
+        execution_result=execution_result,
+        failure_reason=failure_reason,
     )
-    execution = copy.deepcopy(execution_result) if isinstance(execution_result, dict) else {"ok": False}
+    execution = copy.deepcopy(execution_result)
     execution["reviewable_result"] = copy.deepcopy(review)
     execution["code_chain_controlled_self_edit_bridge"] = True
     execution["execution_path"] = agent_execution_path()
@@ -8270,19 +8218,23 @@ def _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, user_input
             "boundary": {
                 "agent_loop_routes_only": True,
                 "planner_produces_plan": True,
-                "step_executor_executes": True,
+                "step_executor_executes": False,
+                "runtime_dispatcher_required": True,
+                "legacy_runtime_dispatcher_migration_required": True,
                 "runtime_file_service_required": True,
                 "runtime_mutation_gateway_required": True,
             },
         },
         execution=execution,
         final_answer=final_answer,
-        error=None if ok else review.get("failure_reason") or final_answer,
+        error=failure_reason,
         extra={
             "reviewable_result": copy.deepcopy(review),
             "code_chain_controlled_self_edit_bridge": True,
             "planner_runtime_dispatch": True,
             "controlled_mutation_plan_produced": bool(controlled_steps),
+            "status": "migration_required",
+            "blocked": True,
         },
     )
 
