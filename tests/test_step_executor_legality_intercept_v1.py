@@ -68,4 +68,4 @@ def test_step_executor_runtime_legality_review_step_requires_authority_first() -
     assert result["ok"] is False
     assert result["error"]["type"] == "execution_authority_denied"
     assert result["authority_decision"]["decision"] == "denied"
-    assert result["authority_decision"]["reason"] == "missing_authority_metadata"
+    assert result["authority_decision"]["reason"] == "missing_or_invalid_execution_authority"

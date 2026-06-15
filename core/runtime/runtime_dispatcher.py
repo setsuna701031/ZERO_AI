@@ -7,6 +7,11 @@ from typing import Any, Mapping
 
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
+from core.runtime.runtime_authority_seal import (
+    _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+    issue_dispatch_execution_capability,
+    issue_work_package_completion_authority,
+)
 from core.runtime.work_package_queue import (
     RuntimePackageQueue,
     RuntimePackageQueueError,
@@ -84,6 +89,7 @@ class RuntimeDispatcher:
         record = self.queue.claim(package_id)
         task = self._execution_task(record)
         self.queue.start_execution_session(package_id, task=task)
+        task["runtime_execution_capability"] = self._execution_capability(record)
         return self._continue_execution(package_id, task=task, tick=0, max_steps=max_steps)
 
     def resume(self, package_id: str, *, max_steps: int | None = None) -> dict[str, Any]:
@@ -101,6 +107,9 @@ class RuntimeDispatcher:
         task["steps"] = steps
         task["current_step_index"] = int(active_graph.get("cursor") or 0)
         task["status"] = "running"
+        task["runtime_execution_capability"] = self._execution_capability(
+            self.queue.status(package_id)
+        )
         self.queue.mark_session_resumed(package_id)
         return self._continue_execution(
             package_id,
@@ -178,7 +187,13 @@ class RuntimeDispatcher:
             tick += 1
             executed += 1
 
-        return self.queue.record_runtime_completed(package_id)
+        return self.queue.record_runtime_completed(
+            package_id,
+            completion_authority=issue_work_package_completion_authority(
+                _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+                package_id=package_id,
+            ),
+        )
 
     def dispatch_next(self) -> dict[str, Any] | None:
         record = self.queue.next_planned()
@@ -248,6 +263,15 @@ class RuntimeDispatcher:
             require_authority_metadata=True,
         )
         return task
+
+    @staticmethod
+    def _execution_capability(record: Mapping[str, Any]):
+        return issue_dispatch_execution_capability(
+            _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+            task_id=str(record.get("task_id") or ""),
+            session_id=str(record.get("session_id") or ""),
+            package_id=str(record.get("package_id") or ""),
+        )
 
     @staticmethod
     def _step_feedback(*, task: Mapping[str, Any], result: Any, tick: int) -> dict[str, Any]:

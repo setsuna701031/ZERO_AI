@@ -9,6 +9,13 @@ from core.tasks.scheduler_core.repo_state_helpers import (
     list_repo_tasks,
     mark_repo_task_with_adapter,
 )
+from core.runtime.task_runner import TaskRunner
+
+
+def _completion_authority(task_id: str):
+    return TaskRunner().complete_task({"task_id": task_id, "steps": []})[
+        "task_completion_authority"
+    ]
 
 
 class ListOnlyRepo:
@@ -69,7 +76,12 @@ class MarkScheduler:
         items.append(status)
         return items
 
-    def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
+    def _persist_task_payload(
+        self,
+        task_id: str,
+        task: Dict[str, Any],
+        completion_authority: Any = None,
+    ) -> None:
         self.persisted.append(copy.deepcopy(task))
 
     def _unblock_tasks_if_dependencies_done(self) -> None:
@@ -187,13 +199,15 @@ def test_mark_repo_task_adapter_invokes_finished_callback() -> None:
         operation="finished",
         task_id="task-1",
         result="done",
+        completion_authority=_completion_authority("task-1"),
     )
 
     assert calls == [
         {
             "scheduler": scheduler,
             "task_id": "task-1",
-            "result": "done",
+                "result": "done",
+                "completion_authority": calls[0]["completion_authority"],
         }
     ]
     assert scheduler.persisted == []
@@ -255,6 +269,7 @@ def test_mark_repo_task_adapter_preserves_finished_contract_without_callback() -
         operation="finished",
         task_id="task-1",
         result="done",
+        completion_authority=_completion_authority("task-1"),
     )
 
     assert scheduler.task["status"] == "finished"

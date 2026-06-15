@@ -64,7 +64,7 @@ def test_step_executor_missing_authority_leaves_audit_evidence_replay_reason(tmp
 
     assert result["ok"] is False
     assert result["blocked"] is True
-    assert result["authority_decision"]["reason"] == "missing_authority_metadata"
+    assert result["authority_decision"]["reason"] == "missing_or_invalid_execution_authority"
     assert result["audit_event"]["reason"] == "missing_authority_metadata"
     assert result["evidence"]["reason"] == "missing_authority_metadata"
     assert result["replay_event"]["decision"] == "blocked"

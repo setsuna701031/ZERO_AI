@@ -67,9 +67,9 @@ def test_replay_mutation_requires_authority() -> None:
 
 
 def test_replay_mutation_requires_transaction(tmp_path: Path) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
-    result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
+    result = owned_step_executor(workspace_root=str(tmp_path)).execute_step(
         {
             "type": "replay_mutation",
             "target_path": "workspace/shared/replay-mutation.txt",
@@ -83,7 +83,7 @@ def test_replay_mutation_requires_transaction(tmp_path: Path) -> None:
 
 
 def test_replay_mutation_creates_new_transaction_with_replay_source(tmp_path: Path) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
     original = create_transaction(
         task_id="task-original",
@@ -93,7 +93,7 @@ def test_replay_mutation_creates_new_transaction_with_replay_source(tmp_path: Pa
         surface="write_file",
         affected_files=["workspace/shared/original.txt"],
     )
-    result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
+    result = owned_step_executor(workspace_root=str(tmp_path)).execute_step(
         {
             "type": "replay_mutation",
             "target_path": "workspace/shared/replay-new.txt",

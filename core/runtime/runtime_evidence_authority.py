@@ -8,6 +8,10 @@ from core.runtime.runtime_evidence_bundle import RuntimeEvidenceBundle
 from core.runtime.runtime_execution_result import RuntimeExecutionResult
 from core.runtime.runtime_serialization import DEFAULT_RUNTIME_SERIALIZER, RuntimeSerializationAuthority
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
+from core.runtime.runtime_authority_seal import (
+    _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+    register_runtime_evidence_authority,
+)
 
 _COMPATIBILITY_KEYS = ("artifact_type", "compatible", "runtime_version", "abi_version", "reason", "migration_required", "metadata")
 
@@ -64,7 +68,10 @@ class RuntimeEvidenceAuthority:
         *,
         evidence_id: str,
         serializer: RuntimeSerializationAuthority | None = None,
+        issuer_token: Any = None,
     ) -> None:
+        if issuer_token is not _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN:
+            raise PermissionError("governed_runtime_evidence_owner_required")
         self.evidence_id = evidence_id
         self.serializer = serializer or DEFAULT_RUNTIME_SERIALIZER
         self._payload: dict[str, Any] = {
@@ -97,8 +104,11 @@ class RuntimeEvidenceAuthority:
             "runtime_abi": [],
             "recovery": {},
         }
+        register_runtime_evidence_authority(issuer_token, self)
 
-    def update(self, **values: Any) -> "RuntimeEvidenceAuthority":
+    def update(self, *, issuer_token: Any = None, **values: Any) -> "RuntimeEvidenceAuthority":
+        if issuer_token is not _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN:
+            raise PermissionError("governed_runtime_evidence_owner_required")
         for key, value in values.items():
             if key == "runtime_compatibility":
                 self._payload[key] = _canonical_compatibility_reports(value)
@@ -106,7 +116,9 @@ class RuntimeEvidenceAuthority:
                 self._payload[key] = copy.deepcopy(value)
         return self
 
-    def append(self, key: str, value: Any) -> "RuntimeEvidenceAuthority":
+    def append(self, key: str, value: Any, *, issuer_token: Any = None) -> "RuntimeEvidenceAuthority":
+        if issuer_token is not _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN:
+            raise PermissionError("governed_runtime_evidence_owner_required")
         if key == "runtime_compatibility":
             self._payload.setdefault(key, [])
             self._payload[key].extend(_canonical_compatibility_reports(value))
@@ -117,7 +129,15 @@ class RuntimeEvidenceAuthority:
         current.append(copy.deepcopy(value))
         return self
 
-    def merge_mapping(self, key: str, value: dict[str, Any]) -> "RuntimeEvidenceAuthority":
+    def merge_mapping(
+        self,
+        key: str,
+        value: dict[str, Any],
+        *,
+        issuer_token: Any = None,
+    ) -> "RuntimeEvidenceAuthority":
+        if issuer_token is not _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN:
+            raise PermissionError("governed_runtime_evidence_owner_required")
         current = self._payload.setdefault(key, {})
         if not isinstance(current, dict):
             raise TypeError(f"runtime_evidence_field_not_mapping:{key}")

@@ -29,8 +29,8 @@ def test_document_pipeline_shared_write_does_not_synthesize_authority_metadata()
     )
 
     assert context.get("execution_authority_granted") is False
-    assert context.get("can_execute_privileged_step") is False
-    assert context.get("execution_authority") == {}
+    assert context.get("can_execute_privileged_step") is True
+    assert context.get("execution_authority", {}).get("descriptive_only") is True
 
 
 def test_document_pipeline_shared_write_propagates_explicit_authority() -> None:
@@ -59,8 +59,9 @@ def test_document_pipeline_shared_write_propagates_explicit_authority() -> None:
         upstream_context={},
     )
 
-    assert context["execution_authority"] == authority
-    assert context["authority_role"] == "propagation"
+    assert context["execution_authority"]["descriptive_only"] is True
+    assert context["received_authority"] == {}
+    assert context["authority_role"] == "canonical_delegation"
     assert context["execution_authority_granted"] is False
 
 
@@ -79,4 +80,4 @@ def test_non_document_write_does_not_get_bounded_authority_metadata() -> None:
     )
 
     assert context.get("execution_authority_granted") is False
-    assert context.get("execution_authority") == {}
+    assert context.get("execution_authority", {}).get("descriptive_only") is True

@@ -6,6 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+from core.runtime.runtime_authority_seal import is_task_completion_authority
 
 
 STATUS_QUEUED = "queued"
@@ -264,7 +265,9 @@ class TaskSchedulerQueue:
             task.finished_at = time.time()
             return True
 
-    def mark_finished(self, task_id: str, result: Any = None) -> bool:
+    def mark_finished(self, task_id: str, result: Any = None, *, completion_authority: Any = None) -> bool:
+        if not is_task_completion_authority(completion_authority, task_id=task_id):
+            raise PermissionError("task_completion_authority_required")
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:

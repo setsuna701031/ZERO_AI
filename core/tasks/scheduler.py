@@ -5787,7 +5787,12 @@ class Scheduler(RuntimeTaskScheduler):
     # Scheduler owns the public task lifecycle write point. Do not add repair
     # or retry mutation here; callers should normalize mutations in
     # scheduler_core helpers before invoking this persistence primitive.
-    def _persist_task_payload(self, task_id: str, task: Dict[str, Any]) -> None:
+    def _persist_task_payload(
+        self,
+        task_id: str,
+        task: Dict[str, Any],
+        completion_authority: Any = None,
+    ) -> None:
         raw_results = copy.deepcopy(task.get("results")) if isinstance(task.get("results"), list) else None
         raw_step_results = copy.deepcopy(task.get("step_results")) if isinstance(task.get("step_results"), list) else None
         raw_execution_log = copy.deepcopy(task.get("execution_log")) if isinstance(task.get("execution_log"), list) else None
@@ -5809,7 +5814,10 @@ class Scheduler(RuntimeTaskScheduler):
                 replace_task_fn(task_id, copy.deepcopy(task))
                 persisted = True
             elif callable(upsert_task_fn):
-                upsert_task_fn(copy.deepcopy(task))
+                upsert_task_fn(
+                    copy.deepcopy(task),
+                    completion_authority=completion_authority,
+                )
                 persisted = True
         except Exception:
             persisted = False
@@ -5820,9 +5828,15 @@ class Scheduler(RuntimeTaskScheduler):
 
             try:
                 if callable(create_task_fn):
-                    create_task_fn(copy.deepcopy(task))
+                    create_task_fn(
+                        copy.deepcopy(task),
+                        completion_authority=completion_authority,
+                    )
                 elif callable(add_task_fn):
-                    add_task_fn(copy.deepcopy(task))
+                    add_task_fn(
+                        copy.deepcopy(task),
+                        completion_authority=completion_authority,
+                    )
             except Exception:
                 pass
 
@@ -7593,12 +7607,14 @@ def _scheduler_repo_state_compat_mark_repo_task_finished(
     self,
     task_id: str,
     result: Any = None,
+    completion_authority: Any = None,
 ) -> None:
     return mark_repo_task_with_adapter(
         scheduler=self,
         operation="finished",
         task_id=task_id,
         result=result,
+        completion_authority=completion_authority,
     )
 
 

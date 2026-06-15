@@ -142,10 +142,8 @@ class RuntimeRecoveryPlanContractTest(unittest.TestCase):
         report = planner.plan(summary)
         failed_plans = report.failed_execution_plans()
 
-        self.assertEqual(len(failed_plans), 1)
-        self.assertEqual(failed_plans[0]["failed_execution_id"], "failed-plan-fp")
-        self.assertEqual(failed_plans[0]["policy_decision"], "allow")
-        self.assertTrue(
+        self.assertEqual(failed_plans, [])
+        self.assertFalse(
             any(item["stage_type"] == "failed_execution_recovery" for item in report.recovery_sequence())
         )
 

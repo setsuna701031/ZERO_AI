@@ -158,9 +158,9 @@ def test_recovery_apply_requires_authority_and_transaction(tmp_path: Path) -> No
 
 
 def test_governed_repair_mutation_creates_transaction(tmp_path: Path) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
-    result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
+    result = owned_step_executor(workspace_root=str(tmp_path)).execute_step(
         {"type": "governed_repair_mutation", "target_path": "workspace/shared/repair.txt", "content": "repair"},
         context={"execution_authority": _authority("governed_repair_mutation")},
     )
@@ -228,12 +228,12 @@ def test_no_mutation_reaches_committed_without_verified_success(tmp_path: Path) 
 
 
 def _executor(tmp_path: Path):
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
     workspace = tmp_path / "workspace"
     shared = workspace / "shared"
     shared.mkdir(parents=True, exist_ok=True)
-    return StepExecutor(workspace_root=str(workspace)), shared
+    return owned_step_executor(workspace_root=str(workspace)), shared
 
 
 def _write(path: Path, text: str) -> None:

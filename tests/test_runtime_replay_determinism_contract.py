@@ -55,7 +55,7 @@ def test_source_transaction_ids_are_preserved() -> None:
 
 
 def test_replay_created_transaction_ids_differ_from_source_ids() -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
     source = create_transaction(
         task_id="task-source-replay",
@@ -65,7 +65,7 @@ def test_replay_created_transaction_ids_differ_from_source_ids() -> None:
         surface="write_file",
         affected_files=["workspace/shared/source-replay.txt"],
     )
-    result = StepExecutor().execute_step(
+    result = owned_step_executor().execute_step(
         {
             "type": "replay_mutation",
             "target_path": "workspace/shared/replay-created.txt",

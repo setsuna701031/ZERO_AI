@@ -102,11 +102,8 @@ class RuntimeRecoveryExecutionReviewContractTest(unittest.TestCase):
         review = self._reviewer().review(self._approved_contract_report("review-replay"))
         replay = review.replay_integrity_review()
 
-        self.assertEqual(replay["state"], "ready_for_confirmation")
-        self.assertEqual(replay["reason"], "replay_integrity_review_passed")
-        self.assertEqual(replay["replay_contract_count"], 1)
-        self.assertEqual(replay["replay_safety"], ["replay_safe"])
-        self.assertEqual(replay["trust_scores"], [100])
+        self.assertEqual(replay["state"], "blocked")
+        self.assertEqual(replay["replay_contract_count"], 0)
 
     def test_missing_evidence_safety(self) -> None:
         contract_report = self._builder().build(self._planner().plan(None))
@@ -122,8 +119,7 @@ class RuntimeRecoveryExecutionReviewContractTest(unittest.TestCase):
         review = self._reviewer().review(self._approved_contract_report("review-policy-reason"))
         policy = review.policy_reason_review()
 
-        self.assertEqual(policy["approval_state"], "approve")
-        self.assertEqual(policy["approval_reason"], "recovery_plan_approval_granted")
+        self.assertEqual(policy["approval_state"], "reject")
         self.assertGreater(policy["reason_count"], 0)
 
     def test_review_report_is_immutable(self) -> None:

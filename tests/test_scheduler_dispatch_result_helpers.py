@@ -3,6 +3,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
+from core.runtime.runtime_authority_seal import (
+    _TASK_RUNNER_ISSUER_TOKEN,
+    issue_task_completion_authority,
+)
 from core.tasks.scheduler_core.dispatch_finalize import (
     _extract_dispatch_failure_error,
     apply_finalize_decision,
@@ -163,10 +167,20 @@ def test_extract_effective_status_does_not_use_effective_status_key_yet() -> Non
 
 
 def test_build_finalize_decision_returns_finish_action_without_writes() -> None:
+    completion_authority = issue_task_completion_authority(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        task_id="task-1",
+    )
     decision = build_finalize_decision(
-        original_task={"status": "queued", "final_answer": "original"},
-        refreshed_task={"status": "running", "final_answer": "refreshed"},
-        runner_result={"status": "completed", "final_answer": "runner", "ok": True},
+        original_task={"task_id": "task-1", "status": "queued", "final_answer": "original"},
+        refreshed_task={"task_id": "task-1", "status": "running", "final_answer": "refreshed"},
+        runner_result={
+            "task_id": "task-1",
+            "status": "completed",
+            "final_answer": "runner",
+            "ok": True,
+            "task_completion_authority": completion_authority,
+        },
         status_blocked="blocked",
         status_finished="finished",
         status_failed="failed",
@@ -180,6 +194,7 @@ def test_build_finalize_decision_returns_finish_action_without_writes() -> None:
         "blocked_reason": "",
         "queue_error": "",
         "ok": True,
+        "task_completion_authority": completion_authority,
     }
 
 
@@ -312,17 +327,35 @@ def test_build_finalize_decision_does_not_use_effective_status_key_yet() -> None
 
 def test_apply_finalize_decision_dispatches_finish_side_effects() -> None:
     scheduler = FinalizeScheduler()
+    completion_authority = issue_task_completion_authority(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        task_id="task-1",
+    )
 
     apply_finalize_decision(
         scheduler=scheduler,
         task_id="task-1",
         scheduled_task=SimpleNamespace(priority=3),
-        decision={"action": "finish", "final_answer": "done"},
+        decision={
+            "action": "finish",
+            "final_answer": "done",
+            "task_completion_authority": completion_authority,
+        },
     )
 
     assert scheduler.calls == [
-        {"method": "complete_task", "task_id": "task-1", "result": "done"},
-        {"method": "_mark_repo_task_finished", "task_id": "task-1", "result": "done"},
+        {
+            "method": "complete_task",
+            "task_id": "task-1",
+            "result": "done",
+            "completion_authority": completion_authority,
+        },
+        {
+            "method": "_mark_repo_task_finished",
+            "task_id": "task-1",
+            "result": "done",
+            "completion_authority": completion_authority,
+        },
     ]
 
 

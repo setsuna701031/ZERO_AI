@@ -103,7 +103,13 @@ class TaskRuntimeHookAttachmentContractTest(unittest.TestCase):
         adapter = RecordingEvidenceAdapter()
         with tempfile.TemporaryDirectory() as tmp:
             runtime = TaskRuntime(workspace_root=str(Path(tmp) / "workspace"), evidence_adapter=adapter)
-            runtime.mark_finished(self._task(Path(tmp), "completed"), current_tick=2, final_answer="done")
+            from core.runtime.task_runner import TaskRunner
+
+            TaskRunner(task_runtime=runtime).complete_task(
+                self._task(Path(tmp), "completed"),
+                current_tick=2,
+                final_answer="done",
+            )
 
         self.assertEqual([call[0] for call in adapter.calls], ["created", "completed"])
         self.assertEqual(adapter.calls[-1][2], "finished")
@@ -171,7 +177,9 @@ class TaskRuntimeHookAttachmentContractTest(unittest.TestCase):
             runtime = TaskRuntime(workspace_root=str(Path(tmp) / "workspace"), evidence_adapter=adapter)
             task = self._task(Path(tmp), "ordered")
             runtime.mark_running(task, current_tick=1)
-            runtime.mark_finished(task, current_tick=2, final_answer="done")
+            from core.runtime.task_runner import TaskRunner
+
+            TaskRunner(task_runtime=runtime).complete_task(task, current_tick=2, final_answer="done")
 
         self.assertEqual(
             [event.phase for event in boundary.list_events()],

@@ -234,12 +234,14 @@ def apply_operator_edit_plan(run: CodexOperatorRun | str, *, authority: Mapping[
     validate_operator_edit_plan(current.edit_plan)
     from core.runtime.execution_authority import validate_authority_metadata
     from core.runtime.step_executor import StepExecutor
+    from core.runtime.task_runner import TaskRunner
 
     validation = validate_authority_metadata(authority or {}, surface="operator_apply_edit")
     if not validation.get("ok"):
         return _blocked(current, str(validation.get("reason") or "operator_apply_edit_requires_authority"))
-    runner = executor or StepExecutor(workspace_root=current.repo_root)
-    raw = runner.execute_step(
+    endpoint = executor or StepExecutor(workspace_root=current.repo_root)
+    runner = TaskRunner(step_executor=endpoint)
+    raw = runner.execute_owned_step(
         {"type": "operator_apply_edit", "edit_plan": copy.deepcopy(current.edit_plan), "affected_files": list(current.edit_plan.get("target_files") or [])},
         task={"task_id": current.task_id},
         context={"repo_root": current.repo_root, "authority": dict(authority or {})},

@@ -77,7 +77,7 @@ class AdaptiveRuntimeResume:
                 if str(result.get("status") or "").lower() not in {"needs_observation", "finished", "completed", "success", "done"}:
                     self._persist(runtime, task, state, chain, counters)
                     continue
-                observed = runtime.record_terminal_observation(
+                observed = task_runner.record_terminal_observation(
                     task,
                     deviation_report=last_report.to_dict(),
                     evidence_persisted=True,
@@ -103,7 +103,7 @@ class AdaptiveRuntimeResume:
 
             if last_decision.action is AdaptiveAction.BLOCK:
                 self.evidence.append(chain, kind="resume_result", payload={"status": "blocked", "reason": last_decision.reason})
-                observed = runtime.record_terminal_observation(
+                observed = task_runner.record_terminal_observation(
                     task,
                     deviation_report=last_report.to_dict(),
                     evidence_persisted=True,
@@ -135,7 +135,7 @@ class AdaptiveRuntimeResume:
                 if last_decision.inserted_steps:
                     resume_index = step_index
 
-            observed = runtime.record_terminal_observation(
+            observed = task_runner.record_terminal_observation(
                 task,
                 deviation_report=last_report.to_dict(),
                 evidence_persisted=True,

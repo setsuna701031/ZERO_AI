@@ -176,6 +176,7 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
 
     def _run_cross_layer_flow(self) -> dict[str, Any]:
         from core.runtime.task_runtime import TaskRuntime
+        from core.runtime.task_runner import TaskRunner
 
         adapters = self._adapters()
         with tempfile.TemporaryDirectory() as tmp_name:
@@ -202,7 +203,7 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             step_result = executor.execute_step(step, task=task)
             step["metadata"]["step_meta"]["items"].append("external-mutation")
             task["metadata"]["task_meta"]["items"].append("external-mutation")
-            finished_result = runtime.mark_finished(
+            finished_result = TaskRunner(task_runtime=runtime).complete_task(
                 task,
                 current_tick=3,
                 final_answer="sealed",

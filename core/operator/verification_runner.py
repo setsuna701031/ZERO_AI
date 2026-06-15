@@ -38,12 +38,14 @@ def run_verification_command(
 ) -> OperatorVerificationResult:
     from core.runtime.execution_authority import validate_authority_metadata
     from core.runtime.step_executor import StepExecutor
+    from core.runtime.task_runner import TaskRunner
 
     validation = validate_authority_metadata(authority or {}, surface="operator_verification")
     if not validation.get("ok"):
         return _result(command, ok=False, returncode=1, stderr=str(validation.get("reason") or "operator_verification_requires_authority"), authority_valid=False)
-    runner = executor or StepExecutor(workspace_root=str((context or {}).get("repo_root") or "."))
-    raw = runner.execute_step(
+    endpoint = executor or StepExecutor(workspace_root=str((context or {}).get("repo_root") or "."))
+    runner = TaskRunner(step_executor=endpoint)
+    raw = runner.execute_owned_step(
         {"type": "operator_verification", "command": str(command or ""), "surface": "operator_verification"},
         task=dict(task or {}),
         context={**dict(context or {}), "authority": dict(authority or {})},

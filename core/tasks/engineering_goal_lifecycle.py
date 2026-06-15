@@ -244,6 +244,7 @@ class EngineeringGoalLifecycle:
         *,
         state: Mapping[str, Any],
         decision: Mapping[str, Any],
+        completion_attestation: Any = None,
     ) -> dict[str, Any]:
         """Persist evaluator-owned terminal intent through lifecycle state."""
 
@@ -252,6 +253,18 @@ class EngineeringGoalLifecycle:
         reason = _clean_text(decision.get("reason"), "adaptive_planning_decision")
         if decision_name not in {"block", "complete"}:
             return self.record_adaptive_decision(state=mutable, decision=decision)
+        if decision_name == "complete":
+            from core.goals.goal_completion_authority import is_accepted_goal_completion_result
+
+            attestation = completion_attestation or decision.get("goal_completion_authority_result")
+            if not is_accepted_goal_completion_result(attestation, goal_id=self.goal_id):
+                mutable = self.record_adaptive_decision(state=mutable, decision=decision)
+                mutable["completion_rejected"] = True
+                mutable["completion_rejected_reason"] = (
+                    "lifecycle_bound_goal_completion_attestation_required"
+                )
+                _write_json(self.path, mutable)
+                return mutable
 
         mutable = self.record_adaptive_decision(state=mutable, decision=decision)
         all_task_ids = [

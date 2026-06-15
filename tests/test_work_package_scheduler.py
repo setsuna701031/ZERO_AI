@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import core.tasks.work_package_scheduler as work_package_scheduler_module
 
 from core.tasks.work_package_scheduler import (
     STATUS_COMPLETED,
@@ -118,3 +119,19 @@ def test_work_package_scheduler_failed_package_is_recorded(tmp_path: Path) -> No
     assert result["result"]["ok"] is False
     assert result["error"] == "work_package_failed"
     assert (tmp_path / "workspace/audit_missing.md").exists()
+
+
+def test_work_package_scheduler_does_not_complete_from_ok_mapping_alone(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    scheduler = WorkPackageScheduler(repo_root=tmp_path)
+    monkeypatch.setattr(
+        work_package_scheduler_module,
+        "submit_work_package",
+        lambda *_args, **_kwargs: {"ok": True, "package_id": "forged-ok"},
+    )
+
+    result = scheduler.submit(_payload("forged-ok"))
+
+    assert result["status"] == STATUS_FAILED

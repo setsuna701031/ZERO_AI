@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from core.tasks.task_paths import TaskPathManager
 from core.tasks.task_store_lock import atomic_write_json, task_store_lock
+from core.runtime.runtime_authority_seal import is_task_completion_authority
 
 
 def _task_store_transaction(method):
@@ -34,8 +35,10 @@ class TaskRepository:
     """
 
     COMPLETED_STATUSES: Set[str] = {
+        "completed",
         "done",
         "finished",
+        "success",
     }
 
     def __init__(self, db_path: str = "workspace/tasks.json") -> None:
@@ -266,11 +269,16 @@ class TaskRepository:
         return None
 
     @_task_store_transaction
-    def add_task(self, task: Dict[str, Any]) -> bool:
+    def add_task(self, task: Dict[str, Any], *, completion_authority: Any = None) -> bool:
         self.reload()
 
         normalized = self._normalize_task(task)
         task_id = normalized["task_id"]
+        if (
+            str(normalized.get("status") or "").strip().lower() in self.COMPLETED_STATUSES
+            and not is_task_completion_authority(completion_authority, task_id=task_id)
+        ):
+            raise PermissionError("task_completion_authority_required")
 
         if self._find_task_ref(task_id):
             return False
@@ -302,7 +310,7 @@ class TaskRepository:
         self.reload()
 
         if isinstance(task, dict):
-            return self.add_task(task)
+            return self.add_task(task, completion_authority=kwargs.get("completion_authority"))
 
         goal = str(kwargs.get("goal") or "").strip()
         if not goal:
@@ -327,14 +335,19 @@ class TaskRepository:
             "history": history,
         }
 
-        return self.add_task(raw_task)
+        return self.add_task(raw_task, completion_authority=kwargs.get("completion_authority"))
 
     @_task_store_transaction
-    def upsert_task(self, task: Dict[str, Any]) -> bool:
+    def upsert_task(self, task: Dict[str, Any], *, completion_authority: Any = None) -> bool:
         self.reload()
 
         normalized = self._normalize_task(task)
         task_id = normalized["task_id"]
+        if (
+            str(normalized.get("status") or "").strip().lower() in self.COMPLETED_STATUSES
+            and not is_task_completion_authority(completion_authority, task_id=task_id)
+        ):
+            raise PermissionError("task_completion_authority_required")
 
         depends_on = self._normalize_depends_on(normalized.get("depends_on", []))
         normalized["depends_on"] = depends_on

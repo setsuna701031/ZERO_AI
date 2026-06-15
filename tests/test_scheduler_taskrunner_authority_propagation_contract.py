@@ -91,13 +91,13 @@ def test_taskrunner_propagates_authority_without_escalation(tmp_path: Path) -> N
         upstream_context={},
     )
 
-    assert context["authority_phase"] == "taskrunner_propagation"
+    assert context["authority_phase"] == "taskrunner_delegation"
     assert context["authority_layer"] == "task_runner"
-    assert context["authority_role"] == "propagation"
+    assert context["authority_role"] == "canonical_delegation"
     assert context["execution_authority_granted"] is False
-    assert context["can_execute_privileged_step"] is False
+    assert context["can_execute_privileged_step"] is True
     assert context["escalated"] is False
-    assert context["execution_authority"] == scheduler_context["execution_authority"]
+    assert context["execution_authority"]["descriptive_only"] is True
     assert [item["layer"] for item in context["authority_chain"]] == [
         "scheduler",
         "task_runner",
@@ -144,30 +144,22 @@ def test_scheduler_side_effect_dispatch_delegates_to_step_executor(
 def test_step_executor_is_execution_authority_endpoint_with_valid_authority(
     tmp_path: Path,
 ) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
-    executor = StepExecutor(workspace_root=str(tmp_path))
+    executor = owned_step_executor(workspace_root=str(tmp_path))
     result = executor.execute_step(
         step={
             "type": "write_file",
             "path": "workspace/shared/endpoint.txt",
             "content": "endpoint authority",
         },
-        context={
-            "authority_propagation_required": True,
-            "authority_context": {
-                "authority_phase": "taskrunner_propagation",
-                "authority_layer": "task_runner",
-                "execution_authority_granted": False,
-                "execution_authority": _execution_authority(action_type="mutation"),
-            },
-        },
+        context={"execution_authority": _execution_authority(action_type="mutation")},
     )
 
     assert result["ok"] is True
     assert result["authority_decision"]["authority_phase"] == "pre_execution"
     assert result["authority_decision"]["decision"] == "allowed"
-    assert result["authority_decision"]["authority_source"] == "human_review"
+    assert result["authority_decision"]["authority_source"] == "task_runner"
     assert result["authority_decision"]["sealed"] is True
     endpoint_path = Path(result["result"]["result"]["full_path"])
     assert endpoint_path.read_text(encoding="utf-8") == (

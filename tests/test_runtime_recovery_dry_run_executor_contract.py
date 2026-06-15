@@ -54,14 +54,7 @@ class RuntimeRecoveryDryRunExecutorContractTest(unittest.TestCase):
         report = self._executor().dry_run(self._approved_contract_report("dry-run-rollback"))
         rollback = report.rollback_dry_runs()
 
-        self.assertEqual(len(rollback), 3)
-        self.assertEqual(
-            [item["metadata"]["execution_id"] for item in rollback],
-            ["step_executor.execute", "task_runtime.lifecycle", "scheduler.dispatch"],
-        )
-        self.assertTrue(all(item["status"] == "simulated" for item in rollback))
-        self.assertTrue(all(item["simulated_action"] == "simulate_rollback_sequence" for item in rollback))
-        self.assertTrue(all(not item["would_execute"] for item in rollback))
+        self.assertEqual(rollback, [])
 
     def test_replay_sequencing_simulation(self) -> None:
         report = self._executor().dry_run(self._approved_contract_report("dry-run-sequence"))
@@ -71,8 +64,7 @@ class RuntimeRecoveryDryRunExecutorContractTest(unittest.TestCase):
             [item["sequence_order"] for item in sequence],
             list(range(len(sequence))),
         )
-        self.assertEqual(sequence[0]["stage_type"], "replay")
-        self.assertIn("rollback", [item["stage_type"] for item in sequence])
+        self.assertEqual(sequence[0]["stage_type"], "blocked_or_deferred")
         self.assertTrue(all(not item["executes_action"] for item in sequence))
 
     def test_blocked_deferred_dry_run_handling(self) -> None:

@@ -12,6 +12,7 @@ from core.tasks.scheduler_runtime_contract import (
     SCHEDULER_RUNTIME_TRANSITIONS,
     validate_scheduler_lifecycle_transition,
 )
+from core.runtime.runtime_authority_seal import is_work_package_completion_authority
 
 
 QUEUE_SCHEMA = "zero.runtime.work_package_queue.v1"
@@ -26,6 +27,18 @@ class RuntimePackageQueueError(RuntimeError):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _transport_value(value: Any) -> Any:
+    if callable(getattr(value, "to_dict", None)):
+        return _transport_value(value.to_dict())
+    if isinstance(value, Mapping):
+        return {str(key): _transport_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_transport_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_transport_value(item) for item in value]
+    return copy.deepcopy(value)
 
 
 def work_package_execution_path() -> dict[str, Any]:
@@ -82,7 +95,7 @@ class RuntimePackageQueue:
         return payload
 
     def _write(self, record: Mapping[str, Any]) -> dict[str, Any]:
-        payload = copy.deepcopy(dict(record))
+        payload = _transport_value(record)
         path = self._path(str(payload.get("package_id") or ""))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -335,7 +348,15 @@ class RuntimePackageQueue:
         record["blocked_reason"] = str(reason or "runtime_blocked")
         return self._transition(record, "blocked", reason=record["blocked_reason"])
 
-    def complete(self, package_id: str, *, validation_summary: Any = None) -> dict[str, Any]:
+    def complete(
+        self,
+        package_id: str,
+        *,
+        validation_summary: Any = None,
+        completion_authority: Any = None,
+    ) -> dict[str, Any]:
+        if not is_work_package_completion_authority(completion_authority, package_id=package_id):
+            raise PermissionError("work_package_completion_authority_required")
         record = self._read(package_id)
         runtime_state = str(record.get("runtime_lifecycle_state") or "queued")
         if not record.get("runtime_lifecycle_state"):
@@ -684,7 +705,14 @@ class RuntimePackageQueue:
             result = self._transition(record, "failed", reason=record["root_cause"])
         return self._write(self._checkpoint_session(result))
 
-    def record_runtime_completed(self, package_id: str) -> dict[str, Any]:
+    def record_runtime_completed(
+        self,
+        package_id: str,
+        *,
+        completion_authority: Any = None,
+    ) -> dict[str, Any]:
+        if not is_work_package_completion_authority(completion_authority, package_id=package_id):
+            raise PermissionError("work_package_completion_authority_required")
         record = self._read(package_id)
         record = self._runtime_transition(record, "completed", reason="all_runtime_steps_completed")
         progress = dict(record.get("progress") or {})

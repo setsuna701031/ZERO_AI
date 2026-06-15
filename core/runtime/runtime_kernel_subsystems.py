@@ -8,6 +8,7 @@ from core.runtime.runtime_evidence_authority import RuntimeEvidenceAuthority
 from core.runtime.runtime_reconstruction_pipeline import RuntimeReconstructionPipeline, RuntimeReconstructionReport
 from core.runtime.runtime_serialization import RuntimeSerializedArtifact, RuntimeSerializationAuthority
 from core.runtime.runtime_version import RUNTIME_ABI_VERSION, RUNTIME_KERNEL_VERSION
+from core.runtime.runtime_authority_seal import _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN
 
 
 @dataclass(frozen=True)
@@ -68,11 +69,11 @@ class RuntimeEvidenceCoordinator:
         self.authority = authority
 
     def update(self, **values: Any) -> RuntimeSubsystemReport:
-        self.authority.update(**values)
+        self.authority.update(issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN, **values)
         return RuntimeSubsystemReport("runtime_evidence", "updated", {"keys": sorted(values)})
 
     def append(self, key: str, value: Any) -> RuntimeSubsystemReport:
-        self.authority.append(key, value)
+        self.authority.append(key, value, issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN)
         return RuntimeSubsystemReport("runtime_evidence", "appended", {"key": key})
 
     def snapshot(self) -> dict[str, Any]:

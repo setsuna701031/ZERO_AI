@@ -16,6 +16,7 @@ from core.runtime.audit_log import AuditLogger
 from core.runtime.runtime_state_guard import RuntimeStateGuard, validate_runtime_state
 from core.runtime.runtime_transition_policy import RuntimeTransitionPolicy, RuntimeTransitionPolicyError
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_authority_seal import is_task_completion_authority
 
 
 TERMINAL_STATUSES = {
@@ -601,7 +602,11 @@ class TaskRuntime:
         current_tick: int = 0,
         final_answer: str = "",
         final_result: Optional[Dict[str, Any]] = None,
+        completion_authority: Any = None,
     ) -> Dict[str, Any]:
+        task_id = str(task.get("task_id") or task.get("id") or task.get("task_name") or "")
+        if not is_task_completion_authority(completion_authority, task_id=task_id):
+            raise PermissionError("taskrunner_completion_authority_required")
         state = self.load_runtime_state(task)
         state = self._sync_steps_from_task(task, state)
         state = self._sync_loop_fields_from_task(task, state)
@@ -688,6 +693,7 @@ class TaskRuntime:
             "task": copy.deepcopy(task),
             "runtime_state": state,
             "final_answer": state.get("final_answer", ""),
+            "task_completion_authority": completion_authority,
             **self._runtime_transition_metadata(state, "mark_finished"),
         }
         self._emit_task_runtime_evidence("completed", task=task, state=state)
@@ -717,6 +723,7 @@ class TaskRuntime:
         current_tick: int = 0,
         deviation_step_index: int = 0,
         blocked: bool = False,
+        completion_authority: Any = None,
     ) -> Dict[str, Any]:
         state = self.load_runtime_state(task)
         report = copy.deepcopy(deviation_report if isinstance(deviation_report, dict) else {})
@@ -754,6 +761,7 @@ class TaskRuntime:
         return self.mark_finished(
             task=task,
             current_tick=current_tick,
+            completion_authority=completion_authority,
             final_result=state.get("last_step_result", {}).get("result")
             if isinstance(state.get("last_step_result"), dict)
             else None,
@@ -7599,8 +7607,8 @@ def _zero_v910_mark_failed(self: TaskRuntime, task: Dict[str, Any], current_tick
     return result
 
 
-def _zero_v910_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    result = _ZERO_V910_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result)
+def _zero_v910_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None, completion_authority: Any = None) -> Dict[str, Any]:
+    result = _ZERO_V910_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result, completion_authority=completion_authority)
     state = result.get('runtime_state') if isinstance(result, dict) and isinstance(result.get('runtime_state'), dict) else self.load_runtime_state(task)
     context = state.get('repair_context') if isinstance(state.get('repair_context'), dict) else {}
     context = self._zero_v910_refresh_engineering_execution(context, selection_reason='task finished')
@@ -7894,8 +7902,8 @@ def _zero_v912_mark_failed(self: TaskRuntime, task: Dict[str, Any], current_tick
     return self._zero_v912_resave_with_actions(task, result)
 
 
-def _zero_v912_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    result = _ZERO_V912_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result)
+def _zero_v912_mark_finished(self: TaskRuntime, task: Dict[str, Any], current_tick: int = 0, final_answer: str = '', final_result: Optional[Dict[str, Any]] = None, completion_authority: Any = None) -> Dict[str, Any]:
+    result = _ZERO_V912_ORIGINAL_MARK_FINISHED(self, task, current_tick=current_tick, final_answer=final_answer, final_result=final_result, completion_authority=completion_authority)
     return self._zero_v912_resave_with_actions(task, result)
 
 

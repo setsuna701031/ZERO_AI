@@ -27,7 +27,7 @@ def test_scheduler_write_file_surface_delegates_to_step_executor(
 
     assert result["source"] == "step_executor"
     assert recorder.calls[0]["step"]["type"] == "write_file"
-    assert recorder.calls[0]["context"]["authority_context"]["authority_role"] == "propagation"
+    assert recorder.calls[0]["context"]["authority_context"]["authority_role"] == "canonical_delegation"
     assert recorder.calls[0]["context"]["authority_context"]["authority_layer"] == "task_runner"
     assert not target.exists()
 
@@ -213,10 +213,10 @@ def test_taskrunner_authority_context_remains_pass_through(tmp_path: Path) -> No
         upstream_context={},
     )
 
-    assert context["authority_role"] == "propagation"
+    assert context["authority_role"] == "canonical_delegation"
     assert context["execution_authority_granted"] is False
-    assert context["can_execute_privileged_step"] is False
-    assert context["execution_authority"] == scheduler_context["execution_authority"]
+    assert context["can_execute_privileged_step"] is True
+    assert context["execution_authority"]["descriptive_only"] is True
 
 
 def _make_scheduler(tmp_path: Path, step_executor: Any | None = None) -> Any:

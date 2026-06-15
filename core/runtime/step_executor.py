@@ -9130,35 +9130,36 @@ def _zero_boundary_extract_execution_authority(context):
 
 
 def _zero_boundary_authority_decision(step, context):
-    authority = _zero_boundary_extract_execution_authority(context)
-    authority_source = _zero_boundary_norm_text(authority.get("authority_source"))
-    authority_status = _zero_boundary_norm_text(authority.get("authority_status") or "allowed").lower()
-    action_type = _zero_boundary_norm_text(authority.get("action_type") or _zero_boundary_step_type(step)).lower()
-    allowed_sources = {
-        "human_review",
-        "operator_cli",
-        "core.runtime.execution_gateway",
-        "runtime_execution_gateway",
-        "execution_gateway",
-        "controlled_document_pipeline",
-        "step_executor",
-        "runtime_step_executor",
-        "agent_loop",
-        "core.agent.agent_loop",
-        "agent_loop_test",
-        "runtime_dispatcher",
-        "core.runtime.runtime_dispatcher",
-    }
-    valid = bool(authority) and authority_source in allowed_sources and authority_status in {"allowed", "approved", "granted", "ok", ""}
+    from core.runtime.runtime_authority_seal import is_taskrunner_execution_capability
+
+    authority_context = context.get("authority_context") if isinstance(context.get("authority_context"), dict) else {}
+    capability = context.get("runtime_execution_capability") or authority_context.get("runtime_execution_capability")
+    step_id = _zero_boundary_norm_text(step.get("id") or step.get("step_id"))
+    valid = is_taskrunner_execution_capability(capability, step_id=step_id or None)
+    step_type = _zero_boundary_step_type(step)
+    authority_required = bool(
+        is_side_effect_surface(step_type)
+        or context.get("authority_propagation_required") is True
+        or context.get("execution_authority")
+        or context.get("runtime_execution_capability")
+        or authority_context
+    )
     return {
         "authority_phase": "pre_execution",
         "authority_layer": "step_executor",
-        "decision": "allowed" if valid else "denied",
-        "authority_source": authority_source,
-        "authority_status": authority_status or "allowed",
-        "action_type": action_type,
+        "authority_policy": "owner_issued_runtime_execution_capability",
+        "authority_required": authority_required,
+        "decision": "allowed" if valid else ("denied" if authority_required else "read_only"),
+        "authority_source": "task_runner" if valid else "",
+        "authority_status": "allowed" if valid else ("denied" if authority_required else "not_required"),
+        "action_type": authority_action_type_for_surface(step_type),
+        "step_type": step_type,
         "sealed": valid,
-        "reason": "valid_execution_authority" if valid else "missing_or_invalid_execution_authority",
+        "reason": (
+            "owner_issued_runtime_execution_capability"
+            if valid
+            else ("missing_or_invalid_execution_authority" if authority_required else "authority_not_required")
+        ),
     }
 
 
@@ -9179,7 +9180,7 @@ def _zero_boundary_workspace_path(self, raw_path):
 
 
 def _zero_boundary_blocked_result(step, decision):
-    return {
+    result = {
         "ok": False,
         "executed": False,
         "blocked": True,
@@ -9197,6 +9198,15 @@ def _zero_boundary_blocked_result(step, decision):
             "surface": _zero_boundary_step_type(step),
         },
     }
+    result["runtime_execution_result"] = {
+        "ok": False,
+        "status": "blocked",
+        "metadata": {
+            "blocked_reason": decision.get("reason"),
+            "authority_decision": copy.deepcopy(decision),
+        },
+    }
+    return result
 
 
 def _zero_boundary_execute_registered_handler(self, step, task, context, previous_result, step_index, step_count):
@@ -9377,21 +9387,21 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
     context = copy.deepcopy(context) if isinstance(context, dict) else {}
     authority_context = _zero_boundary_extract_authority_context(context)
     execution_authority = _zero_boundary_extract_execution_authority(context)
-    if not execution_authority:
-        execution_authority = _zero_boundary_build_document_pipeline_authority(step, task)
-        if execution_authority:
-            context["execution_authority"] = copy.deepcopy(execution_authority)
-            authority_context = copy.deepcopy(authority_context) if isinstance(authority_context, dict) else {}
-            authority_context["execution_authority"] = copy.deepcopy(execution_authority)
-            authority_context["authority_propagation_required"] = True
     if execution_authority and "execution_authority" not in context:
         context["execution_authority"] = copy.deepcopy(execution_authority)
     if authority_context and "authority_context" not in context:
         context["authority_context"] = copy.deepcopy(authority_context)
 
     decision = _zero_boundary_authority_decision(step, context)
+    side_effect_steps = {
+        "command", "run_python", "write_file", "workspace_write", "append_file",
+        "workspace_append", "apply_patch", "apply_unified_diff", "mutation",
+        "recovery_apply", "rollback_restore", "operator_apply_edit",
+    }
     requires_authority = bool(
-        context.get("authority_propagation_required") is True
+        _zero_boundary_step_type(step) in side_effect_steps
+        or context.get("runtime_execution_capability")
+        or context.get("authority_propagation_required") is True
         or execution_authority
         or (
             isinstance(authority_context, dict)
@@ -9402,6 +9412,34 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
         )
     )
     if requires_authority and decision["decision"] != "allowed":
+        stripped_context = copy.deepcopy(context)
+        stripped_context.pop("execution_authority", None)
+        stripped_context.pop("runtime_execution_capability", None)
+        stripped_context.pop("authority_context", None)
+        stripped_context.pop("runtime_authority_context", None)
+        try:
+            blocked = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(
+                self,
+                step=step,
+                task=task,
+                context=stripped_context,
+                previous_result=previous_result,
+                step_index=step_index,
+                step_count=step_count,
+                **kwargs,
+            )
+        except TypeError:
+            blocked = None
+        if isinstance(blocked, dict) and blocked.get("ok") is not True:
+            blocked["authority_decision"] = copy.deepcopy(decision)
+            blocked["executed"] = False
+            blocked["blocked"] = True
+            runtime_result = blocked.get("runtime_execution_result")
+            if isinstance(runtime_result, dict):
+                metadata = runtime_result.setdefault("metadata", {})
+                metadata["authority_decision"] = copy.deepcopy(decision)
+                metadata["blocked_reason"] = decision.get("reason")
+            return blocked
         return _zero_boundary_blocked_result(step, decision)
 
     try:
@@ -9419,7 +9457,11 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
         result = _ZERO_BOUNDARY_ORIGINAL_EXECUTE_STEP(self, step, task=task, context=context)
 
     if isinstance(result, dict):
-        result.setdefault("authority_decision", copy.deepcopy(decision))
+        result["authority_decision"] = copy.deepcopy(decision)
+        runtime_result = result.get("runtime_execution_result")
+        if isinstance(runtime_result, dict):
+            metadata = runtime_result.setdefault("metadata", {})
+            metadata["authority_decision"] = copy.deepcopy(decision)
         if result.get("ok") is True:
             result.setdefault("executed", True)
             return result
@@ -9434,7 +9476,19 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
                 self, step, task, context, previous_result, step_index, step_count
             )
             if isinstance(handler_result, dict):
-                handler_result.setdefault("authority_decision", copy.deepcopy(decision))
+                handler_result.setdefault("step_type", _zero_boundary_step_type(step))
+                handler_result.setdefault("step_index", step_index)
+                handler_result.setdefault("step_count", step_count)
+                handler_result.setdefault("step", copy.deepcopy(step))
+                handler_result.setdefault("message", "")
+                handler_result.setdefault("final_answer", "")
+                handler_result.setdefault("error", None)
+                handler_result = self._attach_runtime_execution_result(handler_result)
+                handler_result = self._attach_execution_trace(step, handler_result)
+                handler_result["authority_decision"] = copy.deepcopy(decision)
+                runtime_result = handler_result.get("runtime_execution_result")
+                if isinstance(runtime_result, dict):
+                    runtime_result.setdefault("metadata", {})["authority_decision"] = copy.deepcopy(decision)
                 handler_result.setdefault("executed", bool(handler_result.get("ok", False)))
                 return handler_result
             fallback = _zero_boundary_execute_simple_fallback(self, step, context, decision)

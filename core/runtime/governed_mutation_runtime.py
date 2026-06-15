@@ -39,6 +39,7 @@ from core.runtime.mutation_verification import (
 )
 from core.runtime.runtime_evidence_bundle import RuntimeEvidenceBundle
 from core.runtime.runtime_evidence_authority import RuntimeEvidenceAuthority
+from core.runtime.runtime_authority_seal import _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN
 from core.runtime.runtime_abi import validate_abi
 from core.runtime.runtime_artifact_gate import RuntimeArtifactGate
 from core.runtime.runtime_capability_graph import (
@@ -248,7 +249,10 @@ class GovernedMutationRuntimeSession:
         self.protection = RuntimeSelfProtectionController()
         self.artifact_gate = RuntimeArtifactGate(self.protection)
         self.lifecycle_coordinator = RuntimeLifecycleCoordinator(self._transition_direct, self._checkpoint_direct)
-        self.evidence_authority = RuntimeEvidenceAuthority(evidence_id=f"evidence:{self.request.intent or 'runtime'}")
+        self.evidence_authority = RuntimeEvidenceAuthority(
+            evidence_id=f"evidence:{self.request.intent or 'runtime'}",
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+        )
         self.evidence_coordinator = RuntimeEvidenceCoordinator(self.evidence_authority)
         self.integrity_coordinator = RuntimeIntegrityCoordinator(self.artifact_gate)
         self.replay_coordinator = RuntimeReplayCoordinator(
@@ -565,7 +569,10 @@ class GovernedMutationRuntimeSession:
             "runtime_compatibility": list(self.compatibility_reports),
             "runtime_abi": list(self.abi_reports),
         }
-        self.evidence_authority.update(**evidence)
+        self.evidence_authority.update(
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+            **evidence,
+        )
         self.evidence = self.evidence_authority.to_dict()
         path = self._reports() / "governed_runtime_evidence.json"
         path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -645,7 +652,10 @@ class GovernedMutationRuntimeSession:
             "reason": "no_governed_repair_mutation_provided",
             "inside_governed_runtime": True,
         }
-        self.evidence_authority.update(recovery=recovery)
+        self.evidence_authority.update(
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+            recovery=recovery,
+        )
         self.evidence = self.evidence_authority.to_dict()
         self._emit_event(
             RecoveryCompletedEvent(
@@ -814,6 +824,7 @@ class GovernedMutationRuntimeSession:
         )
         execution_result = RuntimeExecutionResult.from_governed_mutation_result(result)
         self.evidence_authority.update(
+            issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
             stdout=str(self.evidence.get("stdout") or ""),
             stderr=str(self.evidence.get("stderr") or ""),
             test_results=self.evidence.get("test_results"),

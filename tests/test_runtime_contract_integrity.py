@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 class RuntimeContractIntegrityTest(unittest.TestCase):
     def _make_step_executor(self, workspace_root: Path) -> Any:
         from core.runtime.step_executor import StepExecutor
+        from tests.authority_test_support import owned_step_executor
 
         signature = inspect.signature(StepExecutor)
         kwargs: Dict[str, Any] = {}
@@ -33,7 +34,7 @@ class RuntimeContractIntegrityTest(unittest.TestCase):
         if "debug" in signature.parameters:
             kwargs["debug"] = False
 
-        return StepExecutor(**kwargs)
+        return owned_step_executor(**kwargs)
 
     def _execute_steps(self, executor: Any, steps: List[Dict[str, Any]]) -> Dict[str, Any]:
         method = executor.execute_steps

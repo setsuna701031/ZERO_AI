@@ -17,6 +17,12 @@ from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
+from core.runtime.runtime_authority_seal import (
+    _TASK_RUNNER_ISSUER_TOKEN,
+    delegate_taskrunner_execution_capability,
+    is_task_completion_authority,
+    issue_task_completion_authority,
+)
 from core.runtime.audit_log import AuditLogger
 from core.runtime.repair_planner import RepairPlanner
 from core.runtime.repair_step_injector import RepairStepInjector
@@ -88,6 +94,92 @@ class TaskRunner:
                 self.step_executor.llm_client = llm_client
             except (AttributeError, TypeError):
                 pass
+
+    def execute_owned_step(
+        self,
+        step: Dict[str, Any],
+        *,
+        task: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        previous_result: Any = None,
+        step_index: int = 0,
+        step_count: int = 1,
+    ) -> Dict[str, Any]:
+        """Execute one step through the TaskRunner-owned authority boundary."""
+        owned_task = copy.deepcopy(task) if isinstance(task, dict) else {}
+        owned_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+        task_id = str(
+            owned_task.get("task_id")
+            or owned_task.get("id")
+            or owned_task.get("task_name")
+            or "taskrunner-owned-step"
+        ).strip()
+        owned_task.setdefault("task_id", task_id)
+        authority_context = self._build_taskrunner_authority_context(
+            task=owned_task,
+            state={},
+            step=step,
+            upstream_context=owned_context,
+        )
+        return self.step_executor.execute_step(
+            step=step,
+            task=owned_task,
+            context={
+                **owned_context,
+                "authority_context": authority_context,
+                "runtime_authority_context": authority_context,
+                "runtime_execution_capability": authority_context.get(
+                    "runtime_execution_capability"
+                ),
+                "authority_propagation_required": True,
+            },
+            previous_result=previous_result,
+            step_index=step_index,
+            step_count=step_count,
+        )
+
+    def execute_owned_steps(
+        self,
+        steps: List[Dict[str, Any]],
+        *,
+        task: Optional[Dict[str, Any]] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a batch through a TaskRunner-issued batch capability."""
+        owned_task = copy.deepcopy(task) if isinstance(task, dict) else {}
+        owned_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+        task_id = str(
+            owned_task.get("task_id")
+            or owned_task.get("id")
+            or owned_task.get("task_name")
+            or "taskrunner-owned-batch"
+        ).strip()
+        owned_task.setdefault("task_id", task_id)
+        capability = delegate_taskrunner_execution_capability(
+            _TASK_RUNNER_ISSUER_TOKEN,
+            owned_task.get("runtime_execution_capability"),
+            task_id=task_id,
+            step_id="",
+        )
+        authority_context = {
+            "authority_phase": "taskrunner_delegation",
+            "authority_layer": "task_runner",
+            "authority_role": "canonical_delegation",
+            "authority_policy": "owner_issued_runtime_execution_capability",
+            "authority_propagation_required": True,
+            "runtime_execution_capability": capability,
+        }
+        return self.step_executor.execute_steps(
+            steps,
+            task=owned_task,
+            context={
+                **owned_context,
+                "authority_context": authority_context,
+                "runtime_authority_context": authority_context,
+                "runtime_execution_capability": capability,
+                "authority_propagation_required": True,
+            },
+        )
 
     # ============================================================
     # mutation boundary integration
@@ -952,6 +1044,39 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         return self.run_task_tick(task=task, current_tick=current_tick)
 
+    def complete_task(
+        self,
+        task: Dict[str, Any],
+        *,
+        current_tick: int = 0,
+        final_answer: str = "",
+        final_result: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return self.runtime.mark_finished(
+            task=task,
+            current_tick=current_tick,
+            final_answer=final_answer,
+            final_result=final_result,
+            completion_authority=issue_task_completion_authority(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                task_id=str(task.get("task_id") or task.get("id") or ""),
+            ),
+        )
+
+    def record_terminal_observation(
+        self,
+        task: Dict[str, Any],
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        return self.runtime.record_terminal_observation(
+            task,
+            **kwargs,
+            completion_authority=issue_task_completion_authority(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                task_id=str(task.get("task_id") or task.get("id") or ""),
+            ),
+        )
+
     # ============================================================
     # capability execution
     # ============================================================
@@ -1046,6 +1171,10 @@ class TaskRunner:
                 task=task,
                 current_tick=current_tick,
                 final_answer=final_answer,
+                completion_authority=issue_task_completion_authority(
+                    _TASK_RUNNER_ISSUER_TOKEN,
+                    task_id=str(task.get("task_id") or task.get("id") or ""),
+                ),
                 final_result={
                     "ok": True,
                     "step_type": "capability",
@@ -1088,6 +1217,7 @@ class TaskRunner:
                 "status": "finished",
                 "last_result": copy.deepcopy(result_payload),
                 "final_answer": finish_result.get("final_answer", final_answer),
+                "task_completion_authority": finish_result.get("task_completion_authority"),
                 "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
             }
 
@@ -1453,6 +1583,8 @@ class TaskRunner:
         }
 
     def _make_json_safe(self, value: Any) -> Any:
+        if is_task_completion_authority(value):
+            return value
         if isinstance(value, dict):
             return {str(key): self._make_json_safe(item) for key, item in value.items()}
 
@@ -1758,6 +1890,10 @@ class TaskRunner:
                 current_tick=current_tick,
                 final_answer=str(task.get("final_answer") or state.get("final_answer") or ""),
                 final_result=copy.deepcopy(task.get("last_step_result") or state.get("last_step_result")),
+                completion_authority=issue_task_completion_authority(
+                    _TASK_RUNNER_ISSUER_TOKEN,
+                    task_id=str(task.get("task_id") or task.get("id") or ""),
+                ),
             )
             runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
             self._ensure_execution_trace_defaults(task, runtime_state)
@@ -1768,6 +1904,7 @@ class TaskRunner:
                 "runtime_state": runtime_state,
                 "status": "finished",
                 "final_answer": finish_result.get("final_answer", ""),
+                "task_completion_authority": finish_result.get("task_completion_authority"),
             }
 
         direct_block = self._maybe_block_direct_missing_subgoal_dependency(
@@ -2404,6 +2541,10 @@ class TaskRunner:
                 current_tick=current_tick,
                 final_answer=self._extract_final_answer_from_step_result(result),
                 final_result=result,
+                completion_authority=issue_task_completion_authority(
+                    _TASK_RUNNER_ISSUER_TOKEN,
+                    task_id=str(task.get("task_id") or task.get("id") or ""),
+                ),
             )
             runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
             runtime_state = self._mark_syntax_function_rewrite_completion_if_needed(
@@ -2445,6 +2586,7 @@ class TaskRunner:
                 "status": "finished",
                 "last_result": copy.deepcopy(result),
                 "final_answer": finish_result.get("final_answer", ""),
+                "task_completion_authority": finish_result.get("task_completion_authority"),
                 "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
             }
 
@@ -4773,78 +4915,74 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
     upstream_context = upstream_context if isinstance(upstream_context, dict) else {}
 
     incoming = _zero_boundary_extract_authority_context(task, state, upstream_context)
-    execution_authority = _zero_boundary_extract_execution_authority(incoming, task, state, upstream_context)
-
-    authority_chain = []
-    if isinstance(incoming.get("authority_chain"), list):
-        authority_chain = copy.deepcopy(incoming["authority_chain"])
-
-    controlled_document_write = _zero_boundary_document_pipeline_allowed(task, step)
-
-    if not execution_authority:
+    dispatch_capability = (
+        task.get("runtime_execution_capability")
+        or state.get("runtime_execution_capability")
+        or upstream_context.get("runtime_execution_capability")
+    )
+    task_id = _zero_boundary_norm_text(task.get("task_id") or task.get("id") or state.get("task_id"))
+    step_id = _zero_boundary_norm_text(step.get("id") or step.get("step_id") or f"{task_id}:step")
+    try:
+        capability = delegate_taskrunner_execution_capability(
+            _TASK_RUNNER_ISSUER_TOKEN,
+            dispatch_capability,
+            task_id=task_id,
+            step_id=step_id,
+        )
+    except PermissionError:
         return {
             "authority_phase": "taskrunner_propagation",
             "authority_layer": "task_runner",
             "authority_role": "propagation",
             "authority_source": "",
-            "authority_policy": "no_execution_authority",
-            "authority_propagation_required": False,
+            "authority_policy": "canonical_runtime_dispatch_capability_required",
+            "authority_propagation_required": True,
             "execution_authority_granted": False,
             "can_execute_privileged_step": False,
             "escalated": False,
             "execution_authority": {},
             "received_authority": copy.deepcopy(incoming),
-            "authority_chain": authority_chain,
+            "authority_chain": [],
         }
-
-    authority_source = _zero_boundary_norm_text(
-        execution_authority.get("authority_source") or execution_authority.get("source")
-    )
-    authority_status = _zero_boundary_norm_text(
-        execution_authority.get("authority_status") or execution_authority.get("status")
-    ).lower()
-    approval_state = _zero_boundary_norm_text(
-        execution_authority.get("approval_state")
-    ).lower()
-    authority_endpoint = _zero_boundary_norm_text(
-        execution_authority.get("execution_authority_endpoint")
-        or execution_authority.get("authority_endpoint")
-    ).lower()
-    execution_authority_propagated = bool(
-        authority_status in {"allowed", "approved", "granted", "ok"}
-        and approval_state == "approved"
-        and authority_endpoint == "step_executor"
-    )
-    authority_role = "propagation"
-    authority_phase = "taskrunner_propagation"
-    authority_policy = (
-        "propagate_valid_upstream_execution_authority"
-        if execution_authority_propagated
-        else "propagate_without_escalation"
-    )
-
-    authority_chain.append({
-        "layer": "task_runner",
-        "authority_role": authority_role,
-        "execution_authority_propagated": execution_authority_propagated,
-        "execution_authority_granted": False,
-        "can_execute_privileged_step": False,
-    })
-
     return {
-        "authority_phase": authority_phase,
+        "authority_phase": "taskrunner_delegation",
         "authority_layer": "task_runner",
-        "authority_role": authority_role,
-        "authority_source": authority_source,
-        "authority_policy": authority_policy,
+        "authority_role": "canonical_delegation",
+        "authority_source": "runtime_dispatcher",
+        "authority_policy": "owner_issued_runtime_execution_capability",
         "authority_propagation_required": True,
-        "execution_authority_propagated": execution_authority_propagated,
+        "execution_authority_propagated": True,
         "execution_authority_granted": False,
-        "can_execute_privileged_step": False,
+        "can_execute_privileged_step": True,
         "escalated": False,
-        "execution_authority": copy.deepcopy(execution_authority),
+        "runtime_execution_capability": capability,
+        "execution_authority": {
+            "task_id": task_id,
+            "step_id": step_id,
+            "authority_source": "runtime_dispatcher",
+            "authority_status": "allowed",
+            "execution_authority_endpoint": "step_executor",
+            "action_type": (
+                "execute"
+                if _zero_boundary_norm_text(step.get("type")).lower() in {"command", "run_python"}
+                else "mutation"
+            ),
+            "runtime_session": capability.session_id,
+            "approval_state": "approved",
+            "policy_result": {"allowed": True, "source": "task_runner_live_capability"},
+            "trace_id": f"taskrunner:{task_id}:{step_id}",
+            "descriptive_only": True,
+        },
         "received_authority": copy.deepcopy(incoming),
-        "authority_chain": authority_chain,
+        "authority_chain": copy.deepcopy(incoming.get("authority_chain", [])) + [
+            {
+                "layer": "task_runner",
+                "authority_role": "canonical_delegation",
+                "execution_authority_propagated": True,
+                "execution_authority_granted": False,
+                "can_execute_privileged_step": True,
+            }
+        ],
     }
 
 

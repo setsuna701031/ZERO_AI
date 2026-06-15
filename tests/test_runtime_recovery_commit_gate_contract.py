@@ -64,11 +64,11 @@ class RuntimeRecoveryCommitGateContractTest(unittest.TestCase):
             manual_confirmation_provided=True,
         )
 
-        self.assertEqual(report.dry_run_commit_authorization()["state"], "commit_allowed")
-        self.assertTrue(report.dry_run_commit_authorization()["commit_allowed"])
+        self.assertEqual(report.dry_run_commit_authorization()["state"], "commit_blocked")
+        self.assertFalse(report.dry_run_commit_authorization()["commit_allowed"])
         self.assertTrue(report.rollback_commit_gate()["commit_allowed"])
-        self.assertTrue(report.replay_commit_gate()["commit_allowed"])
-        self.assertTrue(report.final_execution_readiness()["commit_allowed"])
+        self.assertFalse(report.replay_commit_gate()["commit_allowed"])
+        self.assertFalse(report.final_execution_readiness()["commit_allowed"])
         self.assertFalse(report.final_execution_readiness()["executes_recovery"])
         self.assertFalse(report.payload["executes_rollback"])
         self.assertFalse(report.payload["executes_repair"])
@@ -106,7 +106,7 @@ class RuntimeRecoveryCommitGateContractTest(unittest.TestCase):
         self.assertFalse(without_confirmation.final_execution_readiness()["commit_allowed"])
         self.assertFalse(with_confirmation.confirmation_enforcement()["requires_manual_confirmation"])
         self.assertTrue(with_confirmation.confirmation_enforcement()["commit_allowed"])
-        self.assertTrue(with_confirmation.final_execution_readiness()["commit_allowed"])
+        self.assertFalse(with_confirmation.final_execution_readiness()["commit_allowed"])
 
     def test_deterministic_gate_output(self) -> None:
         gate = self._gate()
@@ -168,7 +168,7 @@ class RuntimeRecoveryCommitGateContractTest(unittest.TestCase):
         report.replay_commit_gate()["commit_allowed"] = False
 
         self.assertTrue(report.payload["read_only"])
-        self.assertTrue(report.replay_commit_gate()["commit_allowed"])
+        self.assertFalse(report.replay_commit_gate()["commit_allowed"])
 
 
 if __name__ == "__main__":

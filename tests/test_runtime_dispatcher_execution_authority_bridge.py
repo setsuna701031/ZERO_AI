@@ -40,7 +40,7 @@ def _authority_context(authority: dict) -> dict:
     "authority_source",
     ["runtime_dispatcher", "core.runtime.runtime_dispatcher"],
 )
-def test_runtime_dispatcher_authority_is_accepted_and_sealed_by_step_executor(
+def test_serialized_runtime_dispatcher_authority_is_rejected_by_step_executor(
     tmp_path: Path, authority_source: str
 ) -> None:
     result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
@@ -52,13 +52,12 @@ def test_runtime_dispatcher_authority_is_accepted_and_sealed_by_step_executor(
         context={"authority_context": _authority_context(_authority(authority_source))},
     )
 
-    assert result["ok"] is True
-    assert result["authority_decision"]["decision"] == "allowed"
-    assert result["authority_decision"]["sealed"] is True
+    assert result["ok"] is False
+    assert result["authority_decision"]["decision"] == "denied"
+    assert result["authority_decision"]["sealed"] is False
 
 
-def test_taskrunner_propagates_valid_upstream_execution_authority_without_granting() -> None:
-    """TaskRunner preserves the runtime-owner grant without claiming it."""
+def test_taskrunner_rejects_serialized_upstream_execution_authority() -> None:
     authority = _authority()
     task = {
         "task_id": "runtime-task",
@@ -81,15 +80,11 @@ def test_taskrunner_propagates_valid_upstream_execution_authority_without_granti
         step={"id": "runtime-step", "type": "noop"},
     )
 
-    assert context["execution_authority"] == authority
-    assert context["execution_authority_propagated"] is True
+    assert context["execution_authority"]["descriptive_only"] is True
+    assert context["authority_propagation_required"] is True
     assert context["execution_authority_granted"] is False
-    assert context["can_execute_privileged_step"] is False
-    assert context["authority_chain"][0]["layer"] == "runtime_dispatcher"
-    assert context["authority_chain"][0]["execution_authority_granted"] is True
+    assert context["can_execute_privileged_step"] is True
     assert context["authority_chain"][-1]["layer"] == "task_runner"
-    assert context["authority_chain"][-1]["execution_authority_propagated"] is True
-    assert context["authority_chain"][-1]["execution_authority_granted"] is False
 
 
 def test_step_executor_still_blocks_missing_authority(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_artifact_gate import RuntimeArtifactGate
 from core.runtime.runtime_evidence_authority import RuntimeEvidenceAuthority
+from core.runtime.runtime_authority_seal import _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN
 from core.runtime.runtime_events import RuntimeStateTransitionEvent
 from core.runtime.runtime_journal import RuntimeJournal
 from core.runtime.runtime_reconstruction_pipeline import RuntimeReconstructionPipeline
@@ -40,10 +41,26 @@ def test_runtime_artifact_gate_seals_and_blocks_tampered_replay_artifact() -> No
 
 
 def test_runtime_evidence_authority_is_single_evidence_writer() -> None:
-    authority = RuntimeEvidenceAuthority(evidence_id="evidence:phase7")
-    authority.update(stdout="ok", stderr="", runtime_traces=["start", "finalize"])
-    authority.merge_mapping("rollback_snapshot", {"rollback_required": False})
-    authority.append("runtime_integrity", {"verified": True})
+    authority = RuntimeEvidenceAuthority(
+        evidence_id="evidence:phase7",
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+    )
+    authority.update(
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+        stdout="ok",
+        stderr="",
+        runtime_traces=["start", "finalize"],
+    )
+    authority.merge_mapping(
+        "rollback_snapshot",
+        {"rollback_required": False},
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+    )
+    authority.append(
+        "runtime_integrity",
+        {"verified": True},
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+    )
 
     snapshot = authority.snapshot().to_dict()
     assert snapshot["payload"]["stdout"] == "ok"

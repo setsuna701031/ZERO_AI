@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.runtime.step_executor import StepExecutor
+from tests.authority_test_support import owned_step_executor
 from core.runtime.runtime_execution_result import RuntimeExecutionResult
 from core.runtime.repair_transaction_execution_bridge import (
     execute_committed_runtime_repair_transaction_mainline,
@@ -46,7 +47,7 @@ def test_runtime_execution_result_normalizes_legacy_step_payload() -> None:
 def test_step_executor_attaches_canonical_runtime_execution_result(
     tmp_path: Path,
 ) -> None:
-    executor = StepExecutor(workspace_root=str(tmp_path))
+    executor = owned_step_executor(workspace_root=str(tmp_path))
 
     result = executor.execute_step(
         {

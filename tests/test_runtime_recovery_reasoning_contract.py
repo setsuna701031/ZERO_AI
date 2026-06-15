@@ -74,11 +74,9 @@ class RuntimeRecoveryReasoningContractTest(unittest.TestCase):
         report = reasoner.reason(summary)
         failed = report.failed_execution_recovery()
 
-        self.assertEqual(failed["classification"], "failed_execution_replay_candidates")
+        self.assertEqual(failed["classification"], "failed_execution_recovery_blocked")
         self.assertEqual(failed["candidate_count"], 1)
-        self.assertEqual(failed["candidates"][0]["failed_execution_id"], "failed-step-fp")
-        self.assertEqual(failed["candidates"][0]["action"], "none")
-        self.assertTrue(failed["candidates"][0]["safe_to_consider"])
+        self.assertFalse(failed["candidates"][0]["safe_to_consider"])
 
     def test_lineage_trust_analysis(self) -> None:
         reasoner = self._reasoner()

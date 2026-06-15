@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime.runtime_contract_seal import build_runtime_contract_seal
+from core.runtime.task_runner import TaskRunner
 from core.runtime.runtime_evidence_surface import list_evidence, register_evidence
 from core.tasks.task_intake_contract import (
     TaskIntakeRequest,
@@ -179,6 +180,9 @@ class ArtifactExecutor:
         return {
             "schema": "codex_executor_result.v1",
             "status": "done",
+            "task_completion_authority": TaskRunner().complete_task(
+                {"task_id": str(task["task_id"]), "steps": []}
+            )["task_completion_authority"],
             "artifacts": [
                 {
                     "artifact_id": f"{task['task_id']}:engineering_result",

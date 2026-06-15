@@ -48,10 +48,10 @@ def test_recovery_context_alone_is_not_authority(tmp_path: Path) -> None:
 
 
 def test_recovery_created_transaction_has_recovery_source(tmp_path: Path) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
     source = _source_transaction()
-    result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
+    result = owned_step_executor(workspace_root=str(tmp_path)).execute_step(
         {
             "type": "recovery_apply",
             "target_path": "workspace/shared/recovered.txt",
@@ -69,11 +69,11 @@ def test_recovery_created_transaction_has_recovery_source(tmp_path: Path) -> Non
 
 
 def test_recovery_does_not_overwrite_original_transaction(tmp_path: Path) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
     source = _source_transaction("overwrite")
     before = source.to_dict()
-    result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
+    result = owned_step_executor(workspace_root=str(tmp_path)).execute_step(
         {
             "type": "recovery_apply",
             "target_path": "workspace/shared/recovered-overwrite.txt",
@@ -88,10 +88,10 @@ def test_recovery_does_not_overwrite_original_transaction(tmp_path: Path) -> Non
 
 
 def test_verify_failure_cannot_commit(tmp_path: Path) -> None:
-    from core.runtime.step_executor import StepExecutor
+    from tests.authority_test_support import owned_step_executor
 
     source = _source_transaction("verify-fail")
-    result = StepExecutor(workspace_root=str(tmp_path)).execute_step(
+    result = owned_step_executor(workspace_root=str(tmp_path)).execute_step(
         {
             "type": "recovery_apply",
             "target_path": "workspace/shared/recovery-fail.txt",

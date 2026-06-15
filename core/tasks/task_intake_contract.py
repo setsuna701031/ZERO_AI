@@ -158,7 +158,10 @@ def run_task_intake_pipeline(
         },
         "history": _merged_history(stored_task, lifecycle),
     }
-    repository.upsert_task(final_task)
+    repository.upsert_task(
+        final_task,
+        completion_authority=execution_result.get("task_completion_authority"),
+    )
     final_task = repository.get_task(request.task_id) or final_task
 
     return TaskIntakePipelineResult(

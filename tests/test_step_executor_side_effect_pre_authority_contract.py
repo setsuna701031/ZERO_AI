@@ -100,8 +100,8 @@ def test_side_effect_public_result_keeps_pre_authority_summary(
         expected_decision="denied",
         sealed=False,
     )
-    assert result["authority_decision"]["reason"] == "missing_authority_metadata"
-    assert result["runtime_execution_result"]["metadata"]["blocked_reason"] == "missing_authority_metadata"
+    assert result["authority_decision"]["reason"] == "missing_or_invalid_execution_authority"
+    assert result["runtime_execution_result"]["metadata"]["blocked_reason"] == "missing_or_invalid_execution_authority"
     _assert_no_public_internal_keys(result["authority_decision"])
 
 
@@ -128,7 +128,7 @@ def test_execute_authority_steps_are_legacy_unsealed_not_fake_sealed(
         assert "legacy" in decision["reason"]
 
 
-def test_side_effect_with_valid_authority_metadata_executes(tmp_path: Path) -> None:
+def test_side_effect_with_serialized_authority_metadata_is_rejected(tmp_path: Path) -> None:
     executor = _make_step_executor(tmp_path)
     result = executor.execute_step(
         {
@@ -139,15 +139,14 @@ def test_side_effect_with_valid_authority_metadata_executes(tmp_path: Path) -> N
         context={"execution_authority": _valid_authority("mutation")},
     )
 
-    assert result["ok"] is True
-    target = Path(result["result"]["result"]["full_path"])
-    assert target.read_text(encoding="utf-8") == "SEALED"
+    assert result["ok"] is False
+    assert not (tmp_path / "shared" / "sealed.txt").exists()
     _assert_public_authority_decision(
         result,
         step_type="write_file",
         action_type="mutation",
-        expected_decision="allowed",
-        sealed=True,
+        expected_decision="denied",
+        sealed=False,
     )
 
 
@@ -221,7 +220,7 @@ def _assert_public_authority_decision(
     assert authority_decision["action_type"] == action_type
     assert authority_decision["step_type"] == step_type
     assert authority_decision["decision"] == expected_decision
-    assert authority_decision["authority_policy"] == "execution_authority_closure"
+    assert authority_decision["authority_policy"] == "owner_issued_runtime_execution_capability"
     assert authority_decision["sealed"] is sealed
 
     runtime_payload = result.get("runtime_execution_result")

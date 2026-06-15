@@ -100,7 +100,7 @@ def test_review_policy_and_governance_context_alone_is_not_authority(tmp_path: P
     assert result["ok"] is False
     assert result["blocked"] is True
     assert result["error"]["type"] == "execution_authority_denied"
-    assert result["authority_decision"]["reason"] == "missing_authority_metadata"
+    assert result["authority_decision"]["reason"] == "missing_or_invalid_execution_authority"
 
 
 def test_unknown_mutation_like_names_fail_closed() -> None:
@@ -137,7 +137,7 @@ def test_step_executor_blocks_apply_patch_without_authority_before_review(tmp_pa
 
     assert result["ok"] is False
     assert result["error"]["type"] == "execution_authority_denied"
-    assert result["authority_decision"]["reason"] == "missing_authority_metadata"
+    assert result["authority_decision"]["reason"] == "missing_or_invalid_execution_authority"
 
 
 def test_step_executor_allows_read_only_or_review_step_without_authority(tmp_path: Path) -> None:

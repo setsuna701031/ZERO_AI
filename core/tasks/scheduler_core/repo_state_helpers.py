@@ -485,7 +485,17 @@ def compact_runner_result(result: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def mark_repo_task_finished(scheduler: Any, task_id: str, result: Any = None) -> None:
+def mark_repo_task_finished(
+    scheduler: Any,
+    task_id: str,
+    result: Any = None,
+    *,
+    completion_authority: Any = None,
+) -> None:
+    from core.runtime.runtime_authority_seal import is_task_completion_authority
+
+    if not is_task_completion_authority(completion_authority, task_id=task_id):
+        raise PermissionError("task_completion_authority_required")
     task = scheduler._get_task_from_repo(task_id)
     if not isinstance(task, dict):
         return
@@ -503,7 +513,11 @@ def mark_repo_task_finished(scheduler: Any, task_id: str, result: Any = None) ->
         task["final_answer"] = task.get("final_answer", "")
 
     task["history"] = scheduler._append_history(task.get("history"), "finished")
-    scheduler._persist_task_payload(task_id=task_id, task=task)
+    scheduler._persist_task_payload(
+        task_id=task_id,
+        task=task,
+        completion_authority=completion_authority,
+    )
     scheduler.worker_pool.release_by_task(task_id)
     scheduler._unblock_tasks_if_dependencies_done()
 
@@ -602,18 +616,34 @@ def mark_repo_task_with_adapter(
     *,
     result: Any = None,
     error: str = "",
+    completion_authority: Any = None,
 ) -> None:
     normalized_operation = str(operation or "").strip().lower()
+    if normalized_operation == "finished":
+        from core.runtime.runtime_authority_seal import is_task_completion_authority
+
+        if not is_task_completion_authority(completion_authority, task_id=task_id):
+            raise PermissionError("task_completion_authority_required")
     callback = _resolve_repo_task_mark_adapter_callback(scheduler, normalized_operation)
     if callable(callback):
         if normalized_operation == "finished":
-            callback(scheduler=scheduler, task_id=task_id, result=result)
+            callback(
+                scheduler=scheduler,
+                task_id=task_id,
+                result=result,
+                completion_authority=completion_authority,
+            )
             return
         callback(scheduler=scheduler, task_id=task_id, error=error)
         return
 
     if normalized_operation == "finished":
-        mark_repo_task_finished(scheduler=scheduler, task_id=task_id, result=result)
+        mark_repo_task_finished(
+            scheduler=scheduler,
+            task_id=task_id,
+            result=result,
+            completion_authority=completion_authority,
+        )
         return
     if normalized_operation == "failed":
         mark_repo_task_failed(scheduler=scheduler, task_id=task_id, error=error)
@@ -1055,14 +1085,20 @@ def sync_runtime_back_to_repo(
     merged = scheduler._backfill_replan_decision_fields(merged, replan_result=inferred_replan_result)
     merged = scheduler._infer_completion_fields(merged)
 
-    # Completion authority repair:
-    # AgentLoop may return action=task_finished while leaving status=blocked
-    # as stale/advisory runtime metadata.  Treat explicit finished actions as
-    # authoritative and advance the public/runtime step cursor to the end so
-    # completed multi-step LLM tasks do not loop forever at the final index.
+    from core.runtime.runtime_authority_seal import is_task_completion_authority
+
+    completion_authority = (
+        runner_result.get("task_completion_authority")
+        if isinstance(runner_result, dict)
+        else None
+    )
+    completion_authorized = is_task_completion_authority(
+        completion_authority,
+        task_id=task_id,
+    )
     if isinstance(runner_result, dict):
         runner_action = str(runner_result.get("action") or "").strip().lower()
-        if runner_action in {"task_finished", "simple_task_finished"}:
+        if runner_action in {"task_finished", "simple_task_finished"} and completion_authorized:
             merged["status"] = "finished"
             merged["blocked_reason"] = ""
             merged["waiting_reason"] = ""
@@ -1089,15 +1125,27 @@ def sync_runtime_back_to_repo(
     merged = _downgrade_advisory_blocked_status(merged)
     merged = build_repo_runtime_state_adapter_payload(merged=merged, runner_result=runner_result)
     _save_runtime_state_from_merged(scheduler, merged)
-    scheduler._persist_task_payload(task_id=task_id, task=merged)
+    scheduler._persist_task_payload(
+        task_id=task_id,
+        task=merged,
+        completion_authority=completion_authority if completion_authorized else None,
+    )
 
     normalized_status = str(merged.get("status") or "").strip().lower()
     if not normalized_status:
         return
 
-    if normalized_status in {"finished", "done", "success", "completed", scheduler.STATUS_FINISHED}:
+    if (
+        normalized_status in {"finished", "done", "success", "completed", scheduler.STATUS_FINISHED}
+        and completion_authorized
+    ):
         final_answer = merged.get("final_answer", "")
-        mark_repo_task_finished(scheduler=scheduler, task_id=task_id, result=final_answer)
+        mark_repo_task_finished(
+            scheduler=scheduler,
+            task_id=task_id,
+            result=final_answer,
+            completion_authority=completion_authority,
+        )
         return
 
     if normalized_status in {"failed", "error", scheduler.STATUS_FAILED}:
@@ -1123,4 +1171,3 @@ def sync_runtime_back_to_repo(
     if normalized_status in {"running"}:
         sync_unblocked_state(scheduler=scheduler, task_id=task_id)
         return
-

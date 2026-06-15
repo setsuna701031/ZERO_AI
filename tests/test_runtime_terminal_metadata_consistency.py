@@ -51,7 +51,7 @@ def test_success_with_missing_artifact_is_not_terminal_finished(tmp_path: Path) 
         step=task["steps"][0],
         step_result=executed["last_result"],
     )
-    observed = runtime.record_terminal_observation(
+    observed = runner.record_terminal_observation(
         task,
         deviation_report=report.to_dict(),
         evidence_persisted=True,
@@ -74,13 +74,13 @@ def test_finished_requires_observation_artifact_validation_and_evidence(tmp_path
     )
     executed = runner.run_task(task)
     report = DeviationDetector().detect(task_id=task["task_id"], step=task["steps"][0], step_result=executed["last_result"])
-    not_sealed = runtime.record_terminal_observation(
+    not_sealed = runner.record_terminal_observation(
         task,
         deviation_report=report.to_dict(),
         evidence_persisted=False,
         deviation_step_index=0,
     )
-    sealed = runtime.record_terminal_observation(
+    sealed = runner.record_terminal_observation(
         task,
         deviation_report=report.to_dict(),
         evidence_persisted=True,
@@ -105,7 +105,7 @@ def test_finished_metadata_can_downgrade_through_runtime_contract(tmp_path: Path
         "reason": "artifact_missing",
         "recoverable": True,
     }
-    downgraded = runtime.record_terminal_observation(
+    downgraded = runner.record_terminal_observation(
         task,
         deviation_report=report,
         evidence_persisted=True,

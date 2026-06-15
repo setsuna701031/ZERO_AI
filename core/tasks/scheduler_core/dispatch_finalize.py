@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+from core.runtime.runtime_authority_seal import is_task_completion_authority
 
 
 def extract_effective_status_and_answer(
@@ -89,7 +90,17 @@ def build_finalize_decision(
         default="",
     )
 
-    if status in finished_statuses:
+    completion_authority = result.get("task_completion_authority")
+    completion_authorized = is_task_completion_authority(
+        completion_authority,
+        task_id=str(
+            result.get("task_id")
+            or (refreshed_task or {}).get("task_id")
+            or (original_task or {}).get("task_id")
+            or ""
+        ),
+    )
+    if status in finished_statuses and completion_authorized:
         action = "finish"
     elif status in failed_statuses:
         action = "fail"
@@ -115,6 +126,7 @@ def build_finalize_decision(
         "blocked_reason": blocked_reason,
         "queue_error": queue_error,
         "ok": bool(result.get("ok", True)),
+        "task_completion_authority": completion_authority if completion_authorized else None,
     }
 
 
@@ -129,8 +141,17 @@ def apply_finalize_decision(
     effective_final_answer = decision.get("final_answer")
 
     if action == "finish":
-        scheduler.dispatcher.complete_task(task_id=task_id, result=effective_final_answer)
-        scheduler._mark_repo_task_finished(task_id=task_id, result=effective_final_answer)
+        completion_authority = decision.get("task_completion_authority")
+        scheduler.dispatcher.complete_task(
+            task_id=task_id,
+            result=effective_final_answer,
+            completion_authority=completion_authority,
+        )
+        scheduler._mark_repo_task_finished(
+            task_id=task_id,
+            result=effective_final_answer,
+            completion_authority=completion_authority,
+        )
         return
 
     if action == "fail":

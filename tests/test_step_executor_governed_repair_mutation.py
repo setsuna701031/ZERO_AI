@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.runtime.step_executor import StepExecutor
+from tests.authority_test_support import owned_step_executor
 
 
 def test_step_executor_dispatches_governed_repair_mutation(tmp_path: Path) -> None:
@@ -16,7 +17,7 @@ def test_step_executor_dispatches_governed_repair_mutation(tmp_path: Path) -> No
     rollback.mkdir()
     reports.mkdir()
 
-    executor = StepExecutor()
+    executor = owned_step_executor()
 
     assert executor.has_handler("governed_repair_mutation")
 

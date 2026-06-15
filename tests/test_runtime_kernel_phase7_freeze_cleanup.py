@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_artifact_gate import RuntimeArtifactGate
 from core.runtime.runtime_evidence_authority import RuntimeEvidenceAuthority
+from core.runtime.runtime_authority_seal import _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN
 from core.runtime.runtime_events import RuntimeStateTransitionEvent
 from core.runtime.runtime_journal import RuntimeJournal
 from core.runtime.runtime_reconstruction_pipeline import RuntimeReconstructionPipeline
@@ -52,7 +53,10 @@ def test_artifact_gate_uses_canonical_serialization_and_reports_fingerprint() ->
 
 
 def test_evidence_authority_preserves_phase6_runtime_compatibility_shape() -> None:
-    authority = RuntimeEvidenceAuthority(evidence_id="evidence:test")
+    authority = RuntimeEvidenceAuthority(
+        evidence_id="evidence:test",
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
+    )
     authority.append(
         "runtime_compatibility",
         {
@@ -60,6 +64,7 @@ def test_evidence_authority_preserves_phase6_runtime_compatibility_shape() -> No
             "compatible": True,
             "reason": "ok",
         },
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
     )
     authority.append(
         "runtime_compatibility",
@@ -70,6 +75,7 @@ def test_evidence_authority_preserves_phase6_runtime_compatibility_shape() -> No
                 "reason": "wrapped_gate_report_canonicalized",
             }
         },
+        issuer_token=_GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
     )
 
     payload = authority.to_dict()

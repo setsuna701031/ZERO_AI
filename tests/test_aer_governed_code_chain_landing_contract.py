@@ -30,7 +30,7 @@ class _RecordingStepExecutor:
 
         execution_authority = authority_context.get("execution_authority") or {}
 
-        if not execution_authority.get("granted"):
+        if authority_context.get("runtime_execution_capability") is None:
             return {
                 "ok": False,
                 "blocked": True,
@@ -195,9 +195,11 @@ def test_missing_authority_blocks_before_mutation(
 def test_successful_governed_mutation_emits_sealed_runtime_evidence(
     tmp_path: Path,
 ) -> None:
+    from core.runtime.task_runner import TaskRunner
+
     recorder = _RecordingStepExecutor()
 
-    result = recorder.execute_step(
+    result = TaskRunner(step_executor=recorder).execute_owned_step(
         {
             "type": "apply_patch",
             "target_path": "workspace/shared/demo.txt",
@@ -205,11 +207,7 @@ def test_successful_governed_mutation_emits_sealed_runtime_evidence(
             "new_text": "after",
         },
         task={"task_id": "sealed-runtime-evidence"},
-        context={
-            "authority_context": {
-                "execution_authority": _execution_authority(),
-            }
-        },
+        context={"execution_authority": _execution_authority()},
     )
 
     evidence = result["runtime_evidence"]

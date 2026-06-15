@@ -153,7 +153,9 @@ class _RuntimeEvidenceRegistryQuery:
         if isinstance(source, RuntimeEvidenceRegistrySnapshot):
             return source.payload
         if isinstance(source, Mapping):
-            return copy.deepcopy(dict(source))
+            summary = copy.deepcopy(dict(source))
+            summary["_serialized_summary"] = True
+            return summary
         if source is None:
             return _empty_runtime_summary()
         return _summary_from_seal(source)
@@ -255,6 +257,7 @@ def _empty_runtime_summary() -> dict[str, Any]:
 
 def _build_registry_payload(summary: dict[str, Any]) -> dict[str, Any]:
     safe = copy.deepcopy(summary if isinstance(summary, dict) else {})
+    serialized_summary = bool(safe.pop("_serialized_summary", False))
     refs = _mapping(safe.get("record_refs"))
     execution_order = _list_of_text(safe.get("execution_order"))
     aggregate_status = _safe_text(safe.get("aggregate_status")) or "succeeded"
@@ -269,8 +272,16 @@ def _build_registry_payload(summary: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "ok": True,
         "schema": RuntimeEvidenceRegistrySnapshot.SCHEMA,
-        "sealed": bool(safe.get("sealed", False)),
-        "sealed_state": _mapping(safe.get("sealed_state")),
+        "sealed": bool(safe.get("sealed", False)) and not serialized_summary,
+        "sealed_state": (
+            {
+                "sealed": False,
+                "complete": False,
+                "reason": "serialized_runtime_evidence_summary_is_descriptive_only",
+            }
+            if serialized_summary
+            else _mapping(safe.get("sealed_state"))
+        ),
         "summary_fingerprint": _fingerprint(safe),
         "record_refs": refs,
         "execution_index": execution_index,
@@ -290,6 +301,11 @@ def _build_registry_payload(summary: dict[str, Any]) -> dict[str, Any]:
             "events": len(event_index),
         },
     }
+    if serialized_summary:
+        for index in (lineage_index, replay_index, rollback_index):
+            for item in index.values():
+                if isinstance(item, dict):
+                    item["verified"] = False
     payload["fingerprint"] = _fingerprint(payload)
     return payload
 
