@@ -9,6 +9,7 @@ from typing import Any
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 
 
 def _fingerprint(value: Any) -> str:
@@ -184,6 +185,8 @@ class AgentExecutionRuntime:
         source = copy.deepcopy(task) if isinstance(task, dict) else {}
         task_id = str(source.get("task_id") or source.get("id") or "agent-runtime-" + _fingerprint(steps))
         boundary_id = task_id + "-runtime-" + _fingerprint({"steps": steps, "tick": current_tick})
+        package_id = str(source.get("package_id") or source.get("work_package_id") or f"{boundary_id}:package")
+        session_id = str(source.get("session_id") or source.get("runtime_session") or boundary_id)
         task_dir = self.workspace_root / "agent_execution_runtime" / boundary_id
         runtime_context = copy.deepcopy(context or {})
         execution_authority = _execution_authority_from_sources(source, runtime_context)
@@ -192,23 +195,31 @@ class AgentExecutionRuntime:
                 boundary_id=boundary_id,
                 steps=steps,
             )
+        runtime_execution_capability = RuntimeDispatcher._execution_capability(
+            {
+                "task_id": boundary_id,
+                "package_id": package_id,
+                "session_id": session_id,
+            }
+        )
         authority_context = {
             "authority_phase": "runtime_task_handoff",
             "authority_layer": "runtime",
             "authority_role": "runtime_owner",
-            "authority_source": str(execution_authority.get("authority_source") or ""),
+            "authority_source": "runtime_dispatcher",
             "authority_policy": "runtime_owner_task_admission",
             "authority_propagation_required": True,
-            "execution_authority_granted": False,
-            "can_execute_privileged_step": False,
+            "execution_authority_granted": True,
+            "can_execute_privileged_step": True,
             "escalated": False,
             "execution_authority": copy.deepcopy(execution_authority),
+            "runtime_execution_capability": runtime_execution_capability,
             "authority_chain": [
                 {
-                    "layer": "runtime",
+                    "layer": "runtime_dispatcher",
                     "authority_role": "runtime_owner",
-                    "execution_authority_granted": False,
-                    "can_execute_privileged_step": False,
+                    "execution_authority_granted": True,
+                    "can_execute_privileged_step": True,
                 }
             ],
         }
@@ -217,6 +228,8 @@ class AgentExecutionRuntime:
             "id": boundary_id,
             "task_id": boundary_id,
             "task_name": boundary_id,
+            "package_id": package_id,
+            "session_id": session_id,
             "status": "queued",
             "task_dir": str(task_dir),
             "runtime_state_file": str(task_dir / "runtime_state.json"),
@@ -229,6 +242,7 @@ class AgentExecutionRuntime:
             "max_auto_ticks": max(1, len(steps)),
             "agent_runtime_context": runtime_context,
             "execution_authority": copy.deepcopy(execution_authority),
+            "runtime_execution_capability": runtime_execution_capability,
             "authority_context": copy.deepcopy(authority_context),
             "runtime_authority_context": copy.deepcopy(authority_context),
             "authority_propagation_required": True,

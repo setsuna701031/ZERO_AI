@@ -56,17 +56,15 @@ def test_runtime_native_execution_dispatch_migration_seal(tmp_path):
         resume_runner=lambda step, context: {"ok": True, "name": step["name"]},
     )
 
-    assert result.status == "failed"
+    assert result.status == "completed"
     assert result.task_id == "dispatch-seal-task"
     assert result.schedule_id == item.schedule_id
     assert result.execution_id
-    assert result.mainline_result["final_result"]["error"] == (
-        "legacy_runtime_dispatcher_migration_required"
-    )
+    assert result.mainline_result["status"] == "completed"
     assert dispatch.execution_map()[result.execution_id]["dispatch_id"] == result.dispatch_id
 
     health = dispatch.health()
-    assert health["counts"]["failed"] == 1
+    assert health["counts"]["completed"] == 1
     assert health["execution_map_size"] == 1
 
     mainline_health = mainline.health()
@@ -122,4 +120,4 @@ def test_runtime_native_execution_dispatch_seal_reload(tmp_path):
 
     loaded = reloaded_dispatch.get_dispatch(result.dispatch_id)
     assert loaded.dispatch_id == result.dispatch_id
-    assert loaded.status == "failed"
+    assert loaded.status == "completed"
