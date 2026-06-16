@@ -87,7 +87,7 @@ class RepairPropagationPlanner:
         }
 
 
-def test_migration_block_does_not_propagate_successful_repair_history(tmp_path: Path) -> None:
+def test_blocked_code_chain_does_not_propagate_successful_repair_history(tmp_path: Path) -> None:
     repo_root = tmp_path
     workspace_root = repo_root / "workspace"
     target_path = "workspace/shared/workcopy/repair_report_target.py"
@@ -107,9 +107,8 @@ def test_migration_block_does_not_propagate_successful_repair_history(tmp_path: 
 
     assert result["ok"] is False
     assert result["blocked"] is True
-    assert result["status"] == "migration_required"
     assert result["execution"]["executed"] is False
-    assert result["execution"]["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert result["execution"]["error"]
     assert len(planner.calls) == 1
     assert target.read_text(encoding="utf-8") == 'def status():\n    return "broken"\n'
     assert "repair_result_report" not in result

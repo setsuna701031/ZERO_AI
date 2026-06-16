@@ -44,11 +44,15 @@ def test_runtime_native_scheduler_queues_and_runs_goal(tmp_path):
     )
 
     assert len(results) == 1
-    assert results[0].status == "queued"
-    assert results[0].mainline_result["status"] == "failed"
-    assert results[0].mainline_result["final_result"]["error"] == (
-        "legacy_runtime_dispatcher_migration_required"
-    )
+    assert results[0].status == SCHEDULER_STATUS_COMPLETED
+    assert results[0].mainline_result["status"] == "completed"
+    assert results[0].mainline_result["final_result"]["ok"] is True
+    assert results[0].authority_ref["decision"] == "allow"
+    execution_path = results[0].to_dict()["execution_path"]
+    assert execution_path["direct_execution"] is False
+    assert execution_path["runtime_owns_execution"] is True
+    assert execution_path["taskrunner_required"] is True
+    assert execution_path["step_executor_endpoint_only"] is True
 
 
 def test_runtime_native_scheduler_priority_order(tmp_path):
@@ -120,11 +124,17 @@ def test_runtime_native_scheduler_recovery_refs_propagate(tmp_path):
         resume_runner=lambda step, context: {"ok": True},
     )
 
-    assert result.status == "queued"
-    assert result.mainline_result["status"] == "failed"
-    assert result.mainline_result["final_result"]["error"] == (
-        "legacy_runtime_dispatcher_migration_required"
-    )
+    assert result.status == SCHEDULER_STATUS_COMPLETED
+    assert result.mainline_result["status"] == "completed"
+    assert result.mainline_result["final_result"]["ok"] is True
+    assert result.mainline_result["final_result"]["status"] == "completed"
+    assert result.authority_ref["decision"] == "allow"
+    execution_path = result.to_dict()["execution_path"]
+    assert execution_path["direct_execution"] is False
+    assert execution_path["runtime_owns_execution"] is True
+    assert execution_path["taskrunner_required"] is True
+    assert execution_path["step_executor_endpoint_only"] is True
+    assert mainline.health()["queue_tickets"] == 1
 
 
 def test_runtime_native_scheduler_persists_queue(tmp_path):

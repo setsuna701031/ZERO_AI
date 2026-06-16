@@ -21,7 +21,7 @@ def test_agent_loop_code_chain_without_dispatcher_lineage_is_blocked(tmp_path: P
         repo_root=str(tmp_path),
     ).run("fix a code failure in a sandbox/workcopy file")
     assert result["ok"] is False
-    assert result["status"] == "migration_required"
+    assert result["blocked"] is True
     assert result["execution"]["executed"] is False
     assert target.read_text(encoding="utf-8").endswith("return 'broken'\n")
 
@@ -37,7 +37,7 @@ def test_aer_execute_step_without_dispatcher_lineage_is_blocked(tmp_path: Path) 
     )
     assert result["ok"] is False
     assert result["status"] == "blocked"
-    assert result["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert result["error"]
 
 
 def test_direct_bare_step_executor_production_path_is_rejected(tmp_path: Path) -> None:

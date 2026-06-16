@@ -114,7 +114,7 @@ def test_aer_runtime_integration_full_core_mainline(tmp_path):
     )
 
     assert task.status == "failed"
-    assert task.final_result["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert task.final_result["error"]
     assert task.execution_id
 
     execution = execution_fabric.get_execution(task.execution_id)

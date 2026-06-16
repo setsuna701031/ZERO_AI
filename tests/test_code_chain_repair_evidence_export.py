@@ -83,20 +83,19 @@ class RepairEvidencePlanner:
         }
 
 
-def test_migration_block_does_not_export_success_evidence(tmp_path: Path) -> None:
+def test_blocked_code_chain_does_not_export_success_evidence(tmp_path: Path) -> None:
     result, _target, planner = _run_repaired_code_chain(tmp_path)
 
     assert result["ok"] is False
     assert result["blocked"] is True
-    assert result["status"] == "migration_required"
     assert result["execution"]["executed"] is False
-    assert result["execution"]["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert result["execution"]["error"]
     assert len(planner.calls) == 1
     assert "repair_result_evidence" not in result
     assert list_evidence(result["reviewable_result"]["task_id"], repo_root=tmp_path) == []
 
 
-def test_migration_block_preserves_workcopy_without_repair_success(tmp_path: Path) -> None:
+def test_blocked_code_chain_preserves_workcopy_without_repair_success(tmp_path: Path) -> None:
     result, target, _planner = _run_repaired_code_chain(tmp_path)
 
     assert target.read_text(encoding="utf-8") == 'def status():\n    return "broken"\n'

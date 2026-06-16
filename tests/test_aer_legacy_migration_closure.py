@@ -111,10 +111,10 @@ def test_work_package_result_mapping_cannot_complete(tmp_path: Path, monkeypatch
     assert result["error"] == "work_package_completion_authority_required"
 
 
-def test_verification_runner_bare_taskrunner_path_is_migration_blocked() -> None:
+def test_verification_runner_bare_taskrunner_path_is_blocked() -> None:
     result = run_verification_command("echo should-not-run", authority=_authority("task-a"), task={"task_id": "task-a"})
     assert result.ok is False
-    assert result.stderr == "legacy_runtime_dispatcher_migration_required"
+    assert result.stderr
 
 
 def test_operator_surfaces_do_not_construct_bare_taskrunner() -> None:

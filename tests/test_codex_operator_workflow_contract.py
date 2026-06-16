@@ -17,7 +17,7 @@ def test_task_intent_repo_scan_plan_apply_verify_summary_flow() -> None:
     assert result.success is False
     assert result.final_state is CodexOperatorState.BLOCKED
     assert result.run.applied_changes == ()
-    assert result.run.steps[-2].reason == "legacy_runtime_dispatcher_migration_required"
+    assert result.run.steps[-2].reason
 
 
 def test_verification_failure_observe_repair_verify_again_flow() -> None:

@@ -78,7 +78,7 @@ def test_create_task_records_forced_repo_edit_as_queued_execution_intent(
     assert task["authority_context"]["authority_role"] == "orchestration"
 
 
-def test_code_chain_bridge_without_dispatcher_lineage_is_blocked_with_scheduler_context(
+def test_code_chain_bridge_delegates_through_runtime_dispatcher_with_scheduler_context(
     tmp_path: Path,
 ) -> None:
     recorder = _RecordingStepExecutor()
@@ -97,17 +97,28 @@ def test_code_chain_bridge_without_dispatcher_lineage_is_blocked_with_scheduler_
         },
     )
 
-    assert result["ok"] is False
-    assert result["blocked"] is True
-    assert result["executed"] is False
-    assert result["finished"] is False
-    assert result["completed"] is False
-    assert result["error"] == "runtime_dispatcher_live_capability_required"
-    assert result["step"]["type"] == "code_chain_repair"
-    assert result["task"]["task_id"] == "task-code-chain-agentloop-bridge"
-    assert result["scheduler_authority_context"]["authority_layer"] == "scheduler"
-    assert result["scheduler_authority_context"]["execution_authority_granted"] is False
-    assert recorder.calls == []
+    assert result["ok"] is True
+    assert result.get("blocked") is not True
+    assert result["step_type"] == "code_chain_repair"
+
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    assert call["step"]["type"] == "code_chain_repair"
+    assert call["task"]["task_id"] == "task-code-chain-agentloop-bridge"
+
+    authority_context = call["context"]["authority_context"]
+    assert authority_context["authority_source"] == "runtime_dispatcher"
+    assert authority_context["authority_policy"] == "owner_issued_runtime_execution_capability"
+    assert authority_context["authority_propagation_required"] is True
+    assert authority_context["can_execute_privileged_step"] is True
+    assert authority_context["runtime_execution_capability"] is not None
+    assert authority_context["execution_authority"]["authority_source"] == "runtime_dispatcher"
+
+    scheduler_context = authority_context["received_authority"]
+    assert scheduler_context["authority_layer"] == "scheduler"
+    assert scheduler_context["authority_policy"] == "scheduler_orchestration_only"
+    assert scheduler_context["execution_authority_granted"] is False
+    assert scheduler_context["can_execute_privileged_step"] is False
 
 
 def test_missing_authority_blocks_before_mutation_handler_execution(

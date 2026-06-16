@@ -4,7 +4,7 @@ from core.runtime.runtime_native_mainline import RuntimeNativeMainline
 from core.runtime.runtime_native_scheduler import RuntimeNativeScheduler
 
 
-def test_runtime_native_scheduler_migration_seal(tmp_path):
+def test_runtime_native_scheduler_dispatch_authority_seal(tmp_path):
     mainline = RuntimeNativeMainline.with_workspace(
         tmp_path / "mainline",
         config={
@@ -51,15 +51,20 @@ def test_runtime_native_scheduler_migration_seal(tmp_path):
         resume_runner=lambda step, context: {"ok": True, "name": step["name"]},
     )
 
-    assert result.status == "queued"
+    assert result.status == "completed"
     assert result.task_id == "scheduler-seal-task"
-    assert result.mainline_result["status"] == "failed"
-    assert result.mainline_result["final_result"]["error"] == (
-        "legacy_runtime_dispatcher_migration_required"
-    )
+    assert result.mainline_result["status"] == "completed"
+    assert result.mainline_result["final_result"]["ok"] is True
+    assert result.mainline_result["final_result"]["status"] == "completed"
+    assert result.authority_ref["decision"] == "allow"
+    execution_path = result.to_dict()["execution_path"]
+    assert execution_path["direct_execution"] is False
+    assert execution_path["runtime_owns_execution"] is True
+    assert execution_path["taskrunner_required"] is True
+    assert execution_path["step_executor_endpoint_only"] is True
 
     health = scheduler.health()
-    assert health["counts"]["queued"] == 1
+    assert health["counts"]["completed"] == 1
 
     mainline_health = mainline.health()
     assert mainline_health["queue_tickets"] == 1

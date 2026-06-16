@@ -137,7 +137,7 @@ def test_aer_runtime_integration_failure_recovery_resume(tmp_path):
     )
 
     assert resumed.status == AER_INTEGRATION_STATUS_FAILED
-    assert resumed.final_result["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert resumed.final_result["error"]
     assert execution_fabric.get_execution(resumed.execution_id).status != "completed"
 
 

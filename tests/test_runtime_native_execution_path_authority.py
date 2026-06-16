@@ -146,7 +146,7 @@ def test_no_runtime_native_module_directly_executes_steps_or_constructs_executio
     assert violations == []
 
 
-def test_aer_runtime_execution_boundary_requires_runtime_dispatcher_migration() -> None:
+def test_aer_runtime_execution_boundary_uses_runtime_dispatcher_handoff() -> None:
     path = REPO_ROOT / "core" / "runtime" / "aer_runtime_integration.py"
     calls = _method_calls(path, "_execute_step", "run_task")
     constructors = _method_calls(path, "_execute_step", "TaskRunner")
@@ -154,5 +154,5 @@ def test_aer_runtime_execution_boundary_requires_runtime_dispatcher_migration() 
 
     assert calls == []
     assert constructors == []
-    assert "legacy_runtime_dispatcher_migration_required" in source
     assert '"runtime_dispatcher_required": True' in source
+    assert '"runtime_dispatcher_handoff": True' in source
