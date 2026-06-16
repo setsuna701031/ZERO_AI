@@ -45,7 +45,17 @@ def test_resume_from_failed_step_does_not_rerun_completed_step(tmp_path: Path) -
 
     assert result["ok"] is False
     assert result["status"] == "blocked"
-    assert executor.calls == ["first", "second", "second", "third"]
+    assert result["deviation"]["observed"]["error"]["type"] == "execution_authority_denied"
+    assert result["deviation"]["observed"]["executed"] is False
+    assert executor.calls == []
+    state = result["result"]["runtime_state"]
+    assert state["status"] == "blocked"
+    assert [record["step_index"] for record in state["execution_log"]] == [0, 0, 0]
+    assert all(record["result"]["executed"] is False for record in state["execution_log"])
+    assert state.get("runtime_execution_capability") is None
+    assert state.get("completion_authority") is None
+    assert state.get("task_completion_authority") is None
+    assert state.get("goal_completion_attestation") is None
 
 
 def test_adaptive_loop_stops_at_retry_limit(tmp_path: Path) -> None:
@@ -62,5 +72,14 @@ def test_adaptive_loop_stops_at_retry_limit(tmp_path: Path) -> None:
     result = AdaptiveRuntimeResume(max_cycles=20).run(task_runner=runner, task=task)
 
     assert result["status"] == "blocked"
-    assert result["decision"]["reason"] == "retry_limit_exhausted"
-    assert len(executor.calls) == 3
+    assert result["decision"]["reason"] == "replan_limit_exhausted"
+    assert result["deviation"]["observed"]["error"]["type"] == "execution_authority_denied"
+    assert result["deviation"]["observed"]["executed"] is False
+    assert executor.calls == []
+    state = result["result"]["runtime_state"]
+    assert state["status"] == "blocked"
+    assert all(record["result"]["executed"] is False for record in state["execution_log"])
+    assert state.get("runtime_execution_capability") is None
+    assert state.get("completion_authority") is None
+    assert state.get("task_completion_authority") is None
+    assert state.get("goal_completion_attestation") is None

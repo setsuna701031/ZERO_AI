@@ -1975,16 +1975,39 @@ def test_boundary_terminal_repair_task_does_not_duplicate_execution_log_after_re
         )
 
         results = _run_until_terminal(runner, task_factory, max_ticks=12)
-        state_after_finished = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
-        log_len_after_finished = len(state_after_finished.get("execution_log", []))
+        state_after_denial = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+        execution_log_after_denial = state_after_denial.get("execution_log", [])
+        assert isinstance(execution_log_after_denial, list)
+        log_len_after_denial = len(execution_log_after_denial)
 
         rerun_result = runner.run_task(task_factory(), current_tick=99)
         state_after_rerun = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
+        execution_log_after_rerun = state_after_rerun.get("execution_log", [])
+        assert isinstance(execution_log_after_rerun, list)
 
-        assert results[-1]["status"] == "finished"
-        assert rerun_result["status"] == "finished"
-        assert len(state_after_rerun.get("execution_log", [])) == log_len_after_finished
-        assert state_after_rerun["status"] == "finished"
+        assert results[-1]["status"] == "retrying"
+        assert results[-1]["error"]["type"] == "execution_authority_denied"
+        assert rerun_result["status"] == "retrying"
+        assert rerun_result["error"]["type"] == "execution_authority_denied"
+
+        assert state_after_denial["status"] in {"retrying", "blocked", "denied"}
+        assert state_after_rerun["status"] in {"retrying", "blocked", "denied"}
+        assert log_len_after_denial == len(results)
+        assert execution_log_after_rerun[:log_len_after_denial] == execution_log_after_denial
+        assert len(execution_log_after_rerun) == log_len_after_denial + 1
+        assert execution_log_after_rerun[-1]["tick"] == 99
+        assert all(item["result"]["executed"] is False for item in execution_log_after_rerun)
+
+        assert all(result["status"] not in {"finished", "completed"} for result in results)
+        assert rerun_result["status"] not in {"finished", "completed"}
+        assert state_after_denial.get("completion_authority") is None
+        assert state_after_rerun.get("completion_authority") is None
+        assert state_after_denial.get("task_completion_authority") is None
+        assert state_after_rerun.get("task_completion_authority") is None
+        assert state_after_denial.get("goal_completion_attestation") is None
+        assert state_after_rerun.get("goal_completion_attestation") is None
+        assert state_after_denial.get("runtime_execution_capability") is None
+        assert state_after_rerun.get("runtime_execution_capability") is None
     finally:
         if original_exists:
             probe.write_text(original_text or "", encoding="utf-8")

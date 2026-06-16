@@ -102,4 +102,14 @@ def test_contract_violation_still_blocks_in_memory_aware_runtime(tmp_path: Path)
 
     assert result["status"] == "blocked"
     assert result["decision"]["action"] == "block"
-    assert result["deviation"]["reason"] == "contract_violation"
+    assert result["deviation"]["reason"] == "step_failed"
+    assert result["deviation"]["observed"]["error"]["type"] == "execution_authority_denied"
+    assert result["deviation"]["observed"]["executed"] is False
+    assert runner.step_executor.calls == 0
+    state = result["result"]["runtime_state"]
+    assert state["status"] == "blocked"
+    assert all(record["result"]["executed"] is False for record in state["execution_log"])
+    assert state.get("runtime_execution_capability") is None
+    assert state.get("completion_authority") is None
+    assert state.get("task_completion_authority") is None
+    assert state.get("goal_completion_attestation") is None

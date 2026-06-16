@@ -160,21 +160,61 @@ def test_aer_multifile_engineering_workflow_read_write_verify_artifact(tmp_path:
         "Use planner runtime dispatch for Persistent Autonomous Engineering Runtime multi-file engineering workflow"
     )
 
-    assert result["ok"] is False
+    assert result["ok"] is True
     assert result["mode"] == "planner_step_executor_bridge"
     assert result["agent_loop_planner_step_executor_bridge"] is True
     assert len(planner.calls) == 1
 
     dispatch = result["planner_runtime_dispatch"]
     orchestrator = result["persistent_runtime_orchestrator"]
+    multi = orchestrator["multi_cycle_engineering_loop"]
+    runtime = multi["cycle_results"][0]["runtime"]
 
-    assert dispatch["ok"] is False
-    assert dispatch["status"] != "finished"
-    assert orchestrator["ok"] is False
-    assert orchestrator["status"] != "finished"
-    assert not fixed_a.exists()
-    assert not fixed_b.exists()
-    assert not summary.exists()
+    assert dispatch["ok"] is True
+    assert dispatch["status"] == "dispatched"
+    assert orchestrator["ok"] is True
+    assert orchestrator["status"] == "finished"
+    assert multi["executed_group_count"] == 8
+    assert runtime["executed_group_count"] == 8
+    assert runtime["plan_group_count"] == 8
+    assert runtime["failure_count"] == 0
+    assert runtime["recoverable"] is False
+
+    checkpoints = _checkpoint_results(runtime)
+    assert len(checkpoints) == 8
+    step_results = [checkpoint["result"]["step_executor_result"] for checkpoint in checkpoints]
+    assert all(step_result["ok"] is True for step_result in step_results)
+    assert all(step_result["execution_path"]["runtime_owns_execution"] is True for step_result in step_results)
+    assert all(step_result["execution_path"]["taskrunner_required"] is True for step_result in step_results)
+    assert all(step_result["execution_path"]["step_executor_endpoint_only"] is True for step_result in step_results)
+
+    authority_contexts = [
+        step_result["input"]["context"]["authority_context"]
+        for step_result in step_results
+    ]
+    assert all(context["authority_source"] == "runtime_dispatcher" for context in authority_contexts)
+    assert all(context["authority_policy"] == "owner_issued_runtime_execution_capability" for context in authority_contexts)
+    assert all(context["authority_propagation_required"] is True for context in authority_contexts)
+    assert all(context["can_execute_privileged_step"] is True for context in authority_contexts)
+    assert all("RuntimeExecutionCapability(" in str(context["runtime_execution_capability"]) for context in authority_contexts)
+    execution_authorities = [
+        step_result["input"]["context"]["execution_authority"]
+        for step_result in step_results
+    ]
+    assert all(authority["authority_source"] == "runtime_dispatcher" for authority in execution_authorities)
+    assert all(authority["authority_status"] == "allowed" for authority in execution_authorities)
+    assert all(step_result.get("error") is None for step_result in step_results)
+    assert all(step_result.get("task_completion_authority") is None for step_result in step_results)
+
+    assert fixed_a.exists()
+    assert fixed_b.exists()
+    assert summary.exists()
+    assert _load_module_namespace(fixed_a)["add"](2, 3) == 5
+    assert _load_module_namespace(fixed_b)["multiply"](2, 3) == 6
+    summary_text = summary.read_text(encoding="utf-8")
+    assert "fixed_module_a.py" in summary_text
+    assert "fixed_module_b.py" in summary_text
+    assert "Planner -> Runtime -> StepExecutor -> ToolRegistry" in summary_text
 
 
 def test_aer_multifile_engineering_workflow_write_failure_recovers(tmp_path: Path) -> None:

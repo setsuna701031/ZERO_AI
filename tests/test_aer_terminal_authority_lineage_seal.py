@@ -145,7 +145,7 @@ def test_work_package_scheduler_accepts_live_dispatcher_authority(tmp_path: Path
     assert scheduler.run("package-a", completion_authority=authority)["status"] == STATUS_COMPLETED
 
 
-def test_agent_loop_denied_execution_does_not_report_finished(tmp_path: Path) -> None:
+def test_agent_loop_dispatcher_lineage_reports_real_finished(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     shared = workspace / "shared"
     shared.mkdir(parents=True)
@@ -160,6 +160,19 @@ def test_agent_loop_denied_execution_does_not_report_finished(tmp_path: Path) ->
         repo_root=str(tmp_path),
     )
     result = loop.run("Use planner runtime dispatch for Persistent Autonomous Engineering Runtime multi-file engineering workflow")
+    dispatch = result["planner_runtime_dispatch"]
     orchestrator = result["persistent_runtime_orchestrator"]
-    assert orchestrator["ok"] is False
-    assert orchestrator["status"] != "finished"
+    multi = orchestrator["multi_cycle_engineering_loop"]
+    runtime = multi["cycle_results"][0]["runtime"]
+
+    assert result["ok"] is True
+    assert dispatch["ok"] is True
+    assert dispatch["status"] == "dispatched"
+    assert orchestrator["ok"] is True
+    assert orchestrator["status"] == "finished"
+    assert multi["executed_group_count"] == 8
+    assert runtime["executed_group_count"] == 8
+    assert runtime["failure_count"] == 0
+    assert (shared / "fixed_module_a.py").exists()
+    assert (shared / "fixed_module_b.py").exists()
+    assert (shared / "engineering_multifile_summary.md").exists()

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from core.agent.agent_loop import AgentLoop
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.step_executor import StepExecutor
 from core.tools.tool_registry import ToolRegistry
 
@@ -81,7 +82,7 @@ def test_planner_runtime_dispatch_reaches_real_tool_registry_read_file(tmp_path:
 
     result = loop.run("Use planner runtime dispatch for Persistent Autonomous Engineering Runtime planner tool registry bridge")
 
-    assert result["ok"] is False
+    assert result["ok"] is True
     assert result["mode"] == "planner_step_executor_bridge"
     assert result["agent_loop_planner_step_executor_bridge"] is True
     assert len(planner.calls) == 1
@@ -89,9 +90,30 @@ def test_planner_runtime_dispatch_reaches_real_tool_registry_read_file(tmp_path:
     dispatch = result["planner_runtime_dispatch"]
     orchestrator = result["persistent_runtime_orchestrator"]
 
-    assert dispatch["ok"] is False
-    assert orchestrator["ok"] is False
-    assert orchestrator["status"] != "finished"
+    assert callable(RuntimeDispatcher.dispatch)
+    assert dispatch["ok"] is True
+    assert dispatch["status"] == "dispatched"
+    assert orchestrator["ok"] is True
+    assert orchestrator["status"] == "finished"
+
+    runtime = orchestrator["multi_cycle_engineering_loop"]["cycle_results"][0]["runtime"]
+    checkpoint_result = runtime["latest_checkpoint"]["result"]
+    step_result = checkpoint_result["step_executor_result"]
+    authority_context = step_result["input"]["context"]["authority_context"]
+    execution_path = step_result["execution_path"]
+
+    assert step_result["ok"] is True
+    assert step_result["tool"] == "read_file"
+    assert step_result["output"]["content"] == "ZERO ToolRegistry bridge smoke\n"
+    assert execution_path["runtime_owns_execution"] is True
+    assert execution_path["taskrunner_required"] is True
+    assert execution_path["step_executor_endpoint_only"] is True
+    assert authority_context["authority_source"] == "runtime_dispatcher"
+    assert authority_context["authority_policy"] == "owner_issued_runtime_execution_capability"
+    assert "RuntimeExecutionCapability(" in str(authority_context["runtime_execution_capability"])
+    assert "delegated=True" in str(authority_context["runtime_execution_capability"])
+    assert _nested_find_text(result, "runtime_dispatcher")
+    assert _nested_find_text(result, "owner_issued_runtime_execution_capability")
 
     # The content itself may be omitted from compact public summaries depending
     # on the file tool implementation.  The source file remains the ground truth

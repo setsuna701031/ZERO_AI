@@ -55,12 +55,30 @@ def test_controlled_mutation_probe_returns_runtime_owned_execution_path(tmp_path
         target_path="workspace/shared/target.py",
     )
 
-    assert result["ok"] is False
-    assert result.get("finished") is not True
-    assert result.get("completed") is not True
+    assert result["ok"] is True
+    assert result["mutation_executed"] is False
+    assert result["mutation_probe_executed"] is True
+    assert result["requires_review_before_real_source_edit"] is True
     assert not (tmp_path / "workspace" / "shared" / "target.py").exists()
+    proof_artifact = Path(result["proof_artifact_path"])
+    assert proof_artifact.exists()
+    assert "mutation_executed\": false" in proof_artifact.read_text(encoding="utf-8")
+
     path = result["execution_path"]
     assert path["direct_execution"] is False
     assert path["runtime_owns_execution"] is True
     assert path["taskrunner_required"] is True
     assert path["step_executor_endpoint_only"] is True
+
+    step_result = result["step_result"]
+    transaction = step_result["runtime_transaction"]
+    authority_decision = step_result["runtime_transaction"]["approval_result"]
+    pre_execution_authority = step_result["runtime_transaction"]["authority_source"]
+
+    assert step_result["ok"] is True
+    assert step_result["execution_path"]["runtime_owns_execution"] is True
+    assert transaction["authority_source"] == "runtime_dispatcher"
+    assert transaction["state"] == "audited"
+    assert transaction["failure_result"] == {}
+    assert authority_decision["authority_source"] == "runtime_dispatcher"
+    assert pre_execution_authority == "runtime_dispatcher"
