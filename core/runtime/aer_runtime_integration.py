@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import copy
 import hashlib
@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 
 
@@ -236,6 +236,7 @@ class AERRuntimeIntegration:
         transaction_fabric: Any = None,
         ownership_fabric: Any = None,
         supervisor_bridge: Any = None,
+        runtime_dispatcher: Any = None,
         journal: Any = None,
         audit: Any = None,
     ) -> None:
@@ -250,6 +251,7 @@ class AERRuntimeIntegration:
         self.transaction_fabric = transaction_fabric
         self.ownership_fabric = ownership_fabric
         self.supervisor_bridge = supervisor_bridge
+        self.runtime_dispatcher = runtime_dispatcher
         self.journal = journal
         self.audit = audit
         self._components: dict[str, AERRuntimeComponentRef] = {}
@@ -545,25 +547,127 @@ class AERRuntimeIntegration:
         if not continuation_id:
             raise AERRuntimeIntegrationRejected("task_has_no_continuation_ref")
 
+        continuation_steps = self._extract_continuation_steps(task)
+        if not continuation_steps:
+            updated = AERRuntimeTask.from_dict(
+                {
+                    **task.to_dict(),
+                    "status": AER_INTEGRATION_STATUS_COMPLETED,
+                    "final_result": {
+                        "ok": True,
+                        "status": "completed",
+                        "execution_id": task.execution_id,
+                        "continuation_id": continuation_id,
+                        "message": "aer continuation had no remaining steps",
+                    },
+                    "updated_at": utc_timestamp(),
+                }
+            )
+            self._tasks[task_id] = updated
+            self._append_event(
+                AER_EVENT_TASK_COMPLETED,
+                task_id=task.task_id,
+                execution_id=task.execution_id,
+                payload={"task": updated.to_dict(), "continuation_id": continuation_id},
+            )
+            self.save()
+            return copy.deepcopy(updated)
+
+        results: list[dict[str, Any]] = []
+        failure_result: dict[str, Any] = {}
+        for offset, step in enumerate(continuation_steps, start=1):
+            result = self._execute_step(
+                task=task,
+                step=step,
+                step_index=offset,
+                step_runner=step_runner,
+                execution_phase="resume",
+            )
+            results.append(copy.deepcopy(result))
+            if self.execution_fabric is not None and task.execution_id:
+                record_step_result = getattr(self.execution_fabric, "record_step_result", None)
+                if callable(record_step_result):
+                    record_step_result(
+                        task.execution_id,
+                        step_index=offset,
+                        step=step,
+                        result=result,
+                        state_snapshot={
+                            "task_id": task.task_id,
+                            "continuation_id": continuation_id,
+                            "step_index": offset,
+                            "steps_total": len(continuation_steps),
+                        },
+                    )
+            self._append_event(
+                AER_EVENT_STEP_EXECUTED,
+                task_id=task.task_id,
+                execution_id=task.execution_id,
+                payload={
+                    "step": copy.deepcopy(step),
+                    "result": copy.deepcopy(result),
+                    "step_index": offset,
+                    "continuation_id": continuation_id,
+                    "execution_phase": "resume",
+                },
+            )
+            if bool(result.get("failed", False)) or not bool(result.get("ok", True)):
+                failure_result = result
+                break
+
+        if failure_result:
+            updated = AERRuntimeTask.from_dict(
+                {
+                    **task.to_dict(),
+                    "status": AER_INTEGRATION_STATUS_FAILED,
+                    "final_result": copy.deepcopy(failure_result),
+                    "updated_at": utc_timestamp(),
+                }
+            )
+            self._tasks[task_id] = updated
+            self._append_event(
+                AER_EVENT_FAILURE_DETECTED,
+                task_id=task.task_id,
+                execution_id=task.execution_id,
+                payload={
+                    "task": updated.to_dict(),
+                    "failure": failure_result,
+                    "continuation_id": continuation_id,
+                },
+            )
+            self.save()
+            return copy.deepcopy(updated)
+
+        final_result = {
+            "ok": True,
+            "status": "completed",
+            "execution_id": task.execution_id,
+            "continuation_id": continuation_id,
+            "results": results,
+            "execution_path": self._aer_runtime_dispatch_path(phase="resume"),
+        }
+        if self.execution_fabric is not None and task.execution_id:
+            complete_execution = getattr(self.execution_fabric, "complete_execution", None)
+            if callable(complete_execution):
+                try:
+                    complete_execution(task.execution_id, result=final_result)
+                except TypeError:
+                    complete_execution(task.execution_id, final_result)
+
         updated = AERRuntimeTask.from_dict(
             {
                 **task.to_dict(),
-                "status": AER_INTEGRATION_STATUS_FAILED,
-                "final_result": {
-                    "ok": False,
-                    "execution_id": task.execution_id,
-                    "execution_status": "blocked",
-                    "error": "legacy_runtime_dispatcher_migration_required",
-                },
+                "status": AER_INTEGRATION_STATUS_COMPLETED,
+                "final_result": final_result,
                 "updated_at": utc_timestamp(),
             }
         )
         self._tasks[task_id] = updated
         self._append_event(
-            AER_EVENT_FAILURE_DETECTED,
+            AER_EVENT_TASK_COMPLETED,
             task_id=task.task_id,
             execution_id=task.execution_id,
-            payload={"task": updated.to_dict(), "reason": "legacy_runtime_dispatcher_migration_required"},
+            payload={"task": updated.to_dict(), "continuation_id": continuation_id},
         )
         self.save()
         return copy.deepcopy(updated)
@@ -734,18 +838,174 @@ class AERRuntimeIntegration:
         step: dict[str, Any],
         step_index: int,
         step_runner: StepRunnerFn | None,
+        execution_phase: str = "execute",
     ) -> dict[str, Any]:
+        dispatcher = self._runtime_dispatcher_endpoint()
+        if dispatcher is None:
+            return {
+                "ok": False,
+                "failed": True,
+                "status": "blocked",
+                "error": "legacy_runtime_dispatcher_migration_required",
+                "execution_path": {
+                    "authority_path": "AERRuntimeIntegration -> RuntimeDispatcher migration required",
+                    "direct_execution": False,
+                    "runtime_dispatcher_required": True,
+                    "legacy_migration_required": True,
+                },
+            }
+
+        boundary_task = self._build_runtime_dispatch_boundary_task(
+            task=task,
+            step=step,
+            step_index=step_index,
+            execution_phase=execution_phase,
+        )
+        try:
+            result = dispatcher.run_scheduler_boundary(boundary_task, current_tick=0)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "failed": True,
+                "status": "failed",
+                "error": f"aer_runtime_dispatcher_handoff_failed:{type(exc).__name__}:{exc}",
+                "execution_path": self._aer_runtime_dispatch_path(phase=execution_phase),
+            }
+        return self._normalize_runtime_dispatch_result(
+            result,
+            task=task,
+            step=step,
+            step_index=step_index,
+            execution_phase=execution_phase,
+        )
+
+    def _runtime_dispatcher_endpoint(self) -> Any:
+        dispatcher = self.runtime_dispatcher
+        if dispatcher is None:
+            return None
+        run_scheduler_boundary = getattr(dispatcher, "run_scheduler_boundary", None)
+        return dispatcher if callable(run_scheduler_boundary) else None
+
+    def _build_runtime_dispatch_boundary_task(
+        self,
+        *,
+        task: AERRuntimeTask,
+        step: dict[str, Any],
+        step_index: int,
+        execution_phase: str,
+    ) -> dict[str, Any]:
+        boundary_id = f"{task.task_id}__aer_{execution_phase}_step_{step_index}"
+        boundary_step = copy.deepcopy(step) if isinstance(step, dict) else {}
+        boundary_step.setdefault("id", f"{boundary_id}:step")
+        boundary_step.setdefault("step_id", f"{boundary_id}:step")
         return {
-            "ok": False,
-            "failed": True,
-            "status": "blocked",
-            "error": "legacy_runtime_dispatcher_migration_required",
-            "execution_path": {
-                "authority_path": "AERRuntimeIntegration -> RuntimeDispatcher migration required",
-                "direct_execution": False,
-                "runtime_dispatcher_required": True,
-                "legacy_migration_required": True,
+            "task_id": boundary_id,
+            "task_name": boundary_id,
+            "goal": task.goal,
+            "status": "queued",
+            "steps": [boundary_step],
+            "current_step_index": 0,
+            "results": [],
+            "step_results": [],
+            "execution_log": [],
+            "max_auto_ticks": 1,
+            "package_id": f"aer:{task.task_id}",
+            "session_id": task.source_session_id,
+            "aer_task_id": task.task_id,
+            "aer_execution_id": task.execution_id,
+            "aer_runtime_id": task.runtime_id,
+            "aer_execution_phase": execution_phase,
+            "aer_step_index": step_index,
+            "parent_task_id": task.task_id,
+            "parent_identity": {
+                "aer_task_id": task.task_id,
+                "task_id": task.task_id,
+                "execution_id": task.execution_id,
+                "runtime_id": task.runtime_id,
+                "session_id": task.source_session_id,
             },
+            "authority_propagation_required": True,
+            "runtime_dispatcher_required": True,
+            "execution_path": self._aer_runtime_dispatch_path(phase=execution_phase),
+        }
+
+    def _normalize_runtime_dispatch_result(
+        self,
+        result: Any,
+        *,
+        task: AERRuntimeTask,
+        step: dict[str, Any],
+        step_index: int,
+        execution_phase: str,
+    ) -> dict[str, Any]:
+        payload = copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {"ok": False, "raw_result": copy.deepcopy(result)}
+        runtime_state = payload.get("runtime_state") if isinstance(payload.get("runtime_state"), Mapping) else {}
+        endpoint_result = runtime_state.get("final_result") if isinstance(runtime_state.get("final_result"), Mapping) else {}
+        if not endpoint_result:
+            endpoint_result = payload.get("final_result") if isinstance(payload.get("final_result"), Mapping) else {}
+        if not endpoint_result:
+            endpoint_result = payload
+
+        status = str(
+            endpoint_result.get("status")
+            or payload.get("status")
+            or runtime_state.get("status")
+            or ""
+        ).strip().lower()
+        ok = bool(endpoint_result.get("ok", payload.get("ok", False))) and status not in {"failed", "blocked", "cancelled"}
+        normalized = {
+            "ok": ok,
+            "failed": not ok,
+            "blocked": status == "blocked" or bool(endpoint_result.get("blocked", False)),
+            "status": status or ("completed" if ok else "failed"),
+            "step": copy.deepcopy(step),
+            "step_index": step_index,
+            "execution_phase": execution_phase,
+            "execution_path": self._aer_runtime_dispatch_path(phase=execution_phase),
+            "runtime_dispatcher_handoff": True,
+            "runtime_dispatcher_result": payload,
+            "endpoint_result": copy.deepcopy(endpoint_result),
+        }
+        error = endpoint_result.get("error") or payload.get("error") or runtime_state.get("last_error")
+        if error:
+            normalized["error"] = copy.deepcopy(error)
+        return normalized
+
+    def _extract_continuation_steps(self, task: AERRuntimeTask) -> list[dict[str, Any]]:
+        continuation = task.continuation_ref if isinstance(task.continuation_ref, dict) else {}
+        candidates = [
+            continuation.get("steps"),
+            continuation.get("remaining_steps"),
+            continuation.get("continuation_steps"),
+        ]
+        active_graph = continuation.get("active_graph") if isinstance(continuation.get("active_graph"), dict) else {}
+        candidates.append(active_graph.get("steps"))
+        for candidate in candidates:
+            if isinstance(candidate, list):
+                return [copy.deepcopy(item) for item in candidate if isinstance(item, dict)]
+
+        cursor = _safe_int(
+            continuation.get("cursor")
+            or continuation.get("start_index")
+            or continuation.get("next_step_index")
+            or continuation.get("resume_step_index"),
+            0,
+        )
+        if cursor < 0:
+            cursor = 0
+        return [copy.deepcopy(item) for item in task.steps[cursor:] if isinstance(item, dict)]
+
+    @staticmethod
+    def _aer_runtime_dispatch_path(*, phase: str) -> dict[str, Any]:
+        return {
+            "authority_path": "AERRuntimeIntegration -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
+            "execution_phase": phase,
+            "direct_execution": False,
+            "runtime_dispatcher_required": True,
+            "runtime_dispatcher_handoff": True,
+            "taskrunner_required": True,
+            "step_executor_endpoint_only": True,
+            "legacy_migration_required": False,
         }
 
     def _authorize_task_execution(self, task: AERRuntimeTask) -> None:

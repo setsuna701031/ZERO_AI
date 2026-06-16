@@ -226,6 +226,90 @@ class RuntimeNativeAgentLoopRejected(RuntimeError):
 PlannerFn = Callable[[str, dict[str, Any]], dict[str, Any]]
 StepRunnerFn = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
 
+class _RuntimeNativeAgentLoopDispatcherAdapter:
+    """RuntimeNativeAgentLoop-owned dispatcher endpoint for AER handoff tests/mainline.
+
+    The adapter gives AERRuntimeIntegration a RuntimeDispatcher-shaped boundary
+    without letting AER execute steps directly or construct its own runtime stack.
+    The active step runner is bound by RuntimeNativeAgentLoop.run_goal() for the
+    current run only.
+    """
+
+    def __init__(self) -> None:
+        self._step_runner: StepRunnerFn | None = None
+
+    def bind_step_runner(self, runner: StepRunnerFn | None) -> None:
+        self._step_runner = runner
+
+    def clear_step_runner(self) -> None:
+        self._step_runner = None
+
+    def run_scheduler_boundary(self, task: dict[str, Any], *, current_tick: int = 0) -> dict[str, Any]:
+        boundary_task = copy.deepcopy(task) if isinstance(task, dict) else {}
+        steps = boundary_task.get("steps") if isinstance(boundary_task.get("steps"), list) else []
+        step_index = _safe_int(boundary_task.get("current_step_index"), _safe_int(current_tick, 0))
+        if step_index < 0:
+            step_index = 0
+        step = copy.deepcopy(steps[step_index]) if step_index < len(steps) and isinstance(steps[step_index], dict) else {}
+
+        runner = self._step_runner
+        if runner is None:
+            endpoint_result = {
+                "ok": False,
+                "failed": True,
+                "blocked": True,
+                "status": "blocked",
+                "error": "runtime_native_step_runner_required",
+            }
+        else:
+            context = {
+                "task": copy.deepcopy(boundary_task),
+                "execution_id": str(boundary_task.get("aer_execution_id") or ""),
+                "runtime_native_dispatcher_adapter": True,
+                "runtime_dispatcher_handoff": True,
+                "authority_propagation_required": True,
+            }
+            result = runner(copy.deepcopy(step), context)
+            endpoint_result = result if isinstance(result, dict) else {"ok": True, "result": copy.deepcopy(result)}
+            endpoint_result = copy.deepcopy(endpoint_result)
+
+        failed = bool(endpoint_result.get("failed", False)) or not bool(endpoint_result.get("ok", True))
+        status = str(endpoint_result.get("status") or ("failed" if failed else "completed")).strip().lower()
+        if status in {"failed", "blocked", "cancelled"}:
+            failed = True
+        endpoint_result.setdefault("ok", not failed)
+        endpoint_result.setdefault("failed", failed)
+        endpoint_result["status"] = status
+        endpoint_result.setdefault("step", copy.deepcopy(step))
+        endpoint_result.setdefault("runtime_dispatcher_handoff", True)
+        endpoint_result.setdefault("runtime_native_dispatcher_adapter", True)
+
+        return {
+            "ok": not failed,
+            "status": status,
+            "runtime_state": {
+                "status": status,
+                "final_result": copy.deepcopy(endpoint_result),
+                "step_results": [copy.deepcopy(endpoint_result)],
+                "execution_trace": [
+                    {
+                        "step_index": step_index,
+                        "step": copy.deepcopy(step),
+                        "result": copy.deepcopy(endpoint_result),
+                        "runtime_dispatcher_handoff": True,
+                        "runtime_native_dispatcher_adapter": True,
+                    }
+                ],
+            },
+            "final_result": copy.deepcopy(endpoint_result),
+            "execution_path": {
+                "authority_path": "AERRuntimeIntegration -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
+                "runtime_dispatcher_handoff": True,
+                "runtime_native_dispatcher_adapter": True,
+                "direct_execution": False,
+            },
+        }
+
 
 class RuntimeNativeAgentLoop:
     """
@@ -250,6 +334,14 @@ class RuntimeNativeAgentLoop:
             raise RuntimeNativeAgentLoopRejected("aer_integration_required")
         self.storage_path = Path(storage_path) if storage_path is not None else None
         self.aer_integration = aer_integration
+        self._runtime_dispatcher_adapter = None
+        if getattr(self.aer_integration, "runtime_dispatcher", None) is None:
+            self._runtime_dispatcher_adapter = _RuntimeNativeAgentLoopDispatcherAdapter()
+            setattr(self.aer_integration, "runtime_dispatcher", self._runtime_dispatcher_adapter)
+        else:
+            dispatcher = getattr(self.aer_integration, "runtime_dispatcher", None)
+            if all(hasattr(dispatcher, name) for name in ("bind_step_runner", "clear_step_runner")):
+                self._runtime_dispatcher_adapter = dispatcher
         self.supervisor_bridge = supervisor_bridge
         self.ownership_fabric = ownership_fabric
         self.journal = journal
@@ -391,13 +483,18 @@ class RuntimeNativeAgentLoop:
             payload={"task": task_payload},
         )
 
-        ran = self.aer_integration.run_task(
-            task_payload["task_id"],
-            step_runner=self._cycle_runner(
-                loop_id=loop_id,
-                base_runner=step_runner,
-            ),
+        run_step_runner = self._cycle_runner(
+            loop_id=loop_id,
+            base_runner=step_runner,
         )
+        self._bind_runtime_dispatcher_runner(run_step_runner)
+        try:
+            ran = self.aer_integration.run_task(
+                task_payload["task_id"],
+                step_runner=run_step_runner,
+            )
+        finally:
+            self._clear_runtime_dispatcher_runner()
         ran_payload = ran.to_dict() if hasattr(ran, "to_dict") else copy.deepcopy(ran)
         loop = self._replace_loop(self.get_loop(loop_id), task=ran_payload)
 
@@ -430,13 +527,18 @@ class RuntimeNativeAgentLoop:
                 payload={"task": recovered_payload},
             )
 
-            resumed = self.aer_integration.resume_task(
-                recovered_payload["task_id"],
-                step_runner=self._cycle_runner(
-                    loop_id=loop_id,
-                    base_runner=resume_runner or step_runner,
-                ),
+            resume_step_runner = self._cycle_runner(
+                loop_id=loop_id,
+                base_runner=resume_runner or step_runner,
             )
+            self._bind_runtime_dispatcher_runner(resume_step_runner)
+            try:
+                resumed = self.aer_integration.resume_task(
+                    recovered_payload["task_id"],
+                    step_runner=resume_step_runner,
+                )
+            finally:
+                self._clear_runtime_dispatcher_runner()
             final_payload = resumed.to_dict() if hasattr(resumed, "to_dict") else copy.deepcopy(resumed)
         else:
             final_payload = ran_payload
@@ -537,6 +639,19 @@ class RuntimeNativeAgentLoop:
             reason="runtime_native_agent_loop_save",
             metadata={"runtime_native_agent_loop": True},
         )
+
+
+    def _bind_runtime_dispatcher_runner(self, runner: StepRunnerFn | None) -> None:
+        adapter = self._runtime_dispatcher_adapter
+        bind = getattr(adapter, "bind_step_runner", None)
+        if callable(bind):
+            bind(runner)
+
+    def _clear_runtime_dispatcher_runner(self) -> None:
+        adapter = self._runtime_dispatcher_adapter
+        clear = getattr(adapter, "clear_step_runner", None)
+        if callable(clear):
+            clear()
 
     def _cycle_runner(
         self,
