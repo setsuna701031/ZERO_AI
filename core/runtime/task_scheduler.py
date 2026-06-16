@@ -553,9 +553,10 @@ class TaskScheduler:
             "execution_path": {
                 "direct_execution": False,
                 "scheduler_owns_execution": False,
+                "runtime_dispatcher_required": True,
                 "taskrunner_required": True,
                 "step_executor_endpoint_only": True,
-                "authority_path": "Scheduler -> TaskRunner -> StepExecutor",
+                "authority_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             },
         }
 

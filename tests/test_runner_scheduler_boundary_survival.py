@@ -10,6 +10,7 @@ from core.runtime.runtime_recovery_executor import RuntimeRecoveryExecutor
 from core.runtime.runtime_replay_engine import RuntimeReplayEngine
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runtime import TaskRuntime
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 
 
 def _operator_stack():
@@ -92,6 +93,17 @@ def _task(tmp_path: Path, *, task_id: str, step_type: str) -> dict:
     }
 
 
+def _with_dispatch_capability(task: dict) -> dict:
+    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(
+        {
+            "task_id": task.get("task_id"),
+            "package_id": task.get("package_id", ""),
+            "session_id": task.get("session_id", ""),
+        }
+    )
+    return task
+
+
 def test_runtime_task_runner_preserves_operator_session_through_runtime_and_executor(tmp_path):
     from core.runtime.task_runner import TaskRunner
 
@@ -110,11 +122,11 @@ def test_runtime_task_runner_preserves_operator_session_through_runtime_and_exec
     step_executor.register_handler("runner_failure", _failure_handler)
     runner = TaskRunner(task_runtime=task_runtime, step_executor=step_executor)
 
-    first = runner.run_task_tick(task, current_tick=1)
+    first = runner.run_task_tick(_with_dispatch_capability(task), current_tick=1)
     assert first["ok"] is True
     assert first["runtime_state"]["operator_session_id"] == session_id
 
-    second = runner.run_task_tick(task, current_tick=2)
+    second = runner.run_task_tick(_with_dispatch_capability(task), current_tick=2)
     assert second["ok"] is False
     assert second["runtime_state"]["operator_session_id"] == session_id
 
@@ -202,7 +214,7 @@ def test_no_bridge_missing_session_and_scheduler_static_boundary_are_safe(tmp_pa
         task_runtime=TaskRuntime(workspace_root=str(tmp_path)),
         step_executor=step_executor,
     )
-    runner_result = runner.run_task_tick(task, current_tick=1)
+    runner_result = runner.run_task_tick(_with_dispatch_capability(task), current_tick=1)
     assert runner_result["ok"] is True
 
     scheduler = Scheduler(workspace_dir=str(tmp_path), step_executor=StepExecutor(workspace_root=str(tmp_path)))

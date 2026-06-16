@@ -9,13 +9,47 @@ from core.tasks.scheduler_core.repo_state_helpers import (
     list_repo_tasks,
     mark_repo_task_with_adapter,
 )
-from core.runtime.task_runner import TaskRunner
+from core.runtime.runtime_authority_seal import (
+    _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+    _TASK_RUNNER_ISSUER_TOKEN,
+    delegate_taskrunner_execution_capability,
+    issue_dispatch_execution_capability,
+    issue_task_completion_authority,
+    issue_terminal_execution_evidence,
+)
 
 
 def _completion_authority(task_id: str):
-    return TaskRunner().complete_task({"task_id": task_id, "steps": []})[
-        "task_completion_authority"
-    ]
+    package_id = "repo-state-package"
+    session_id = "repo-state-session"
+    step_id = f"{task_id}:terminal"
+    dispatch = issue_dispatch_execution_capability(
+        _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+    )
+    delegated = delegate_taskrunner_execution_capability(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        dispatch,
+        task_id=task_id,
+        step_id=step_id,
+    )
+    evidence = issue_terminal_execution_evidence(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        delegated,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+        step_id=step_id,
+    )
+    return issue_task_completion_authority(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+        evidence=evidence,
+    )
 
 
 class ListOnlyRepo:

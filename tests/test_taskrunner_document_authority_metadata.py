@@ -29,11 +29,13 @@ def test_document_pipeline_shared_write_does_not_synthesize_authority_metadata()
     )
 
     assert context.get("execution_authority_granted") is False
-    assert context.get("can_execute_privileged_step") is True
-    assert context.get("execution_authority", {}).get("descriptive_only") is True
+    assert context.get("can_execute_privileged_step") is False
+    assert context.get("execution_authority") == {}
+    assert context.get("authority_role") == "propagation"
+    assert context.get("authority_policy") == "canonical_runtime_dispatch_capability_required"
 
 
-def test_document_pipeline_shared_write_propagates_explicit_authority() -> None:
+def test_document_pipeline_shared_write_rejects_explicit_authority_without_live_capability() -> None:
     runner = TaskRunner()
     authority = {
         "task_id": "task_doc_authority_smoke",
@@ -59,10 +61,11 @@ def test_document_pipeline_shared_write_propagates_explicit_authority() -> None:
         upstream_context={},
     )
 
-    assert context["execution_authority"]["descriptive_only"] is True
-    assert context["received_authority"] == {}
-    assert context["authority_role"] == "canonical_delegation"
+    assert context["execution_authority"] == {}
+    assert context["authority_role"] == "propagation"
+    assert context["authority_policy"] == "canonical_runtime_dispatch_capability_required"
     assert context["execution_authority_granted"] is False
+    assert context["can_execute_privileged_step"] is False
 
 
 def test_non_document_write_does_not_get_bounded_authority_metadata() -> None:
@@ -80,4 +83,6 @@ def test_non_document_write_does_not_get_bounded_authority_metadata() -> None:
     )
 
     assert context.get("execution_authority_granted") is False
-    assert context.get("execution_authority", {}).get("descriptive_only") is True
+    assert context.get("can_execute_privileged_step") is False
+    assert context.get("execution_authority") == {}
+    assert context.get("authority_role") == "propagation"

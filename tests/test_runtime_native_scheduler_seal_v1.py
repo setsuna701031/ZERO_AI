@@ -51,15 +51,15 @@ def test_runtime_native_scheduler_migration_seal(tmp_path):
         resume_runner=lambda step, context: {"ok": True, "name": step["name"]},
     )
 
-    assert result.status == "completed"
+    assert result.status == "queued"
     assert result.task_id == "scheduler-seal-task"
-    assert result.mainline_result["status"] == "completed"
-    assert result.mainline_result["loop_record"]["task"]["continuation_ref"]["resume_step_index"] == 2
-    assert result.continuation_ref["resume_step_index"] == 2
-    assert result.recovery_ref["recovery_ticket"]["status"] == "completed"
+    assert result.mainline_result["status"] == "failed"
+    assert result.mainline_result["final_result"]["error"] == (
+        "legacy_runtime_dispatcher_migration_required"
+    )
 
     health = scheduler.health()
-    assert health["counts"]["completed"] == 1
+    assert health["counts"]["queued"] == 1
 
     mainline_health = mainline.health()
     assert mainline_health["queue_tickets"] == 1

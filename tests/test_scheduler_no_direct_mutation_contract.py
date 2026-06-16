@@ -196,6 +196,7 @@ def test_mutation_still_requires_step_executor_authority_validation(
 
 
 def test_taskrunner_authority_context_remains_pass_through(tmp_path: Path) -> None:
+    from core.runtime.runtime_dispatcher import RuntimeDispatcher
     from core.runtime.task_runner import TaskRunner
 
     runner = TaskRunner(step_executor=_RecordingStepExecutor(), debug=False)
@@ -207,7 +208,17 @@ def test_taskrunner_authority_context_remains_pass_through(tmp_path: Path) -> No
         }
     )
     context = runner._build_taskrunner_authority_context(
-        task={"task_id": "task-runner-pass-through", "authority_context": scheduler_context},
+        task={
+            "task_id": "task-runner-pass-through",
+            "authority_context": scheduler_context,
+            "runtime_execution_capability": RuntimeDispatcher._execution_capability(
+                {
+                    "task_id": "task-runner-pass-through",
+                    "package_id": "",
+                    "session_id": "",
+                }
+            ),
+        },
         state={},
         step={"type": "apply_patch"},
         upstream_context={},

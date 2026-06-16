@@ -226,11 +226,17 @@ def test_dispatcher_operator_and_cli_have_no_direct_step_executor_calls() -> Non
     ):
         source = (ROOT / relative).read_text(encoding="utf-8")
         tree = ast.parse(source)
-        assert "StepExecutor" not in source
         assert not [
             node
             for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"execute_step", "execute_steps"}
+            if isinstance(node, ast.Call) and (
+                (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "StepExecutor"
+                )
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"execute_step", "execute_steps"}
+                )
+            )
         ]

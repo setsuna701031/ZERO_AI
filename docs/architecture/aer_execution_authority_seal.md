@@ -12,16 +12,17 @@ The only formal execution chains are:
 AgentLoop -> AgentExecutionRuntime -> TaskRunner -> StepExecutor
 CodeChainControlledSelfEditBridge -> AgentExecutionRuntime -> TaskRunner -> StepExecutor
 ControlledMutationBridge -> AgentExecutionRuntime -> TaskRunner -> StepExecutor
-Scheduler -> TaskRunner -> StepExecutor
+Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor
 ```
 
 ## Ownership Contract
 
 - AgentLoop is orchestration/admission only.
 - AgentExecutionRuntime owns runtime execution authority.
+- RuntimeDispatcher is the required Scheduler execution handoff and live capability issuer.
 - TaskRunner is the required delegation boundary.
 - StepExecutor is the endpoint only.
-- Scheduler may wire TaskRunner/StepExecutor during initialization, but it must not directly execute steps.
+- Scheduler may wire dependencies during initialization, but RuntimeDispatcher is its only legal execution handoff and Scheduler must not directly execute steps.
 - Bridges must not own execution authority.
 
 ## Forbidden Paths

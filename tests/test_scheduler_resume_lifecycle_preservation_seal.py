@@ -186,4 +186,5 @@ def test_continuation_boundary_identity_changes_when_step_payload_changes(tmp_pa
 
     first_task = first.get("task", {})
     second_task = second.get("task", {})
-    assert first_task.get("task_id") != second_task.get("task_id")
+    assert first_task.get("task_id") == second_task.get("task_id") == "task-boundary"
+    assert first_task.get("scheduler_boundary_id") != second_task.get("scheduler_boundary_id")

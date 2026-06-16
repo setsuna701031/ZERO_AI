@@ -10251,9 +10251,8 @@ def _zero_v7336_is_repairable_failure(self, task: Dict[str, Any]) -> Tuple[bool,
 
 Scheduler._is_repairable_failure = _zero_v7336_is_repairable_failure
 
-# ZERO v7.3.37 - Scheduler create-task mutation bridge intent seal
 # Create-task compatibility paths must create execution intent only.  Actual
-# mutation remains behind Scheduler -> TaskRunner -> StepExecutor.
+# mutation remains behind Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor.
 _ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK = Scheduler._try_force_repo_edit_at_create_task
 _ZERO_V7337_ORIGINAL_SCHEDULER_CREATE_TASK_RECORD = Scheduler._create_task_record
 

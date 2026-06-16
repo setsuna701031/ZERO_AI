@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
+from core.runtime.runtime_authority_seal import is_dispatch_execution_capability
 from core.runtime.work_package_queue import RuntimePackageQueue, RuntimePackageQueueError
 from core.tasks.scheduler_runtime_contract import (
     SchedulerRuntimeContractError,
@@ -36,7 +37,7 @@ def test_scheduler_identity_contract_seal() -> None:
     contract = seal_scheduler_runtime_contract(
         _payload(),
         lifecycle_state="executing",
-        dispatch_path="Scheduler -> TaskRunner -> StepExecutor",
+        dispatch_path="Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
         require_package_identity=True,
         require_session_identity=True,
     )
@@ -60,7 +61,7 @@ def test_scheduler_authority_contract_rejects_missing_metadata() -> None:
         seal_scheduler_runtime_contract(
             payload,
             lifecycle_state="executing",
-            dispatch_path="Scheduler -> TaskRunner -> StepExecutor",
+            dispatch_path="Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             require_authority_metadata=True,
         )
 
@@ -107,6 +108,14 @@ def test_scheduler_boundary_preserves_previous_evidence_and_parent_identity(tmp_
     assert boundary["session_id"] == "session-seal"
     assert boundary["last_step_result"] == task["last_step_result"]
     assert boundary["scheduler_runtime_contract"]["lifecycle_state"] == "executing"
+    assert boundary["scheduler_runtime_contract"]["dispatch_path"] == (
+        "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor"
+    )
+    assert boundary["runtime_dispatcher_handoff"]["capability_issuer"] == "RuntimeDispatcher"
+    assert is_dispatch_execution_capability(
+        boundary["runtime_execution_capability"],
+        task_id="task-seal",
+    )
 
 
 def test_queue_direct_completion_is_illegal_before_executing(tmp_path: Path) -> None:

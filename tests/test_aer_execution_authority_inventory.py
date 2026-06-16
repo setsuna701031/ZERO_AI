@@ -118,7 +118,7 @@ def test_aer_execution_authority_document_exists() -> None:
         "AgentLoop -> AgentExecutionRuntime -> TaskRunner -> StepExecutor",
         "CodeChainControlledSelfEditBridge -> AgentExecutionRuntime -> TaskRunner -> StepExecutor",
         "ControlledMutationBridge -> AgentExecutionRuntime -> TaskRunner -> StepExecutor",
-        "Scheduler -> TaskRunner -> StepExecutor",
+        "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
         "direct_execution=False",
         "runtime_owns_execution=True",
         "taskrunner_required=True",

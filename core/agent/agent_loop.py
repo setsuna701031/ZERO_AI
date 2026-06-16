@@ -6926,7 +6926,7 @@ def _zero_v7337_agent_forced_repo_edit_intent_response(self, text: str) -> Dict[
         "agent_loop_mutation_bridge_intent": True,
         "authority_propagation_required": True,
     }
-    final_answer = "repo edit intent created; execution requires Scheduler -> TaskRunner -> StepExecutor"
+    final_answer = "repo edit intent created; execution requires Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor"
     execution = {
         "ok": True,
         "steps_executed": 0,
@@ -6975,7 +6975,7 @@ def _zero_v7337_agent_forced_repo_edit_intent_response(self, text: str) -> Dict[
                 "forced_route": True,
                 "execution_intent_only": True,
                 "mutation_executed": False,
-                "authority_path": "AgentLoop/CreateTask -> Scheduler -> TaskRunner -> StepExecutor",
+                "authority_path": "AgentLoop/CreateTask -> Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             },
             "forced_repo_edit": copy.deepcopy(forced),
         },

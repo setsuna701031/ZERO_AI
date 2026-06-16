@@ -6,6 +6,7 @@ from core.runtime.runtime_native_execution_dispatch import (
     DISPATCH_NODE_EXECUTION,
     DISPATCH_STATUS_BLOCKED,
     DISPATCH_STATUS_COMPLETED,
+    DISPATCH_STATUS_FAILED,
     RuntimeNativeExecutionDispatch,
 )
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
@@ -43,7 +44,10 @@ def test_runtime_native_dispatch_runs_goal(tmp_path):
         step_runner=lambda step, context: {"ok": True},
     )
 
-    assert result.status == DISPATCH_STATUS_COMPLETED
+    assert result.status == DISPATCH_STATUS_FAILED
+    assert result.mainline_result["final_result"]["error"] == (
+        "legacy_runtime_dispatcher_migration_required"
+    )
     assert result.execution_id
     assert result.nodes[0].node_type == DISPATCH_NODE_ENTRY
     assert any(node.node_type == DISPATCH_NODE_EXECUTION for node in result.nodes)
@@ -74,10 +78,10 @@ def test_runtime_native_dispatch_recovery_continuation_graph(tmp_path):
         current_tick=2,
     )
 
-    assert result.status == DISPATCH_STATUS_COMPLETED
-    assert result.continuation_ref["resume_step_index"] == 2
-    assert any(node.node_type == DISPATCH_NODE_CONTINUATION for node in result.nodes)
-    assert result.recovery_ref["recovery_ticket"]["status"] == "completed"
+    assert result.status == DISPATCH_STATUS_FAILED
+    assert result.mainline_result["final_result"]["error"] == (
+        "legacy_runtime_dispatcher_migration_required"
+    )
 
 
 def test_runtime_native_dispatch_blocks_authority_denied(tmp_path):
@@ -108,7 +112,10 @@ def test_runtime_native_dispatch_from_schedule_item(tmp_path):
         step_runner=lambda step, context: {"ok": True},
     )
 
-    assert result.status == DISPATCH_STATUS_COMPLETED
+    assert result.status == DISPATCH_STATUS_FAILED
+    assert result.mainline_result["final_result"]["error"] == (
+        "legacy_runtime_dispatcher_migration_required"
+    )
     assert result.schedule_id == item.schedule_id
     assert result.task_id == "scheduled-dispatch-task"
 

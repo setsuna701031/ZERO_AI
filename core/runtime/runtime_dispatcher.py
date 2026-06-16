@@ -15,6 +15,7 @@ from core.runtime.runtime_authority_seal import (
 from core.runtime.work_package_queue import (
     RuntimePackageQueue,
     RuntimePackageQueueError,
+    _transport_value,
     runtime_dispatch_contract_path,
 )
 from core.tasks.scheduler_runtime_contract import (
@@ -306,7 +307,8 @@ class RuntimeDispatcher:
             "dispatch_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             "live_capability_issued": True,
         }
-        return self.task_runner.run_task(task=boundary_task, current_tick=current_tick)
+        result = self.task_runner.run_task(task=boundary_task, current_tick=current_tick)
+        return _transport_value(result) if isinstance(result, Mapping) else result
 
     @staticmethod
     def _step_feedback(*, task: Mapping[str, Any], result: Any, tick: int) -> dict[str, Any]:

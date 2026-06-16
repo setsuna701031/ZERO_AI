@@ -70,6 +70,7 @@ def test_approved_non_repair_scheduler_task_completes_without_new_review(tmp_pat
 
 
 def test_taskrunner_propagates_authority_without_escalation(tmp_path: Path) -> None:
+    from core.runtime.runtime_dispatcher import RuntimeDispatcher
     from core.runtime.task_runner import TaskRunner
 
     scheduler_context = _make_scheduler(tmp_path)._build_scheduler_authority_context(
@@ -85,6 +86,13 @@ def test_taskrunner_propagates_authority_without_escalation(tmp_path: Path) -> N
         task={
             "task_id": "task-taskrunner-authority",
             "authority_context": scheduler_context,
+            "runtime_execution_capability": RuntimeDispatcher._execution_capability(
+                {
+                    "task_id": "task-taskrunner-authority",
+                    "package_id": "",
+                    "session_id": "",
+                }
+            ),
         },
         state={"current_step_index": 0},
         step={"type": "write_file"},

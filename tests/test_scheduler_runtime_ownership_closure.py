@@ -55,10 +55,12 @@ def test_scheduler_constructs_one_endpoint_and_one_delegation_boundary() -> None
     assert len([item for item in constructors if item.startswith("TaskRunner:__init__:")]) == 1
 
 
-def test_scheduler_runtime_boundary_uses_task_runner() -> None:
+def test_scheduler_runtime_boundary_uses_runtime_dispatcher_handoff() -> None:
     method_source = ast.get_source_segment(_source(), _method_node("_run_step_via_task_runner")) or ""
 
-    assert "runner.run_task" in method_source
+    assert "RuntimeDispatcher(" in method_source
+    assert "run_scheduler_boundary" in method_source
+    assert "runner.run_task" not in method_source
     assert "TaskRunner(" not in method_source
     assert "StepExecutor(" not in method_source
     assert ".execute_step(" not in method_source
@@ -68,8 +70,9 @@ def test_scheduler_runtime_boundary_uses_task_runner() -> None:
 def test_scheduler_execution_path_declares_delegation_boundary() -> None:
     source = _source()
 
-    assert '"authority_path": "Scheduler -> TaskRunner -> StepExecutor"' in source
+    assert '"authority_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor"' in source
     assert '"direct_execution": False' in source
     assert '"scheduler_owns_execution": False' in source
+    assert '"runtime_dispatcher_required": True' in source
     assert '"taskrunner_required": True' in source
     assert '"step_executor_endpoint_only": True' in source

@@ -35,9 +35,10 @@ def _owner(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> str:
 def _assert_path(path: dict[str, Any]) -> None:
     assert path["direct_execution"] is False
     assert path["scheduler_owns_execution"] is False
+    assert path["runtime_dispatcher_required"] is True
     assert path["taskrunner_required"] is True
     assert path["step_executor_endpoint_only"] is True
-    assert path["authority_path"] == "Scheduler -> TaskRunner -> StepExecutor"
+    assert path["authority_path"] == "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor"
 
 
 def test_scheduler_formal_path_has_no_direct_step_executor_calls() -> None:
@@ -90,7 +91,7 @@ def test_scheduler_side_effect_reaches_endpoint_through_taskrunner(tmp_path: Pat
     _assert_path(result["execution_path"])
 
 
-def test_scheduler_payload_exposes_taskrunner_authority_path(tmp_path: Path) -> None:
+def test_scheduler_payload_exposes_runtime_dispatcher_authority_path(tmp_path: Path) -> None:
     scheduler = Scheduler(workspace_dir=str(tmp_path), step_executor=_RecordingEndpoint())
 
     result = scheduler.run_one_step({"task_id": "terminal", "status": "finished", "steps": []})

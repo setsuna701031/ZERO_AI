@@ -64,7 +64,7 @@ def build_forced_repo_edit_intent(goal: str, *, queued_status: str = "queued") -
                 "forced_route": True,
                 "execution_intent_only": True,
                 "mutation_executed": False,
-                "authority_path": "AgentLoop/CreateTask -> Scheduler -> TaskRunner -> StepExecutor",
+                "authority_path": "AgentLoop/CreateTask -> Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             },
             "forced_repo_edit": copy.deepcopy(forced),
         },

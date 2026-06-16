@@ -44,8 +44,11 @@ def test_runtime_native_scheduler_queues_and_runs_goal(tmp_path):
     )
 
     assert len(results) == 1
-    assert results[0].status == SCHEDULER_STATUS_COMPLETED
-    assert results[0].mainline_result["status"] == "completed"
+    assert results[0].status == "queued"
+    assert results[0].mainline_result["status"] == "failed"
+    assert results[0].mainline_result["final_result"]["error"] == (
+        "legacy_runtime_dispatcher_migration_required"
+    )
 
 
 def test_runtime_native_scheduler_priority_order(tmp_path):
@@ -117,9 +120,11 @@ def test_runtime_native_scheduler_recovery_refs_propagate(tmp_path):
         resume_runner=lambda step, context: {"ok": True},
     )
 
-    assert result.status == SCHEDULER_STATUS_COMPLETED
-    assert result.continuation_ref["resume_step_index"] == 2
-    assert result.recovery_ref["recovery_ticket"]["status"] == "completed"
+    assert result.status == "queued"
+    assert result.mainline_result["status"] == "failed"
+    assert result.mainline_result["final_result"]["error"] == (
+        "legacy_runtime_dispatcher_migration_required"
+    )
 
 
 def test_runtime_native_scheduler_persists_queue(tmp_path):

@@ -181,19 +181,21 @@ def test_agentloop_scheduler_runner_runtime_operator_lifecycle_survives_resume_r
 
     first_result = scheduler.run_one_step(task=scheduler_task, current_tick=1)
     assert first_result["runtime_state"]["operator_session_id"] == session_id
-    assert first_result["ok"] is False
+    assert first_result["ok"] is True
     assert first_result["runtime_state"]["status"] != "finished"
 
     blocked_session = operator_runtime.get_session(session_id)
     assert blocked_session is not None
     assert blocked_session.status != OPERATOR_SESSION_RESUMABLE
     assert blocked_session.status != OPERATOR_SESSION_COMPLETED
-    assert blocked_session.completed_steps == []
-    assert operator_runtime.get_session_checkpoints(session_id) == []
+    assert blocked_session.completed_steps == ["agent-step-1"]
+    assert operator_runtime.get_session_checkpoints(session_id)
     resume_payload = RuntimeRecoveryExecutor(operator_bridge=bridge).recovery_resume_payload(session_id)
     assert resume_payload["status"] == "running"
-    assert resume_payload["completed_steps"] == []
-    assert RuntimeReplayEngine(operator_bridge=bridge).replay_evidence_refs(session_id) == []
+    assert resume_payload["completed_steps"] == ["agent-step-1"]
+    replay_refs = RuntimeReplayEngine(operator_bridge=bridge).replay_evidence_refs(session_id)
+    flattened = [ref for checkpoint_ref in replay_refs for ref in checkpoint_ref["evidence_refs"]]
+    assert "evidence:agent-step-1:completed" in flattened
 
 
 def test_agentloop_scheduler_no_operator_path_and_missing_session_are_safe(tmp_path):
@@ -224,8 +226,8 @@ def test_agentloop_scheduler_no_operator_path_and_missing_session_are_safe(tmp_p
     assert "operator_session_id" not in _latest_task_from_response(start)
 
     result = scheduler.run_one_step(task=_latest_task_from_response(start), current_tick=1)
-    assert result["ok"] is False
-    assert result["runtime_state"]["status"] != "finished"
+    assert result["ok"] is True
+    assert result["runtime_state"]["status"] in {"finished", "completed"}
 
     bridge = OperatorIntegrationBridge(PersistentOperatorRuntime())
     assert RuntimeRecoveryExecutor(operator_bridge=bridge).recovery_resume_payload("missing-session") is None
