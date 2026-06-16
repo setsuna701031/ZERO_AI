@@ -175,6 +175,14 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
         }
 
     def _run_cross_layer_flow(self) -> dict[str, Any]:
+        from core.runtime.runtime_authority_seal import (
+            _TASK_RUNNER_ISSUER_TOKEN,
+            delegate_taskrunner_execution_capability,
+            issue_terminal_execution_evidence,
+            is_task_completion_authority,
+            is_terminal_execution_evidence,
+        )
+        from core.runtime.runtime_dispatcher import RuntimeDispatcher
         from core.runtime.task_runtime import TaskRuntime
         from core.runtime.task_runner import TaskRunner
 
@@ -182,6 +190,9 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_name:
             tmp = Path(tmp_name)
             task = self._task(tmp)
+            task["package_id"] = "mainline-package"
+            task["session_id"] = "mainline-session"
+            task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
             scheduler = self._scheduler(tmp, task, adapters["scheduler_adapter"])
             runtime = TaskRuntime(
                 workspace_root=str(tmp / "workspace"),
@@ -203,10 +214,42 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             step_result = executor.execute_step(step, task=task)
             step["metadata"]["step_meta"]["items"].append("external-mutation")
             task["metadata"]["task_meta"]["items"].append("external-mutation")
+            self.assertTrue(step_result.get("ok"))
+            taskrunner_capability = delegate_taskrunner_execution_capability(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                task["runtime_execution_capability"],
+                task_id=task["task_id"],
+                step_id=step["id"],
+            )
+            terminal_evidence = issue_terminal_execution_evidence(
+                _TASK_RUNNER_ISSUER_TOKEN,
+                taskrunner_capability,
+                task_id=task["task_id"],
+                package_id=task["package_id"],
+                session_id=task["session_id"],
+                step_id=step["id"],
+            )
+            self.assertTrue(
+                is_terminal_execution_evidence(
+                    terminal_evidence,
+                    task_id=task["task_id"],
+                    package_id=task["package_id"],
+                    session_id=task["session_id"],
+                )
+            )
             finished_result = TaskRunner(task_runtime=runtime).complete_task(
                 task,
                 current_tick=3,
                 final_answer="sealed",
+                terminal_evidence=terminal_evidence,
+            )
+            self.assertTrue(
+                is_task_completion_authority(
+                    finished_result["task_completion_authority"],
+                    task_id=task["task_id"],
+                    package_id=task["package_id"],
+                    session_id=task["session_id"],
+                )
             )
             scheduler_status = scheduler.status()
 
@@ -224,6 +267,7 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
                 "finished": finished_result,
                 "scheduler_status": scheduler_status,
             },
+            "terminal_evidence": terminal_evidence,
             "transcript": (
                 [("scheduler", event.orchestration_phase) for event in scheduler_events]
                 + [("task_runtime", event.phase) for event in task_events]
@@ -250,6 +294,10 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
         self.assertEqual(flow["results"]["running"]["status"], "running")
         self.assertTrue(flow["results"]["step"].get("ok"))
         self.assertEqual(flow["results"]["finished"]["status"], "finished")
+        self.assertEqual(
+            flow["results"]["finished"]["task_completion_authority"].task_id,
+            flow["terminal_evidence"].task_id,
+        )
 
     def test_deterministic_cross_layer_ordering(self) -> None:
         flow = self._run_cross_layer_flow()
