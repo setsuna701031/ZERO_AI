@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from core.planning.replanner import Replanner
 from core.planning.planner import Planner
 from core.planning.replan_suggestion import build_replan_suggestion, build_replan_suggestions, format_replan_suggestion_cli
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_scheduler import TaskScheduler as RuntimeTaskScheduler
 from core.runtime.trace_runtime import TraceRuntime
 from core.runtime.execution_cycle_runtime import ExecutionCycleRuntime
@@ -20,6 +21,7 @@ from core.runtime.repair_chain_reader import RepairChainReader
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
+from core.runtime.work_package_queue import RuntimePackageQueue
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
@@ -1287,9 +1289,10 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "direct_execution": False,
             "scheduler_owns_execution": False,
+            "runtime_dispatcher_required": True,
             "taskrunner_required": True,
             "step_executor_endpoint_only": True,
-            "authority_path": "Scheduler -> TaskRunner -> StepExecutor",
+            "authority_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
         }
 
     def _attach_scheduler_execution_path(self, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -1310,40 +1313,9 @@ class Scheduler(RuntimeTaskScheduler):
         step: Dict[str, Any],
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Formal Scheduler execution boundary: TaskRunner owns step execution."""
+        """Formal Scheduler execution boundary through RuntimeDispatcher."""
         task_id = self._extract_task_id(task) or "scheduler-task"
-        from core.runtime.runtime_authority_seal import is_dispatch_execution_capability
-
-        capability = task.get("runtime_execution_capability")
-        has_dispatcher_lineage = is_dispatch_execution_capability(
-            capability,
-            task_id=task_id,
-        )
         scheduler_authority = self._build_scheduler_authority_context(task)
-        error = (
-            "legacy_runtime_dispatcher_migration_required"
-            if has_dispatcher_lineage
-            else "runtime_dispatcher_live_capability_required"
-        )
-        return self._attach_scheduler_execution_path(
-            {
-                "ok": False,
-                "executed": False,
-                "blocked": True,
-                "finished": False,
-                "completed": False,
-                "status": "migration_required" if has_dispatcher_lineage else "blocked",
-                "action": "scheduler_runtime_dispatcher_migration_blocked",
-                "error": error,
-                "task": copy.deepcopy(task),
-                "step": copy.deepcopy(step),
-                "scheduler_authority_context": scheduler_authority,
-                "runtime_dispatcher_required": True,
-            }
-        )
-
-        # Legacy boundary construction below is retained for migration context,
-        # but is unreachable until Scheduler can preserve dispatcher lineage.
         try:
             step_index = int(task.get("current_step_index", 0) or 0)
         except Exception:
@@ -1388,7 +1360,7 @@ class Scheduler(RuntimeTaskScheduler):
         scheduler_runtime_contract = seal_scheduler_runtime_contract(
             task,
             lifecycle_state="executing",
-            dispatch_path="Scheduler -> TaskRunner -> StepExecutor",
+            dispatch_path="Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             require_authority_metadata=bool(
                 task.get("authority_propagation_required")
                 or scheduler_authority.get("execution_authority")
@@ -1406,7 +1378,8 @@ class Scheduler(RuntimeTaskScheduler):
             except Exception:
                 pass
         boundary_task = {
-            "task_id": boundary_id,
+            "task_id": task_id,
+            "scheduler_boundary_id": boundary_id,
             "task_name": boundary_id,
             "goal": str(task.get("goal") or task_id),
             "status": "queued",
@@ -1414,6 +1387,7 @@ class Scheduler(RuntimeTaskScheduler):
             "runtime_state_file": str(boundary_task_dir / "runtime_state.json"),
             "steps": [copy.deepcopy(step)],
             "current_step_index": 0,
+            "scheduler_current_step_index": step_index,
             "results": copy.deepcopy(task.get("results", [])) if isinstance(task.get("results"), list) else [],
             "step_results": copy.deepcopy(task.get("step_results", [])) if isinstance(task.get("step_results"), list) else [],
             "execution_log": copy.deepcopy(task.get("execution_log", [])) if isinstance(task.get("execution_log"), list) else [],
@@ -1422,6 +1396,13 @@ class Scheduler(RuntimeTaskScheduler):
             "package_id": str(task.get("package_id") or ""),
             "session_id": str(task.get("session_id") or runtime_identity.get("session_id") or ""),
             "scheduler_task_id": task_id,
+            "parent_task_id": task_id,
+            "parent_identity": {
+                "scheduler_task_id": task_id,
+                "task_id": task_id,
+                "package_id": str(task.get("package_id") or ""),
+                "session_id": str(task.get("session_id") or runtime_identity.get("session_id") or ""),
+            },
             "scheduler_runtime_contract": scheduler_runtime_contract,
             "authority_context": scheduler_authority,
             "runtime_authority_context": scheduler_authority,
@@ -1441,7 +1422,16 @@ class Scheduler(RuntimeTaskScheduler):
         runner = getattr(self, "task_runner", None)
         if runner is None:
             raise RuntimeError("task_runner unavailable for scheduler delegation")
-        runner_result = runner.run_task(boundary_task, current_tick=step_index)
+        runtime_dispatcher = RuntimeDispatcher(
+            queue=RuntimePackageQueue(repo_root=Path(self.workspace_dir)),
+            task_runner=runner,
+            workspace_root=Path(self.workspace_dir),
+            llm_client=getattr(self, "llm_client", None),
+        )
+        runner_result = runtime_dispatcher.run_scheduler_boundary(
+            boundary_task,
+            current_tick=0,
+        )
         runtime_state = runner_result.get("runtime_state") if isinstance(runner_result, dict) else {}
         endpoint_result = runtime_state.get("final_result") if isinstance(runtime_state, dict) else {}
         if isinstance(endpoint_result, dict) and endpoint_result:

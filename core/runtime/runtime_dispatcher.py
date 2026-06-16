@@ -273,6 +273,41 @@ class RuntimeDispatcher:
             package_id=str(record.get("package_id") or ""),
         )
 
+    def run_scheduler_boundary(
+        self,
+        task: Mapping[str, Any],
+        *,
+        current_tick: int = 0,
+    ) -> dict[str, Any]:
+        """RuntimeDispatcher-owned handoff for Scheduler-created boundary tasks."""
+        boundary_task = copy.deepcopy(dict(task))
+        task_id = str(boundary_task.get("task_id") or boundary_task.get("id") or "").strip()
+        if not task_id:
+            return {
+                "ok": False,
+                "executed": False,
+                "blocked": True,
+                "finished": False,
+                "completed": False,
+                "status": "blocked",
+                "error": "runtime_dispatcher_task_identity_required",
+                "task": boundary_task,
+            }
+        boundary_task["runtime_execution_capability"] = self._execution_capability(
+            {
+                "task_id": task_id,
+                "session_id": str(boundary_task.get("session_id") or ""),
+                "package_id": str(boundary_task.get("package_id") or ""),
+            }
+        )
+        boundary_task["runtime_dispatcher_handoff"] = {
+            "runtime_owner": "RuntimeDispatcher",
+            "capability_issuer": "RuntimeDispatcher",
+            "dispatch_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
+            "live_capability_issued": True,
+        }
+        return self.task_runner.run_task(task=boundary_task, current_tick=current_tick)
+
     @staticmethod
     def _step_feedback(*, task: Mapping[str, Any], result: Any, tick: int) -> dict[str, Any]:
         payload = copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {"ok": False}
