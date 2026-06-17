@@ -27,7 +27,9 @@ from typing import Any, Mapping
 from core.tasks.work_package_contract import WorkPackageRequest, validate_work_package_request
 from core.tasks.work_package_intake import submit_work_package
 from core.runtime.runtime_authority_seal import (
+    _WORK_PACKAGE_SCHEDULER_ISSUER_TOKEN,
     is_work_package_completion_authority,
+    issue_work_package_completion_authority,
 )
 
 
@@ -37,6 +39,11 @@ STATUS_RUNNING = "running"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 TERMINAL_STATUSES = frozenset({STATUS_COMPLETED, STATUS_FAILED})
+TRUSTED_SCHEDULER_COMPLETION_REASONS = frozenset(
+    {
+        "controlled_workspace_execution_completed",
+    }
+)
 
 
 class WorkPackageSchedulerError(RuntimeError):
@@ -179,7 +186,68 @@ class WorkPackageScheduler:
         return self.state_dir / f"{_safe_package_id(package_id)}.json"
 
     def _completion_authority(self, package_id: str, result: Mapping[str, Any]) -> Any:
-        return None
+        safe_id = _safe_package_id(package_id)
+        if not bool(result.get("ok", False)):
+            return None
+        if str(result.get("package_id") or "") != safe_id:
+            return None
+        if str(result.get("reason") or "") not in TRUSTED_SCHEDULER_COMPLETION_REASONS:
+            return None
+
+        record_path = self._record_path(safe_id)
+        if not record_path.is_file():
+            return None
+        try:
+            record = WorkPackageScheduleRecord.from_dict(_read_json(record_path))
+        except WorkPackageSchedulerError:
+            return None
+        if record.package_id != safe_id or record.status != STATUS_RUNNING:
+            return None
+
+        request = record.request
+        if str(request.get("mode") or "") != "execute" or not bool(request.get("approval", False)):
+            return None
+
+        evidence = result.get("evidence")
+        if not isinstance(evidence, Mapping):
+            return None
+        if evidence.get("package_id") != safe_id:
+            return None
+        if evidence.get("guard") != "workspace_only":
+            return None
+        if evidence.get("policy_reason") != "controlled_workspace_write_allowed":
+            return None
+        if evidence.get("approval") is not True:
+            return None
+
+        changed_files = result.get("changed_files")
+        if not isinstance(changed_files, list) or not changed_files:
+            return None
+
+        root = self.repo_root.resolve()
+        normalized_changed: list[str] = []
+        for item in changed_files:
+            changed = str(item or "").strip().replace("\\", "/").lstrip("./")
+            if not changed or not changed.startswith("workspace/"):
+                return None
+            path = (root / changed).resolve()
+            if root not in (path, *path.parents) or not path.is_file():
+                return None
+            normalized_changed.append(changed)
+
+        target_path = str(evidence.get("target_path") or result.get("target_path") or "").replace("\\", "/").lstrip("./")
+        evidence_changed = evidence.get("changed_files")
+        if isinstance(evidence_changed, list):
+            evidence_changed_paths = [str(item or "").replace("\\", "/").lstrip("./") for item in evidence_changed]
+            if evidence_changed_paths != normalized_changed:
+                return None
+        elif target_path and normalized_changed != [target_path]:
+            return None
+
+        return issue_work_package_completion_authority(
+            _WORK_PACKAGE_SCHEDULER_ISSUER_TOKEN,
+            package_id=safe_id,
+        )
 
     def submit(
         self,
@@ -241,6 +309,8 @@ class WorkPackageScheduler:
 
         try:
             result = submit_work_package(running.request, repo_root=self.repo_root)
+            if completion_authority is None:
+                completion_authority = self._completion_authority(running.package_id, result)
             completion_authorized = is_work_package_completion_authority(
                 completion_authority,
                 package_id=running.package_id,

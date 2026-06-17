@@ -193,7 +193,10 @@ def _build_authority_boundary():
         *,
         package_id: str,
     ) -> WorkPackageCompletionAuthority:
-        if token is not _RUNTIME_DISPATCHER_ISSUER_TOKEN:
+        if token not in {
+            _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+            _WORK_PACKAGE_SCHEDULER_ISSUER_TOKEN,
+        }:
             raise PermissionError("work_package_completion_owner_required")
         authority = WorkPackageCompletionAuthority(package_id=str(package_id))
         package_completions[id(authority)] = authority
