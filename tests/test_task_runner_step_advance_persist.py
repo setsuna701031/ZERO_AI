@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 import json
 
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 
@@ -77,6 +78,14 @@ def _task() -> dict:
     }
 
 
+def _dispatcher_owned_task() -> dict:
+    task = _task()
+    task["package_id"] = "two_step_runtime-package"
+    task["session_id"] = "two_step_runtime-session"
+    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
+    return task
+
+
 def setup_function() -> None:
     if TEST_ROOT.exists():
         shutil.rmtree(TEST_ROOT)
@@ -92,8 +101,9 @@ def test_successful_step_advances_and_persists_runtime_state() -> None:
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
 
-    first_result = runner.run_task(_task(), current_tick=1)
-    reloaded_after_first = runtime.load_runtime_state(_task())
+    task = _dispatcher_owned_task()
+    first_result = runner.run_task(task, current_tick=1)
+    reloaded_after_first = runtime.load_runtime_state(task)
 
     assert first_result["ok"] is True
     assert first_result["action"] == "step_completed"
@@ -102,9 +112,9 @@ def test_successful_step_advances_and_persists_runtime_state() -> None:
     assert reloaded_after_first["status"] == "running"
     assert executor.calls == ["first"]
 
-    second_result = runner.run_task(_task(), current_tick=2)
-    reloaded_after_second = runtime.load_runtime_state(_task())
-    runtime_state_json = json.loads(Path(_task()["runtime_state_file"]).read_text(encoding="utf-8"))
+    second_result = runner.run_task(task, current_tick=2)
+    reloaded_after_second = runtime.load_runtime_state(task)
+    runtime_state_json = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
     assert second_result["ok"] is True
     assert second_result["action"] == "task_finished"
@@ -123,35 +133,56 @@ def test_successful_step_advances_and_persists_runtime_state() -> None:
     assert executor.calls == ["first", "second"]
 
 
-def test_exhausted_runtime_state_marks_finished_without_rerun() -> None:
+def test_bare_task_runner_without_dispatcher_capability_is_blocked() -> None:
     executor = FakeStepExecutor()
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=executor, task_runtime=runtime)
-    task = _task()
+
+    result = runner.run_task(_task(), current_tick=1)
+    reloaded = runtime.load_runtime_state(_task())
+
+    assert result["ok"] is False
+    assert result["action"] == "retry"
+    assert result["failure_type"] == "execution_authority_denied"
+    assert result["error"]["type"] == "execution_authority_denied"
+    assert result["last_result"]["executed"] is False
+    assert result["last_result"]["blocked"] is True
+    assert reloaded["current_step_index"] == 0
+    assert reloaded["status"] == "blocked"
+    assert executor.calls == []
+
+
+def test_exhausted_runtime_state_without_terminal_evidence_does_not_finish() -> None:
+    executor = FakeStepExecutor()
+    runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
+    runner = TaskRunner(step_executor=executor, task_runtime=runtime)
+    task = _dispatcher_owned_task()
 
     state = runtime.ensure_runtime_state(task)
     state["current_step_index"] = 99
     runtime.save_runtime_state(task, state)
 
-    result = runner.run_task(_task(), current_tick=3)
-    reloaded = runtime.load_runtime_state(_task())
+    result = runner.run_task(task, current_tick=3)
+    reloaded = runtime.load_runtime_state(task)
 
-    assert result["ok"] is True
-    assert result["action"] == "already_finished"
-    assert result["status"] == "finished"
+    assert result["ok"] is False
+    assert result["action"] == "exception_failed"
+    assert result["status"] == "failed"
     assert reloaded["current_step_index"] == 2
-    assert reloaded["status"] == "finished"
-    assert reloaded["finished_tick"] == 3
-    assert reloaded["finished_at"]
+    assert reloaded["status"] == "failed"
+    assert reloaded["last_error"] == "successful_terminal_execution_evidence_required"
+    assert reloaded.get("finished_tick") is None
+    assert reloaded.get("finished_at") is None
     assert executor.calls == []
 
 
 def test_failed_step_does_not_advance_and_persists_error() -> None:
     runtime = TaskRuntime(workspace_root=str(TEST_ROOT))
     runner = TaskRunner(step_executor=FailingStepExecutor(), task_runtime=runtime)
+    task = _dispatcher_owned_task()
 
-    result = runner.run_task(_task(), current_tick=1)
-    reloaded = runtime.load_runtime_state(_task())
+    result = runner.run_task(task, current_tick=1)
+    reloaded = runtime.load_runtime_state(task)
 
     assert result["ok"] is False
     assert result["action"] == "step_failed"

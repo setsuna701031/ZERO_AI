@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
@@ -86,7 +86,7 @@ def _make_scheduler(tmp_path: Path, step_executor: Any | None = None):
     )
 
 
-def test_legacy_scheduler_code_chain_path_cannot_rebind_live_dispatcher_capability(
+def test_scheduler_code_chain_path_accepts_live_dispatcher_capability(
     tmp_path: Path,
 ) -> None:
     from core.runtime.runtime_dispatcher import RuntimeDispatcher
@@ -111,17 +111,23 @@ def test_legacy_scheduler_code_chain_path_cannot_rebind_live_dispatcher_capabili
         },
     )
 
-    assert recorder.calls == []
-    assert result["ok"] is False
-    assert result["blocked"] is True
-    assert result["executed"] is False
-    assert result["finished"] is False
-    assert result["completed"] is False
-    assert result["status"] == "migration_required"
-    assert result["error"] == "legacy_runtime_dispatcher_migration_required"
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    authority_context = call["context"]["authority_context"]
+
+    assert authority_context["authority_source"] == "runtime_dispatcher"
+    assert authority_context["authority_policy"] == "owner_issued_runtime_execution_capability"
+    assert authority_context["authority_propagation_required"] is True
+    assert authority_context["can_execute_privileged_step"] is True
+    assert authority_context["runtime_execution_capability"] is not None
+
+    assert result["ok"] is True
+    assert result["action"] == "governed_mutation_executed"
+    assert result["mutation_executed"] is True
+    assert result["runtime_evidence"]["sealed_execution_evidence"] is True
 
 
-def test_scheduler_remains_orchestration_only(
+def test_scheduler_delegates_mutation_with_issued_capability_without_direct_write(
     tmp_path: Path,
 ) -> None:
     recorder = _RecordingStepExecutor()
@@ -143,11 +149,16 @@ def test_scheduler_remains_orchestration_only(
         },
     )
 
-    assert recorder.calls == []
-    assert result["ok"] is False
-    assert result["blocked"] is True
-    assert result["executed"] is False
-    assert result["error"] == "runtime_dispatcher_live_capability_required"
+    assert len(recorder.calls) == 1
+    call = recorder.calls[0]
+    authority_context = call["context"]["authority_context"]
+
+    assert authority_context["authority_source"] == "runtime_dispatcher"
+    assert authority_context["authority_policy"] == "owner_issued_runtime_execution_capability"
+    assert authority_context["authority_propagation_required"] is True
+    assert authority_context["runtime_execution_capability"] is not None
+    assert result["ok"] is True
+    assert result["mutation_executed"] is True
     assert not target.exists()
 
 
@@ -289,4 +300,3 @@ def test_runtime_evidence_consumer_only_accepts_normalized_governed_evidence() -
 
     assert summary["ok"] is False
     assert summary["invalid_records"]
-

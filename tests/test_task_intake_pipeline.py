@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from core.runtime.runtime_contract_seal import build_runtime_contract_seal
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_runner import TaskRunner
 from core.runtime.runtime_evidence_surface import list_evidence, register_evidence
 from core.tasks.task_intake_contract import (
@@ -125,6 +128,11 @@ def test_task_intake_pipeline_adds_no_scheduler_agent_loop_or_authority_path() -
     assert "fallback" not in source.lower()
 
 
+def test_task_intake_fixture_cannot_complete_without_terminal_evidence() -> None:
+    with pytest.raises(PermissionError, match="terminal_execution_evidence_required"):
+        TaskRunner().complete_task({"task_id": "codex-phase-1", "steps": []})
+
+
 class RecordingPlanner:
     def __init__(self) -> None:
         self.task_ids: list[str] = []
@@ -177,12 +185,28 @@ class ArtifactExecutor:
         artifact_path = artifact_dir / "engineering_result.txt"
         artifact_path.write_text(str(task["goal"]) + "\n", encoding="utf-8")
         digest = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        runner = TaskRunner()
+        completion_task = {
+            "task_id": str(task["task_id"]),
+            "package_id": f"{task['task_id']}-package",
+            "session_id": str(runtime_receipt["plan_id"]),
+        }
+        completion_task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(completion_task)
+        completion_step = {
+            "id": f"{task['task_id']}-terminal",
+            "type": "final_answer",
+            "content": "engineering artifact produced",
+        }
+        completion_result = runner.execute_owned_step(completion_step, task=completion_task)
+        completion_authority = runner._terminal_completion_authority(
+            task=completion_task,
+            step=completion_step,
+            result=completion_result,
+        )
         return {
             "schema": "codex_executor_result.v1",
             "status": "done",
-            "task_completion_authority": TaskRunner().complete_task(
-                {"task_id": str(task["task_id"]), "steps": []}
-            )["task_completion_authority"],
+            "task_completion_authority": completion_authority,
             "artifacts": [
                 {
                     "artifact_id": f"{task['task_id']}:engineering_result",
