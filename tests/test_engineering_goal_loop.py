@@ -293,3 +293,33 @@ def test_goal_loop_does_not_mutate_runner_runtime_or_lifecycle_payloads(tmp_path
     assert result["stop_reason"] == "complete"
     assert runner_result["runtime_result"] == before_runtime["runtime_result"]
     assert runner_result["goal_lifecycle"] == before_runtime["goal_lifecycle"]
+
+
+def test_goal_loop_generates_work_package_and_executes_workspace_goal(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal({"goal_id": "goal_workspace_file", "summary": "建立 workspace/example.txt"})
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_workspace_file",
+        max_cycles=1,
+    )
+
+    cycle = result["cycles"][0]
+    runtime_result = cycle["runner_result"]["runtime_result"]
+    scheduler_record = runtime_result["scheduler_record"]
+    work_package_result = runtime_result["work_package_result"]
+
+    assert result["ok"] is True
+    assert result["terminal"] is True
+    assert result["stop_reason"] == "complete"
+    assert result["goal_completion_authority_result"]["accepted"] is True
+    assert result["goal_completion_authority_result"]["completed"] is True
+    assert runtime_result["planner_result"]["source"] == "planner.normalize_aer_execution_intent"
+    assert runtime_result["work_package"]["mode"] == "execute"
+    assert runtime_result["work_package"]["edit"]["target_path"] == "workspace/example.txt"
+    assert scheduler_record["status"] == "completed"
+    assert scheduler_record["completion_authority"]["package_id"] == "goal_workspace_file"
+    assert work_package_result["reason"] == "controlled_workspace_execution_completed"
+    assert work_package_result["evidence"]["guard"] == "workspace_only"
+    assert work_package_result["changed_files"] == ["workspace/example.txt"]
+    assert (tmp_path / "workspace/example.txt").is_file()

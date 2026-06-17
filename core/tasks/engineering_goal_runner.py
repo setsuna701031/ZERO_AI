@@ -19,6 +19,7 @@ from typing import Any, Mapping, Sequence
 from core.tasks.engineering_adaptive_planner import EngineeringAdaptivePlanner, normalize_adaptive_decision
 from core.tasks.engineering_goal_dependency_graph import EngineeringGoalDependencyGraph
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+from core.tasks.engineering_goal_work_package_mainline import run_goal_work_package_mainline
 from core.tasks.engineering_issue_summary import apply_engineering_issue_summary, build_engineering_issue_summary
 from core.tasks.engineering_runtime_contract import build_engineering_runtime_contract
 from core.tasks.engineering_planning_adapter import EngineeringPlanningOnlyAdapter
@@ -133,6 +134,31 @@ class EngineeringGoalRunner:
         if goal is None:
             return self._not_found_result(target_goal_id)
         request = self.build_runtime_request([goal], selected_goal_id=target_goal_id)
+        mainline = self._run_work_package_mainline(goal)
+        if mainline:
+            runtime_result = mainline["runtime_result"]
+            runtime_root_cause = {} if bool(runtime_result.get("ok")) else self._runtime_root_cause(runtime_result)
+            issue_summary = build_engineering_issue_summary(self.repo_root, issue_reporter=self.issue_reporter)
+            adaptive_decision = mainline["adaptive_decision"]
+            return self._runner_result(
+                ok=bool(runtime_result.get("ok")),
+                action="run_goal",
+                goal_id=target_goal_id,
+                runtime_request=request,
+                runtime_result=runtime_result,
+                runtime_stdout="",
+                runtime_root_cause=runtime_root_cause,
+                adaptive_decision=adaptive_decision,
+                issue_summary=issue_summary,
+                execution_path_overrides={
+                    "work_package_mainline": True,
+                    "work_package_execution_authority": True,
+                    "planner_generates_work_package": True,
+                    "scheduler_executes_work_package": True,
+                    "direct_execution": False,
+                    "new_execution_path": False,
+                },
+            )
         runtime_result, runtime_stdout = self._run_runtime(request, scheduler_goals=[goal])
         runtime_root_cause = self._runtime_root_cause(runtime_result) if not bool(runtime_result.get("ok")) else {}
         issue_summary = build_engineering_issue_summary(self.repo_root, issue_reporter=self.issue_reporter)
@@ -257,6 +283,9 @@ class EngineeringGoalRunner:
             issue_reporter=self.issue_reporter,
         )
 
+    def _run_work_package_mainline(self, goal: Mapping[str, Any]) -> dict[str, Any]:
+        return run_goal_work_package_mainline(goal, repo_root=self.repo_root)
+
     def _run_runtime(
         self,
         request: Mapping[str, Any],
@@ -304,6 +333,7 @@ class EngineeringGoalRunner:
         runtime_root_cause: Mapping[str, Any],
         adaptive_decision: Mapping[str, Any],
         issue_summary: Mapping[str, Any],
+        execution_path_overrides: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         runtime_contract = build_engineering_runtime_contract(
             goal_id=goal_id,
@@ -316,8 +346,7 @@ class EngineeringGoalRunner:
             adaptive_decision=adaptive_decision,
             issue_summary=issue_summary,
         )
-        return apply_engineering_issue_summary(
-            {
+        result = {
             "schema": ENGINEERING_GOAL_RUNNER_SCHEMA,
             "ok": bool(ok),
             "mode": "engineering_goal_runner",
@@ -346,7 +375,13 @@ class EngineeringGoalRunner:
                 "new_execution_path": False,
             },
             "updated_at": time.time(),
-            },
+        }
+        if isinstance(execution_path_overrides, Mapping):
+            result["execution_path"].update(copy.deepcopy(dict(execution_path_overrides)))
+            runtime_contract["execution_path"].update(copy.deepcopy(dict(execution_path_overrides)))
+            result["engineering_runtime_contract"] = runtime_contract
+        return apply_engineering_issue_summary(
+            result,
             repo_root=self.repo_root,
             issue_reporter=self.issue_reporter,
             issue_summary=issue_summary,
