@@ -1131,6 +1131,13 @@ class TaskRunner:
         final_result: Optional[Dict[str, Any]] = None,
         terminal_evidence: Any = None,
     ) -> Dict[str, Any]:
+        """Seal terminal completion behind live TaskRunner execution evidence.
+
+        This API is intentionally not a convenience shortcut. Callers must pass
+        a live TerminalExecutionEvidence object issued from TaskRunner-owned
+        execution lineage; missing, serialized, or synthetic evidence is
+        rejected by issue_task_completion_authority.
+        """
         task_id = str(task.get("task_id") or task.get("id") or "")
         package_id = str(task.get("package_id") or task.get("work_package_id") or "")
         session_id = str(task.get("session_id") or task.get("runtime_session") or "")

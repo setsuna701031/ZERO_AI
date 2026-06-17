@@ -6,7 +6,10 @@ from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.runtime_authority_seal import (
     _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+    _TASK_RUNNER_ISSUER_TOKEN,
+    delegate_taskrunner_execution_capability,
     issue_dispatch_execution_capability,
+    issue_terminal_execution_evidence,
 )
 
 
@@ -46,3 +49,38 @@ class OwnedStepExecutor:
 
 def owned_step_executor(*args: Any, **kwargs: Any) -> OwnedStepExecutor:
     return OwnedStepExecutor(StepExecutor(*args, **kwargs))
+
+
+def live_terminal_evidence_for_test(
+    task: dict[str, Any],
+    *,
+    step_id: str = "test-terminal",
+) -> Any:
+    """Issue live terminal evidence for tests that need a legal finish event."""
+    task_id = str(task.get("task_id") or task.get("id") or "test-dispatch-task")
+    package_id = str(task.get("package_id") or task.get("work_package_id") or "test-dispatch-package")
+    session_id = str(task.get("session_id") or task.get("runtime_session") or "test-dispatch-session")
+    task.update({"task_id": task_id, "package_id": package_id, "session_id": session_id})
+    dispatch = task.get("runtime_execution_capability")
+    if dispatch is None:
+        dispatch = issue_dispatch_execution_capability(
+            _RUNTIME_DISPATCHER_ISSUER_TOKEN,
+            task_id=task_id,
+            package_id=package_id,
+            session_id=session_id,
+        )
+        task["runtime_execution_capability"] = dispatch
+    delegated = delegate_taskrunner_execution_capability(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        dispatch,
+        task_id=task_id,
+        step_id=step_id,
+    )
+    return issue_terminal_execution_evidence(
+        _TASK_RUNNER_ISSUER_TOKEN,
+        delegated,
+        task_id=task_id,
+        package_id=package_id,
+        session_id=session_id,
+        step_id=step_id,
+    )

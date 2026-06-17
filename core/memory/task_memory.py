@@ -652,6 +652,8 @@ class TaskRepository:
         return self.set_task_status(task_id, "running")
 
     def complete_task(self, task_id: str, result: Optional[str] = None) -> TaskRecord:
+        # Memory status completion only; runtime terminal execution completion
+        # is sealed by TaskRunner/TaskRuntime authority contracts.
         return self.set_task_status(task_id, "completed", result=result)
 
     def fail_task(self, task_id: str, error: str) -> TaskRecord:
