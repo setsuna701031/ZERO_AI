@@ -131,6 +131,7 @@ class WorkPackageScheduleRecord:
     status: str
     request: dict[str, Any]
     result: dict[str, Any] | None = None
+    completion_authority: dict[str, Any] | None = None
     error: str | None = None
     created_at: float = field(default_factory=_now)
     updated_at: float = field(default_factory=_now)
@@ -142,6 +143,7 @@ class WorkPackageScheduleRecord:
             "status": self.status,
             "request": dict(self.request),
             "result": dict(self.result) if isinstance(self.result, dict) else None,
+            "completion_authority": dict(self.completion_authority) if isinstance(self.completion_authority, dict) else None,
             "error": self.error,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -157,12 +159,14 @@ class WorkPackageScheduleRecord:
         if not isinstance(request, Mapping):
             raise WorkPackageSchedulerError("scheduler_record_request_missing")
         result = payload.get("result")
+        completion_authority = payload.get("completion_authority")
         error = payload.get("error")
         return cls(
             package_id=package_id,
             status=status,
             request=dict(request),
             result=dict(result) if isinstance(result, Mapping) else None,
+            completion_authority=dict(completion_authority) if isinstance(completion_authority, Mapping) else None,
             error=str(error) if error else None,
             created_at=float(payload.get("created_at") or _now()),
             updated_at=float(payload.get("updated_at") or _now()),
@@ -271,6 +275,7 @@ class WorkPackageScheduler:
             status=STATUS_QUEUED,
             request=request_payload,
             result=None,
+            completion_authority=None,
             error=None,
             created_at=_now(),
             updated_at=_now(),
@@ -301,6 +306,7 @@ class WorkPackageScheduler:
             status=STATUS_RUNNING,
             request=record.request,
             result=record.result,
+            completion_authority=None,
             error=None,
             created_at=record.created_at,
             updated_at=_now(),
@@ -315,11 +321,17 @@ class WorkPackageScheduler:
                 completion_authority,
                 package_id=running.package_id,
             )
+            completion_authority_summary = (
+                completion_authority.to_dict()
+                if completion_authorized and callable(getattr(completion_authority, "to_dict", None))
+                else None
+            )
             completed = WorkPackageScheduleRecord(
                 package_id=running.package_id,
                 status=STATUS_COMPLETED if completion_authorized else STATUS_FAILED,
                 request=running.request,
                 result=dict(result),
+                completion_authority=completion_authority_summary,
                 error=(
                     None
                     if completion_authorized
@@ -338,6 +350,7 @@ class WorkPackageScheduler:
                 status=STATUS_FAILED,
                 request=running.request,
                 result=None,
+                completion_authority=None,
                 error=f"{type(exc).__name__}: {exc}",
                 created_at=running.created_at,
                 updated_at=_now(),

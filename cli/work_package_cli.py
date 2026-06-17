@@ -7,10 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+from core.tasks.work_package_scheduler import WorkPackageScheduler
 
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _is_scheduler_work_package(payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return all(key in payload for key in ("package_id", "kind", "mode", "scope_paths", "report_path"))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -52,7 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "submit":
             payload = json.loads(Path(args.package_file).read_text(encoding="utf-8"))
-            result = operator.submit_package(payload)
+            if _is_scheduler_work_package(payload):
+                result = WorkPackageScheduler(repo_root=args.repo_root).submit(payload)
+            else:
+                result = operator.submit_package(payload)
         elif args.command == "status":
             result = operator.package_status(args.package_id)
         elif args.command == "plan":
