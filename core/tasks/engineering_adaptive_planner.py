@@ -12,6 +12,7 @@ import time
 from typing import Any, Mapping
 
 from core.tasks.adaptive_planning_foundation import evaluate_runtime_outcome
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
 
 
 ENGINEERING_ADAPTIVE_PLANNER_SCHEMA = "zero.engineering_adaptive_planner.v2"
@@ -71,6 +72,42 @@ def _goal_id(goal: Mapping[str, Any]) -> str:
     return _clean_text(goal.get("goal_id") or goal.get("task_id") or goal.get("package_id"))
 
 
+
+GOAL_LINEAGE_REQUIRED_FIELDS = (
+    "root_goal_id",
+    "goal_lineage_id",
+    "session_id",
+    "runtime_session_id",
+    "branch_type",
+    "branch_id",
+)
+
+
+def _goal_lineage(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Return complete canonical lineage when available.
+
+    Adaptive planning must remain compatible with legacy/non-session goals.
+    It may carry lineage forward when callers already provide a complete
+    lineage contract, but it must not invent missing session identity or make
+    old single-goal tests fail by requiring session/runtime_session fields.
+    """
+
+    lineage = extract_goal_lineage(value)
+    if not lineage:
+        return {}
+    if not all(_clean_text(lineage.get(field)) for field in GOAL_LINEAGE_REQUIRED_FIELDS):
+        return {}
+    return lineage
+
+
+def _attach_lineage(record: Mapping[str, Any], lineage: Mapping[str, Any]) -> dict[str, Any]:
+    """Attach lineage only when it is complete enough for the canonical contract."""
+
+    complete_lineage = _goal_lineage(lineage)
+    if not complete_lineage:
+        return copy.deepcopy(dict(record))
+    return attach_goal_lineage(dict(record), dict(complete_lineage))
+
 def _clamp_confidence(value: Any, default: float = 0.75) -> float:
     try:
         confidence = float(value)
@@ -120,7 +157,8 @@ def normalize_adaptive_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
     if not reason:
         reason = "invalid_adaptive_decision" if normalized_decision == "blocked" else f"{normalized_decision}_requested"
 
-    return {
+    lineage = _goal_lineage(raw)
+    normalized = {
         **raw,
         "decision": normalized_decision,
         "reason": reason,
@@ -134,6 +172,7 @@ def normalize_adaptive_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
         "evidence_chain": copy.deepcopy(_as_list(raw.get("evidence_chain"))),
         "root_cause_report": copy.deepcopy(_as_mapping(raw.get("root_cause_report"))),
     }
+    return _attach_lineage(normalized, lineage) if lineage else normalized
 
 
 class EngineeringAdaptivePlanner:
@@ -148,6 +187,7 @@ class EngineeringAdaptivePlanner:
         issue_summary: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         lifecycle = self._latest_lifecycle(runtime_result)
+        goal_lineage = _goal_lineage({**_as_mapping(lifecycle), **_as_mapping(runtime_result), **_as_mapping(goal)})
         progress = _as_mapping(lifecycle.get("progress"))
         completed_tasks = _as_list(lifecycle.get("completed_tasks"))
         remaining_tasks = _as_list(lifecycle.get("remaining_tasks"))
@@ -186,6 +226,7 @@ class EngineeringAdaptivePlanner:
         progress_record = {
             "schema": ENGINEERING_ADAPTIVE_PLANNER_SCHEMA,
             "goal_id": _goal_id(goal) or _clean_text(lifecycle.get("goal_id")),
+            "goal_lineage": copy.deepcopy(goal_lineage),
             "runtime_ok": runtime_ok,
             "runtime_state": runtime_state,
             "goal_state": goal_state,
@@ -205,6 +246,7 @@ class EngineeringAdaptivePlanner:
             "incomplete_with_next_request": incomplete_with_next_request,
             "updated_at": time.time(),
         }
+        progress_record = _attach_lineage(progress_record, goal_lineage) if goal_lineage else progress_record
         progress_record["evidence_chain"] = self._build_evidence_chain(progress_record)
         return progress_record
 
@@ -226,6 +268,7 @@ class EngineeringAdaptivePlanner:
             runtime_root_cause=runtime_root_cause,
             issue_summary=issue_summary,
         )
+        goal_lineage = _goal_lineage(progress)
         if progress["complete"]:
             decision = "complete"
             reason = "goal_completed"
@@ -277,6 +320,7 @@ class EngineeringAdaptivePlanner:
             max_replans=max_replans,
             max_continuations=max_continuations,
         )
+        adaptive_planning_record = _attach_lineage(adaptive_planning_record, goal_lineage) if goal_lineage else adaptive_planning_record
         normalized = normalize_adaptive_decision({
             "schema": ENGINEERING_ADAPTIVE_DECISION_SCHEMA,
             "decision": decision,
@@ -289,6 +333,7 @@ class EngineeringAdaptivePlanner:
             "mainline_decision": mainline_decision,
             "create_continuation_requested": mainline_decision == "create_continuation",
             "goal_id": progress["goal_id"],
+            "goal_lineage": copy.deepcopy(goal_lineage),
             "terminal": decision in {"complete", "blocked"},
             "continue_requested": decision == "continue",
             "complete_requested": decision == "complete",
@@ -316,7 +361,7 @@ class EngineeringAdaptivePlanner:
         normalized["blocked"] = normalized["decision"] == "blocked"
         if normalized.get("create_continuation_requested"):
             normalized["next_action"] = "create_continuation_work_item"
-        return normalized
+        return _attach_lineage(normalized, goal_lineage) if goal_lineage else normalized
 
     def build_continuation_plan(
         self,
@@ -327,6 +372,7 @@ class EngineeringAdaptivePlanner:
     ) -> dict[str, Any]:
         progress_record = _as_mapping(progress) or self.evaluate_goal_progress(goal=goal, runtime_result=runtime_result)
         goal_id = _goal_id(goal) or _clean_text(progress_record.get("goal_id"))
+        goal_lineage = _goal_lineage({**progress_record, **_as_mapping(goal)})
         remaining_tasks = _as_list(progress_record.get("remaining_tasks"))
         next_runtime_request = _as_mapping(progress_record.get("next_runtime_request"))
         request_payload = _as_mapping(next_runtime_request.get("payload"))
@@ -338,6 +384,7 @@ class EngineeringAdaptivePlanner:
         payload.setdefault("task_type", "engineering_task")
         payload.setdefault("engineering_goal_lifecycle", True)
         payload["continuation_requested"] = True
+        payload = _attach_lineage(payload, goal_lineage) if goal_lineage else payload
         target_path = _clean_text(payload.get("target_path") or payload.get("path"))
         if not remaining_tasks and target_path:
             remaining_tasks = [target_path]
@@ -346,6 +393,7 @@ class EngineeringAdaptivePlanner:
         source_runtime_state = _clean_text(next_runtime_request.get("source_runtime_state") or runtime_result.get("state"))
         work_item_template = {
             "objective": _clean_text(payload.get("goal"), f"Continue {goal_id}"),
+            "goal_lineage": copy.deepcopy(goal_lineage),
             "source_goal_id": goal_id,
             "task_type": _clean_text(payload.get("task_type"), "engineering_task"),
             "remaining_tasks": copy.deepcopy(remaining_tasks),
@@ -361,7 +409,7 @@ class EngineeringAdaptivePlanner:
                 "evidence_ids": [item["evidence_id"] for item in evidence_chain if isinstance(item, Mapping)],
             },
         }
-        return {
+        continuation_plan = {
             "schema": ENGINEERING_CONTINUATION_PLAN_SCHEMA,
             "goal_id": goal_id,
             "reason": "goal_incomplete",
@@ -380,6 +428,7 @@ class EngineeringAdaptivePlanner:
             },
             "created_at": time.time(),
         }
+        return _attach_lineage(continuation_plan, goal_lineage) if goal_lineage else continuation_plan
 
     def build_replan_request(
         self,
@@ -391,6 +440,7 @@ class EngineeringAdaptivePlanner:
     ) -> dict[str, Any]:
         progress_record = _as_mapping(progress) or self.evaluate_goal_progress(goal=goal, runtime_result=runtime_result)
         goal_id = _goal_id(goal) or _clean_text(progress_record.get("goal_id"))
+        goal_lineage = _goal_lineage({**progress_record, **_as_mapping(goal)})
         replan_reason = _clean_text(reason, "recoverable_runtime_failure")
         failed_tasks = _as_list(progress_record.get("failed_tasks"))
         remaining_tasks = _as_list(progress_record.get("remaining_tasks"))
@@ -409,7 +459,7 @@ class EngineeringAdaptivePlanner:
             reason=replan_reason,
             decision="replan",
         )
-        return {
+        replan_request = {
             "schema": ENGINEERING_REPLAN_REQUEST_SCHEMA,
             "goal_id": goal_id,
             "source_goal_id": goal_id,
@@ -430,6 +480,7 @@ class EngineeringAdaptivePlanner:
                 "preserve": {
                     "completed_tasks": copy.deepcopy(_as_list(progress_record.get("completed_tasks"))),
                     "goal_id": goal_id,
+                    "goal_lineage": copy.deepcopy(goal_lineage),
                 },
                 "reconsider": {
                     "failed_tasks": copy.deepcopy(failed_tasks),
@@ -449,6 +500,7 @@ class EngineeringAdaptivePlanner:
             },
             "created_at": time.time(),
         }
+        return _attach_lineage(replan_request, goal_lineage) if goal_lineage else replan_request
 
     def _missing_artifacts(
         self,
@@ -517,27 +569,33 @@ class EngineeringAdaptivePlanner:
             payload["target_path"] = target_path
         payload["replan_requested"] = True
         payload["replan_reason"] = replan_reason
-        return {
+        goal_lineage = _goal_lineage(goal)
+        payload = _attach_lineage(payload, goal_lineage) if goal_lineage else payload
+        request = {
             "goal_id": goal_id,
             "payload": payload,
             "source_runtime_state": "replan",
             "replan_reason": replan_reason,
         }
+        return _attach_lineage(request, goal_lineage) if goal_lineage else request
 
     def _build_evidence_chain(self, progress: Mapping[str, Any]) -> list[dict[str, Any]]:
         evidence: list[dict[str, Any]] = []
+        goal_lineage = _goal_lineage(progress)
 
         def add(kind: str, source: str, value: Any, supports: list[str]) -> None:
             if value in ("", None, [], {}, False):
                 return
-            evidence.append({
+            record = {
                 "schema": ENGINEERING_ADAPTIVE_EVIDENCE_SCHEMA,
                 "evidence_id": f"evidence_{len(evidence) + 1}",
                 "kind": kind,
                 "source": source,
                 "value": copy.deepcopy(value),
                 "supports": supports,
-            })
+                "goal_lineage": copy.deepcopy(goal_lineage),
+            }
+            evidence.append(_attach_lineage(record, goal_lineage) if goal_lineage else record)
 
         add("runtime_status", "runtime_result", {
             "ok": bool(progress.get("runtime_ok")),
@@ -574,13 +632,15 @@ class EngineeringAdaptivePlanner:
         factor("root_cause_available", 0.08, decision in {"blocked", "replan"} and bool(progress.get("root_cause")))
         factor("limited_evidence", -0.12, len(evidence_chain) < 2)
         score = _clamp_confidence(base + sum(float(item["adjustment"]) for item in factors))
-        return {
+        record = {
             "schema": ENGINEERING_ADAPTIVE_CONFIDENCE_SCHEMA,
             "score": score,
             "level": "high" if score >= 0.85 else "medium" if score >= 0.65 else "low",
             "factors": factors,
             "evidence_count": len(evidence_chain),
         }
+        goal_lineage = _goal_lineage(progress)
+        return _attach_lineage(record, goal_lineage) if goal_lineage else record
 
     def _build_decision_reasoning(
         self,
@@ -590,7 +650,7 @@ class EngineeringAdaptivePlanner:
         progress: Mapping[str, Any],
         confidence_score: Mapping[str, Any],
     ) -> dict[str, Any]:
-        return {
+        record = {
             "selected": decision,
             "reason": reason,
             "facts": {
@@ -606,6 +666,8 @@ class EngineeringAdaptivePlanner:
             ],
             "confidence_level": _clean_text(confidence_score.get("level")),
         }
+        goal_lineage = _goal_lineage(progress)
+        return _attach_lineage(record, goal_lineage) if goal_lineage else record
 
     def _build_root_cause_report(
         self,
@@ -622,7 +684,7 @@ class EngineeringAdaptivePlanner:
             root_cause.get("stop_reason") or root_cause.get("reason") or reason,
             "blocking_issue_or_unrecoverable_failure" if decision == "blocked" else "recoverable_runtime_failure",
         )
-        return {
+        record = {
             "schema": ENGINEERING_BLOCKED_ROOT_CAUSE_SCHEMA,
             "classification": "blocked" if decision == "blocked" else "recoverable",
             "primary_cause": primary_cause,
@@ -636,6 +698,8 @@ class EngineeringAdaptivePlanner:
                 if isinstance(item, Mapping) and decision in _as_list(item.get("supports"))
             ],
         }
+        goal_lineage = _goal_lineage(progress)
+        return _attach_lineage(record, goal_lineage) if goal_lineage else record
 
     def _latest_lifecycle(self, runtime_result: Mapping[str, Any]) -> dict[str, Any]:
         iterations = _as_list(runtime_result.get("iterations"))
