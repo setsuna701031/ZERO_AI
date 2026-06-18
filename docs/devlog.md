@@ -1276,3 +1276,140 @@ Finish collecting the remaining Evidence and Artifact packages as separate
 commits, then review the modified legacy entry files before connecting anything
 further into Runtime.
 ```
+
+---
+
+## 2026-06-18 - Goal Lineage Coordination Seal
+
+Completed and committed the Goal Lineage Coordination Seal.
+
+Purpose:
+
+```text
+multi-session runtime
+-> root goal lineage
+-> continuation / replan branch identity
+-> persistent queue duplicate gate
+-> scheduler isolation
+-> resume isolation
+-> evidence / authority / completion lineage validation
+```
+
+This package closes the gap left after Multi-Session Coordination Seal: session
+isolation alone was not enough to prevent same-name continuation or replan
+branches from colliding inside or across root goal lineage. The runtime now uses
+a canonical goal-lineage identity shared by queue, scheduler, resume, evidence,
+authority, and completion surfaces.
+
+Files added / updated:
+
+```text
+core/goals/goal_lineage_contract.py
+core/runtime/persistent_queue_contract.py
+core/adaptive/continuation_coordinator.py
+core/adaptive/replan_coordinator.py
+core/evidence/decision_evidence.py
+core/evidence/evidence_authority.py
+core/evidence/evidence_repository.py
+core/goals/goal_completion_authority.py
+core/runtime/persistent_runtime_orchestrator.py
+core/runtime/runtime_authority_seal.py
+core/runtime/runtime_dispatcher.py
+core/runtime/runtime_session_resume.py
+core/runtime/runtime_task_continuation.py
+core/runtime/work_package_queue.py
+core/session/session_progression_coordinator.py
+core/tasks/adaptive_persistence_gateway.py
+core/tasks/engineering_adaptive_planner.py
+core/tasks/engineering_goal_loop.py
+core/tasks/engineering_goal_runner.py
+core/tasks/engineering_goal_work_package_mainline.py
+core/tasks/scheduler_core/task_scheduler_queue.py
+tests/test_goal_lineage_coordination_seal.py
+tests/test_multi_session_coordination_seal.py
+tests/test_persistent_queue_contract_seal.py
+tests/test_persistent_queue_multi_session.py
+```
+
+Canonical identity:
+
+```text
+canonical scope:
+root_goal_id + goal_lineage_id + session_id + runtime_session_id
+
+canonical child identity:
+goal_lineage_id + session_id + runtime_session_id + branch_type + branch_id
+```
+
+Rules sealed:
+
+```text
+Same task_id is not enough to prove identity.
+Same package_id is not enough to prove identity.
+Same continuation_id is not enough to prove identity.
+Same replan_request_id is not enough to prove identity.
+Only the full canonical child identity is duplicate-idempotent.
+A resume cannot restore another root/session/lineage snapshot.
+A retry/fail/finish operation is branch-scoped.
+A child branch finish cannot complete the wrong root goal.
+Evidence from the wrong lineage must be rejected by GoalCompletionAuthority.
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_goal_lineage_coordination_seal.py -q
+-> 6 passed
+
+python -m pytest tests/test_multi_session_coordination_seal.py -q
+-> 8 passed
+
+python -m pytest tests/test_persistent_queue_multi_session.py -q
+-> 2 passed
+
+python -m pytest tests/test_persistent_queue_contract_seal.py -q
+-> 8 passed
+
+python -m compileall core cli tests
+-> passed
+
+git diff --check
+-> passed
+```
+
+Commit:
+
+```text
+0bd13c31 Seal goal lineage coordination
+```
+
+Non-mainline issue reporting:
+
+```text
+issues_found:
+- LF -> CRLF warnings are still present in the Windows working tree.
+- runtime/evidence/evidence_records.jsonl was a dirty validation artifact and was excluded.
+- PATH python availability was environment-specific during Codex execution.
+
+issues_deferred:
+- Line-ending policy cleanup remains deferred because diff-check passes.
+- Existing runtime evidence artifacts remain uncommitted.
+
+blocking_issues:
+- none
+```
+
+Engineering verdict:
+
+```text
+Goal Lineage Coordination Seal: SEALED
+```
+
+Next mainline direction:
+
+```text
+Move above static lineage sealing into long-horizon adaptive planning validation:
+Goal -> Replan -> Replan -> Continuation -> Resume -> Replan -> Completion,
+while preserving lineage, evidence, authority, and completion consistency across
+multiple cycles.
+```

@@ -1155,3 +1155,136 @@ Engineering verdict:
 ```text
 Engineering Goal Scheduler v1: SEALED
 ```
+
+---
+
+## 2026-06-18 - Goal Lineage Coordination Seal
+
+ZERO has now sealed goal-lineage coordination across multi-session runtime,
+queue, scheduler, resume, evidence, authority, and completion paths.
+
+Purpose:
+
+```text
+root goal
+-> continuation / replan branches
+-> persistent queue identity
+-> scheduler duplicate gate
+-> resume snapshot isolation
+-> decision evidence lineage
+-> evidence authority validation
+-> goal completion authority
+```
+
+This package fixes the identity gap where task, package, continuation, or replan
+IDs could collide across root goals, sessions, runtime sessions, or branch types.
+Identity is now anchored by a canonical goal-lineage contract instead of loose
+name matching.
+
+Completed:
+
+- Canonical Goal Lineage Contract
+- Persistent Queue Contract integration
+- continuation / replan lineage propagation
+- session progression lineage propagation
+- persistent runtime orchestrator lineage handoff
+- scheduler lineage-aware storage key and duplicate gate
+- runtime resume snapshot lineage isolation
+- decision evidence lineage propagation
+- evidence repository lineage-scoped lookup
+- evidence authority lineage validation
+- goal completion authority lineage mismatch rejection
+- persistent queue multi-session reload regression coverage
+
+Canonical scope:
+
+```text
+root_goal_id
++ goal_lineage_id
++ session_id
++ runtime_session_id
+```
+
+Canonical child identity:
+
+```text
+goal_lineage_id
++ session_id
++ runtime_session_id
++ branch_type
++ branch_id
+```
+
+Legacy IDs remain metadata only:
+
+```text
+goal_id
+source_goal_id
+continuation_id
+replan_request_id
+task_id
+package_id
+```
+
+Boundary decision:
+
+```text
+Task/package/continuation/replan names are not identity by themselves.
+Duplicate gates require the full canonical child identity.
+Scheduler remains orchestration only.
+Queue does not become completion authority.
+Resume restores only matching lineage snapshots.
+Evidence cannot complete a goal across the wrong lineage.
+GoalCompletionAuthority must reject lineage-mismatched evidence.
+No legacy direct JSON engineering_task_runner path is allowed to own mainline execution.
+```
+
+Validated checkpoints:
+
+```text
+python -m pytest tests/test_goal_lineage_coordination_seal.py -q
+-> 6 passed
+
+python -m pytest tests/test_multi_session_coordination_seal.py -q
+-> 8 passed
+
+python -m pytest tests/test_persistent_queue_multi_session.py -q
+-> 2 passed
+
+python -m pytest tests/test_persistent_queue_contract_seal.py -q
+-> 8 passed
+
+python -m compileall core cli tests
+-> passed
+
+git diff --check
+-> passed
+```
+
+Non-mainline issue reporting:
+
+```text
+issues_found:
+- Git LF -> CRLF warnings remain environment / line-ending policy warnings.
+- runtime/evidence/evidence_records.jsonl was dirty during validation and was excluded from commit.
+- Local PATH python availability was observed as an environment issue in Codex; workspace Python was used when needed.
+
+issues_deferred:
+- Line-ending policy cleanup is deferred because git diff --check passes.
+- Existing dirty evidence artifacts are not committed as source changes.
+
+blocking_issues:
+- none
+```
+
+Commit:
+
+```text
+0bd13c31 Seal goal lineage coordination
+```
+
+Engineering verdict:
+
+```text
+Goal Lineage Coordination Seal: SEALED
+```
