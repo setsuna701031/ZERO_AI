@@ -9,6 +9,8 @@ from typing import Any, Mapping
 
 
 GOAL_LINEAGE_SCHEMA = "zero.goal_lineage.v1"
+RUNTIME_IDENTITY_SCHEMA = "zero.runtime_identity.v1"
+
 GOAL_LINEAGE_FIELDS = (
     "root_goal_id",
     "source_goal_id",
@@ -20,8 +22,14 @@ GOAL_LINEAGE_FIELDS = (
     "runtime_session_id",
 )
 
+RUNTIME_IDENTITY_FIELDS = (
+    "session_id",
+    "runtime_session_id",
+)
+
 _NESTED_KEYS = (
     "goal_lineage",
+    "runtime_identity",
     "lineage",
     "metadata",
     "payload",
@@ -67,6 +75,42 @@ def build_goal_lineage_id(*, root_goal_id: str, session_id: str = "", runtime_se
         separators=(",", ":"),
     )
     return "goal-lineage-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
+
+
+def extract_runtime_identity(
+    value: Mapping[str, Any] | None,
+    *,
+    require_complete: bool = False,
+) -> dict[str, str]:
+    """Extract strict runtime identity without manufacturing runtime_session_id.
+
+    This helper is the Runtime Identity Authority V2 staging boundary.
+
+    Compatibility note:
+    - ``extract_goal_lineage`` still preserves the historical
+      ``runtime_session_id or session_id`` fallback.
+    - This helper does not perform that fallback. A missing
+      ``runtime_session_id`` remains missing and can be rejected by
+      authority boundaries that opt into strict runtime identity.
+    """
+
+    if not isinstance(value, Mapping):
+        if require_complete:
+            raise ValueError("runtime_identity_requires_mapping")
+        return {}
+
+    sources = _sources(value)
+    identity = {
+        "schema": RUNTIME_IDENTITY_SCHEMA,
+        "session_id": _first(sources, "session_id", "operator_session_id", "persistent_operator_session_id"),
+        "runtime_session_id": _first(sources, "runtime_session_id"),
+    }
+    result = {key: copy.deepcopy(item) for key, item in identity.items() if _text(item)}
+    if require_complete:
+        missing = [field for field in RUNTIME_IDENTITY_FIELDS if not _text(result.get(field))]
+        if missing:
+            raise ValueError("runtime_identity_missing_fields:" + ",".join(missing))
+    return result
 
 
 def extract_goal_lineage(value: Mapping[str, Any] | None, *, require_complete: bool = False) -> dict[str, str]:
@@ -126,6 +170,17 @@ def lineage_scope_matches(left: Mapping[str, Any] | None, right: Mapping[str, An
     )
 
 
+def runtime_identity_matches(left: Mapping[str, Any] | None, right: Mapping[str, Any] | None) -> bool:
+    lhs = extract_runtime_identity(left)
+    rhs = extract_runtime_identity(right)
+    return bool(
+        lhs.get("session_id")
+        and lhs.get("runtime_session_id")
+        and lhs.get("session_id") == rhs.get("session_id")
+        and lhs.get("runtime_session_id") == rhs.get("runtime_session_id")
+    )
+
+
 def canonical_work_identity(value: Mapping[str, Any] | None) -> tuple[str, ...]:
     if not isinstance(value, Mapping):
         return ()
@@ -153,9 +208,13 @@ def attach_goal_lineage(target: Mapping[str, Any], lineage: Mapping[str, Any]) -
 __all__ = [
     "GOAL_LINEAGE_FIELDS",
     "GOAL_LINEAGE_SCHEMA",
+    "RUNTIME_IDENTITY_FIELDS",
+    "RUNTIME_IDENTITY_SCHEMA",
     "attach_goal_lineage",
     "build_goal_lineage_id",
     "canonical_work_identity",
     "extract_goal_lineage",
+    "extract_runtime_identity",
     "lineage_scope_matches",
+    "runtime_identity_matches",
 ]
