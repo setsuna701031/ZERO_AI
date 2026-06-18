@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import json
 import time
 from pathlib import Path
@@ -21,6 +22,8 @@ from core.runtime.runtime_task_continuation import (
     CONTINUATION_ACTION_WAIT,
     RuntimeTaskContinuation,
 )
+from core.runtime.persistent_queue_contract import extract_queue_lineage
+from core.goals.goal_lineage_contract import canonical_work_identity
 
 try:
     from core.runtime.persistent_engineering_session import PersistentEngineeringSession
@@ -555,6 +558,7 @@ class PersistentRuntimeOrchestrator:
         task_repository: Any,
         scheduler: Any = None,
         agent_loop: Any = None,
+        session_id: str | None = None,
         persist: bool = True,
         force: bool = False,
     ) -> Dict[str, Any]:
@@ -567,7 +571,7 @@ class PersistentRuntimeOrchestrator:
         started_at = _now()
         tasks = self._list_repo_tasks(task_repository)
         resume_runtime = self._build_runtime_resume_store()
-        latest_record = resume_runtime.latest_record()
+        latest_record = resume_runtime.get_record(session_id) if session_id else resume_runtime.latest_record()
         record_source = "existing_runtime_session_resume_record"
         record: RuntimeSessionResumeRecord | None = latest_record
 
@@ -600,6 +604,25 @@ class PersistentRuntimeOrchestrator:
             include_terminal=False,
             persist=persist,
         )
+        if resume_plan.get("already_resumed"):
+            result = self._result(
+                ok=True,
+                action="idempotent_resume_skip",
+                reason="session_already_resumed",
+                record_source=record_source,
+                session_id=record.session_id,
+                resume_plan=resume_plan,
+                requeued_task_ids=[],
+                waiting_task_ids=[],
+                skipped_task_ids=[],
+                requeued_count=0,
+                waiting_count=0,
+                skipped_count=0,
+                tasks_seen=len(tasks),
+                started_at=started_at,
+            )
+            self._append_audit(result)
+            return result
         snapshots = self._snapshots_from_record(record)
         candidate_tasks, terminal_guard_skipped = self._candidate_tasks_from_snapshots(snapshots)
         if not candidate_tasks:
@@ -751,11 +774,17 @@ class PersistentRuntimeOrchestrator:
     ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         candidate_tasks: List[Dict[str, Any]] = []
         skipped: List[Dict[str, Any]] = []
+        seen_identities: set[tuple[str, ...] | tuple[str, str]] = set()
         for snapshot in snapshots:
             task = _safe_dict(snapshot.task)
             if not task:
                 continue
             task.setdefault("task_id", snapshot.task_id)
+            task_id = _clean_text(task.get("task_id"))
+            identity = canonical_work_identity(task) or ("task_id", task_id)
+            if identity in seen_identities:
+                continue
+            seen_identities.add(identity)
             runtime_status = self._runtime_state_status_for_task(task)
             if runtime_status and self._is_terminal_status(runtime_status):
                 task["status"] = runtime_status
@@ -966,16 +995,20 @@ class PersistentRuntimeOrchestrator:
     ) -> List[Dict[str, Any]]:
         if scheduler is None:
             return []
-        task_ids = continuation_plan.get("requeue_task_ids")
-        if not isinstance(task_ids, list):
+        decisions = [
+            item for item in (continuation_plan.get("decisions") or [])
+            if isinstance(item, Mapping) and item.get("action") == CONTINUATION_ACTION_REQUEUE
+        ]
+        if not decisions:
             return []
 
         updates: List[Dict[str, Any]] = []
-        for raw_task_id in task_ids:
-            task_id = _clean_text(raw_task_id)
+        for decision in decisions:
+            task_id = _clean_text(decision.get("task_id"))
             if not task_id:
                 continue
-            runtime_status = self._runtime_state_status_for_task({"task_id": task_id})
+            task_payload = decision.get("task") if isinstance(decision.get("task"), Mapping) else {}
+            runtime_status = self._runtime_state_status_for_task(task_payload or {"task_id": task_id})
             if runtime_status and self._is_terminal_status(runtime_status):
                 updates.append(
                     {
@@ -990,7 +1023,13 @@ class PersistentRuntimeOrchestrator:
 
             try:
                 if hasattr(scheduler, "submit_existing_task"):
-                    result = scheduler.submit_existing_task(task_id)
+                    submit = scheduler.submit_existing_task
+                    parameters = inspect.signature(submit).parameters
+                    result = (
+                        submit(task_id, goal_lineage=extract_queue_lineage(task_payload))
+                        if "goal_lineage" in parameters
+                        else submit(task_id)
+                    )
                 elif hasattr(scheduler, "enqueue_task"):
                     result = scheduler.enqueue_task(task_id)
                 elif hasattr(scheduler, "enqueue"):
@@ -1009,6 +1048,8 @@ class PersistentRuntimeOrchestrator:
                         "action": "scheduler_requeue",
                         "result": result,
                     }
+                item["lineage"] = extract_queue_lineage(task_payload if isinstance(task_payload, Mapping) else {})
+                item["queue_identity_preserved"] = True
                 updates.append(item)
             except Exception as exc:
                 updates.append(
@@ -1117,6 +1158,7 @@ def resume_last_persistent_runtime_session(
     task_repository: Any,
     scheduler: Any = None,
     agent_loop: Any = None,
+    session_id: str | None = None,
     repo_root: str | Path = ".",
     workspace_dir: str | Path = "workspace",
     resume_store_path: str | Path | None = None,
@@ -1132,6 +1174,7 @@ def resume_last_persistent_runtime_session(
         task_repository=task_repository,
         scheduler=scheduler,
         agent_loop=agent_loop,
+        session_id=session_id,
         persist=persist,
         force=force,
     )

@@ -19,6 +19,7 @@ from core.evidence.decision_evidence import DecisionEvidenceRepository, build_de
 from core.evidence.evidence_authority import EvidenceAuthority
 from core.evidence.evidence_repository import EvidenceRepository
 from core.tasks.adaptive_planning_foundation import ADAPTIVE_PLANNING_RECORD_SCHEMA
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 
 ADAPTIVE_PERSISTENCE_GATEWAY_SCHEMA = "zero.adaptive_persistence_gateway.v1"
@@ -81,11 +82,15 @@ class AdaptivePersistenceGateway:
         cycle["decision_reason"] = record["decision_reason"]
         cycle["replan_count"] = int(replan_count)
         cycle["continuation_count"] = int(continuation_count)
+        lineage = extract_goal_lineage(cycle)
 
         self.persist_goal_adaptive_metadata(cycle, record)
         decision_evidence = self.register_decision_evidence(cycle)
         cycle["decision_evidence"] = copy.deepcopy(decision_evidence)
-        cycle["evidence_chain"] = self.evidence_chain_summary(_clean_text(cycle.get("goal_id")))
+        cycle["evidence_chain"] = self.evidence_chain_summary(
+            _clean_text(cycle.get("goal_id")),
+            goal_lineage=lineage,
+        )
         self.link_decision_evidence(cycle, decision_evidence)
         cycle["adaptive_persistence_gateway"] = {
             "schema": ADAPTIVE_PERSISTENCE_GATEWAY_SCHEMA,
@@ -149,6 +154,7 @@ class AdaptivePersistenceGateway:
                 goal_id,
                 {
                     "metadata": {
+                        "goal_lineage": copy.deepcopy(extract_goal_lineage(cycle)),
                         "adaptive_planning_record": copy.deepcopy(dict(record)),
                         "adaptive_planning_history": history,
                     }
@@ -192,13 +198,39 @@ class AdaptivePersistenceGateway:
             update_goal(continuation_goal_id, {"metadata": {"decision_evidence_id": decision_id}})
             continuation_work_item = _as_mapping(cycle.get("continuation_work_item"))
             continuation_work_item["decision_evidence_id"] = decision_id
+            continuation_work_item["evidence_ref"] = decision_id
+            continuation_refs = [
+                _clean_text(item)
+                for item in continuation_work_item.get("evidence_refs", [])
+                if _clean_text(item)
+            ] if isinstance(continuation_work_item.get("evidence_refs"), list) else []
+            if decision_id not in continuation_refs:
+                continuation_refs.append(decision_id)
+            continuation_work_item["evidence_refs"] = continuation_refs
             cycle["continuation_work_item"] = continuation_work_item
         if cycle.get("replan_record"):
             replan_record = _as_mapping(cycle.get("replan_record"))
+            replan_request = _as_mapping(replan_record.get("replan_request"))
+            if replan_request.get("request_id") and not replan_record.get("replan_request_id"):
+                replan_record["replan_request_id"] = _clean_text(replan_request.get("request_id"))
             replan_record["decision_evidence_id"] = decision_id
+            replan_record["evidence_ref"] = decision_id
+            evidence_refs = [
+                _clean_text(item)
+                for item in replan_record.get("evidence_refs", [])
+                if _clean_text(item)
+            ] if isinstance(replan_record.get("evidence_refs"), list) else []
+            if decision_id not in evidence_refs:
+                evidence_refs.append(decision_id)
+            replan_record["evidence_refs"] = evidence_refs
             cycle["replan_record"] = replan_record
 
-    def evidence_chain_summary(self, goal_id: str) -> dict[str, Any]:
+    def evidence_chain_summary(
+        self,
+        goal_id: str,
+        *,
+        goal_lineage: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         get_goal_chain = getattr(self.evidence_authority, "get_goal_chain", None)
         if not callable(get_goal_chain):
             build_chain = getattr(self.evidence_repository, "build_chain", None)
@@ -208,7 +240,13 @@ class AdaptivePersistenceGateway:
         else:
             chain_factory = get_goal_chain
         try:
-            chain = chain_factory(_clean_text(goal_id))
+            lineage = extract_goal_lineage(goal_lineage)
+            chain = chain_factory(
+                _clean_text(goal_id),
+                session_id=lineage.get("session_id") or None,
+                goal_lineage_id=lineage.get("goal_lineage_id") or None,
+                root_goal_id=lineage.get("root_goal_id") or None,
+            )
         except Exception:
             return {}
         to_dict = getattr(chain, "to_dict", None)

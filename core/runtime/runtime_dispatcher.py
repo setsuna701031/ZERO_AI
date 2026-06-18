@@ -12,6 +12,7 @@ from core.runtime.runtime_authority_seal import (
     issue_dispatch_execution_capability,
     issue_work_package_completion_authority,
 )
+from core.runtime.persistent_queue_contract import classify_queue_failure, extract_queue_lineage, merge_queue_lineage
 from core.runtime.work_package_queue import (
     RuntimePackageQueue,
     RuntimePackageQueueError,
@@ -193,6 +194,7 @@ class RuntimeDispatcher:
             completion_authority=issue_work_package_completion_authority(
                 _RUNTIME_DISPATCHER_ISSUER_TOKEN,
                 package_id=package_id,
+                session_id=str(self.queue.status(package_id).get("session_id") or ""),
             ),
         )
 
@@ -225,8 +227,9 @@ class RuntimeDispatcher:
             "policy_result": {"allowed": True, "source": "runtime_dispatcher"},
             "trace_id": f"trace:{package_id}:{task_id}",
         }
+        sealed_item, _ = merge_queue_lineage(item, record)
         task = {
-            **copy.deepcopy(dict(item)),
+            **sealed_item,
             "id": task_id,
             "task_id": task_id,
             "task_name": task_id,
@@ -331,9 +334,10 @@ class RuntimeDispatcher:
             or (payload.get("engineering_replan_candidate") and "replan")
             or ""
         ).strip().lower()
+        failure_class = classify_queue_failure(status, error, explicit_next_action, payload)
         if ok:
             next_action = "complete" if current >= len(steps) else "continue"
-        elif status in {"blocked", "waiting", "paused"}:
+        elif status in {"blocked", "waiting", "paused"} or failure_class == "blocked":
             next_action = "block"
         elif explicit_next_action in {
             "replan",
@@ -341,7 +345,7 @@ class RuntimeDispatcher:
             "manual_or_planner_replan",
             "retry_with_replan",
             "request_replan",
-        }:
+        } and failure_class == "replan":
             next_action = "replan"
         else:
             next_action = "fail"
@@ -398,19 +402,42 @@ class RuntimeDispatcher:
             "schema": RUNTIME_REPLAN_REQUEST_SCHEMA,
             "request_id": f"{package_id}:replan:{replan_count + 1}",
             "package_id": package_id,
+            "session_id": record.get("session_id") or record.get("runtime_session_id"),
             "task_id": record.get("task_id"),
+            "goal_id": task.get("goal_id"),
+            "source_goal_id": task.get("source_goal_id"),
+            "cycle_index": task.get("cycle_index"),
+            "continuation_goal_id": task.get("continuation_goal_id"),
+            "continuation_task_id": task.get("continuation_task_id"),
+            "evidence_ref": task.get("evidence_ref"),
+            "evidence_refs": copy.deepcopy(task.get("evidence_refs") or []),
+            "decision_evidence_id": task.get("decision_evidence_id"),
+            "authority_state": task.get("authority_state"),
             "failed_step_index": feedback.get("step_index"),
             "failed_step_id": feedback.get("step_id"),
             "failed_step_type": feedback.get("step_type"),
             "root_cause": feedback.get("root_cause"),
+            "failure_class": "recoverable",
+            "next_action": "replan",
             "previous_evidence": copy.deepcopy(feedback.get("evidence")),
             "requested_at": _now(),
             "append_only": True,
             "preserve_lifecycle_history": True,
             "replan_count": replan_count + 1,
             "max_replans": max_replans,
+            **extract_queue_lineage(task),
         }
         recorded = self.queue.record_replan_request(package_id, request)
+        if not any(
+            isinstance(item, Mapping) and item.get("request_id") == request["request_id"]
+            for item in (recorded.get("replan_requests") or [])
+        ):
+            return {
+                "ok": False,
+                "root_cause": "runtime_replan_request_rejected_by_queue_contract",
+                "replan_request": request,
+                "queue_replan_rejections": copy.deepcopy(recorded.get("replan_rejections") or []),
+            }
         method = getattr(self.planner_bridge, "replan_package", None)
         if not callable(method):
             return {

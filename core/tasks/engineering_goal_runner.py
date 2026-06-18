@@ -24,6 +24,7 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_runtime_contract import build_engineering_runtime_contract
 from core.tasks.engineering_planning_adapter import EngineeringPlanningOnlyAdapter
 from core.tasks.engineering_runtime_orchestrator import EngineeringRuntimeOrchestrator
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
 
 
 ENGINEERING_GOAL_RUNNER_SCHEMA = "zero.engineering_goal_runner.v1"
@@ -128,11 +129,18 @@ class EngineeringGoalRunner:
         self.adaptive_planner = adaptive_planner or EngineeringAdaptivePlanner()
         self.issue_reporter = issue_reporter
 
-    def run_goal(self, goal_id: str) -> dict[str, Any]:
+    def run_goal(
+        self,
+        goal_id: str,
+        *,
+        goal_lineage: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
         goal = self.repository.load_goal(target_goal_id)
         if goal is None:
             return self._not_found_result(target_goal_id)
+        if goal_lineage is not None:
+            goal = attach_goal_lineage(goal, goal_lineage)
         request = self.build_runtime_request([goal], selected_goal_id=target_goal_id)
         mainline = self._run_work_package_mainline(goal)
         if mainline:

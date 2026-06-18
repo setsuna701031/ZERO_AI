@@ -22,6 +22,7 @@ from core.evidence.evidence_authority import (
 from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_record import EvidenceRecord
 from core.evidence.evidence_repository import EvidenceRepository
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 
 DECISION_EVIDENCE_STORE_SCHEMA = "zero.decision_evidence.projection.v2"
@@ -64,6 +65,7 @@ def build_decision_evidence(
     )
     goal_id = _text(cycle_record.get("goal_id") or adaptive.get("goal_id"))
     cycle_index = int(cycle_record.get("cycle_index") or 0)
+    lineage = extract_goal_lineage(cycle_record)
     decision = _text(adaptive.get("decision"), "unavailable")
     outcome_class = _text(planning.get("outcome_class") or adaptive.get("outcome_class"), "unavailable")
     next_action = _text(planning.get("next_action") or adaptive.get("next_action"), "unavailable")
@@ -95,6 +97,8 @@ def build_decision_evidence(
             "cycle_index": cycle_index,
             "decision": decision,
             "outcome_class": outcome_class,
+            "goal_lineage_id": lineage.get("goal_lineage_id", ""),
+            "branch_id": lineage.get("branch_id", ""),
         },
         sort_keys=True,
     )
@@ -104,7 +108,7 @@ def build_decision_evidence(
     if confidence in (None, ""):
         confidence = None
 
-    return DecisionEvidenceRecord(
+    result = DecisionEvidenceRecord(
         decision_id=decision_id,
         goal_id=goal_id,
         task_id=task_id,
@@ -125,6 +129,9 @@ def build_decision_evidence(
         created_at=time.time(),
         links=links,
     ).to_dict()
+    result.update(lineage)
+    result["goal_lineage"] = lineage
+    return result
 
 
 def decision_evidence_to_evidence_record(record: Mapping[str, Any]) -> EvidenceRecord:

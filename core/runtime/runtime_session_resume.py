@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
+from core.runtime.persistent_queue_contract import duplicate_identity, extract_queue_lineage
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 SESSION_STATUS_OPEN = "open"
 SESSION_STATUS_RESUMABLE = "resumable"
@@ -69,6 +71,111 @@ def _copy_list(value: Any) -> list[Any]:
     return copy.deepcopy(value) if isinstance(value, list) else []
 
 
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _first_text(*values: Any) -> str:
+    for value in values:
+        text = _clean_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
+    metadata = task.get("metadata") if isinstance(task.get("metadata"), Mapping) else {}
+    replan_record = task.get("replan_record") if isinstance(task.get("replan_record"), Mapping) else {}
+    replan_request = (
+        replan_record.get("replan_request")
+        if isinstance(replan_record.get("replan_request"), Mapping)
+        else {}
+    )
+    continuation_work_item = (
+        task.get("continuation_work_item") if isinstance(task.get("continuation_work_item"), Mapping) else {}
+    )
+    lineage = {
+        "session_id": _first_text(
+            task.get("session_id"),
+            task.get("runtime_session_id"),
+            metadata.get("session_id"),
+            metadata.get("runtime_session_id"),
+        ),
+        "runtime_session_id": _first_text(task.get("runtime_session_id"), metadata.get("runtime_session_id")),
+        "goal_id": _first_text(task.get("goal_id"), metadata.get("goal_id"), task.get("task_id"), task.get("id")),
+        "source_goal_id": _first_text(
+            task.get("source_goal_id"),
+            metadata.get("source_goal_id"),
+            replan_record.get("source_goal_id"),
+            continuation_work_item.get("source_goal_id"),
+        ),
+        "continuation_goal_id": _first_text(
+            task.get("continuation_goal_id"),
+            metadata.get("continuation_goal_id"),
+            continuation_work_item.get("goal_id"),
+        ),
+        "continuation_task_id": _first_text(
+            task.get("continuation_task_id"),
+            metadata.get("continuation_task_id"),
+            continuation_work_item.get("continuation_task_id"),
+            continuation_work_item.get("task_id"),
+        ),
+        "replan_request_id": _first_text(
+            task.get("replan_request_id"),
+            metadata.get("replan_request_id"),
+            replan_record.get("replan_request_id"),
+            replan_record.get("request_id"),
+            replan_request.get("request_id"),
+        ),
+        "evidence_ref": _first_text(
+            task.get("evidence_ref"),
+            metadata.get("evidence_ref"),
+            replan_record.get("evidence_ref"),
+            continuation_work_item.get("evidence_ref"),
+        ),
+        "decision_evidence_id": _first_text(
+            task.get("decision_evidence_id"),
+            metadata.get("decision_evidence_id"),
+            replan_record.get("decision_evidence_id"),
+            continuation_work_item.get("decision_evidence_id"),
+        ),
+        "authority_state": _first_text(
+            task.get("authority_state"),
+            metadata.get("authority_state"),
+            replan_record.get("authority_state"),
+            continuation_work_item.get("authority_state"),
+        ),
+    }
+    if task.get("cycle_index") is not None:
+        lineage["cycle_index"] = _safe_int(task.get("cycle_index"), 0)
+    elif metadata.get("source_cycle_index") is not None:
+        lineage["cycle_index"] = _safe_int(metadata.get("source_cycle_index"), 0)
+    elif replan_record.get("cycle_index") is not None:
+        lineage["cycle_index"] = _safe_int(replan_record.get("cycle_index"), 0)
+    elif continuation_work_item.get("cycle_index") is not None:
+        lineage["cycle_index"] = _safe_int(continuation_work_item.get("cycle_index"), 0)
+
+    evidence_refs = []
+    for candidate in (
+        task.get("evidence_refs"),
+        metadata.get("evidence_refs"),
+        replan_record.get("evidence_refs"),
+        continuation_work_item.get("evidence_refs"),
+    ):
+        if isinstance(candidate, list):
+            evidence_refs.extend(_clean_text(item) for item in candidate if _clean_text(item))
+    if lineage["evidence_ref"]:
+        evidence_refs.append(lineage["evidence_ref"])
+    if lineage["decision_evidence_id"]:
+        evidence_refs.append(lineage["decision_evidence_id"])
+    if evidence_refs:
+        lineage["evidence_refs"] = list(dict.fromkeys(evidence_refs))
+
+    lineage.update(extract_goal_lineage({**dict(task), **lineage}))
+
+    return {key: copy.deepcopy(value) for key, value in lineage.items() if value not in ("", [], {})}
+
+
 def normalize_task_status(value: Any) -> str:
     text = str(value or "").strip().lower()
     return text or TASK_STATUS_CREATED
@@ -100,6 +207,7 @@ class RuntimeTaskResumeSnapshot:
     retry_count: int = 0
     max_retries: int = 0
     task: dict[str, Any] = field(default_factory=dict)
+    lineage: dict[str, Any] = field(default_factory=dict)
     resume_reason: str = ""
     fingerprint: str = ""
     captured_at: str = field(default_factory=utc_timestamp)
@@ -117,6 +225,7 @@ class RuntimeTaskResumeSnapshot:
             retry_count=_safe_int(data.get("retry_count"), 0),
             max_retries=_safe_int(data.get("max_retries"), 0),
             task=_copy_dict(data.get("task")),
+            lineage=_copy_dict(data.get("lineage")),
             resume_reason=str(data.get("resume_reason") or ""),
             fingerprint=str(data.get("fingerprint") or ""),
             captured_at=str(data.get("captured_at") or utc_timestamp()),
@@ -203,6 +312,7 @@ class RuntimeSessionResume:
             "retry_count": retry_count,
             "max_retries": max_retries,
             "task": task_copy,
+            "lineage": _lineage_from_task(task_copy),
         }
         return RuntimeTaskResumeSnapshot(
             task_id=task_id,
@@ -211,6 +321,7 @@ class RuntimeSessionResume:
             retry_count=retry_count,
             max_retries=max_retries,
             task=task_copy,
+            lineage=_lineage_from_task(task_copy),
             resume_reason=resume_reason or _default_resume_reason(status),
             fingerprint=stable_resume_fingerprint(fingerprint_payload),
         )
@@ -228,7 +339,10 @@ class RuntimeSessionResume:
         for task in tasks or []:
             if not isinstance(task, Mapping):
                 continue
-            snapshot = self.capture_task_snapshot(task)
+            session_task = copy.deepcopy(dict(task))
+            if not _first_text(session_task.get("session_id"), session_task.get("runtime_session_id")):
+                session_task["session_id"] = normalized_session_id
+            snapshot = self.capture_task_snapshot(session_task)
             snapshot = self._resolve_snapshot_against_runtime_state(snapshot)
             if include_terminal or is_resumable_task_status(snapshot.status):
                 snapshots.append(snapshot)
@@ -275,6 +389,17 @@ class RuntimeSessionResume:
         record = self.get_record(session_id) if session_id else self.latest_record()
         if record is None:
             return self._empty_resume_plan(reason="no_session_record")
+        if record.status in {SESSION_STATUS_RESUMED, SESSION_STATUS_FINALIZED}:
+            plan = self._empty_resume_plan(reason="session_already_resumed")
+            plan.update(
+                {
+                    "action": "idempotent_resume_skip",
+                    "session_id": record.session_id,
+                    "already_resumed": True,
+                    "previous_resume_fingerprint": record.resume_plan.get("fingerprint"),
+                }
+            )
+            return plan
 
         resolved_snapshots = [self._resolve_snapshot_against_runtime_state(item) for item in record.snapshots]
         snapshots = [item for item in resolved_snapshots if include_terminal or is_resumable_task_status(item.status)]
@@ -423,12 +548,14 @@ class RuntimeSessionResume:
             "retry_count": snapshot.retry_count,
             "max_retries": snapshot.max_retries,
             "task": task_payload,
+            "lineage": _lineage_from_task(task_payload) if task_payload else copy.deepcopy(snapshot.lineage),
             "guard": "runtime_state_status_precedence",
         }
         return replace(
             snapshot,
             status=runtime_status,
             task=task_payload,
+            lineage=_lineage_from_task(task_payload) if task_payload else copy.deepcopy(snapshot.lineage),
             resume_reason=reason,
             fingerprint=stable_resume_fingerprint(fingerprint_payload),
         )
@@ -467,7 +594,7 @@ class RuntimeSessionResume:
         return root / "workspace"
 
     def _build_resume_plan_from_snapshots(self, snapshots: Iterable[RuntimeTaskResumeSnapshot]) -> dict[str, Any]:
-        ordered = list(snapshots or [])
+        ordered, duplicate_ids = self._dedupe_snapshots_by_identity(snapshots)
         task_ids = [item.task_id for item in ordered]
         blocked = [item.task_id for item in ordered if item.status in {TASK_STATUS_BLOCKED, TASK_STATUS_REVIEW_REQUIRED}]
         runnable = [item.task_id for item in ordered if item.status not in {TASK_STATUS_BLOCKED, TASK_STATUS_REVIEW_REQUIRED}]
@@ -478,6 +605,12 @@ class RuntimeSessionResume:
             "runnable_task_ids": runnable,
             "blocked_task_ids": blocked,
             "snapshot_count": len(ordered),
+            "duplicate_task_ids": duplicate_ids,
+            "lineage_by_task_id": {
+                item.task_id: copy.deepcopy(item.lineage)
+                for item in ordered
+                if item.task_id and item.lineage
+            },
             "status_counts": _count_statuses(item.status for item in ordered),
             "resume_policy": {
                 "terminal_tasks_excluded": True,
@@ -489,6 +622,29 @@ class RuntimeSessionResume:
             "created_at": utc_timestamp(),
         }
         return plan_payload
+
+    @staticmethod
+    def _dedupe_snapshots_by_identity(
+        snapshots: Iterable[RuntimeTaskResumeSnapshot],
+    ) -> tuple[list[RuntimeTaskResumeSnapshot], list[str]]:
+        ordered: list[RuntimeTaskResumeSnapshot] = []
+        accepted_payloads: list[dict[str, Any]] = []
+        duplicate_ids: list[str] = []
+        for item in snapshots or []:
+            task_id = _clean_text(getattr(item, "task_id", ""))
+            if not task_id:
+                continue
+            payload = copy.deepcopy(dict(item.task)) if isinstance(item.task, Mapping) else {}
+            payload.setdefault("task_id", task_id)
+            for key, value in extract_queue_lineage(item.lineage).items():
+                payload.setdefault(key, copy.deepcopy(value))
+            duplicate, _ = duplicate_identity(payload, accepted_payloads)
+            if duplicate is not None:
+                duplicate_ids.append(task_id)
+                continue
+            ordered.append(item)
+            accepted_payloads.append(payload)
+        return ordered, list(dict.fromkeys(duplicate_ids))
 
     def _empty_resume_plan(self, *, reason: str) -> dict[str, Any]:
         return {

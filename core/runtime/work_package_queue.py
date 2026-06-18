@@ -13,6 +13,13 @@ from core.tasks.scheduler_runtime_contract import (
     validate_scheduler_lifecycle_transition,
 )
 from core.runtime.runtime_authority_seal import is_work_package_completion_authority
+from core.runtime.persistent_queue_contract import (
+    classify_queue_failure,
+    duplicate_identity,
+    extract_queue_lineage,
+    merge_queue_lineage,
+    queue_session_id,
+)
 
 
 QUEUE_SCHEMA = "zero.runtime.work_package_queue.v1"
@@ -128,11 +135,14 @@ class RuntimePackageQueue:
             for item in feedback
             if isinstance(item, Mapping) and not item.get("ok") and str(item.get("step_id") or "")
         ]
+        lineage = extract_queue_lineage(record)
         return {
             "schema": SESSION_RESUME_SCHEMA,
             "session_id": record.get("session_id"),
             "task_id": record.get("task_id"),
             "package_id": record.get("package_id"),
+            "lineage": lineage,
+            **lineage,
             "active_graph": {
                 "task_graph": copy.deepcopy(record.get("task_graph") or {}),
                 "steps": active_steps,
@@ -252,8 +262,34 @@ class RuntimePackageQueue:
         package_record = package.to_dict() if isinstance(package, WorkPackage) else dict(package)
         package_id = str(package_record.get("package_id") or "")
         path = self._path(package_id)
+        existing_records = self.list_packages()
+        duplicate, matched_identity = duplicate_identity(package_record, existing_records)
         if path.exists():
-            return self._read(package_id)
+            path_record = self._read(package_id)
+            existing_session = queue_session_id(path_record)
+            incoming_session = queue_session_id(package_record)
+            if existing_session != incoming_session and (existing_session or incoming_session):
+                raise RuntimePackageQueueError(
+                    f"package_id_session_collision:{package_id}:{existing_session}:{incoming_session}"
+                )
+            duplicate = path_record
+            matched_identity = matched_identity or {"package_id": package_id}
+        if isinstance(duplicate, Mapping):
+            existing = copy.deepcopy(dict(duplicate))
+            merged, conflicts = merge_queue_lineage(
+                existing, package_record, preserve_existing_evidence=True
+            )
+            event = {
+                "result": "duplicate_idempotent",
+                "matched_identity": copy.deepcopy(matched_identity),
+                "incoming_package_id": package_id,
+                "lineage_conflicts": conflicts,
+                "timestamp": _now(),
+            }
+            merged.setdefault("queue_idempotency_events", []).append(event)
+            merged["queue_admission"] = event
+            return self._write(merged)
+        lineage = extract_queue_lineage(package_record)
         timestamp = _now()
         transition = {
             "from": None,
@@ -265,6 +301,7 @@ class RuntimePackageQueue:
         }
         record = {
             **copy.deepcopy(package_record),
+            **lineage,
             "schema": QUEUE_SCHEMA,
             "status": "queued",
             "lifecycle_state": "queued",
@@ -276,6 +313,17 @@ class RuntimePackageQueue:
             "last_transition": transition,
             "progress_snapshot": self._progress_snapshot(package_record, status="queued"),
             "execution_path": work_package_execution_path(),
+            "queue_ownership": {
+                "stores_and_dispatches_only": True,
+                "package_completion_scope": "package_only",
+                "owns_goal_completion_authority": False,
+                "issues_completion_authority": False,
+            },
+            "queue_admission": {
+                "result": "enqueued",
+                "identity": copy.deepcopy(extract_queue_lineage(package_record)),
+                "timestamp": timestamp,
+            },
         }
         return self._write(record)
 
@@ -332,6 +380,15 @@ class RuntimePackageQueue:
             raise RuntimePackageQueueError(f"terminal_package_cannot_resume:{record['status']}")
         if record["status"] not in {"paused", "blocked"}:
             return record
+        if record["status"] == "blocked" and classify_queue_failure(
+            record.get("blocked_reason"), record.get("root_cause")
+        ) == "blocked":
+            record["queue_resume_result"] = {
+                "result": "blocked_terminal_policy_preserved",
+                "requeued": False,
+                "timestamp": _now(),
+            }
+            return self._write(record)
         runtime_state = str(record.get("runtime_lifecycle_state") or "")
         if runtime_state in {"paused", "blocked"}:
             record = self._runtime_transition(record, "planned", reason="operator_resumed_package")
@@ -355,9 +412,13 @@ class RuntimePackageQueue:
         validation_summary: Any = None,
         completion_authority: Any = None,
     ) -> dict[str, Any]:
-        if not is_work_package_completion_authority(completion_authority, package_id=package_id):
-            raise PermissionError("work_package_completion_authority_required")
         record = self._read(package_id)
+        if not is_work_package_completion_authority(
+            completion_authority,
+            package_id=package_id,
+            session_id=str(record.get("session_id") or ""),
+        ):
+            raise PermissionError("work_package_completion_authority_required")
         runtime_state = str(record.get("runtime_lifecycle_state") or "queued")
         if not record.get("runtime_lifecycle_state"):
             timestamp = _now()
@@ -423,7 +484,26 @@ class RuntimePackageQueue:
         record["task_graph"] = copy.deepcopy(snapshot.get("task_graph") or {})
         record["task_graph_summary"] = copy.deepcopy(snapshot.get("task_graph_summary") or {})
         record["memory_context_used"] = copy.deepcopy(snapshot.get("memory_context_used") or [])
-        record["runtime_queue_item"] = copy.deepcopy(snapshot.get("runtime_queue_item"))
+        incoming_item = snapshot.get("runtime_queue_item")
+        if isinstance(incoming_item, Mapping):
+            existing_item = record.get("runtime_queue_item")
+            base_item = existing_item if isinstance(existing_item, Mapping) else incoming_item
+            sealed_item, conflicts = merge_queue_lineage(
+                base_item,
+                record,
+                snapshot,
+                incoming_item,
+                preserve_existing_evidence=isinstance(existing_item, Mapping),
+            )
+            if isinstance(existing_item, Mapping):
+                for key, value in incoming_item.items():
+                    if key not in sealed_item or sealed_item.get(key) in (None, "", [], {}):
+                        sealed_item[key] = copy.deepcopy(value)
+            record["runtime_queue_item"] = sealed_item
+            if conflicts:
+                record.setdefault("queue_lineage_conflicts", []).extend(conflicts)
+        else:
+            record["runtime_queue_item"] = None
         record["updated_at"] = _now()
         if record["planning_status"] != "planned":
             errors = snapshot.get("errors") if isinstance(snapshot.get("errors"), list) else []
@@ -540,6 +620,36 @@ class RuntimePackageQueue:
         if record.get("runtime_lifecycle_state") != "executing":
             raise RuntimePackageQueueError("replan_request_requires_executing_package")
         item = copy.deepcopy(dict(request))
+        request_id = str(item.get("request_id") or "").strip()
+        if not request_id:
+            raise RuntimePackageQueueError("replan_request_id_required")
+        failure_class = classify_queue_failure(
+            item.get("failure_class"),
+            item.get("root_cause"),
+            item.get("reason"),
+            item.get("next_action"),
+        )
+        if failure_class != "replan":
+            rejection = {
+                "request_id": request_id,
+                "result": "replan_rejected",
+                "reason": "blocked_or_nonrecoverable_failure",
+                "failure_class": failure_class,
+                "timestamp": _now(),
+            }
+            record.setdefault("replan_rejections", []).append(rejection)
+            record["active_replan_request"] = None
+            record["updated_at"] = _now()
+            return self._write(self._checkpoint_session(record))
+        existing_requests = record.get("replan_requests") or []
+        if any(
+            isinstance(existing, Mapping)
+            and str(existing.get("request_id") or "").strip() == request_id
+            for existing in existing_requests
+        ):
+            record["duplicate_replan_request_rejected"] = request_id
+            record["updated_at"] = _now()
+            return self._write(self._checkpoint_session(record))
         record.setdefault("replan_requests", []).append(item)
         record["active_replan_request"] = item
         record["updated_at"] = _now()
@@ -556,6 +666,24 @@ class RuntimePackageQueue:
         record = self._read(package_id)
         if record.get("runtime_lifecycle_state") != "executing":
             raise RuntimePackageQueueError("replan_append_requires_executing_package")
+        request_id = str(request.get("request_id") or "").strip()
+        if not request_id:
+            raise RuntimePackageQueueError("replan_request_id_required")
+        if not any(
+            isinstance(existing, Mapping)
+            and str(existing.get("request_id") or "").strip() == request_id
+            for existing in (record.get("replan_requests") or [])
+        ):
+            raise RuntimePackageQueueError("replan_append_requires_admitted_request")
+        if any(
+            isinstance(existing, Mapping)
+            and str(existing.get("request_id") or "").strip() == request_id
+            for existing in (record.get("replan_history") or [])
+        ):
+            record["duplicate_replan_append_rejected"] = request_id
+            record["last_replan_appended_steps"] = []
+            record["updated_at"] = _now()
+            return self._write(self._checkpoint_session(record))
         queue_item = copy.deepcopy(record.get("runtime_queue_item") or {})
         original_steps = copy.deepcopy(queue_item.get("steps") or [])
         replan_number = len(record.get("replan_history") or []) + 1
@@ -711,9 +839,13 @@ class RuntimePackageQueue:
         *,
         completion_authority: Any = None,
     ) -> dict[str, Any]:
-        if not is_work_package_completion_authority(completion_authority, package_id=package_id):
-            raise PermissionError("work_package_completion_authority_required")
         record = self._read(package_id)
+        if not is_work_package_completion_authority(
+            completion_authority,
+            package_id=package_id,
+            session_id=str(record.get("session_id") or ""),
+        ):
+            raise PermissionError("work_package_completion_authority_required")
         record = self._runtime_transition(record, "completed", reason="all_runtime_steps_completed")
         progress = dict(record.get("progress") or {})
         total = int(progress.get("step_count") or 0)

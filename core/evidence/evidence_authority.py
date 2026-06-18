@@ -74,12 +74,24 @@ class EvidenceAuthority:
         normalized["evidence_authority_schema"] = EVIDENCE_AUTHORITY_SCHEMA
         return normalized
 
-    def get_goal_chain(self, goal_id: str) -> EvidenceChain:
+    def get_goal_chain(
+        self,
+        goal_id: str,
+        *,
+        session_id: str | None = None,
+        goal_lineage_id: str | None = None,
+        root_goal_id: str | None = None,
+    ) -> EvidenceChain:
         target = clean_required_text(goal_id, "goal_id")
         build_chain = getattr(self.repository, "build_chain", None)
-        if callable(build_chain):
+        if callable(build_chain) and session_id is None:
             return build_chain(target)
-        records = self._records_for_goal(target)
+        records = self._records_for_goal(
+            target,
+            session_id=session_id,
+            goal_lineage_id=goal_lineage_id,
+            root_goal_id=root_goal_id,
+        )
         return EvidenceChain.from_records(target, records)
 
     def get_subgoal_chain(self, goal_id: str, subgoal_id: str) -> EvidenceChain:
@@ -91,22 +103,23 @@ class EvidenceAuthority:
         records = self._records_for_goal(target_goal)
         return EvidenceChain.from_records(target_goal, records, subgoal_id=target_subgoal)
 
-    def get_decision_chain(self, goal_id: str, *, task_id: str | None = None) -> EvidenceChain:
+    def get_decision_chain(self, goal_id: str, *, task_id: str | None = None, session_id: str | None = None) -> EvidenceChain:
         target_goal = clean_required_text(goal_id, "goal_id")
         target_task = clean_optional_text(task_id)
-        records = [record for record in self._records_for_goal(target_goal) if record.source == DECISION_EVIDENCE_SOURCE]
+        records = [record for record in self._records_for_goal(target_goal, session_id=session_id) if record.source == DECISION_EVIDENCE_SOURCE]
         if target_task is not None:
             records = [record for record in records if record.subgoal_id == target_task]
         return EvidenceChain.from_records(target_goal, records, subgoal_id=target_task)
 
-    def build_goal_evidence_summary(self, goal_id: str) -> dict[str, Any]:
-        chain = self.get_goal_chain(goal_id)
-        decision_chain = self.get_decision_chain(goal_id)
+    def build_goal_evidence_summary(self, goal_id: str, *, session_id: str | None = None) -> dict[str, Any]:
+        chain = self.get_goal_chain(goal_id, session_id=session_id)
+        decision_chain = self.get_decision_chain(goal_id, session_id=session_id)
         summary = chain.to_dict()
         summary.update(
             {
                 "schema": EVIDENCE_AUTHORITY_SCHEMA,
                 "goal_id": chain.goal_id,
+                "session_id": str(session_id or ""),
                 "decision_evidence_ids": copy.deepcopy(decision_chain.evidence_ids),
                 "validated_decision_evidence_ids": copy.deepcopy(decision_chain.validated_evidence_ids),
                 "decision_validation_summary": copy.deepcopy(dict(decision_chain.validation_summary)),
@@ -121,11 +134,41 @@ class EvidenceAuthority:
             return list_records()
         return []
 
-    def _records_for_goal(self, goal_id: str) -> list[EvidenceRecord]:
+    def _records_for_goal(
+        self,
+        goal_id: str,
+        *,
+        session_id: str | None = None,
+        goal_lineage_id: str | None = None,
+        root_goal_id: str | None = None,
+    ) -> list[EvidenceRecord]:
         list_by_goal = getattr(self.repository, "list_by_goal", None)
         if callable(list_by_goal):
-            return list_by_goal(goal_id)
-        return [record for record in self.list_records() if record.goal_id == goal_id]
+            try:
+                return list_by_goal(
+                    goal_id,
+                    session_id=session_id,
+                    goal_lineage_id=goal_lineage_id,
+                    root_goal_id=root_goal_id,
+                )
+            except TypeError:
+                records = list_by_goal(goal_id)
+                if session_id is None:
+                    return records
+                return [
+                    record for record in records
+                    if _text(_mapping(record.metadata).get("session_id") or _mapping(record.metadata).get("runtime_session_id"))
+                    == str(session_id)
+                ]
+        return [
+            record for record in self.list_records()
+            if record.goal_id == goal_id
+            and (
+                session_id is None
+                or _text(_mapping(record.metadata).get("session_id") or _mapping(record.metadata).get("runtime_session_id"))
+                == str(session_id)
+            )
+        ]
 
     @staticmethod
     def decision_evidence_to_record(record: Mapping[str, Any]) -> EvidenceRecord:
@@ -151,6 +194,14 @@ class EvidenceAuthority:
                 "metadata": {
                     "decision_id": decision_id,
                     "task_id": task_id,
+                    "session_id": _text(normalized.get("session_id") or normalized.get("runtime_session_id")),
+                    "runtime_session_id": _text(normalized.get("runtime_session_id") or normalized.get("session_id")),
+                    "root_goal_id": _text(normalized.get("root_goal_id")),
+                    "source_goal_id": _text(normalized.get("source_goal_id")),
+                    "goal_lineage_id": _text(normalized.get("goal_lineage_id")),
+                    "branch_type": _text(normalized.get("branch_type")),
+                    "branch_id": _text(normalized.get("branch_id")),
+                    "goal_lineage": _mapping(normalized.get("goal_lineage")),
                     "source_stage": _text(normalized.get("source_stage")),
                     "next_action": _text(normalized.get("next_action")),
                     "links": _mapping(normalized.get("links")),

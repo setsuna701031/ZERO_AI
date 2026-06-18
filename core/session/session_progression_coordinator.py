@@ -19,6 +19,7 @@ from core.tasks.goal_loop_coordinator import GoalLoopCoordinator
 from core.tasks.lifecycle_coordinator import LifecycleCoordinator
 from core.session.session_coordinator import SessionCoordinator
 from core.program.program_coordinator import ProgramCoordinator
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 
 SESSION_PROGRESSION_COORDINATOR_SCHEMA = "zero.session_progression_coordinator.v1"
@@ -78,6 +79,9 @@ class SessionProgressionCoordinator:
         """Attach passive controls to one cycle and return updated runtime."""
 
         updated = _mapping(cycle)
+        lineage = extract_goal_lineage(updated)
+        if lineage:
+            updated["goal_lineage"] = lineage
         updated = self.adaptive_loop_coordinator.attach_cycle_controls(
             updated,
             previous_observation=runtime.previous_observation,
@@ -109,6 +113,7 @@ class SessionProgressionCoordinator:
             "attached_program": True,
             "attached_goal_loop_decision": True,
             "cycle_index": int(cycle_index or 0),
+            "goal_lineage": copy.deepcopy(lineage),
             "execution_path": {
                 "coordinator_only": True,
                 "executes_tasks": False,

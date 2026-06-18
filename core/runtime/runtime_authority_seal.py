@@ -55,11 +55,13 @@ class TaskCompletionAuthority:
 @dataclass(frozen=True)
 class WorkPackageCompletionAuthority:
     package_id: str
+    session_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": "zero.work_package_completion_authority.summary.v1",
             "package_id": self.package_id,
+            "session_id": self.session_id,
             "authoritative": False,
         }
 
@@ -192,13 +194,14 @@ def _build_authority_boundary():
         token: Any,
         *,
         package_id: str,
+        session_id: str = "",
     ) -> WorkPackageCompletionAuthority:
         if token not in {
             _RUNTIME_DISPATCHER_ISSUER_TOKEN,
             _WORK_PACKAGE_SCHEDULER_ISSUER_TOKEN,
         }:
             raise PermissionError("work_package_completion_owner_required")
-        authority = WorkPackageCompletionAuthority(package_id=str(package_id))
+        authority = WorkPackageCompletionAuthority(package_id=str(package_id), session_id=str(session_id or ""))
         package_completions[id(authority)] = authority
         return authority
 
@@ -263,11 +266,12 @@ def _build_authority_boundary():
             and (session_id is None or value.session_id == str(session_id))
         )
 
-    def is_work_package_completion_authority(value: Any, *, package_id: str | None = None) -> bool:
+    def is_work_package_completion_authority(value: Any, *, package_id: str | None = None, session_id: str | None = None) -> bool:
         return bool(
             isinstance(value, WorkPackageCompletionAuthority)
             and package_completions.get(id(value)) is value
             and (package_id is None or value.package_id == str(package_id))
+            and (session_id is None or not value.session_id or value.session_id == str(session_id))
         )
 
     def is_runtime_evidence_authority(value: Any) -> bool:

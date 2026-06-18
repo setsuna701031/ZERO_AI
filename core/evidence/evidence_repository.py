@@ -16,6 +16,7 @@ from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_record import EvidenceRecord
 from core.evidence.evidence_validator import is_provenance_validated_evidence
 from core.goals.goal_contract import clean_required_text
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 
 EVIDENCE_EVENT_SCHEMA = "zero.evidence_event.v1"
@@ -48,21 +49,48 @@ class EvidenceRepository:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         with self.storage_path.open("a", encoding="utf-8") as stream:
             stream.write(encoded + "\n")
-        self._live_records[evidence.evidence_id] = evidence
+        self._live_records[self._record_key(evidence)] = evidence
         return evidence
 
     def add_records(self, records: Sequence[EvidenceRecord | Mapping[str, Any]]) -> list[EvidenceRecord]:
         return [self.add_record(record) for record in records]
 
-    def get_record(self, evidence_id: str) -> EvidenceRecord | None:
-        return self._latest_records().get(clean_required_text(evidence_id, "evidence_id"))
+    def get_record(
+        self,
+        evidence_id: str,
+        *,
+        session_id: str | None = None,
+        goal_lineage_id: str | None = None,
+        root_goal_id: str | None = None,
+    ) -> EvidenceRecord | None:
+        target = clean_required_text(evidence_id, "evidence_id")
+        records = [record for record in self._latest_records().values() if record.evidence_id == target]
+        if session_id is not None:
+            records = [record for record in records if self._session_id(record) == str(session_id)]
+        if goal_lineage_id is not None:
+            records = [record for record in records if self._lineage(record).get("goal_lineage_id") == str(goal_lineage_id)]
+        if root_goal_id is not None:
+            records = [record for record in records if self._lineage(record).get("root_goal_id") == str(root_goal_id)]
+        return records[0] if len(records) == 1 else None
 
     def list_records(self) -> list[EvidenceRecord]:
         return list(self._latest_records().values())
 
-    def list_by_goal(self, goal_id: str) -> list[EvidenceRecord]:
+    def list_by_goal(
+        self,
+        goal_id: str,
+        *,
+        session_id: str | None = None,
+        goal_lineage_id: str | None = None,
+        root_goal_id: str | None = None,
+    ) -> list[EvidenceRecord]:
         target = clean_required_text(goal_id, "goal_id")
-        return self._matching(lambda record: record.goal_id == target)
+        return self._matching(
+            lambda record: record.goal_id == target
+            and (session_id is None or self._session_id(record) == str(session_id))
+            and (goal_lineage_id is None or self._lineage(record).get("goal_lineage_id") == str(goal_lineage_id))
+            and (root_goal_id is None or self._lineage(record).get("root_goal_id") == str(root_goal_id))
+        )
 
     def list_by_subgoal(self, subgoal_id: str) -> list[EvidenceRecord]:
         target = clean_required_text(subgoal_id, "subgoal_id")
@@ -78,8 +106,8 @@ class EvidenceRepository:
     def list_validated_by_subgoal(self, subgoal_id: str) -> list[EvidenceRecord]:
         return [record for record in self.list_by_subgoal(subgoal_id) if is_provenance_validated_evidence(record)]
 
-    def build_chain(self, goal_id: str, *, subgoal_id: str | None = None) -> EvidenceChain:
-        records = self.list_by_goal(goal_id)
+    def build_chain(self, goal_id: str, *, subgoal_id: str | None = None, session_id: str | None = None) -> EvidenceChain:
+        records = self.list_by_goal(goal_id, session_id=session_id)
         return EvidenceChain.from_records(goal_id, records, subgoal_id=subgoal_id)
 
     def build_chain_from_records(
@@ -103,7 +131,7 @@ class EvidenceRepository:
     def _latest_records(self) -> dict[str, EvidenceRecord]:
         latest: dict[str, EvidenceRecord] = {}
         for record in self._load_records():
-            latest[record.evidence_id] = record
+            latest[self._record_key(record)] = record
         latest.update(self._live_records)
         return latest
 
@@ -128,6 +156,22 @@ class EvidenceRepository:
     @staticmethod
     def _normalize_record(record: EvidenceRecord | Mapping[str, Any]) -> EvidenceRecord:
         return record if isinstance(record, EvidenceRecord) else EvidenceRecord.from_mapping(record)
+
+    @staticmethod
+    def _session_id(record: EvidenceRecord) -> str:
+        metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+        return str(metadata.get("session_id") or metadata.get("runtime_session_id") or "").strip()
+
+    @staticmethod
+    def _lineage(record: EvidenceRecord) -> dict[str, str]:
+        return extract_goal_lineage({"goal_id": record.goal_id, "metadata": record.metadata})
+
+    @classmethod
+    def _record_key(cls, record: EvidenceRecord) -> str:
+        session_id = cls._session_id(record)
+        lineage_id = cls._lineage(record).get("goal_lineage_id", "")
+        scope = "::".join(part for part in (session_id, lineage_id) if part)
+        return f"{scope}::{record.evidence_id}" if scope else record.evidence_id
 
 
 __all__ = [

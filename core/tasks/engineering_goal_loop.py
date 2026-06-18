@@ -8,6 +8,7 @@ RuntimeOrchestrator.
 """
 
 import copy
+import inspect
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -32,6 +33,8 @@ from core.adaptive.continuation_coordinator import ContinuationCoordinator
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_coordinator import ReplanCoordinator
 from core.adaptive.replan_runtime import ReplanRuntime
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
 
 
 ENGINEERING_GOAL_LOOP_RESPONSIBILITY_MARKERS = {
@@ -160,8 +163,24 @@ class EngineeringGoalLoop:
         *,
         max_replans: int = 1,
         max_continuations: int | None = None,
+        session_id: str | None = None,
+        runtime_session_id: str | None = None,
     ) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
+        resolved_session_id = _clean_text(session_id, f"goal-session-{target_goal_id}")
+        resolved_runtime_session_id = _clean_text(runtime_session_id, resolved_session_id)
+        current_lineage = extract_goal_lineage(
+            {
+                "root_goal_id": target_goal_id,
+                "source_goal_id": target_goal_id,
+                "goal_id": target_goal_id,
+                "branch_type": "root",
+                "branch_id": target_goal_id,
+                "session_id": resolved_session_id,
+                "runtime_session_id": resolved_runtime_session_id,
+            },
+            require_complete=True,
+        )
         cycle_limit = max(1, int(max_cycles or 1))
         replan_limit = max(0, int(max_replans or 0))
         continuation_limit = cycle_limit if max_continuations is None else max(0, int(max_continuations or 0))
@@ -187,7 +206,11 @@ class EngineeringGoalLoop:
         )
 
         for cycle_index in range(cycle_limit):
-            cycle = self.run_one_cycle(session_runtime.current_goal_id, cycle_index=cycle_index)
+            cycle = self.run_one_cycle(
+                session_runtime.current_goal_id,
+                cycle_index=cycle_index,
+                goal_lineage=current_lineage,
+            )
             cycle, session_runtime = self.session_progression_coordinator.attach_cycle_progression(
                 cycle,
                 runtime=session_runtime.replace(
@@ -212,6 +235,31 @@ class EngineeringGoalLoop:
             if dispatch_result.refusal_reason:
                 self._refuse_adaptive_continuation(cycle, dispatch_result.refusal_reason)
 
+            cycle_decision = _clean_text(cycle.get("adaptive_decision"))
+            cycle_runtime_state = _clean_text(cycle.get("runtime_state"))
+            cycle_completed = cycle_decision == "complete" or cycle_runtime_state == "complete"
+            post_completion_continuation_goal_id = ""
+            should_handoff_post_completion = False
+            if cycle_completed:
+                cycle, continuation_runtime = self._create_post_completion_continuation(
+                    cycle,
+                    current_goal_id=session_runtime.current_goal_id,
+                    cycle_index=cycle_index,
+                    continuation_runtime=continuation_runtime,
+                )
+                post_completion_continuation_goal_id = _clean_text(
+                    _as_mapping(cycle.get("post_completion_continuation")).get("continuation_goal_id")
+                )
+                should_handoff_post_completion = bool(
+                    post_completion_continuation_goal_id and cycle_index + 1 < cycle_limit
+                )
+                if should_handoff_post_completion:
+                    cycle["terminal"] = False
+                    cycle["stop_reason"] = "post_completion_continuation_handoff"
+                else:
+                    cycle["terminal"] = True
+                    cycle["stop_reason"] = "complete"
+
             self._persist_adaptive_record(
                 cycle,
                 replan_count=replan_runtime.replan_count,
@@ -220,22 +268,29 @@ class EngineeringGoalLoop:
                 max_continuations=continuation_limit,
             )
 
-            cycle_decision = _clean_text(cycle.get("adaptive_decision"))
-            cycle_runtime_state = _clean_text(cycle.get("runtime_state"))
-            cycle_completed = cycle_decision == "complete" or cycle_runtime_state == "complete"
-            if cycle_completed:
-                cycle["terminal"] = True
-                cycle["stop_reason"] = "complete"
-
             cycles.append(cycle)
+            next_goal_id = (
+                post_completion_continuation_goal_id
+                if should_handoff_post_completion
+                else _clean_text(dispatch_result.current_goal_id, session_runtime.current_goal_id)
+            )
+            next_stop_reason = (
+                "post_completion_continuation_handoff"
+                if should_handoff_post_completion
+                else _clean_text(dispatch_result.stop_reason, stop_reason)
+            )
             session_runtime = session_runtime.replace(
-                current_goal_id=_clean_text(dispatch_result.current_goal_id, session_runtime.current_goal_id),
+                current_goal_id=next_goal_id,
                 replan_count=replan_runtime.replan_count,
                 continuation_count=continuation_runtime.continuation_count,
-                terminal=bool(dispatch_result.terminal),
-                stop_reason=_clean_text(dispatch_result.stop_reason, stop_reason),
+                terminal=False if should_handoff_post_completion else bool(dispatch_result.terminal),
+                stop_reason=next_stop_reason,
                 refusal_reason=_clean_text(dispatch_result.refusal_reason),
             )
+
+            if should_handoff_post_completion:
+                current_lineage = extract_goal_lineage(cycle.get("continuation_work_item"), require_complete=True)
+                continue
 
             if dispatch_result.terminal or cycle_completed:
                 terminal = True
@@ -245,7 +300,7 @@ class EngineeringGoalLoop:
                     terminal=True,
                     stop_reason=stop_reason,
                     refusal_reason=refusal_reason,
-                    current_goal_id=_clean_text(dispatch_result.current_goal_id, session_runtime.current_goal_id),
+                    current_goal_id=next_goal_id,
                 )
                 break
 
@@ -264,14 +319,37 @@ class EngineeringGoalLoop:
             replan_runtime=replan_runtime,
         )
 
-    def run_one_cycle(self, goal_id: str, *, cycle_index: int = 0) -> dict[str, Any]:
-        runner_result = self.runner.run_goal(_clean_text(goal_id))
+    def run_one_cycle(
+        self,
+        goal_id: str,
+        *,
+        cycle_index: int = 0,
+        goal_lineage: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        run_goal = self.runner.run_goal
+        parameters = inspect.signature(run_goal).parameters
+        runner_result = (
+            run_goal(_clean_text(goal_id), goal_lineage=goal_lineage)
+            if "goal_lineage" in parameters
+            else run_goal(_clean_text(goal_id))
+        )
         runtime_contract = build_engineering_runtime_contract_from_result(runner_result)
         runtime_result = _as_mapping(runtime_contract.get("runtime_result"))
         adaptive = _as_mapping(runtime_contract.get("adaptive_decision"))
         decision = _clean_text(adaptive.get("decision"))
         root_cause = _as_mapping(adaptive.get("root_cause") or runtime_contract.get("runtime_root_cause"))
-        cycle = {
+        lineage = extract_goal_lineage(
+            goal_lineage
+            or {
+                "root_goal_id": goal_id,
+                "source_goal_id": goal_id,
+                "goal_id": goal_id,
+                "session_id": f"goal-session-{goal_id}",
+                "runtime_session_id": f"goal-session-{goal_id}",
+            },
+            require_complete=True,
+        )
+        cycle = attach_goal_lineage({
             "schema": ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA,
             "cycle_index": int(cycle_index),
             "goal_id": _clean_text(runtime_contract.get("goal_id"), _clean_text(goal_id)),
@@ -301,7 +379,7 @@ class EngineeringGoalLoop:
             "engineering_program_state": {},
             "goal_loop_decision": {},
             "updated_at": time.time(),
-        }
+        }, lineage)
         completion_attestation = adaptive.get("goal_completion_authority_result")
         if completion_attestation is not None:
             cycle["goal_completion_attestation"] = completion_attestation
@@ -329,6 +407,53 @@ class EngineeringGoalLoop:
         cycle["adaptive_planning_record"] = record
         cycle["adaptive_refusal_reason"] = _clean_text(reason)
         cycle["decision_reason"] = _clean_text(reason)
+
+    def _create_post_completion_continuation(
+        self,
+        cycle: dict[str, Any],
+        *,
+        current_goal_id: str,
+        cycle_index: int,
+        continuation_runtime: ContinuationRuntime,
+    ) -> tuple[dict[str, Any], ContinuationRuntime]:
+        plan = _as_mapping(cycle.get("continuation_plan"))
+        next_request = _as_mapping(plan.get("next_runtime_request"))
+        if not next_request:
+            return cycle, continuation_runtime
+        if not is_accepted_goal_completion_result(
+            cycle.get("goal_completion_attestation"),
+            goal_id=_clean_text(current_goal_id),
+        ):
+            return cycle, continuation_runtime
+        if continuation_runtime.limit_reached:
+            cycle["post_completion_continuation_refusal"] = "max_continuations_exhausted"
+            return cycle, continuation_runtime
+
+        work_item, next_runtime = self.continuation_coordinator.create_work_item(
+            runtime=continuation_runtime,
+            cycle=cycle,
+            goal_id=current_goal_id,
+            cycle_index=cycle_index,
+            continuation_plan=plan,
+            runner_result=_as_mapping(cycle.get("runner_result")),
+        )
+        updated = dict(cycle)
+        updated["continuation_work_item"] = work_item
+        updated["post_completion_continuation_created"] = True
+        updated["post_completion_continuation"] = {
+            "created": True,
+            "source_goal_id": _clean_text(current_goal_id),
+            "continuation_goal_id": _clean_text(work_item.get("goal_id")),
+            "continuation_index": int(continuation_runtime.continuation_count) + 1,
+            "max_continuations": int(continuation_runtime.max_continuations),
+            "execution_path": {
+                "after_goal_completion": True,
+                "uses_continuation_coordinator": True,
+                "executes_tasks": False,
+                "bypasses_scheduler": False,
+            },
+        }
+        return updated, next_runtime
 
     def _persist_adaptive_record(
         self,

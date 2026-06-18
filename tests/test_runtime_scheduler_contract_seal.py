@@ -130,3 +130,41 @@ def test_queue_direct_completion_is_illegal_before_executing(tmp_path: Path) -> 
     record = queue.status("illegal-complete")
     with pytest.raises(RuntimePackageQueueError, match="invalid_runtime_lifecycle_transition"):
         queue._runtime_transition(record, "completed", reason="illegal_direct_completion")
+
+
+def test_duplicate_replan_request_and_append_are_idempotent(tmp_path: Path) -> None:
+    queue = RuntimePackageQueue(repo_root=tmp_path)
+    queue._write(
+        {
+            "package_id": "duplicate-replan",
+            "task_id": "task-duplicate-replan",
+            "status": "running",
+            "runtime_lifecycle_state": "executing",
+            "runtime_queue_item": {"steps": [{"id": "original", "type": "inspect"}]},
+            "replan_requests": [],
+            "replan_history": [],
+        }
+    )
+    request = {"request_id": "replan-request-1", "root_cause": "recoverable"}
+
+    queue.record_replan_request("duplicate-replan", request)
+    duplicate_request = queue.record_replan_request("duplicate-replan", request)
+    first_append = queue.append_replan_steps(
+        "duplicate-replan",
+        request=request,
+        steps=[{"id": "repair", "type": "inspect"}],
+        replan_snapshot={"schema": "test", "planning_status": "ready"},
+    )
+    duplicate_append = queue.append_replan_steps(
+        "duplicate-replan",
+        request=request,
+        steps=[{"id": "repair", "type": "inspect"}],
+        replan_snapshot={"schema": "test", "planning_status": "ready"},
+    )
+
+    assert len(duplicate_request["replan_requests"]) == 1
+    assert duplicate_request["duplicate_replan_request_rejected"] == "replan-request-1"
+    assert len(first_append["runtime_queue_item"]["steps"]) == 2
+    assert len(duplicate_append["runtime_queue_item"]["steps"]) == 2
+    assert len(duplicate_append["replan_history"]) == 1
+    assert duplicate_append["duplicate_replan_append_rejected"] == "replan-request-1"

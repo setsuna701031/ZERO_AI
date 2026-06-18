@@ -516,6 +516,112 @@ class RuntimeMainlineEvidenceSealContractTest(unittest.TestCase):
             "succeeded",
         )
 
+    def test_goal_loop_success_completes_with_validated_evidence(self) -> None:
+        from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+        from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            repository = EngineeringGoalRepository(tmp)
+            repository.save_goal({"goal_id": "goal_success", "summary": "create workspace/example.txt"})
+
+            result = EngineeringGoalLoop(repo_root=tmp, repository=repository).run_until_terminal(
+                "goal_success",
+                max_cycles=1,
+                max_replans=1,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["cycles"][0]["adaptive_decision"], "complete")
+        self.assertEqual(result["cycles"][0]["replan_record"], {})
+        self.assertTrue(result["goal_completion_authority_result"]["accepted"])
+
+    def test_goal_loop_recoverable_failure_creates_sealed_replan_evidence(self) -> None:
+        from core.evidence.evidence_authority import EvidenceAuthority
+        from core.evidence.evidence_repository import EvidenceRepository
+        from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+        from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            repository = EngineeringGoalRepository(tmp)
+            evidence_repository = EvidenceRepository(tmp)
+            evidence_authority = EvidenceAuthority(tmp, evidence_repository=evidence_repository)
+            repository.save_goal(
+                {
+                    "goal_id": "goal_replan",
+                    "summary": "create workspace/report.txt",
+                    "payload": {
+                        "target_path": "workspace/report.txt",
+                        "verify_contains": "missing-from-output",
+                    },
+                }
+            )
+
+            result = EngineeringGoalLoop(
+                repo_root=tmp,
+                repository=repository,
+                evidence_repository=evidence_repository,
+                evidence_authority=evidence_authority,
+            ).run_until_terminal("goal_replan", max_cycles=1, max_replans=1)
+            replan_record = result["cycles"][0]["replan_record"]
+            decision_chain = evidence_authority.get_decision_chain("goal_replan")
+            decision_records = [
+                record for record in evidence_repository.list_records()
+                if record.evidence_id == replan_record["evidence_ref"]
+            ]
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["cycles"][0]["adaptive_decision"], "replan")
+        self.assertEqual(result["replan_count"], 1)
+        self.assertEqual(replan_record["source_goal_id"], "goal_replan")
+        self.assertEqual(replan_record["cycle_index"], 0)
+        self.assertEqual(replan_record["replan_reason"], "verification_failed")
+        self.assertIn("workspace/report.txt", replan_record["missing_artifacts"])
+        self.assertEqual(replan_record["evidence_ref"], replan_record["decision_evidence_id"])
+        self.assertIn(replan_record["evidence_ref"], replan_record["evidence_refs"])
+        self.assertIn(replan_record["evidence_ref"], decision_chain.evidence_ids)
+        self.assertEqual(decision_records[0].goal_id, "goal_replan")
+        self.assertEqual(decision_records[0].metadata["links"]["cycle_index"], 0)
+        self.assertEqual(decision_records[0].metadata["links"]["replan_goal_id"], "goal_replan")
+        self.assertFalse(result["goal_completion_authority_result"]["accepted"])
+
+    def test_goal_loop_policy_blocked_does_not_replan_or_continue(self) -> None:
+        from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+        from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+
+        with tempfile.TemporaryDirectory() as tmp_name:
+            tmp = Path(tmp_name)
+            repository = EngineeringGoalRepository(tmp)
+            repository.save_goal({"goal_id": "goal_policy_blocked", "summary": "create core/agent/agent_loop.py"})
+
+            result = EngineeringGoalLoop(repo_root=tmp, repository=repository).run_until_terminal(
+                "goal_policy_blocked",
+                max_cycles=1,
+                max_replans=1,
+                max_continuations=1,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["cycles"][0]["adaptive_decision"], "blocked")
+        self.assertEqual(result["cycles"][0]["replan_record"], {})
+        self.assertEqual(result["cycles"][0]["continuation_work_item"], {})
+        self.assertEqual(result["goal_completion_authority_result"], {})
+
+    def test_missing_validated_evidence_cannot_complete_goal(self) -> None:
+        from core.goals.goal_completion_authority import GoalCompletionAuthority
+
+        result = GoalCompletionAuthority().complete_goal(
+            goal_id="goal_missing_evidence",
+            from_state="active",
+            evidence_refs=[],
+            all_subgoals_completed=True,
+            reason="operator_claim_without_evidence",
+        )
+
+        self.assertFalse(result.accepted)
+        self.assertFalse(result.completed)
+
 
 if __name__ == "__main__":
     unittest.main()

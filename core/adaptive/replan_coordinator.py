@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.adaptive.replan_runtime import ReplanRuntime
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
 
 
 REPLAN_COORDINATOR_SCHEMA = "zero.replan_coordinator.v1"
@@ -21,6 +22,10 @@ def _text(value: Any, default: str = "") -> str:
 
 def _mapping(value: Any) -> dict[str, Any]:
     return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+
+
+def _list(value: Any) -> list[Any]:
+    return copy.deepcopy(list(value)) if isinstance(value, list) else []
 
 
 class ReplanCoordinator:
@@ -45,11 +50,43 @@ class ReplanCoordinator:
         request = _mapping(replan_request) or _mapping(cycle_record.get("replan_request"))
         source_goal_id = _text(goal_id or cycle_record.get("goal_id") or request.get("goal_id"))
         resolved_cycle_index = int(cycle_index if cycle_index is not None else cycle_record.get("cycle_index") or 0)
-        record = {
+        session_id = _text(cycle_record.get("session_id") or cycle_record.get("runtime_session_id"))
+        task_id = f"replan:{source_goal_id}:{resolved_cycle_index}"
+        replan_request_id = _text(request.get("request_id"), task_id)
+        parent_lineage = extract_goal_lineage(cycle_record)
+        lineage = extract_goal_lineage(
+            {
+                **parent_lineage,
+                "goal_id": source_goal_id,
+                "source_goal_id": source_goal_id,
+                "branch_type": "replan",
+                "branch_id": replan_request_id,
+                "replan_request_id": replan_request_id,
+            },
+            require_complete=True,
+        )
+        evidence_refs = [
+            _text(item.get("evidence_id"))
+            for item in (request.get("evidence_chain") or [])
+            if isinstance(item, Mapping) and _text(item.get("evidence_id"))
+        ]
+        record = attach_goal_lineage({
             "schema": ENGINEERING_REPLAN_RECORD_SCHEMA,
             "goal_id": source_goal_id,
+            "task_id": task_id,
+            "replan_request_id": replan_request_id,
+            "source_goal_id": source_goal_id,
             "cycle_index": resolved_cycle_index,
+            **({"session_id": session_id} if session_id else {}),
+            "evidence_ref": evidence_refs[0] if evidence_refs else "",
+            "evidence_refs": list(dict.fromkeys(evidence_refs)),
+            "decision_evidence_id": "",
+            "authority_state": "completion_authority_not_granted",
             "reason": _text(request.get("reason"), "recoverable_runtime_failure"),
+            "replan_reason": _text(request.get("replan_reason") or request.get("reason"), "recoverable_runtime_failure"),
+            "failed_step": _mapping(request.get("failed_step")),
+            "missing_artifacts": _list(request.get("missing_artifacts")),
+            "next_runtime_request": _mapping(request.get("next_runtime_request")),
             "replan_request": copy.deepcopy(request),
             "runner_adaptive_decision": _mapping(_mapping(runner_result).get("adaptive_decision")),
             "adaptive_planning_record": _mapping(
@@ -70,7 +107,7 @@ class ReplanCoordinator:
                 },
             },
             "created_at": time.time(),
-        }
+        }, lineage)
         return record, runtime.record_replan(record)
 
 

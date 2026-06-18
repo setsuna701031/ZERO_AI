@@ -35,6 +35,10 @@ RECOVERABLE_MARKERS = (
     "no output",
     "artifact_not_found",
     "output_not_found",
+    "validation_failed",
+    "validation failed",
+    "verification_failed",
+    "verification failed",
     "replan",
     "repairable",
     "recoverable",
@@ -78,6 +82,24 @@ def _clamp_confidence(value: Any, default: float = 0.75) -> float:
 def _contains_marker(value: Any, markers: tuple[str, ...]) -> bool:
     text = repr(value).lower() if isinstance(value, Mapping) else str(value or "").lower()
     return any(marker in text for marker in markers)
+
+
+def _first_text(values: list[Any]) -> str:
+    for value in values:
+        text = _clean_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _target_from_goal(goal: Mapping[str, Any]) -> str:
+    payload = _as_mapping(goal.get("payload"))
+    return _clean_text(
+        payload.get("target_path")
+        or payload.get("path")
+        or goal.get("target_path")
+        or goal.get("path")
+    ).replace("\\", "/").lstrip("./")
 
 
 def _normalize_decision_name(value: Any) -> str:
@@ -138,13 +160,19 @@ class EngineeringAdaptivePlanner:
         issues = _as_mapping(issue_summary)
         blocking_issues = _as_list(issues.get("blocking_issues"))
 
-        blocking_failure = (
+        recoverable_failure = (
+            runtime_state in {"replan", "recoverable_failure", "retryable_failure"}
+            or _contains_marker(root_cause, RECOVERABLE_MARKERS)
+            or any(_contains_marker(item, RECOVERABLE_MARKERS) for item in failed_tasks)
+        )
+        hard_blocking_failure = (
             bool(blocking_issues)
             or bool(blocked_tasks)
             or runtime_state in {"blocked"}
             or _contains_marker(root_cause, BLOCKING_MARKERS)
             or any(_contains_marker(item, BLOCKING_MARKERS) for item in failed_tasks)
         )
+        blocking_failure = hard_blocking_failure and not recoverable_failure
         complete = (
             runtime_ok
             and goal_state == "completed"
@@ -152,11 +180,6 @@ class EngineeringAdaptivePlanner:
             and not failed_tasks
             and not blocked_tasks
             and not blocking_failure
-        )
-        recoverable_failure = (
-            runtime_state in {"replan"}
-            or _contains_marker(root_cause, RECOVERABLE_MARKERS)
-            or any(_contains_marker(item, RECOVERABLE_MARKERS) for item in failed_tasks)
         )
         next_runtime_request = self._next_runtime_request(runtime_result)
         incomplete_with_next_request = runtime_ok and bool(next_runtime_request) and not complete
@@ -176,6 +199,7 @@ class EngineeringAdaptivePlanner:
             "root_cause": copy.deepcopy(root_cause),
             "blocking_issues": copy.deepcopy(blocking_issues),
             "blocking_failure": blocking_failure,
+            "hard_blocking_failure": hard_blocking_failure,
             "recoverable_failure": recoverable_failure,
             "next_runtime_request": copy.deepcopy(next_runtime_request),
             "incomplete_with_next_request": incomplete_with_next_request,
@@ -234,9 +258,10 @@ class EngineeringAdaptivePlanner:
 
         continuation_plan = (
             self.build_continuation_plan(goal=goal, runtime_result=runtime_result, progress=progress)
-            if decision == "continue"
+            if decision == "continue" or (decision == "complete" and bool(progress.get("next_runtime_request")))
             else {}
         )
+        mainline_decision = "create_continuation" if continuation_plan and decision == "complete" else decision
         replan_request = (
             self.build_replan_request(goal=goal, runtime_result=runtime_result, progress=progress, reason=reason)
             if decision == "replan"
@@ -261,6 +286,8 @@ class EngineeringAdaptivePlanner:
             "decision_reasoning": decision_reasoning,
             "evidence_chain": evidence_chain,
             "next_action": self._next_action_for_decision(decision),
+            "mainline_decision": mainline_decision,
+            "create_continuation_requested": mainline_decision == "create_continuation",
             "goal_id": progress["goal_id"],
             "terminal": decision in {"complete", "blocked"},
             "continue_requested": decision == "continue",
@@ -287,6 +314,8 @@ class EngineeringAdaptivePlanner:
         normalized["continue_requested"] = normalized["decision"] == "continue"
         normalized["complete_requested"] = normalized["decision"] == "complete"
         normalized["blocked"] = normalized["decision"] == "blocked"
+        if normalized.get("create_continuation_requested"):
+            normalized["next_action"] = "create_continuation_work_item"
         return normalized
 
     def build_continuation_plan(
@@ -299,7 +328,9 @@ class EngineeringAdaptivePlanner:
         progress_record = _as_mapping(progress) or self.evaluate_goal_progress(goal=goal, runtime_result=runtime_result)
         goal_id = _goal_id(goal) or _clean_text(progress_record.get("goal_id"))
         remaining_tasks = _as_list(progress_record.get("remaining_tasks"))
-        payload = copy.deepcopy(_as_mapping(goal.get("payload")))
+        next_runtime_request = _as_mapping(progress_record.get("next_runtime_request"))
+        request_payload = _as_mapping(next_runtime_request.get("payload"))
+        payload = copy.deepcopy(request_payload or _as_mapping(goal.get("payload")))
         payload.setdefault("goal_id", goal_id)
         payload.setdefault("task_id", goal_id)
         payload.setdefault("package_id", goal_id)
@@ -307,9 +338,12 @@ class EngineeringAdaptivePlanner:
         payload.setdefault("task_type", "engineering_task")
         payload.setdefault("engineering_goal_lifecycle", True)
         payload["continuation_requested"] = True
-        if remaining_tasks:
-            payload["remaining_tasks"] = copy.deepcopy(remaining_tasks)
+        target_path = _clean_text(payload.get("target_path") or payload.get("path"))
+        if not remaining_tasks and target_path:
+            remaining_tasks = [target_path]
+        payload["remaining_tasks"] = copy.deepcopy(remaining_tasks)
         evidence_chain = copy.deepcopy(_as_list(progress_record.get("evidence_chain")))
+        source_runtime_state = _clean_text(next_runtime_request.get("source_runtime_state") or runtime_result.get("state"))
         work_item_template = {
             "objective": _clean_text(payload.get("goal"), f"Continue {goal_id}"),
             "source_goal_id": goal_id,
@@ -320,9 +354,10 @@ class EngineeringAdaptivePlanner:
                 "remaining_tasks": [],
                 "failed_tasks": [],
                 "blocked_tasks": [],
+                "created_file": target_path,
             },
             "provenance": {
-                "source_runtime_state": _clean_text(runtime_result.get("state")),
+                "source_runtime_state": source_runtime_state,
                 "evidence_ids": [item["evidence_id"] for item in evidence_chain if isinstance(item, Mapping)],
             },
         }
@@ -334,7 +369,7 @@ class EngineeringAdaptivePlanner:
             "next_runtime_request": {
                 "goal_id": goal_id,
                 "payload": payload,
-                "source_runtime_state": _clean_text(runtime_result.get("state")),
+                "source_runtime_state": source_runtime_state,
             },
             "work_item_template": work_item_template,
             "evidence_chain": evidence_chain,
@@ -356,32 +391,50 @@ class EngineeringAdaptivePlanner:
     ) -> dict[str, Any]:
         progress_record = _as_mapping(progress) or self.evaluate_goal_progress(goal=goal, runtime_result=runtime_result)
         goal_id = _goal_id(goal) or _clean_text(progress_record.get("goal_id"))
+        replan_reason = _clean_text(reason, "recoverable_runtime_failure")
+        failed_tasks = _as_list(progress_record.get("failed_tasks"))
+        remaining_tasks = _as_list(progress_record.get("remaining_tasks"))
+        missing_artifacts = self._missing_artifacts(goal=goal, progress=progress_record, runtime_result=runtime_result)
+        target_path = _first_text(missing_artifacts) or _first_text(remaining_tasks) or _target_from_goal(goal)
+        failed_step = self._failed_step(progress_record)
+        next_runtime_request = self._replan_next_runtime_request(
+            goal=goal,
+            goal_id=goal_id,
+            target_path=target_path,
+            replan_reason=replan_reason,
+        )
         evidence_chain = copy.deepcopy(_as_list(progress_record.get("evidence_chain")))
         root_cause_report = self._build_root_cause_report(
             progress=progress_record,
-            reason=_clean_text(reason, "recoverable_runtime_failure"),
+            reason=replan_reason,
             decision="replan",
         )
         return {
             "schema": ENGINEERING_REPLAN_REQUEST_SCHEMA,
             "goal_id": goal_id,
-            "reason": _clean_text(reason, "recoverable_runtime_failure"),
+            "source_goal_id": goal_id,
+            "reason": replan_reason,
+            "replan_reason": replan_reason,
             "runtime_state": _clean_text(runtime_result.get("state")),
-            "failed_tasks": copy.deepcopy(_as_list(progress_record.get("failed_tasks"))),
-            "remaining_tasks": copy.deepcopy(_as_list(progress_record.get("remaining_tasks"))),
+            "failed_step": failed_step,
+            "failed_tasks": copy.deepcopy(failed_tasks),
+            "remaining_tasks": copy.deepcopy(remaining_tasks),
+            "missing_artifacts": copy.deepcopy(missing_artifacts),
             "root_cause": copy.deepcopy(_as_mapping(progress_record.get("root_cause"))),
             "root_cause_report": root_cause_report,
             "evidence_chain": evidence_chain,
+            "next_runtime_request": next_runtime_request,
             "replan_payload": {
-                "trigger": _clean_text(reason, "recoverable_runtime_failure"),
+                "trigger": replan_reason,
                 "objective": "produce_a_revised_execution_plan",
                 "preserve": {
                     "completed_tasks": copy.deepcopy(_as_list(progress_record.get("completed_tasks"))),
                     "goal_id": goal_id,
                 },
                 "reconsider": {
-                    "failed_tasks": copy.deepcopy(_as_list(progress_record.get("failed_tasks"))),
-                    "remaining_tasks": copy.deepcopy(_as_list(progress_record.get("remaining_tasks"))),
+                    "failed_tasks": copy.deepcopy(failed_tasks),
+                    "remaining_tasks": copy.deepcopy(remaining_tasks),
+                    "missing_artifacts": copy.deepcopy(missing_artifacts),
                 },
                 "constraints": {
                     "planner_decision_only": True,
@@ -395,6 +448,80 @@ class EngineeringAdaptivePlanner:
                 "persists_goal": False,
             },
             "created_at": time.time(),
+        }
+
+    def _missing_artifacts(
+        self,
+        *,
+        goal: Mapping[str, Any],
+        progress: Mapping[str, Any],
+        runtime_result: Mapping[str, Any],
+    ) -> list[str]:
+        root_cause = _as_mapping(progress.get("root_cause"))
+        candidates: list[Any] = []
+        for key in ("missing_artifacts", "missing_artifact", "target_path", "artifact_path"):
+            value = root_cause.get(key)
+            if isinstance(value, list):
+                candidates.extend(value)
+            elif value:
+                candidates.append(value)
+        for value in _as_list(progress.get("remaining_tasks")) + _as_list(progress.get("failed_tasks")):
+            text = _clean_text(value)
+            if "/" in text or "\\" in text:
+                candidates.append(text.split(":", 1)[-1])
+        observed = _as_mapping(runtime_result.get("work_package_result"))
+        for key in ("target_path", "target_file"):
+            if observed.get(key):
+                candidates.append(observed.get(key))
+        target = _target_from_goal(goal)
+        if target:
+            candidates.append(target)
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in candidates:
+            text = _clean_text(value).replace("\\", "/").lstrip("./")
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            normalized.append(text)
+        return normalized
+
+    def _failed_step(self, progress: Mapping[str, Any]) -> dict[str, Any]:
+        root_cause = _as_mapping(progress.get("root_cause"))
+        explicit = _as_mapping(root_cause.get("failed_step"))
+        if explicit:
+            return explicit
+        failed_tasks = _as_list(progress.get("failed_tasks"))
+        task = _first_text(failed_tasks)
+        return {
+            "task_id": task,
+            "reason": _clean_text(root_cause.get("stop_reason") or root_cause.get("reason"), "recoverable_runtime_failure"),
+        }
+
+    def _replan_next_runtime_request(
+        self,
+        *,
+        goal: Mapping[str, Any],
+        goal_id: str,
+        target_path: str,
+        replan_reason: str,
+    ) -> dict[str, Any]:
+        payload = copy.deepcopy(_as_mapping(goal.get("payload")))
+        payload.setdefault("goal_id", goal_id)
+        payload.setdefault("task_id", goal_id)
+        payload.setdefault("package_id", goal_id)
+        payload.setdefault("goal", _clean_text(goal.get("summary") or goal.get("goal"), goal_id))
+        payload.setdefault("task_type", "engineering_task")
+        payload.setdefault("operation", "create_file")
+        if target_path:
+            payload["target_path"] = target_path
+        payload["replan_requested"] = True
+        payload["replan_reason"] = replan_reason
+        return {
+            "goal_id": goal_id,
+            "payload": payload,
+            "source_runtime_state": "replan",
+            "replan_reason": replan_reason,
         }
 
     def _build_evidence_chain(self, progress: Mapping[str, Any]) -> list[dict[str, Any]]:

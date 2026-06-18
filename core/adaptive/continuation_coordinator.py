@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.adaptive.continuation_runtime import ContinuationRuntime
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
 
 
 CONTINUATION_COORDINATOR_SCHEMA = "zero.continuation_coordinator.v1"
@@ -27,6 +28,19 @@ def _text(value: Any, default: str = "") -> str:
 
 def _mapping(value: Any) -> dict[str, Any]:
     return copy.deepcopy(dict(value)) if isinstance(value, Mapping) else {}
+
+
+def _transport(value: Any) -> Any:
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return _transport(to_dict())
+    if isinstance(value, Mapping):
+        return {str(key): _transport(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_transport(item) for item in value]
+    if isinstance(value, tuple):
+        return [_transport(item) for item in value]
+    return copy.deepcopy(value)
 
 
 class ContinuationCoordinator:
@@ -64,21 +78,53 @@ class ContinuationCoordinator:
             runtime.current_goal_id,
         )
         resolved_cycle_index = int(cycle_index if cycle_index is not None else cycle_record.get("cycle_index") or 0)
+        session_id = _text(cycle_record.get("session_id") or cycle_record.get("runtime_session_id"))
         continuation_goal_id = self._continuation_goal_id(source_goal_id, resolved_cycle_index)
+        parent_lineage = extract_goal_lineage(cycle_record)
+        lineage = extract_goal_lineage(
+            {
+                **parent_lineage,
+                "goal_id": continuation_goal_id,
+                "source_goal_id": source_goal_id,
+                "branch_type": "continuation",
+                "branch_id": continuation_goal_id,
+                "continuation_id": continuation_goal_id,
+            },
+            require_complete=True,
+        )
+        evidence_refs = [
+            _text(item.get("evidence_id"))
+            for item in (plan.get("evidence_chain") or [])
+            if isinstance(item, Mapping) and _text(item.get("evidence_id"))
+        ]
+        attestation = _mapping(cycle_record.get("goal_completion_authority_result"))
+        if not attestation:
+            transported_attestation = _transport(cycle_record.get("goal_completion_attestation"))
+            attestation = _mapping(transported_attestation)
+        authority_state = (
+            "completion_authority_accepted"
+            if bool(attestation.get("accepted")) and bool(attestation.get("completed"))
+            else "completion_authority_not_granted"
+        )
         summary = _text(payload.get("goal") or plan.get("reason"), f"Continue {source_goal_id}")
         payload["goal_id"] = continuation_goal_id
         payload["task_id"] = continuation_goal_id
         payload["package_id"] = continuation_goal_id
         payload["source_goal_id"] = source_goal_id
+        payload["continuation_goal_id"] = continuation_goal_id
+        payload["continuation_task_id"] = continuation_goal_id
         payload["continuation_source_goal_id"] = source_goal_id
         payload["continuation_cycle_index"] = resolved_cycle_index
         payload["continuation_requested"] = True
+        payload = attach_goal_lineage(payload, lineage)
+        if session_id:
+            payload["session_id"] = session_id
         payload["continuation_objective"] = _text(work_item_template.get("objective"), summary)
         payload["continuation_acceptance"] = _mapping(work_item_template.get("acceptance"))
         payload["adaptive_evidence_chain"] = copy.deepcopy(plan.get("evidence_chain") or [])
 
         record = self.repository.save_goal(
-            {
+            attach_goal_lineage({
                 "schema": ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA,
                 "goal_id": continuation_goal_id,
                 "summary": summary,
@@ -89,22 +135,31 @@ class ContinuationCoordinator:
                     "source": "continuation_coordinator",
                     "source_goal_id": source_goal_id,
                     "source_cycle_index": resolved_cycle_index,
+                    **({"session_id": session_id} if session_id else {}),
                     "continuation_plan": plan,
                     "work_item_template": work_item_template,
                     "adaptive_evidence_chain": copy.deepcopy(plan.get("evidence_chain") or []),
-                    "runner_adaptive_decision": _mapping(_mapping(runner_result).get("adaptive_decision")),
-                    "adaptive_planning_record": _mapping(
+                    "runner_adaptive_decision": _transport(_mapping(_mapping(runner_result).get("adaptive_decision"))),
+                    "adaptive_planning_record": _transport(_mapping(
                         _mapping(_mapping(runner_result).get("adaptive_decision")).get("adaptive_planning_record")
-                    ),
+                    )),
                     "continuation_coordinator_schema": CONTINUATION_COORDINATOR_SCHEMA,
                 },
-            }
+            }, lineage)
         )
-        work_item = {
+        work_item = attach_goal_lineage({
             "schema": ENGINEERING_CONTINUATION_WORK_ITEM_SCHEMA,
             "goal_id": record["goal_id"],
+            "task_id": record["goal_id"],
+            "continuation_goal_id": record["goal_id"],
+            "continuation_task_id": record["goal_id"],
             "source_goal_id": source_goal_id,
             "cycle_index": resolved_cycle_index,
+            **({"session_id": session_id} if session_id else {}),
+            "evidence_ref": evidence_refs[0] if evidence_refs else "",
+            "evidence_refs": list(dict.fromkeys(evidence_refs)),
+            "decision_evidence_id": "",
+            "authority_state": authority_state,
             "record": record,
             "continuation_coordinator": {
                 "schema": CONTINUATION_COORDINATOR_SCHEMA,
@@ -119,20 +174,12 @@ class ContinuationCoordinator:
                 },
             },
             "created_at": time.time(),
-        }
+        }, lineage)
         return work_item, runtime.record_work_item(work_item)
 
     def _continuation_goal_id(self, source_goal_id: str, cycle_index: int) -> str:
         base = f"{_text(source_goal_id, 'goal')}__continuation_{int(cycle_index) + 1}"
-        candidate = base
-        suffix = 2
-        load_goal = getattr(self.repository, "load_goal", None)
-        if not callable(load_goal):
-            return candidate
-        while self.repository.load_goal(candidate) is not None:
-            candidate = f"{base}_{suffix}"
-            suffix += 1
-        return candidate
+        return base
 
 
 __all__ = [

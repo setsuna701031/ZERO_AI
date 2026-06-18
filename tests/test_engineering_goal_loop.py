@@ -314,6 +314,9 @@ def test_goal_loop_generates_work_package_and_executes_workspace_goal(tmp_path) 
     assert result["stop_reason"] == "complete"
     assert result["goal_completion_authority_result"]["accepted"] is True
     assert result["goal_completion_authority_result"]["completed"] is True
+    assert cycle["adaptive_decision_record"]["mainline_decision"] == "create_continuation"
+    assert cycle["adaptive_decision_record"]["next_action"] == "create_continuation_work_item"
+    assert cycle["replan_record"] == {}
     assert runtime_result["planner_result"]["source"] == "planner.normalize_aer_execution_intent"
     assert runtime_result["work_package"]["mode"] == "execute"
     assert runtime_result["work_package"]["edit"]["target_path"] == "workspace/example.txt"
@@ -323,3 +326,213 @@ def test_goal_loop_generates_work_package_and_executes_workspace_goal(tmp_path) 
     assert work_package_result["evidence"]["guard"] == "workspace_only"
     assert work_package_result["changed_files"] == ["workspace/example.txt"]
     assert (tmp_path / "workspace/example.txt").is_file()
+
+
+def test_goal_loop_validation_missing_artifact_does_not_complete_or_continue(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal(
+        {
+            "goal_id": "goal_workspace_verify_missing",
+            "summary": "create workspace/example.txt",
+            "payload": {
+                "target_path": "workspace/example.txt",
+                "verify_contains": "text-that-is-not-written",
+            },
+        }
+    )
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_workspace_verify_missing",
+        max_cycles=1,
+        max_continuations=1,
+    )
+    cycle = result["cycles"][0]
+
+    replan_record = cycle["replan_record"]
+
+    assert result["ok"] is False
+    assert result["goal_completion_authority_result"]["accepted"] is False
+    assert cycle["adaptive_decision"] == "replan"
+    assert replan_record["source_goal_id"] == "goal_workspace_verify_missing"
+    assert replan_record["replan_reason"] == "verification_failed"
+    assert replan_record["failed_step"]["target_path"] == "workspace/example.txt"
+    assert "workspace/example.txt" in replan_record["missing_artifacts"]
+    assert replan_record["next_runtime_request"]["payload"]["target_path"] == "workspace/example.txt"
+    assert result["replan_count"] == 1
+    assert cycle["continuation_work_item"] == {}
+    assert repository.load_goal("goal_workspace_verify_missing__continuation_1") is None
+
+
+def test_goal_loop_replan_respects_max_replans_zero(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal(
+        {
+            "goal_id": "goal_workspace_verify_missing",
+            "summary": "create workspace/report.txt",
+            "payload": {
+                "target_path": "workspace/report.txt",
+                "verify_contains": "text-that-is-not-written",
+            },
+        }
+    )
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_workspace_verify_missing",
+        max_cycles=1,
+        max_replans=0,
+    )
+    cycle = result["cycles"][0]
+
+    assert result["ok"] is False
+    assert result["replan_count"] == 0
+    assert cycle["adaptive_decision"] == "replan"
+    assert cycle["replan_record"] == {}
+    assert cycle["adaptive_refusal_reason"] == "max_replans_exhausted"
+
+
+def test_authority_denied_completion_does_not_create_continuation(tmp_path) -> None:
+    rejected = {
+        **GOAL_COMPLETION_AUTHORITY_RESULT,
+        "accepted": False,
+        "completed": False,
+        "blocked_reason": "completed_goal_requires_validated_evidence",
+    }
+    runner = StubRunner(
+        [
+            {
+                "decision": "complete",
+                "runtime_state": "complete",
+                "goal_completion_authority_result": rejected,
+                "continuation_plan": _continue_plan(),
+            }
+        ]
+    )
+
+    result = EngineeringGoalLoop(
+        repo_root=tmp_path,
+        repository=_repository(tmp_path),
+        runner=runner,
+    ).run_until_terminal("goal_1", max_cycles=2, max_continuations=1)
+
+    assert result["ok"] is False
+    assert result["stop_reason"] == "goal_completion_authority_required"
+    assert result["continuation_count"] == 0
+    assert result["cycles"][0]["continuation_work_item"] == {}
+    assert "post_completion_continuation_created" not in result["cycles"][0]
+
+
+def test_policy_blocked_illegal_target_does_not_replan_or_continue(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal({"goal_id": "goal_illegal_target", "summary": "create core/agent/agent_loop.py"})
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_illegal_target",
+        max_cycles=1,
+        max_replans=1,
+        max_continuations=1,
+    )
+    cycle = result["cycles"][0]
+
+    assert result["ok"] is False
+    assert cycle["adaptive_decision"] == "blocked"
+    assert cycle["replan_record"] == {}
+    assert cycle["continuation_work_item"] == {}
+    assert result["goal_completion_authority_result"] == {}
+
+
+def test_completed_goal_creates_bounded_continuation_goal_and_next_goal_runs(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal({"goal_id": "goal_workspace_file", "summary": "建立 workspace/example.txt"})
+
+    first = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_workspace_file",
+        max_cycles=1,
+        max_continuations=1,
+    )
+    work_item = first["cycles"][0]["continuation_work_item"]
+    continuation_goal_id = work_item["goal_id"]
+    continuation_goal = repository.load_goal(continuation_goal_id)
+
+    assert first["ok"] is True
+    assert first["continuation_count"] == 1
+    assert continuation_goal_id == "goal_workspace_file__continuation_1"
+    assert continuation_goal["summary"] == "建立 workspace/example_next.txt"
+    assert continuation_goal["metadata"]["source_goal_id"] == "goal_workspace_file"
+    assert continuation_goal["metadata"]["source_cycle_index"] == 0
+    assert continuation_goal["metadata"]["continuation_coordinator_schema"] == "zero.continuation_coordinator.v1"
+    assert continuation_goal["payload"]["continuation_requested"] is True
+    assert continuation_goal["payload"]["continuation_source_goal_id"] == "goal_workspace_file"
+    assert continuation_goal["payload"]["target_path"] == "workspace/example_next.txt"
+
+    second = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        continuation_goal_id,
+        max_cycles=1,
+        max_continuations=1,
+    )
+    second_runtime = second["cycles"][0]["runner_result"]["runtime_result"]
+
+    assert second["ok"] is True
+    assert second["cycles"][0]["continuation_work_item"] == {}
+    assert second_runtime["work_package"]["edit"]["target_path"] == "workspace/example_next.txt"
+    assert second_runtime["scheduler_record"]["status"] == "completed"
+    assert second_runtime["work_package_result"]["evidence"]["guard"] == "workspace_only"
+    assert second["goal_completion_authority_result"]["accepted"] is True
+    assert (tmp_path / "workspace/example_next.txt").is_file()
+
+
+def test_post_completion_continuation_auto_handoff_executes_next_goal_in_same_run(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal({"goal_id": "goal_workspace_file", "summary": "建立 workspace/example.txt"})
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_workspace_file",
+        max_cycles=2,
+        max_continuations=1,
+    )
+
+    first_cycle = result["cycles"][0]
+    second_cycle = result["cycles"][1]
+    work_item = first_cycle["continuation_work_item"]
+    continuation_goal_id = work_item["goal_id"]
+    continuation_goal = repository.load_goal(continuation_goal_id)
+    second_runtime = second_cycle["runner_result"]["runtime_result"]
+
+    assert result["ok"] is True
+    assert result["cycle_count"] == 2
+    assert result["continuation_count"] == 1
+    assert result["continuation_count"] <= result["max_continuations"]
+    assert first_cycle["adaptive_decision"] == "complete"
+    assert first_cycle["goal_completion_authority_result"]["accepted"] is True
+    assert first_cycle["post_completion_continuation_created"] is True
+    assert first_cycle["post_completion_continuation"]["continuation_goal_id"] == "goal_workspace_file__continuation_1"
+    assert first_cycle["stop_reason"] == "post_completion_continuation_handoff"
+    assert continuation_goal is not None
+    assert continuation_goal["payload"]["target_path"] == "workspace/example_next.txt"
+    assert second_cycle["goal_id"] == continuation_goal_id
+    assert second_cycle["adaptive_decision"] == "complete"
+    assert second_cycle["continuation_work_item"] == {}
+    assert second_runtime["work_package"]["edit"]["target_path"] == "workspace/example_next.txt"
+    assert second_runtime["scheduler_record"]["status"] == "completed"
+    assert second_runtime["work_package_result"]["reason"] == "controlled_workspace_execution_completed"
+    assert second_runtime["work_package_result"]["evidence"]["guard"] == "workspace_only"
+    assert result["goal_completion_authority_result"]["accepted"] is True
+    assert (tmp_path / "workspace/example.txt").is_file()
+    assert (tmp_path / "workspace/example_next.txt").is_file()
+    assert repository.load_goal("goal_workspace_file__continuation_1__continuation_2") is None
+
+
+def test_post_completion_continuation_respects_max_continuations(tmp_path) -> None:
+    repository = EngineeringGoalRepository(tmp_path)
+    repository.save_goal({"goal_id": "goal_workspace_file", "summary": "建立 workspace/example.txt"})
+
+    result = EngineeringGoalLoop(repo_root=tmp_path, repository=repository).run_until_terminal(
+        "goal_workspace_file",
+        max_cycles=1,
+        max_continuations=0,
+    )
+
+    assert result["ok"] is True
+    assert result["continuation_count"] == 0
+    assert result["cycles"][0]["continuation_work_item"] == {}
+    assert result["cycles"][0]["post_completion_continuation_refusal"] == "max_continuations_exhausted"
+    assert repository.load_goal("goal_workspace_file__continuation_1") is None

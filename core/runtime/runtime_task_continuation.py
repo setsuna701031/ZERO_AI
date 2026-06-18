@@ -15,6 +15,7 @@ from core.runtime.runtime_session_resume import (
     normalize_task_status,
     stable_resume_fingerprint,
 )
+from core.runtime.persistent_queue_contract import duplicate_identity
 
 CONTINUATION_ACTION_REQUEUE = "requeue"
 CONTINUATION_ACTION_WAIT = "wait"
@@ -45,6 +46,7 @@ class RuntimeTaskContinuationPlan:
     requeue_task_ids: list[str]
     waiting_task_ids: list[str]
     skipped_task_ids: list[str]
+    duplicate_task_ids: list[str]
     fingerprint: str
     created_at: str = field(default_factory=utc_timestamp)
 
@@ -55,6 +57,7 @@ class RuntimeTaskContinuationPlan:
             "requeue_task_ids": list(self.requeue_task_ids),
             "waiting_task_ids": list(self.waiting_task_ids),
             "skipped_task_ids": list(self.skipped_task_ids),
+            "duplicate_task_ids": list(self.duplicate_task_ids),
             "fingerprint": self.fingerprint,
             "created_at": self.created_at,
         }
@@ -72,6 +75,8 @@ class RuntimeTaskContinuation:
 
     def build_plan(self, tasks: Iterable[Mapping[str, Any]]) -> RuntimeTaskContinuationPlan:
         decisions: list[RuntimeTaskContinuationDecision] = []
+        accepted_tasks: list[dict[str, Any]] = []
+        duplicate_task_ids: list[str] = []
         for task in tasks or []:
             if not isinstance(task, Mapping):
                 continue
@@ -81,6 +86,12 @@ class RuntimeTaskContinuation:
             if not task_id:
                 task_id = "task:" + stable_resume_fingerprint(task_copy)[:16]
                 task_copy.setdefault("task_id", task_id)
+            task_copy.setdefault("task_id", task_id)
+            duplicate, _ = duplicate_identity(task_copy, accepted_tasks)
+            if duplicate is not None:
+                duplicate_task_ids.append(task_id)
+                continue
+            accepted_tasks.append(task_copy)
 
             if status in {TASK_STATUS_BLOCKED, TASK_STATUS_REVIEW_REQUIRED}:
                 decision = RuntimeTaskContinuationDecision(
@@ -118,6 +129,7 @@ class RuntimeTaskContinuation:
             requeue_task_ids=requeue,
             waiting_task_ids=waiting,
             skipped_task_ids=skipped,
+            duplicate_task_ids=list(dict.fromkeys(duplicate_task_ids)),
             fingerprint=fingerprint,
         )
 
