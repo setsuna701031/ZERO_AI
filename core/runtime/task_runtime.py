@@ -1189,11 +1189,14 @@ class TaskRuntime:
             raise RuntimeTransitionPolicyError(policy_decision.reason)
 
         if "status" in transition_updates:
-            requested_status = str(transition_updates.get("status") or "").strip().lower()
-            if requested_status not in self.state_machine.ALL_STATUSES:
+            raw_status = transition_updates.get("status")
+            requested_status_text = str(raw_status or "").strip().lower().replace("-", "_").replace(" ", "_")
+            if not self.state_machine.is_known_status(raw_status):
                 raise RuntimeTransitionPolicyError(
-                    f"runtime_state_machine_rejected_unknown_status:{requested_status}"
+                    f"runtime_state_machine_rejected_unknown_status:{requested_status_text}"
                 )
+            requested_status = self.state_machine.normalize_status(raw_status)
+            transition_updates["status"] = requested_status
             machine_state, machine_result = self.state_machine.transition(
                 next_state,
                 requested_status,

@@ -577,7 +577,7 @@ class RuntimeSessionResume:
 
         task_payload = copy.deepcopy(snapshot.task)
         if task_payload:
-            task_payload["status"] = runtime_status
+            task_payload["status"] = _canonical_runtime_status(runtime_status)
             history = task_payload.setdefault("history", [])
             if isinstance(history, list) and runtime_status not in history:
                 history.append(runtime_status)

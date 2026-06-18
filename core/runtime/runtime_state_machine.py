@@ -63,6 +63,30 @@ class RuntimeStateMachine:
     }
 
     ALL_STATUSES: Set[str] = TERMINAL_STATUSES | ACTIVE_STATUSES
+    STATUS_ALIASES: Dict[str, str] = {
+        "aborted": STATUS_CANCELLED,
+        "abort": STATUS_CANCELLED,
+        "cancel": STATUS_CANCELLED,
+        "canceled": STATUS_CANCELLED,
+        "complete": STATUS_FINISHED,
+        "completed": STATUS_FINISHED,
+        "done": STATUS_FINISHED,
+        "ok": STATUS_FINISHED,
+        "success": STATUS_FINISHED,
+        "succeeded": STATUS_FINISHED,
+        "verified": STATUS_FINISHED,
+        "partial_failed": STATUS_FAILED,
+        "recoverable_failure": STATUS_FAILED,
+        "verification_failed": STATUS_FAILED,
+        "review_required": STATUS_BLOCKED,
+        "policy_blocked": STATUS_BLOCKED,
+        "rejected": STATUS_BLOCKED,
+        "forced_repair": STATUS_REPLANNING,
+        "fallback": STATUS_REPLANNING,
+        "recovering": STATUS_REPLANNING,
+        "timed_out": STATUS_TIMEOUT,
+        "timedout": STATUS_TIMEOUT,
+    }
 
     ALLOWED_TRANSITIONS: Dict[str, Set[str]] = {
         STATUS_QUEUED: {
@@ -159,13 +183,27 @@ class RuntimeStateMachine:
     # basic helpers
     # ============================================================
 
-    def normalize_status(self, status: Any) -> str:
-        text = str(status or "").strip().lower()
+    def _status_text(self, status: Any) -> str:
+        return str(status or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    def canonicalize_status(self, status: Any) -> str:
+        text = self._status_text(status)
         if not text:
             return self.STATUS_QUEUED
-        if text not in self.ALL_STATUSES:
-            return self.STATUS_QUEUED
-        return text
+        if text in self.ALL_STATUSES:
+            return text
+        if text in self.STATUS_ALIASES:
+            return self.STATUS_ALIASES[text]
+        return self.STATUS_QUEUED
+
+    def is_known_status(self, status: Any) -> bool:
+        text = self._status_text(status)
+        if not text:
+            return True
+        return text in self.ALL_STATUSES or text in self.STATUS_ALIASES
+
+    def normalize_status(self, status: Any) -> str:
+        return self.canonicalize_status(status)
 
     def is_terminal(self, status: Any) -> bool:
         return self.normalize_status(status) in self.TERMINAL_STATUSES

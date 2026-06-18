@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.runtime.runtime_state_machine import RuntimeStateMachine
+
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.runtime_authority_seal import (
@@ -109,7 +111,7 @@ class RuntimeDispatcher:
             raise RuntimePackageQueueError("work_package_resume_contract_missing_active_graph")
         task["steps"] = steps
         task["current_step_index"] = int(active_graph.get("cursor") or 0)
-        task["status"] = "running"
+        task["status"] = _canonical_runtime_status("running")
         task["runtime_execution_capability"] = self._execution_capability(
             self.queue.status(package_id)
         )
@@ -492,7 +494,7 @@ class RuntimeDispatcher:
             *copy.deepcopy(appended_steps),
         ]
         next_task["current_step_index"] = int(feedback.get("current_step") or 0)
-        next_task["status"] = "running"
+        next_task["status"] = _canonical_runtime_status("running")
         next_task["replan_count"] = int(task.get("replan_count") or 0) + 1
         return next_task
 
@@ -506,7 +508,7 @@ class RuntimeDispatcher:
         result_task = result.get("task") if isinstance(result.get("task"), Mapping) else {}
         next_task.update(copy.deepcopy(dict(result_task)))
         next_task["current_step_index"] = int(feedback.get("current_step") or 0)
-        next_task["status"] = "running"
+        next_task["status"] = _canonical_runtime_status("running")
         return next_task
 
 
