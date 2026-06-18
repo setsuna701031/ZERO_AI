@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 
 CONTINUATION_RUNTIME_SCHEMA = "zero.continuation_runtime.v1"
+_CONTINUATION_MUTATION_AUTHORITY = object()
 
 
 def _text(value: Any, default: str = "") -> str:
@@ -68,6 +69,8 @@ class ContinuationRuntime:
         return self.continuation_count >= self.max_continuations
 
     def record_work_item(self, work_item: Mapping[str, Any]) -> "ContinuationRuntime":
+        if self.limit_reached:
+            raise RuntimeError("continuation_limit_reached")
         item = _mapping(work_item)
         goal_id = _text(item.get("goal_id"), self.current_goal_id)
         return self.replace(
@@ -75,9 +78,12 @@ class ContinuationRuntime:
             continuation_count=self.continuation_count + 1,
             last_continuation_goal_id=goal_id,
             last_work_item=item,
+            _authority_token=_CONTINUATION_MUTATION_AUTHORITY,
         )
 
-    def replace(self, **changes: Any) -> "ContinuationRuntime":
+    def replace(self, *, _authority_token: object | None = None, **changes: Any) -> "ContinuationRuntime":
+        if _authority_token is not _CONTINUATION_MUTATION_AUTHORITY:
+            raise PermissionError("continuation_mutation_authority_required")
         values = {
             "current_goal_id": self.current_goal_id,
             "continuation_count": self.continuation_count,

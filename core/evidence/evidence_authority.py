@@ -84,7 +84,7 @@ class EvidenceAuthority:
     ) -> EvidenceChain:
         target = clean_required_text(goal_id, "goal_id")
         build_chain = getattr(self.repository, "build_chain", None)
-        if callable(build_chain) and session_id is None:
+        if callable(build_chain) and session_id is None and goal_lineage_id is None and root_goal_id is None:
             return build_chain(target)
         records = self._records_for_goal(
             target,
@@ -157,16 +157,14 @@ class EvidenceAuthority:
                     return records
                 return [
                     record for record in records
-                    if _text(_mapping(record.metadata).get("session_id") or _mapping(record.metadata).get("runtime_session_id"))
-                    == str(session_id)
+                    if _text(_mapping(record.metadata).get("session_id")) == str(session_id)
                 ]
         return [
             record for record in self.list_records()
             if record.goal_id == goal_id
             and (
                 session_id is None
-                or _text(_mapping(record.metadata).get("session_id") or _mapping(record.metadata).get("runtime_session_id"))
-                == str(session_id)
+                or _text(_mapping(record.metadata).get("session_id")) == str(session_id)
             )
         ]
 
@@ -194,8 +192,8 @@ class EvidenceAuthority:
                 "metadata": {
                     "decision_id": decision_id,
                     "task_id": task_id,
-                    "session_id": _text(normalized.get("session_id") or normalized.get("runtime_session_id")),
-                    "runtime_session_id": _text(normalized.get("runtime_session_id") or normalized.get("session_id")),
+                    "session_id": _text(normalized.get("session_id")),
+                    "runtime_session_id": _text(normalized.get("runtime_session_id")),
                     "root_goal_id": _text(normalized.get("root_goal_id")),
                     "source_goal_id": _text(normalized.get("source_goal_id")),
                     "goal_lineage_id": _text(normalized.get("goal_lineage_id")),

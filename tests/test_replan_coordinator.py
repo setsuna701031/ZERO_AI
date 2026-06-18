@@ -8,6 +8,8 @@ def test_replan_coordinator_creates_record_and_updates_runtime(tmp_path) -> None
     cycle = {
         "goal_id": "goal_a",
         "cycle_index": 0,
+        "session_id": "session_a",
+        "runtime_session_id": "runtime_a",
         "replan_request": {
             "reason": "recoverable_runtime_failure",
             "root_cause_report": {"primary_cause": "missing_output"},

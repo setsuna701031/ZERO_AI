@@ -1188,6 +1188,22 @@ class TaskRuntime:
         if not policy_decision.ok:
             raise RuntimeTransitionPolicyError(policy_decision.reason)
 
+        if "status" in transition_updates:
+            requested_status = str(transition_updates.get("status") or "").strip().lower()
+            if requested_status not in self.state_machine.ALL_STATUSES:
+                raise RuntimeTransitionPolicyError(
+                    f"runtime_state_machine_rejected_unknown_status:{requested_status}"
+                )
+            machine_state, machine_result = self.state_machine.transition(
+                next_state,
+                requested_status,
+                reason=transition_action,
+                message=f"authorized runtime transition by {transition_owner}",
+            )
+            if not machine_result.ok:
+                raise RuntimeTransitionPolicyError(machine_result.message)
+            next_state = machine_state
+
         next_state.setdefault("runtime_transition_policy", {})
         if isinstance(next_state.get("runtime_transition_policy"), dict):
             next_state["runtime_transition_policy"]["last_decision"] = policy_decision.to_dict()

@@ -24,6 +24,8 @@ class AdaptiveReplanTransition:
     action: str
     reason: str = ""
     contract: Mapping[str, Any] | None = None
+    goal_id: str = ""
+    completion_attestation: Any = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "from_state", clean_adaptive_replan_state(self.from_state))
@@ -31,13 +33,29 @@ class AdaptiveReplanTransition:
         object.__setattr__(self, "action", clean_adaptive_replan_state(self.action))
         object.__setattr__(self, "reason", _text(self.reason, f"adaptive_replan_{self.action}"))
         object.__setattr__(self, "contract", copy.deepcopy(dict(self.contract)) if isinstance(self.contract, Mapping) else {})
+        object.__setattr__(self, "goal_id", _text(self.goal_id))
 
     @classmethod
-    def from_contract(cls, contract: Mapping[str, Any], *, from_state: str = "continue") -> "AdaptiveReplanTransition":
+    def from_contract(
+        cls,
+        contract: Mapping[str, Any],
+        *,
+        from_state: str = "continue",
+        goal_id: str = "",
+        completion_attestation: Any = None,
+    ) -> "AdaptiveReplanTransition":
         record = copy.deepcopy(dict(contract)) if isinstance(contract, Mapping) else {}
         action = _text(record.get("loop_action"), "stop")
         reason = _text(record.get("reason") or record.get("stop_reason"), f"adaptive_replan_{action}")
-        return cls(from_state=from_state, to_state=action, action=action, reason=reason, contract=record)
+        return cls(
+            from_state=from_state,
+            to_state=action,
+            action=action,
+            reason=reason,
+            contract=record,
+            goal_id=goal_id,
+            completion_attestation=completion_attestation,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +65,7 @@ class AdaptiveReplanTransition:
             "action": self.action,
             "reason": self.reason,
             "contract": copy.deepcopy(dict(self.contract or {})),
+            "goal_id": self.goal_id,
             "execution_path": {
                 "decision_only": True,
                 "executes_tasks": False,

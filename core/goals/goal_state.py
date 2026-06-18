@@ -8,6 +8,7 @@ from enum import Enum
 class GoalState(str, Enum):
     CREATED = "created"
     PLANNED = "planned"
+    PENDING = "pending"
     ACTIVE = "active"
     BLOCKED = "blocked"
     RESUMABLE = "resumable"

@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.adaptive.continuation_runtime import ContinuationRuntime
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage, extract_runtime_identity
 
 
 CONTINUATION_COORDINATOR_SCHEMA = "zero.continuation_coordinator.v1"
@@ -78,7 +79,8 @@ class ContinuationCoordinator:
             runtime.current_goal_id,
         )
         resolved_cycle_index = int(cycle_index if cycle_index is not None else cycle_record.get("cycle_index") or 0)
-        session_id = _text(cycle_record.get("session_id") or cycle_record.get("runtime_session_id"))
+        runtime_identity = extract_runtime_identity(cycle_record, require_complete=True)
+        session_id = runtime_identity["session_id"]
         continuation_goal_id = self._continuation_goal_id(source_goal_id, resolved_cycle_index)
         parent_lineage = extract_goal_lineage(cycle_record)
         lineage = extract_goal_lineage(
@@ -97,13 +99,12 @@ class ContinuationCoordinator:
             for item in (plan.get("evidence_chain") or [])
             if isinstance(item, Mapping) and _text(item.get("evidence_id"))
         ]
-        attestation = _mapping(cycle_record.get("goal_completion_authority_result"))
-        if not attestation:
-            transported_attestation = _transport(cycle_record.get("goal_completion_attestation"))
-            attestation = _mapping(transported_attestation)
         authority_state = (
             "completion_authority_accepted"
-            if bool(attestation.get("accepted")) and bool(attestation.get("completed"))
+            if is_accepted_goal_completion_result(
+                cycle_record.get("goal_completion_attestation"),
+                goal_id=source_goal_id,
+            )
             else "completion_authority_not_granted"
         )
         summary = _text(payload.get("goal") or plan.get("reason"), f"Continue {source_goal_id}")

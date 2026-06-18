@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from core.adaptive.adaptive_replan_state import clean_adaptive_replan_state
 from core.adaptive.adaptive_replan_transition import AdaptiveReplanTransition
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
 
 
 ADAPTIVE_REPLAN_VALIDATION_SCHEMA = "zero.adaptive_replan_validation.v1"
@@ -75,6 +76,21 @@ class AdaptiveReplanValidator:
                 to_state=to_state,
                 reason="adaptive_replan_transition_rejected",
                 blocked_reason=f"illegal_transition:{from_state}->{to_state}",
+            )
+        if to_state == "complete" and (
+            not isinstance(transition, AdaptiveReplanTransition)
+            or not transition.goal_id
+            or not is_accepted_goal_completion_result(
+                transition.completion_attestation,
+                goal_id=transition.goal_id,
+            )
+        ):
+            return AdaptiveReplanValidationResult(
+                accepted=False,
+                from_state=from_state,
+                to_state=to_state,
+                reason="adaptive_replan_transition_rejected",
+                blocked_reason="canonical_completion_attestation_required",
             )
         return AdaptiveReplanValidationResult(
             accepted=True,

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.adaptive.replan_runtime import ReplanRuntime
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage, extract_runtime_identity
 
 
 REPLAN_COORDINATOR_SCHEMA = "zero.replan_coordinator.v1"
@@ -50,7 +50,8 @@ class ReplanCoordinator:
         request = _mapping(replan_request) or _mapping(cycle_record.get("replan_request"))
         source_goal_id = _text(goal_id or cycle_record.get("goal_id") or request.get("goal_id"))
         resolved_cycle_index = int(cycle_index if cycle_index is not None else cycle_record.get("cycle_index") or 0)
-        session_id = _text(cycle_record.get("session_id") or cycle_record.get("runtime_session_id"))
+        runtime_identity = extract_runtime_identity(cycle_record, require_complete=True)
+        session_id = runtime_identity["session_id"]
         task_id = f"replan:{source_goal_id}:{resolved_cycle_index}"
         replan_request_id = _text(request.get("request_id"), task_id)
         parent_lineage = extract_goal_lineage(cycle_record)

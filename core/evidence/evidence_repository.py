@@ -160,7 +160,12 @@ class EvidenceRepository:
     @staticmethod
     def _session_id(record: EvidenceRecord) -> str:
         metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
-        return str(metadata.get("session_id") or metadata.get("runtime_session_id") or "").strip()
+        return str(metadata.get("session_id") or "").strip()
+
+    @staticmethod
+    def _runtime_session_id(record: EvidenceRecord) -> str:
+        metadata = record.metadata if isinstance(record.metadata, Mapping) else {}
+        return str(metadata.get("runtime_session_id") or "").strip()
 
     @staticmethod
     def _lineage(record: EvidenceRecord) -> dict[str, str]:
@@ -169,8 +174,11 @@ class EvidenceRepository:
     @classmethod
     def _record_key(cls, record: EvidenceRecord) -> str:
         session_id = cls._session_id(record)
+        runtime_session_id = cls._runtime_session_id(record)
         lineage_id = cls._lineage(record).get("goal_lineage_id", "")
-        scope = "::".join(part for part in (session_id, lineage_id) if part)
+        scope = "::".join((session_id, runtime_session_id, lineage_id)) if any(
+            (session_id, runtime_session_id, lineage_id)
+        ) else ""
         return f"{scope}::{record.evidence_id}" if scope else record.evidence_id
 
 

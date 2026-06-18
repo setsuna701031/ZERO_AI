@@ -69,7 +69,9 @@ class RuntimeStateMachine:
             STATUS_PLANNING,
             STATUS_READY,
             STATUS_RUNNING,
+            STATUS_BLOCKED,
             STATUS_PAUSED,
+            STATUS_FINISHED,
             STATUS_CANCELLED,
             STATUS_FAILED,
         },
@@ -321,39 +323,13 @@ class RuntimeStateMachine:
         message: str = "",
         extra_updates: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], TransitionResult]:
-        state = self.ensure_runtime_status_fields(runtime_state)
-
-        old_status = self.normalize_status(state.get("status"))
-        target_status = self.normalize_status(new_status)
-
-        updated = copy.deepcopy(state)
-        updated["status"] = target_status
-
-        if extra_updates:
-            updated.update(copy.deepcopy(extra_updates))
-
-        updated = self._apply_status_timestamps(
-            runtime_state=updated,
-            old_status=old_status,
-            new_status=target_status,
-        )
-
-        updated = self._append_history(
-            runtime_state=updated,
-            old_status=old_status,
-            new_status=target_status,
+        return self.transition(
+            runtime_state,
+            new_status,
             reason=reason,
-            message=message or f"force set: {old_status} -> {target_status}",
+            message=message or "force_set_routed_through_transition_validator",
+            extra_updates=extra_updates,
         )
-
-        result = TransitionResult(
-            ok=True,
-            old_status=old_status,
-            new_status=target_status,
-            reason=reason,
-            message=message or f"force set: {old_status} -> {target_status}",
-        )
-        return updated, result
 
     # ============================================================
     # convenience wrappers

@@ -75,7 +75,7 @@ class AdaptiveReplanStateMachine:
 
     def transition(self, transition: AdaptiveReplanTransition | Mapping[str, Any]) -> AdaptiveReplanStateResult:
         transition_record = transition.to_dict() if isinstance(transition, AdaptiveReplanTransition) else _mapping(transition)
-        validation = self.validator.validate(transition_record)
+        validation = self.validator.validate(transition)
         validation_record = validation.to_dict()
         contract = _mapping(transition_record.get("contract"))
         from_state = _text(validation_record.get("from_state"))
@@ -95,8 +95,22 @@ class AdaptiveReplanStateMachine:
             )
         return self._accepted_result(from_state=from_state, to_state=to_state, contract=contract)
 
-    def evaluate_contract(self, contract: Mapping[str, Any], *, from_state: str = "continue") -> AdaptiveReplanStateResult:
-        return self.transition(AdaptiveReplanTransition.from_contract(contract, from_state=from_state))
+    def evaluate_contract(
+        self,
+        contract: Mapping[str, Any],
+        *,
+        from_state: str = "continue",
+        goal_id: str = "",
+        completion_attestation: Any = None,
+    ) -> AdaptiveReplanStateResult:
+        return self.transition(
+            AdaptiveReplanTransition.from_contract(
+                contract,
+                from_state=from_state,
+                goal_id=goal_id,
+                completion_attestation=completion_attestation,
+            )
+        )
 
     def _accepted_result(self, *, from_state: str, to_state: str, contract: Mapping[str, Any]) -> AdaptiveReplanStateResult:
         action = clean_adaptive_replan_state(to_state)

@@ -66,14 +66,11 @@ def test_scheduler_cannot_produce_sealed_execution_evidence_directly(tmp_path: P
     assert forged["execution_evidence"]["producer_layer"] == "scheduler"
 
 
-def test_code_chain_visibility_artifacts_are_output_not_execution_proof(
-    monkeypatch: Any,
-) -> None:
+def test_code_chain_visibility_artifacts_route_through_execution_owner() -> None:
     from core.agent.agent_loop import AgentLoop
 
-    fake = _RecordingPersistence()
-    loop = AgentLoop(debug=False)
-    monkeypatch.setattr(loop, "_code_chain_persistence", lambda: fake)
+    fake = _RecordingExecutionRuntime()
+    loop = AgentLoop(debug=False, execution_runtime=fake)
 
     result = loop._write_code_chain_text(
         Path("workspace/audit/code_chain/diffs/probe.diff"),
@@ -85,11 +82,11 @@ def test_code_chain_visibility_artifacts_are_output_not_execution_proof(
 
     call = fake.calls[0]
     assert result["ok"] is True
-    assert call["operation_type"] == "generated_artifact_write"
-    assert call["lineage"]["artifact_class"] == "output_artifact"
-    assert call["provenance"]["producer_layer"] == "agent_loop"
-    assert call["metadata"]["artifact_class"] == "output_artifact"
-    assert call["metadata"]["sealed_execution_evidence"] is False
+    assert call["step"]["type"] == "write_file"
+    assert call["context"]["ownership_handoff"] == "agent_loop_to_agent_execution_runtime"
+    assert call["context"]["lineage"]["artifact_class"] == "output_artifact"
+    assert call["context"]["provenance"]["producer_layer"] == "agent_execution_runtime"
+    assert call["context"]["metadata"]["sealed_execution_evidence"] is True
 
 
 def test_unsealed_audit_and_output_artifacts_cannot_satisfy_evidence_seal() -> None:
@@ -173,30 +170,10 @@ def test_runtime_state_persistence_is_task_state_not_execution_proof(tmp_path: P
     assert "evidence_seal_valid" not in task_record
 
 
-class _RecordingPersistence:
+class _RecordingExecutionRuntime:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
-    def write_text(
-        self,
-        file_path: str | Path,
-        text: str,
-        *,
-        reason: str = "",
-        lineage: dict[str, Any] | None = None,
-        provenance: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
-        operation_type: str = "",
-    ) -> dict[str, Any]:
-        self.calls.append(
-            {
-                "file_path": str(file_path),
-                "text": text,
-                "reason": reason,
-                "lineage": dict(lineage or {}),
-                "provenance": dict(provenance or {}),
-                "metadata": dict(metadata or {}),
-                "operation_type": operation_type,
-            }
-        )
-        return {"ok": True, "artifact_class": "output_artifact"}
+    def run_step(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs)
+        return {"ok": True, "execution_path": {"runtime_owns_execution": True}}

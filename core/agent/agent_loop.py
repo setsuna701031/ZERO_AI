@@ -30,7 +30,6 @@ from core.agent.agent_loop_route_marker import mark_agent_loop_route
 from core.memory.context_builder import build_context
 from core.runtime.agent_execution_runtime import AgentExecutionRuntime, agent_execution_path
 from core.runtime.code_chain_patch_restore import request_code_chain_patch_restore
-from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.agent.loop_decision import observe_and_decide
 from core.runtime.blockers import active_blockers, normalize_blockers
 from core.agent.local_observer import observe_runner_result as observe_local_runner_result
@@ -2008,9 +2007,6 @@ class AgentLoop:
             text = "target"
         return re.sub(r"[^A-Za-z0-9_.-]+", "_", text)[:120]
 
-    def _code_chain_persistence(self) -> RuntimePersistenceService:
-        return RuntimePersistenceService(workspace_root=Path(".").resolve())
-
     def _write_code_chain_text(
         self,
         path: Path | str,
@@ -2021,37 +2017,44 @@ class AgentLoop:
         artifact_type: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        return self._code_chain_persistence().write_text(
-            path,
-            str(text),
-            operation_type="generated_artifact_write",
-            reason=reason,
-            lineage={
+        result = self.execution_runtime.run_step(
+            step={
+                "type": "write_file",
+                "path": str(path).replace("\\", "/"),
+                "content": str(text),
+            },
+            context={
+                "reason": reason,
+                "ownership_handoff": "agent_loop_to_agent_execution_runtime",
+                "lineage": {
                 "caller": "agent_loop",
                 "surface": "code_chain_patch",
                 "artifact_type": artifact_type,
                 "artifact_class": "output_artifact",
-                "sealed_execution_evidence": False,
                 "patch_target_path": str(target_path or ""),
-            },
-            provenance={
+                },
+                "provenance": {
                 "caller": "agent_loop",
                 "surface": "code_chain_patch",
                 "artifact_type": artifact_type,
                 "artifact_class": "output_artifact",
-                "producer_layer": "agent_loop",
-            },
-            metadata={
+                    "producer_layer": "agent_execution_runtime",
+                },
+                "metadata": {
                 "caller": "agent_loop",
                 "runtime_seal_pass": "active_mutation_closure_v1",
                 "artifact_type": artifact_type,
                 "artifact_class": "output_artifact",
-                "producer_layer": "agent_loop",
-                "sealed_execution_evidence": False,
+                    "producer_layer": "agent_execution_runtime",
+                    "sealed_execution_evidence": True,
                 "patch_target_path": str(target_path or ""),
                 **dict(metadata or {}),
+                },
             },
         )
+        if result.get("ok") is not True:
+            raise PermissionError("agent_execution_runtime_write_required")
+        return result
 
     def _prepare_code_chain_patch_visibility(
         self,
@@ -2202,33 +2205,14 @@ class AgentLoop:
                 "original_task": visibility.get("original_task"),
             }
             audit_path = audit_dir / f"{timestamp}_{slug}.json"
-            self._code_chain_persistence().write_json(
+            self._write_code_chain_text(
                 audit_path,
-                audit_payload,
+                json.dumps(audit_payload, ensure_ascii=False, indent=2),
                 reason="agent_loop_code_chain_audit_write",
-                lineage={
-                    "caller": "agent_loop",
-                    "surface": "code_chain_patch",
-                    "artifact_type": "patch_audit",
-                    "artifact_class": "output_artifact",
-                    "sealed_execution_evidence": False,
-                    "patch_target_path": normalized_target,
-                },
-                provenance={
-                    "caller": "agent_loop",
-                    "surface": "code_chain_patch",
-                    "artifact_type": "patch_audit",
-                    "artifact_class": "output_artifact",
-                    "producer_layer": "agent_loop",
-                },
+                target_path=normalized_target,
+                artifact_type="patch_audit",
                 metadata={
-                    "caller": "agent_loop",
-                    "runtime_seal_pass": "active_mutation_closure_v1",
-                    "artifact_type": "patch_audit",
-                    "artifact_class": "output_artifact",
-                    "producer_layer": "agent_loop",
-                    "sealed_execution_evidence": False,
-                    "patch_target_path": normalized_target,
+                    "audit": True,
                 },
             )
             visibility["audit_path"] = str(audit_path).replace("\\", "/")

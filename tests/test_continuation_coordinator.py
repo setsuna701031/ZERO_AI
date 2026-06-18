@@ -21,6 +21,8 @@ def test_continuation_coordinator_creates_work_item_and_updates_runtime(tmp_path
     cycle = {
         "goal_id": "goal_a",
         "cycle_index": 0,
+        "session_id": "session_a",
+        "runtime_session_id": "runtime_a",
         "continuation_plan": {
             "next_runtime_request": {"payload": {"goal": "Continue work"}},
             "work_item_template": {"objective": "Continue work", "acceptance": {"ok": True}},

@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.goals.goal_completion_authority import GoalCompletionResult, is_accepted_goal_completion_result
+from core.goals.goal_state_machine import GoalStateMachine
+from core.goals.goal_transition import GoalTransition
 
 ENGINEERING_GOAL_REPOSITORY_SCHEMA = "zero.engineering_goal_repository.v1"
 ENGINEERING_GOAL_RECORD_SCHEMA = "zero.engineering_goal_record.v1"
@@ -115,8 +117,10 @@ class EngineeringGoalRepository:
         repo_root: str | Path,
         *,
         storage_path: str | Path | None = None,
+        state_machine: GoalStateMachine | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
+        self.state_machine = state_machine or GoalStateMachine()
         self.storage_path = Path(storage_path) if storage_path is not None else self.repo_root / "runtime" / "goals" / "goals.json"
         if not self.storage_path.is_absolute():
             self.storage_path = self.repo_root / self.storage_path
@@ -173,6 +177,26 @@ class EngineeringGoalRepository:
             goal_id=target_goal_id,
         ):
             raise ValueError("canonical_completion_attestation_required")
+        if target_status and target_status not in {"complete", "completed"} and target_status != existing.get("status"):
+            transition = GoalTransition(
+                target_type="goal",
+                target_id=target_goal_id,
+                from_state=existing.get("status"),
+                to_state=target_status,
+                action={
+                    "planned": "plan",
+                    "active": "start",
+                    "blocked": "block",
+                    "resumable": "resume_ready",
+                    "failed": "fail",
+                }.get(target_status, target_status),
+                reason=_clean_text(updates.get("reason") or updates.get("blocked_reason"), "engineering_goal_status_update"),
+                resume_point=updates.get("resume_point"),
+                evidence_refs=list(updates.get("evidence_refs") or existing.get("evidence_refs") or []),
+            )
+            result = self.state_machine.transition(transition)
+            if not result.accepted:
+                raise ValueError(f"{result.reason}:{result.blocked_reason}")
         merged = copy.deepcopy(existing)
         for key, value in updates.items():
             if key in {"schema", "goal_id", "created_at"}:

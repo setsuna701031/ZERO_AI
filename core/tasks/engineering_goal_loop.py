@@ -235,9 +235,10 @@ class EngineeringGoalLoop:
             if dispatch_result.refusal_reason:
                 self._refuse_adaptive_continuation(cycle, dispatch_result.refusal_reason)
 
-            cycle_decision = _clean_text(cycle.get("adaptive_decision"))
-            cycle_runtime_state = _clean_text(cycle.get("runtime_state"))
-            cycle_completed = cycle_decision == "complete" or cycle_runtime_state == "complete"
+            cycle_completed = is_accepted_goal_completion_result(
+                cycle.get("goal_completion_attestation"),
+                goal_id=session_runtime.current_goal_id,
+            )
             post_completion_continuation_goal_id = ""
             should_handoff_post_completion = False
             if cycle_completed:
@@ -292,7 +293,8 @@ class EngineeringGoalLoop:
                 current_lineage = extract_goal_lineage(cycle.get("continuation_work_item"), require_complete=True)
                 continue
 
-            if dispatch_result.terminal or cycle_completed:
+            dispatch_blocked_terminal = dispatch_result.action == "terminal_blocked"
+            if dispatch_result.terminal or dispatch_blocked_terminal or cycle_completed:
                 terminal = True
                 stop_reason = "complete" if cycle_completed else _clean_text(dispatch_result.stop_reason, "stop")
                 refusal_reason = _clean_text(dispatch_result.refusal_reason)

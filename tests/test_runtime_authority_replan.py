@@ -17,10 +17,12 @@ def test_replan_coordinator_is_only_replan_record_creator(tmp_path) -> None:
     coordinator = ReplanCoordinator(repo_root=tmp_path)
     record, runtime = coordinator.create_replan_record(
         runtime=ReplanRuntime.start(max_replans=2),
-        cycle={
-            "goal_id": "goal_a",
-            "cycle_index": 0,
-            "replan_request": {"reason": "recoverable_runtime_failure", "evidence_chain": []},
+            cycle={
+                "goal_id": "goal_a",
+                "cycle_index": 0,
+                "session_id": "session_a",
+                "runtime_session_id": "runtime_a",
+                "replan_request": {"reason": "recoverable_runtime_failure", "evidence_chain": []},
         },
     )
     marker = record["replan_coordinator"]["execution_path"]

@@ -12,6 +12,7 @@ from core.runtime.runtime_authority_seal import (
     issue_dispatch_execution_capability,
     issue_work_package_completion_authority,
 )
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.persistent_queue_contract import classify_queue_failure, extract_queue_lineage, merge_queue_lineage
 from core.runtime.work_package_queue import (
     RuntimePackageQueue,
@@ -398,11 +399,16 @@ class RuntimeDispatcher:
                 "ok": False,
                 "root_cause": f"runtime_replan_limit_reached:{replan_count}/{max_replans}",
             }
+        runtime_identity = extract_runtime_identity(record)
+        identity_missing_fields = [
+            field
+            for field in ("session_id", "runtime_session_id")
+            if not runtime_identity.get(field)
+        ]
         request = {
             "schema": RUNTIME_REPLAN_REQUEST_SCHEMA,
             "request_id": f"{package_id}:replan:{replan_count + 1}",
             "package_id": package_id,
-            "session_id": record.get("session_id") or record.get("runtime_session_id"),
             "task_id": record.get("task_id"),
             "goal_id": task.get("goal_id"),
             "source_goal_id": task.get("source_goal_id"),
@@ -426,6 +432,9 @@ class RuntimeDispatcher:
             "replan_count": replan_count + 1,
             "max_replans": max_replans,
             **extract_queue_lineage(task),
+            "session_id": runtime_identity.get("session_id", ""),
+            "runtime_session_id": runtime_identity.get("runtime_session_id", ""),
+            "identity_missing_fields": identity_missing_fields,
         }
         recorded = self.queue.record_replan_request(package_id, request)
         if not any(

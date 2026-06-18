@@ -24,7 +24,7 @@ class GoalRepository:
         state_machine: GoalStateMachine | None = None,
     ) -> None:
         self.repo_root = Path(repo_root)
-        self.state_machine = state_machine
+        self.state_machine = state_machine or GoalStateMachine()
         self.storage_path = Path(storage_path) if storage_path is not None else Path("runtime/goals/goals.jsonl")
         if not self.storage_path.is_absolute():
             self.storage_path = self.repo_root / self.storage_path
@@ -62,7 +62,7 @@ class GoalRepository:
             not is_accepted_goal_completion_result(completion_attestation, goal_id=goal_id)
         ):
             raise ValueError("canonical_completion_attestation_required")
-        if self.state_machine is not None and target_status != "completed":
+        if target_status != "completed":
             self._validate_transition(
                 GoalTransition(
                     "goal",
@@ -98,19 +98,18 @@ class GoalRepository:
         if existing is None:
             raise KeyError(clean_required_text(subgoal_id, "subgoal_id"))
         target_status = clean_status(status)
-        if self.state_machine is not None:
-            self._validate_transition(
-                GoalTransition(
-                    "subgoal",
-                    subgoal_id,
-                    existing["status"],
-                    target_status,
-                    action or self._infer_action(target_status),
-                    reason or blocked_reason,
-                    resume_point if resume_point is not None else existing.get("resume_point"),
-                    evidence_refs if evidence_refs is not None else existing.get("evidence_refs") or [],
-                )
+        self._validate_transition(
+            GoalTransition(
+                "subgoal",
+                subgoal_id,
+                existing["status"],
+                target_status,
+                action or self._infer_action(target_status),
+                reason or blocked_reason,
+                resume_point if resume_point is not None else existing.get("resume_point"),
+                evidence_refs if evidence_refs is not None else existing.get("evidence_refs") or [],
             )
+        )
         existing["status"] = target_status
         existing["updated_at"] = utc_now()
         if progress is not None:

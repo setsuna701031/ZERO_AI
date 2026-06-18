@@ -29,10 +29,12 @@ def test_continuation_coordinator_is_only_continuation_writer(tmp_path) -> None:
     coordinator = ContinuationCoordinator(repo_root=tmp_path, repository=FakeRepository())
     work_item, runtime = coordinator.create_work_item(
         runtime=ContinuationRuntime.start("goal_a", max_continuations=2),
-        cycle={
-            "goal_id": "goal_a",
-            "cycle_index": 0,
-            "continuation_plan": {
+            cycle={
+                "goal_id": "goal_a",
+                "cycle_index": 0,
+                "session_id": "session_a",
+                "runtime_session_id": "runtime_a",
+                "continuation_plan": {
                 "next_runtime_request": {"payload": {"goal": "Continue"}},
                 "work_item_template": {"objective": "Continue", "acceptance": {}},
                 "evidence_chain": [],

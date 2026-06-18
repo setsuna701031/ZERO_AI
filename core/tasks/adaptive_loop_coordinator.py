@@ -69,7 +69,11 @@ class AdaptiveLoopCoordinator:
         contract_record = contract.to_dict()
         updated["adaptive_replan_contract"] = contract_record
 
-        state_result = self.adaptive_replan_state_machine.evaluate_contract(contract_record)
+        state_result = self.adaptive_replan_state_machine.evaluate_contract(
+            contract_record,
+            goal_id=str(updated.get("goal_id") or ""),
+            completion_attestation=updated.get("goal_completion_attestation"),
+        )
         state_record = state_result.to_dict() if hasattr(state_result, "to_dict") else _mapping(state_result)
         updated["adaptive_replan_state"] = state_record
 

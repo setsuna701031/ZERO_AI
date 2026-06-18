@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 
 REPLAN_RUNTIME_SCHEMA = "zero.replan_runtime.v1"
+_REPLAN_MUTATION_AUTHORITY = object()
 
 
 def _limit(value: Any, default: int = 0) -> int:
@@ -43,12 +44,17 @@ class ReplanRuntime:
         return self.replan_count >= self.max_replans
 
     def record_replan(self, replan_record: Mapping[str, Any]) -> "ReplanRuntime":
+        if self.limit_reached:
+            raise RuntimeError("replan_limit_reached")
         return self.replace(
             replan_count=self.replan_count + 1,
             last_replan_record=_mapping(replan_record),
+            _authority_token=_REPLAN_MUTATION_AUTHORITY,
         )
 
-    def replace(self, **changes: Any) -> "ReplanRuntime":
+    def replace(self, *, _authority_token: object | None = None, **changes: Any) -> "ReplanRuntime":
+        if _authority_token is not _REPLAN_MUTATION_AUTHORITY:
+            raise PermissionError("replan_mutation_authority_required")
         values = {
             "replan_count": self.replan_count,
             "max_replans": self.max_replans,

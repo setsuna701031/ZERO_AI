@@ -97,9 +97,7 @@ def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
     lineage = {
         "session_id": _first_text(
             task.get("session_id"),
-            task.get("runtime_session_id"),
             metadata.get("session_id"),
-            metadata.get("runtime_session_id"),
         ),
         "runtime_session_id": _first_text(task.get("runtime_session_id"), metadata.get("runtime_session_id")),
         "goal_id": _first_text(task.get("goal_id"), metadata.get("goal_id"), task.get("task_id"), task.get("id")),
@@ -174,6 +172,47 @@ def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
     lineage.update(extract_goal_lineage({**dict(task), **lineage}))
 
     return {key: copy.deepcopy(value) for key, value in lineage.items() if value not in ("", [], {})}
+
+
+def _validate_runtime_identity_boundary(task: Mapping[str, Any], *, session_id: str) -> dict[str, str] | None:
+    """Validate strict identity when the V2 runtime_identity section is present.
+
+    Records without that section remain on the legacy migration path. No field
+    in either path is derived from the other identity field.
+    """
+
+    section = task.get("runtime_identity")
+    if not isinstance(section, Mapping):
+        return None
+
+    identity = {
+        "session_id": _clean_text(section.get("session_id")),
+        "runtime_session_id": _clean_text(section.get("runtime_session_id")),
+    }
+    if not identity["session_id"]:
+        raise RuntimeSessionResumeStoreError("session_id_missing")
+    if not identity["runtime_session_id"]:
+        raise RuntimeSessionResumeStoreError("runtime_session_id_missing")
+
+    if identity["session_id"] != session_id:
+        raise RuntimeSessionResumeStoreError("runtime_identity_mismatch")
+    for field in ("session_id", "runtime_session_id"):
+        explicit = _clean_text(task.get(field))
+        if explicit and explicit != identity[field]:
+            raise RuntimeSessionResumeStoreError("runtime_identity_mismatch")
+
+    goal_lineage = task.get("goal_lineage")
+    if isinstance(goal_lineage, Mapping):
+        for field in ("session_id", "runtime_session_id"):
+            lineage_value = _clean_text(goal_lineage.get(field))
+            if lineage_value != identity[field]:
+                raise RuntimeSessionResumeStoreError("lineage_mismatch")
+        for field in ("root_goal_id", "goal_lineage_id", "branch_type", "branch_id"):
+            explicit = _clean_text(task.get(field))
+            lineage_value = _clean_text(goal_lineage.get(field))
+            if explicit and lineage_value and explicit != lineage_value:
+                raise RuntimeSessionResumeStoreError("lineage_mismatch")
+    return identity
 
 
 def normalize_task_status(value: Any) -> str:
@@ -334,13 +373,22 @@ class RuntimeSessionResume:
         metadata: Mapping[str, Any] | None = None,
         include_terminal: bool = False,
     ) -> RuntimeSessionResumeRecord:
-        normalized_session_id = str(session_id or "").strip() or self._new_session_id(tasks=tasks, metadata=metadata)
+        normalized_session_id = str(session_id or "").strip()
+        if not normalized_session_id:
+            raise RuntimeSessionResumeStoreError("session_id_missing")
         snapshots: list[RuntimeTaskResumeSnapshot] = []
         for task in tasks or []:
             if not isinstance(task, Mapping):
                 continue
             session_task = copy.deepcopy(dict(task))
-            if not _first_text(session_task.get("session_id"), session_task.get("runtime_session_id")):
+            runtime_identity = _validate_runtime_identity_boundary(
+                session_task,
+                session_id=normalized_session_id,
+            )
+            if runtime_identity is not None:
+                session_task["session_id"] = runtime_identity["session_id"]
+                session_task["runtime_session_id"] = runtime_identity["runtime_session_id"]
+            elif not _clean_text(session_task.get("session_id")):
                 session_task["session_id"] = normalized_session_id
             snapshot = self.capture_task_snapshot(session_task)
             snapshot = self._resolve_snapshot_against_runtime_state(snapshot)

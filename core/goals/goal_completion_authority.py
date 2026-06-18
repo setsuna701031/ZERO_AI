@@ -9,7 +9,7 @@ from typing import Mapping
 from core.evidence.evidence_validator import is_provenance_validated_evidence
 from core.goals.goal_state_machine import GoalStateMachine, _GOAL_COMPLETION_AUTHORITY_TOKEN
 from core.goals.goal_transition import GoalTransition
-from core.goals.goal_lineage_contract import extract_goal_lineage, lineage_scope_matches
+from core.goals.goal_lineage_contract import extract_goal_lineage, extract_runtime_identity, lineage_scope_matches
 
 
 GOAL_COMPLETION_AUTHORITY_OWNER = "core.goals.goal_completion_authority.GoalCompletionAuthority"
@@ -22,13 +22,16 @@ def _evidence_session_id(value: Any) -> str:
     if not isinstance(value, Mapping):
         return ""
     metadata = value.get("metadata") if isinstance(value.get("metadata"), Mapping) else {}
-    return str(
-        value.get("session_id")
-        or value.get("runtime_session_id")
-        or metadata.get("session_id")
-        or metadata.get("runtime_session_id")
-        or ""
-    ).strip()
+    return str(value.get("session_id") or metadata.get("session_id") or "").strip()
+
+
+def _evidence_runtime_session_id(value: Any) -> str:
+    if callable(getattr(value, "to_dict", None)):
+        value = value.to_dict()
+    if not isinstance(value, Mapping):
+        return ""
+    metadata = value.get("metadata") if isinstance(value.get("metadata"), Mapping) else {}
+    return str(value.get("runtime_session_id") or metadata.get("runtime_session_id") or "").strip()
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,7 @@ class GoalCompletionResult:
     requires_user_review: bool = False
     evidence_refs: list[Any] = field(default_factory=list)
     session_id: str = ""
+    runtime_session_id: str = ""
     goal_lineage: Mapping[str, Any] = field(default_factory=dict)
     authority_owner: str = GOAL_COMPLETION_AUTHORITY_OWNER
     schema: str = GOAL_COMPLETION_RESULT_SCHEMA
@@ -67,6 +71,7 @@ class GoalCompletionResult:
                 for ref in self.evidence_refs
             ],
             "session_id": self.session_id,
+            "runtime_session_id": self.runtime_session_id,
             "goal_lineage": dict(self.goal_lineage),
         }
 
@@ -117,9 +122,29 @@ def _build_completion_attestation_boundary():
         ) -> GoalCompletionResult:
             refs = list(evidence_refs or [])
             target_session_id = str(session_id or "").strip()
+            target_runtime_session_id = ""
             target_lineage = extract_goal_lineage(goal_lineage) if goal_lineage is not None else {}
             if target_lineage:
                 target_session_id = target_lineage.get("session_id", target_session_id)
+                target_runtime_session_id = extract_runtime_identity(target_lineage).get("runtime_session_id", "")
+            if target_runtime_session_id and any(
+                _evidence_session_id(ref) == target_session_id
+                and _evidence_runtime_session_id(ref) != target_runtime_session_id
+                for ref in refs
+            ):
+                return GoalCompletionResult(
+                    accepted=False,
+                    goal_id=goal_id,
+                    from_state=from_state,
+                    to_state=from_state,
+                    reason="goal_completion_evidence_runtime_session_mismatch",
+                    blocked_reason="goal_completion_evidence_runtime_session_mismatch",
+                    evidence_refs=refs,
+                    session_id=target_session_id,
+                    runtime_session_id=target_runtime_session_id,
+                    goal_lineage=target_lineage,
+                )
+            if target_lineage:
                 mismatched = [
                     ref for ref in refs
                     if not lineage_scope_matches(
@@ -140,6 +165,7 @@ def _build_completion_attestation_boundary():
                         blocked_reason="goal_completion_evidence_lineage_mismatch",
                         evidence_refs=refs,
                         session_id=target_session_id,
+                        runtime_session_id=target_runtime_session_id,
                         goal_lineage=target_lineage,
                     )
             if target_session_id and any(
@@ -154,6 +180,7 @@ def _build_completion_attestation_boundary():
                     blocked_reason="goal_completion_evidence_session_mismatch",
                     evidence_refs=refs,
                     session_id=target_session_id,
+                    runtime_session_id=target_runtime_session_id,
                     goal_lineage=target_lineage,
                 )
             transition = GoalTransition(
@@ -180,6 +207,7 @@ def _build_completion_attestation_boundary():
                 requires_user_review=result.requires_user_review,
                 evidence_refs=result.evidence_refs,
                 session_id=target_session_id,
+                runtime_session_id=target_runtime_session_id,
                 goal_lineage=target_lineage,
             )
             if (
