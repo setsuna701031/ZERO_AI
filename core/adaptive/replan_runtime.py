@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 REPLAN_RUNTIME_SCHEMA = "zero.replan_runtime.v2"
 _REPLAN_MUTATION_AUTHORITY = object()
@@ -32,22 +33,27 @@ def _identity_from_lineage(lineage: Mapping[str, Any] | None) -> dict[str, str]:
     goal_id = _text(data.get("goal_id"), _text(data.get("root_goal_id"), "goal"))
     root_goal_id = _text(data.get("root_goal_id"), goal_id)
     session_id = _text(data.get("session_id"), f"goal-session-{root_goal_id}")
-    runtime_session_id = _text(data.get("runtime_session_id"), session_id)
+    runtime_session_id = _text(data.get("runtime_session_id"), f"goal-runtime-{root_goal_id}")
     branch_id = _text(data.get("branch_id"), goal_id)
     branch_type = _text(data.get("branch_type"), "root")
-    goal_lineage_id = _text(
-        data.get("goal_lineage_id"),
-        f"{root_goal_id}:{branch_type}:{branch_id}:{session_id}:{runtime_session_id}",
+    canonical = extract_goal_lineage(
+        {
+            **data,
+            "root_goal_id": root_goal_id,
+            "source_goal_id": _text(data.get("source_goal_id"), root_goal_id),
+            "goal_id": goal_id,
+            "branch_type": branch_type,
+            "branch_id": branch_id,
+            "session_id": session_id,
+            "runtime_session_id": runtime_session_id,
+        },
+        require_complete=True,
+        reject_conflicts=True,
     )
-    return {
-        "root_goal_id": root_goal_id,
-        "source_goal_id": _text(data.get("source_goal_id"), root_goal_id),
-        "goal_lineage_id": goal_lineage_id,
-        "branch_type": branch_type,
-        "branch_id": branch_id,
-        "session_id": session_id,
-        "runtime_session_id": runtime_session_id,
-    }
+    return {field: canonical[field] for field in (
+        "root_goal_id", "source_goal_id", "goal_id", "goal_lineage_id", "branch_type",
+        "branch_id", "session_id", "runtime_session_id",
+    )}
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,7 @@ class ReplanRuntime:
     last_replan_record: Mapping[str, Any] = field(default_factory=dict)
     root_goal_id: str = ""
     source_goal_id: str = ""
+    goal_id: str = ""
     goal_lineage_id: str = ""
     branch_type: str = "root"
     branch_id: str = ""
@@ -70,6 +77,7 @@ class ReplanRuntime:
             {
                 "root_goal_id": self.root_goal_id,
                 "source_goal_id": self.source_goal_id,
+                "goal_id": self.goal_id,
                 "goal_lineage_id": self.goal_lineage_id,
                 "branch_type": self.branch_type,
                 "branch_id": self.branch_id,
@@ -116,6 +124,7 @@ class ReplanRuntime:
             "last_replan_record": copy.deepcopy(dict(self.last_replan_record)),
             "root_goal_id": self.root_goal_id,
             "source_goal_id": self.source_goal_id,
+            "goal_id": self.goal_id,
             "goal_lineage_id": self.goal_lineage_id,
             "branch_type": self.branch_type,
             "branch_id": self.branch_id,
@@ -133,6 +142,7 @@ class ReplanRuntime:
             "last_replan_record": copy.deepcopy(dict(self.last_replan_record)),
             "root_goal_id": self.root_goal_id,
             "source_goal_id": self.source_goal_id,
+            "goal_id": self.goal_id,
             "goal_lineage_id": self.goal_lineage_id,
             "branch_type": self.branch_type,
             "branch_id": self.branch_id,

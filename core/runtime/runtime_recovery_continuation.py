@@ -3,10 +3,16 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from core.goals.goal_lineage_contract import (
+    GOAL_LINEAGE_FIELDS,
+    attach_goal_lineage,
+    extract_goal_lineage,
+    extract_runtime_identity,
+)
 from core.runtime.runtime_recovery_state import (
     RECOVERY_CONTINUATION_BLOCKED,
     RECOVERY_CONTINUATION_READY,
@@ -333,13 +339,42 @@ class RuntimeRecoveryContinuationLayer:
     ) -> RuntimeContinuationPlan:
         execution_payload = normalize_recovery_execution_payload(execution_result)
         chain_payload = normalize_recovery_chain_payload(recovery_chain) if recovery_chain is not None else {}
+        normalized_source_state = _copy_dict(source_state)
+        identity_error = ""
+        try:
+            extract_runtime_identity(normalized_source_state, reject_conflicts=True)
+        except ValueError as exc:
+            identity_error = str(exc)
+        if not identity_error and (
+            isinstance(normalized_source_state.get("goal_lineage"), dict)
+            or any(normalized_source_state.get(field) for field in GOAL_LINEAGE_FIELDS)
+        ):
+            try:
+                canonical_lineage = extract_goal_lineage(
+                    normalized_source_state,
+                    require_complete=True,
+                    reject_conflicts=True,
+                )
+                normalized_source_state = attach_goal_lineage(normalized_source_state, canonical_lineage)
+            except ValueError as exc:
+                identity_error = str(exc)
         plan = self.policy.build_plan(
             execution_payload=execution_payload,
-            source_state=_copy_dict(source_state),
+            source_state=normalized_source_state,
             recovery_chain=chain_payload,
             approval=approval,
             metadata=metadata,
         )
+        if identity_error:
+            plan = replace(
+                plan,
+                status=CONTINUATION_STATUS_BLOCKED,
+                decision=RECOVERY_CONTINUATION_BLOCKED,
+                reason=identity_error,
+                safe_to_apply=False,
+                requires_review=True,
+                requires_approval=True,
+            )
         self._plans[plan.continuation_id] = copy.deepcopy(plan)
         self._append_journal("runtime_recovery_continuation_plan", plan.to_dict(), {"recovery_id": plan.recovery_id})
         return plan
@@ -354,6 +389,22 @@ class RuntimeRecoveryContinuationLayer:
     ) -> RuntimeContinuationResult:
         plan = self._normalize_plan(continuation_plan)
         before = _copy_dict(source_state) or _copy_dict(plan.get("source_state_snapshot"))
+        try:
+            extract_runtime_identity(before, reject_conflicts=True)
+        except ValueError as exc:
+            plan["decision"] = RECOVERY_CONTINUATION_BLOCKED
+            plan["status"] = CONTINUATION_STATUS_BLOCKED
+            plan["reason"] = str(exc)
+            plan["safe_to_apply"] = False
+        if isinstance(before.get("goal_lineage"), dict) or any(before.get(field) for field in GOAL_LINEAGE_FIELDS):
+            try:
+                canonical_lineage = extract_goal_lineage(before, require_complete=True, reject_conflicts=True)
+                before = attach_goal_lineage(before, canonical_lineage)
+            except ValueError as exc:
+                plan["decision"] = RECOVERY_CONTINUATION_BLOCKED
+                plan["status"] = CONTINUATION_STATUS_BLOCKED
+                plan["reason"] = str(exc)
+                plan["safe_to_apply"] = False
         after = copy.deepcopy(before)
         audit_events: list[dict[str, Any]] = []
         action_results: list[dict[str, Any]] = []

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from core.runtime.runtime_state_machine import RuntimeStateMachine
+from core.runtime.runtime_status import normalize_runtime_status
 
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
@@ -14,7 +14,7 @@ from core.runtime.runtime_authority_seal import (
     issue_dispatch_execution_capability,
     issue_work_package_completion_authority,
 )
-from core.goals.goal_lineage_contract import extract_runtime_identity
+from core.goals.goal_lineage_contract import GOAL_LINEAGE_FIELDS, extract_goal_lineage, extract_runtime_identity
 from core.runtime.persistent_queue_contract import classify_queue_failure, extract_queue_lineage, merge_queue_lineage
 from core.runtime.work_package_queue import (
     RuntimePackageQueue,
@@ -111,7 +111,7 @@ class RuntimeDispatcher:
             raise RuntimePackageQueueError("work_package_resume_contract_missing_active_graph")
         task["steps"] = steps
         task["current_step_index"] = int(active_graph.get("cursor") or 0)
-        task["status"] = _canonical_runtime_status("running")
+        task["status"] = normalize_runtime_status("running")
         task["runtime_execution_capability"] = self._execution_capability(
             self.queue.status(package_id)
         )
@@ -401,7 +401,32 @@ class RuntimeDispatcher:
                 "ok": False,
                 "root_cause": f"runtime_replan_limit_reached:{replan_count}/{max_replans}",
             }
-        runtime_identity = extract_runtime_identity(record)
+        try:
+            task_lineage = extract_goal_lineage(task, reject_conflicts=True)
+            record_lineage = extract_goal_lineage(record, reject_conflicts=True)
+        except ValueError as exc:
+            return {"ok": False, "root_cause": str(exc)}
+        task_has_lineage = bool(task_lineage.get("root_goal_id") or task_lineage.get("goal_lineage_id"))
+        record_has_lineage = bool(record_lineage.get("root_goal_id") or record_lineage.get("goal_lineage_id"))
+        if task_has_lineage and record_has_lineage:
+            conflicts = [
+                field for field in GOAL_LINEAGE_FIELDS
+                if task_lineage.get(field) and record_lineage.get(field)
+                and task_lineage[field] != record_lineage[field]
+            ]
+            if conflicts:
+                return {
+                    "ok": False,
+                    "root_cause": "goal_lineage_conflicting_fields:" + ",".join(conflicts),
+                }
+        canonical_lineage = task_lineage if task_has_lineage else record_lineage
+        try:
+            runtime_identity = extract_runtime_identity(
+                task if task_has_lineage else record,
+                reject_conflicts=True,
+            )
+        except ValueError as exc:
+            return {"ok": False, "root_cause": str(exc)}
         identity_missing_fields = [
             field
             for field in ("session_id", "runtime_session_id")
@@ -412,8 +437,6 @@ class RuntimeDispatcher:
             "request_id": f"{package_id}:replan:{replan_count + 1}",
             "package_id": package_id,
             "task_id": record.get("task_id"),
-            "goal_id": task.get("goal_id"),
-            "source_goal_id": task.get("source_goal_id"),
             "cycle_index": task.get("cycle_index"),
             "continuation_goal_id": task.get("continuation_goal_id"),
             "continuation_task_id": task.get("continuation_task_id"),
@@ -434,6 +457,7 @@ class RuntimeDispatcher:
             "replan_count": replan_count + 1,
             "max_replans": max_replans,
             **extract_queue_lineage(task),
+            **canonical_lineage,
             "session_id": runtime_identity.get("session_id", ""),
             "runtime_session_id": runtime_identity.get("runtime_session_id", ""),
             "identity_missing_fields": identity_missing_fields,
@@ -494,7 +518,7 @@ class RuntimeDispatcher:
             *copy.deepcopy(appended_steps),
         ]
         next_task["current_step_index"] = int(feedback.get("current_step") or 0)
-        next_task["status"] = _canonical_runtime_status("running")
+        next_task["status"] = normalize_runtime_status("running")
         next_task["replan_count"] = int(task.get("replan_count") or 0) + 1
         return next_task
 
@@ -508,7 +532,7 @@ class RuntimeDispatcher:
         result_task = result.get("task") if isinstance(result.get("task"), Mapping) else {}
         next_task.update(copy.deepcopy(dict(result_task)))
         next_task["current_step_index"] = int(feedback.get("current_step") or 0)
-        next_task["status"] = _canonical_runtime_status("running")
+        next_task["status"] = normalize_runtime_status("running")
         return next_task
 
 

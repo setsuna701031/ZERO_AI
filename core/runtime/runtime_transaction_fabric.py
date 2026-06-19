@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.goals.goal_lineage_contract import GOAL_LINEAGE_FIELDS, extract_goal_lineage, extract_runtime_identity
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
@@ -673,6 +674,14 @@ class RuntimeTransactionFabric:
         reason: str = "",
     ) -> dict[str, Any]:
         record = self.get_transaction(transaction_id)
+        session_identity = extract_runtime_identity(
+            {
+                "source_session_id": record.source_session_id,
+                "metadata": record.metadata,
+            },
+            reject_conflicts=True,
+        )
+        goal_lineage = extract_goal_lineage(record.metadata, reject_conflicts=True)
         return {
             "incident_id": "runtime-transaction-incident-" + stable_transaction_fingerprint(
                 {
@@ -683,7 +692,9 @@ class RuntimeTransactionFabric:
             )[:16],
             "incident_type": "runtime_transaction_failed",
             "source_session_id": record.source_session_id,
-            "runtime_session_id": record.source_session_id,
+            "session_id": session_identity.get("session_id", ""),
+            "runtime_session_id": session_identity.get("runtime_session_id", ""),
+            **{field: goal_lineage[field] for field in GOAL_LINEAGE_FIELDS if goal_lineage.get(field)},
             "task_id": record.task_id,
             "execution_id": record.execution_id,
             "transaction_id": record.transaction_id,

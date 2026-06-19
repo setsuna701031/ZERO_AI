@@ -11,6 +11,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 CONTINUATION_RUNTIME_SCHEMA = "zero.continuation_runtime.v2"
 _CONTINUATION_MUTATION_AUTHORITY = object()
@@ -37,22 +38,27 @@ def _identity_from_lineage(current_goal_id: str, lineage: Mapping[str, Any] | No
     goal_id = _text(data.get("goal_id"), current_goal_id)
     root_goal_id = _text(data.get("root_goal_id"), goal_id)
     session_id = _text(data.get("session_id"), f"goal-session-{root_goal_id}")
-    runtime_session_id = _text(data.get("runtime_session_id"), session_id)
+    runtime_session_id = _text(data.get("runtime_session_id"), f"goal-runtime-{root_goal_id}")
     branch_id = _text(data.get("branch_id"), goal_id)
     branch_type = _text(data.get("branch_type"), "root")
-    goal_lineage_id = _text(
-        data.get("goal_lineage_id"),
-        f"{root_goal_id}:{branch_type}:{branch_id}:{session_id}:{runtime_session_id}",
+    canonical = extract_goal_lineage(
+        {
+            **data,
+            "root_goal_id": root_goal_id,
+            "source_goal_id": _text(data.get("source_goal_id"), root_goal_id),
+            "goal_id": goal_id,
+            "branch_type": branch_type,
+            "branch_id": branch_id,
+            "session_id": session_id,
+            "runtime_session_id": runtime_session_id,
+        },
+        require_complete=True,
+        reject_conflicts=True,
     )
-    return {
-        "root_goal_id": root_goal_id,
-        "source_goal_id": _text(data.get("source_goal_id"), root_goal_id),
-        "goal_lineage_id": goal_lineage_id,
-        "branch_type": branch_type,
-        "branch_id": branch_id,
-        "session_id": session_id,
-        "runtime_session_id": runtime_session_id,
-    }
+    return {field: canonical[field] for field in (
+        "root_goal_id", "source_goal_id", "goal_lineage_id", "branch_type",
+        "branch_id", "session_id", "runtime_session_id",
+    )}
 
 
 @dataclass(frozen=True)
@@ -153,6 +159,7 @@ class ContinuationRuntime:
         return {
             "schema": CONTINUATION_RUNTIME_SCHEMA,
             "current_goal_id": self.current_goal_id,
+            "goal_id": self.current_goal_id,
             "continuation_count": self.continuation_count,
             "max_continuations": self.max_continuations,
             "last_continuation_goal_id": self.last_continuation_goal_id,
