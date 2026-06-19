@@ -53,7 +53,7 @@ def test_no_unapproved_stepexecutor_construction() -> None:
                     if rel not in ALLOWED_STEPEXECUTOR_CONSTRUCTORS:
                         violations.append(f"{rel}:{node.lineno}: StepExecutor(...)")
 
-    assert not violations, "\\n".join(violations)
+    assert not violations, "\n".join(violations)
 
 
 def test_no_unapproved_execute_step_calls() -> None:
@@ -68,7 +68,7 @@ def test_no_unapproved_execute_step_calls() -> None:
                     if rel not in ALLOWED_EXECUTE_STEP_CALLS:
                         violations.append(f"{rel}:{node.lineno}: .{node.func.attr}(...)")
 
-    assert not violations, "\\n".join(violations)
+    assert not violations, "\n".join(violations)
 
 
 def test_agent_loop_has_no_legacy_engineering_task_direct_route() -> None:
@@ -106,7 +106,7 @@ def test_bridges_do_not_reference_direct_step_executor_execution() -> None:
             if item in source:
                 violations.append(f"{_rel(path)} contains {item}")
 
-    assert not violations, "\\n".join(violations)
+    assert not violations, "\n".join(violations)
 
 
 def test_aer_execution_authority_document_exists() -> None:

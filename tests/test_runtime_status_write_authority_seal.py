@@ -33,11 +33,27 @@ ALLOWED_NON_RUNTIME_STATUS_SUFFIXES = (
 
 HIGH_RISK_RUNTIME_STATUS_WRITERS = {
     "core/adaptive/adaptive_runtime_resume.py",
-    "core/runtime/runtime_dispatcher.py",
-    "core/runtime/runtime_session_resume.py",
+    "core/runtime/long_engineering_runtime.py",
+    "core/runtime/mutation_boundary.py",
+    "core/runtime/persistent_engineering_session.py",
     "core/runtime/persistent_runtime_orchestrator.py",
+    "core/runtime/recovery_replay_closure.py",
+    "core/runtime/runtime_dispatcher.py",
+    "core/runtime/runtime_recovery_continuation.py",
+    "core/runtime/runtime_session_resume.py",
     "core/runtime/task_runner.py",
-    "core/tasks/adaptive_loop_coordinator.py",
+    "core/runtime/thin_runtime_bridge.py",
+    "core/runtime/work_package_queue.py",
+    "core/tasks/engineering_goal_scheduler.py",
+    "core/tasks/scheduler.py",
+    "core/tasks/scheduler_core/public_task_record_helpers.py",
+    "core/tasks/scheduler_core/queue_sync_helpers.py",
+    "core/tasks/scheduler_core/repair_injection_execution.py",
+    "core/tasks/scheduler_core/repo_state_helpers.py",
+    "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+    "core/tasks/scheduler_core/runtime_resume_gate.py",
+    "core/tasks/scheduler_core/simple_runner_helpers.py",
+    "core/tasks/task_repository.py",
 }
 
 
@@ -83,11 +99,18 @@ def _is_runtime_status_target(target: ast.Subscript) -> bool:
         "record",
         "result",
         "execution",
+        "after",
+        "updated_task",
     }
 
 
+def _source(path: Path) -> str:
+    return path.read_text(encoding="utf-8-sig")
+
+
 def _status_writes(path: Path) -> list[tuple[int, str]]:
-    tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    source = _source(path)
+    tree = ast.parse(source, filename=str(path))
     writes: list[tuple[int, str]] = []
 
     for node in ast.walk(tree):
@@ -95,13 +118,23 @@ def _status_writes(path: Path) -> list[tuple[int, str]]:
             for target in node.targets:
                 if isinstance(target, ast.Subscript) and _is_status_key(target.slice):
                     if _is_runtime_status_target(target):
-                        writes.append((node.lineno, ast.get_source_segment(path.read_text(encoding="utf-8-sig"), node) or "status write"))
+                        writes.append(
+                            (
+                                node.lineno,
+                                ast.get_source_segment(source, node) or "status write",
+                            )
+                        )
 
         if isinstance(node, ast.AnnAssign):
             target = node.target
             if isinstance(target, ast.Subscript) and _is_status_key(target.slice):
                 if _is_runtime_status_target(target):
-                    writes.append((node.lineno, ast.get_source_segment(path.read_text(encoding="utf-8-sig"), node) or "status write"))
+                    writes.append(
+                        (
+                            node.lineno,
+                            ast.get_source_segment(source, node) or "status write",
+                        )
+                    )
 
     return writes
 
@@ -118,10 +151,20 @@ def test_runtime_status_write_authority_inventory_is_explicit() -> None:
             if writes:
                 findings[rel] = writes
 
-    high_risk = sorted(set(findings) & HIGH_RISK_RUNTIME_STATUS_WRITERS)
+    found_high_risk = set(findings)
+    expected_high_risk = HIGH_RISK_RUNTIME_STATUS_WRITERS
 
-    assert high_risk == sorted(HIGH_RISK_RUNTIME_STATUS_WRITERS & set(findings)), findings
-    assert high_risk, "status write inventory unexpectedly empty; audit no longer meaningful"
+    assert expected_high_risk <= found_high_risk, {
+        "missing_expected_high_risk_files": sorted(expected_high_risk - found_high_risk),
+        "found": sorted(findings),
+    }
+
+    assert found_high_risk <= expected_high_risk, {
+        "unexpected_high_risk_files": sorted(found_high_risk - expected_high_risk),
+        "expected": sorted(expected_high_risk),
+    }
+
+    assert found_high_risk, "status write inventory unexpectedly empty; audit no longer meaningful"
 
 
 def test_runtime_status_canonical_owner_files_are_allowed() -> None:
