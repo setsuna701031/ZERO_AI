@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import inspect
 import json
@@ -787,7 +788,7 @@ class PersistentRuntimeOrchestrator:
             seen_identities.add(identity)
             runtime_status = self._runtime_state_status_for_task(task)
             if runtime_status and self._is_terminal_status(runtime_status):
-                task["status"] = runtime_status
+                project_runtime_status(task, runtime_status, owner="core/runtime/persistent_runtime_orchestrator.py")
                 skipped.append(
                     {
                         "ok": True,
@@ -934,16 +935,16 @@ class PersistentRuntimeOrchestrator:
 
             status = normalize_task_status(task.get("status"))
             if action == CONTINUATION_ACTION_REQUEUE and status in RESUME_TO_QUEUE_STATUSES:
-                task["status"] = "queued"
+                project_runtime_status(task, "queued", owner="core/runtime/persistent_runtime_orchestrator.py")
                 task["blocked_reason"] = ""
                 task["waiting_reason"] = ""
                 task["next_action"] = "run_next_tick"
             elif action == CONTINUATION_ACTION_WAIT:
                 if status == "review_required":
-                    task["status"] = "review_required"
+                    project_runtime_status(task, "review_required", owner="core/runtime/persistent_runtime_orchestrator.py")
                     task["next_action"] = "wait_for_external_event"
                 else:
-                    task["status"] = "blocked"
+                    project_runtime_status(task, "blocked", owner="core/runtime/persistent_runtime_orchestrator.py")
                     task.setdefault("blocked_reason", "persistent_runtime_resume_waiting")
                     task["next_action"] = "wait_for_external_event"
             elif action == CONTINUATION_ACTION_SKIP:

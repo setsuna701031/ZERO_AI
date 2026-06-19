@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import hashlib
 import json
@@ -479,7 +480,7 @@ class RuntimeRecoveryContinuationLayer:
                     after = copy.deepcopy(handler_result["source_state"])
                 action_results.append(copy.deepcopy(handler_result if isinstance(handler_result, dict) else {"ok": True}))
             else:
-                after["status"] = str(plan.get("target_runtime_status") or "running")
+                project_runtime_status(after, str(plan.get("target_runtime_status") or "running"), owner="core/runtime/runtime_recovery_continuation.py")
                 after["runtime_recovery_continuation"] = {
                     "continuation_id": str(plan.get("continuation_id") or ""),
                     "recovery_id": str(plan.get("recovery_id") or ""),

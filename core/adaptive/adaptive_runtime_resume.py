@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 from typing import Any, Mapping
 
@@ -161,7 +162,7 @@ class AdaptiveRuntimeResume:
         state = runtime.load_runtime_state(task)
         last_decision = AdaptiveDecision(AdaptiveAction.BLOCK, "adaptive_cycle_limit_exhausted", requires_user_review=True)
         self.evidence.append(chain, kind="decision", payload=last_decision.to_dict())
-        state["status"] = "blocked"
+        project_runtime_status(state, "blocked", owner="core/adaptive/adaptive_runtime_resume.py")
         state["adaptive_block_reason"] = last_decision.reason
         self._persist(runtime, task, state, chain, counters)
         result.update({"ok": False, "status": "blocked", "action": "adaptive_blocked", "runtime_state": state})
@@ -190,7 +191,7 @@ class AdaptiveRuntimeResume:
         if callable(sync):
             sync(task, saved)
         else:
-            task["status"] = saved.get("status", task.get("status"))
+            project_runtime_status(task, saved.get("status", task.get("status")), owner="core/adaptive/adaptive_runtime_resume.py")
             task["current_step_index"] = saved.get("current_step_index", task.get("current_step_index", 0))
 
     @staticmethod

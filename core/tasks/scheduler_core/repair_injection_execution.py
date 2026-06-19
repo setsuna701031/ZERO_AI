@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
@@ -131,7 +132,7 @@ def execute_repair_injection_transaction(
     replacement_decision = repair_replacement_decision(ok, repair_steps, repair_meta)
     repair_meta = replacement_decision["repair_meta"]
     if replacement_decision["action"] == "repair_injection_failed":
-        task["status"] = status_failed
+        project_runtime_status(task, status_failed, owner="core/tasks/scheduler_core/repair_injection_execution.py")
         task["last_error"] = "retrying repair bridge failed: " + str(repair_meta.get("reason") or "unknown")
         task["failure_message"] = task["last_error"]
         persist_task_payload(task_id=task_id, task=task)

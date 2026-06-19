@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -139,8 +139,8 @@ def _status_writes(path: Path) -> list[tuple[int, str]]:
     return writes
 
 
-def test_runtime_status_write_authority_inventory_is_explicit() -> None:
-    findings: dict[str, list[tuple[int, str]]] = {}
+def test_runtime_status_write_authority_is_enforced() -> None:
+    unauthorized: dict[str, list[tuple[int, str]]] = {}
 
     for scan_dir in SCAN_DIRS:
         for path in scan_dir.rglob("*.py"):
@@ -149,24 +149,38 @@ def test_runtime_status_write_authority_inventory_is_explicit() -> None:
                 continue
             writes = _status_writes(path)
             if writes:
-                findings[rel] = writes
+                unauthorized[rel] = writes
 
-    found_high_risk = set(findings)
-    expected_high_risk = HIGH_RISK_RUNTIME_STATUS_WRITERS
-
-    assert expected_high_risk <= found_high_risk, {
-        "missing_expected_high_risk_files": sorted(expected_high_risk - found_high_risk),
-        "found": sorted(findings),
+    assert not unauthorized, {
+        "unauthorized_runtime_status_writers": unauthorized,
+        "allowed_status_write_files": sorted(ALLOWED_STATUS_WRITE_FILES),
+        "required_boundary": "call TaskRuntime/project_runtime_status or state-machine APIs",
     }
 
-    assert found_high_risk <= expected_high_risk, {
-        "unexpected_high_risk_files": sorted(found_high_risk - expected_high_risk),
-        "expected": sorted(expected_high_risk),
-    }
 
-    assert found_high_risk, "status write inventory unexpectedly empty; audit no longer meaningful"
+def test_previous_high_risk_status_writers_are_projection_clients() -> None:
+    findings: dict[str, list[tuple[int, str]]] = {}
+
+    for rel in HIGH_RISK_RUNTIME_STATUS_WRITERS:
+        path = ROOT / rel
+        if not path.exists():
+            continue
+        writes = _status_writes(path)
+        if writes:
+            findings[rel] = writes
+
+    assert not findings, {
+        "high_risk_direct_status_writers_remaining": findings,
+        "required_boundary": "call TaskRuntime/project_runtime_status or state-machine APIs",
+    }
 
 
 def test_runtime_status_canonical_owner_files_are_allowed() -> None:
     for rel in ALLOWED_STATUS_WRITE_FILES:
         assert (ROOT / rel).exists(), rel
+
+
+def test_task_runtime_exposes_projection_boundary() -> None:
+    source = _source(ROOT / "core/runtime/task_runtime.py")
+    assert "def project_runtime_status(" in source
+    assert "payload[\"status\"] = status" in source

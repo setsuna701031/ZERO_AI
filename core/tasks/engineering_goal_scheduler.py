@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 """Scheduling layer for engineering goals.
 
 EngineeringGoalScheduler owns scheduling decisions only. It updates scheduling
@@ -234,7 +235,7 @@ class EngineeringGoalScheduler:
         for record in records:
             if _goal_id(record) != target_goal_id:
                 continue
-            record["status"] = status
+            project_runtime_status(record, status, owner="core/tasks/engineering_goal_scheduler.py")
             record["updated_at"] = time.time()
             schedule_refs = _as_mapping(record.get("schedule_refs"))
             schedule_refs.update({"last_scheduler_action": action, "last_scheduler_reason": reason})

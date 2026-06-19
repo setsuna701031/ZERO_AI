@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import os
 import time
@@ -24,7 +25,7 @@ def normalize_public_status_fields(
         return task
 
     status = str(task.get("status") or status_created).strip().lower() or status_created
-    task["status"] = status
+    project_runtime_status(task, status, owner="core/tasks/scheduler_core/public_task_record_helpers.py")
 
     steps = task.get("steps", [])
     if not isinstance(steps, list):

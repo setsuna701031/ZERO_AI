@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 from typing import Any, Dict, Optional
 
@@ -118,10 +119,10 @@ def _direct_step_success_payload(
     updated_task["execution_log"] = execution_log
     updated_task["current_step_index"] = min(index + 1, len(steps))
     if index + 1 >= len(steps):
-        updated_task["status"] = "finished"
+        project_runtime_status(updated_task, "finished", owner="core/tasks/scheduler_core/runtime_overlay_helpers.py")
         status = "finished"
     else:
-        updated_task["status"] = "queued"
+        project_runtime_status(updated_task, "queued", owner="core/tasks/scheduler_core/runtime_overlay_helpers.py")
         status = "queued"
     runtime_state = _save_runtime_state_if_available(scheduler, updated_task)
     _persist_task_payload_if_available(scheduler, updated_task)
@@ -156,7 +157,7 @@ def _direct_step_failure_payload(
     blocked = bool(step_result.get("blocked"))
     failed_status = "blocked" if blocked else "failed"
     updated_task = copy.deepcopy(task)
-    updated_task["status"] = failed_status
+    project_runtime_status(updated_task, failed_status, owner="core/tasks/scheduler_core/runtime_overlay_helpers.py")
     updated_task["current_step_index"] = index
     updated_task["last_step_result"] = copy.deepcopy(step_result)
     updated_task.setdefault("results", [])

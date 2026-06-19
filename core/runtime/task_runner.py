@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import json
 import os
@@ -2972,7 +2973,7 @@ class TaskRunner:
         task["results"] = copy.deepcopy(safe_state.get("results", task.get("results", [])))
         task["step_results"] = copy.deepcopy(safe_state.get("step_results", task.get("step_results", [])))
         task["last_step_result"] = copy.deepcopy(safe_state.get("last_step_result", task.get("last_step_result")))
-        task["status"] = safe_state.get("status", task.get("status"))
+        project_runtime_status(task, safe_state.get("status", task.get("status")), owner="core/runtime/task_runner.py")
         task["current_step_index"] = safe_state.get("current_step_index", task.get("current_step_index", 0))
         task["steps_total"] = safe_state.get("steps_total", task.get("steps_total", 0))
         task["last_error"] = safe_state.get("last_error", task.get("last_error"))
@@ -4053,7 +4054,7 @@ class TaskRunner:
 
         if isinstance(safe_runtime_state, dict) and isinstance(task, dict):
             task.pop("runtime_state", None)
-            task["status"] = safe_runtime_state.get("status", task.get("status"))
+            project_runtime_status(task, safe_runtime_state.get("status", task.get("status")), owner="core/runtime/task_runner.py")
             task["current_step_index"] = safe_runtime_state.get("current_step_index", task.get("current_step_index", 0))
             task["steps_total"] = safe_runtime_state.get("steps_total", task.get("steps_total", 0))
             task["results"] = copy.deepcopy(safe_runtime_state.get("results", task.get("results", [])))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import json
 import time
 from pathlib import Path
@@ -313,13 +314,13 @@ class MultiCycleEngineeringLoop:
 
                 if not bool(closure_result.get("ok")) and stop_on_unclosed_failure:
                     record["ok"] = False
-                    record["status"] = "blocked_unclosed_failure"
+                    project_runtime_status(record, "blocked_unclosed_failure", owner="core/runtime/recovery_replay_closure.py")
                     record["blocked_cycle_index"] = cycle_index
                     self._write_loop_record(record)
                     return self._finalize(record)
 
         record["ok"] = True
-        record["status"] = "finished"
+        project_runtime_status(record, "finished", owner="core/runtime/recovery_replay_closure.py")
         record["finished_at"] = _now()
         self._write_loop_record(record)
         return self._finalize(record)

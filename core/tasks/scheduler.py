@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import hashlib
 import json
@@ -1887,13 +1888,13 @@ class Scheduler(RuntimeTaskScheduler):
         }
 
         if isinstance(state, dict):
-            state["status"] = STATUS_FAILED
+            project_runtime_status(state, STATUS_FAILED, owner="core/tasks/scheduler.py")
             state["last_error"] = message
             state["failure_message"] = message
             state["failure_type"] = error_type
 
         if isinstance(task, dict):
-            task["status"] = STATUS_FAILED
+            project_runtime_status(task, STATUS_FAILED, owner="core/tasks/scheduler.py")
             task["last_error"] = message
             task["failure_message"] = message
             task["failure_type"] = error_type
@@ -2366,13 +2367,13 @@ class Scheduler(RuntimeTaskScheduler):
         task["replanned"] = True
         task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or "")
         task["planner_result"] = copy.deepcopy(plan)
-        task["status"] = "queued"
+        project_runtime_status(task, "queued", owner="core/tasks/scheduler.py")
         task["history"] = self._append_history(task.get("history"), "replanned")
         task["history"] = self._append_history(task.get("history"), "queued")
 
         runtime_state = task.get("runtime_state")
         if isinstance(runtime_state, dict):
-            runtime_state["status"] = "queued"
+            project_runtime_status(runtime_state, "queued", owner="core/tasks/scheduler.py")
             runtime_state["steps"] = copy.deepcopy(new_steps)
             runtime_state["steps_total"] = len(new_steps)
             runtime_state["current_step_index"] = 0
@@ -3050,7 +3051,7 @@ class Scheduler(RuntimeTaskScheduler):
         if not task_id:
             return
 
-        task["status"] = STATUS_FAILED
+        project_runtime_status(task, STATUS_FAILED, owner="core/tasks/scheduler.py")
         task["last_error"] = str(reason or "queue hygiene failed task")
         task["failure_type"] = "queue_hygiene"
         task["failure_message"] = str(reason or "queue hygiene failed task")
@@ -4366,7 +4367,7 @@ class Scheduler(RuntimeTaskScheduler):
         deps_ready, blocked_reason = self._task_dependencies_satisfied(task)
 
         if deps_ready:
-            task["status"] = "queued"
+            project_runtime_status(task, "queued", owner="core/tasks/scheduler.py")
             task["blocked_reason"] = ""
             task["scheduler_build"] = SCHEDULER_BUILD
             task["history"] = self._append_history(task.get("history"), "queued")
@@ -4396,7 +4397,7 @@ class Scheduler(RuntimeTaskScheduler):
                 "message": "task submitted",
             }
 
-        task["status"] = STATUS_BLOCKED
+        project_runtime_status(task, STATUS_BLOCKED, owner="core/tasks/scheduler.py")
         task["blocked_reason"] = blocked_reason
         task["last_error"] = ""
         task["failure_message"] = ""
@@ -4531,7 +4532,7 @@ class Scheduler(RuntimeTaskScheduler):
                     "status": status,
                 }
 
-            task["status"] = status
+            project_runtime_status(task, status, owner="core/tasks/scheduler.py")
             task["history"] = self._append_history(task.get("history"), status)
             self._persist_task_payload(task_id=task_name, task=task)
             return {
@@ -4554,7 +4555,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         task = self._get_task_from_repo(task_name)
         if isinstance(task, dict):
-            task["status"] = status
+            project_runtime_status(task, status, owner="core/tasks/scheduler.py")
             task["history"] = self._append_history(task.get("history"), status)
             self._save_task_snapshot_safe(task)
             self._persist_task_payload(task_id=task_name, task=task)
@@ -5779,7 +5780,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         task["task_id"] = str(task.get("task_id") or clean_task_id)
         task["task_name"] = str(task.get("task_name") or task.get("task_id") or clean_task_id)
-        task["status"] = STATUS_BLOCKED
+        project_runtime_status(task, STATUS_BLOCKED, owner="core/tasks/scheduler.py")
         task["blocked_reason"] = reason
         task["waiting_reason"] = reason
         task["next_action"] = "wait_for_external_event"
@@ -5789,7 +5790,7 @@ class Scheduler(RuntimeTaskScheduler):
 
         runtime_state = task.get("runtime_state")
         if isinstance(runtime_state, dict):
-            runtime_state["status"] = STATUS_BLOCKED
+            project_runtime_status(runtime_state, STATUS_BLOCKED, owner="core/tasks/scheduler.py")
             runtime_state["blocked_reason"] = reason
             runtime_state["waiting_reason"] = reason
             runtime_state["next_action"] = "wait_for_external_event"
@@ -5970,7 +5971,7 @@ class Scheduler(RuntimeTaskScheduler):
         task["step_count"] = len(steps)
         task["steps_total"] = len(steps)
         if not str(task.get("status") or "").strip():
-            task["status"] = STATUS_QUEUED
+            project_runtime_status(task, STATUS_QUEUED, owner="core/tasks/scheduler.py")
         return task
 
     def _extract_function_name_for_fix(self, text: str) -> str:
@@ -8029,7 +8030,7 @@ def _zero_v724_cleanup_fingerprint_index(self, *, pending_ttl_seconds: int = 300
             continue
 
         # Keep index status fresh for non-terminal tasks.
-        record["status"] = status or str(record.get("status") or "")
+        project_runtime_status(record, status or str(record.get("status") or ""), owner="core/tasks/scheduler.py")
         record["updated_at"] = now
         data[fingerprint] = record
 
@@ -9154,11 +9155,11 @@ def _zero_review_action_apply_result(
     if review_state == "approved":
         task["next_action"] = "run_next_tick"
         task["agent_action"] = "resume_execution"
-        task["status"] = "waiting_review"
+        project_runtime_status(task, "waiting_review", owner="core/tasks/scheduler.py")
     elif review_state == "rejected":
         task["next_action"] = "archive_or_revise_transaction"
         task["agent_action"] = "review_rejected"
-        task["status"] = STATUS_BLOCKED
+        project_runtime_status(task, STATUS_BLOCKED, owner="core/tasks/scheduler.py")
         task["blocked_reason"] = str(action_result.get("human_summary") or "review rejected")
 
     task["review_payload"] = copy.deepcopy(action_result)
@@ -10273,7 +10274,7 @@ def _zero_v7337_scheduler_create_task_record(self, *args, **kwargs) -> Dict[str,
     if isinstance(planner, dict) and isinstance(planner.get("forced_repo_edit"), dict):
         forced = planner.get("forced_repo_edit")
     if isinstance(forced, dict) and forced.get("execution_intent_only"):
-        task["status"] = STATUS_QUEUED
+        project_runtime_status(task, STATUS_QUEUED, owner="core/tasks/scheduler.py")
         task["current_step_index"] = 0
         task["finished_tick"] = None
         task["final_answer"] = ""

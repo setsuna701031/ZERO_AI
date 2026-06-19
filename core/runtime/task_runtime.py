@@ -66,6 +66,26 @@ MAX_STORED_TRACE_ITEMS = 200
 DROP_RECURSIVE_KEYS = {"runtime_state", "task", "raw_task", "raw_result", "runner_result"}
 
 
+def project_runtime_status(
+    payload: Dict[str, Any],
+    status: Any,
+    *,
+    owner: str = "task_runtime",
+    reason: str = "runtime_status_projection",
+) -> Dict[str, Any]:
+    """Project a runtime status field through the canonical status write boundary.
+
+    Non-owner layers call this instead of assigning ``["status"]`` directly.
+    The ``owner`` and ``reason`` arguments are intentionally accepted for audit
+    readability at call sites without changing legacy payload shapes.
+    """
+    _ = (owner, reason)
+    if not isinstance(payload, dict):
+        raise TypeError("runtime status projection target must be a dict")
+    payload["status"] = status
+    return payload
+
+
 class TaskRuntime:
     def __init__(
         self,

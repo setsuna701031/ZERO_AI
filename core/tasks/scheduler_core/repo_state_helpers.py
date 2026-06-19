@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -500,7 +501,7 @@ def mark_repo_task_finished(
     if not isinstance(task, dict):
         return
 
-    task["status"] = "finished"
+    project_runtime_status(task, "finished", owner="core/tasks/scheduler_core/repo_state_helpers.py")
     task["blocked_reason"] = ""
     task["last_error"] = ""
     task["failure_message"] = ""
@@ -529,7 +530,7 @@ def mark_repo_task_failed(scheduler: Any, task_id: str, error: str = "") -> None
 
     final_error = str(error or task.get("last_error") or task.get("failure_message") or "task failed")
 
-    task["status"] = "failed"
+    project_runtime_status(task, "failed", owner="core/tasks/scheduler_core/repo_state_helpers.py")
     task["blocked_reason"] = ""
     task["last_error"] = final_error
     task["failure_message"] = final_error
@@ -557,7 +558,7 @@ def mark_repo_task_queued(scheduler: Any, task_id: str, error: str = "") -> None
     if current_status in scheduler.TERMINAL_STATUSES:
         return
 
-    task["status"] = "queued"
+    project_runtime_status(task, "queued", owner="core/tasks/scheduler_core/repo_state_helpers.py")
     task["blocked_reason"] = ""
     task["scheduler_build"] = scheduler.SCHEDULER_BUILD if hasattr(scheduler, "SCHEDULER_BUILD") else getattr(scheduler, "scheduler_build", "")
 
@@ -828,7 +829,7 @@ def sync_blocked_state(scheduler: Any, task_id: str, blocked_reason: str) -> Non
     changed = False
 
     if current_status != scheduler.STATUS_BLOCKED:
-        task["status"] = scheduler.STATUS_BLOCKED
+        project_runtime_status(task, scheduler.STATUS_BLOCKED, owner="core/tasks/scheduler_core/repo_state_helpers.py")
         task["history"] = scheduler._append_history(task.get("history"), scheduler.STATUS_BLOCKED)
         changed = True
 
@@ -885,7 +886,7 @@ def sync_unblocked_state(scheduler: Any, task_id: str) -> None:
     changed = False
 
     if current_status == scheduler.STATUS_BLOCKED:
-        task["status"] = "queued"
+        project_runtime_status(task, "queued", owner="core/tasks/scheduler_core/repo_state_helpers.py")
         task["history"] = scheduler._append_history(task.get("history"), "queued")
         current_status = "queued"
         changed = True

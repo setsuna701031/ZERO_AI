@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -171,7 +172,7 @@ def _handle_simple_blocked_task(
     blocked_reason: str,
 ) -> Dict[str, Any]:
     blocked_status = getattr(scheduler, "STATUS_BLOCKED", "blocked")
-    task["status"] = blocked_status
+    project_runtime_status(task, blocked_status, owner="core/tasks/scheduler_core/simple_runner_helpers.py")
     task["blocked_reason"] = blocked_reason
     task["history"] = scheduler._append_history(task.get("history"), blocked_status)
 
@@ -212,7 +213,7 @@ def _handle_simple_finished_task(
     step_results: List[Dict[str, Any]],
     last_step_result: Any,
 ) -> Dict[str, Any]:
-    task["status"] = "finished"
+    project_runtime_status(task, "finished", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
     task["final_answer"] = str(task.get("final_answer") or scheduler._build_simple_final_answer(results))
     task["finished_tick"] = scheduler.current_tick
     task["last_run_tick"] = scheduler.current_tick
@@ -265,7 +266,7 @@ def _handle_simple_invalid_step(
     step_results: List[Dict[str, Any]],
     last_step_result: Any,
 ) -> Dict[str, Any]:
-    task["status"] = "failed"
+    project_runtime_status(task, "failed", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
     task["last_error"] = "invalid step type"
     task["failure_message"] = "invalid step type"
     task["last_failure_tick"] = scheduler.current_tick
@@ -360,7 +361,7 @@ def _handle_simple_step_exception(
     task["replan_repairable"] = replan_result.get("repairable", None)
 
     if replan_result.get("replanned"):
-        task["status"] = "queued"
+        project_runtime_status(task, "queued", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
         task["replan_reason"] = str(task.get("last_error") or task.get("failure_message") or str(error))
         task["current_step_index"] = 0
         task["history"] = scheduler._append_history(task.get("history"), "replanned")
@@ -419,7 +420,7 @@ def _handle_simple_step_exception(
             "replan_result": replan_result,
         }
 
-    task["status"] = "failed"
+    project_runtime_status(task, "failed", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
     task["history"] = scheduler._append_history(task.get("history"), "failed")
 
     scheduler._trace_status(
@@ -599,7 +600,7 @@ def _handle_simple_step_blocked_or_failed_result(
     step_results = copy.deepcopy(results)
     last_step_result = copy.deepcopy(normalized_step_result)
 
-    task["status"] = status
+    project_runtime_status(task, status, owner="core/tasks/scheduler_core/simple_runner_helpers.py")
     task["execution_log"] = execution_log
     task["results"] = results
     task["step_results"] = step_results
@@ -746,7 +747,7 @@ def _handle_simple_step_success(
         final_answer = scheduler._build_simple_final_answer(
             [x.get("result", x) if isinstance(x, dict) else x for x in results]
         )
-        task["status"] = "finished"
+        project_runtime_status(task, "finished", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
         task["final_answer"] = final_answer
         task["finished_tick"] = scheduler.current_tick
         task["history"] = scheduler._append_history(task.get("history"), "finished")
@@ -785,7 +786,7 @@ def _handle_simple_step_success(
             "finished_tick": scheduler.current_tick,
         }
 
-    task["status"] = "queued"
+    project_runtime_status(task, "queued", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
     task["history"] = scheduler._append_history(task.get("history"), "queued")
 
     scheduler._trace_status(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import json
 from datetime import datetime, timezone
@@ -212,7 +213,7 @@ class RuntimePackageQueue:
             "session_id": result.get("session_id"),
             "task_id": result.get("task_id"),
         }
-        result["status"] = to_status
+        project_runtime_status(result, to_status, owner="core/runtime/work_package_queue.py")
         result["lifecycle_state"] = to_status
         result["updated_at"] = timestamp
         result["last_transition"] = transition
@@ -225,7 +226,7 @@ class RuntimePackageQueue:
                 if isinstance(result.get("runtime_state"), Mapping)
                 else {}
             )
-            result["runtime_state"]["status"] = to_status
+            project_runtime_status(result["runtime_state"], to_status, owner="core/runtime/work_package_queue.py")
         result = self._commit_terminal_memory(result)
         result["progress_snapshot"] = self._progress_snapshot(result)
         return self._write(result)
@@ -761,7 +762,7 @@ class RuntimePackageQueue:
         runtime_task["steps"] = merged_steps
         runtime_state["task"] = runtime_task
         runtime_state["steps"] = merged_steps
-        runtime_state["status"] = "executing"
+        project_runtime_status(runtime_state, "executing", owner="core/runtime/work_package_queue.py")
         record["runtime_state"] = runtime_state
         record["updated_at"] = _now()
         record["progress_snapshot"] = self._progress_snapshot(record)

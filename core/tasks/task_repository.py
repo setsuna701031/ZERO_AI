@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import functools
 import json
@@ -212,7 +213,7 @@ class TaskRepository:
             return result
 
         if not deps:
-            result["status"] = "queued"
+            project_runtime_status(result, "queued", owner="core/tasks/task_repository.py")
             return result
 
         all_done = True
@@ -225,7 +226,7 @@ class TaskRepository:
                 all_done = False
                 break
 
-        result["status"] = "queued" if all_done else "blocked"
+        project_runtime_status(result, "queued" if all_done else "blocked", owner="core/tasks/task_repository.py")
         return result
 
     # ============================================================

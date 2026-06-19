@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 from typing import Any, Dict, List
 
@@ -84,7 +85,7 @@ def apply_runtime_resume_gate(
         and active_blocker_count <= 0
         and not review_pending
     ):
-        task["status"] = "running"
+        project_runtime_status(task, "running", owner="core/tasks/scheduler_core/runtime_resume_gate.py")
         task["blocked_reason"] = ""
         task["waiting_reason"] = ""
         task["active_blocker_count"] = 0

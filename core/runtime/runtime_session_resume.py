@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import hashlib
 import json
@@ -580,7 +581,7 @@ class RuntimeSessionResume:
 
         task_payload = copy.deepcopy(snapshot.task)
         if task_payload:
-            task_payload["status"] = normalize_runtime_status(runtime_status)
+            project_runtime_status(task_payload, normalize_runtime_status(runtime_status), owner="core/runtime/runtime_session_resume.py")
             history = task_payload.setdefault("history", [])
             if isinstance(history, list) and runtime_status not in history:
                 history.append(runtime_status)

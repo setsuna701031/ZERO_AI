@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import json
 import time
 import uuid
@@ -330,7 +331,7 @@ class LongEngineeringRuntime:
                     checkpoint=checkpoint,
                 )
                 journal["ok"] = False
-                journal["status"] = "recoverable_failure"
+                project_runtime_status(journal, "recoverable_failure", owner="core/runtime/long_engineering_runtime.py")
                 journal["recovery_marker_path"] = str(self.recovery_marker_path)
                 journal["latest_checkpoint"] = checkpoint
                 journal["recovery_marker"] = marker
@@ -367,7 +368,7 @@ class LongEngineeringRuntime:
                     checkpoint=checkpoint,
                 )
                 journal["ok"] = False
-                journal["status"] = "recoverable_failure"
+                project_runtime_status(journal, "recoverable_failure", owner="core/runtime/long_engineering_runtime.py")
                 journal["recovery_marker_path"] = str(self.recovery_marker_path)
                 journal["latest_checkpoint"] = checkpoint
                 journal["recovery_marker"] = marker
@@ -387,7 +388,7 @@ class LongEngineeringRuntime:
             self._write_journal(journal)
 
         journal["ok"] = True
-        journal["status"] = "finished"
+        project_runtime_status(journal, "finished", owner="core/runtime/long_engineering_runtime.py")
         journal["finished_at"] = _now()
         self._write_journal(journal)
         return self._finalize_result(journal)

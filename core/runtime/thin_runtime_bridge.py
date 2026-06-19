@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import json
 import time
 from pathlib import Path
@@ -1456,7 +1457,7 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
             )
             continue
 
-        task["status"] = "running"
+        project_runtime_status(task, "running", owner="core/runtime/thin_runtime_bridge.py")
         task["started_at"] = now
         task["runtime_booted"] = False
         task["fast_cli_path"] = True
@@ -1482,7 +1483,7 @@ def run_ingestion_tasks(repo_root: Path, count: int) -> Optional[Dict[str, Any]]
         else:
             result = execute_ingestion_task(repo_root, task)
 
-        task["status"] = "finished" if result.get("ok") else "failed"
+        project_runtime_status(task, "finished" if result.get("ok") else "failed", owner="core/runtime/thin_runtime_bridge.py")
         task["finished_at"] = time.time()
         task["result"] = result
         executed_results.append(result)

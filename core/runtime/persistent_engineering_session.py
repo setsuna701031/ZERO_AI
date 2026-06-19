@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.task_runtime import project_runtime_status
 import copy
 import json
 import time
@@ -237,7 +238,7 @@ class PersistentEngineeringSession:
                         }
                     )
 
-        payload["status"] = "runtime_attached"
+        project_runtime_status(payload, "runtime_attached", owner="core/runtime/persistent_engineering_session.py")
         payload.setdefault("events", []).append(
             {
                 "event": "runtime_result_attached",
@@ -289,7 +290,7 @@ class PersistentEngineeringSession:
             "status": "open",
         }
         payload.setdefault("resume_points", []).append(record)
-        payload["status"] = "resume_point_open"
+        project_runtime_status(payload, "resume_point_open", owner="core/runtime/persistent_engineering_session.py")
         payload.setdefault("events", []).append(
             {
                 "event": "resume_point_created",
@@ -324,7 +325,7 @@ class PersistentEngineeringSession:
                 resume["status"] = "continued"
                 resume["continued_at"] = record["created_at"]
 
-        payload["status"] = "continued"
+        project_runtime_status(payload, "continued", owner="core/runtime/persistent_engineering_session.py")
         payload.setdefault("events", []).append(
             {
                 "event": "continuation_recorded",
