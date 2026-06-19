@@ -3,6 +3,9 @@
 import ast
 from pathlib import Path
 
+import core.runtime.runtime_dispatcher as runtime_dispatcher_module
+from core.runtime.runtime_dispatcher import RuntimeDispatcher
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,12 +53,12 @@ def test_dispatcher_and_resume_status_writes_are_canonicalized() -> None:
     )
 
     assert any(
-        '_canonical_runtime_status("running")' in entry
+        'normalize_runtime_status("running")' in entry
         for entry in dispatcher
     )
 
     assert any(
-        "_canonical_runtime_status(runtime_status)"
+        "normalize_runtime_status(runtime_status)"
         in entry
         for entry in resume
     )
@@ -70,5 +73,32 @@ def test_dispatcher_and_resume_use_canonical_status_helper() -> None:
         ROOT / "core/runtime/runtime_session_resume.py"
     ).read_text(encoding="utf-8-sig")
 
-    assert "_canonical_runtime_status" in dispatcher_source
-    assert "_canonical_runtime_status" in resume_source
+    assert "from core.runtime.runtime_status import normalize_runtime_status" in dispatcher_source
+    assert "_canonical_runtime_status" not in dispatcher_source
+    assert "from core.runtime.runtime_status import normalize_runtime_status" in resume_source
+    assert "_canonical_runtime_status" not in resume_source
+
+
+def test_dispatcher_status_projection_delegates_to_canonical_normalizer(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def canonical_status(value):
+        calls.append(value)
+        return "canonical-running"
+
+    monkeypatch.setattr(runtime_dispatcher_module, "normalize_runtime_status", canonical_status)
+
+    next_task = RuntimeDispatcher._next_task(
+        {"status": "queued"},
+        {"task": {"status": "active"}},
+        {"current_step": 1},
+    )
+    replanned = RuntimeDispatcher._append_replan_task(
+        {"status": "failed", "steps": []},
+        [{"id": "repair"}],
+        {"current_step": 1},
+    )
+
+    assert next_task["status"] == "canonical-running"
+    assert replanned["status"] == "canonical-running"
+    assert calls == ["running", "running"]

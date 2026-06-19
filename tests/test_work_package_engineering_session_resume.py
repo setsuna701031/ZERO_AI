@@ -9,6 +9,7 @@ from pathlib import Path
 
 from core.planning.work_package_planner_bridge import WorkPackagePlannerBridge
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
+from core.runtime.runtime_session_resume import RuntimeSessionResume
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.runtime.work_package_queue import RuntimePackageQueue
 from services.system_boot import ZeroSystem
@@ -135,6 +136,23 @@ def test_process_restart_restores_cursor_and_does_not_duplicate_completed_step(t
     assert [item["step_id"] for item in result["step_feedback"]] == ["one", "two", "three"]
     assert result["runtime_lifecycle_history"][: len(original_history)] == original_history
     assert result["session_resume_count"] == 1
+
+
+def test_runtime_state_precedence_uses_canonical_status_authority(tmp_path: Path) -> None:
+    task_dir = tmp_path / "workspace" / "tasks" / "resume-status-authority"
+    task_dir.mkdir(parents=True)
+    (task_dir / "runtime_state.json").write_text(json.dumps({"status": "finished"}), encoding="utf-8")
+    runtime = RuntimeSessionResume(workspace_root=tmp_path, storage_path=tmp_path / "resume.json")
+    stale_snapshot = runtime.capture_task_snapshot(
+        {"task_id": "resume-status-authority", "status": "running", "history": ["running"]}
+    )
+
+    resolved = runtime._resolve_snapshot_against_runtime_state(stale_snapshot)
+
+    assert resolved.status == "finished"
+    assert resolved.task["status"] == "executed"
+    assert resolved.task["history"] == ["running", "finished"]
+    assert resolved.resume_reason == "terminal_runtime_state_guard"
 
 
 def test_resume_after_replan_restores_appended_graph_without_replanning(tmp_path: Path) -> None:

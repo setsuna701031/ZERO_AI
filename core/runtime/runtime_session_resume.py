@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 from core.runtime.persistent_queue_contract import duplicate_identity, extract_queue_lineage
-from core.goals.goal_lineage_contract import extract_goal_lineage
+from core.runtime.runtime_status import normalize_runtime_status
+from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage, extract_runtime_identity
 
 SESSION_STATUS_OPEN = "open"
 SESSION_STATUS_RESUMABLE = "resumable"
@@ -94,19 +95,8 @@ def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
     continuation_work_item = (
         task.get("continuation_work_item") if isinstance(task.get("continuation_work_item"), Mapping) else {}
     )
-    lineage = {
-        "session_id": _first_text(
-            task.get("session_id"),
-            metadata.get("session_id"),
-        ),
-        "runtime_session_id": _first_text(task.get("runtime_session_id"), metadata.get("runtime_session_id")),
-        "goal_id": _first_text(task.get("goal_id"), metadata.get("goal_id"), task.get("task_id"), task.get("id")),
-        "source_goal_id": _first_text(
-            task.get("source_goal_id"),
-            metadata.get("source_goal_id"),
-            replan_record.get("source_goal_id"),
-            continuation_work_item.get("source_goal_id"),
-        ),
+    lineage = extract_goal_lineage(task, reject_conflicts=True)
+    lineage.update({
         "continuation_goal_id": _first_text(
             task.get("continuation_goal_id"),
             metadata.get("continuation_goal_id"),
@@ -143,7 +133,7 @@ def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
             replan_record.get("authority_state"),
             continuation_work_item.get("authority_state"),
         ),
-    }
+    })
     if task.get("cycle_index") is not None:
         lineage["cycle_index"] = _safe_int(task.get("cycle_index"), 0)
     elif metadata.get("source_cycle_index") is not None:
@@ -169,8 +159,6 @@ def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
     if evidence_refs:
         lineage["evidence_refs"] = list(dict.fromkeys(evidence_refs))
 
-    lineage.update(extract_goal_lineage({**dict(task), **lineage}))
-
     return {key: copy.deepcopy(value) for key, value in lineage.items() if value not in ("", [], {})}
 
 
@@ -185,14 +173,15 @@ def _validate_runtime_identity_boundary(task: Mapping[str, Any], *, session_id: 
     if not isinstance(section, Mapping):
         return None
 
-    identity = {
-        "session_id": _clean_text(section.get("session_id")),
-        "runtime_session_id": _clean_text(section.get("runtime_session_id")),
-    }
-    if not identity["session_id"]:
-        raise RuntimeSessionResumeStoreError("session_id_missing")
-    if not identity["runtime_session_id"]:
-        raise RuntimeSessionResumeStoreError("runtime_session_id_missing")
+    try:
+        identity = extract_runtime_identity(section, require_complete=True, reject_conflicts=True)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "runtime_identity_missing_fields:session_id":
+            raise RuntimeSessionResumeStoreError("session_id_missing") from exc
+        if message == "runtime_identity_missing_fields:runtime_session_id":
+            raise RuntimeSessionResumeStoreError("runtime_session_id_missing") from exc
+        raise RuntimeSessionResumeStoreError(message) from exc
 
     if identity["session_id"] != session_id:
         raise RuntimeSessionResumeStoreError("runtime_identity_mismatch")
@@ -390,6 +379,20 @@ class RuntimeSessionResume:
                 session_task["runtime_session_id"] = runtime_identity["runtime_session_id"]
             elif not _clean_text(session_task.get("session_id")):
                 session_task["session_id"] = normalized_session_id
+            try:
+                canonical_lineage = extract_goal_lineage(session_task, reject_conflicts=True)
+            except ValueError as exc:
+                session_task["status"] = TASK_STATUS_BLOCKED
+                session_task["identity_validation_error"] = str(exc)
+                nested_lineage = session_task.get("goal_lineage")
+                if isinstance(nested_lineage, Mapping):
+                    session_task = attach_goal_lineage(session_task, nested_lineage)
+            else:
+                if all(canonical_lineage.get(field) for field in (
+                    "root_goal_id", "source_goal_id", "goal_id", "goal_lineage_id",
+                    "branch_type", "branch_id", "session_id", "runtime_session_id",
+                )):
+                    session_task = attach_goal_lineage(session_task, canonical_lineage)
             snapshot = self.capture_task_snapshot(session_task)
             snapshot = self._resolve_snapshot_against_runtime_state(snapshot)
             if include_terminal or is_resumable_task_status(snapshot.status):
@@ -577,7 +580,7 @@ class RuntimeSessionResume:
 
         task_payload = copy.deepcopy(snapshot.task)
         if task_payload:
-            task_payload["status"] = _canonical_runtime_status(runtime_status)
+            task_payload["status"] = normalize_runtime_status(runtime_status)
             history = task_payload.setdefault("history", [])
             if isinstance(history, list) and runtime_status not in history:
                 history.append(runtime_status)
