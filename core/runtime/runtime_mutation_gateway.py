@@ -45,6 +45,11 @@ from core.runtime.runtime_state_snapshot import (
     hash_bytes,
     hash_text,
 )
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    RuntimeSystemCapabilityError,
+    validate_runtime_system_capability,
+)
 
 
 APPROVED_MUTATION_OPERATIONS = {
@@ -82,6 +87,24 @@ class RuntimeMutationGateway:
         )
 
     def mutate(self, request: RuntimeMutationRequest) -> RuntimeMutationTransactionResult:
+        if request.identity is not None and str(request.identity.identity_type or "").upper() == "SYSTEM":
+            try:
+                validate_runtime_system_capability(
+                    request.metadata.get("runtime_system_capability"),
+                    issuer="RuntimeMutationGateway",
+                    capability_class=RuntimeCapabilityClass.MUTATE,
+                    resource="workspace",
+                    action=request.operation_type,
+                    scope={"request_id": request.request_id, "target_path": request.target_path},
+                    lineage=request.lineage,
+                )
+            except RuntimeSystemCapabilityError as exc:
+                return self._blocked_without_execution(
+                    request=request,
+                    transaction_id=f"runtime_mutation:{request.request_id}",
+                    status_reason=str(exc),
+                    started_at=_utc_timestamp(),
+                )
         request_metadata = merge_current_transaction_metadata({
             **dict(request.metadata),
             **build_mutation_authority_metadata(
@@ -95,6 +118,8 @@ class RuntimeMutationGateway:
                     allowed_operations=(request.operation_type,),
                     allowed_targets=(str(request.target_path),),
                     provenance=request.provenance,
+                    scope={"request_id": request.request_id, "target_path": request.target_path},
+                    lineage=request.lineage,
                     metadata={"gateway": "canonical"},
                 )
             ),
@@ -123,6 +148,8 @@ class RuntimeMutationGateway:
             allowed_operations=(request.operation_type,),
             allowed_targets=(str(request.target_path),),
             provenance=request.provenance,
+            scope={"request_id": request.request_id, "target_path": request.target_path},
+            lineage=request.lineage,
             metadata={"transaction_id": transaction_id},
         )
         bind_current_mutation(transaction_id, metadata={"source": "runtime_mutation_gateway"})

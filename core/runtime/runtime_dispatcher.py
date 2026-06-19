@@ -15,6 +15,10 @@ from core.runtime.runtime_authority_seal import (
     issue_dispatch_execution_capability,
     issue_work_package_completion_authority,
 )
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    issue_runtime_system_capability,
+)
 from core.goals.goal_lineage_contract import GOAL_LINEAGE_FIELDS, extract_goal_lineage, extract_runtime_identity
 from core.runtime.persistent_queue_contract import classify_queue_failure, extract_queue_lineage, merge_queue_lineage
 from core.runtime.work_package_queue import (
@@ -96,6 +100,7 @@ class RuntimeDispatcher:
         task = self._execution_task(record)
         self.queue.start_execution_session(package_id, task=task)
         task["runtime_execution_capability"] = self._execution_capability(record)
+        task["runtime_system_capability"] = self._system_execution_capability(record)
         return self._continue_execution(package_id, task=task, tick=0, max_steps=max_steps)
 
     def resume(self, package_id: str, *, max_steps: int | None = None) -> dict[str, Any]:
@@ -114,6 +119,9 @@ class RuntimeDispatcher:
         task["current_step_index"] = int(active_graph.get("cursor") or 0)
         project_runtime_status(task, normalize_runtime_status("running"), owner="core/runtime/runtime_dispatcher.py")
         task["runtime_execution_capability"] = self._execution_capability(
+            self.queue.status(package_id)
+        )
+        task["runtime_system_capability"] = self._system_execution_capability(
             self.queue.status(package_id)
         )
         self.queue.mark_session_resumed(package_id)
@@ -281,6 +289,21 @@ class RuntimeDispatcher:
             package_id=str(record.get("package_id") or ""),
         )
 
+    @staticmethod
+    def _system_execution_capability(record: Mapping[str, Any]):
+        task_id = str(record.get("task_id") or "")
+        package_id = str(record.get("package_id") or "")
+        session_id = str(record.get("session_id") or "")
+        claims = {"task_id": task_id, "package_id": package_id, "session_id": session_id}
+        return issue_runtime_system_capability(
+            issuer="RuntimeDispatcher",
+            capability_class=RuntimeCapabilityClass.EXECUTE,
+            resource="runtime_task",
+            action="execute",
+            scope=claims,
+            lineage=claims,
+        )
+
     def run_scheduler_boundary(
         self,
         task: Mapping[str, Any],
@@ -302,6 +325,13 @@ class RuntimeDispatcher:
                 "task": boundary_task,
             }
         boundary_task["runtime_execution_capability"] = self._execution_capability(
+            {
+                "task_id": task_id,
+                "session_id": str(boundary_task.get("session_id") or ""),
+                "package_id": str(boundary_task.get("package_id") or ""),
+            }
+        )
+        boundary_task["runtime_system_capability"] = self._system_execution_capability(
             {
                 "task_id": task_id,
                 "session_id": str(boundary_task.get("session_id") or ""),

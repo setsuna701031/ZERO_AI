@@ -31,6 +31,12 @@ from core.runtime.repair_planner import RepairPlanner
 from core.runtime.repair_step_injector import RepairStepInjector
 from core.runtime.repair_observability import build_repair_chain_id, build_repair_observability
 from core.runtime.repair_rollback import restore_repair_backup, should_rollback_after_failed_verify
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    RuntimeSystemCapabilityError,
+    issue_runtime_system_capability,
+    validate_runtime_system_capability,
+)
 
 try:
     from core.runtime.mutation_integration import MutationRuntimeIntegration
@@ -111,7 +117,26 @@ class TaskRunner:
         session_id = str(task.get("session_id") or task.get("runtime_session") or "").strip()
         step_id = str(step.get("id") or step.get("step_id") or f"{task_id}:step").strip()
         capability = authority_context.get("runtime_execution_capability")
-        if is_taskrunner_execution_capability(
+        system_capability = authority_context.get("runtime_system_capability")
+        claims = {"task_id": task_id, "package_id": package_id, "session_id": session_id}
+        runtime_identity = task.get("runtime_identity") if isinstance(task, dict) else None
+        system_identity = isinstance(runtime_identity, dict) and str(runtime_identity.get("identity_type") or "").upper() == "SYSTEM"
+        system_allowed = not system_identity
+        if system_identity:
+            try:
+                validate_runtime_system_capability(
+                    system_capability,
+                    issuer="RuntimeDispatcher",
+                    capability_class=RuntimeCapabilityClass.EXECUTE,
+                    resource="runtime_task",
+                    action="execute",
+                    scope=claims,
+                    lineage=claims,
+                )
+                system_allowed = True
+            except RuntimeSystemCapabilityError:
+                pass
+        if system_allowed and is_taskrunner_execution_capability(
             capability,
             task_id=task_id,
             package_id=package_id,
@@ -247,6 +272,7 @@ class TaskRunner:
             "authority_policy": "owner_issued_runtime_execution_capability",
             "authority_propagation_required": True,
             "runtime_execution_capability": capability,
+            "runtime_system_capability": owned_task.get("runtime_system_capability"),
         }
         return self.step_executor.execute_steps(
             steps,
@@ -1732,7 +1758,23 @@ class TaskRunner:
             "received_authority": copy.deepcopy(received),
             "execution_authority": copy.deepcopy(execution_authority),
             "authority_chain": chain,
+            "runtime_system_capability": task.get("runtime_system_capability"),
         }
+
+    @staticmethod
+    def _attach_system_rollback_capability(task: Dict[str, Any]) -> None:
+        identity = task.get("runtime_identity") if isinstance(task, dict) else None
+        if not isinstance(identity, dict) or str(identity.get("identity_type") or "").upper() != "SYSTEM":
+            return
+        task_id = str(task.get("task_id") or task.get("id") or "")
+        task["runtime_rollback_capability"] = issue_runtime_system_capability(
+            issuer="TaskRunner",
+            capability_class=RuntimeCapabilityClass.ROLLBACK,
+            resource="workspace",
+            action="rollback",
+            scope={"task_id": task_id},
+            lineage={"task_id": task_id},
+        )
 
     def _make_json_safe(self, value: Any) -> Any:
         if is_task_completion_authority(value):
@@ -2495,6 +2537,7 @@ class TaskRunner:
 
             rollback_result = None
             if self._should_rollback_after_failed_verify(step=step, step_result=result, state=state):
+                self._attach_system_rollback_capability(task)
                 rollback_result = restore_repair_backup(
                     runtime=self.runtime,
                     task=task,
@@ -2682,6 +2725,7 @@ class TaskRunner:
                     current_tick=current_tick,
                 )
                 new_state = copy.deepcopy(recorded.get("runtime_state", new_state))
+                self._attach_system_rollback_capability(task)
                 rollback_result = restore_repair_backup(
                     runtime=self.runtime,
                     task=task,

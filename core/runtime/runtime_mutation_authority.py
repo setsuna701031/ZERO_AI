@@ -58,8 +58,10 @@ class RuntimeMutationCapability:
     request_id: str
     operation_type: str
     target_path: str
-    allowed_operations: tuple[str, ...] = ("*",)
-    allowed_targets: tuple[str, ...] = ("*",)
+    allowed_operations: tuple[str, ...] = ()
+    allowed_targets: tuple[str, ...] = ()
+    scope: dict[str, Any] = field(default_factory=dict)
+    lineage: dict[str, Any] = field(default_factory=dict)
     provenance: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -75,6 +77,8 @@ class RuntimeMutationCapability:
             "target_path": self.target_path,
             "allowed_operations": list(self.allowed_operations),
             "allowed_targets": list(self.allowed_targets),
+            "scope": dict(self.scope),
+            "lineage": dict(self.lineage),
             "provenance": dict(self.provenance),
             "metadata": dict(self.metadata),
         }
@@ -100,8 +104,10 @@ def issue_runtime_mutation_capability(
     operation_type: str,
     target_path: str | Path,
     role: str = MUTATION_REQUEST_ROLE,
-    allowed_operations: Iterable[str] = ("*",),
-    allowed_targets: Iterable[str | Path] = ("*",),
+    allowed_operations: Iterable[str] | None = None,
+    allowed_targets: Iterable[str | Path] | None = None,
+    scope: Mapping[str, Any] | None = None,
+    lineage: Mapping[str, Any] | None = None,
     provenance: Mapping[str, Any] | None = None,
     metadata: Mapping[str, Any] | None = None,
 ) -> RuntimeMutationCapability:
@@ -130,8 +136,10 @@ def issue_runtime_mutation_capability(
         request_id=str(request_id or "").strip(),
         operation_type=str(operation_type or "").strip(),
         target_path=str(target_path or "").replace("\\", "/").strip(),
-        allowed_operations=tuple(str(item or "").strip() for item in allowed_operations if str(item or "").strip()),
-        allowed_targets=tuple(str(item or "").replace("\\", "/").strip() for item in allowed_targets if str(item or "").strip()),
+        allowed_operations=tuple(str(item or "").strip() for item in (allowed_operations or (operation_type,)) if str(item or "").strip()),
+        allowed_targets=tuple(str(item or "").replace("\\", "/").strip() for item in (allowed_targets or (target_path,)) if str(item or "").strip()),
+        scope=dict(scope or {"request_id": str(request_id or "").strip()}),
+        lineage=dict(lineage or provenance or {"request_id": str(request_id or "").strip()}),
         provenance=dict(provenance or {}),
         metadata=dict(metadata or {}),
     )
@@ -157,6 +165,8 @@ def validate_runtime_mutation_capability(
     operation_type: str,
     target_path: str | Path,
     role: str | None = None,
+    scope: Mapping[str, Any] | None = None,
+    lineage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = _capability_payload(capability)
     if not payload:
@@ -165,6 +175,8 @@ def validate_runtime_mutation_capability(
         raise RuntimeMutationAuthorityError("invalid_runtime_mutation_capability_schema")
     if payload.get("authority") != CANONICAL_MUTATION_AUTHORITY:
         raise RuntimeMutationAuthorityError("invalid_runtime_mutation_authority")
+    if str(payload.get("issuer") or "").strip() != CANONICAL_MUTATION_AUTHORITY:
+        raise RuntimeMutationAuthorityError("invalid_runtime_mutation_capability_issuer")
 
     expected_role = str(role or payload.get("role") or "").strip().upper()
     actual_role = str(payload.get("role") or "").strip().upper()
@@ -180,6 +192,12 @@ def validate_runtime_mutation_capability(
     allowed_targets = [str(item or "").replace("\\", "/").strip() for item in payload.get("allowed_targets") or ()]
     if "*" not in allowed_targets and not any(_target_matches(target, pattern) for pattern in allowed_targets):
         raise RuntimeMutationAuthorityError("runtime_mutation_target_outside_authority")
+    if "*" in allowed_operations or "*" in allowed_targets:
+        raise RuntimeMutationAuthorityError("runtime_mutation_wildcard_authority_forbidden")
+    if not _mapping_contains(payload.get("scope"), scope or {}):
+        raise RuntimeMutationAuthorityError("runtime_mutation_scope_mismatch")
+    if not _mapping_contains(payload.get("lineage"), lineage or {}):
+        raise RuntimeMutationAuthorityError("runtime_mutation_lineage_mismatch")
 
     return {
         **payload,
@@ -197,6 +215,8 @@ def require_runtime_mutation_authority(
     operation_type: str,
     target_path: str | Path,
     role: str | None = None,
+    scope: Mapping[str, Any] | None = None,
+    lineage: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     return validate_runtime_mutation_capability(
         capability,
@@ -204,6 +224,8 @@ def require_runtime_mutation_authority(
         operation_type=operation_type,
         target_path=target_path,
         role=role,
+        scope=scope,
+        lineage=lineage,
     )
 
 
@@ -228,3 +250,9 @@ def _target_matches(target: str, pattern: str) -> bool:
     normalized_target = target.lower()
     normalized_pattern = pattern.lower().rstrip("/")
     return normalized_target == normalized_pattern or normalized_target.startswith(normalized_pattern + "/")
+
+
+def _mapping_contains(granted: Any, requested: Mapping[str, Any]) -> bool:
+    if not isinstance(granted, Mapping) or not granted:
+        return False
+    return all(str(granted.get(key)) == str(value) for key, value in dict(requested).items())

@@ -17,6 +17,10 @@ from core.runtime.runtime_state_guard import RuntimeStateGuard, validate_runtime
 from core.runtime.runtime_transition_policy import RuntimeTransitionPolicy, RuntimeTransitionPolicyError
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.runtime_authority_seal import is_task_completion_authority
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    validate_runtime_system_capability,
+)
 
 
 TERMINAL_STATUSES = {
@@ -3546,6 +3550,18 @@ class TaskRuntime:
         current_tick: int = 0,
         verify_error: Any = None,
     ) -> Dict[str, Any]:
+        runtime_identity = task.get("runtime_identity") if isinstance(task, dict) else None
+        if isinstance(runtime_identity, dict) and str(runtime_identity.get("identity_type") or "").upper() == "SYSTEM":
+            task_id = str(task.get("task_id") or task.get("id") or "")
+            validate_runtime_system_capability(
+                task.get("runtime_rollback_capability"),
+                issuer="TaskRunner",
+                capability_class=RuntimeCapabilityClass.ROLLBACK,
+                resource="workspace",
+                action="rollback",
+                scope={"task_id": task_id},
+                lineage={"task_id": task_id},
+            )
         state = self.load_runtime_state(task)
         context = self._normalize_repair_context(state.get("repair_context"))
         existing_result = context.get("rollback_result")

@@ -196,8 +196,10 @@ def apply_patch_plan(
             operation_type=item.operation,
             target_path=relative_path,
             role=MUTATION_PERSISTENCE_ROLE,
-            allowed_operations=("*",),
-            allowed_targets=("*",),
+            allowed_operations=(item.operation,),
+            allowed_targets=(relative_path,),
+            scope={"session_id": session.session_id, "target_path": relative_path},
+            lineage={"session_id": session.session_id},
             provenance={"session_id": session.session_id},
             metadata={"compatibility": "legacy_direct_apply_call"},
         )

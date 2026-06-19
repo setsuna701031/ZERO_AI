@@ -3,6 +3,11 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
+from core.runtime.runtime_system_capability import (
+    RuntimeCapabilityClass,
+    SYSTEM_CAPABILITY_INVENTORY,
+)
+
 
 class RuntimeOwner(str, Enum):
     SCHEDULER = "scheduler"
@@ -38,6 +43,11 @@ class RuntimeAuthorityError(PermissionError):
 
 
 AuthorityRule = tuple[RuntimeOwner, RuntimeResource, RuntimeAction]
+
+# Public inventory aliases keep policy review in the ownership module while
+# token issuance and validation remain isolated in runtime_system_capability.
+SYSTEM_PERMISSION_CLASSES = RuntimeCapabilityClass
+SYSTEM_EXPLICIT_CAPABILITIES = SYSTEM_CAPABILITY_INVENTORY
 
 
 _ALLOWED_RULES: frozenset[AuthorityRule] = frozenset(
@@ -104,15 +114,9 @@ _ALLOWED_RULES: frozenset[AuthorityRule] = frozenset(
 # or execution-result write must be performed by the concrete runtime owner or
 # by a live capability/token authority in the domain-specific authority modules.
 _SYSTEM_ALLOWED_RULES: frozenset[AuthorityRule] = frozenset(
-    {
-        (RuntimeOwner.SYSTEM, RuntimeResource.RUNTIME_EVENT, RuntimeAction.EMIT),
-        (RuntimeOwner.SYSTEM, RuntimeResource.RUNTIME_INCIDENT, RuntimeAction.EMIT),
-        (RuntimeOwner.SYSTEM, RuntimeResource.RUNTIME_SNAPSHOT, RuntimeAction.SNAPSHOT),
-    }
-    | {
-        (RuntimeOwner.SYSTEM, resource, RuntimeAction.READ)
-        for resource in RuntimeResource
-    }
+    (RuntimeOwner.SYSTEM, RuntimeResource(resource), RuntimeAction(action))
+    for capability_class in (RuntimeCapabilityClass.READ, RuntimeCapabilityClass.WRITE)
+    for resource, action in SYSTEM_CAPABILITY_INVENTORY[capability_class]
 )
 
 
