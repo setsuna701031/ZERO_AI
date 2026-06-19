@@ -23,7 +23,7 @@ from core.runtime.runtime_task_continuation import (
     RuntimeTaskContinuation,
 )
 from core.runtime.persistent_queue_contract import extract_queue_lineage
-from core.goals.goal_lineage_contract import canonical_work_identity
+from core.goals.goal_lineage_contract import canonical_work_identity, extract_runtime_identity
 
 try:
     from core.runtime.persistent_engineering_session import PersistentEngineeringSession
@@ -1076,6 +1076,21 @@ class PersistentRuntimeOrchestrator:
             return {"ok": False, "reason": "persistent_engineering_session_unavailable"}
 
         try:
+            lineage_by_task_id = resume_plan.get("lineage_by_task_id")
+            resume_identities = [
+                extract_runtime_identity(item, reject_conflicts=True)
+                for item in (lineage_by_task_id.values() if isinstance(lineage_by_task_id, Mapping) else [])
+                if isinstance(item, Mapping)
+            ]
+            session_ids = {item.get("session_id", "") for item in resume_identities}
+            session_ids.discard("")
+            if len(session_ids) > 1 or (session_ids and record.session_id not in session_ids):
+                raise ValueError("resume_plan_conflicting_session_identity")
+            runtime_session_ids = {item.get("runtime_session_id", "") for item in resume_identities}
+            runtime_session_ids.discard("")
+            if len(runtime_session_ids) > 1:
+                raise ValueError("resume_plan_conflicting_runtime_session_identity")
+            runtime_session_id = next(iter(runtime_session_ids), "")
             session = PersistentEngineeringSession(
                 repo_root=self.repo_root,
                 workflow_id=record.session_id or "runtime_resume",
@@ -1086,7 +1101,8 @@ class PersistentRuntimeOrchestrator:
             resume_point = session.create_resume_point(
                 reason="persistent_runtime_orchestrator_resume",
                 cursor={
-                    "runtime_session_id": record.session_id,
+                    "session_id": record.session_id,
+                    "runtime_session_id": runtime_session_id,
                     "resume_plan_fingerprint": resume_plan.get("fingerprint"),
                     "continuation_fingerprint": continuation_plan.get("fingerprint"),
                 },

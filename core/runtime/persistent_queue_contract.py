@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any, Iterable, Mapping
-from core.goals.goal_lineage_contract import canonical_work_identity, extract_goal_lineage
+from core.goals.goal_lineage_contract import canonical_work_identity, extract_goal_lineage, extract_runtime_identity
 
 
 QUEUE_LINEAGE_FIELDS = (
@@ -36,10 +36,8 @@ QUEUE_IDENTITY_FIELDS = (
 
 QUEUE_SESSION_FIELDS = (
     "session_id",
-    "runtime_session_id",
     "operator_session_id",
     "persistent_operator_session_id",
-    "source_session_id",
 )
 
 _NESTED_LINEAGE_KEYS = (
@@ -186,12 +184,7 @@ def queue_identity(payload: Mapping[str, Any] | None) -> dict[str, str]:
 def queue_session_id(payload: Mapping[str, Any] | None) -> str:
     if not isinstance(payload, Mapping):
         return ""
-    for source in _sources(payload):
-        for field in QUEUE_SESSION_FIELDS:
-            value = str(source.get(field) or "").strip()
-            if value:
-                return value
-    return ""
+    return extract_runtime_identity(payload, reject_conflicts=True).get("session_id", "")
 
 
 def duplicate_identity(
