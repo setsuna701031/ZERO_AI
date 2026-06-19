@@ -1,24 +1,26 @@
-# Runtime SYSTEM Authority Enforcement Seal - apply package
+# Runtime Mutation Sovereignty Closure - apply package
 
 Copy these files into the repository root, preserving paths.
 
 Files included:
 
-- `core/runtime/runtime_ownership.py`
-- `docs/runtime_system_authority_audit.md`
-- `docs/runtime_system_authority_enforcement.md`
-- `tests/runtime_system_authority_audit.md`
-- `tests/test_runtime_boundary_contract.py`
-- `tests/test_runtime_mutation_bypass_proof.py`
-- `tests/test_runtime_mutation_guard_contract.py`
-- `tests/test_runtime_ownership_contract.py`
-- `tests/test_runtime_system_authority_audit.py`
-- `tests/test_runtime_system_authority_enforcement_seal.py`
+```text
+core/runtime/runtime_mutation_authority.py
+core/runtime/runtime_mutation_gateway.py
+core/runtime/governed_mutation_runtime.py
+core/runtime/mutation_runtime_pipeline.py
+core/runtime/mutation_patch_apply.py
+docs/runtime_mutation_sovereignty_closure.md
+tests/test_runtime_mutation_authority_inventory.py
+tests/test_runtime_mutation_bypass_proof.py
+tests/test_runtime_mutation_gateway_sovereignty_seal.py
+tests/test_runtime_mutation_sovereignty_closure.py
+```
 
 Validation used:
 
 ```powershell
-pytest -q tests/test_runtime_system_authority_enforcement_seal.py tests/test_runtime_system_authority_audit.py tests/test_runtime_mutation_gateway_sovereignty_seal.py tests/test_runtime_mutation_bypass_proof.py tests/test_runtime_ownership_contract.py tests/test_runtime_mutation_guard_contract.py tests/test_runtime_boundary_contract.py
+pytest -q tests/test_runtime_mutation_sovereignty_closure.py tests/test_runtime_mutation_authority_inventory.py tests/test_runtime_mutation_gateway_sovereignty_seal.py tests/test_runtime_mutation_bypass_proof.py tests/test_mutation_patch_apply.py
 python -m compileall core cli tests
 git diff --check
 ```
@@ -26,9 +28,11 @@ git diff --check
 Expected focused result:
 
 ```text
-60 passed, 23 subtests passed
+26 passed
+compileall passed
 ```
 
 Non-mainline note:
 
-The historical audit document remains at `tests/runtime_system_authority_audit.md` because it was already committed there. This package also adds the canonical docs copy at `docs/runtime_system_authority_audit.md` and the enforcement document at `docs/runtime_system_authority_enforcement.md`.
+Evidence reference ownership remains a separate distributed metadata authority surface and is not closed by this package.
+```

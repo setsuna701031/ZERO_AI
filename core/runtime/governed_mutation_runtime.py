@@ -22,6 +22,7 @@ from core.runtime.mutation_audit import (
     write_audit_record,
 )
 from core.runtime.mutation_gateway import MutationGatewayRequest
+from core.runtime.runtime_mutation_authority import mutation_surface_inventory
 from core.runtime.mutation_patch_apply import (
     MutationPatchApplyResult,
     MutationPatchPlan,

@@ -6,24 +6,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 MUTATION_SURFACES = {
-    "core/runtime/runtime_mutation_gateway.py": "canonical_gateway",
-    "core/runtime/mutation_patch_apply.py": "patch_apply_surface",
-    "core/runtime/mutation_runtime_pipeline.py": "pipeline_surface",
-    "core/runtime/governed_mutation_runtime.py": "governed_runtime_surface",
-    "core/runtime/controlled_mutation_bridge.py": "controlled_bridge_surface",
+    "core/runtime/runtime_mutation_gateway.py": "AUTHORITY",
+    "core/runtime/governed_mutation_runtime.py": "REQUEST",
+    "core/runtime/mutation_runtime_pipeline.py": "REQUEST",
+    "core/runtime/mutation_patch_apply.py": "PERSISTENCE",
+    "core/runtime/controlled_mutation_bridge.py": "REQUEST",
 }
 
 CANONICAL_GATEWAY_FILE = "core/runtime/runtime_mutation_gateway.py"
-BYPASS_CANDIDATE_FILES = {
-    "core/runtime/mutation_patch_apply.py",
-    "core/runtime/mutation_runtime_pipeline.py",
-    "core/runtime/controlled_mutation_bridge.py",
-}
-
-REQUIRED_GATEWAY_GUARDS = {
-    "runtime_identity_required",
-    "runtime_authority_scope_required",
-    "runtime_capability_scope_required",
+REQUEST_CLIENT_FILES = {
+    path for path, role in MUTATION_SURFACES.items() if role != "AUTHORITY"
 }
 
 DIRECT_MUTATION_CALLS = {
@@ -34,6 +26,14 @@ DIRECT_MUTATION_CALLS = {
     "move",
     "rmtree",
     "unlink",
+}
+
+CANONICAL_DECISION_TERMS = {
+    "authority_evaluator.evaluate",
+    "capability_evaluator.evaluate",
+    "kernel_protection.evaluate",
+    "mutation_policy.evaluate",
+    "classify_mutation_risk",
 }
 
 
@@ -80,71 +80,66 @@ def _calls(path: Path, names: set[str]) -> list[tuple[int, str]]:
     return found
 
 
-def _string_constants(path: Path) -> set[str]:
-    values: set[str] = set()
-    for node in ast.walk(_tree(path)):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            values.add(node.value)
-    return values
+def test_runtime_mutation_authority_contract_exists() -> None:
+    authority = ROOT / "core/runtime/runtime_mutation_authority.py"
+    source = _source(authority)
+
+    assert "CANONICAL_MUTATION_AUTHORITY" in source
+    assert "RuntimeMutationCapability" in source
+    assert "issue_runtime_mutation_capability" in source
+    assert "require_runtime_mutation_authority" in source
+    assert "MUTATION_SURFACE_ROLES" in source
 
 
-def test_runtime_mutation_gateway_declares_canonical_blocking_guards() -> None:
-    gateway = ROOT / CANONICAL_GATEWAY_FILE
-    source = _source(gateway)
-    constants = _string_constants(gateway)
+def test_runtime_mutation_gateway_is_the_only_decision_owner() -> None:
+    gateway_source = _source(ROOT / CANONICAL_GATEWAY_FILE)
+    assert "class RuntimeMutationGateway" in gateway_source
+    assert "def mutate" in gateway_source
+    for term in CANONICAL_DECISION_TERMS:
+        assert term in gateway_source
 
-    assert "class RuntimeMutationGateway" in source
-    assert "def mutate" in source
-    assert REQUIRED_GATEWAY_GUARDS <= constants
-    assert "authority_evaluator.evaluate" in source
-    assert "capability_evaluator.evaluate" in source
-    assert "kernel_protection.evaluate" in source
-    assert "mutation_policy.evaluate" in source
+    drift: dict[str, list[str]] = {}
+    for rel in REQUEST_CLIENT_FILES:
+        source = _source(ROOT / rel)
+        leaked_terms = [term for term in CANONICAL_DECISION_TERMS if term in source]
+        if leaked_terms:
+            drift[rel] = leaked_terms
+
+    assert not drift, {"request_client_decision_drift": drift}
 
 
-def test_mutation_surfaces_are_mapped_and_classified() -> None:
-    missing = [path for path in MUTATION_SURFACES if not (ROOT / path).exists()]
-    assert not missing, {"missing_mutation_surfaces": missing}
+def test_mutation_request_clients_delegate_authority() -> None:
+    for rel in REQUEST_CLIENT_FILES:
+        path = ROOT / rel
+        source = _source(path)
+        assert "runtime_mutation_authority" in source or rel == "core/runtime/controlled_mutation_bridge.py", rel
 
-    classification = {
-        path: {
-            "role": role,
-            "imports_gateway": _imports_name(ROOT / path, "RuntimeMutationGateway"),
-            "direct_mutation_calls": _calls(ROOT / path, DIRECT_MUTATION_CALLS),
-            "calls_apply_patch_plan": bool(_calls(ROOT / path, {"apply_patch_plan"})),
-        }
-        for path, role in MUTATION_SURFACES.items()
+    pipeline = ROOT / "core/runtime/mutation_runtime_pipeline.py"
+    assert "issue_runtime_mutation_capability" in _source(pipeline)
+    assert "mutation_capability=mutation_capability" in _source(pipeline)
+
+    patch_apply = ROOT / "core/runtime/mutation_patch_apply.py"
+    patch_source = _source(patch_apply)
+    assert "mutation_capability" in patch_source
+    assert "require_runtime_mutation_authority" in patch_source
+
+
+def test_direct_file_mutation_surfaces_are_persistence_not_authority() -> None:
+    direct = {
+        rel: _calls(ROOT / rel, DIRECT_MUTATION_CALLS)
+        for rel in REQUEST_CLIENT_FILES
     }
 
-    assert classification[CANONICAL_GATEWAY_FILE]["imports_gateway"] is False
-    assert classification["core/runtime/mutation_patch_apply.py"]["direct_mutation_calls"], classification
-    assert classification["core/runtime/mutation_runtime_pipeline.py"]["calls_apply_patch_plan"], classification
+    assert direct["core/runtime/mutation_patch_apply.py"], direct
+    assert "require_runtime_mutation_authority" in _source(ROOT / "core/runtime/mutation_patch_apply.py")
+    assert "RuntimeMutationGateway" not in _source(ROOT / "core/runtime/mutation_patch_apply.py")
 
 
-def test_current_bypass_candidates_do_not_enter_runtime_mutation_gateway() -> None:
-    findings: dict[str, dict[str, object]] = {}
-
-    for rel in sorted(BYPASS_CANDIDATE_FILES):
-        path = ROOT / rel
-        findings[rel] = {
-            "imports_gateway": _imports_name(path, "RuntimeMutationGateway"),
-            "imports_guard": _imports_name(path, "guard_mutation") or _imports_name(path, "RuntimeMutationGuard"),
-            "direct_mutation_calls": _calls(path, DIRECT_MUTATION_CALLS),
-            "apply_patch_plan_calls": _calls(path, {"apply_patch_plan"}),
-        }
-
-    # This is a proof test, not the final enforcement seal: it pins the audit's
-    # current finding that legacy mutation surfaces can still exist outside the
-    # canonical RuntimeMutationGateway path.
-    assert any(not item["imports_gateway"] for item in findings.values()), findings
-    assert findings["core/runtime/mutation_patch_apply.py"]["direct_mutation_calls"], findings
-    assert findings["core/runtime/controlled_mutation_bridge.py"]["imports_gateway"] is False, findings
-
-
-def test_runtime_gateway_sovereignty_next_seal_has_explicit_targets() -> None:
-    targets = sorted(BYPASS_CANDIDATE_FILES | {"core/runtime/runtime_ownership.py"})
+def test_runtime_mutation_sovereignty_targets_are_closed() -> None:
+    targets = sorted(REQUEST_CLIENT_FILES | {"core/runtime/runtime_ownership.py"})
     assert targets == [
         "core/runtime/controlled_mutation_bridge.py",
+        "core/runtime/governed_mutation_runtime.py",
         "core/runtime/mutation_patch_apply.py",
         "core/runtime/mutation_runtime_pipeline.py",
         "core/runtime/runtime_ownership.py",

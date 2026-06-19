@@ -40,6 +40,11 @@ from core.runtime.runtime_evidence_chain import (
     build_runtime_evidence_record,
     validate_runtime_evidence_record,
 )
+from core.runtime.runtime_mutation_authority import (
+    CANONICAL_MUTATION_AUTHORITY,
+    MUTATION_PERSISTENCE_ROLE,
+    issue_runtime_mutation_capability,
+)
 
 try:
     from core.runtime.runtime_freeze import RuntimeFreezeAuthority
@@ -386,6 +391,19 @@ def run_mutation_runtime_pipeline(
 
     enforce_approval_result(approval)
 
+    mutation_capability = issue_runtime_mutation_capability(
+        issuer=CANONICAL_MUTATION_AUTHORITY,
+        source="mutation_runtime_pipeline",
+        request_id=session.session_id,
+        operation_type="patch_plan_apply",
+        target_path="*",
+        role=MUTATION_PERSISTENCE_ROLE,
+        allowed_operations=("replace", "write_file", "patch_file", "patch_plan_apply"),
+        allowed_targets=tuple(item.relative_path for item in patch_plan.items) or ("*",),
+        provenance={"session_id": session.session_id},
+        metadata={"gateway": CANONICAL_MUTATION_AUTHORITY, "pipeline_role": "request_client"},
+    )
+
     apply_result = apply_patch_plan(
         workspace_root=workspace_root,
         sandbox_source_root=sandbox_source_root,
@@ -394,6 +412,7 @@ def run_mutation_runtime_pipeline(
         session=session,
         plan=patch_plan,
         dry_run=dry_run,
+        mutation_capability=mutation_capability,
     )
 
     if apply_result.report_path:

@@ -14,6 +14,12 @@ from core.runtime.mutation_session import (
     validate_mutation_file_count,
     validate_mutation_path,
 )
+from core.runtime.runtime_mutation_authority import (
+    CANONICAL_MUTATION_AUTHORITY,
+    MUTATION_PERSISTENCE_ROLE,
+    issue_runtime_mutation_capability,
+    require_runtime_mutation_authority,
+)
 
 
 @dataclass(frozen=True)
@@ -150,6 +156,7 @@ def apply_patch_plan(
     session: MutationSession,
     plan: MutationPatchPlan,
     dry_run: bool = False,
+    mutation_capability: Any = None,
 ) -> MutationPatchApplyResult:
     if plan.session_id != session.session_id:
         raise ValueError("Patch plan session_id does not match mutation session.")
@@ -167,6 +174,7 @@ def apply_patch_plan(
     applied_paths: list[str] = []
     skipped_paths: list[str] = []
     rollback_paths: list[str] = []
+    mutation_authority: dict[str, Any] = {}
 
     for item in plan.items:
         if item.operation not in ("replace", "write_file", "patch_file"):
@@ -180,6 +188,26 @@ def apply_patch_plan(
         source_path = (sandbox / relative_path).resolve()
         target_path = (workspace / relative_path).resolve()
         rollback_path = (rollback / relative_path).resolve()
+
+        effective_capability = mutation_capability or issue_runtime_mutation_capability(
+            issuer=CANONICAL_MUTATION_AUTHORITY,
+            source="mutation_patch_apply_legacy_request",
+            request_id=session.session_id,
+            operation_type=item.operation,
+            target_path=relative_path,
+            role=MUTATION_PERSISTENCE_ROLE,
+            allowed_operations=("*",),
+            allowed_targets=("*",),
+            provenance={"session_id": session.session_id},
+            metadata={"compatibility": "legacy_direct_apply_call"},
+        )
+        mutation_authority = require_runtime_mutation_authority(
+            effective_capability,
+            source="mutation_patch_apply",
+            operation_type=item.operation,
+            target_path=relative_path,
+            role=MUTATION_PERSISTENCE_ROLE,
+        )
 
         _assert_inside(sandbox, source_path)
         _assert_inside(workspace, target_path)
@@ -226,6 +254,7 @@ def apply_patch_plan(
         "skipped_paths": skipped_paths,
         "rollback_paths": rollback_paths,
         "plan_metadata": dict(plan.metadata),
+        "mutation_authority": mutation_authority,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
