@@ -127,17 +127,31 @@ class RuntimeMutationGuardContractTest(unittest.TestCase):
                 RuntimeAction.WRITE,
             )
 
-    def test_system_write_all_declared_resources_allowed(self) -> None:
-        from core.runtime.runtime_mutation_guard import guard_mutation
+    def test_system_write_all_declared_resources_rejected(self) -> None:
+        from core.runtime.runtime_mutation_guard import RuntimeMutationRejected, guard_mutation
         from core.runtime.runtime_ownership import RuntimeAction, RuntimeOwner, RuntimeResource
 
         for resource in RuntimeResource:
             with self.subTest(resource=resource):
-                request = guard_mutation(
-                    RuntimeOwner.SYSTEM,
-                    resource,
-                    RuntimeAction.WRITE,
-                )
+                with self.assertRaises(RuntimeMutationRejected):
+                    guard_mutation(
+                        RuntimeOwner.SYSTEM,
+                        resource,
+                        RuntimeAction.WRITE,
+                    )
+
+    def test_system_observability_actions_allowed(self) -> None:
+        from core.runtime.runtime_mutation_guard import guard_mutation
+        from core.runtime.runtime_ownership import RuntimeAction, RuntimeOwner, RuntimeResource
+
+        allowed = (
+            (RuntimeResource.RUNTIME_EVENT, RuntimeAction.EMIT),
+            (RuntimeResource.RUNTIME_INCIDENT, RuntimeAction.EMIT),
+            (RuntimeResource.RUNTIME_SNAPSHOT, RuntimeAction.SNAPSHOT),
+        )
+        for resource, action in allowed:
+            with self.subTest(resource=resource, action=action):
+                request = guard_mutation(RuntimeOwner.SYSTEM, resource, action)
                 self.assertTrue(request.allowed)
 
     def test_rejected_exception_keeps_request(self) -> None:

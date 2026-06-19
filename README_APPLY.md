@@ -1,42 +1,34 @@
-# ZERO AER Persistent Engineering Session v8.3.1
+# Runtime SYSTEM Authority Enforcement Seal - apply package
 
-新增：
+Copy these files into the repository root, preserving paths.
+
+Files included:
+
+- `core/runtime/runtime_ownership.py`
+- `docs/runtime_system_authority_audit.md`
+- `docs/runtime_system_authority_enforcement.md`
+- `tests/runtime_system_authority_audit.md`
+- `tests/test_runtime_boundary_contract.py`
+- `tests/test_runtime_mutation_bypass_proof.py`
+- `tests/test_runtime_mutation_guard_contract.py`
+- `tests/test_runtime_ownership_contract.py`
+- `tests/test_runtime_system_authority_audit.py`
+- `tests/test_runtime_system_authority_enforcement_seal.py`
+
+Validation used:
+
+```powershell
+pytest -q tests/test_runtime_system_authority_enforcement_seal.py tests/test_runtime_system_authority_audit.py tests/test_runtime_mutation_gateway_sovereignty_seal.py tests/test_runtime_mutation_bypass_proof.py tests/test_runtime_ownership_contract.py tests/test_runtime_mutation_guard_contract.py tests/test_runtime_boundary_contract.py
+python -m compileall core cli tests
+git diff --check
+```
+
+Expected focused result:
 
 ```text
-core/runtime/persistent_engineering_session.py
-tests/test_persistent_engineering_session_contract.py
+60 passed, 23 subtests passed
 ```
 
-這包不是單純新增 workflow smoke test，而是新增一個實際 runtime state layer：
+Non-mainline note:
 
-```text
-PlannerRuntimeDispatch result
--> PersistentEngineeringSession
--> runtime session lineage
--> checkpoint index
--> artifact record
--> resume point
--> continuation record
-```
-
-邊界：
-
-```text
-PersistentEngineeringSession only records session state.
-It does not plan.
-It does not execute StepExecutor.
-It does not call ToolRegistry.
-It does not mutate project files outside its own session JSON.
-```
-
-單檔測試：
-
-```bash
-python -m pytest tests/test_persistent_engineering_session_contract.py -q
-```
-
-完整鏈測試：
-
-```bash
-python -m pytest tests/test_long_engineering_runtime_contract.py tests/test_recovery_replay_multicycle_contract.py tests/test_persistent_runtime_orchestrator_contract.py tests/test_agent_loop_persistent_runtime_route_contract.py tests/test_planner_runtime_dispatch_contract.py tests/test_agent_loop_planner_runtime_dispatch_contract.py tests/test_agent_loop_planner_step_executor_bridge_contract.py tests/test_aer_runtime_real_work_smoke_contract.py tests/test_aer_engineering_task_chain_contract.py tests/test_aer_planner_tool_registry_bridge_contract.py tests/test_aer_tool_write_verify_path_contract.py tests/test_aer_multifile_engineering_workflow_contract.py tests/test_persistent_engineering_session_contract.py -q
-```
+The historical audit document remains at `tests/runtime_system_authority_audit.md` because it was already committed there. This package also adds the canonical docs copy at `docs/runtime_system_authority_audit.md` and the enforcement document at `docs/runtime_system_authority_enforcement.md`.

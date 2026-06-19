@@ -117,13 +117,25 @@ class RuntimeOwnershipContractTest(unittest.TestCase):
             )
         )
 
-    def test_system_can_access_all_declared_resources_and_actions(self) -> None:
-        from core.runtime.runtime_ownership import RuntimeAction, RuntimeOwner, RuntimeResource, can_access
+    def test_system_access_is_explicitly_scoped(self) -> None:
+        from core.runtime.runtime_ownership import (
+            RuntimeAction,
+            RuntimeOwner,
+            RuntimeResource,
+            can_access,
+            system_authority_rules,
+        )
 
-        for resource in RuntimeResource:
-            for action in RuntimeAction:
-                with self.subTest(resource=resource, action=action):
-                    self.assertTrue(can_access(RuntimeOwner.SYSTEM, resource, action))
+        allowed = {
+            (resource, action)
+            for resource in RuntimeResource
+            for action in RuntimeAction
+            if can_access(RuntimeOwner.SYSTEM, resource, action)
+        }
+        self.assertEqual(allowed, {(resource, action) for _, resource, action in system_authority_rules()})
+        self.assertIn((RuntimeResource.RUNTIME_EVENT, RuntimeAction.EMIT), allowed)
+        self.assertNotIn((RuntimeResource.QUEUE_STATE, RuntimeAction.WRITE), allowed)
+        self.assertNotIn((RuntimeResource.ORCHESTRATION_STATE, RuntimeAction.DISPATCH), allowed)
 
     def test_assert_runtime_authority_raises_runtime_authority_error(self) -> None:
         from core.runtime.runtime_ownership import (

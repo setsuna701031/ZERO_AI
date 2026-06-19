@@ -60,11 +60,12 @@ def _imports(rel: str, imported: str) -> bool:
     return False
 
 
-def test_system_owner_is_currently_a_wildcard_authority() -> None:
+def test_system_owner_wildcard_authority_is_sealed() -> None:
     source = _source(SYSTEM_WILDCARD_FILE)
     assert 'SYSTEM = "system"' in source
-    assert "if runtime_owner is RuntimeOwner.SYSTEM" in source
-    assert "return True" in source[source.index("if runtime_owner is RuntimeOwner.SYSTEM") :]
+    assert "_SYSTEM_ALLOWED_RULES" in source
+    assert "def system_authority_rules" in source
+    assert "if runtime_owner is RuntimeOwner.SYSTEM:\n        return True" not in source
 
 
 def test_patch_apply_has_direct_file_write_surface_outside_gateway() -> None:
