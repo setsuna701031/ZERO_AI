@@ -17,6 +17,18 @@ CANONICAL_EXECUTION_OWNERS = {
     "core.runtime.execution_gateway",
     "runtime.executor",
     "core.runtime.executor",
+    "runtime.step_executor",
+    "core.runtime.step_executor",
+}
+
+CANONICAL_EXECUTION_AUTHORITY_MATRIX = {
+    "runtime_dispatcher": {"role": "ISSUER", "may_execute": False, "requires_gate": False, "requires_capability": False},
+    "task_runner": {"role": "DELEGATE", "may_execute": False, "requires_gate": True, "requires_capability": True},
+    "task_runtime": {"role": "DISPATCH", "may_execute": False, "requires_gate": True, "requires_capability": False},
+    "step_executor": {"role": "EXECUTE", "may_execute": True, "requires_gate": True, "requires_capability": True},
+    "execution_gateway": {"role": "EXECUTE", "may_execute": True, "requires_gate": True, "requires_capability": False},
+    "executor": {"role": "EXECUTE", "may_execute": True, "requires_gate": True, "requires_capability": False},
+    "runtime_native_execution_authority": {"role": "DESCRIBE", "may_execute": False, "requires_gate": False, "requires_capability": False},
 }
 
 ORCHESTRATION_ONLY_OWNERS = {
@@ -29,6 +41,9 @@ ORCHESTRATION_ONLY_OWNERS = {
 }
 
 SIDE_EFFECT_ACTIONS = {
+    "execute",
+    "run",
+    "dispatch",
     "command",
     "subprocess",
     "shell",
@@ -101,6 +116,14 @@ class RuntimeExecutionAuthorityPolicy:
             )
 
         if normalized_source in CANONICAL_EXECUTION_OWNERS:
+            if normalized_source in {"runtime.step_executor", "core.runtime.step_executor"} and not _validated_step_capability(meta):
+                return _decision(
+                    allowed=False,
+                    source=normalized_source,
+                    action_type=normalized_action,
+                    reason="runtime_execution_capability_not_validated",
+                    metadata=meta,
+                )
             return _decision(
                 allowed=True,
                 source=normalized_source,
@@ -199,6 +222,21 @@ def _looks_like_helper_or_bridge(source: str) -> bool:
     return any(token in source for token in tokens)
 
 
+def _validated_step_capability(metadata: Mapping[str, Any]) -> bool:
+    try:
+        from core.runtime.runtime_authority_seal import is_taskrunner_execution_capability
+
+        return is_taskrunner_execution_capability(
+            metadata.get("runtime_execution_capability"),
+            task_id=str(metadata.get("task_id") or ""),
+            step_id=str(metadata.get("step_id") or ""),
+            package_id=str(metadata.get("package_id") or ""),
+            session_id=str(metadata.get("session_id") or ""),
+        )
+    except Exception:
+        return False
+
+
 def _normalize_source(value: Any) -> str:
     return str(value or "").strip().replace("/", ".").replace("\\", ".").lower()
 
@@ -213,6 +251,7 @@ def _fingerprint(payload: Any) -> str:
 
 
 __all__ = [
+    "CANONICAL_EXECUTION_AUTHORITY_MATRIX",
     "CANONICAL_EXECUTION_AUTHORITY_PATH",
     "CANONICAL_EXECUTION_OWNERS",
     "ORCHESTRATION_ONLY_OWNERS",

@@ -27,6 +27,7 @@ from core.runtime.runtime_mutation_gateway import (
 )
 from core.runtime.runtime_state_gateway import governed_runtime_state_record
 from core.runtime.runtime_state_record import RuntimeStateOwner
+from core.runtime.runtime_system_capability import RuntimeCapabilityClass, issue_runtime_system_capability
 
 
 class RuntimeFileService:
@@ -78,11 +79,12 @@ class RuntimeFileService:
         actor = self._identity(lineage=merged_lineage)
         authority = self._authority_scope()
         capability = self._capability_scope()
+        request_id = self._request_id(reason=reason, target_path=target_path)
         result = governed_runtime_write_text(
             workspace_root=self.workspace_root,
             target_path=target_path,
             text=str(text),
-            request_id=self._request_id(reason=reason, target_path=target_path),
+            request_id=request_id,
             identity=actor,
             authority_scope=authority,
             capability_scope=capability,
@@ -94,6 +96,14 @@ class RuntimeFileService:
                 "runtime_file_service": True,
                 "reason": reason,
                 "target_path": str(target_path),
+                "runtime_system_capability": issue_runtime_system_capability(
+                    issuer="RuntimeFileService",
+                    capability_class=RuntimeCapabilityClass.MUTATE,
+                    resource="workspace",
+                    action=operation_type,
+                    scope={"request_id": request_id, "target_path": str(target_path)},
+                    lineage=merged_lineage,
+                ),
             },
         )
         return self._require_committed(result, target_path=target_path, reason=reason)
@@ -123,11 +133,12 @@ class RuntimeFileService:
         actor = self._identity(lineage=merged_lineage)
         authority = self._authority_scope()
         capability = self._capability_scope()
+        request_id = self._request_id(reason=reason, target_path=target_path)
         result = governed_runtime_write_bytes(
             workspace_root=self.workspace_root,
             target_path=target_path,
             content=bytes(content),
-            request_id=self._request_id(reason=reason, target_path=target_path),
+            request_id=request_id,
             identity=actor,
             authority_scope=authority,
             capability_scope=capability,
@@ -139,6 +150,14 @@ class RuntimeFileService:
                 "runtime_file_service": True,
                 "reason": reason,
                 "target_path": str(target_path),
+                "runtime_system_capability": issue_runtime_system_capability(
+                    issuer="RuntimeFileService",
+                    capability_class=RuntimeCapabilityClass.MUTATE,
+                    resource="workspace",
+                    action=operation_type,
+                    scope={"request_id": request_id, "target_path": str(target_path)},
+                    lineage=merged_lineage,
+                ),
             },
         )
         return self._require_committed(result, target_path=target_path, reason=reason)

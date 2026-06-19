@@ -343,6 +343,8 @@ class RuntimeDispatcher:
             "capability_issuer": "RuntimeDispatcher",
             "dispatch_path": "Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor",
             "live_capability_issued": True,
+            "execution_authority_gate_required": True,
+            "direct_execution": False,
         }
         result = self.task_runner.run_task(task=boundary_task, current_tick=current_tick)
         return _transport_value(result) if isinstance(result, Mapping) else result

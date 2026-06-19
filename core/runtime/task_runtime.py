@@ -9851,6 +9851,12 @@ def _zero_v920_run_readonly_command_execution_gate(
 
     try:
         argv = list(argv_plan["argv"])
+        from core.runtime.runtime_execution_authority_gate import enforce_execution_authority
+        enforce_execution_authority(
+            source="core.runtime.execution_gateway",
+            action_type="command",
+            metadata={"side_effect": True, "delegated_from": "TaskRuntime.readonly_command_gate"},
+        )
         from core.runtime.execution_gateway import safe_subprocess_run
 
         completed = safe_subprocess_run(
@@ -10815,6 +10821,12 @@ def replay_readonly_execution_from_registry(
         )
 
     try:
+        from core.runtime.runtime_execution_authority_gate import enforce_execution_authority
+        enforce_execution_authority(
+            source="core.runtime.execution_gateway",
+            action_type="command",
+            metadata={"side_effect": True, "delegated_from": "TaskRuntime.readonly_replay_gate"},
+        )
         from core.runtime.execution_gateway import safe_subprocess_run
 
         completed = safe_subprocess_run(

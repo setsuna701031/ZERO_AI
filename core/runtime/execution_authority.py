@@ -18,6 +18,17 @@ REQUIRED_AUTHORITY_METADATA_FIELDS = (
 
 ALLOWED_APPROVAL_STATES = {"approved", "allowed", "preapproved"}
 
+EXECUTION_AUTHORITY_INVENTORY = (
+    {"surface": "RuntimeDispatcher.dispatch", "role": "ISSUER", "execute": False, "gate_required": False, "capability_required": False},
+    {"surface": "TaskRunner.run_task", "role": "DELEGATE", "execute": False, "gate_required": True, "capability_required": True},
+    {"surface": "TaskRunner._run_one_step", "role": "DELEGATE", "execute": False, "gate_required": True, "capability_required": True},
+    {"surface": "TaskRuntime.readonly_command_gate", "role": "DISPATCH", "execute": False, "gate_required": True, "capability_required": False},
+    {"surface": "StepExecutor.execute_step", "role": "EXECUTE", "execute": True, "gate_required": True, "capability_required": True},
+    {"surface": "execution_gateway.safe_subprocess_run", "role": "EXECUTE", "execute": True, "gate_required": True, "capability_required": False},
+    {"surface": "Executor.execute_request", "role": "EXECUTE", "execute": True, "gate_required": True, "capability_required": False},
+    {"surface": "runtime_native_execution_path", "role": "DESCRIBE", "execute": False, "gate_required": False, "capability_required": False},
+)
+
 
 def validate_authority_metadata(
     metadata: Mapping[str, Any] | None,
@@ -60,6 +71,12 @@ def validate_authority_metadata(
             }
 
     payload = dict(metadata or {})
+    if payload.get("descriptive_only") or payload.get("compatibility_authority_adapter"):
+        return _with_invariant({
+            "ok": False,
+            "reason": "authority_metadata_is_not_execution_authority",
+            "missing_fields": [],
+        })
     missing = [
         key
         for key in REQUIRED_AUTHORITY_METADATA_FIELDS
@@ -199,12 +216,6 @@ def normalize_authority_metadata(
             context_payload.get("policy_result"),
             task_payload.get("policy_result"),
         )
-    if not policy_result:
-        policy_result = {
-            "allowed": True,
-            "decision": "allow",
-            "source": "compatibility_authority_adapter",
-        }
 
     task_id = _first_text(
         payload.get("task_id"),
@@ -284,12 +295,13 @@ def normalize_authority_metadata(
         "step_id": step_id,
         "authority_source": _first_text(payload.get("authority_source"), authority_source),
         "runtime_session": runtime_session,
-        "approval_state": _first_text(payload.get("approval_state"), "approved"),
+        "approval_state": _first_text(payload.get("approval_state")),
         "policy_result": policy_result,
         "trace_id": trace_id,
         "authority_status": _first_text(payload.get("authority_status"), payload.get("status"), "allowed"),
         "action_type": _first_text(payload.get("action_type"), action_type),
-        "compatibility_authority_adapter": True,
+        "compatibility_authority_adapter": not has_explicit_authority,
+        "descriptive_only": not has_explicit_authority,
     }
     return normalized
 
@@ -302,3 +314,8 @@ def ensure_authority_metadata(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     normalized = normalize_authority_metadata(metadata, **kwargs)
     return normalized, validate_authority_metadata(normalized, surface=surface)
+
+
+def execution_authority_inventory() -> tuple[dict[str, Any], ...]:
+    """Return the finite execute/run/dispatch authority inventory."""
+    return tuple(dict(entry) for entry in EXECUTION_AUTHORITY_INVENTORY)

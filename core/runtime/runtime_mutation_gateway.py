@@ -89,9 +89,11 @@ class RuntimeMutationGateway:
     def mutate(self, request: RuntimeMutationRequest) -> RuntimeMutationTransactionResult:
         if request.identity is not None and str(request.identity.identity_type or "").upper() == "SYSTEM":
             try:
+                system_capability = request.metadata.get("runtime_system_capability")
+                capability_issuer = getattr(system_capability, "issuer", "")
                 validate_runtime_system_capability(
-                    request.metadata.get("runtime_system_capability"),
-                    issuer="RuntimeMutationGateway",
+                    system_capability,
+                    issuer=str(capability_issuer),
                     capability_class=RuntimeCapabilityClass.MUTATE,
                     resource="workspace",
                     action=request.operation_type,

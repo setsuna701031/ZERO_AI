@@ -57,6 +57,7 @@ SYSTEM_CAPABILITY_ISSUERS: dict[str, frozenset[RuntimeCapabilityClass]] = {
     "TaskRunner": frozenset({RuntimeCapabilityClass.EXECUTE, RuntimeCapabilityClass.ROLLBACK, RuntimeCapabilityClass.RECOVERY}),
     "TaskRuntime": frozenset({RuntimeCapabilityClass.WRITE, RuntimeCapabilityClass.ROLLBACK, RuntimeCapabilityClass.RECOVERY}),
     "RuntimeMutationGateway": frozenset({RuntimeCapabilityClass.MUTATE, RuntimeCapabilityClass.ROLLBACK}),
+    "RuntimeFileService": frozenset({RuntimeCapabilityClass.MUTATE}),
 }
 
 

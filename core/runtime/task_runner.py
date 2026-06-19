@@ -37,6 +37,7 @@ from core.runtime.runtime_system_capability import (
     issue_runtime_system_capability,
     validate_runtime_system_capability,
 )
+from core.runtime.runtime_execution_authority_gate import enforce_execution_authority
 
 try:
     from core.runtime.mutation_integration import MutationRuntimeIntegration
@@ -2227,6 +2228,19 @@ class TaskRunner:
             authority_context=authority_context,
         )
         if result is None:
+            enforce_execution_authority(
+                source="core.runtime.step_executor",
+                action_type=str(step.get("type") or step.get("action") or "execute"),
+                metadata={
+                    "side_effect": str(step.get("type") or step.get("action") or "").lower() not in self.READ_ONLY_STEP_TYPES,
+                    "execution_authority_gate": "task_runner_pre_execution",
+                    "runtime_execution_capability": authority_context.get("runtime_execution_capability"),
+                    "task_id": str(task.get("task_id") or task.get("id") or ""),
+                    "step_id": str(step.get("id") or step.get("step_id") or f"{task.get('task_id')}:step"),
+                    "package_id": str(task.get("package_id") or task.get("work_package_id") or ""),
+                    "session_id": str(task.get("session_id") or task.get("runtime_session") or ""),
+                },
+            )
             result = self.step_executor.execute_step(
                 task=task,
                 step=step,
@@ -3787,6 +3801,15 @@ class TaskRunner:
                 blocked_commands.append(item)
                 failed_commands.append(item)
                 continue
+            enforce_execution_authority(
+                source="core.runtime.execution_gateway",
+                action_type="command",
+                metadata={
+                    "side_effect": True,
+                    "delegated_from": "TaskRunner._run_regression_verify_phase",
+                    "task_id": str(task.get("task_id") or task.get("id") or ""),
+                },
+            )
             completed = safe_subprocess_run(
                 guard["argv"],
                 cwd=self._resolve_target_repo_root(task=task, state=state) or os.getcwd(),
@@ -5172,6 +5195,11 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         or state.get("runtime_execution_capability")
         or upstream_context.get("runtime_execution_capability")
     )
+    system_capability = (
+        task.get("runtime_system_capability")
+        or state.get("runtime_system_capability")
+        or upstream_context.get("runtime_system_capability")
+    )
     task_id = _zero_boundary_norm_text(task.get("task_id") or task.get("id") or state.get("task_id"))
     step_id = _zero_boundary_norm_text(step.get("id") or step.get("step_id") or f"{task_id}:step")
     try:
@@ -5195,6 +5223,7 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
             "execution_authority": {},
             "received_authority": copy.deepcopy(incoming),
             "authority_chain": [],
+            "runtime_system_capability": system_capability,
         }
     return {
         "authority_phase": "taskrunner_delegation",
@@ -5208,6 +5237,7 @@ def _zero_boundary_build_taskrunner_authority_context(self, task=None, state=Non
         "can_execute_privileged_step": True,
         "escalated": False,
         "runtime_execution_capability": capability,
+        "runtime_system_capability": system_capability,
         "execution_authority": {
             "task_id": task_id,
             "step_id": step_id,
