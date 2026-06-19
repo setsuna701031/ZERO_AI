@@ -168,7 +168,7 @@ class EngineeringGoalLoop:
     ) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
         resolved_session_id = _clean_text(session_id, f"goal-session-{target_goal_id}")
-        resolved_runtime_session_id = _clean_text(runtime_session_id, resolved_session_id)
+        resolved_runtime_session_id = _clean_text(runtime_session_id, f"goal-runtime-session-{target_goal_id}")
         current_lineage = extract_goal_lineage(
             {
                 "root_goal_id": target_goal_id,

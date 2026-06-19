@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.runtime_recovery_queue import (
     RECOVERY_TICKET_STATUS_COMPLETED,
     RECOVERY_TICKET_STATUS_ESCALATED,
@@ -160,13 +161,8 @@ class RuntimeRecoveryOrchestrator:
             or incident.get("task_id")
             or "runtime-global"
         )
-        source_session_id = str(
-            incident.get("source_session_id")
-            or incident.get("session_id")
-            or incident.get("runtime_session_id")
-            or incident.get("task_id")
-            or ""
-        )
+        runtime_identity = extract_runtime_identity(incident, reject_conflicts=True)
+        source_session_id = str(runtime_identity.get("source_session_id") or "")
         task_id = str(incident.get("task_id") or "")
         recovery_id = str(incident.get("recovery_id") or "").strip()
         if not recovery_id:

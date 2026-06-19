@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
+
 try:
     from core.runtime.runtime_recovery_authority import (
         AUTHORITY_APPLY_STATUS_APPLIED,
@@ -74,10 +76,11 @@ def _normalize_failure_payload(
     if not error and failure_message:
         error = failure_message
 
+    runtime_identity = extract_runtime_identity(state, reject_conflicts=True)
     return {
         "task_id": _text(state.get("task_id"), task.get("task_id"), task.get("id")),
         "task_name": _text(state.get("task_name"), task.get("name")),
-        "source_session_id": _text(state.get("session_id"), state.get("source_session_id")),
+        "source_session_id": runtime_identity.get("source_session_id", ""),
         "failure_type": _text(failure_type, state.get("failure_type"), result.get("failure_type"), default="runtime_failure"),
         "failure_message": _text(failure_message, state.get("failure_message"), result.get("message"), result.get("error"), default=str(error or "")),
         "error": copy.deepcopy(error),
@@ -214,12 +217,10 @@ class RuntimeFailureRecoveryHook:
             failure.get("recovery_id"),
             default="runtime-recovery-" + _stable_fingerprint({"state": state_payload, "failure": failure})[:12],
         )
-        source_session_id = _text(
-            meta.get("source_session_id"),
-            state_payload.get("session_id"),
-            state_payload.get("source_session_id"),
-            failure.get("source_session_id"),
-        )
+        source_session_id = extract_runtime_identity(
+            {"runtime_identity": state_payload, "metadata": meta},
+            reject_conflicts=True,
+        ).get("source_session_id", "") or _text(failure.get("source_session_id"))
 
         if not self.auto_recover:
             return self._build_result(

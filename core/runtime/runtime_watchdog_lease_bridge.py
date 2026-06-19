@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.runtime_session_lease import (
     SESSION_STATUS_ZOMBIE,
     RuntimeSessionLeaseRegistry,
@@ -34,6 +35,8 @@ class RuntimeWatchdogLeaseIncident:
     incident_type: str
     session_id: str
     task_id: str = ""
+    runtime_session_id: str = ""
+    source_session_id: str = ""
     owner_id: str = ""
     lease_id: str = ""
     current_tick: int = 0
@@ -43,12 +46,20 @@ class RuntimeWatchdogLeaseIncident:
     created_at: str = field(default_factory=utc_timestamp)
 
     def to_dict(self) -> dict[str, Any]:
+        identity = extract_runtime_identity(
+            {
+                "session_id": self.session_id,
+                "runtime_session_id": self.runtime_session_id,
+                "source_session_id": self.source_session_id,
+            },
+            reject_conflicts=True,
+        )
         return {
             "incident_id": self.incident_id,
             "incident_type": self.incident_type,
-            "session_id": self.session_id,
-            "source_session_id": self.session_id,
-            "runtime_session_id": self.session_id,
+            "session_id": identity.get("session_id", ""),
+            "source_session_id": identity.get("source_session_id", ""),
+            "runtime_session_id": identity.get("runtime_session_id", ""),
             "task_id": self.task_id,
             "owner_id": self.owner_id,
             "lease_id": self.lease_id,
@@ -396,11 +407,14 @@ class RuntimeWatchdogLeaseBridge:
         if existing is not None:
             return copy.deepcopy(existing)
 
+        runtime_identity = extract_runtime_identity(session, reject_conflicts=True)
         incident = RuntimeWatchdogLeaseIncident(
             incident_id=incident_id,
             incident_type=incident_type,
             session_id=session_id,
             task_id=str(session.get("task_id") or ""),
+            runtime_session_id=runtime_identity.get("runtime_session_id", ""),
+            source_session_id=runtime_identity.get("source_session_id", ""),
             owner_id=str(session.get("owner_id") or ""),
             lease_id=str(session.get("lease_id") or ""),
             current_tick=int(current_tick),

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
@@ -139,6 +140,8 @@ class RuntimeWatchdogIncident:
     incident_type: str
     session_id: str
     task_id: str = ""
+    runtime_session_id: str = ""
+    source_session_id: str = ""
     current_tick: int = 0
     last_heartbeat_tick: int = 0
     status: str = "open"
@@ -148,12 +151,20 @@ class RuntimeWatchdogIncident:
     created_at: str = field(default_factory=utc_timestamp)
 
     def to_dict(self) -> dict[str, Any]:
+        identity = extract_runtime_identity(
+            {
+                "session_id": self.session_id,
+                "runtime_session_id": self.runtime_session_id,
+                "source_session_id": self.source_session_id,
+            },
+            reject_conflicts=True,
+        )
         return {
             "incident_id": self.incident_id,
             "incident_type": self.incident_type,
-            "session_id": self.session_id,
-            "source_session_id": self.session_id,
-            "runtime_session_id": self.session_id,
+            "session_id": identity.get("session_id", ""),
+            "source_session_id": identity.get("source_session_id", ""),
+            "runtime_session_id": identity.get("runtime_session_id", ""),
             "task_id": self.task_id,
             "current_tick": self.current_tick,
             "last_heartbeat_tick": self.last_heartbeat_tick,
@@ -476,8 +487,10 @@ class RuntimeWatchdog:
                     incident = RuntimeWatchdogIncident(
                         incident_id=str(item.get("incident_id") or ""),
                         incident_type=str(item.get("incident_type") or ""),
-                        session_id=str(item.get("session_id") or item.get("source_session_id") or ""),
+                        session_id=str(item.get("session_id") or ""),
                         task_id=str(item.get("task_id") or ""),
+                        runtime_session_id=str(item.get("runtime_session_id") or ""),
+                        source_session_id=str(item.get("source_session_id") or ""),
                         current_tick=_safe_int(item.get("current_tick"), 0),
                         last_heartbeat_tick=_safe_int(item.get("last_heartbeat_tick"), 0),
                         status=str(item.get("status") or "open"),
@@ -536,12 +549,18 @@ class RuntimeWatchdog:
             }
         )
         self._sessions[session.session_id] = updated_session
+        runtime_identity = extract_runtime_identity(
+            {"session_id": session.session_id, "metadata": session.metadata},
+            reject_conflicts=True,
+        )
 
         incident = RuntimeWatchdogIncident(
             incident_id=incident_id,
             incident_type=incident_type,
             session_id=session.session_id,
             task_id=session.task_id,
+            runtime_session_id=runtime_identity.get("runtime_session_id", ""),
+            source_session_id=runtime_identity.get("source_session_id", ""),
             current_tick=int(current_tick),
             last_heartbeat_tick=session.last_heartbeat_tick,
             payload={"reason": reason, "session": updated_session.to_dict()},

@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
+
 
 RECOVERY_STATUS_PLANNED = "planned"
 RECOVERY_STATUS_ROLLBACK_REQUIRED = "rollback_required"
@@ -229,10 +231,8 @@ def normalize_runtime_failure(
         or payload.get("reason"),
         failure_type,
     )
-    resolved_source_session_id = _string(
-        payload.get("source_session_id") or payload.get("session_id"),
-        source_session_id,
-    )
+    runtime_identity = extract_runtime_identity(payload, reject_conflicts=True)
+    resolved_source_session_id = _string(runtime_identity.get("source_session_id"), source_session_id)
     resolved_task_id = _string(payload.get("task_id"), task_id)
 
     return RuntimeRecoveryFailure(

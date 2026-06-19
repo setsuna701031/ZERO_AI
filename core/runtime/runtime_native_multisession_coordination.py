@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.runtime_native_execution_authority import runtime_native_execution_path
 
@@ -702,7 +703,13 @@ class RuntimeNativeMultiSessionCoordination:
         source = self.get_node(signal.source_node_id)
         target = self.get_node(signal.target_node_id)
 
-        source_session_id = target.source_session_id or target.runtime_id
+        source_session_id = target.source_session_id
+        runtime_identity = extract_runtime_identity(
+            {
+                "runtime_session_id": target.runtime_id,
+                "source_session_id": source_session_id,
+            },
+        )
         task_id = str(signal.payload.get("task_id") or "")
         incident_id = "coordination-recovery-incident-" + stable_coordination_fingerprint(signal.to_dict())[:16]
 
@@ -719,7 +726,8 @@ class RuntimeNativeMultiSessionCoordination:
             "incident_id": incident_id,
             "incident_type": "cross_runtime_recovery_request",
             "source_session_id": source_session_id,
-            "runtime_session_id": source_session_id,
+            "session_id": runtime_identity.get("session_id", ""),
+            "runtime_session_id": runtime_identity["runtime_session_id"],
             "task_id": task_id,
             "event_type": "failure",
             "payload": {

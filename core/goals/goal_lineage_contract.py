@@ -27,6 +27,12 @@ RUNTIME_IDENTITY_FIELDS = (
     "runtime_session_id",
 )
 
+SESSION_IDENTITY_FIELDS = (
+    "session_id",
+    "runtime_session_id",
+    "source_session_id",
+)
+
 _NESTED_KEYS = (
     "goal_lineage",
     "runtime_identity",
@@ -81,17 +87,14 @@ def extract_runtime_identity(
     value: Mapping[str, Any] | None,
     *,
     require_complete: bool = False,
+    reject_conflicts: bool = False,
 ) -> dict[str, str]:
     """Extract strict runtime identity without manufacturing runtime_session_id.
 
     This helper is the Runtime Identity Authority V2 staging boundary.
 
-    Compatibility note:
-    - ``extract_goal_lineage`` still preserves the historical
-      ``runtime_session_id or session_id`` fallback.
-    - This helper does not perform that fallback. A missing
-      ``runtime_session_id`` remains missing and can be rejected by
-      authority boundaries that opt into strict runtime identity.
+    A missing ``runtime_session_id`` remains missing and can be rejected by
+    authority boundaries that opt into strict runtime identity.
     """
 
     if not isinstance(value, Mapping):
@@ -100,10 +103,23 @@ def extract_runtime_identity(
         return {}
 
     sources = _sources(value)
+    if reject_conflicts:
+        conflicts = [
+            field
+            for field in SESSION_IDENTITY_FIELDS
+            if len(list(dict.fromkeys(
+                _text(source.get(field))
+                for source in sources
+                if _text(source.get(field))
+            ))) > 1
+        ]
+        if conflicts:
+            raise ValueError("session_identity_conflicting_fields:" + ",".join(conflicts))
     identity = {
         "schema": RUNTIME_IDENTITY_SCHEMA,
         "session_id": _first(sources, "session_id", "operator_session_id", "persistent_operator_session_id"),
         "runtime_session_id": _first(sources, "runtime_session_id"),
+        "source_session_id": _first(sources, "source_session_id"),
     }
     result = {key: copy.deepcopy(item) for key, item in identity.items() if _text(item)}
     if require_complete:
@@ -113,17 +129,40 @@ def extract_runtime_identity(
     return result
 
 
-def extract_goal_lineage(value: Mapping[str, Any] | None, *, require_complete: bool = False) -> dict[str, str]:
+def extract_goal_lineage(
+    value: Mapping[str, Any] | None,
+    *,
+    require_complete: bool = False,
+    reject_conflicts: bool = False,
+) -> dict[str, str]:
     if not isinstance(value, Mapping):
         if require_complete:
             raise ValueError("goal_lineage_requires_mapping")
         return {}
     sources = _sources(value)
+    if reject_conflicts:
+        conflicts: list[str] = []
+        nested_lineage = value.get("goal_lineage")
+        conflict_sources = [value]
+        if isinstance(nested_lineage, Mapping):
+            conflict_sources.append(nested_lineage)
+        for field in GOAL_LINEAGE_FIELDS:
+            values = list(
+                dict.fromkeys(
+                    _text(source.get(field))
+                    for source in conflict_sources
+                    if _text(source.get(field))
+                )
+            )
+            if len(values) > 1:
+                conflicts.append(field)
+        if conflicts:
+            raise ValueError("goal_lineage_conflicting_fields:" + ",".join(conflicts))
     goal_id = _first(sources, "goal_id", "child_goal_id")
     source_goal_id = _first(sources, "source_goal_id", "continuation_source_goal_id")
     root_goal_id = _first(sources, "root_goal_id") or source_goal_id or goal_id
     session_id = _first(sources, "session_id", "operator_session_id", "persistent_operator_session_id")
-    runtime_session_id = _first(sources, "runtime_session_id") or session_id
+    runtime_session_id = _first(sources, "runtime_session_id")
     branch_type = _first(sources, "branch_type")
     continuation_id = _first(sources, "continuation_id", "continuation_task_id", "continuation_goal_id")
     replan_id = _first(sources, "replan_id", "replan_request_id")
@@ -210,6 +249,7 @@ __all__ = [
     "GOAL_LINEAGE_SCHEMA",
     "RUNTIME_IDENTITY_FIELDS",
     "RUNTIME_IDENTITY_SCHEMA",
+    "SESSION_IDENTITY_FIELDS",
     "attach_goal_lineage",
     "build_goal_lineage_id",
     "canonical_work_identity",

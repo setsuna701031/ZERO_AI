@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 
 
@@ -300,12 +301,8 @@ class RuntimeSupervisor:
             incident_id = "runtime-supervisor-incident-" + stable_supervisor_fingerprint(incident)[:16]
 
         incident_type = str(incident.get("incident_type") or incident.get("type") or "runtime_unknown_incident")
-        source_session_id = str(
-            incident.get("source_session_id")
-            or incident.get("runtime_session_id")
-            or incident.get("session_id")
-            or ""
-        )
+        runtime_identity = extract_runtime_identity(incident, reject_conflicts=True)
+        source_session_id = str(runtime_identity.get("source_session_id") or "")
         task_id = str(incident.get("task_id") or "")
         classification = self.policy.classify(incident)
 

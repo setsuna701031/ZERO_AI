@@ -16,7 +16,12 @@ def test_watchdog_detects_stalled_session(tmp_path):
         dead_after_ticks=10,
     )
 
-    watchdog.register_session("session-1", task_id="task-1", current_tick=1)
+    watchdog.register_session(
+        "session-1",
+        task_id="task-1",
+        current_tick=1,
+        metadata={"runtime_session_id": "runtime-1", "source_session_id": "source-1"},
+    )
     watchdog.heartbeat("session-1", task_id="task-1", current_tick=1)
 
     result = watchdog.tick(current_tick=4, submit_to_recovery=False)
@@ -24,7 +29,9 @@ def test_watchdog_detects_stalled_session(tmp_path):
     assert result["ok"] is True
     assert result["incident_count"] == 1
     assert result["incidents"][0]["incident_type"] == WATCHDOG_INCIDENT_TYPE_STALLED
-    assert result["incidents"][0]["source_session_id"] == "session-1"
+    assert result["incidents"][0]["session_id"] == "session-1"
+    assert result["incidents"][0]["runtime_session_id"] == "runtime-1"
+    assert result["incidents"][0]["source_session_id"] == "source-1"
 
 
 def test_watchdog_detects_dead_session(tmp_path):
@@ -76,14 +83,19 @@ def test_watchdog_submits_incident_to_recovery_orchestrator(tmp_path):
         orchestrator=orchestrator,
     )
 
-    watchdog.register_session("session-4", task_id="task-4", current_tick=1)
+    watchdog.register_session(
+        "session-4",
+        task_id="task-4",
+        current_tick=1,
+        metadata={"runtime_session_id": "runtime-4", "source_session_id": "source-4"},
+    )
     watchdog.heartbeat("session-4", task_id="task-4", current_tick=1)
 
     result = watchdog.tick(current_tick=3, submit_to_recovery=True)
 
     assert result["incident_count"] == 1
     assert len(result["submitted_recovery_tickets"]) == 1
-    assert result["submitted_recovery_tickets"][0]["source_session_id"] == "session-4"
+    assert result["submitted_recovery_tickets"][0]["source_session_id"] == "source-4"
 
     recovery_results = orchestrator.consume_ready(current_tick=3)
     assert len(recovery_results) == 1

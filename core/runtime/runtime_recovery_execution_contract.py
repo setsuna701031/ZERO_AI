@@ -6,6 +6,7 @@ import json
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
+from core.goals.goal_lineage_contract import extract_runtime_identity
 from core.runtime.runtime_recovery_approval import (
     APPROVAL_APPROVE,
     APPROVAL_DEFER,
@@ -661,7 +662,8 @@ class RuntimeRecoveryExecutionContractBuilder:
             or payload.get("task_id")
             or "runtime-recovery-contract"
         )
-        source_session_id = self._safe_text(payload.get("source_session_id") or payload.get("session_id") or payload.get("transaction_id") or "")
+        runtime_identity = extract_runtime_identity(payload, reject_conflicts=True)
+        source_session_id = self._safe_text(runtime_identity.get("source_session_id") or "")
         task_id = self._safe_text(payload.get("task_id") or "")
         status = self._safe_text(payload.get("status") or "failed")
         plan = build_runtime_recovery_plan(

@@ -44,8 +44,10 @@ def test_strict_runtime_identity_rejects_missing_runtime_session_id() -> None:
         "session_id": "session-a",
     }
 
-    compatible = extract_goal_lineage(legacy_lineage, require_complete=True)
-    assert compatible["runtime_session_id"] == "session-a"
+    with pytest.raises(ValueError) as lineage_exc:
+        extract_goal_lineage(legacy_lineage, require_complete=True)
+
+    assert str(lineage_exc.value) == "goal_lineage_missing_fields:runtime_session_id"
 
     with pytest.raises(ValueError) as exc:
         extract_runtime_identity(legacy_lineage, require_complete=True)

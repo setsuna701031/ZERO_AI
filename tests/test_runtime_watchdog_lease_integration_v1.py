@@ -63,13 +63,16 @@ def test_watchdog_lease_bridge_emits_lease_expired_incident(tmp_path):
         "owner-a",
         task_id="task-2",
         current_tick=1,
+        metadata={"runtime_session_id": "runtime-2", "source_session_id": "source-2"},
     )
 
     result = bridge.tick(current_tick=4, submit_to_recovery=False)
 
     assert result["incident_count"] == 1
     assert result["incidents"][0]["incident_type"] == BRIDGE_INCIDENT_TYPE_LEASE_EXPIRED
-    assert result["incidents"][0]["source_session_id"] == "session-2"
+    assert result["incidents"][0]["session_id"] == "session-2"
+    assert result["incidents"][0]["runtime_session_id"] == "runtime-2"
+    assert result["incidents"][0]["source_session_id"] == "source-2"
 
 
 def test_watchdog_lease_bridge_emits_zombie_incident(tmp_path):
@@ -113,12 +116,13 @@ def test_watchdog_lease_bridge_submits_to_recovery_orchestrator(tmp_path):
         "owner-a",
         task_id="task-4",
         current_tick=1,
+        metadata={"runtime_session_id": "runtime-4", "source_session_id": "source-4"},
     )
 
     result = bridge.tick(current_tick=4, submit_to_recovery=True)
 
     assert len(result["submitted_recovery_tickets"]) == 1
-    assert result["submitted_recovery_tickets"][0]["source_session_id"] == "session-4"
+    assert result["submitted_recovery_tickets"][0]["source_session_id"] == "source-4"
 
     recovery_results = orchestrator.consume_ready(current_tick=4)
     assert len(recovery_results) == 1
