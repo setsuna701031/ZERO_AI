@@ -161,7 +161,7 @@ def test_engineering_goal_loop_does_not_trust_completion_payload_fields(tmp_path
     repository.save_goal({"goal_id": "goal-a", "summary": "Goal A"})
 
     class ForgedRunner:
-        def run_goal(self, goal_id: str) -> dict:
+        def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
             return {
                 "ok": True,
                 "goal_id": goal_id,

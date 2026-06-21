@@ -11,12 +11,11 @@ SCAN_ROOTS = (
     ROOT / "core" / "adaptive",
 )
 
+CANONICAL_OWNER_SYMBOL = "core.runtime.task_runtime.project_runtime_status"
+
 ALLOWED_FILES = {
     "core/runtime/runtime_state_machine.py",
     "core/runtime/task_runtime.py",
-    "core/runtime/runtime_dispatcher.py",
-    "core/runtime/runtime_session_resume.py",
-    "core/tasks/task_state.py",
 }
 
 TRACKED_STATUS_TARGETS = {
@@ -37,7 +36,7 @@ TRACKED_STATUS_TARGETS = {
     "updated_task",
 }
 
-EXPECTED_HIGH_RISK_FILES = {
+CANONICAL_PROJECTION_CLIENTS = {
     "core/adaptive/adaptive_runtime_resume.py",
     "core/runtime/persistent_runtime_orchestrator.py",
     "core/runtime/runtime_recovery_continuation.py",
@@ -107,14 +106,46 @@ def test_runtime_status_ownership_inventory_is_explicit() -> None:
             if writes:
                 findings[rel] = writes
 
-    high_risk = set(findings)
-
-    assert EXPECTED_HIGH_RISK_FILES <= high_risk, {
-        "missing_expected_high_risk_files": sorted(EXPECTED_HIGH_RISK_FILES - high_risk),
-        "found": sorted(findings),
+    assert not findings, {
+        "unexpected_direct_status_writers": findings,
+        "canonical_owner": CANONICAL_OWNER_SYMBOL,
+        "required_boundary": "project_runtime_status(...) or runtime state-machine APIs",
     }
 
 
 def test_runtime_status_owner_files_exist() -> None:
     for rel in ALLOWED_FILES:
         assert (ROOT / rel).exists(), rel
+
+
+def test_runtime_status_projection_owner_is_canonical() -> None:
+    source = (ROOT / "core/runtime/task_runtime.py").read_text(encoding="utf-8-sig")
+    tree = ast.parse(source)
+    owner = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "project_runtime_status"),
+        None,
+    )
+
+    assert owner is not None, CANONICAL_OWNER_SYMBOL
+    assert any(
+        isinstance(node, (ast.Assign, ast.AnnAssign))
+        and any(
+            isinstance(target, ast.Subscript) and _status_key(target.slice)
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        )
+        for node in ast.walk(owner)
+    ), "canonical owner must perform the status projection"
+
+
+def test_historical_status_writers_are_canonical_projection_clients() -> None:
+    missing: list[str] = []
+
+    for rel in sorted(CANONICAL_PROJECTION_CLIENTS):
+        path = ROOT / rel
+        if not path.exists() or "project_runtime_status(" not in path.read_text(encoding="utf-8-sig"):
+            missing.append(rel)
+
+    assert not missing, {
+        "missing_canonical_projection_clients": missing,
+        "canonical_owner": CANONICAL_OWNER_SYMBOL,
+    }

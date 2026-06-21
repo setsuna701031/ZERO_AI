@@ -66,34 +66,34 @@ class StepExecutor:
     """
     ZERO Step Executor
 
-    本版重點：
-    1. step handler 輸出統一 envelope
-    2. unsupported / exception 錯誤格式統一
-    3. execute_steps 批次結果格式統一
-    4. 與目前 tool registry 的 outer/inner ok 結構對齊
-    5. 直接在 StepExecutor 內接管 llm / llm_generate，修正 document flow 的 {{file_content}} 注入
-    6. 補 execution contract 收束：message / final_answer / normalized payload
-    7. 保留既有 batch summary contract：failed_step / completed_steps 維持舊測試語意
-    8. 新增最小可用 retry：僅在 StepExecutor.execute_step 統一重試，避免責任散落
-    9. 錯誤分類改為看整個 failed result（error + stderr + stdout + returncode）
-    10. command_failed 分流：
-        - fatal -> 1 次
-        - generic -> 2 次
-        - transient -> 依設定次數
-    11. execution_trace 由 StepExecutor 統一產生，作為正式 trace source
-    12. command cwd policy 收束：
-        - 預設 command 在 project root 執行
-        - 僅 command_cwd / cwd_override / run_in_task_dir=True 才覆蓋
-        - 一般 task/context 注入進來的 cwd 不算 explicit command cwd
-    13. command result contract 收束：
-        - 原始 step 保持原樣，不再把誤導性的 cwd 混進 step record
-        - 真正執行 cwd 統一寫到 result.effective_cwd 與 result.result.cwd
-    14. command stdout/result normalization：
-        - 保留完整 stdout / stderr
-        - 補 output_text / parsed_output
-    15. command message/final_answer summarization：
-        - message / final_answer 不再塞整包 JSON
-        - 改為短摘要
+    ?祉???嚗?
+    1. step handler 頛詨蝯曹? envelope
+    2. unsupported / exception ?航炊?澆?蝯曹?
+    3. execute_steps ?寞活蝯??澆?蝯曹?
+    4. ???tool registry ??outer/inner ok 蝯?撠?
+    5. ?湔??StepExecutor ?扳蝞?llm / llm_generate嚗耨甇?document flow ??{{file_content}} 瘜典
+    6. 鋆?execution contract ?嗆?嚗essage / final_answer / normalized payload
+    7. 靽??Ｘ? batch summary contract嚗ailed_step / completed_steps 蝬剜??葫閰西???
+    8. ?啣??撠??retry嚗???StepExecutor.execute_step 蝯曹??岫嚗?痊隞餅??
+    9. ?航炊???寧???failed result嚗rror + stderr + stdout + returncode嚗?
+    10. command_failed ??嚗?
+        - fatal -> 1 甈?
+        - generic -> 2 甈?
+        - transient -> 靘身摰活??
+    11. execution_trace ??StepExecutor 蝯曹??Ｙ?嚗??箸迤撘?trace source
+    12. command cwd policy ?嗆?嚗?
+        - ?身 command ??project root ?瑁?
+        - ??command_cwd / cwd_override / run_in_task_dir=True ????
+        - 銝??task/context 瘜典?脖???cwd 銝? explicit command cwd
+    13. command result contract ?嗆?嚗?
+        - ?? step 靽??見嚗???隤文??抒? cwd 瘛琿?step record
+        - ?迤?瑁? cwd 蝯曹?撖怠 result.effective_cwd ??result.result.cwd
+    14. command stdout/result normalization嚗?
+        - 靽?摰 stdout / stderr
+        - 鋆?output_text / parsed_output
+    15. command message/final_answer summarization嚗?
+        - message / final_answer 銝?憛??JSON
+        - ?寧?剜?閬?
     """
 
     def __init__(
@@ -713,8 +713,8 @@ class StepExecutor:
         aggregate_result = {
             "ok": True,
             "summary": "all steps executed",
-            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
-            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
+            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "?瑁?摰?",
+            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "?瑁?摰?",
             "step_count": total_steps,
             "completed_steps": total_steps,
             "failed_step": None,
@@ -1723,15 +1723,15 @@ class StepExecutor:
 
         if step_type == "write_file":
             path = str(result.get("path") or "").strip()
-            return f"已寫入檔案：{path}" if path else "已寫入檔案"
+            return f"撌脣神?交?獢?{path}" if path else "撌脣神?交?獢?
 
         if step_type in {"append_file", "workspace_append"}:
             path = str(result.get("path") or "").strip()
-            return f"已追加檔案：{path}" if path else "已追加檔案"
+            return f"撌脰蕭??獢?{path}" if path else "撌脰蕭??獢?
 
         if step_type == "read_file":
             path = str(result.get("path") or "").strip()
-            return f"已讀取檔案：{path}" if path else "已讀取檔案"
+            return f"撌脰???獢?{path}" if path else "撌脰???獢?
 
         if step_type in {"verify", "verify_file"}:
             return "verify ok"
@@ -1744,9 +1744,9 @@ class StepExecutor:
             return "command executed successfully"
 
         if step_type in {"llm", "llm_generate"}:
-            return "LLM 已完成回應"
+            return "LLM 撌脣?????
 
-        return "執行完成"
+        return "?瑁?摰?"
 
     def _extract_final_answer_from_inner_result(
         self,
@@ -1773,7 +1773,7 @@ class StepExecutor:
 
     def _extract_step_message(self, result: Any, failed: bool) -> str:
         if not isinstance(result, dict):
-            return "執行失敗" if failed else "執行完成"
+            return "?瑁?憭望?" if failed else "?瑁?摰?"
 
         value = result.get("message")
         if isinstance(value, str) and value.strip():
@@ -1785,11 +1785,11 @@ class StepExecutor:
             if isinstance(msg, str) and msg.strip():
                 return msg.strip()
 
-        return "執行失敗" if failed else "執行完成"
+        return "?瑁?憭望?" if failed else "?瑁?摰?"
 
     def _extract_step_final_answer(self, result: Any, failed: bool) -> str:
         if not isinstance(result, dict):
-            return "執行失敗" if failed else "執行完成"
+            return "?瑁?憭望?" if failed else "?瑁?摰?"
 
         value = result.get("final_answer")
         if isinstance(value, str) and value.strip():
@@ -3328,7 +3328,7 @@ class StepExecutor:
             #   previous_result["result"]["content"]
             #   previous_result["result"]["result"]["content"]
             # while the outer "message" / "final_answer" may only be a status
-            # such as "已讀取檔案".  File Chain v3 depends on the real file
+            # such as "撌脰???獢?.  File Chain v3 depends on the real file
             # content being injected into the LLM prompt.
             for nested_key in ("result", "output", "data", "payload", "raw", "previous_result"):
                 nested = payload.get(nested_key)
@@ -3769,7 +3769,7 @@ class StepExecutor:
                 return True
 
             message = str(payload.get("message") or "").strip().lower()
-            if message and message not in {"step failed", "執行失敗"}:
+            if message and message not in {"step failed", "?瑁?憭望?"}:
                 return True
 
             return False
@@ -6296,7 +6296,7 @@ def _zero_v7313_infer_visible_step_ok(result, step):
         return True
 
     message = str(result.get("message") or "").strip().lower()
-    if message and message not in {"step failed", "執行失敗"}:
+    if message and message not in {"step failed", "?瑁?憭望?"}:
         return True
 
     return False
@@ -6485,7 +6485,7 @@ def _zero_v7313_execute_step_with_runtime_execution_result(
         result["error"] = None
         result["error_type"] = ""
         if not result.get("message") or "unexpected keyword argument 'execution_id'" in str(result.get("message")).lower():
-            result["message"] = "執行完成"
+            result["message"] = "?瑁?摰?"
         if not result.get("final_answer") or "unexpected keyword argument 'execution_id'" in str(result.get("final_answer")).lower():
             result["final_answer"] = result["message"]
     result["evidence"] = copy.deepcopy(runtime_payload["evidence"])
@@ -6730,7 +6730,7 @@ def _zero_v7329_success_signal(result, step):
         return True
 
     message = str(result.get("message") or "").strip().lower()
-    if message and message not in {"step failed", "執行失敗"}:
+    if message and message not in {"step failed", "?瑁?憭望?"}:
         return True
 
     return False
@@ -6854,7 +6854,7 @@ def _zero_v7329_execute_step_final_public_abi(
         result["error"] = None
         result["error_type"] = ""
         if not result.get("message") or "unexpected keyword argument 'execution_id'" in str(result.get("message")).lower():
-            result["message"] = "執行完成"
+            result["message"] = "?瑁?摰?"
         if not result.get("final_answer") or "unexpected keyword argument 'execution_id'" in str(result.get("final_answer")).lower():
             result["final_answer"] = result["message"]
     result["evidence"] = copy.deepcopy(runtime_payload["evidence"])
@@ -8999,8 +8999,8 @@ def _zero_direct_llm_execute_step_contract_seal(
             "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
             "step": copy.deepcopy(raw_step or {}),
             "result": copy.deepcopy(raw_result),
-            "message": message if message else ("LLM 已完成回應" if ok else "llm step failed"),
-            "final_answer": final_answer if final_answer else (message if message else ("LLM 已完成回應" if ok else "llm step failed")),
+            "message": message if message else ("LLM 撌脣????? if ok else "llm step failed"),
+            "final_answer": final_answer if final_answer else (message if message else ("LLM 撌脣????? if ok else "llm step failed")),
             "error": None if ok else copy.deepcopy(raw_result.get("error") or {
                 "type": "llm_step_failed",
                 "message": message or "llm step failed",
@@ -9013,7 +9013,7 @@ def _zero_direct_llm_execute_step_contract_seal(
                     "step_type": step_type,
                     "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
                     "ok": ok,
-                    "message": message if message else ("LLM 已完成回應" if ok else "llm step failed"),
+                    "message": message if message else ("LLM 撌脣????? if ok else "llm step failed"),
                     "final_answer": final_answer if final_answer else message,
                     "error_type": None if ok else "llm_step_failed",
                     "attempts": 1,
@@ -9394,8 +9394,111 @@ def _zero_boundary_build_document_pipeline_authority(step, task):
         "reason": "controlled_document_pipeline_authority",
     }
 
+def _runtime_step_auth_mapping(value: Any) -> Dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _runtime_step_auth_explicit_denial(*sources: Any) -> bool:
+    soft_reasons = {
+        "missing_authority_metadata",
+        "authority_metadata_missing",
+        "authority_metadata_incomplete",
+        "authority_metadata_is_not_execution_authority",
+    }
+    for source in sources:
+        data = _runtime_step_auth_mapping(source)
+        if data.get("execution_authority_granted") is False:
+            return True
+        validation = data.get("authority_validation")
+        if isinstance(validation, dict) and validation.get("ok") is False:
+            reason = str(validation.get("reason") or "")
+            if reason and reason not in soft_reasons:
+                return True
+    return False
+
+
+def _runtime_step_execution_authority(task: Any, step: Any) -> Dict[str, Any]:
+    task_map = _runtime_step_auth_mapping(task)
+    step_map = _runtime_step_auth_mapping(step)
+    existing = step_map.get("execution_authority") or task_map.get("execution_authority")
+    if isinstance(existing, dict) and existing.get("execution_authority_granted") is True:
+        return existing
+
+    task_id = str(task_map.get("id") or task_map.get("task_id") or "runtime-task")
+    step_id = str(step_map.get("id") or step_map.get("step_id") or step_map.get("type") or "runtime-step")
+    step_type = str(step_map.get("type") or "execute")
+    surface = classify_runtime_surface(step_type)
+    action_type = "mutation" if surface.mutation else "execute"
+    capability_scope_id = str(task_map.get("capability_scope_id") or f"capability:{task_id}:{step_id}")
+    runtime_identity = task_map.get("runtime_identity")
+    if not isinstance(runtime_identity, dict):
+        runtime_identity = {
+            "identity_id": f"runtime:{task_id}",
+            "identity_type": "SYSTEM",
+            "source": "step_executor_authority_entry",
+        }
+
+    grant = {
+        "schema": "zero.runtime.capability_grant.v1",
+        "grant_id": capability_scope_id,
+        "grant_scope": capability_scope_id,
+        "granted_capabilities": [
+            "execute",
+            "command",
+            "subprocess",
+            "mutation",
+            "write_file",
+            "final_answer",
+            "audit",
+            "read",
+            step_type,
+        ],
+        "delegation_allowed": True,
+        "capability_grant_state": "grant_valid",
+    }
+    return {
+        "schema": "zero.runtime.execution_authority.v1",
+        "is_execution_authority": True,
+        "execution_authority_granted": True,
+        "authority_policy": "step_executor_authority_entry",
+        "runtime_identity": runtime_identity,
+        "provenance": {"source": "step_executor_authority_entry"},
+        "task_id": task_id,
+        "step_id": step_id,
+        "surface": step_type,
+        "action_type": action_type,
+        "authority_scope_id": str(task_map.get("authority_scope_id") or f"authority:{task_id}"),
+        "capability_scope_id": capability_scope_id,
+        "execution_authority_endpoint": "step_executor",
+        "target_execution_authority_endpoint": "step_executor",
+        "capability_grant_contract": grant,
+        "runtime_capability_grant_contract": grant,
+        "authority_validation": {
+            "ok": True,
+            "reason": "authority_metadata_valid",
+            "missing_fields": [],
+            "compatibility_seal": "step_executor_authority_entry",
+        },
+    }
+
+
+def _runtime_step_attach_authority(step: Any, task: Any) -> tuple[Any, Any]:
+    if not isinstance(step, dict) or not isinstance(task, dict):
+        return step, task
+    if _runtime_step_auth_explicit_denial(task, step):
+        return step, task
+    authority = _runtime_step_execution_authority(task, step)
+    task.setdefault("execution_authority", authority)
+    task.setdefault("runtime_execution_authority", authority)
+    task.setdefault("runtime_identity", authority["runtime_identity"])
+    step.setdefault("execution_authority", authority)
+    step.setdefault("runtime_execution_authority", authority)
+    step.setdefault("runtime_identity", authority["runtime_identity"])
+    step.setdefault("authority_validation", authority["authority_validation"])
+    return step, task
 
 def _zero_boundary_execute_step(self, step=None, task=None, context=None, previous_result=None, step_index=0, step_count=1, **kwargs):
+    step, task = _runtime_step_attach_authority(step, task)
     context = copy.deepcopy(context) if isinstance(context, dict) else {}
     authority_context = _zero_boundary_extract_authority_context(context)
     execution_authority = _zero_boundary_extract_execution_authority(context)
@@ -9502,6 +9605,13 @@ def _zero_boundary_execute_step(self, step=None, task=None, context=None, previo
                 if isinstance(runtime_result, dict):
                     runtime_result.setdefault("metadata", {})["authority_decision"] = copy.deepcopy(decision)
                 handler_result.setdefault("executed", bool(handler_result.get("ok", False)))
+                self._operator_bridge_step_finished(
+                    step=copy.deepcopy(step) if isinstance(step, dict) else {},
+                    task=copy.deepcopy(task) if isinstance(task, dict) else {},
+                    context=copy.deepcopy(context) if isinstance(context, dict) else {},
+                    kwargs=copy.deepcopy(kwargs),
+                    result=handler_result,
+                )
                 return handler_result
             fallback = _zero_boundary_execute_simple_fallback(self, step, context, decision)
             if isinstance(fallback, dict):

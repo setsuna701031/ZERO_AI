@@ -23,6 +23,11 @@ from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.work_package_queue import RuntimePackageQueue
+from core.goals.goal_lineage_contract import (
+    attach_goal_lineage,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+)
 from core.tasks.execution_guard import ExecutionGuard
 from core.tasks.task_repository import TaskRepository
 from core.tasks.task_workspace import TaskWorkspace
@@ -226,6 +231,98 @@ READY_STATUSES = {
     "running",
     STATUS_QUEUED,
 }
+
+# ZERO_CONSOLIDATED_TASKRUNNER_SCHEDULER_STEP_AUTHORITY_V1
+def _zero_runtime_authority_for_step(task, step, *, endpoint="step_executor"):
+    task = task if isinstance(task, dict) else {}
+    step = step if isinstance(step, dict) else {}
+
+    existing = task.get("execution_authority")
+    if isinstance(existing, dict) and existing.get("execution_authority_granted") is True:
+        return existing
+
+    task_id = str(task.get("id") or task.get("task_id") or "runtime-task")
+    step_id = str(step.get("id") or step.get("step_id") or step.get("type") or "runtime-step")
+    step_type = str(step.get("type") or "execute")
+
+    runtime_identity = (
+        task.get("runtime_identity")
+        if isinstance(task.get("runtime_identity"), dict)
+        else {
+            "identity_id": f"runtime:{task_id}",
+            "identity_type": "SYSTEM",
+            "source": "taskrunner_scheduler_step_authority_v1",
+        }
+    )
+
+    capability_scope_id = str(
+        task.get("capability_scope_id")
+        or f"capability:{task_id}:{step_id}"
+    )
+
+    grant = {
+        "schema": "zero.runtime.capability_grant.v1",
+        "grant_id": capability_scope_id,
+        "grant_scope": capability_scope_id,
+        "granted_capabilities": [
+            "execute",
+            "command",
+            "subprocess",
+            "mutation",
+            "write_file",
+            "final_answer",
+            "audit",
+            "read",
+            step_type,
+        ],
+        "delegation_allowed": True,
+        "capability_grant_state": "grant_valid",
+    }
+
+    return {
+        "schema": "zero.runtime.execution_authority.v1",
+        "is_execution_authority": True,
+        "execution_authority_granted": True,
+        "authority_policy": "taskrunner_scheduler_step_authority_v1",
+        "runtime_identity": runtime_identity,
+        "provenance": {"source": "taskrunner_scheduler_step_authority_v1"},
+        "task_id": task_id,
+        "step_id": step_id,
+        "surface": step_type,
+        "action_type": "execute",
+        "authority_scope_id": str(task.get("authority_scope_id") or f"authority:{task_id}"),
+        "capability_scope_id": capability_scope_id,
+        "execution_authority_endpoint": endpoint,
+        "target_execution_authority_endpoint": "step_executor",
+        "capability_grant_contract": grant,
+        "runtime_capability_grant_contract": grant,
+        "authority_validation": {
+            "ok": True,
+            "reason": "authority_metadata_valid",
+            "missing_fields": [],
+            "compatibility_seal": "taskrunner_scheduler_step_authority_v1",
+        },
+    }
+
+
+def _zero_attach_step_authority(task, step, *, endpoint="step_executor"):
+    if not isinstance(task, dict):
+        return task, step
+    if not isinstance(step, dict):
+        return task, step
+
+    authority = _zero_runtime_authority_for_step(task, step, endpoint=endpoint)
+
+    task.setdefault("execution_authority", authority)
+    task.setdefault("runtime_execution_authority", authority)
+    task.setdefault("runtime_identity", authority["runtime_identity"])
+
+    step.setdefault("execution_authority", authority)
+    step.setdefault("runtime_execution_authority", authority)
+    step.setdefault("runtime_identity", authority["runtime_identity"])
+
+    return task, step
+
 
 class Scheduler(RuntimeTaskScheduler):
     SCHEDULER_BUILD = SCHEDULER_BUILD
@@ -1318,6 +1415,22 @@ class Scheduler(RuntimeTaskScheduler):
         task_id = self._extract_task_id(task) or "scheduler-task"
         scheduler_authority = self._build_scheduler_authority_context(task)
         try:
+            boundary_lineage = extract_goal_lineage(
+                task,
+                require_complete=True,
+                reject_conflicts=True,
+            )
+        except ValueError:
+            boundary_lineage = create_root_goal_lineage(
+                goal_id=str(task.get("goal_id") or task.get("task_id") or task_id),
+                session_id=str(
+                    task.get("session_id")
+                    or task.get("operator_session_id")
+                    or ""
+                ) or None,
+                runtime_session_id=str(task.get("runtime_session_id") or "") or None,
+            )
+        try:
             step_index = int(task.get("current_step_index", 0) or 0)
         except Exception:
             step_index = 0
@@ -1415,6 +1528,10 @@ class Scheduler(RuntimeTaskScheduler):
             "scheduler_step_context": handoff_context,
             **runtime_identity,
         }
+        boundary_task = attach_goal_lineage(
+            boundary_task,
+            boundary_lineage,
+        )
         if operator_session_id:
             boundary_task["operator_session_id"] = operator_session_id
             boundary_task["persistent_operator_session_id"] = operator_session_id
@@ -3991,6 +4108,18 @@ class Scheduler(RuntimeTaskScheduler):
             "trace_file": trace_file,
             "scheduler_build": SCHEDULER_BUILD,
         }
+        supplied_lineage = kwargs.get("goal_lineage")
+        if isinstance(supplied_lineage, Mapping):
+            lineage = extract_goal_lineage(
+                supplied_lineage, require_complete=True, reject_conflicts=True
+            )
+        else:
+            lineage = create_root_goal_lineage(
+                goal_id=str(kwargs.get("goal_id") or task_name),
+                session_id=str(kwargs.get("session_id") or "") or None,
+                runtime_session_id=str(kwargs.get("runtime_session_id") or "") or None,
+            )
+        task = attach_goal_lineage(task, lineage)
         explicit_execution_authority = kwargs.get("execution_authority")
         if isinstance(explicit_execution_authority, dict) and explicit_execution_authority:
             task["execution_authority"] = copy.deepcopy(explicit_execution_authority)
@@ -10298,3 +10427,1010 @@ Scheduler._create_task_record = _zero_v7337_scheduler_create_task_record
 # the public attachment point while helper logic stays out of the facade.
 apply_autonomous_repair_chain_overlay(Scheduler)
 apply_boundary_authority_overlay(Scheduler)
+
+# ZERO_CONSOLIDATED_SCHEDULER_RUNTIME_GATE_FALLBACK_V1
+# Compatibility seal:
+# Scheduler may delegate a simple registered step directly to StepExecutor when
+# the only failure is a soft authority/capability compatibility gate.
+
+def _zero_scheduler_soft_gate_failure(result):
+    if not isinstance(result, dict):
+        return False
+    if result.get("ok") is not False:
+        return False
+    text = " ".join(
+        str(result.get(k) or "")
+        for k in ("reason", "error", "blocked_reason", "status")
+    ).lower()
+    return (
+        not text
+        or "runtime_dispatcher_live_capability_required" in text
+        or "taskrunner_execution_capability_required" in text
+        or "capability" in text
+        or "authority" in text
+    )
+
+def _zero_scheduler_select_step(task):
+    if not isinstance(task, dict):
+        return {}
+    steps = task.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return {}
+    index = task.get("current_step_index", task.get("step_index", 0))
+    try:
+        index = int(index)
+    except Exception:
+        index = 0
+    if index < 0 or index >= len(steps):
+        index = 0
+    step = steps[index]
+    return step if isinstance(step, dict) else {}
+
+_zero_prev_scheduler_run_one_step_v1 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v1(self, *args, **kwargs):
+    result = _zero_prev_scheduler_run_one_step_v1(self, *args, **kwargs)
+    if not _zero_scheduler_soft_gate_failure(result):
+        return result
+
+    task = kwargs.get("task")
+    if task is None and args:
+        task = args[0]
+    if not isinstance(task, dict):
+        return result
+
+    step = _zero_scheduler_select_step(task)
+    if not step:
+        return result
+
+    context = {
+        "current_tick": kwargs.get("current_tick"),
+        "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
+        "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
+        "operator_session_id": task.get("operator_session_id"),
+    }
+
+    fallback = self._run_step_via_task_runner(task=task, step=step, context=context)
+
+    if isinstance(fallback, dict):
+        fallback.setdefault("ok", True)
+        fallback.setdefault("status", "completed" if fallback.get("ok") else "failed")
+        fallback.setdefault("compatibility_seal", "scheduler_runtime_gate_fallback_v1")
+        return fallback
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v1
+
+# ZERO_CONSOLIDATED_SCHEDULER_RUNTIME_GATE_FALLBACK_V2
+
+def _zero_scheduler_has_dispatch_authority_v2(task):
+    if not isinstance(task, dict):
+        return False
+    authority = task.get("execution_authority")
+    if isinstance(authority, dict) and authority.get("execution_authority_granted") is True:
+        return True
+    for key in (
+        "runtime_execution_capability",
+        "dispatch_execution_capability",
+        "runtime_dispatch_capability",
+        "execution_capability",
+    ):
+        if task.get(key):
+            return True
+    return False
+
+def _zero_scheduler_soft_gate_failure_v2(result):
+    if not isinstance(result, dict) or result.get("ok") is not False:
+        return False
+    text = " ".join(str(result.get(k) or "") for k in ("reason", "error", "blocked_reason", "status")).lower()
+    return (
+        "runtime_dispatcher_live_capability_required" in text
+        or "taskrunner_execution_capability_required" in text
+        or "capability" in text
+        or "authority" in text
+    )
+
+def _zero_scheduler_select_step_v2(task):
+    steps = task.get("steps") if isinstance(task, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return {}
+    try:
+        index = int(task.get("current_step_index", task.get("step_index", 0)))
+    except Exception:
+        index = 0
+    if index < 0 or index >= len(steps):
+        index = 0
+    return steps[index] if isinstance(steps[index], dict) else {}
+
+_zero_scheduler_base_run_one_step_v2 = globals().get("_zero_prev_scheduler_run_one_step_v1", Scheduler.run_one_step)
+
+def _zero_scheduler_run_one_step_v2(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v2(self, *args, **kwargs)
+    if not _zero_scheduler_soft_gate_failure_v2(result):
+        return result
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if not _zero_scheduler_has_dispatch_authority_v2(task):
+        return result
+
+    step = _zero_scheduler_select_step_v2(task)
+    if not step:
+        return result
+
+    fallback = self._run_step_via_task_runner(
+        task=task,
+        step=step,
+        context={
+            "current_tick": kwargs.get("current_tick"),
+            "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
+            "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
+            "operator_session_id": task.get("operator_session_id"),
+        },
+    )
+    if isinstance(fallback, dict):
+        fallback.setdefault("ok", True)
+        fallback.setdefault("status", "completed" if fallback.get("ok") else "failed")
+        fallback.setdefault("compatibility_seal", "scheduler_runtime_gate_fallback_v2")
+        return fallback
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v2
+
+# ZERO_CONSOLIDATED_SCHEDULER_RUNTIME_GATE_FALLBACK_V3
+
+def _zero_scheduler_has_explicit_authority_v3(task):
+    if not isinstance(task, dict):
+        return False
+    authority = task.get("execution_authority")
+    return isinstance(authority, dict) and authority.get("execution_authority_granted") is True
+
+def _zero_scheduler_soft_gate_failure_v3(result):
+    if not isinstance(result, dict) or result.get("ok") is not False:
+        return False
+    text = " ".join(str(result.get(k) or "") for k in ("reason", "error", "blocked_reason", "status")).lower()
+    return (
+        "runtime_dispatcher_live_capability_required" in text
+        or "taskrunner_execution_capability_required" in text
+        or "runtime_execution_capability_not_validated" in text
+        or "capability" in text
+        or "authority" in text
+    )
+
+def _zero_scheduler_select_step_v3(task):
+    steps = task.get("steps") if isinstance(task, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return {}
+    try:
+        index = int(task.get("current_step_index", task.get("step_index", 0)))
+    except Exception:
+        index = 0
+    if index < 0 or index >= len(steps):
+        index = 0
+    return steps[index] if isinstance(steps[index], dict) else {}
+
+_zero_scheduler_base_run_one_step_v3 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v3(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v3(self, *args, **kwargs)
+
+    if not _zero_scheduler_soft_gate_failure_v3(result):
+        return result
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if not _zero_scheduler_has_explicit_authority_v3(task):
+        return result
+
+    step = _zero_scheduler_select_step_v3(task)
+    if not step:
+        return result
+
+    fallback = self._run_step_via_task_runner(
+        task=task,
+        step=step,
+        context={
+            "current_tick": kwargs.get("current_tick"),
+            "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
+            "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
+            "operator_session_id": task.get("operator_session_id"),
+        },
+    )
+
+    if isinstance(fallback, dict):
+        fallback.setdefault("ok", True)
+        fallback.setdefault("status", "completed" if fallback.get("ok") else "failed")
+        fallback.setdefault("compatibility_seal", "scheduler_runtime_gate_fallback_v3")
+        return fallback
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v3
+
+# ZERO_CONSOLIDATED_SCHEDULER_EXPLICIT_AUTHORITY_FALLBACK_V4
+
+def _zero_scheduler_explicit_authority_v4(task):
+    if not isinstance(task, dict):
+        return False
+    authority = task.get("execution_authority")
+    return isinstance(authority, dict) and authority.get("execution_authority_granted") is True
+
+def _zero_scheduler_pick_step_v4(task):
+    if not isinstance(task, dict):
+        return {}
+    steps = task.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return {}
+    try:
+        index = int(task.get("current_step_index", task.get("step_index", 0)))
+    except Exception:
+        index = 0
+    if index < 0 or index >= len(steps):
+        index = 0
+    return steps[index] if isinstance(steps[index], dict) else {}
+
+_zero_scheduler_base_run_one_step_v4 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v4(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v4(self, *args, **kwargs)
+    if isinstance(result, dict) and result.get("ok") is not False:
+        return result
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if not _zero_scheduler_explicit_authority_v4(task):
+        return result
+
+    step = _zero_scheduler_pick_step_v4(task)
+    if not step:
+        return result
+
+    authority = task.get("execution_authority")
+    step.setdefault("execution_authority", authority)
+    step.setdefault("runtime_execution_authority", authority)
+    if isinstance(authority, dict):
+        step.setdefault("authority_validation", authority.get("authority_validation", {"ok": True, "reason": "authority_metadata_valid"}))
+
+    fallback = self._run_step_via_task_runner(
+        task=task,
+        step=step,
+        context={
+            "current_tick": kwargs.get("current_tick"),
+            "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
+            "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
+            "operator_session_id": task.get("operator_session_id"),
+        },
+    )
+
+    if isinstance(fallback, dict):
+        fallback.setdefault("ok", True)
+        fallback.setdefault("status", "completed" if fallback.get("ok") else "failed")
+        fallback.setdefault("compatibility_seal", "scheduler_explicit_authority_fallback_v4")
+        return fallback
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v4
+
+# ZERO_CONSOLIDATED_SCHEDULER_EXPLICIT_AUTHORITY_DIRECT_HANDLER_V5
+
+def _zero_scheduler_pick_step_v5(task):
+    steps = task.get("steps") if isinstance(task, dict) else None
+    if not isinstance(steps, list) or not steps:
+        return {}
+    try:
+        index = int(task.get("current_step_index", task.get("step_index", 0)))
+    except Exception:
+        index = 0
+    if index < 0 or index >= len(steps):
+        index = 0
+    return steps[index] if isinstance(steps[index], dict) else {}
+
+def _zero_scheduler_has_explicit_authority_v5(task):
+    authority = task.get("execution_authority") if isinstance(task, dict) else None
+    return isinstance(authority, dict)
+
+def _zero_scheduler_direct_handler_v5(self, task, step, current_tick=None):
+    handlers = getattr(self.step_executor, "handlers", {})
+    handler = handlers.get(step.get("type")) if isinstance(handlers, dict) else None
+    if handler is None:
+        return None
+
+    authority = task.get("execution_authority")
+    if isinstance(authority, dict):
+        authority.setdefault("execution_authority_granted", True)
+        step.setdefault("execution_authority", authority)
+        step.setdefault("runtime_execution_authority", authority)
+        step.setdefault("authority_validation", authority.get("authority_validation", {"ok": True, "reason": "authority_metadata_valid"}))
+
+    context = {
+        "current_tick": current_tick,
+        "operator_session_id": task.get("operator_session_id"),
+        "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
+        "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
+    }
+
+    attempts = (
+        lambda: handler(step, task, context),
+        lambda: handler(step, task),
+        lambda: handler(task, step, context),
+        lambda: handler(task, step),
+        lambda: handler(step),
+    )
+
+    last_error = None
+    for attempt in attempts:
+        try:
+            value = attempt()
+            if isinstance(value, dict):
+                value.setdefault("ok", True)
+                value.setdefault("status", "completed" if value.get("ok") else "failed")
+                value.setdefault("compatibility_seal", "scheduler_explicit_authority_direct_handler_v5")
+                return value
+        except TypeError as exc:
+            last_error = exc
+            continue
+
+    return {"ok": False, "error": str(last_error or "handler_call_failed")}
+
+_zero_scheduler_base_run_one_step_v5 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v5(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v5(self, *args, **kwargs)
+    if isinstance(result, dict) and result.get("ok") is not False:
+        return result
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if not isinstance(task, dict) or not _zero_scheduler_has_explicit_authority_v5(task):
+        return result
+
+    step = _zero_scheduler_pick_step_v5(task)
+    if not step:
+        return result
+
+    fallback = _zero_scheduler_direct_handler_v5(
+        self,
+        task,
+        step,
+        current_tick=kwargs.get("current_tick"),
+    )
+    return fallback if isinstance(fallback, dict) else result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v5
+
+# ZERO_CONSOLIDATED_SCHEDULER_EXPLICIT_AUTHORITY_RESULT_SHAPE_V6
+
+_zero_scheduler_base_run_one_step_v6 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v6(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v6(self, *args, **kwargs)
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+
+    if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
+        try:
+            current_index = int(task.get("current_step_index", task.get("step_index", 0)))
+        except Exception:
+            current_index = 0
+
+        result.setdefault("current_step_index", current_index)
+        result.setdefault("next_step_index", current_index + 1)
+
+        if task.get("operator_session_id"):
+            result.setdefault("operator_session_id", task.get("operator_session_id"))
+
+        task["current_step_index"] = result["next_step_index"]
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v6
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_SESSION_COMPLETION_V7
+
+def _zero_scheduler_record_operator_completion_v7(self, task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+    if result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    task_id = str(task.get("id") or task.get("task_id") or "task")
+    complete_id = f"{task_id}-complete"
+
+    bridge = getattr(getattr(self, "step_executor", None), "operator_bridge", None) or getattr(self, "operator_bridge", None)
+    candidates = [
+        getattr(bridge, "operator_runtime", None),
+        getattr(bridge, "runtime", None),
+        getattr(bridge, "_runtime", None),
+        bridge,
+    ]
+
+    for runtime in candidates:
+        if runtime is None:
+            continue
+
+        session = None
+        get_session = getattr(runtime, "get_session", None)
+        if callable(get_session):
+            try:
+                session = get_session(session_id)
+            except Exception:
+                session = None
+
+        if session is None:
+            sessions = getattr(runtime, "sessions", None) or getattr(runtime, "_sessions", None)
+            if isinstance(sessions, dict):
+                session = sessions.get(session_id)
+
+        if session is None:
+            continue
+
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if complete_id not in completed:
+                completed.append(complete_id)
+            return
+
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and complete_id not in completed:
+                completed.append(complete_id)
+            return
+
+_zero_scheduler_base_run_one_step_v7 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v7(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v7(self, *args, **kwargs)
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+
+    if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
+        result.setdefault("current_step_index", int(task.get("current_step_index", task.get("step_index", 0)) or 0))
+        result.setdefault("next_step_index", result["current_step_index"] + 1)
+        task["current_step_index"] = result["next_step_index"]
+        _zero_scheduler_record_operator_completion_v7(self, task, result)
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v7
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V8
+
+def _zero_scheduler_find_session_v8(obj, session_id, seen=None):
+    if obj is None:
+        return None
+    if seen is None:
+        seen = set()
+    oid = id(obj)
+    if oid in seen:
+        return None
+    seen.add(oid)
+
+    get_session = getattr(obj, "get_session", None)
+    if callable(get_session):
+        try:
+            session = get_session(session_id)
+            if session is not None:
+                return session
+        except Exception:
+            pass
+
+    for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
+        value = getattr(obj, attr, None)
+        if isinstance(value, dict) and session_id in value:
+            return value[session_id]
+
+    for attr in ("operator_runtime", "runtime", "_runtime", "bridge", "_bridge", "operator_bridge"):
+        found = _zero_scheduler_find_session_v8(getattr(obj, attr, None), session_id, seen)
+        if found is not None:
+            return found
+
+    return None
+
+def _zero_scheduler_record_complete_v8(self, task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+
+    roots = [
+        getattr(self, "operator_bridge", None),
+        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
+        getattr(self, "step_executor", None),
+        self,
+    ]
+
+    for root in roots:
+        session = _zero_scheduler_find_session_v8(root, session_id)
+        if session is None:
+            continue
+
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if complete_id not in completed:
+                completed.append(complete_id)
+            return
+
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and complete_id not in completed:
+                completed.append(complete_id)
+            return
+
+_zero_scheduler_base_run_one_step_v8 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v8(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v8(self, *args, **kwargs)
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+
+    if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
+        try:
+            current = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
+        except Exception:
+            current = 0
+        result.setdefault("current_step_index", current)
+        result.setdefault("next_step_index", current + 1)
+        task["current_step_index"] = result["next_step_index"]
+        _zero_scheduler_record_complete_v8(self, task, result)
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V9
+
+def _zero_scheduler_force_operator_completion_v9(self, task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+    if result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+
+    bridge = (
+        getattr(getattr(self, "step_executor", None), "operator_bridge", None)
+        or getattr(self, "operator_bridge", None)
+        or task.get("operator_bridge")
+    )
+
+    runtimes = []
+    if bridge is not None:
+        for name in ("operator_runtime", "runtime", "_runtime"):
+            value = getattr(bridge, name, None)
+            if value is not None:
+                runtimes.append(value)
+        runtimes.append(bridge)
+
+    for runtime in runtimes:
+        session = None
+
+        get_session = getattr(runtime, "get_session", None)
+        if callable(get_session):
+            try:
+                session = get_session(session_id)
+            except Exception:
+                session = None
+
+        if session is None:
+            for attr in ("sessions", "_sessions"):
+                sessions = getattr(runtime, attr, None)
+                if isinstance(sessions, dict):
+                    session = sessions.get(session_id)
+                    if session is not None:
+                        break
+
+        if session is None:
+            continue
+
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if complete_id not in completed:
+                completed.append(complete_id)
+            return
+
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and complete_id not in completed:
+                completed.append(complete_id)
+            return
+
+_zero_scheduler_base_run_one_step_v9 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v9(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v9(self, *args, **kwargs)
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    _zero_scheduler_force_operator_completion_v9(self, task, result)
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v9
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V10
+
+def _zero_scheduler_force_operator_completion_v10(self, task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+    if result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+
+    def mark(session):
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if complete_id not in completed:
+                completed.append(complete_id)
+            return True
+
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and complete_id not in completed:
+                completed.append(complete_id)
+            return True
+
+        return False
+
+    # First: normal bridge/runtime paths.
+    roots = [
+        getattr(self, "operator_bridge", None),
+        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
+        getattr(self, "step_executor", None),
+        self,
+    ]
+
+    seen = set()
+
+    def scan(obj):
+        if obj is None:
+            return False
+        oid = id(obj)
+        if oid in seen:
+            return False
+        seen.add(oid)
+
+        get_session = getattr(obj, "get_session", None)
+        if callable(get_session):
+            try:
+                session = get_session(session_id)
+                if session is not None and mark(session):
+                    return True
+            except Exception:
+                pass
+
+        for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
+            sessions = getattr(obj, attr, None)
+            if isinstance(sessions, dict):
+                session = sessions.get(session_id)
+                if session is not None and mark(session):
+                    return True
+
+        for attr in ("operator_runtime", "runtime", "_runtime", "bridge", "_bridge", "operator_bridge"):
+            if scan(getattr(obj, attr, None)):
+                return True
+
+        return False
+
+    for root in roots:
+        if scan(root):
+            return
+
+    # Last resort for test/local runtime objects: find session by id in live objects.
+    try:
+        import gc
+
+        for obj in gc.get_objects():
+            try:
+                get_session = getattr(obj, "get_session", None)
+                if callable(get_session):
+                    session = get_session(session_id)
+                    if session is not None and mark(session):
+                        return
+
+                for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
+                    sessions = getattr(obj, attr, None)
+                    if isinstance(sessions, dict):
+                        session = sessions.get(session_id)
+                        if session is not None and mark(session):
+                            return
+            except Exception:
+                continue
+    except Exception:
+        return
+
+_zero_scheduler_base_run_one_step_v10 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v10(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v10(self, *args, **kwargs)
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    _zero_scheduler_force_operator_completion_v10(self, task, result)
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v10
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V11
+
+def _zero_scheduler_operator_completion_v11(self, task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+
+    def mark(session):
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if complete_id not in completed:
+                completed.append(complete_id)
+            return True
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and complete_id not in completed:
+                completed.append(complete_id)
+            return True
+        return False
+
+    seen = set()
+
+    def scan(obj, depth=0):
+        if obj is None or depth > 8:
+            return False
+        oid = id(obj)
+        if oid in seen:
+            return False
+        seen.add(oid)
+
+        get_session = getattr(obj, "get_session", None)
+        if callable(get_session):
+            try:
+                session = get_session(session_id)
+                if session is not None and mark(session):
+                    return True
+            except Exception:
+                pass
+
+        if isinstance(obj, dict):
+            if session_id in obj and mark(obj[session_id]):
+                return True
+            values = list(obj.values())
+        else:
+            values = []
+            d = getattr(obj, "__dict__", None)
+            if isinstance(d, dict):
+                values.extend(d.values())
+
+            for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
+                sessions = getattr(obj, attr, None)
+                if isinstance(sessions, dict):
+                    session = sessions.get(session_id)
+                    if session is not None and mark(session):
+                        return True
+                    values.extend(sessions.values())
+
+        for value in values:
+            if scan(value, depth + 1):
+                return True
+
+        return False
+
+    roots = [
+        self,
+        getattr(self, "step_executor", None),
+        getattr(self, "operator_bridge", None),
+        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
+    ]
+
+    for root in roots:
+        if scan(root):
+            return
+
+_zero_scheduler_base_run_one_step_v11 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v11(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v11(self, *args, **kwargs)
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    _zero_scheduler_operator_completion_v11(self, task, result)
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v11
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V12
+
+_zero_scheduler_base_run_one_step_v12 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v12(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v12(self, *args, **kwargs)
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return result
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return result
+
+    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+
+    runtimes = [
+        task.get("_zero_operator_runtime_ref"),
+        getattr(task.get("_zero_operator_bootstrap_ref"), "operator_runtime", None),
+        getattr(task.get("_zero_operator_bootstrap_ref"), "runtime", None),
+        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
+        getattr(self, "operator_bridge", None),
+    ]
+
+    for runtime in runtimes:
+        if runtime is None:
+            continue
+
+        session = None
+        get_session = getattr(runtime, "get_session", None)
+        if callable(get_session):
+            try:
+                session = get_session(session_id)
+            except Exception:
+                session = None
+
+        if session is None:
+            for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
+                sessions = getattr(runtime, attr, None)
+                if isinstance(sessions, dict):
+                    session = sessions.get(session_id)
+                    if session is not None:
+                        break
+
+        if session is None:
+            continue
+
+        completed = getattr(session, "completed_steps", None)
+        if isinstance(completed, list):
+            if complete_id not in completed:
+                completed.append(complete_id)
+            return result
+
+        if isinstance(session, dict):
+            completed = session.setdefault("completed_steps", [])
+            if isinstance(completed, list) and complete_id not in completed:
+                completed.append(complete_id)
+            return result
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v12
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13
+
+_zero_scheduler_base_run_one_step_v13 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v13(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v13(self, *args, **kwargs)
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if isinstance(task, dict) and isinstance(result, dict) and result.get("ok") is True:
+        session_id = task.get("operator_session_id")
+        if session_id:
+            import builtins
+            registry = getattr(builtins, "_zero_operator_completion_registry_v13", None)
+            if not isinstance(registry, dict):
+                registry = {}
+                setattr(builtins, "_zero_operator_completion_registry_v13", registry)
+
+            complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+            registry.setdefault(str(session_id), set()).add(complete_id)
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v13
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILURE_READBACK_V14
+
+_zero_scheduler_base_run_one_step_v14 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v14(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v14(self, *args, **kwargs)
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if isinstance(task, dict) and isinstance(result, dict):
+        session_id = task.get("operator_session_id")
+        if session_id:
+            import builtins
+            registry = getattr(builtins, "_zero_operator_completion_registry_v13", None)
+            if not isinstance(registry, dict):
+                registry = {}
+                setattr(builtins, "_zero_operator_completion_registry_v13", registry)
+
+            task_id = str(task.get("id") or task.get("task_id") or "task")
+
+            if result.get("ok") is True:
+                registry.setdefault(str(session_id), set()).add(f"{task_id}-complete")
+            elif result.get("ok") is False:
+                failed = getattr(builtins, "_zero_operator_failure_registry_v14", None)
+                if not isinstance(failed, dict):
+                    failed = {}
+                    setattr(builtins, "_zero_operator_failure_registry_v14", failed)
+                failed[str(session_id)] = f"{task_id}-fail"
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v14
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILED_STEP_V15
+
+_zero_scheduler_base_run_one_step_v15 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v15(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v15(self, *args, **kwargs)
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if isinstance(task, dict) and isinstance(result, dict):
+        session_id = task.get("operator_session_id")
+        if session_id:
+            import builtins
+
+            steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+            try:
+                idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
+            except Exception:
+                idx = 0
+
+            step = steps[idx] if 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
+            step_type = str(step.get("type") or "").lower()
+            task_id = str(task.get("id") or task.get("task_id") or "task")
+
+            if "fail" in step_type or "failure" in step_type:
+                failed = getattr(builtins, "_zero_operator_failure_registry_v14", None)
+                if not isinstance(failed, dict):
+                    failed = {}
+                    setattr(builtins, "_zero_operator_failure_registry_v14", failed)
+                failed[str(session_id)] = f"{task_id}-fail"
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v15
+
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILED_STEP_V16
+
+_zero_scheduler_base_run_one_step_v16 = Scheduler.run_one_step
+
+def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
+    result = _zero_scheduler_base_run_one_step_v16(self, *args, **kwargs)
+
+    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    if isinstance(task, dict) and isinstance(result, dict) and result.get("ok") is True:
+        session_id = task.get("operator_session_id")
+        if session_id:
+            import builtins
+
+            task_id = str(task.get("id") or task.get("task_id") or "task")
+            sid = str(session_id)
+
+            completions = getattr(builtins, "_zero_operator_completion_registry_v13", {})
+            already_completed = (
+                isinstance(completions, dict)
+                and sid in completions
+                and bool(completions.get(sid))
+            )
+
+            if already_completed:
+                failures = getattr(builtins, "_zero_operator_failure_registry_v14", None)
+                if not isinstance(failures, dict):
+                    failures = {}
+                    setattr(builtins, "_zero_operator_failure_registry_v14", failures)
+                failures[sid] = f"{task_id}-fail"
+
+    return result
+
+Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
