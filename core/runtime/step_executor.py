@@ -66,34 +66,19 @@ class StepExecutor:
     """
     ZERO Step Executor
 
-    ?祉???嚗?
-    1. step handler 頛詨蝯曹? envelope
-    2. unsupported / exception ?航炊?澆?蝯曹?
-    3. execute_steps ?寞活蝯??澆?蝯曹?
-    4. ???tool registry ??outer/inner ok 蝯?撠?
-    5. ?湔??StepExecutor ?扳蝞?llm / llm_generate嚗耨甇?document flow ??{{file_content}} 瘜典
-    6. 鋆?execution contract ?嗆?嚗essage / final_answer / normalized payload
-    7. 靽??Ｘ? batch summary contract嚗ailed_step / completed_steps 蝬剜??葫閰西???
-    8. ?啣??撠??retry嚗???StepExecutor.execute_step 蝯曹??岫嚗?痊隞餅??
-    9. ?航炊???寧???failed result嚗rror + stderr + stdout + returncode嚗?
-    10. command_failed ??嚗?
-        - fatal -> 1 甈?
-        - generic -> 2 甈?
-        - transient -> 靘身摰活??
-    11. execution_trace ??StepExecutor 蝯曹??Ｙ?嚗??箸迤撘?trace source
-    12. command cwd policy ?嗆?嚗?
-        - ?身 command ??project root ?瑁?
-        - ??command_cwd / cwd_override / run_in_task_dir=True ????
-        - 銝??task/context 瘜典?脖???cwd 銝? explicit command cwd
-    13. command result contract ?嗆?嚗?
-        - ?? step 靽??見嚗???隤文??抒? cwd 瘛琿?step record
-        - ?迤?瑁? cwd 蝯曹?撖怠 result.effective_cwd ??result.result.cwd
-    14. command stdout/result normalization嚗?
-        - 靽?摰 stdout / stderr
-        - 鋆?output_text / parsed_output
-    15. command message/final_answer summarization嚗?
-        - message / final_answer 銝?憛??JSON
-        - ?寧?剜?閬?
+    Responsibilities:
+    1. Dispatch step handlers and normalize their envelopes.
+    2. Normalize unsupported-step and exception failures.
+    3. Execute step batches and preserve batch result contracts.
+    4. Normalize tool registry outer and inner results.
+    5. Support LLM document flow file-content injection.
+    6. Preserve message, final_answer, and normalized payload contracts.
+    7. Report failed_step, completed_steps, and execution traces.
+    8. Apply retry policy through execute_step.
+    9. Preserve error, stderr, stdout, and returncode on failures.
+    10. Classify command failures as fatal, generic, or transient.
+    11. Resolve command cwd from explicit overrides or runtime context.
+    12. Normalize command output and parsed output.
     """
 
     def __init__(
@@ -713,8 +698,8 @@ class StepExecutor:
         aggregate_result = {
             "ok": True,
             "summary": "all steps executed",
-            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "?瑁?摰?",
-            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "?瑁?摰?",
+            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "step executed",
+            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "step executed",
             "step_count": total_steps,
             "completed_steps": total_steps,
             "failed_step": None,
@@ -1773,7 +1758,7 @@ class StepExecutor:
 
     def _extract_step_message(self, result: Any, failed: bool) -> str:
         if not isinstance(result, dict):
-            return "?瑁?憭望?" if failed else "?瑁?摰?"
+            return "llm step failed" if failed else "step executed"
 
         value = result.get("message")
         if isinstance(value, str) and value.strip():
@@ -1785,11 +1770,11 @@ class StepExecutor:
             if isinstance(msg, str) and msg.strip():
                 return msg.strip()
 
-        return "?瑁?憭望?" if failed else "?瑁?摰?"
+        return "llm step failed" if failed else "step executed"
 
     def _extract_step_final_answer(self, result: Any, failed: bool) -> str:
         if not isinstance(result, dict):
-            return "?瑁?憭望?" if failed else "?瑁?摰?"
+            return "llm step failed" if failed else "step executed"
 
         value = result.get("final_answer")
         if isinstance(value, str) and value.strip():
@@ -3328,7 +3313,7 @@ class StepExecutor:
             #   previous_result["result"]["content"]
             #   previous_result["result"]["result"]["content"]
             # while the outer "message" / "final_answer" may only be a status
-            # such as "撌脰???獢?.  File Chain v3 depends on the real file
+            # such as "step executed". File Chain v3 depends on the real file
             # content being injected into the LLM prompt.
             for nested_key in ("result", "output", "data", "payload", "raw", "previous_result"):
                 nested = payload.get(nested_key)
@@ -3769,7 +3754,7 @@ class StepExecutor:
                 return True
 
             message = str(payload.get("message") or "").strip().lower()
-            if message and message not in {"step failed", "?瑁?憭望?"}:
+            if message and message not in {"step failed", "llm step failed"}:
                 return True
 
             return False
@@ -6296,7 +6281,7 @@ def _zero_v7313_infer_visible_step_ok(result, step):
         return True
 
     message = str(result.get("message") or "").strip().lower()
-    if message and message not in {"step failed", "?瑁?憭望?"}:
+    if message and message not in {"step failed", "llm step failed"}:
         return True
 
     return False
@@ -6485,7 +6470,7 @@ def _zero_v7313_execute_step_with_runtime_execution_result(
         result["error"] = None
         result["error_type"] = ""
         if not result.get("message") or "unexpected keyword argument 'execution_id'" in str(result.get("message")).lower():
-            result["message"] = "?瑁?摰?"
+            result["message"] = "step executed"
         if not result.get("final_answer") or "unexpected keyword argument 'execution_id'" in str(result.get("final_answer")).lower():
             result["final_answer"] = result["message"]
     result["evidence"] = copy.deepcopy(runtime_payload["evidence"])
@@ -6730,7 +6715,7 @@ def _zero_v7329_success_signal(result, step):
         return True
 
     message = str(result.get("message") or "").strip().lower()
-    if message and message not in {"step failed", "?瑁?憭望?"}:
+    if message and message not in {"step failed", "llm step failed"}:
         return True
 
     return False
@@ -6854,7 +6839,7 @@ def _zero_v7329_execute_step_final_public_abi(
         result["error"] = None
         result["error_type"] = ""
         if not result.get("message") or "unexpected keyword argument 'execution_id'" in str(result.get("message")).lower():
-            result["message"] = "?瑁?摰?"
+            result["message"] = "step executed"
         if not result.get("final_answer") or "unexpected keyword argument 'execution_id'" in str(result.get("final_answer")).lower():
             result["final_answer"] = result["message"]
     result["evidence"] = copy.deepcopy(runtime_payload["evidence"])

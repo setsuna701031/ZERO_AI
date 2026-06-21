@@ -334,14 +334,10 @@ class Scheduler(RuntimeTaskScheduler):
     TERMINAL_STATUSES = TERMINAL_STATUSES
 
     """
-    ?????Scheduler + ExecutionTrace
+    Task scheduler with execution tracing.
 
-    ?????????????
-    1. task mode ?????agent_loop ??鞎?? planner / llm_planner????????????????頩????? planner
-    2. task mode ?????? ensure_file step ?????
-    3. task-local ???????????????task sandbox?????????task_dir ??雓????
-    4. task hydration / result ????????????????
-    5. finished task ?????????????steps / results / final_answer
+    Coordinates planner selection, task-local execution, task hydration,
+    result persistence, and terminal task output.
     """
 
     def __init__(
@@ -455,7 +451,7 @@ class Scheduler(RuntimeTaskScheduler):
             self.replanner = Replanner(llm_client=llm_client)
 
     # ------------------------------------------------------------
-    # ???????????
+    # Compatibility entry points
     # ------------------------------------------------------------
 
     def run_next(self) -> Dict[str, Any]:
@@ -492,7 +488,7 @@ class Scheduler(RuntimeTaskScheduler):
         return self.rebuild_ready_queue()
 
     # ------------------------------------------------------------
-    # ??????
+    # Scheduler tick
     # ------------------------------------------------------------
 
     def tick(self, current_tick: Optional[int] = None) -> Dict[str, Any]:
@@ -3521,7 +3517,7 @@ class Scheduler(RuntimeTaskScheduler):
         self._save_repair_fingerprint_index(data)
 
     # ------------------------------------------------------------
-    # ??????? API
+    # Repair planning API
     # ------------------------------------------------------------
 
 
@@ -6250,7 +6246,7 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "planner_mode": "deterministic_v5_7_2_atomic_multi_function_fix",
             "intent": "multi_function_fix_atomic",
-            "final_answer": "???????atomic multi-file function fix ?????",
+            "final_answer": "planner execution completed",
             "steps": [
                 {
                     "type": "multi_code_edit",
@@ -6369,7 +6365,7 @@ class Scheduler(RuntimeTaskScheduler):
         return {
             "planner_mode": "deterministic_v5_6_8_engineering_correct_function_fix_fallback",
             "intent": "function_fix",
-            "final_answer": "???????function fix fallback ?????",
+            "final_answer": "planner execution completed",
             "steps": [
                 {
                     "type": "code_edit",
@@ -6851,9 +6847,9 @@ class Scheduler(RuntimeTaskScheduler):
             "contains",
             "equals",
             "exists",
-            "????",
+            "確認",
             "check",
-            "????",
+            "驗證",
         ]
 
         if any(marker in text for marker in shared_markers):
@@ -7456,15 +7452,15 @@ class Scheduler(RuntimeTaskScheduler):
             "extract action items",
             "todo",
             "to-do",
-            "??雓◇??????",
-            "??蟡????????",
+            "行動項目",
+            "待辦事項",
         ]
         summary_keywords = [
             "summary",
             "summarize",
             "summarise",
             "???",
-            "????",
+            "總結",
         ]
 
         wants_action_items = any(keyword in lowered for keyword in action_keywords)
@@ -7578,12 +7574,12 @@ class Scheduler(RuntimeTaskScheduler):
         candidates = [
             "hello world python",
             "hello world ??python",
-            "??此?????hello world python",
-            "???? hello world python",
-            "?????hello world python",
+            "寫一個 hello world python",
+            "建立 hello world python",
+            "做一個 hello world python",
             "python hello world",
-            "??????????hello.py ?????hello world",
-            "hello.py ?????hello world",
+            "建立一個 hello.py 印出 hello world",
+            "hello.py 印出 hello world",
         ]
         return any(item in lowered for item in candidates)
 
@@ -7620,12 +7616,12 @@ class Scheduler(RuntimeTaskScheduler):
         stripped = str(text or "").strip()
 
         patterns = [
-            r"????????(.+)$",
-            r"????????(.+)$",
-            r"????:\s*(.+)$",
-            r"???????s*(.+)$",
-            r"??此???拆????*(.+)$",
-            r"??????\s*(.+)$",
+            r"內容是\s*(.+)$",
+            r"內容為\s*(.+)$",
+            r"內容:\s*(.+)$",
+            r"內容：\s*(.+)$",
+            r"寫入\s*(.+)$",
+            r"放入\s*(.+)$",
             r"content is\s+(.+)$",
             r"content:\s*(.+)$",
             r"with content\s+(.+)$",
@@ -7861,7 +7857,7 @@ def _zero_v702_build_code_chain_repair_plan(goal: str) -> Optional[Dict[str, Any
     return {
         "planner_mode": "scheduler_v7_0_2_repair_step_preservation",
         "intent": "autonomous_code_repair",
-        "final_answer": "???????Code Chain repair ?????",
+        "final_answer": "planner execution completed",
         "steps": [step],
         "meta": {
             "planner_autonomous_repair": True,
@@ -9179,7 +9175,7 @@ def _zero_v11_attach_scheduler_adapter_payload(result):
     payload = copy.deepcopy(result)
 
     ok = bool(payload.get("ok", False))
-    message = _zero_v11_scheduler_str(payload.get("message"), "?????????" if ok else "???????")
+    message = _zero_v11_scheduler_str(payload.get("message"), "step executed" if ok else "runtime execution failed")
     final_answer = _zero_v11_scheduler_str(payload.get("final_answer"), message)
 
     adapter_payload = {
