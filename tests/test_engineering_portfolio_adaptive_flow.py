@@ -12,7 +12,7 @@ class AdaptiveGoalLoop:
     def __init__(self, decision: dict) -> None:
         self.decision = decision
 
-    def run_until_terminal(self, goal_id: str, max_cycles: int = 3) -> dict:
+    def run_until_terminal(self, goal_id: str, max_cycles: int = 3, *, goal_lineage=None) -> dict:
         return {
             "ok": self.decision["decision"] == "complete",
             "goal_id": goal_id,

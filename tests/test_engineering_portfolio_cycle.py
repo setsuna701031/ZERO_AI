@@ -10,9 +10,16 @@ from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
 
 
-def _attestation(goal_id: str):
-    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
-    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+def _attestation(goal_id: str, goal_lineage=None):
+    evidence = EvidenceValidator().validate(
+        EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now", metadata=goal_lineage or {})
+    )
+    return GoalCompletionAuthority().complete_goal(
+        goal_id=goal_id,
+        evidence_refs=[evidence],
+        all_subgoals_completed=True,
+        goal_lineage=goal_lineage,
+    )
 
 
 class FakeGoalLoop:
@@ -20,14 +27,17 @@ class FakeGoalLoop:
         self.outcomes = outcomes or {}
         self.calls: list[str] = []
 
-    def run_until_terminal(self, goal_id: str, max_cycles: int = 3) -> dict:
+    def run_until_terminal(self, goal_id: str, max_cycles: int = 3, *, goal_lineage=None) -> dict:
         self.calls.append(goal_id)
         stop_reason = self.outcomes.get(goal_id, "complete")
-        evidence = EvidenceValidator().validate(EvidenceRecord("e1", goal_id, None, "test", "ok", "now"))
+        evidence = EvidenceValidator().validate(
+            EvidenceRecord("e1", goal_id, None, "test", "ok", "now", metadata=goal_lineage or {})
+        )
         attestation = GoalCompletionAuthority().complete_goal(
             goal_id=goal_id,
             evidence_refs=[evidence],
             all_subgoals_completed=True,
+            goal_lineage=goal_lineage,
         )
         return {
             "ok": stop_reason == "complete",
@@ -55,10 +65,15 @@ def _cycle(tmp_path: Path, statuses: dict[str, str], outcomes: dict[str, str] | 
     goal_loop = FakeGoalLoop(outcomes)
     portfolio_repository.create_portfolio({"portfolio_id": "portfolio_1", "name": "Cycle portfolio"})
     for goal_id, status in statuses.items():
-        goal_repository.save_goal(
-            {"goal_id": goal_id, "summary": goal_id, "status": status},
-            completion_attestation=_attestation(goal_id) if status in {"complete", "completed"} else None,
-        )
+        if status in {"complete", "completed"}:
+            goal = goal_repository.save_goal({"goal_id": goal_id, "summary": goal_id, "status": "pending"})
+            goal_repository.update_goal(
+                goal_id,
+                {"status": status},
+                completion_attestation=_attestation(goal_id, goal["goal_lineage"]),
+            )
+        else:
+            goal_repository.save_goal({"goal_id": goal_id, "summary": goal_id, "status": status})
         portfolio_repository.add_goal_to_portfolio("portfolio_1", goal_id)
     coordinator = EngineeringPortfolioCoordinator(
         repo_root=tmp_path,

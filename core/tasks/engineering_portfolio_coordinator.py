@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.goals.goal_lineage_contract import extract_goal_lineage
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_policy import EngineeringPortfolioPolicy
@@ -102,7 +103,19 @@ class EngineeringPortfolioCoordinator:
                 "updated_at": time.time(),
             }
 
-        loop_result = self.goal_loop.run_until_terminal(selected_goal_id, max_cycles=3)
+        selected_goal = self.goal_repository.load_goal(selected_goal_id)
+        if not isinstance(selected_goal, Mapping):
+            raise ValueError("portfolio_selected_goal_record_required")
+        selected_lineage = extract_goal_lineage(
+            selected_goal,
+            require_complete=True,
+            reject_conflicts=True,
+        )
+        loop_result = self.goal_loop.run_until_terminal(
+            selected_goal_id,
+            max_cycles=3,
+            goal_lineage=selected_lineage,
+        )
         updated_goal = self._record_loop_terminal_status(selected_goal_id, loop_result)
         return {
             "schema": ENGINEERING_PORTFOLIO_COORDINATOR_SCHEMA,

@@ -17,9 +17,24 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 COORDINATOR_FILE = REPO_ROOT / "core/tasks/engineering_portfolio_coordinator.py"
 
 
-def _attestation(goal_id: str):
-    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
-    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+def _attestation(goal_id: str, goal_lineage=None):
+    evidence = EvidenceValidator().validate(
+        EvidenceRecord(
+            "seed-e",
+            goal_id,
+            None,
+            "test",
+            "ok",
+            "now",
+            metadata=goal_lineage or {},
+        )
+    )
+    return GoalCompletionAuthority().complete_goal(
+        goal_id=goal_id,
+        evidence_refs=[evidence],
+        all_subgoals_completed=True,
+        goal_lineage=goal_lineage,
+    )
 
 
 class FakeGoalLoop:
@@ -27,13 +42,16 @@ class FakeGoalLoop:
         self.stop_reason = stop_reason
         self.calls: list[tuple[str, int]] = []
 
-    def run_until_terminal(self, goal_id: str, max_cycles: int = 3) -> dict:
+    def run_until_terminal(self, goal_id: str, max_cycles: int = 3, *, goal_lineage=None) -> dict:
         self.calls.append((goal_id, max_cycles))
-        evidence = EvidenceValidator().validate(EvidenceRecord("e1", goal_id, None, "test", "ok", "now"))
+        evidence = EvidenceValidator().validate(
+            EvidenceRecord("e1", goal_id, None, "test", "ok", "now", metadata=goal_lineage or {})
+        )
         attestation = GoalCompletionAuthority().complete_goal(
             goal_id=goal_id,
             evidence_refs=[evidence],
             all_subgoals_completed=True,
+            goal_lineage=goal_lineage,
         )
         return {
             "ok": self.stop_reason == "complete",
@@ -62,10 +80,18 @@ def _portfolio_with_goals(tmp_path, statuses: dict[str, str]):
     portfolio_repository, goal_repository = _repos(tmp_path)
     portfolio = portfolio_repository.create_portfolio({"portfolio_id": "portfolio_1", "name": "Runtime portfolio"})
     for goal_id, status in statuses.items():
-        goal_repository.save_goal(
-            {"goal_id": goal_id, "summary": goal_id, "status": status},
-            completion_attestation=_attestation(goal_id) if status in {"complete", "completed"} else None,
+        goal = goal_repository.save_goal(
+            {"goal_id": goal_id, "summary": goal_id, "status": "pending"}
         )
+        if status in {"complete", "completed"}:
+            goal["status"] = status
+            goal_repository.update_goal(
+                goal_id,
+                {"status": status},
+                completion_attestation=_attestation(goal_id, goal["goal_lineage"]),
+            )
+        elif status != "pending":
+            goal_repository.update_goal(goal_id, {"status": status})
         portfolio_repository.add_goal_to_portfolio(portfolio["portfolio_id"], goal_id)
     return portfolio_repository, goal_repository
 
