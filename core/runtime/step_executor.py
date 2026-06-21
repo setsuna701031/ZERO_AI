@@ -1723,15 +1723,15 @@ class StepExecutor:
 
         if step_type == "write_file":
             path = str(result.get("path") or "").strip()
-            return f"撌脣神?交?獢?{path}" if path else "撌脣神?交?獢?
+            return f"wrote file: {path}" if path else "wrote file"
 
         if step_type in {"append_file", "workspace_append"}:
             path = str(result.get("path") or "").strip()
-            return f"撌脰蕭??獢?{path}" if path else "撌脰蕭??獢?
+            return f"updated file: {path}" if path else "updated file"
 
         if step_type == "read_file":
             path = str(result.get("path") or "").strip()
-            return f"撌脰???獢?{path}" if path else "撌脰???獢?
+            return f"read file: {path}" if path else "read file"
 
         if step_type in {"verify", "verify_file"}:
             return "verify ok"
@@ -1744,9 +1744,9 @@ class StepExecutor:
             return "command executed successfully"
 
         if step_type in {"llm", "llm_generate"}:
-            return "LLM 撌脣?????
+            return "llm generated output"
 
-        return "?瑁?摰?"
+        return "step executed"
 
     def _extract_final_answer_from_inner_result(
         self,
@@ -8999,8 +8999,8 @@ def _zero_direct_llm_execute_step_contract_seal(
             "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
             "step": copy.deepcopy(raw_step or {}),
             "result": copy.deepcopy(raw_result),
-            "message": message if message else ("LLM 撌脣????? if ok else "llm step failed"),
-            "final_answer": final_answer if final_answer else (message if message else ("LLM 撌脣????? if ok else "llm step failed")),
+            "message": message if message else ("llm ok" if ok else "llm step failed"),
+            "final_answer": final_answer if final_answer else (message if message else ("llm ok" if ok else "llm step failed")),
             "error": None if ok else copy.deepcopy(raw_result.get("error") or {
                 "type": "llm_step_failed",
                 "message": message or "llm step failed",
@@ -9013,7 +9013,7 @@ def _zero_direct_llm_execute_step_contract_seal(
                     "step_type": step_type,
                     "runtime_mode": self._normalize_runtime_mode(step_payload.get("runtime_mode") or "execute"),
                     "ok": ok,
-                    "message": message if message else ("LLM 撌脣????? if ok else "llm step failed"),
+                    "message": message if message else ("llm ok" if ok else "llm step failed"),
                     "final_answer": final_answer if final_answer else message,
                     "error_type": None if ok else "llm_step_failed",
                     "attempts": 1,
