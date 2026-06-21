@@ -1,0 +1,31 @@
+{
+  "source_native_contract_items": 66,
+  "mapped_items": 66,
+  "by_native_owner": {
+    "RuntimeExecutionAuthorityGate": 16,
+    "StepExecutor": 38,
+    "TaskRunner": 12
+  },
+  "by_owner_domain": {
+    "runtime_authority": 16,
+    "step_executor": 38,
+    "task_runner": 12
+  },
+  "by_bridge_dependency": {
+    "none_or_native": 66
+  },
+  "by_next_action": {
+    "extract_native_authority_contract_test": 12,
+    "bind_compatibility_path_to_native_owner_test": 53,
+    "extract_planning_recovery_contract_test": 1
+  },
+  "uncovered_test_candidate_count": 0,
+  "zero_patch_residue_count": 0,
+  "zero_patch_residue": [],
+  "verification_passed": true,
+  "outputs": {
+    "mapping": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_contract_ownership_mapping_stage5.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_contract_ownership_mapping_stage5_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_contract_ownership_mapping_stage5_report.md"
+  }
+}

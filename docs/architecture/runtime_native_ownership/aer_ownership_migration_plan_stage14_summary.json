@@ -1,0 +1,67 @@
+{
+  "stage": "AER Ownership Migration Plan Stage14",
+  "total_confirmed_blockers_planned": 113,
+  "migration_waves_count": 11,
+  "freeze_blockers_count": 113,
+  "seal_blockers_count": 134,
+  "critical_suite_blockers_count": 2,
+  "direct_stepexecutor_call_seal_count": 6,
+  "compatibility_bridge_count": 15,
+  "non_mainline_issue_count": 6,
+  "migration_domain_counts": {
+    "authority_context": 6,
+    "planner_goal_overlay": 1,
+    "scheduler": 45,
+    "taskrunner": 19,
+    "stepexecutor": 16,
+    "repairchain": 26,
+    "lineage": 24,
+    "runtime_session": 24,
+    "compatibility_bridge": 15,
+    "non_mainline_observability": 6
+  },
+  "risk_counts": {
+    "critical": 87,
+    "high": 26
+  },
+  "highest_risk_domains": [
+    "scheduler",
+    "taskrunner",
+    "stepexecutor",
+    "authority_context",
+    "repairchain"
+  ],
+  "first_executable_migration_wave": "Wave 1: authority context migration (after Wave 0 evidence and invariant lock)",
+  "validation_results": {
+    "status": "failed_with_recorded_freeze_and_seal_evidence",
+    "observed_on": "2026-06-21",
+    "generator": "pass",
+    "compileall": "pass",
+    "pytest": {
+      "status": "fail",
+      "passed": 82,
+      "failed": 2,
+      "subtests_passed": 7,
+      "duration_seconds": 13.27,
+      "failures": [
+        {
+          "test": "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+          "freeze_evidence": "Scheduler contains six direct execute_step/execute_steps calls; Wave 3 cannot complete until the direct-call seal passes."
+        },
+        {
+          "test": "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+          "seal_evidence": "Expected high-risk status-writer inventory differs from the current source scan; ownership inventory evidence must be reconciled before seal."
+        }
+      ]
+    }
+  },
+  "production_runtime_touched": false,
+  "tests_touched": false,
+  "blockers_fixed": false,
+  "deterministic_output": true,
+  "outputs": {
+    "plan": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json",
+    "summary": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_report.md"
+  }
+}

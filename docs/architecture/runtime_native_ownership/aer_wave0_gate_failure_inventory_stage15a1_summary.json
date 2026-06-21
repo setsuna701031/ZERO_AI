@@ -1,0 +1,70 @@
+{
+  "stage": "Stage15A.1 — Wave 0 Gate Failure Decomposition",
+  "failing_test_count": 3,
+  "distinct_gate_failures": 3,
+  "blocked_waves": {
+    "direct": [
+      "Wave 3: scheduler direct-call seal",
+      "Wave 7: repairchain recovery / retry / duplicate repair",
+      "Wave 10: seal validation"
+    ],
+    "authorization": "Wave 1 is closed by the failed Wave 0 aggregate validation gate.",
+    "transitive": [
+      "Wave 1: authority context migration",
+      "Wave 2: planner goal overlay migration",
+      "Wave 3: scheduler direct-call seal",
+      "Wave 4: taskrunner execution ownership",
+      "Wave 5: stepexecutor fallback / execution ownership",
+      "Wave 6: lineage + runtime-session boundary",
+      "Wave 7: repairchain recovery / retry / duplicate repair",
+      "Wave 8: compatibility bridge retirement",
+      "Wave 9: freeze validation",
+      "Wave 10: seal validation"
+    ]
+  },
+  "highest_risk_failure": {
+    "failure_id": "S15A1-GF-001",
+    "test_name": "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+    "basis": "Critical freeze blocker with the earliest assigned blocked migration wave (Wave 3) among critical failures."
+  },
+  "first_authorizable_wave": "Wave 1: authority context migration, after all minimum_gate_set conditions pass",
+  "minimum_gate_set": [
+    "S15A1-GF-001",
+    "S15A1-GF-002",
+    "S15A1-GF-003"
+  ],
+  "category_counts": {
+    "scheduler_direct_call_seal": 1,
+    "authority_propagation": 0,
+    "runtime_status_ownership_drift": 1,
+    "goal_lineage_integrity": 1,
+    "runtime_session_boundary": 1,
+    "repair_chain_dependency": 1,
+    "other": 0
+  },
+  "freeze_impact": "Wave 0 remains failed; Wave 1 and all sequential downstream waves remain unauthorized.",
+  "seal_impact": "Wave 10 remains blocked by all three preserved failures; status inventory drift is explicit seal evidence.",
+  "non_mainline_issue_reporting": "6 / 6 preserved in observability-only track",
+  "validation_results": {
+    "generator": "pass",
+    "compileall": "pass",
+    "pytest": {
+      "status": "expected_failures_reproduced",
+      "collected": 3,
+      "passed": 0,
+      "failed": 3,
+      "duration_seconds": 2.24,
+      "failure_set_matches_stage15a": true,
+      "command": "python -m pytest -vv tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit"
+    },
+    "overall": "pass_with_expected_failures_preserved_as_evidence"
+  },
+  "production_runtime_touched": false,
+  "tests_touched": false,
+  "blockers_fixed": false,
+  "outputs": {
+    "inventory": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json",
+    "summary": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1_report.md"
+  }
+}

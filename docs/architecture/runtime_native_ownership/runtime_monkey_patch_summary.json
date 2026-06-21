@@ -1,0 +1,25 @@
+{
+  "monkey_patch_items": 156,
+  "zero_patch_residue_count": 0,
+  "by_kind": {
+    "setattr_runtime_injection": 120,
+    "class_method_assignment": 36
+  },
+  "by_owner_domain": {
+    "unknown": 80,
+    "planner": 3,
+    "task_runner": 5,
+    "scheduler": 61,
+    "runtime_authority": 7
+  },
+  "by_action": {
+    "manual_review_or_promote_to_native_owner": 156
+  },
+  "native_contract_tests_passed": true,
+  "verification_passed": true,
+  "outputs": {
+    "inventory": "E:\\zero_ai\\docs\\architecture\\runtime_native_ownership\\runtime_monkey_patch_inventory.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_native_ownership\\runtime_monkey_patch_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_native_ownership\\runtime_monkey_patch_report.md"
+  }
+}

@@ -1,0 +1,4223 @@
+{
+  "stage": "RepairChain Native Ownership Closure Stage13D",
+  "scope": "discovery_and_ownership_mapping_only",
+  "production_runtime_modified": false,
+  "inputs": [
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation_summary.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+    "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_summary.json",
+    "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json",
+    "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b_summary.json",
+    "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json",
+    "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c_summary.json"
+  ],
+  "stage11b_validated_blocker_count": 142,
+  "total_repair_items": 33,
+  "classification_counts": {
+    "confirmed_blocker": 26,
+    "compatibility_bridge": 0,
+    "false_positive": 6,
+    "non_mainline_issue": 1
+  },
+  "bucket_counts": {
+    "repair_execution": 12,
+    "duplicate_repair": 1,
+    "recovery_chain": 32,
+    "retry_chain": 15,
+    "repair_authority": 13,
+    "repair_session": 6,
+    "repair_lineage": 7,
+    "repair_step_executor_dependency": 5,
+    "compatibility_bridge": 0,
+    "non_mainline_issue": 1
+  },
+  "repairchain_items": [
+    {
+      "blocker_id": "S13D-RC-001",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4222,
+      "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4222",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain",
+        "repair_step_executor_dependency"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/step_executor.py:4222"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/step_executor.py:4222"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "repair_chain",
+          "relationship": "repair_step_executor_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "stepexecutor",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4222",
+        "explicit_symbol_contract:StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-002",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4367,
+      "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4367",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain",
+        "repair_step_executor_dependency"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/step_executor.py:4367"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/step_executor.py:4367"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "repair_chain",
+          "relationship": "repair_step_executor_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "stepexecutor",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4367",
+        "explicit_symbol_contract:StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-003",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4577,
+      "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4577",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain",
+        "repair_step_executor_dependency"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/step_executor.py:4577"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/step_executor.py:4577"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "repair_chain",
+          "relationship": "repair_step_executor_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "stepexecutor",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4577",
+        "explicit_symbol_contract:StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-004",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 4587,
+      "symbol": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:4587",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain",
+        "repair_step_executor_dependency"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/step_executor.py:4587"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/step_executor.py:4587"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "repair_chain",
+          "relationship": "repair_step_executor_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "stepexecutor",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:4587",
+        "explicit_symbol_contract:StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-005",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 8890,
+      "symbol": "StepExecutor._handle_autonomous_repair_chain_step",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step",
+      "current_owner": "class-level assignment in core/runtime/step_executor.py:8890",
+      "expected_native_owner": "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain",
+        "repair_step_executor_dependency",
+        "repair_session",
+        "repair_lineage"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/step_executor.py:8890",
+          "assignment_rhs:_zero_v2_autonomous_repair_chain_handler"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/step_executor.py:8890",
+          "assignment_rhs:_zero_v2_autonomous_repair_chain_handler"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/runtime/step_executor.py:8890",
+          "assignment_rhs:_zero_v2_autonomous_repair_chain_handler"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/runtime/step_executor.py:8890",
+          "assignment_rhs:_zero_v2_autonomous_repair_chain_handler"
+        ]
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        },
+        {
+          "from": "step_executor_contract",
+          "to": "repair_chain",
+          "relationship": "repair_step_executor_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "stepexecutor",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v2_autonomous_repair_chain_handler",
+        "direct_calls": [
+          "RuntimeNativeAutonomousRepairChain",
+          "_safe_int",
+          "_zero_v2_callable_or_value",
+          "bool",
+          "deepcopy",
+          "get",
+          "getattr",
+          "hasattr",
+          "int",
+          "isinstance",
+          "max",
+          "run_repair_chain",
+          "str",
+          "strip",
+          "to_dict",
+          "to_runtime_execution_result",
+          "type"
+        ],
+        "reachable_local_helpers": [
+          "_safe_int",
+          "_zero_v2_callable_or_value"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/step_executor.py:8890",
+        "explicit_symbol_contract:StepExecutor._handle_autonomous_repair_chain_step",
+        "assignment_rhs:_zero_v2_autonomous_repair_chain_handler",
+        "ast_function:core/runtime/step_executor.py::_zero_v2_autonomous_repair_chain_handler"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-006",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4601,
+      "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4601",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4601"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4601"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4601",
+        "explicit_symbol_contract:TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-007",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4605,
+      "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4605",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4605"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4605"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4605",
+        "explicit_symbol_contract:TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-008",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4634,
+      "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4634",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4634"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4634"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4634",
+        "explicit_symbol_contract:TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-009",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4639,
+      "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4639",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4639"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4639"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4639",
+        "explicit_symbol_contract:TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-010",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4690,
+      "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4690",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4690"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4690"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4690",
+        "explicit_symbol_contract:TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-011",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4695,
+      "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4695",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4695"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4695"
+        ]
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4695",
+        "explicit_symbol_contract:TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-012",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4983,
+      "symbol": "TaskRunner._zero_v800_build_observation",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_build_observation",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4983",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._zero_v800_build_observation (native definition)",
+      "ownership_buckets": [
+        "recovery_chain",
+        "repair_session",
+        "repair_lineage"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4983",
+          "assignment_rhs:_zero_v800_build_observation"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/runtime/task_runner.py:4983",
+          "assignment_rhs:_zero_v800_build_observation"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/runtime/task_runner.py:4983",
+          "assignment_rhs:_zero_v800_build_observation"
+        ]
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v800_build_observation",
+        "direct_calls": [
+          "_zero_v800_extract_action",
+          "_zero_v800_extract_error",
+          "_zero_v800_extract_status",
+          "_zero_v800_last_step_type",
+          "_zero_v800_represents_failed_step_observation",
+          "append",
+          "bool",
+          "deepcopy",
+          "get",
+          "isinstance",
+          "join"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v800_extract_action",
+          "_zero_v800_extract_error",
+          "_zero_v800_extract_status",
+          "_zero_v800_last_step_type",
+          "_zero_v800_represents_failed_step_observation"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4983",
+        "explicit_symbol_contract:TaskRunner._zero_v800_build_observation",
+        "assignment_rhs:_zero_v800_build_observation",
+        "ast_function:core/runtime/task_runner.py::_zero_v800_build_observation"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-013",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4984,
+      "symbol": "TaskRunner._zero_v800_decide_from_observation",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4984",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain",
+        "repair_lineage"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4984",
+          "assignment_rhs:_zero_v800_decide_from_observation"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/runtime/task_runner.py:4984",
+          "assignment_rhs:_zero_v800_decide_from_observation"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/runtime/task_runner.py:4984",
+          "assignment_rhs:_zero_v800_decide_from_observation"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v800_decide_from_observation",
+        "direct_calls": [
+          "bool",
+          "get",
+          "isinstance",
+          "lower",
+          "str"
+        ],
+        "reachable_local_helpers": [],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4984",
+        "explicit_symbol_contract:TaskRunner._zero_v800_decide_from_observation",
+        "assignment_rhs:_zero_v800_decide_from_observation",
+        "ast_function:core/runtime/task_runner.py::_zero_v800_decide_from_observation"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-014",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4985,
+      "symbol": "TaskRunner._zero_v800_last_step_type",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_last_step_type",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4985",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._zero_v800_last_step_type (native definition)",
+      "ownership_buckets": [
+        "recovery_chain",
+        "retry_chain",
+        "repair_session",
+        "repair_lineage"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4985",
+          "assignment_rhs:_zero_v800_last_step_type"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/runtime/task_runner.py:4985",
+          "assignment_rhs:_zero_v800_last_step_type"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/runtime/task_runner.py:4985",
+          "assignment_rhs:_zero_v800_last_step_type"
+        ]
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v800_last_step_type",
+        "direct_calls": [
+          "get",
+          "isinstance",
+          "str"
+        ],
+        "reachable_local_helpers": [],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4985",
+        "explicit_symbol_contract:TaskRunner._zero_v800_last_step_type",
+        "assignment_rhs:_zero_v800_last_step_type",
+        "ast_function:core/runtime/task_runner.py::_zero_v800_last_step_type"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-015",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4986,
+      "symbol": "TaskRunner._zero_v800_represents_failed_step_observation",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4986",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4986",
+          "assignment_rhs:_zero_v800_represents_failed_step_observation"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/runtime/task_runner.py:4986",
+          "assignment_rhs:_zero_v800_represents_failed_step_observation"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v800_represents_failed_step_observation",
+        "direct_calls": [
+          "_zero_v800_last_step_type",
+          "get",
+          "int",
+          "isinstance"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v800_last_step_type"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4986",
+        "explicit_symbol_contract:TaskRunner._zero_v800_represents_failed_step_observation",
+        "assignment_rhs:_zero_v800_represents_failed_step_observation",
+        "ast_function:core/runtime/task_runner.py::_zero_v800_represents_failed_step_observation"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-016",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 4987,
+      "symbol": "TaskRunner._run_one_step",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._run_one_step",
+      "current_owner": "class-level assignment in core/runtime/task_runner.py:4987",
+      "expected_native_owner": "core.runtime.task_runner.TaskRunner._run_one_step (native definition)",
+      "ownership_buckets": [
+        "repair_execution",
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain",
+        "repair_session",
+        "repair_lineage"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/runtime/task_runner.py:4987",
+          "assignment_rhs:_zero_v800_task_runner_run_one_step"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/runtime/task_runner.py:4987",
+          "assignment_rhs:_zero_v800_task_runner_run_one_step"
+        ]
+      },
+      "execution_boundary": {
+        "active": true,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": [
+          "explicit_symbol_contract:execution",
+          "source_assignment:core/runtime/task_runner.py:4987",
+          "assignment_rhs:_zero_v800_task_runner_run_one_step"
+        ]
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/runtime/task_runner.py:4987",
+          "assignment_rhs:_zero_v800_task_runner_run_one_step"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/runtime/task_runner.py:4987",
+          "assignment_rhs:_zero_v800_task_runner_run_one_step"
+        ]
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "taskrunner_contract",
+          "to": "repair_chain",
+          "relationship": "repair_execution_dependency"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v800_task_runner_run_one_step",
+        "direct_calls": [
+          "_ZERO_V800_ORIGINAL_TASK_RUNNER_RUN_ONE_STEP",
+          "_zero_v800_build_observation",
+          "_zero_v800_decide_from_observation",
+          "create_engineering_replan_candidate",
+          "deepcopy",
+          "get",
+          "isinstance",
+          "load_runtime_state",
+          "record_engineering_decision",
+          "record_engineering_observation",
+          "save_runtime_state",
+          "str"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v800_build_observation",
+          "_zero_v800_decide_from_observation",
+          "_zero_v800_extract_action",
+          "_zero_v800_extract_error",
+          "_zero_v800_extract_status",
+          "_zero_v800_last_step_type",
+          "_zero_v800_represents_failed_step_observation"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/runtime/task_runner.py:4987",
+        "explicit_symbol_contract:TaskRunner._run_one_step",
+        "assignment_rhs:_zero_v800_task_runner_run_one_step",
+        "ast_function:core/runtime/task_runner.py::_zero_v800_task_runner_run_one_step"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-017",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7945,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "validated_classification": "false_positive",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:7945",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "ownership_buckets": [
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": false,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": []
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Retain as non-behavioral metadata; no executable blocker removal is required.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:7945",
+        "explicit_symbol_contract:Scheduler.SCHEDULER_BUILD",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-018",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8038,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8038",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:8038",
+          "assignment_rhs:_zero_v703_scheduler_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:8038",
+          "assignment_rhs:_zero_v703_scheduler_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v703_scheduler_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V703_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_get_failed_step_type",
+          "get",
+          "int",
+          "isinstance",
+          "lower",
+          "str",
+          "strip"
+        ],
+        "reachable_local_helpers": [
+          "_get_failed_step_payload",
+          "_get_failed_step_type"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8038",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v703_scheduler_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v703_scheduler_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-019",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8040,
+      "symbol": "Scheduler.REPAIRABLE_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8040",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:8040"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:8040"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8040",
+        "explicit_symbol_contract:Scheduler.REPAIRABLE_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-020",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8327,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "validated_classification": "false_positive",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8327",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "ownership_buckets": [
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": false,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": []
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Retain as non-behavioral metadata; no executable blocker removal is required.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8327",
+        "explicit_symbol_contract:Scheduler.SCHEDULER_BUILD",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-021",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8514,
+      "symbol": "Scheduler._find_active_duplicate_repair_task",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8514",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task (native definition)",
+      "ownership_buckets": [
+        "duplicate_repair",
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain",
+        "repair_session",
+        "repair_lineage"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:8514",
+          "assignment_rhs:_zero_v726_find_active_duplicate_repair_task"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:8514",
+          "assignment_rhs:_zero_v726_find_active_duplicate_repair_task"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/tasks/scheduler.py:8514",
+          "assignment_rhs:_zero_v726_find_active_duplicate_repair_task"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/tasks/scheduler.py:8514",
+          "assignment_rhs:_zero_v726_find_active_duplicate_repair_task"
+        ]
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        },
+        {
+          "from": "retry_chain",
+          "to": "duplicate_repair",
+          "relationship": "duplicate_suppression_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v726_find_active_duplicate_repair_task",
+        "direct_calls": [
+          "_ZERO_V726_ORIGINAL_FIND_ACTIVE_DUPLICATE_REPAIR_TASK",
+          "_load_repair_fingerprint_index",
+          "_zero_v726_pending_lock_age_seconds",
+          "_zero_v726_pending_lock_task_id",
+          "_zero_v726_release_pending_repair_lock",
+          "get",
+          "isinstance",
+          "str",
+          "strip"
+        ],
+        "reachable_local_helpers": [
+          "_load_repair_fingerprint_index",
+          "_repair_fingerprint_index_file",
+          "_save_repair_fingerprint_index",
+          "_zero_v726_pending_lock_age_seconds",
+          "_zero_v726_pending_lock_task_id",
+          "_zero_v726_release_pending_repair_lock"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8514",
+        "explicit_symbol_contract:Scheduler._find_active_duplicate_repair_task",
+        "assignment_rhs:_zero_v726_find_active_duplicate_repair_task",
+        "ast_function:core/tasks/scheduler.py::_zero_v726_find_active_duplicate_repair_task"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-022",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8518,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "validated_classification": "false_positive",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8518",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "ownership_buckets": [
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": false,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": []
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Retain as non-behavioral metadata; no executable blocker removal is required.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8518",
+        "explicit_symbol_contract:Scheduler.SCHEDULER_BUILD",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-023",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8601,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8601",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:8601",
+          "assignment_rhs:_zero_v731_scheduler_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:8601",
+          "assignment_rhs:_zero_v731_scheduler_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v731_scheduler_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V731_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_get_failed_step_type",
+          "get",
+          "int",
+          "isinstance",
+          "lower",
+          "str",
+          "strip"
+        ],
+        "reachable_local_helpers": [
+          "_get_failed_step_payload",
+          "_get_failed_step_type"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8601",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v731_scheduler_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v731_scheduler_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-024",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8603,
+      "symbol": "Scheduler.REPAIRABLE_STEP_TYPES",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8603",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:8603"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:8603"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8603",
+        "explicit_symbol_contract:Scheduler.REPAIRABLE_STEP_TYPES",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-025",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8605,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "validated_classification": "false_positive",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:8605",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "ownership_buckets": [
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": false,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": []
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Retain as non-behavioral metadata; no executable blocker removal is required.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:8605",
+        "explicit_symbol_contract:Scheduler.SCHEDULER_BUILD",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-026",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9025,
+      "symbol": "Scheduler.RETRYING_REPAIR_BRIDGE_VERSION",
+      "validated_classification": "false_positive",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.RETRYING_REPAIR_BRIDGE_VERSION",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:9025",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.RETRYING_REPAIR_BRIDGE_VERSION (non-behavioral metadata)",
+      "ownership_buckets": [
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": false,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": []
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Retain as non-behavioral metadata; no executable blocker removal is required.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:9025",
+        "explicit_symbol_contract:Scheduler.RETRYING_REPAIR_BRIDGE_VERSION",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-027",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9026,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "validated_classification": "false_positive",
+      "replacement_kind": "class_level_state_override",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:9026",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "ownership_buckets": [
+        "recovery_chain"
+      ],
+      "repair_boundary": {
+        "active": false,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": []
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Retain as non-behavioral metadata; no executable blocker removal is required.",
+      "dependency_edges": [],
+      "unlock_targets": [],
+      "call_graph": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:9026",
+        "explicit_symbol_contract:Scheduler.SCHEDULER_BUILD",
+        "class_state_or_metadata_assignment"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-028",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9590,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:9590",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:9590",
+          "assignment_rhs:_zero_v7332_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:9590",
+          "assignment_rhs:_zero_v7332_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v7332_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7332_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7332_is_constitutional_block"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7332_is_constitutional_block"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:9590",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v7332_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v7332_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-029",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9798,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:9798",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:9798",
+          "assignment_rhs:_zero_v7333_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:9798",
+          "assignment_rhs:_zero_v7333_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v7333_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7333_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7333_governed_continuation_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7333_governed_continuation_summary"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:9798",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v7333_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v7333_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-030",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9964,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:9964",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:9964",
+          "assignment_rhs:_zero_v7334_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:9964",
+          "assignment_rhs:_zero_v7334_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v7334_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7334_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7334_governed_self_repair_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7333_governed_continuation_summary",
+          "_zero_v7334_governed_self_repair_summary"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:9964",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v7334_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v7334_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-031",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 10180,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:10180",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:10180",
+          "assignment_rhs:_zero_v7335_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:10180",
+          "assignment_rhs:_zero_v7335_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v7335_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7335_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7335_controlled_mutation_bridge_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7333_governed_continuation_summary",
+          "_zero_v7334_governed_self_repair_summary",
+          "_zero_v7335_controlled_mutation_bridge_summary"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:10180",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v7335_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v7335_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-032",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 10366,
+      "symbol": "Scheduler._is_repairable_failure",
+      "validated_classification": "confirmed_blocker",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+      "current_owner": "class-level assignment in core/tasks/scheduler.py:10366",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)",
+      "ownership_buckets": [
+        "repair_authority",
+        "recovery_chain",
+        "retry_chain"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler.py:10366",
+          "assignment_rhs:_zero_v7336_is_repairable_failure"
+        ]
+      },
+      "authority_boundary": {
+        "active": true,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": [
+          "explicit_symbol_contract:authority",
+          "source_assignment:core/tasks/scheduler.py:10366",
+          "assignment_rhs:_zero_v7336_is_repairable_failure"
+        ]
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": false,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": []
+      },
+      "runtime_session_boundary": {
+        "active": false,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": []
+      },
+      "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.",
+      "dependency_edges": [
+        {
+          "from": "authority_contract",
+          "to": "repair_chain",
+          "relationship": "repair_authority_dependency"
+        },
+        {
+          "from": "recovery_chain",
+          "to": "retry_chain",
+          "relationship": "continuation_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "scheduler",
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "_zero_v7336_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7336_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7336_verified_mutation_continuation_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7336_verified_mutation_continuation_summary"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler.py:10366",
+        "explicit_symbol_contract:Scheduler._is_repairable_failure",
+        "assignment_rhs:_zero_v7336_is_repairable_failure",
+        "ast_function:core/tasks/scheduler.py::_zero_v7336_is_repairable_failure"
+      ]
+    },
+    {
+      "blocker_id": "S13D-RC-033",
+      "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "source_line": 227,
+      "symbol": "Scheduler._attach_autonomous_repair_chain_summary",
+      "validated_classification": "non_mainline_issue",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary",
+      "current_owner": "class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary (native observability boundary)",
+      "ownership_buckets": [
+        "recovery_chain",
+        "repair_session",
+        "repair_lineage",
+        "non_mainline_issue"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+          "assignment_rhs:attach_autonomous_repair_chain_summary"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+          "assignment_rhs:attach_autonomous_repair_chain_summary"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+          "assignment_rhs:attach_autonomous_repair_chain_summary"
+        ]
+      },
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: A native observability owner and independent non-mainline validation exist before retiring this assignment.",
+      "dependency_edges": [
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "attach_autonomous_repair_chain_summary",
+        "direct_calls": [
+          "append",
+          "bool",
+          "get",
+          "int",
+          "is_autonomous_repair_chain_payload",
+          "isinstance",
+          "setdefault",
+          "str"
+        ],
+        "reachable_local_helpers": [
+          "is_autonomous_repair_chain_payload"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+        "explicit_symbol_contract:Scheduler._attach_autonomous_repair_chain_summary",
+        "assignment_rhs:attach_autonomous_repair_chain_summary",
+        "ast_function:core/tasks/scheduler_core/runtime_overlay_helpers.py::attach_autonomous_repair_chain_summary"
+      ]
+    }
+  ],
+  "ownership_buckets": {
+    "repair_execution": [
+      "S13D-RC-001",
+      "S13D-RC-002",
+      "S13D-RC-003",
+      "S13D-RC-004",
+      "S13D-RC-005",
+      "S13D-RC-006",
+      "S13D-RC-007",
+      "S13D-RC-008",
+      "S13D-RC-009",
+      "S13D-RC-010",
+      "S13D-RC-011",
+      "S13D-RC-016"
+    ],
+    "duplicate_repair": [
+      "S13D-RC-021"
+    ],
+    "recovery_chain": [
+      "S13D-RC-001",
+      "S13D-RC-002",
+      "S13D-RC-003",
+      "S13D-RC-004",
+      "S13D-RC-005",
+      "S13D-RC-006",
+      "S13D-RC-007",
+      "S13D-RC-008",
+      "S13D-RC-009",
+      "S13D-RC-010",
+      "S13D-RC-011",
+      "S13D-RC-012",
+      "S13D-RC-013",
+      "S13D-RC-014",
+      "S13D-RC-015",
+      "S13D-RC-016",
+      "S13D-RC-017",
+      "S13D-RC-018",
+      "S13D-RC-019",
+      "S13D-RC-020",
+      "S13D-RC-021",
+      "S13D-RC-022",
+      "S13D-RC-023",
+      "S13D-RC-024",
+      "S13D-RC-025",
+      "S13D-RC-027",
+      "S13D-RC-028",
+      "S13D-RC-029",
+      "S13D-RC-030",
+      "S13D-RC-031",
+      "S13D-RC-032",
+      "S13D-RC-033"
+    ],
+    "retry_chain": [
+      "S13D-RC-013",
+      "S13D-RC-014",
+      "S13D-RC-015",
+      "S13D-RC-016",
+      "S13D-RC-018",
+      "S13D-RC-019",
+      "S13D-RC-021",
+      "S13D-RC-023",
+      "S13D-RC-024",
+      "S13D-RC-026",
+      "S13D-RC-028",
+      "S13D-RC-029",
+      "S13D-RC-030",
+      "S13D-RC-031",
+      "S13D-RC-032"
+    ],
+    "repair_authority": [
+      "S13D-RC-013",
+      "S13D-RC-015",
+      "S13D-RC-016",
+      "S13D-RC-018",
+      "S13D-RC-019",
+      "S13D-RC-021",
+      "S13D-RC-023",
+      "S13D-RC-024",
+      "S13D-RC-028",
+      "S13D-RC-029",
+      "S13D-RC-030",
+      "S13D-RC-031",
+      "S13D-RC-032"
+    ],
+    "repair_session": [
+      "S13D-RC-005",
+      "S13D-RC-012",
+      "S13D-RC-014",
+      "S13D-RC-016",
+      "S13D-RC-021",
+      "S13D-RC-033"
+    ],
+    "repair_lineage": [
+      "S13D-RC-005",
+      "S13D-RC-012",
+      "S13D-RC-013",
+      "S13D-RC-014",
+      "S13D-RC-016",
+      "S13D-RC-021",
+      "S13D-RC-033"
+    ],
+    "repair_step_executor_dependency": [
+      "S13D-RC-001",
+      "S13D-RC-002",
+      "S13D-RC-003",
+      "S13D-RC-004",
+      "S13D-RC-005"
+    ],
+    "compatibility_bridge": [],
+    "non_mainline_issue": [
+      "S13D-RC-033"
+    ]
+  },
+  "dependency_graph": {
+    "repair_roots": [
+      "Scheduler.REPAIRABLE_STEP_TYPES",
+      "Scheduler._find_active_duplicate_repair_task",
+      "Scheduler._is_repairable_failure",
+      "TaskRunner._run_one_step",
+      "TaskRunner._zero_v800_decide_from_observation",
+      "TaskRunner._zero_v800_represents_failed_step_observation"
+    ],
+    "repair_owners": [
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner._run_one_step (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_build_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_last_step_type (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation (native definition)",
+      "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)",
+      "core.tasks.scheduler.Scheduler.RETRYING_REPAIR_BRIDGE_VERSION (non-behavioral metadata)",
+      "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary (native observability boundary)",
+      "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task (native definition)",
+      "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)"
+    ],
+    "repair_authority_endpoints": [
+      "core.runtime.task_runner.TaskRunner._run_one_step (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation (native definition)",
+      "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)",
+      "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task (native definition)",
+      "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)"
+    ],
+    "repair_execution_endpoints": [
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner._run_one_step (native definition)"
+    ],
+    "repair_continuation_paths": [
+      "Scheduler.REPAIRABLE_STEP_TYPES",
+      "Scheduler._find_active_duplicate_repair_task",
+      "Scheduler._is_repairable_failure",
+      "TaskRunner._run_one_step",
+      "TaskRunner._zero_v800_decide_from_observation",
+      "TaskRunner._zero_v800_last_step_type",
+      "TaskRunner._zero_v800_represents_failed_step_observation"
+    ],
+    "repair_resume_paths": [
+      "Scheduler._find_active_duplicate_repair_task",
+      "StepExecutor._handle_autonomous_repair_chain_step",
+      "TaskRunner._run_one_step",
+      "TaskRunner._zero_v800_build_observation",
+      "TaskRunner._zero_v800_last_step_type"
+    ],
+    "item_dependency_edges": [
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "step_executor_contract",
+        "to": "repair_chain",
+        "relationship": "repair_step_executor_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "step_executor_contract",
+        "to": "repair_chain",
+        "relationship": "repair_step_executor_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "step_executor_contract",
+        "to": "repair_chain",
+        "relationship": "repair_step_executor_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "step_executor_contract",
+        "to": "repair_chain",
+        "relationship": "repair_step_executor_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "repair_chain",
+        "relationship": "repair_session_dependency"
+      },
+      {
+        "from": "step_executor_contract",
+        "to": "repair_chain",
+        "relationship": "repair_step_executor_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "repair_chain",
+        "relationship": "repair_session_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "repair_chain",
+        "relationship": "repair_session_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "taskrunner_contract",
+        "to": "repair_chain",
+        "relationship": "repair_execution_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "repair_chain",
+        "relationship": "repair_session_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "repair_chain",
+        "relationship": "repair_session_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "retry_chain",
+        "to": "duplicate_repair",
+        "relationship": "duplicate_suppression_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "authority_contract",
+        "to": "repair_chain",
+        "relationship": "repair_authority_dependency"
+      },
+      {
+        "from": "recovery_chain",
+        "to": "retry_chain",
+        "relationship": "continuation_dependency"
+      },
+      {
+        "from": "goal_lineage_contract",
+        "to": "repair_chain",
+        "relationship": "repair_lineage_dependency"
+      },
+      {
+        "from": "runtime_session_ownership",
+        "to": "repair_chain",
+        "relationship": "repair_session_dependency"
+      }
+    ],
+    "item_call_graphs": {
+      "S13D-RC-001": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-002": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-003": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-004": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-005": {
+        "assignment_rhs": "_zero_v2_autonomous_repair_chain_handler",
+        "direct_calls": [
+          "RuntimeNativeAutonomousRepairChain",
+          "_safe_int",
+          "_zero_v2_callable_or_value",
+          "bool",
+          "deepcopy",
+          "get",
+          "getattr",
+          "hasattr",
+          "int",
+          "isinstance",
+          "max",
+          "run_repair_chain",
+          "str",
+          "strip",
+          "to_dict",
+          "to_runtime_execution_result",
+          "type"
+        ],
+        "reachable_local_helpers": [
+          "_safe_int",
+          "_zero_v2_callable_or_value"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-006": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-007": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-008": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-009": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-010": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-011": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-012": {
+        "assignment_rhs": "_zero_v800_build_observation",
+        "direct_calls": [
+          "_zero_v800_extract_action",
+          "_zero_v800_extract_error",
+          "_zero_v800_extract_status",
+          "_zero_v800_last_step_type",
+          "_zero_v800_represents_failed_step_observation",
+          "append",
+          "bool",
+          "deepcopy",
+          "get",
+          "isinstance",
+          "join"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v800_extract_action",
+          "_zero_v800_extract_error",
+          "_zero_v800_extract_status",
+          "_zero_v800_last_step_type",
+          "_zero_v800_represents_failed_step_observation"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-013": {
+        "assignment_rhs": "_zero_v800_decide_from_observation",
+        "direct_calls": [
+          "bool",
+          "get",
+          "isinstance",
+          "lower",
+          "str"
+        ],
+        "reachable_local_helpers": [],
+        "source_function_found": true
+      },
+      "S13D-RC-014": {
+        "assignment_rhs": "_zero_v800_last_step_type",
+        "direct_calls": [
+          "get",
+          "isinstance",
+          "str"
+        ],
+        "reachable_local_helpers": [],
+        "source_function_found": true
+      },
+      "S13D-RC-015": {
+        "assignment_rhs": "_zero_v800_represents_failed_step_observation",
+        "direct_calls": [
+          "_zero_v800_last_step_type",
+          "get",
+          "int",
+          "isinstance"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v800_last_step_type"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-016": {
+        "assignment_rhs": "_zero_v800_task_runner_run_one_step",
+        "direct_calls": [
+          "_ZERO_V800_ORIGINAL_TASK_RUNNER_RUN_ONE_STEP",
+          "_zero_v800_build_observation",
+          "_zero_v800_decide_from_observation",
+          "create_engineering_replan_candidate",
+          "deepcopy",
+          "get",
+          "isinstance",
+          "load_runtime_state",
+          "record_engineering_decision",
+          "record_engineering_observation",
+          "save_runtime_state",
+          "str"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v800_build_observation",
+          "_zero_v800_decide_from_observation",
+          "_zero_v800_extract_action",
+          "_zero_v800_extract_error",
+          "_zero_v800_extract_status",
+          "_zero_v800_last_step_type",
+          "_zero_v800_represents_failed_step_observation"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-017": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-018": {
+        "assignment_rhs": "_zero_v703_scheduler_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V703_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_get_failed_step_type",
+          "get",
+          "int",
+          "isinstance",
+          "lower",
+          "str",
+          "strip"
+        ],
+        "reachable_local_helpers": [
+          "_get_failed_step_payload",
+          "_get_failed_step_type"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-019": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-020": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-021": {
+        "assignment_rhs": "_zero_v726_find_active_duplicate_repair_task",
+        "direct_calls": [
+          "_ZERO_V726_ORIGINAL_FIND_ACTIVE_DUPLICATE_REPAIR_TASK",
+          "_load_repair_fingerprint_index",
+          "_zero_v726_pending_lock_age_seconds",
+          "_zero_v726_pending_lock_task_id",
+          "_zero_v726_release_pending_repair_lock",
+          "get",
+          "isinstance",
+          "str",
+          "strip"
+        ],
+        "reachable_local_helpers": [
+          "_load_repair_fingerprint_index",
+          "_repair_fingerprint_index_file",
+          "_save_repair_fingerprint_index",
+          "_zero_v726_pending_lock_age_seconds",
+          "_zero_v726_pending_lock_task_id",
+          "_zero_v726_release_pending_repair_lock"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-022": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-023": {
+        "assignment_rhs": "_zero_v731_scheduler_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V731_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_get_failed_step_type",
+          "get",
+          "int",
+          "isinstance",
+          "lower",
+          "str",
+          "strip"
+        ],
+        "reachable_local_helpers": [
+          "_get_failed_step_payload",
+          "_get_failed_step_type"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-024": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-025": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-026": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-027": {
+        "assignment_rhs": null,
+        "direct_calls": [],
+        "reachable_local_helpers": [],
+        "source_function_found": false
+      },
+      "S13D-RC-028": {
+        "assignment_rhs": "_zero_v7332_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7332_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7332_is_constitutional_block"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7332_is_constitutional_block"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-029": {
+        "assignment_rhs": "_zero_v7333_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7333_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7333_governed_continuation_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7333_governed_continuation_summary"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-030": {
+        "assignment_rhs": "_zero_v7334_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7334_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7334_governed_self_repair_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7333_governed_continuation_summary",
+          "_zero_v7334_governed_self_repair_summary"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-031": {
+        "assignment_rhs": "_zero_v7335_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7335_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7335_controlled_mutation_bridge_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7332_constitutional_metadata",
+          "_zero_v7333_governed_continuation_summary",
+          "_zero_v7334_governed_self_repair_summary",
+          "_zero_v7335_controlled_mutation_bridge_summary"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-032": {
+        "assignment_rhs": "_zero_v7336_is_repairable_failure",
+        "direct_calls": [
+          "_ZERO_V7336_ORIGINAL_IS_REPAIRABLE_FAILURE",
+          "_zero_v7336_verified_mutation_continuation_summary",
+          "get"
+        ],
+        "reachable_local_helpers": [
+          "_zero_v7336_verified_mutation_continuation_summary"
+        ],
+        "source_function_found": true
+      },
+      "S13D-RC-033": {
+        "assignment_rhs": "attach_autonomous_repair_chain_summary",
+        "direct_calls": [
+          "append",
+          "bool",
+          "get",
+          "int",
+          "is_autonomous_repair_chain_payload",
+          "isinstance",
+          "setdefault",
+          "str"
+        ],
+        "reachable_local_helpers": [
+          "is_autonomous_repair_chain_payload"
+        ],
+        "source_function_found": true
+      }
+    }
+  },
+  "unlock_graph": {
+    "scheduler": [
+      {
+        "blocker_id": "S13A-SCHED-002",
+        "symbol": "Scheduler._handle_missing_repo_task",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-002"
+      },
+      {
+        "blocker_id": "S13A-SCHED-003",
+        "symbol": "Scheduler._handle_run_one_step_exception",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json#S13A-SCHED-003"
+      }
+    ],
+    "taskrunner": [
+      {
+        "blocker_id": "S13B-TR-002",
+        "symbol": "TaskRunner._determine_failure_type",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-002"
+      },
+      {
+        "blocker_id": "S13B-TR-003",
+        "symbol": "TaskRunner._determine_failure_type",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-003"
+      },
+      {
+        "blocker_id": "S13B-TR-006",
+        "symbol": "TaskRunner._determine_failure_type",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json#S13B-TR-006"
+      }
+    ],
+    "stepexecutor": [
+      {
+        "blocker_id": "S13C-SE-003",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json#S13C-SE-003"
+      },
+      {
+        "blocker_id": "S13C-SE-005",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json#S13C-SE-005"
+      },
+      {
+        "blocker_id": "S13C-SE-007",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json#S13C-SE-007"
+      },
+      {
+        "blocker_id": "S13C-SE-008",
+        "symbol": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json#S13C-SE-008"
+      },
+      {
+        "blocker_id": "S13C-SE-028",
+        "symbol": "StepExecutor._handle_autonomous_repair_chain_step",
+        "relationship": "unlocked_after_repairchain_closure",
+        "evidence_source": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json#S13C-SE-028"
+      }
+    ],
+    "repair": [
+      {
+        "blocker_id": "S13D-RC-001",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "stepexecutor",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-002",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "stepexecutor",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-003",
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "stepexecutor",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-004",
+        "symbol": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "stepexecutor",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-005",
+        "symbol": "StepExecutor._handle_autonomous_repair_chain_step",
+        "unlock_targets": [
+          "taskrunner",
+          "stepexecutor",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-006",
+        "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-007",
+        "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-008",
+        "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-009",
+        "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-010",
+        "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-011",
+        "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-012",
+        "symbol": "TaskRunner._zero_v800_build_observation",
+        "unlock_targets": [
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-013",
+        "symbol": "TaskRunner._zero_v800_decide_from_observation",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-014",
+        "symbol": "TaskRunner._zero_v800_last_step_type",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-015",
+        "symbol": "TaskRunner._zero_v800_represents_failed_step_observation",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-016",
+        "symbol": "TaskRunner._run_one_step",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-018",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-019",
+        "symbol": "Scheduler.REPAIRABLE_STEP_TYPES",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-021",
+        "symbol": "Scheduler._find_active_duplicate_repair_task",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-023",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-024",
+        "symbol": "Scheduler.REPAIRABLE_STEP_TYPES",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-028",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-029",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-030",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-031",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      },
+      {
+        "blocker_id": "S13D-RC-032",
+        "symbol": "Scheduler._is_repairable_failure",
+        "unlock_targets": [
+          "scheduler",
+          "taskrunner",
+          "repair"
+        ]
+      }
+    ]
+  },
+  "closure_order": [
+    {
+      "order": 1,
+      "node": "authority",
+      "blocked_by": [
+        "authority_contract"
+      ],
+      "unlocks": [
+        "execution"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "execution",
+      "blocked_by": [
+        "authority"
+      ],
+      "unlocks": [
+        "lineage"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "lineage",
+      "blocked_by": [
+        "execution",
+        "goal_lineage_contract"
+      ],
+      "unlocks": [
+        "runtime_session"
+      ]
+    },
+    {
+      "order": 4,
+      "node": "runtime_session",
+      "blocked_by": [
+        "lineage",
+        "runtime_session_ownership"
+      ],
+      "unlocks": [
+        "recovery"
+      ]
+    },
+    {
+      "order": 5,
+      "node": "recovery",
+      "blocked_by": [
+        "runtime_session",
+        "step_executor_contract"
+      ],
+      "unlocks": [
+        "retry"
+      ]
+    },
+    {
+      "order": 6,
+      "node": "retry",
+      "blocked_by": [
+        "recovery",
+        "scheduler_contract"
+      ],
+      "unlocks": [
+        "duplicate_repair"
+      ]
+    },
+    {
+      "order": 7,
+      "node": "duplicate_repair",
+      "blocked_by": [
+        "retry",
+        "scheduler_queue_ownership"
+      ],
+      "unlocks": [
+        "freeze_readiness"
+      ]
+    }
+  ],
+  "ownership_leak_map": {
+    "current_owners": [
+      "class-level assignment in core/runtime/step_executor.py:4222",
+      "class-level assignment in core/runtime/step_executor.py:4367",
+      "class-level assignment in core/runtime/step_executor.py:4577",
+      "class-level assignment in core/runtime/step_executor.py:4587",
+      "class-level assignment in core/runtime/step_executor.py:8890",
+      "class-level assignment in core/runtime/task_runner.py:4601",
+      "class-level assignment in core/runtime/task_runner.py:4605",
+      "class-level assignment in core/runtime/task_runner.py:4634",
+      "class-level assignment in core/runtime/task_runner.py:4639",
+      "class-level assignment in core/runtime/task_runner.py:4690",
+      "class-level assignment in core/runtime/task_runner.py:4695",
+      "class-level assignment in core/runtime/task_runner.py:4983",
+      "class-level assignment in core/runtime/task_runner.py:4984",
+      "class-level assignment in core/runtime/task_runner.py:4985",
+      "class-level assignment in core/runtime/task_runner.py:4986",
+      "class-level assignment in core/runtime/task_runner.py:4987",
+      "class-level assignment in core/tasks/scheduler.py:10180",
+      "class-level assignment in core/tasks/scheduler.py:10366",
+      "class-level assignment in core/tasks/scheduler.py:7945",
+      "class-level assignment in core/tasks/scheduler.py:8038",
+      "class-level assignment in core/tasks/scheduler.py:8040",
+      "class-level assignment in core/tasks/scheduler.py:8327",
+      "class-level assignment in core/tasks/scheduler.py:8514",
+      "class-level assignment in core/tasks/scheduler.py:8518",
+      "class-level assignment in core/tasks/scheduler.py:8601",
+      "class-level assignment in core/tasks/scheduler.py:8603",
+      "class-level assignment in core/tasks/scheduler.py:8605",
+      "class-level assignment in core/tasks/scheduler.py:9025",
+      "class-level assignment in core/tasks/scheduler.py:9026",
+      "class-level assignment in core/tasks/scheduler.py:9590",
+      "class-level assignment in core/tasks/scheduler.py:9798",
+      "class-level assignment in core/tasks/scheduler.py:9964",
+      "class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:227"
+    ],
+    "expected_owners": [
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner._run_one_step (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_build_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_last_step_type (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation (native definition)",
+      "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)",
+      "core.tasks.scheduler.Scheduler.RETRYING_REPAIR_BRIDGE_VERSION (non-behavioral metadata)",
+      "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD (non-behavioral metadata)",
+      "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary (native observability boundary)",
+      "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task (native definition)",
+      "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)"
+    ],
+    "ownership_leak_locations": [
+      "core/runtime/step_executor.py:4222",
+      "core/runtime/step_executor.py:4367",
+      "core/runtime/step_executor.py:4577",
+      "core/runtime/step_executor.py:4587",
+      "core/runtime/step_executor.py:8890",
+      "core/runtime/task_runner.py:4601",
+      "core/runtime/task_runner.py:4605",
+      "core/runtime/task_runner.py:4634",
+      "core/runtime/task_runner.py:4639",
+      "core/runtime/task_runner.py:4690",
+      "core/runtime/task_runner.py:4695",
+      "core/runtime/task_runner.py:4983",
+      "core/runtime/task_runner.py:4984",
+      "core/runtime/task_runner.py:4985",
+      "core/runtime/task_runner.py:4986",
+      "core/runtime/task_runner.py:4987",
+      "core/tasks/scheduler.py:10180",
+      "core/tasks/scheduler.py:10366",
+      "core/tasks/scheduler.py:8038",
+      "core/tasks/scheduler.py:8040",
+      "core/tasks/scheduler.py:8514",
+      "core/tasks/scheduler.py:8601",
+      "core/tasks/scheduler.py:8603",
+      "core/tasks/scheduler.py:9590",
+      "core/tasks/scheduler.py:9798",
+      "core/tasks/scheduler.py:9964",
+      "core/tasks/scheduler_core/runtime_overlay_helpers.py:227"
+    ],
+    "repair_native_owner_endpoints": [
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)",
+      "core.runtime.task_runner.TaskRunner._run_one_step (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_build_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_last_step_type (native definition)",
+      "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation (native definition)",
+      "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)",
+      "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task (native definition)",
+      "core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)"
+    ]
+  },
+  "non_mainline_issues": [
+    {
+      "blocker_id": "S13D-RC-033",
+      "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "source_line": 227,
+      "symbol": "Scheduler._attach_autonomous_repair_chain_summary",
+      "validated_classification": "non_mainline_issue",
+      "replacement_kind": "class_level_replacement",
+      "replacement_target": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary",
+      "current_owner": "class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+      "expected_native_owner": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary (native observability boundary)",
+      "ownership_buckets": [
+        "recovery_chain",
+        "repair_session",
+        "repair_lineage",
+        "non_mainline_issue"
+      ],
+      "repair_boundary": {
+        "active": true,
+        "owner": "RuntimeNativeAutonomousRepairChain / scheduler repair handoff",
+        "evidence": [
+          "explicit_symbol_contract:repair",
+          "source_assignment:core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+          "assignment_rhs:attach_autonomous_repair_chain_summary"
+        ]
+      },
+      "authority_boundary": {
+        "active": false,
+        "owner": "Scheduler repair eligibility and TaskRunner repair decision endpoints",
+        "evidence": []
+      },
+      "execution_boundary": {
+        "active": false,
+        "owner": "TaskRunner and StepExecutor native repair execution endpoints",
+        "evidence": []
+      },
+      "lineage_boundary": {
+        "active": true,
+        "owner": "repair-chain identity and goal-lineage contract",
+        "evidence": [
+          "explicit_symbol_contract:lineage",
+          "source_assignment:core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+          "assignment_rhs:attach_autonomous_repair_chain_summary"
+        ]
+      },
+      "runtime_session_boundary": {
+        "active": true,
+        "owner": "runtime-session repair continuation contract",
+        "evidence": [
+          "explicit_symbol_contract:runtime_session",
+          "source_assignment:core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+          "assignment_rhs:attach_autonomous_repair_chain_summary"
+        ]
+      },
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: A native observability owner and independent non-mainline validation exist before retiring this assignment.",
+      "dependency_edges": [
+        {
+          "from": "goal_lineage_contract",
+          "to": "repair_chain",
+          "relationship": "repair_lineage_dependency"
+        },
+        {
+          "from": "runtime_session_ownership",
+          "to": "repair_chain",
+          "relationship": "repair_session_dependency"
+        }
+      ],
+      "unlock_targets": [
+        "taskrunner",
+        "repair"
+      ],
+      "call_graph": {
+        "assignment_rhs": "attach_autonomous_repair_chain_summary",
+        "direct_calls": [
+          "append",
+          "bool",
+          "get",
+          "int",
+          "is_autonomous_repair_chain_payload",
+          "isinstance",
+          "setdefault",
+          "str"
+        ],
+        "reachable_local_helpers": [
+          "is_autonomous_repair_chain_payload"
+        ],
+        "source_function_found": true
+      },
+      "evidence_source": [
+        "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#repair_chain",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+        "explicit_symbol_contract:Scheduler._attach_autonomous_repair_chain_summary",
+        "assignment_rhs:attach_autonomous_repair_chain_summary",
+        "ast_function:core/tasks/scheduler_core/runtime_overlay_helpers.py::attach_autonomous_repair_chain_summary"
+      ]
+    }
+  ],
+  "unresolved_ambiguities": [],
+  "aer_closure_summary": {
+    "stage13a_mapped_confirmed": 45,
+    "stage13b_mapped_confirmed": 19,
+    "stage13c_mapped_confirmed": 26,
+    "stage13d_mapped_confirmed": 26,
+    "stage13d_new_distinct_mappings": 21,
+    "total_mapped_blockers": 111,
+    "remaining_unmapped_blockers": 2,
+    "remaining_unmapped_inventory": [
+      {
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5449,
+        "symbol": "TaskRunner._build_taskrunner_authority_context",
+        "domain": "authority_contract"
+      },
+      {
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7909,
+        "symbol": "Scheduler._plan_goal",
+        "domain": "planner_contract"
+      }
+    ],
+    "ownership_mapping_percent": 98.2,
+    "ownership_closure_percent": 0.0,
+    "freeze_readiness_percent": 0.0,
+    "freeze_blockers": 113,
+    "seal_blockers": 113,
+    "critical_suite_blockers": 33,
+    "remaining_native_ownership_leaks": 113,
+    "scheduler_impact": "2 scheduler dependency paths are mapped to RepairChain closure prerequisites.",
+    "taskrunner_impact": "3 TaskRunner dependency paths are mapped to RepairChain closure prerequisites.",
+    "stepexecutor_impact": "5 StepExecutor dependency paths are mapped; five RepairChain blockers overlap Stage13C ownership evidence.",
+    "repairchain_impact": "All 33 RepairChain items are inventoried; 26 are confirmed blockers and 21 add distinct AER mappings.",
+    "remaining_stages_before_aer_seal": "minimum 9 gated stages: remaining authority/planner mapping, seven RepairChain closure nodes, and freeze/seal validation"
+  },
+  "validation_results": {
+    "observed_on": "2026-06-21",
+    "generator": {
+      "status": "pass",
+      "passed": 1,
+      "failed": 0
+    },
+    "compileall": {
+      "status": "pass",
+      "passed": 1,
+      "failed": 0
+    },
+    "repair_chain_suites": {
+      "status": "fail",
+      "passed": 37,
+      "failed": 31,
+      "duration_seconds": 372.81,
+      "failure_summary": "30 repair runtime expectations observe blocked where retrying was expected; one native autonomous repair handler returned ok=false."
+    },
+    "ownership_suites": {
+      "status": "fail",
+      "passed": 69,
+      "failed": 2,
+      "subtests_passed": 7,
+      "duration_seconds": 27.05,
+      "failures": [
+        "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+        "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit"
+      ]
+    },
+    "runtime_blocker_suites": {
+      "status": "pass",
+      "passed": 8,
+      "failed": 0,
+      "duration_seconds": 1.38
+    },
+    "total_test_passed": 114,
+    "total_test_failed": 33,
+    "failures_fixed": false
+  }
+}

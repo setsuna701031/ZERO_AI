@@ -1,0 +1,126 @@
+{
+  "stage": "Runtime Blocker Domain Split Stage12",
+  "total_blockers_processed": 142,
+  "classification_counts": {
+    "confirmed_blocker": 113,
+    "compatibility_bridge": 15,
+    "false_positive": 8,
+    "non_mainline_issue": 6
+  },
+  "domain_counts": {
+    "authority_contract": 6,
+    "runtime_gate_compatibility_bridge": 15,
+    "planner_contract": 1,
+    "scheduler_contract": 52,
+    "taskrunner_contract": 19,
+    "step_executor_contract": 16,
+    "repair_chain": 33
+  },
+  "confirmed_blocker_domain_counts": {
+    "authority_contract": 6,
+    "runtime_gate_compatibility_bridge": 0,
+    "planner_contract": 1,
+    "scheduler_contract": 45,
+    "taskrunner_contract": 19,
+    "step_executor_contract": 16,
+    "repair_chain": 26
+  },
+  "critical_chain_counts": {
+    "authority_chain": 6,
+    "runtime_gate_chain": 15,
+    "planner_chain": 1,
+    "scheduler_chain": 52,
+    "task_runner_chain": 19,
+    "step_executor_chain": 16,
+    "recovery_chain": 33
+  },
+  "critical_chain_order": [
+    {
+      "order": 1,
+      "domain": "authority_contract",
+      "chain": "authority_chain",
+      "depends_on": [],
+      "count": 6,
+      "confirmed_blocker_count": 6
+    },
+    {
+      "order": 2,
+      "domain": "runtime_gate_compatibility_bridge",
+      "chain": "runtime_gate_chain",
+      "depends_on": [
+        "authority_contract"
+      ],
+      "count": 15,
+      "confirmed_blocker_count": 0
+    },
+    {
+      "order": 3,
+      "domain": "planner_contract",
+      "chain": "planner_chain",
+      "depends_on": [
+        "authority_contract",
+        "runtime_gate_compatibility_bridge"
+      ],
+      "count": 1,
+      "confirmed_blocker_count": 1
+    },
+    {
+      "order": 4,
+      "domain": "scheduler_contract",
+      "chain": "scheduler_chain",
+      "depends_on": [
+        "planner_contract"
+      ],
+      "count": 52,
+      "confirmed_blocker_count": 45
+    },
+    {
+      "order": 5,
+      "domain": "taskrunner_contract",
+      "chain": "task_runner_chain",
+      "depends_on": [
+        "scheduler_contract",
+        "runtime_gate_compatibility_bridge"
+      ],
+      "count": 19,
+      "confirmed_blocker_count": 19
+    },
+    {
+      "order": 6,
+      "domain": "step_executor_contract",
+      "chain": "step_executor_chain",
+      "depends_on": [
+        "taskrunner_contract",
+        "authority_contract"
+      ],
+      "count": 16,
+      "confirmed_blocker_count": 16
+    },
+    {
+      "order": 7,
+      "domain": "repair_chain",
+      "chain": "recovery_chain",
+      "depends_on": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "count": 33,
+      "confirmed_blocker_count": 26
+    }
+  ],
+  "compatibility_bridge_count": 15,
+  "false_positive_count": 8,
+  "non_mainline_issue_count": 6,
+  "required_corrections_enforced": {
+    "TaskRunner._runtime_gate_consolidated": "compatibility_bridge",
+    "Scheduler._find_active_duplicate_repair_task": "confirmed_blocker",
+    "TaskRunner._zero_v800_last_step_type": "confirmed_blocker"
+  },
+  "production_runtime_modified": false,
+  "outputs": {
+    "domain_split": "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json",
+    "summary": "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md"
+  }
+}

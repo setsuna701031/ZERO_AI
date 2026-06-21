@@ -1,0 +1,480 @@
+{
+  "stage": "Stage16C — Canonical Ownership Framework Migration Bundle",
+  "scope": "inventory_seal_readiness_framework_migration",
+  "canonical_owner": {
+    "symbol": "core.runtime.task_runtime.project_runtime_status",
+    "file": "core/runtime/task_runtime.py",
+    "valid": true
+  },
+  "inventory_migration": {
+    "status": "pass",
+    "projection_clients_expected": [
+      "core/adaptive/adaptive_runtime_resume.py",
+      "core/runtime/persistent_runtime_orchestrator.py",
+      "core/runtime/runtime_recovery_continuation.py",
+      "core/runtime/task_runner.py",
+      "core/runtime/thin_runtime_bridge.py",
+      "core/runtime/work_package_queue.py",
+      "core/tasks/scheduler.py",
+      "core/tasks/scheduler_core/repo_state_helpers.py",
+      "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "core/tasks/scheduler_core/runtime_resume_gate.py",
+      "core/tasks/scheduler_core/simple_runner_helpers.py"
+    ],
+    "projection_clients_missing": [],
+    "allowed_direct_write_files": [
+      "core/runtime/runtime_state_machine.py",
+      "core/runtime/task_runtime.py"
+    ],
+    "unexpected_direct_writers": {},
+    "taskrunner_direct_writer_count": 0,
+    "historical_direct_writers_required": false
+  },
+  "seal_migration": {
+    "status": "pass",
+    "canonical_boundary": "core.runtime.task_runtime.project_runtime_status",
+    "strict_seal_weakened": false,
+    "taskrunner_direct_writer_count": 0,
+    "scheduler_direct_stepexecutor_call_count": 0,
+    "scheduler_direct_stepexecutor_calls": [],
+    "compatibility_bridges_visible": true,
+    "compatibility_bridge_count": 15,
+    "compatibility_bridge_ids": [
+      "S14-CB-001",
+      "S14-CB-002",
+      "S14-CB-003",
+      "S14-CB-004",
+      "S14-CB-005",
+      "S14-CB-006",
+      "S14-CB-007",
+      "S14-CB-008",
+      "S14-CB-009",
+      "S14-CB-010",
+      "S14-CB-011",
+      "S14-CB-012",
+      "S14-CB-013",
+      "S14-CB-014",
+      "S14-CB-015"
+    ]
+  },
+  "readiness_migration": {
+    "validation_source": "live commands executed by tools/canonical_ownership_framework_migration_stage16c.py",
+    "historical_stage15a_results_used_as_current_input": false,
+    "gf_001": "cleared",
+    "gf_002": "cleared",
+    "gf_003": "inventory_drift_resolved",
+    "wave0_gate_status": "pass",
+    "wave1_ready": true,
+    "blocking_reasons": []
+  },
+  "validation_results": {
+    "status": "pass",
+    "generator": "pass",
+    "compileall": "pass",
+    "pytest": {
+      "status": "pass",
+      "passed": 80,
+      "failed": 0,
+      "errors": 0,
+      "failures": []
+    },
+    "commands": {
+      "compileall": {
+        "label": "compileall",
+        "status": "pass",
+        "returncode": 0,
+        "command": "C:\\Users\\heero\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe -m compileall -q core cli tests tools",
+        "passed": 0,
+        "failed": 0,
+        "errors": 0,
+        "output_tail": ""
+      },
+      "ownership_blocker_suite": {
+        "label": "ownership_blocker_suite",
+        "status": "pass",
+        "returncode": 0,
+        "command": "C:\\Users\\heero\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe -m pytest -q tests/test_runtime_ownership_gate_contract.py tests/test_runtime_execution_ownership_seal.py tests/test_runtime_execution_ownership_migration_contract.py tests/test_scheduler_runtime_ownership_closure.py tests/test_runtime_ownership_execution_path_seal.py tests/test_runtime_ownership_contract.py tests/test_runtime_ownership_enforcement.py tests/test_runtime_native_autonomous_repair_chain_v1.py tests/test_runtime_native_autonomous_repair_chain_v2_integration.py tests/test_runtime_native_autonomous_repair_chain_seal_v1.py tests/test_runtime_blockers.py tests/test_runtime_ownership_isolation_fabric_seal_v1.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_ownership_enforcement_phase3.py tests/test_runtime_audit_artifact.py",
+        "passed": 69,
+        "failed": 0,
+        "errors": 0,
+        "output_tail": "................................................................. [ 94%]\n....                                                                     [100%]\n69 passed, 7 subtests passed in 17.92s"
+      },
+      "strict_ownership_seal": {
+        "label": "strict_ownership_seal",
+        "status": "pass",
+        "returncode": 0,
+        "command": "C:\\Users\\heero\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe -m pytest -q tests/test_runtime_status_write_authority_seal.py",
+        "passed": 4,
+        "failed": 0,
+        "errors": 0,
+        "output_tail": "....                                                                     [100%]\n============================== warnings summary ===============================\ntests/test_runtime_status_write_authority_seal.py: 4303 warnings\n  E:\\zero_ai\\tests\\test_runtime_status_write_authority_seal.py:67: DeprecationWarning: ast.Str is deprecated and will be removed in Python 3.14; use ast.Constant instead\n    if isinstance(node, ast.Str) and node.s == \"status\":\n\ntests/test_runtime_status_write_authority_seal.py: 3798 warnings\n  E:\\zero_ai\\tests\\test_runtime_status_write_authority_seal.py:67: DeprecationWarning: Attribute s is deprecated and will be removed in Python 3.14; use value instead\n    if isinstance(node, ast.Str) and node.s == \"status\":\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n4 passed, 8101 warnings in 2.14s"
+      },
+      "runtime_status_inventory": {
+        "label": "runtime_status_inventory",
+        "status": "pass",
+        "returncode": 0,
+        "command": "C:\\Users\\heero\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe -m pytest -q tests/test_runtime_status_ownership_inventory.py",
+        "passed": 4,
+        "failed": 0,
+        "errors": 0,
+        "output_tail": "....                                                                     [100%]\n4 passed in 1.91s"
+      },
+      "stage15a_gate_suite": {
+        "label": "stage15a_gate_suite",
+        "status": "pass",
+        "returncode": 0,
+        "command": "C:\\Users\\heero\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe -m pytest -q tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary tests/test_runtime_native_autonomous_repair_chain_v2_integration.py::test_step_executor_autonomous_repair_chain_handler tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+        "passed": 3,
+        "failed": 0,
+        "errors": 0,
+        "output_tail": "...                                                                      [100%]\n3 passed in 2.58s"
+      }
+    }
+  },
+  "non_mainline_issue_reporting": {
+    "status": "preserved",
+    "covered": 6,
+    "total": 6,
+    "tracking_ids": [
+      "S14-NM-001",
+      "S14-NM-002",
+      "S14-NM-003",
+      "S14-NM-004",
+      "S14-NM-005",
+      "S14-NM-006"
+    ],
+    "records": [
+      {
+        "tracking_id": "S14-NM-001",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8325,
+        "symbol": "Scheduler.get_queue_snapshot",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:8325",
+        "native_owner": "core.tasks.scheduler.Scheduler.get_queue_snapshot",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:8325"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-002",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8326,
+        "symbol": "Scheduler.get_queue_rows",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:8326",
+        "native_owner": "core.tasks.scheduler.Scheduler.get_queue_rows",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:8326"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-003",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9343,
+        "symbol": "Scheduler.approve_review_item",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:9343",
+        "native_owner": "core.tasks.scheduler.Scheduler.approve_review_item",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:9343"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-004",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9344,
+        "symbol": "Scheduler.reject_review_item",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:9344",
+        "native_owner": "core.tasks.scheduler.Scheduler.reject_review_item",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:9344"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-005",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9381,
+        "symbol": "Scheduler.get_review_queue",
+        "current_owner": "class-level assignment in core/tasks/scheduler.py:9381",
+        "native_owner": "core.tasks.scheduler.Scheduler.get_review_queue",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler.py:9381"
+        ]
+      },
+      {
+        "tracking_id": "S14-NM-006",
+        "validated_classification": "non_mainline_issue",
+        "migration_domain": "non_mainline_observability",
+        "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "source_line": 227,
+        "symbol": "Scheduler._attach_autonomous_repair_chain_summary",
+        "current_owner": "class-level assignment in core/tasks/scheduler_core/runtime_overlay_helpers.py:227",
+        "native_owner": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary",
+        "migration_action": "Assign a named native observability owner, preserve evidence output, and retire the non-mainline assignment only after independent artifact validation.",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "validation_gate": {
+          "required_suites": [
+            "tests/test_runtime_status_ownership_inventory.py",
+            "tests/test_runtime_audit_artifact.py"
+          ],
+          "pass_condition": "All named suites pass with no ownership, authority, lineage, session, blocker, or artifact regression.",
+          "evidence_condition": "The blocker-specific source assignment is absent only after native-owner evidence and dependency edges remain stable."
+        },
+        "seal_gate": true,
+        "evidence_source": [
+          "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json#non_mainline_observability",
+          "core/tasks/scheduler_core/runtime_overlay_helpers.py:227"
+        ]
+      }
+    ]
+  },
+  "historical_evidence": {
+    "stage11b_through_stage16b_rewritten": false,
+    "locked_artifacts": [
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json",
+        "sha256": "60e99964d161db2dc165a7422c3b908d39642ab5e6615fb59b3a4f6f18a24853"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_report.md",
+        "sha256": "aba9eb39d9aa8aed187c64a1f0ac40655dc0e75a4ec4647d5929e9e3366517f7"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14_summary.json",
+        "sha256": "47bee0cffd71b9db8148eeb41c032ea702eae4e64fddaaf479048ec6b0f3ea0f"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+        "sha256": "e98e2ce7d0d059f57ef9d5b67c5cb00384d02d421b8820c9407231b29596706e"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a_report.md",
+        "sha256": "8d099d72541570d3a007600f7b6a2b40f411aa4f3e3d5540dff03cf48fef90ac"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a_summary.json",
+        "sha256": "c0c296e9b7e83edc76a025747bbc1a15d0454110e647af0a6e51e30814886101"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json",
+        "sha256": "495b01cabe2099788a3ff7c489e8f9e711c3a88482387cff7190cbad2e58e774"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1_report.md",
+        "sha256": "89120022d9a9812bad698b34a6436502bd228d2a5164cc553c1a67207cc298bd"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1_summary.json",
+        "sha256": "1b651ec22f6e2375bc4ef09aa5799ecd896108f747d0b2cb49730530843df17d"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e.json",
+        "sha256": "8cd91928753f629dcea57b02ce0ebdd0caf3002153983ed44138c85d5f5cb2dd"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e_report.md",
+        "sha256": "d4fd63bb99105ce0161dc96a4ffa5137ebf05b9a80e57a75480788a61f6727f8"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e_summary.json",
+        "sha256": "e0565cd5fc1d4d48c006838823602f73ab2c3821b1d945fb8903e110390f7ceb"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/authority_reconciliation_stage15c.json",
+        "sha256": "dde456395e22c592ea7d43b948556e2d31c14596c5db9ffc6fd75e7452363907"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/authority_reconciliation_stage15c_report.md",
+        "sha256": "97fbda599a83fa37e6f086b38abace6349a79a8fcd95365598701a05ef78cfca"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/authority_reconciliation_stage15c_summary.json",
+        "sha256": "e94f4ac61c20f8b6bd78b78f6785635062fdb844bdd3270884e826f342c937e4"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json",
+        "sha256": "82c248dc78bea7d3c182e266134630d5c9ff34608695cd0c82a13885defcea34"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_report.md",
+        "sha256": "560301d86287199c968e5605e30d172861a3d607c559fd251f7bf0cb4cd3d2b8"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_summary.json",
+        "sha256": "6e726270202aa1d8bc24a1bc08560031f15dce2c75255729a17a9ffa9e2398cb"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/inventory_alignment_seal_framework_correction_stage16a_report.md",
+        "sha256": "b17d888e76f6820b498b9fef9c0eaa16e26bc1c05b038d29f401d59ef3ade411"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json",
+        "sha256": "cff6972e0c11fb60e0d89d06f886d6e83df6fd804494458df5b8b4b66867e0fd"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d_report.md",
+        "sha256": "77c66cf3bf43f2e613cd7230e935290e66ac6c53cc128c0823192df0df4f5724"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d_summary.json",
+        "sha256": "d42f863fd55afaa1b01901600fb15170fa0966b3ac074f55244c47449556bd61"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json",
+        "sha256": "bd053c0ffdccbf703c6c5bb528b00db8ecd44cf978853d758d01376c9276301e"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_report.md",
+        "sha256": "8d4b27a24a68ad0d88983c1f2e1da8c2eb56399e0fcec51955a180f3985a3e36"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12_summary.json",
+        "sha256": "7b8ed9f6424039bc935ec1e25426f0da5714f09d5a48a79eb8ebd62819ab9aa7"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a.json",
+        "sha256": "69378e32d420f751a43646fcff28ee294798a11f8f80670202e5ffe4bc780d42"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_report.md",
+        "sha256": "ebd56609557b106d24f98442becf3a0dd31fa104a4588a661977d4d5a9c2a521"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/scheduler_native_ownership_closure_stage13a_summary.json",
+        "sha256": "76de9892e7bab89931f34378cfee8d276d28dc16d7c05aaa9c2247918b2a7feb"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json",
+        "sha256": "c4598afd33755f612aa41d191488cd0bb570b727cf7c569130cef19e2dda4a91"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c_report.md",
+        "sha256": "4869ea966b5a13e9fc48da02ba6c71d90a18ed4e687868a33e2d50e77d75edd5"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c_summary.json",
+        "sha256": "fbe7459fa5ddb752e1f29781ad42fddf3719321c4d6734c54113b09710800d26"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json",
+        "sha256": "c4865b79fe91e4533b29279c3f4829475067946d0e90c3a713f460cf3454274c"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b_report.md",
+        "sha256": "3cc3a6d1f398b6be26735b0c972f1c7ed3557bea7a6b52163b72695bb56504e3"
+      },
+      {
+        "artifact": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b_summary.json",
+        "sha256": "00e9a9430dd1e61271aa21a10b9afa407c8ad8e8e88cb8b628c7c68af86e864d"
+      }
+    ]
+  },
+  "production_runtime_modified": false,
+  "tests_modified": true,
+  "test_modification_scope": [
+    "tests/test_runtime_status_ownership_inventory.py"
+  ],
+  "live_source_lock": [
+    {
+      "artifact": "tests/test_runtime_status_ownership_inventory.py",
+      "sha256": "76cdfd27ec70ca3564a8347d7e294e09d3467d51e2824e2836a04a93717b65f9"
+    },
+    {
+      "artifact": "tests/test_runtime_status_write_authority_seal.py",
+      "sha256": "12b6b29f1d633c173e0004f9f02f42668a625c63d9673a0897dd2a3c0ac7d0dc"
+    },
+    {
+      "artifact": "tools/aer_wave0_execution_gate_stage15a.py",
+      "sha256": "bdabf0b00ab7c96bb0bd56713f0e2a5bd4022b5ec7d2d9a39fb0b572951ab8a4"
+    },
+    {
+      "artifact": "tools/canonical_ownership_framework_migration_stage16c.py",
+      "sha256": "c8111e175466d49c9e8255ac745276e248c82659beae0a81bbc1393364baf7a4"
+    },
+    {
+      "artifact": "core/runtime/task_runtime.py",
+      "sha256": "f79bd9f9a6d537718eae2c73bcb158eb00913f311e7c83a7310eac0a184420de"
+    },
+    {
+      "artifact": "core/runtime/task_runner.py",
+      "sha256": "3ab1ccbaa3ce02f4d7aa88d536a36884cce522c8dec0b71c35047f893b2da53e"
+    },
+    {
+      "artifact": "core/tasks/scheduler.py",
+      "sha256": "7c8c9d307b6abad5e271ac36e4b931108cfb7957537803edfb3659f3ebab0127"
+    }
+  ],
+  "outputs": {
+    "migration": "docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c.json",
+    "summary": "docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/canonical_ownership_framework_migration_stage16c_report.md"
+  }
+}

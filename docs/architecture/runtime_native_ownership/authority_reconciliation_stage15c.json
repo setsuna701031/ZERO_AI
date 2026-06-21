@@ -1,0 +1,574 @@
+{
+  "stage": "Stage15C — Gate Authority Reconciliation",
+  "scope": "GF-003 authority reconciliation only",
+  "production_runtime_modified": false,
+  "tests_modified": false,
+  "stage15a_artifacts_modified": false,
+  "inputs": [
+    {
+      "artifact": "core/runtime/task_runtime.py",
+      "sha256": "f79bd9f9a6d537718eae2c73bcb158eb00913f311e7c83a7310eac0a184420de"
+    },
+    {
+      "artifact": "tests/test_runtime_status_ownership_inventory.py",
+      "sha256": "df89b8e8a1282058a87db4be9e66a1faeb26b4c210676c2700c0060d68bf8db1"
+    },
+    {
+      "artifact": "tools/aer_ownership_migration_plan_stage14.py",
+      "sha256": "bd7e9be4dc79c04a13e0c295c95190ac353c711ee53d0c862f687f24beb28301"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json",
+      "sha256": "60e99964d161db2dc165a7422c3b908d39642ab5e6615fb59b3a4f6f18a24853"
+    },
+    {
+      "artifact": "tools/aer_wave0_execution_gate_stage15a.py",
+      "sha256": "fcb72e1ba6c6f13d65f63f28bdb427144d42baa2fdee1595d0b97f4b15ec3ea3"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_execution_gate_stage15a.json",
+      "sha256": "e98e2ce7d0d059f57ef9d5b67c5cb00384d02d421b8820c9407231b29596706e"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json",
+      "sha256": "495b01cabe2099788a3ff7c489e8f9e711c3a88482387cff7190cbad2e58e774"
+    },
+    {
+      "artifact": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json",
+      "sha256": "82c248dc78bea7d3c182e266134630d5c9ff34608695cd0c82a13885defcea34"
+    }
+  ],
+  "gf003_evidence_trace": [
+    {
+      "evidence_id": "GF003-E01",
+      "layer": "runtime_owner",
+      "source": "core/runtime/task_runtime.py:75",
+      "fact": "project_runtime_status is the canonical status write boundary; it validates a dict target, assigns payload['status'], and returns that payload."
+    },
+    {
+      "evidence_id": "GF003-E02",
+      "layer": "runtime_callers",
+      "source": "live AST scan of core/runtime, core/tasks, and core/adaptive",
+      "fact": "All eleven EXPECTED_HIGH_RISK_FILES entries call project_runtime_status; ten have no tracked direct status assignment, while task_runner.py remains the only tracked non-owner direct writer.",
+      "projected_expected_files": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/task_runner.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ],
+      "projected_missing_baseline_files": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ],
+      "direct_writer_files": [
+        "core/runtime/task_runner.py"
+      ]
+    },
+    {
+      "evidence_id": "GF003-E03",
+      "layer": "inventory_rule",
+      "source": "tests/test_runtime_status_ownership_inventory.py:14-48",
+      "fact": "ALLOWED_FILES names five accepted owner files, while EXPECTED_HIGH_RISK_FILES is a fixed eleven-file residue baseline.",
+      "allowed_owner_files": [
+        "core/runtime/runtime_dispatcher.py",
+        "core/runtime/runtime_session_resume.py",
+        "core/runtime/runtime_state_machine.py",
+        "core/runtime/task_runtime.py",
+        "core/tasks/task_state.py"
+      ],
+      "expected_high_risk_files": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/task_runner.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ]
+    },
+    {
+      "evidence_id": "GF003-E04",
+      "layer": "failing_assertion",
+      "source": "tests/test_runtime_status_ownership_inventory.py:98-115",
+      "fact": "The assertion requires every fixed EXPECTED_HIGH_RISK_FILES entry to appear among current tracked direct status assignments.",
+      "assertion": "assert EXPECTED_HIGH_RISK_FILES <= high_risk",
+      "missing_expected_high_risk_files": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ]
+    },
+    {
+      "evidence_id": "GF003-E05",
+      "layer": "stage14_seal",
+      "source": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json#validation_results/seal_blockers",
+      "fact": "Stage14 records the assertion failure as seal evidence and requires ownership/evidence graph stability; its generic runtime-ownership drift rule does not require reintroducing direct status writes.",
+      "failure": {
+        "test": "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+        "seal_evidence": "Expected high-risk status-writer inventory differs from the current source scan; ownership inventory evidence must be reconciled before seal."
+      },
+      "runtime_ownership_drift": {
+        "condition": "No class-level replacement, direct execution ownership, or owner endpoint drift may reappear after freeze.",
+        "evidence": [
+          "113 blocker freeze records",
+          "scheduler direct StepExecutor call scan",
+          "ownership suites"
+        ]
+      },
+      "evidence_graph_drift": {
+        "condition": "Source symbols, native owners, dependency edges, and validation evidence hashes remain stable from freeze through seal.",
+        "evidence": [
+          "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e.json",
+          "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json"
+        ]
+      }
+    },
+    {
+      "evidence_id": "GF003-E06",
+      "layer": "non_mainline_track",
+      "source": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json#non_mainline_issues",
+      "fact": "Six non-mainline observability records remain separately reported; GF-003 does not erase or reclassify them.",
+      "tracking_ids": [
+        "S14-NM-001",
+        "S14-NM-002",
+        "S14-NM-003",
+        "S14-NM-004",
+        "S14-NM-005",
+        "S14-NM-006"
+      ]
+    },
+    {
+      "evidence_id": "GF003-E07",
+      "layer": "stage15a_generator",
+      "source": "tools/aer_wave0_execution_gate_stage15a.py:34-60,192-205",
+      "fact": "Stage15A readiness consumes a hardcoded historical VALIDATION_RESULTS object, so rerunning the generator cannot observe a newly passing live suite without generator correction.",
+      "failure": {
+        "test": "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit",
+        "gate": "seal",
+        "evidence": "The expected high-risk status-writer inventory differs from the source scan; inventory drift remains seal evidence."
+      }
+    },
+    {
+      "evidence_id": "GF003-E08",
+      "layer": "downstream_artifacts",
+      "source": "docs/architecture/runtime_native_ownership/aer_wave0_gate_failure_inventory_stage15a1.json and docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json",
+      "fact": "Stage15A.1 preserves GF-003 as runtime-status inventory drift; Stage15A.2 correctly declines to manufacture direct writes and leaves reconciliation gated.",
+      "stage15a1_category": [
+        "runtime_status_ownership_drift"
+      ],
+      "stage15a2_topology": "execution_dependency_deadlock"
+    }
+  ],
+  "live_inventory": {
+    "expected_high_risk_count": 11,
+    "observed_direct_writer_count": 1,
+    "observed_direct_writer_files": [
+      "core/runtime/task_runner.py"
+    ],
+    "missing_expected_count": 10,
+    "missing_expected_files": [
+      "core/adaptive/adaptive_runtime_resume.py",
+      "core/runtime/persistent_runtime_orchestrator.py",
+      "core/runtime/runtime_recovery_continuation.py",
+      "core/runtime/thin_runtime_bridge.py",
+      "core/runtime/work_package_queue.py",
+      "core/tasks/scheduler.py",
+      "core/tasks/scheduler_core/repo_state_helpers.py",
+      "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "core/tasks/scheduler_core/runtime_resume_gate.py",
+      "core/tasks/scheduler_core/simple_runner_helpers.py"
+    ],
+    "expected_files_using_canonical_projection_count": 11,
+    "expected_files_using_canonical_projection": [
+      "core/adaptive/adaptive_runtime_resume.py",
+      "core/runtime/persistent_runtime_orchestrator.py",
+      "core/runtime/runtime_recovery_continuation.py",
+      "core/runtime/task_runner.py",
+      "core/runtime/thin_runtime_bridge.py",
+      "core/runtime/work_package_queue.py",
+      "core/tasks/scheduler.py",
+      "core/tasks/scheduler_core/repo_state_helpers.py",
+      "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "core/tasks/scheduler_core/runtime_resume_gate.py",
+      "core/tasks/scheduler_core/simple_runner_helpers.py"
+    ],
+    "missing_baseline_files_using_canonical_projection_count": 10,
+    "missing_baseline_files_using_canonical_projection": [
+      "core/adaptive/adaptive_runtime_resume.py",
+      "core/runtime/persistent_runtime_orchestrator.py",
+      "core/runtime/runtime_recovery_continuation.py",
+      "core/runtime/thin_runtime_bridge.py",
+      "core/runtime/work_package_queue.py",
+      "core/tasks/scheduler.py",
+      "core/tasks/scheduler_core/repo_state_helpers.py",
+      "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "core/tasks/scheduler_core/runtime_resume_gate.py",
+      "core/tasks/scheduler_core/simple_runner_helpers.py"
+    ],
+    "projection_call_evidence": {
+      "core/adaptive/adaptive_runtime_resume.py": [
+        {
+          "line": 165,
+          "owner_argument": "core/adaptive/adaptive_runtime_resume.py"
+        },
+        {
+          "line": 194,
+          "owner_argument": "core/adaptive/adaptive_runtime_resume.py"
+        }
+      ],
+      "core/runtime/persistent_runtime_orchestrator.py": [
+        {
+          "line": 789,
+          "owner_argument": "core/runtime/persistent_runtime_orchestrator.py"
+        },
+        {
+          "line": 936,
+          "owner_argument": "core/runtime/persistent_runtime_orchestrator.py"
+        },
+        {
+          "line": 942,
+          "owner_argument": "core/runtime/persistent_runtime_orchestrator.py"
+        },
+        {
+          "line": 945,
+          "owner_argument": "core/runtime/persistent_runtime_orchestrator.py"
+        }
+      ],
+      "core/runtime/runtime_recovery_continuation.py": [
+        {
+          "line": 483,
+          "owner_argument": "core/runtime/runtime_recovery_continuation.py"
+        }
+      ],
+      "core/runtime/task_runner.py": [
+        {
+          "line": 3191,
+          "owner_argument": "core/runtime/task_runner.py"
+        },
+        {
+          "line": 4281,
+          "owner_argument": "core/runtime/task_runner.py"
+        }
+      ],
+      "core/runtime/thin_runtime_bridge.py": [
+        {
+          "line": 1460,
+          "owner_argument": "core/runtime/thin_runtime_bridge.py"
+        },
+        {
+          "line": 1486,
+          "owner_argument": "core/runtime/thin_runtime_bridge.py"
+        }
+      ],
+      "core/runtime/work_package_queue.py": [
+        {
+          "line": 216,
+          "owner_argument": "core/runtime/work_package_queue.py"
+        },
+        {
+          "line": 229,
+          "owner_argument": "core/runtime/work_package_queue.py"
+        },
+        {
+          "line": 765,
+          "owner_argument": "core/runtime/work_package_queue.py"
+        }
+      ],
+      "core/tasks/scheduler.py": [
+        {
+          "line": 1992,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 1998,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 2471,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 2477,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 3155,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 4483,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 4513,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 4648,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 4671,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 5896,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 5906,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 6087,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 8146,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 9271,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 9275,
+          "owner_argument": "core/tasks/scheduler.py"
+        },
+        {
+          "line": 10390,
+          "owner_argument": "core/tasks/scheduler.py"
+        }
+      ],
+      "core/tasks/scheduler_core/repo_state_helpers.py": [
+        {
+          "line": 504,
+          "owner_argument": "core/tasks/scheduler_core/repo_state_helpers.py"
+        },
+        {
+          "line": 533,
+          "owner_argument": "core/tasks/scheduler_core/repo_state_helpers.py"
+        },
+        {
+          "line": 561,
+          "owner_argument": "core/tasks/scheduler_core/repo_state_helpers.py"
+        },
+        {
+          "line": 832,
+          "owner_argument": "core/tasks/scheduler_core/repo_state_helpers.py"
+        },
+        {
+          "line": 889,
+          "owner_argument": "core/tasks/scheduler_core/repo_state_helpers.py"
+        }
+      ],
+      "core/tasks/scheduler_core/runtime_overlay_helpers.py": [
+        {
+          "line": 122,
+          "owner_argument": "core/tasks/scheduler_core/runtime_overlay_helpers.py"
+        },
+        {
+          "line": 125,
+          "owner_argument": "core/tasks/scheduler_core/runtime_overlay_helpers.py"
+        },
+        {
+          "line": 160,
+          "owner_argument": "core/tasks/scheduler_core/runtime_overlay_helpers.py"
+        }
+      ],
+      "core/tasks/scheduler_core/runtime_resume_gate.py": [
+        {
+          "line": 88,
+          "owner_argument": "core/tasks/scheduler_core/runtime_resume_gate.py"
+        }
+      ],
+      "core/tasks/scheduler_core/simple_runner_helpers.py": [
+        {
+          "line": 175,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 216,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 269,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 364,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 423,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 603,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 750,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        },
+        {
+          "line": 789,
+          "owner_argument": "core/tasks/scheduler_core/simple_runner_helpers.py"
+        }
+      ]
+    }
+  },
+  "authority_reconciliation": {
+    "actual_runtime_owner": {
+      "owner": "core.runtime.task_runtime.project_runtime_status",
+      "owner_file": "core/runtime/task_runtime.py",
+      "write_symbol": "project_runtime_status(payload, status, owner=..., reason=...)",
+      "evidence": "The only status assignment inside the canonical projection boundary is payload['status'] = status."
+    },
+    "expected_inventory_owner": {
+      "allowed_owner_files": [
+        "core/runtime/runtime_dispatcher.py",
+        "core/runtime/runtime_session_resume.py",
+        "core/runtime/runtime_state_machine.py",
+        "core/runtime/task_runtime.py",
+        "core/tasks/task_state.py"
+      ],
+      "rule_meaning": "These files are excluded from the high-risk non-owner direct-writer scan; the suite separately asserts that each file exists.",
+      "stale_residue_baseline": [
+        "core/adaptive/adaptive_runtime_resume.py",
+        "core/runtime/persistent_runtime_orchestrator.py",
+        "core/runtime/runtime_recovery_continuation.py",
+        "core/runtime/task_runner.py",
+        "core/runtime/thin_runtime_bridge.py",
+        "core/runtime/work_package_queue.py",
+        "core/tasks/scheduler.py",
+        "core/tasks/scheduler_core/repo_state_helpers.py",
+        "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "core/tasks/scheduler_core/runtime_resume_gate.py",
+        "core/tasks/scheduler_core/simple_runner_helpers.py"
+      ]
+    },
+    "seal_rule_source": {
+      "primary": "tools/aer_ownership_migration_plan_stage14.py:155-175,664-673",
+      "artifact": "docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json#validation_results/seal_blockers",
+      "rule": "No class-level replacement, direct execution ownership, or owner endpoint drift may reappear after freeze.",
+      "gf003_entry_path": "validation_results.pytest.failures[].seal_evidence"
+    },
+    "failing_assertion_source": {
+      "source": "tests/test_runtime_status_ownership_inventory.py:112",
+      "assertion": "EXPECTED_HIGH_RISK_FILES <= high_risk",
+      "expected_count": 11,
+      "observed_count": 1,
+      "missing_count": 10
+    }
+  },
+  "classification": {
+    "gf003": "inventory_drift",
+    "is_runtime_bug": false,
+    "selection_count": 1,
+    "allowed_classifications": [
+      "runtime_bug",
+      "test_bug",
+      "inventory_drift",
+      "seal_rule_drift",
+      "artifact_generator_drift"
+    ],
+    "basis": [
+      "The runtime uses the named canonical status projection boundary in ten files that the inventory still expects to be direct writers.",
+      "The failing assertion compares a historical fixed residue set against current direct-write AST findings.",
+      "Stage14 itself describes the failure as an inventory difference requiring reconciliation, not as proof of an illegal runtime write."
+    ],
+    "downstream_drift": {
+      "seal_rule_drift": "secondary: the seal consumes the stale inventory result as failure evidence",
+      "artifact_generator_drift": "secondary: Stage15A hardcodes historical validation results",
+      "test_bug": "not selected: assertion implementation is internally consistent with its static baseline; the baseline is stale"
+    }
+  },
+  "migration_plan": {
+    "required": true,
+    "scope": "inventory/seal/generator correction only; no runtime ownership change",
+    "steps": [
+      {
+        "order": 1,
+        "target": "runtime status ownership inventory source of truth",
+        "action": "Generate a typed inventory with separate canonical-owner files, canonical projection callers, tracked non-owner direct writers, and non-mainline observability records.",
+        "completion_gate": "The generated inventory reports task_runtime.project_runtime_status as owner, ten projected expected files, task_runner.py as the current tracked direct-writer residue, and S14-NM-001..006 unchanged."
+      },
+      {
+        "order": 2,
+        "target": "tests/test_runtime_status_ownership_inventory.py",
+        "action": "In a separately authorized change, replace the stale fixed direct-writer subset assertion with assertions over the typed inventory: canonical owner exists, projection callers are explicit, and no untracked direct writer appears.",
+        "completion_gate": "The ownership suite passes without adding direct status writes to projection callers."
+      },
+      {
+        "order": 3,
+        "target": "Stage14 successor seal definition",
+        "action": "Bind status ownership seal evidence to the typed inventory and fail only on canonical-owner drift, unexpected direct writers, missing projection provenance, or loss of non-mainline records.",
+        "completion_gate": "Seal semantics preserve runtime_ownership_drift and evidence_graph_drift without treating successful projection migration as missing evidence."
+      },
+      {
+        "order": 4,
+        "target": "tools/aer_wave0_execution_gate_stage15a.py",
+        "action": "In a separately authorized successor generator, replace hardcoded VALIDATION_RESULTS readiness input with a versioned live validation-result artifact; retain historical failures as immutable evidence only.",
+        "completion_gate": "A rerun reflects current suite results while Stage15A artifacts remain unchanged."
+      },
+      {
+        "order": 5,
+        "target": "Wave 0 authorization reconciliation",
+        "action": "Run artifact consistency and the corrected ownership inventory suite, then issue a new reconciliation decision rather than rewriting Stage14 or Stage15A evidence.",
+        "completion_gate": "GF-003 is closed as inventory_drift, six non-mainline records remain reported, and no runtime/test change is hidden in artifact regeneration."
+      }
+    ],
+    "rollback_conditions": [
+      "Any correction that reintroduces direct status writes into canonical projection callers.",
+      "Any correction that removes S14-NM-001..006 from observability reporting.",
+      "Any generator correction that overwrites historical Stage14/Stage15A evidence instead of versioning current results."
+    ]
+  },
+  "non_mainline_issue_reporting": {
+    "mandatory": true,
+    "status": "preserved",
+    "count": 6,
+    "tracking_ids": [
+      "S14-NM-001",
+      "S14-NM-002",
+      "S14-NM-003",
+      "S14-NM-004",
+      "S14-NM-005",
+      "S14-NM-006"
+    ]
+  },
+  "artifact_consistency": {
+    "status": "pass",
+    "classification_is_exactly_one": true,
+    "all_gf003_sources_traced": true,
+    "live_inventory_matches_failure_evidence": true,
+    "stage15a_failure_preserved": true
+  }
+}

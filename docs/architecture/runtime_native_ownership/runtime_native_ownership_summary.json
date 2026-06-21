@@ -1,0 +1,80 @@
+{
+  "ownership_items": 3803,
+  "owner_domain_counts": {
+    "runtime_authority": 99,
+    "step_executor": 652,
+    "task_runner": 842,
+    "scheduler": 1653,
+    "planner": 67,
+    "recovery": 490
+  },
+  "bridge_class_counts": {
+    "none_or_native": 2031,
+    "native_owner": 1017,
+    "compatibility_fallback": 283,
+    "blocker_signal": 472
+  },
+  "action_counts": {
+    "native_owner_confirmed": 2502,
+    "add_native_owner_contract_test_before_removal": 283,
+    "keep_as_blocker_signal": 472,
+    "manual_review": 546
+  },
+  "risk_counts": {
+    "low": 3520,
+    "medium": 283
+  },
+  "top_files": [
+    [
+      "core/tasks/scheduler.py",
+      1561
+    ],
+    [
+      "core/runtime/task_runner.py",
+      841
+    ],
+    [
+      "core/runtime/step_executor.py",
+      652
+    ],
+    [
+      "core/runtime/runtime_replay_engine.py",
+      371
+    ],
+    [
+      "core/runtime/runtime_recovery_executor.py",
+      106
+    ],
+    [
+      "core/runtime/runtime_native_scheduler.py",
+      91
+    ],
+    [
+      "core/runtime/planner_runtime_dispatch.py",
+      67
+    ],
+    [
+      "core/runtime/execution_authority.py",
+      62
+    ],
+    [
+      "core/runtime/runtime_authority.py",
+      37
+    ],
+    [
+      "core/runtime/operator_integration_bridge.py",
+      15
+    ]
+  ],
+  "zero_patch_residue_count": 0,
+  "monkey_patch_residue_count": 2,
+  "native_contract_tests_passed": true,
+  "stage5_native_contracts": null,
+  "stage7_generated_tests": 66,
+  "verification_passed": true,
+  "outputs": {
+    "inventory": "E:\\zero_ai\\docs\\architecture\\runtime_native_ownership\\runtime_native_ownership_inventory.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_native_ownership\\runtime_native_ownership_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_native_ownership\\runtime_native_ownership_report.md"
+  }
+}

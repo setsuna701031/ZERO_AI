@@ -1,0 +1,747 @@
+# AER Ownership Migration Plan — Stage14
+
+Planning only. No production runtime or test file was modified, and no blocker was fixed.
+
+## Summary
+
+- Confirmed blockers planned: 113
+- Migration waves: 11
+- Freeze blockers: 113
+- Seal blockers: 134
+- Compatibility bridges tracked separately: 15
+- Non-mainline issues tracked separately: 6
+- Highest-risk domains: scheduler, taskrunner, stepexecutor, authority_context, repairchain
+- First executable migration wave: Wave 1: authority context migration (after Wave 0 evidence and invariant lock)
+- Production runtime touched: false
+- Tests touched: false
+
+## Ordered migration waves
+
+### Wave 0: evidence and invariant lock
+
+- Included records: 113
+- Cannot start until: none
+- Validation suites: evidence/schema validation
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 1: authority context migration
+
+- Included records: 6
+- Cannot start until: wave_0_complete
+- Validation suites: `tests/test_runtime_ownership_gate_contract.py`, `tests/test_runtime_execution_ownership_seal.py`, `tests/test_runtime_execution_ownership_migration_contract.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 2: planner goal overlay migration
+
+- Included records: 1
+- Cannot start until: wave_1_complete
+- Validation suites: `tests/test_scheduler_runtime_ownership_closure.py`, `tests/test_runtime_ownership_execution_path_seal.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 3: scheduler direct-call seal
+
+- Included records: 45
+- Cannot start until: wave_2_complete
+- Validation suites: `tests/test_scheduler_runtime_ownership_closure.py`, `tests/test_runtime_execution_ownership_seal.py`, `tests/test_runtime_ownership_execution_path_seal.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 4: taskrunner execution ownership
+
+- Included records: 19
+- Cannot start until: wave_3_complete
+- Validation suites: `tests/test_runtime_execution_ownership_migration_contract.py`, `tests/test_runtime_ownership_gate_contract.py`, `tests/test_runtime_ownership_contract.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 5: stepexecutor fallback / execution ownership
+
+- Included records: 16
+- Cannot start until: wave_4_complete
+- Validation suites: `tests/test_runtime_execution_ownership_seal.py`, `tests/test_runtime_ownership_execution_path_seal.py`, `tests/test_runtime_ownership_enforcement.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 6: lineage + runtime-session boundary
+
+- Included records: 26
+- Cannot start until: wave_5_complete
+- Validation suites: `tests/test_runtime_execution_ownership_migration_contract.py`, `tests/test_runtime_ownership_isolation_fabric_seal_v1.py`, `tests/test_runtime_ownership_contract.py`, `tests/test_runtime_status_ownership_inventory.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 7: repairchain recovery / retry / duplicate repair
+
+- Included records: 26
+- Cannot start until: wave_6_complete
+- Validation suites: `tests/test_runtime_native_autonomous_repair_chain_v1.py`, `tests/test_runtime_native_autonomous_repair_chain_v2_integration.py`, `tests/test_runtime_native_autonomous_repair_chain_seal_v1.py`, `tests/test_runtime_blockers.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 8: compatibility bridge retirement
+
+- Included records: 15
+- Cannot start until: wave_7_complete
+- Validation suites: `tests/test_runtime_ownership_gate_contract.py`, `tests/test_runtime_ownership_enforcement_phase3.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 9: freeze validation
+
+- Included records: 113
+- Cannot start until: wave_8_complete
+- Validation suites: `tests/test_runtime_ownership_gate_contract.py`, `tests/test_runtime_execution_ownership_seal.py`, `tests/test_runtime_execution_ownership_migration_contract.py`, `tests/test_scheduler_runtime_ownership_closure.py`, `tests/test_runtime_ownership_execution_path_seal.py`, `tests/test_runtime_ownership_contract.py`, `tests/test_runtime_ownership_enforcement.py`, `tests/test_runtime_native_autonomous_repair_chain_v1.py`, `tests/test_runtime_native_autonomous_repair_chain_v2_integration.py`, `tests/test_runtime_native_autonomous_repair_chain_seal_v1.py`, `tests/test_runtime_blockers.py`, `tests/test_runtime_ownership_isolation_fabric_seal_v1.py`, `tests/test_runtime_status_ownership_inventory.py`, `tests/test_runtime_ownership_enforcement_phase3.py`, `tests/test_runtime_audit_artifact.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+### Wave 10: seal validation
+
+- Included records: 134
+- Cannot start until: wave_9_complete
+- Validation suites: `tests/test_runtime_ownership_gate_contract.py`, `tests/test_runtime_execution_ownership_seal.py`, `tests/test_runtime_execution_ownership_migration_contract.py`, `tests/test_scheduler_runtime_ownership_closure.py`, `tests/test_runtime_ownership_execution_path_seal.py`, `tests/test_runtime_ownership_contract.py`, `tests/test_runtime_ownership_enforcement.py`, `tests/test_runtime_native_autonomous_repair_chain_v1.py`, `tests/test_runtime_native_autonomous_repair_chain_v2_integration.py`, `tests/test_runtime_native_autonomous_repair_chain_seal_v1.py`, `tests/test_runtime_blockers.py`, `tests/test_runtime_ownership_isolation_fabric_seal_v1.py`, `tests/test_runtime_status_ownership_inventory.py`, `tests/test_runtime_ownership_enforcement_phase3.py`, `tests/test_runtime_audit_artifact.py`
+- Completion: All included records satisfy native-owner, safe-removal, validation, rollback-evidence, freeze-gate, and seal-gate requirements.
+- Rollback: Rollback the entire wave if any included blocker validation gate fails or ownership/evidence drift is detected.
+
+## Migration domain counts
+
+- `authority_context`: 6
+- `planner_goal_overlay`: 1
+- `scheduler`: 45
+- `taskrunner`: 19
+- `stepexecutor`: 16
+- `repairchain`: 26
+- `lineage`: 24
+- `runtime_session`: 24
+- `compatibility_bridge`: 15
+- `non_mainline_observability`: 6
+
+## Freeze blockers
+
+- Confirmed blocker records: 113
+- Critical suite blockers: 2
+- Direct StepExecutor call seals: 6
+- Authority propagation blockers: 21
+- Goal-lineage integrity blockers: 24
+- Runtime-session blockers: 24
+- Repair-chain blockers: 26
+
+## Seal blockers
+
+- Distinct actionable records: 134
+- Runtime ownership drift gate: No class-level replacement, direct execution ownership, or owner endpoint drift may reappear after freeze.
+- Evidence graph drift gate: Source symbols, native owners, dependency edges, and validation evidence hashes remain stable from freeze through seal.
+- Compatibility bridge residue: 15
+- Non-mainline observability residue: 6
+
+## Confirmed blocker plan
+
+- `S13C-SE-001` — `core/runtime/step_executor.py:4196` — `StepExecutor._register_builtin_handlers`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-002` — `core/runtime/step_executor.py:4221` — `StepExecutor.__init__`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.__init__ (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-003` — `core/runtime/step_executor.py:4222` — `StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free. Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13C-SE-004` — `core/runtime/step_executor.py:4366` — `StepExecutor._register_builtin_handlers`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-005` — `core/runtime/step_executor.py:4367` — `StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free. Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13C-SE-006` — `core/runtime/step_executor.py:4576` — `StepExecutor._register_builtin_handlers`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-007` — `core/runtime/step_executor.py:4577` — `StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free. Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13C-SE-008` — `core/runtime/step_executor.py:4587` — `StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free. Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13C-SE-009` — `core/runtime/step_executor.py:5840` — `StepExecutor.__init__`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.__init__ (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-014` — `core/runtime/step_executor.py:6498` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-015` — `core/runtime/step_executor.py:6867` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-016` — `core/runtime/step_executor.py:7044` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-017` — `core/runtime/step_executor.py:7300` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-018` — `core/runtime/step_executor.py:7365` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-019` — `core/runtime/step_executor.py:7403` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-020` — `core/runtime/step_executor.py:7775` — `StepExecutor._classify_step_authority_requirement`
+  - Domains: `authority_context`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor._classify_step_authority_requirement (native definition)`
+  - Risk: `critical`; primary wave: 1
+  - Safe removal: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.
+- `S13C-SE-021` — `core/runtime/step_executor.py:7776` — `StepExecutor._build_pre_execution_authority_decision`
+  - Domains: `authority_context`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision (native definition)`
+  - Risk: `critical`; primary wave: 1
+  - Safe removal: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.
+- `S13C-SE-022` — `core/runtime/step_executor.py:7777` — `StepExecutor._attach_pre_execution_authority`
+  - Domains: `authority_context`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor._attach_pre_execution_authority (native definition)`
+  - Risk: `critical`; primary wave: 1
+  - Safe removal: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.
+- `S13C-SE-023` — `core/runtime/step_executor.py:7778` — `StepExecutor.execute_step`
+  - Domains: `authority_context`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 1
+  - Safe removal: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.
+- `S13C-SE-024` — `core/runtime/step_executor.py:8464` — `StepExecutor.execute_step`
+  - Domains: `authority_context`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 1
+  - Safe removal: Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.
+- `S13C-SE-025` — `core/runtime/step_executor.py:8509` — `StepExecutor.__init__`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.__init__ (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-026` — `core/runtime/step_executor.py:8731` — `StepExecutor.__init__`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.__init__ (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-027` — `core/runtime/step_executor.py:8889` — `StepExecutor._register_builtin_handlers`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-028` — `core/runtime/step_executor.py:8890` — `StepExecutor._handle_autonomous_repair_chain_step`
+  - Domains: `repairchain`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13C StepExecutor condition: Repair handlers, routing sets, and recovery result contracts are native and duplicate-free. Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13C-SE-029` — `core/runtime/step_executor.py:9072` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: One native StepExecutor.execute_step endpoint and one native handler registry pass execution-boundary ownership suites.
+- `S13C-SE-030` — `core/runtime/step_executor.py:9622` — `StepExecutor.execute_step`
+  - Domains: `stepexecutor`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.step_executor.StepExecutor.execute_step (native definition)`
+  - Risk: `critical`; primary wave: 5
+  - Safe removal: Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts. Stage13C StepExecutor condition: Authority context and capability lineage arrive through TaskRunner and are enforced once by the native StepExecutor endpoint.
+- `S13B-TR-001` — `core/runtime/task_runner.py:4589` — `TaskRunner._run_one_step`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner._run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13D-RC-006` — `core/runtime/task_runner.py:4601` — `TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-007` — `core/runtime/task_runner.py:4605` — `TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13B-TR-002` — `core/runtime/task_runner.py:4624` — `TaskRunner._determine_failure_type`
+  - Domains: `taskrunner`
+  - Native owner: `core.runtime.task_runner.TaskRunner._determine_failure_type (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13D-RC-008` — `core/runtime/task_runner.py:4634` — `TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-009` — `core/runtime/task_runner.py:4639` — `TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13B-TR-003` — `core/runtime/task_runner.py:4669` — `TaskRunner._determine_failure_type`
+  - Domains: `taskrunner`
+  - Native owner: `core.runtime.task_runner.TaskRunner._determine_failure_type (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-004` — `core/runtime/task_runner.py:4686` — `TaskRunner.READ_ONLY_STEP_TYPES`
+  - Domains: `taskrunner`
+  - Native owner: `core.runtime.task_runner.TaskRunner.READ_ONLY_STEP_TYPES (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native TaskRunner declares canonical step-type routing sets and all consumers use those declarations.
+- `S13D-RC-010` — `core/runtime/task_runner.py:4690` — `TaskRunner.SIDE_EFFECT_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-011` — `core/runtime/task_runner.py:4695` — `TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13B-TR-005` — `core/runtime/task_runner.py:4696` — `TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Domains: `taskrunner`
+  - Native owner: `core.runtime.task_runner.TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native TaskRunner declares canonical step-type routing sets and all consumers use those declarations.
+- `S13B-TR-006` — `core/runtime/task_runner.py:4722` — `TaskRunner._determine_failure_type`
+  - Domains: `taskrunner`
+  - Native owner: `core.runtime.task_runner.TaskRunner._determine_failure_type (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13D-RC-012` — `core/runtime/task_runner.py:4983` — `TaskRunner._zero_v800_build_observation`
+  - Domains: `repairchain`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner._zero_v800_build_observation (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-013` — `core/runtime/task_runner.py:4984` — `TaskRunner._zero_v800_decide_from_observation`
+  - Domains: `repairchain`, `lineage`
+  - Native owner: `core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-014` — `core/runtime/task_runner.py:4985` — `TaskRunner._zero_v800_last_step_type`
+  - Domains: `repairchain`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner._zero_v800_last_step_type (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-015` — `core/runtime/task_runner.py:4986` — `TaskRunner._zero_v800_represents_failed_step_observation`
+  - Domains: `repairchain`
+  - Native owner: `core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-016` — `core/runtime/task_runner.py:4987` — `TaskRunner._run_one_step`
+  - Domains: `repairchain`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner._run_one_step (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13B-TR-007` — `core/runtime/task_runner.py:5179` — `TaskRunner.__init__`
+  - Domains: `taskrunner`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.__init__ (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native construction and persistence use one runtime-session owner and preserve step results across resume.
+- `S13B-TR-008` — `core/runtime/task_runner.py:5180` — `TaskRunner._persist_step_result_to_runtime_state`
+  - Domains: `taskrunner`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner._persist_step_result_to_runtime_state (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native construction and persistence use one runtime-session owner and preserve step results across resume.
+- `S13E-AP-001` — `core/runtime/task_runner.py:5449` — `TaskRunner._build_taskrunner_authority_context`
+  - Domains: `authority_context`
+  - Native owner: `core.runtime.task_runner.TaskRunner._build_taskrunner_authority_context (native definition at core/runtime/task_runner.py:1775)`
+  - Risk: `critical`; primary wave: 1
+  - Safe removal: The native TaskRunner authority-context method preserves upstream authority source, capability provenance, identity graph, task/step identity, and runtime-session identity; both execute_owned_step and _run_one_step consume that native method; StepExecutor authority-denial and capability suites pass without the class-level assignment.
+- `S13B-TR-009` — `core/runtime/task_runner.py:5476` — `TaskRunner.run_task_adaptive`
+  - Domains: `taskrunner`, `lineage`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task_adaptive (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: Native adaptive execution preserves complete goal lineage and continuation identity through scheduler handoff.
+- `S13B-TR-010` — `core/runtime/task_runner.py:5630` — `TaskRunner.run_task_tick`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task_tick (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-011` — `core/runtime/task_runner.py:5643` — `TaskRunner.run_task`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-012` — `core/runtime/task_runner.py:5683` — `TaskRunner.run_task_tick`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task_tick (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-013` — `core/runtime/task_runner.py:5692` — `TaskRunner.run_task`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-014` — `core/runtime/task_runner.py:5875` — `TaskRunner.run_task_tick`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task_tick (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-015` — `core/runtime/task_runner.py:5889` — `TaskRunner.run_task`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-016` — `core/runtime/task_runner.py:5982` — `TaskRunner.run_task_tick`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task_tick (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-017` — `core/runtime/task_runner.py:5991` — `TaskRunner.run_task`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-018` — `core/runtime/task_runner.py:6036` — `TaskRunner.run_task_tick`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task_tick (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13B-TR-019` — `core/runtime/task_runner.py:6045` — `TaskRunner.run_task`
+  - Domains: `taskrunner`, `lineage`, `runtime_session`
+  - Native owner: `core.runtime.task_runner.TaskRunner.run_task (native definition)`
+  - Risk: `critical`; primary wave: 4
+  - Safe removal: Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries. Stage13B TaskRunner condition: One native run_task/run_task_tick/_run_one_step chain passes TaskRunner contracts and scheduler boundary survival tests.
+- `S13A-SCHED-001` — `core/tasks/scheduler.py:7782` — `Scheduler._handle_dispatch_result`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._handle_dispatch_result (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-002` — `core/tasks/scheduler.py:7783` — `Scheduler._handle_missing_repo_task`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._handle_missing_repo_task (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Retry and recovery ownership is explicit at the scheduler/repair-chain boundary, including failure and resumability contracts.
+- `S13A-SCHED-003` — `core/tasks/scheduler.py:7784` — `Scheduler._handle_run_one_step_exception`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._handle_run_one_step_exception (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Retry and recovery ownership is explicit at the scheduler/repair-chain boundary, including failure and resumability contracts.
+- `S13A-SCHED-004` — `core/tasks/scheduler.py:7785` — `Scheduler._finalize_dispatched_task`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._finalize_dispatched_task (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-005` — `core/tasks/scheduler.py:7787` — `Scheduler._mark_repo_task_finished`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._mark_repo_task_finished (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-006` — `core/tasks/scheduler.py:7788` — `Scheduler._mark_repo_task_failed`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._mark_repo_task_failed (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-007` — `core/tasks/scheduler.py:7789` — `Scheduler._mark_repo_task_queued`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._mark_repo_task_queued (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13E-AP-002` — `core/tasks/scheduler.py:7909` — `Scheduler._plan_goal`
+  - Domains: `planner_goal_overlay`
+  - Native owner: `core.tasks.scheduler.Scheduler._plan_goal (native definition at core/tasks/scheduler.py:6914)`
+  - Risk: `high`; primary wave: 2
+  - Safe removal: The native Scheduler._plan_goal owns the code-chain repair-plan branch or delegates it through one named native planner endpoint; _create_task_record and _ensure_executable_steps_for_task consume the same canonical plan contract; planner, scheduler, repair-plan, and runtime-gate compatibility suites pass without the class-level assignment or predecessor fallback.
+- `S13A-SCHED-008` — `core/tasks/scheduler.py:7910` — `Scheduler._execute_simple_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._execute_simple_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-009` — `core/tasks/scheduler.py:7944` — `Scheduler._execute_simple_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._execute_simple_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13D-RC-018` — `core/tasks/scheduler.py:8038` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-019` — `core/tasks/scheduler.py:8040` — `Scheduler.REPAIRABLE_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-011` — `core/tasks/scheduler.py:8323` — `Scheduler.cleanup_task_queue_hygiene`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+- `S13A-SCHED-012` — `core/tasks/scheduler.py:8324` — `Scheduler.tick`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.tick (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+- `S13D-RC-021` — `core/tasks/scheduler.py:8514` — `Scheduler._find_active_duplicate_repair_task`
+  - Domains: `repairchain`, `lineage`, `runtime_session`
+  - Native owner: `core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task (native definition)`
+  - Risk: `critical`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-015` — `core/tasks/scheduler.py:8515` — `Scheduler.cleanup_task_queue_hygiene`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+- `S13A-SCHED-016` — `core/tasks/scheduler.py:8516` — `Scheduler.create_task`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.create_task (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-017` — `core/tasks/scheduler.py:8517` — `Scheduler.tick`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.tick (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+- `S13D-RC-023` — `core/tasks/scheduler.py:8601` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13D-RC-024` — `core/tasks/scheduler.py:8603` — `Scheduler.REPAIRABLE_STEP_TYPES`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-018` — `core/tasks/scheduler.py:8604` — `Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-019` — `core/tasks/scheduler.py:8639` — `Scheduler._run_simple_task_tick`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._run_simple_task_tick (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-020` — `core/tasks/scheduler.py:8640` — `Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-022` — `core/tasks/scheduler.py:9023` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-023` — `core/tasks/scheduler.py:9024` — `Scheduler._sync_runner_result_and_requeue_if_ready`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._sync_runner_result_and_requeue_if_ready (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native queue cleanup, tick, and requeue behavior preserves queue transition and scheduler lifecycle contracts.
+- `S13A-SCHED-027` — `core/tasks/scheduler.py:9414` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-028` — `core/tasks/scheduler.py:9579` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13D-RC-028` — `core/tasks/scheduler.py:9590` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-029` — `core/tasks/scheduler.py:9784` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13D-RC-029` — `core/tasks/scheduler.py:9798` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-030` — `core/tasks/scheduler.py:9950` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13D-RC-030` — `core/tasks/scheduler.py:9964` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-031` — `core/tasks/scheduler.py:10166` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13D-RC-031` — `core/tasks/scheduler.py:10180` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-032` — `core/tasks/scheduler.py:10352` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13D-RC-032` — `core/tasks/scheduler.py:10366` — `Scheduler._is_repairable_failure`
+  - Domains: `repairchain`
+  - Native owner: `core.tasks.scheduler.Scheduler._is_repairable_failure (native definition)`
+  - Risk: `high`; primary wave: 7
+  - Safe removal: Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end. Stage13D condition: Native repair authority, execution, identity, session, recovery, retry, and duplicate suppression endpoints pass their ownership suites without this assignment.
+- `S13A-SCHED-033` — `core/tasks/scheduler.py:10406` — `Scheduler._try_force_repo_edit_at_create_task`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._try_force_repo_edit_at_create_task (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-034` — `core/tasks/scheduler.py:10407` — `Scheduler._create_task_record`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler._create_task_record (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: Native Scheduler methods own task creation and repository-task transitions, with state helper and no-direct-mutation contracts passing.
+- `S13A-SCHED-035` — `core/tasks/scheduler.py:10493` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-036` — `core/tasks/scheduler.py:10570` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-037` — `core/tasks/scheduler.py:10641` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-038` — `core/tasks/scheduler.py:10707` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-039` — `core/tasks/scheduler.py:10793` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-040` — `core/tasks/scheduler.py:10820` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-041` — `core/tasks/scheduler.py:10891` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-042` — `core/tasks/scheduler.py:10978` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-043` — `core/tasks/scheduler.py:11049` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-044` — `core/tasks/scheduler.py:11155` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-045` — `core/tasks/scheduler.py:11244` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-046` — `core/tasks/scheduler.py:11308` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-047` — `core/tasks/scheduler.py:11332` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-048` — `core/tasks/scheduler.py:11364` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-049` — `core/tasks/scheduler.py:11398` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-050` — `core/tasks/scheduler.py:11432` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-051` — `core/tasks/scheduler_core/runtime_overlay_helpers.py:226` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+- `S13A-SCHED-052` — `core/tasks/scheduler_core/runtime_overlay_helpers.py:245` — `Scheduler.run_one_step`
+  - Domains: `scheduler`
+  - Native owner: `core.tasks.scheduler.Scheduler.run_one_step (native definition)`
+  - Risk: `critical`; primary wave: 3
+  - Safe removal: Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites. Stage13A scheduler condition: One native Scheduler dispatch path owns run_one_step and result finalization across TaskRunner and StepExecutor boundaries.
+
+## Compatibility Bridge Retirement Track
+
+- `S14-CB-001` — `core/runtime/step_executor.py:6037` — `StepExecutor._attach_adapter_payload`
+- `S14-CB-002` — `core/runtime/step_executor.py:6106` — `StepExecutor._attach_adapter_payload`
+- `S14-CB-003` — `core/runtime/step_executor.py:6166` — `StepExecutor._attach_adapter_payload`
+- `S14-CB-004` — `core/runtime/step_executor.py:6194` — `StepExecutor._attach_adapter_payload`
+- `S14-CB-005` — `core/runtime/task_runner.py:5082` — `TaskRunner._finalize_public_result`
+- `S14-CB-006` — `core/runtime/task_runner.py:5181` — `TaskRunner._finalize_public_result`
+- `S14-CB-007` — `core/runtime/task_runner.py:5645` — `TaskRunner._runtime_gate_consolidated`
+- `S14-CB-008` — `core/tasks/scheduler.py:7664` — `Scheduler._resolve_step_path`
+- `S14-CB-009` — `core/tasks/scheduler.py:7665` — `Scheduler._resolve_read_path_with_fallback`
+- `S14-CB-010` — `core/tasks/scheduler.py:7666` — `Scheduler._needs_scheduler_path_resolution`
+- `S14-CB-011` — `core/tasks/scheduler.py:7667` — `Scheduler._normalize_step_scope`
+- `S14-CB-012` — `core/tasks/scheduler.py:7668` — `Scheduler._resolve_guard_target_path`
+- `S14-CB-013` — `core/tasks/scheduler.py:7786` — `Scheduler._extract_effective_status_and_answer`
+- `S14-CB-014` — `core/tasks/scheduler.py:8039` — `Scheduler._normalize_replan_metadata`
+- `S14-CB-015` — `core/tasks/scheduler.py:8602` — `Scheduler._normalize_replan_metadata`
+
+## Non-Mainline Issue Report
+
+- `S14-NM-001` — `core/tasks/scheduler.py:8325` — `Scheduler.get_queue_snapshot`
+- `S14-NM-002` — `core/tasks/scheduler.py:8326` — `Scheduler.get_queue_rows`
+- `S14-NM-003` — `core/tasks/scheduler.py:9343` — `Scheduler.approve_review_item`
+- `S14-NM-004` — `core/tasks/scheduler.py:9344` — `Scheduler.reject_review_item`
+- `S14-NM-005` — `core/tasks/scheduler.py:9381` — `Scheduler.get_review_queue`
+- `S14-NM-006` — `core/tasks/scheduler_core/runtime_overlay_helpers.py:227` — `Scheduler._attach_autonomous_repair_chain_summary`
+
+## Validation
+
+- Generator: pass
+- Compileall: pass
+- Pytest: 82 passed, 2 failed, 7 subtests passed
+- Overall: failed_with_recorded_freeze_and_seal_evidence
+- Failing tests were recorded as freeze/seal evidence and were not fixed.
+- Production runtime touched: false
+- Tests touched: false
+
+### Recorded validation failures
+
+- `tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary` — Scheduler contains six direct execute_step/execute_steps calls; Wave 3 cannot complete until the direct-call seal passes.
+- `tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit` — Expected high-risk status-writer inventory differs from the current source scan; ownership inventory evidence must be reconciled before seal.

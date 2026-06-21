@@ -1,0 +1,166 @@
+{
+  "stage": "StepExecutor Native Ownership Closure Stage13C",
+  "total_stepexecutor_items": 30,
+  "confirmed_blockers": 26,
+  "compatibility_bridge_count": 4,
+  "false_positive_count": 0,
+  "non_mainline_issue_count": 0,
+  "bucket_counts": {
+    "execution_ownership": 18,
+    "authority_propagation": 6,
+    "direct_overlay": 30,
+    "fallback_signature": 2,
+    "lineage_dependency": 6,
+    "runtime_session_dependency": 6,
+    "repair_chain_dependency": 5,
+    "compatibility_bridge": 4,
+    "non_mainline_issue": 0
+  },
+  "direct_overlay_count": 30,
+  "indirect_overlay_count": 7,
+  "fallback_signature_count": 2,
+  "authority_propagation_chain_count": 6,
+  "lineage_dependency_count": 6,
+  "runtime_session_dependency_count": 6,
+  "repair_chain_dependency_count": 5,
+  "unlock_counts": {
+    "scheduler_dependency_edges": 30,
+    "scheduler_direct": 0,
+    "scheduler_after_taskrunner_and_stepexecutor": 30,
+    "taskrunner_dependency_edges": 12,
+    "taskrunner_direct": 0,
+    "repair_chain": 5
+  },
+  "closure_order": [
+    {
+      "order": 1,
+      "node": "authority_propagation",
+      "blocked_by": [
+        "authority_contract"
+      ],
+      "unlocks": [
+        "execution_ownership"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "execution_ownership",
+      "blocked_by": [
+        "authority_propagation"
+      ],
+      "unlocks": [
+        "lineage_dependency",
+        "runtime_session_dependency"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "lineage_dependency",
+      "blocked_by": [
+        "execution_ownership",
+        "goal_lineage_contract"
+      ],
+      "unlocks": [
+        "runtime_session_dependency"
+      ]
+    },
+    {
+      "order": 4,
+      "node": "runtime_session_dependency",
+      "blocked_by": [
+        "lineage_dependency",
+        "runtime_session_ownership"
+      ],
+      "unlocks": [
+        "fallback_signature"
+      ]
+    },
+    {
+      "order": 5,
+      "node": "fallback_signature",
+      "blocked_by": [
+        "runtime_session_dependency",
+        "taskrunner_contract"
+      ],
+      "unlocks": [
+        "repair_chain_dependency",
+        "scheduler_contract"
+      ]
+    },
+    {
+      "order": 6,
+      "node": "repair_chain_dependency",
+      "blocked_by": [
+        "fallback_signature",
+        "repair_chain"
+      ],
+      "unlocks": [
+        "freeze_readiness"
+      ]
+    }
+  ],
+  "ownership_map": {
+    "current_execution_owner": "30 class-level StepExecutor assignments across execution, authority, repair, and adapter bridges",
+    "expected_execution_owner": "core.runtime.step_executor.StepExecutor native methods and native class state",
+    "ownership_leak_locations": [
+      "core/runtime/step_executor.py:4196",
+      "core/runtime/step_executor.py:4221",
+      "core/runtime/step_executor.py:4222",
+      "core/runtime/step_executor.py:4366",
+      "core/runtime/step_executor.py:4367",
+      "core/runtime/step_executor.py:4576",
+      "core/runtime/step_executor.py:4577",
+      "core/runtime/step_executor.py:4587",
+      "core/runtime/step_executor.py:5840",
+      "core/runtime/step_executor.py:6037",
+      "core/runtime/step_executor.py:6106",
+      "core/runtime/step_executor.py:6166",
+      "core/runtime/step_executor.py:6194",
+      "core/runtime/step_executor.py:6498",
+      "core/runtime/step_executor.py:6867",
+      "core/runtime/step_executor.py:7044",
+      "core/runtime/step_executor.py:7300",
+      "core/runtime/step_executor.py:7365",
+      "core/runtime/step_executor.py:7403",
+      "core/runtime/step_executor.py:7775",
+      "core/runtime/step_executor.py:7776",
+      "core/runtime/step_executor.py:7777",
+      "core/runtime/step_executor.py:7778",
+      "core/runtime/step_executor.py:8464",
+      "core/runtime/step_executor.py:8509",
+      "core/runtime/step_executor.py:8731",
+      "core/runtime/step_executor.py:8889",
+      "core/runtime/step_executor.py:8890",
+      "core/runtime/step_executor.py:9072",
+      "core/runtime/step_executor.py:9622"
+    ],
+    "native_owner_endpoints": [
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES (native definition)",
+      "core.runtime.step_executor.StepExecutor.__init__ (native definition)",
+      "core.runtime.step_executor.StepExecutor._attach_adapter_payload (native definition)",
+      "core.runtime.step_executor.StepExecutor._attach_pre_execution_authority (native definition)",
+      "core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision (native definition)",
+      "core.runtime.step_executor.StepExecutor._classify_step_authority_requirement (native definition)",
+      "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step (native definition)",
+      "core.runtime.step_executor.StepExecutor._register_builtin_handlers (native definition)",
+      "core.runtime.step_executor.StepExecutor.execute_step (native definition)"
+    ]
+  },
+  "unresolved_ambiguity_count": 0,
+  "production_runtime_touched": false,
+  "aer_closure_impact": {
+    "scheduler_impact": "Clears 30 StepExecutor dependency edges; 30 require TaskRunner closure too.",
+    "taskrunner_impact": "Clears 12 StepExecutor dependency edges, including the 2 direct overlays identified in Stage13B.",
+    "repair_chain_impact": "Maps 5 StepExecutor-owned repair blockers that gate repair-chain closure.",
+    "ownership_closure_completion_percent": 79.6,
+    "ownership_closure_basis": "confirmed blocker ownership mapped in Stage13A/B/C: 90/113",
+    "freeze_readiness_percent": 0.0,
+    "freeze_readiness_basis": "discovery only; 26 confirmed StepExecutor blockers remain and known ownership suites are not frozen"
+  },
+  "outputs": {
+    "inventory": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c.json",
+    "summary": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/stepexecutor_native_ownership_closure_stage13c_report.md"
+  }
+}

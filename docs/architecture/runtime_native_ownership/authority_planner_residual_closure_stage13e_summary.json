@@ -1,0 +1,76 @@
+{
+  "stage": "Authority + Planner Residual Closure Stage13E",
+  "residual_blockers_mapped": 2,
+  "authority_context_blockers": 1,
+  "planner_goal_overlay_blockers": 1,
+  "mapped_blockers": 113,
+  "total_confirmed_blockers": 113,
+  "remaining_unmapped_blockers": 0,
+  "ownership_mapping_percent": 100.0,
+  "mapping_status": "113 / 113 mapped",
+  "stage_mapping_counts": {
+    "stage13a": 45,
+    "stage13b": 19,
+    "stage13c": 26,
+    "stage13d": 26,
+    "stage13e": 2
+  },
+  "stage13d_new_distinct_mappings": 21,
+  "closure_order": [
+    {
+      "order": 1,
+      "node": "authority_context",
+      "blocker_id": "S13E-AP-001",
+      "blocked_by": [
+        "runtime_dispatcher_capability",
+        "runtime_capability_provenance",
+        "runtime_session_ownership"
+      ],
+      "unlocks": [
+        "planner_goal_overlay",
+        "taskrunner_authority_closure",
+        "stepexecutor_authority_boundary"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "planner_goal_overlay",
+      "blocker_id": "S13E-AP-002",
+      "blocked_by": [
+        "authority_context",
+        "runtime_gate_compatibility_bridge"
+      ],
+      "unlocks": [
+        "planner_contract",
+        "scheduler_goal_to_step_boundary",
+        "ownership_mapping_complete"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "ownership_mapping_complete",
+      "blocked_by": [
+        "authority_context",
+        "planner_goal_overlay"
+      ],
+      "unlocks": [
+        "native_ownership_closure_execution",
+        "freeze_planning"
+      ]
+    }
+  ],
+  "unresolved_ambiguities": 0,
+  "production_runtime_touched": false,
+  "tests_touched": false,
+  "blockers_fixed": false,
+  "validation": {
+    "generator": "pass",
+    "compile_and_schema": "pass",
+    "runtime_tests": "not_run_no_runtime_change"
+  },
+  "outputs": {
+    "inventory": "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e.json",
+    "summary": "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/authority_planner_residual_closure_stage13e_report.md"
+  }
+}

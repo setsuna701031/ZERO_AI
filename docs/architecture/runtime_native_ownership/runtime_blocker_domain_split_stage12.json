@@ -1,0 +1,3062 @@
+{
+  "stage": "Runtime Blocker Domain Split Stage12",
+  "purpose": "domain split, dependency chain, and critical-chain ordering only",
+  "production_runtime_modified": false,
+  "inputs": [
+    "tools/runtime_replacement_blocker_validation_stage11b.py",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation_summary.json",
+    "docs/architecture/runtime_native_ownership/runtime_blocker_validation_report.md"
+  ],
+  "total_blockers_processed": 142,
+  "classification_counts": {
+    "confirmed_blocker": 113,
+    "compatibility_bridge": 15,
+    "false_positive": 8,
+    "non_mainline_issue": 6
+  },
+  "domain_counts": {
+    "authority_contract": 6,
+    "runtime_gate_compatibility_bridge": 15,
+    "planner_contract": 1,
+    "scheduler_contract": 52,
+    "taskrunner_contract": 19,
+    "step_executor_contract": 16,
+    "repair_chain": 33
+  },
+  "critical_chain_counts": {
+    "authority_chain": 6,
+    "runtime_gate_chain": 15,
+    "planner_chain": 1,
+    "scheduler_chain": 52,
+    "task_runner_chain": 19,
+    "step_executor_chain": 16,
+    "recovery_chain": 33
+  },
+  "critical_chain_order": [
+    {
+      "order": 1,
+      "domain": "authority_contract",
+      "chain": "authority_chain",
+      "depends_on": [],
+      "count": 6,
+      "confirmed_blocker_count": 6
+    },
+    {
+      "order": 2,
+      "domain": "runtime_gate_compatibility_bridge",
+      "chain": "runtime_gate_chain",
+      "depends_on": [
+        "authority_contract"
+      ],
+      "count": 15,
+      "confirmed_blocker_count": 0
+    },
+    {
+      "order": 3,
+      "domain": "planner_contract",
+      "chain": "planner_chain",
+      "depends_on": [
+        "authority_contract",
+        "runtime_gate_compatibility_bridge"
+      ],
+      "count": 1,
+      "confirmed_blocker_count": 1
+    },
+    {
+      "order": 4,
+      "domain": "scheduler_contract",
+      "chain": "scheduler_chain",
+      "depends_on": [
+        "planner_contract"
+      ],
+      "count": 52,
+      "confirmed_blocker_count": 45
+    },
+    {
+      "order": 5,
+      "domain": "taskrunner_contract",
+      "chain": "task_runner_chain",
+      "depends_on": [
+        "scheduler_contract",
+        "runtime_gate_compatibility_bridge"
+      ],
+      "count": 19,
+      "confirmed_blocker_count": 19
+    },
+    {
+      "order": 6,
+      "domain": "step_executor_contract",
+      "chain": "step_executor_chain",
+      "depends_on": [
+        "taskrunner_contract",
+        "authority_contract"
+      ],
+      "count": 16,
+      "confirmed_blocker_count": 16
+    },
+    {
+      "order": 7,
+      "domain": "repair_chain",
+      "chain": "recovery_chain",
+      "depends_on": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "count": 33,
+      "confirmed_blocker_count": 26
+    }
+  ],
+  "confirmed_blockers_by_domain": {
+    "authority_contract": [
+      {
+        "classification": "confirmed_blocker",
+        "domain": "authority_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7775,
+        "symbol": "StepExecutor._classify_step_authority_requirement",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._classify_step_authority_requirement",
+        "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.",
+        "critical_chain": "authority_chain",
+        "critical_chain_order": 1,
+        "critical_chain_order_label": "1. authority_contract",
+        "depends_on_domains": [],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._classify_step_authority_requirement = _zero_v7334_classify_step_authority_requirement"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "authority_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7776,
+        "symbol": "StepExecutor._build_pre_execution_authority_decision",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._build_pre_execution_authority_decision",
+        "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.",
+        "critical_chain": "authority_chain",
+        "critical_chain_order": 1,
+        "critical_chain_order_label": "1. authority_contract",
+        "depends_on_domains": [],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._build_pre_execution_authority_decision = _zero_v7334_build_pre_execution_authority_decision"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "authority_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7777,
+        "symbol": "StepExecutor._attach_pre_execution_authority",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._attach_pre_execution_authority",
+        "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.",
+        "critical_chain": "authority_chain",
+        "critical_chain_order": 1,
+        "critical_chain_order_label": "1. authority_contract",
+        "depends_on_domains": [],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._attach_pre_execution_authority = _zero_v7334_attach_pre_execution_authority"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "authority_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7778,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.",
+        "critical_chain": "authority_chain",
+        "critical_chain_order": 1,
+        "critical_chain_order_label": "1. authority_contract",
+        "depends_on_domains": [],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7334_execute_step_with_pre_authority"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "authority_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 8464,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.",
+        "critical_chain": "authority_chain",
+        "critical_chain_order": 1,
+        "critical_chain_order_label": "1. authority_contract",
+        "depends_on_domains": [],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v811_execute_step_with_authority_closure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "authority_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5449,
+        "symbol": "TaskRunner._build_taskrunner_authority_context",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._build_taskrunner_authority_context",
+        "safe_removal_precondition": "Native authority decisions and capability propagation cover every affected entry point with authority contract tests passing.",
+        "critical_chain": "authority_chain",
+        "critical_chain_order": 1,
+        "critical_chain_order_label": "1. authority_contract",
+        "depends_on_domains": [],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._build_taskrunner_authority_context = _zero_boundary_build_taskrunner_authority_context"
+      }
+    ],
+    "runtime_gate_compatibility_bridge": [],
+    "planner_contract": [
+      {
+        "classification": "confirmed_blocker",
+        "domain": "planner_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7909,
+        "symbol": "Scheduler._plan_goal",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._plan_goal",
+        "safe_removal_precondition": "Native planning owns goal-to-step creation and preserves planner/scheduler boundary contracts without replacement assignment.",
+        "critical_chain": "planner_chain",
+        "critical_chain_order": 3,
+        "critical_chain_order_label": "3. planner_contract",
+        "depends_on_domains": [
+          "authority_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._plan_goal = _zero_v702_scheduler_plan_goal"
+      }
+    ],
+    "scheduler_contract": [
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7782,
+        "symbol": "Scheduler._handle_dispatch_result",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler._handle_dispatch_result",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._handle_dispatch_result = _scheduler_dispatch_compat_handle_dispatch_result"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7783,
+        "symbol": "Scheduler._handle_missing_repo_task",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._handle_missing_repo_task",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._handle_missing_repo_task = _scheduler_dispatch_compat_handle_missing_repo_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7784,
+        "symbol": "Scheduler._handle_run_one_step_exception",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._handle_run_one_step_exception",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._handle_run_one_step_exception = _scheduler_dispatch_compat_handle_run_one_step_exception"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7785,
+        "symbol": "Scheduler._finalize_dispatched_task",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler._finalize_dispatched_task",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._finalize_dispatched_task = _scheduler_dispatch_compat_finalize_dispatched_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7787,
+        "symbol": "Scheduler._mark_repo_task_finished",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler._mark_repo_task_finished",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._mark_repo_task_finished = _scheduler_repo_state_compat_mark_repo_task_finished"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7788,
+        "symbol": "Scheduler._mark_repo_task_failed",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler._mark_repo_task_failed",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._mark_repo_task_failed = _scheduler_repo_state_compat_mark_repo_task_failed"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7789,
+        "symbol": "Scheduler._mark_repo_task_queued",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler._mark_repo_task_queued",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._mark_repo_task_queued = _scheduler_repo_state_compat_mark_repo_task_queued"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7910,
+        "symbol": "Scheduler._execute_simple_step",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._execute_simple_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._execute_simple_step = _zero_v702_scheduler_execute_simple_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7944,
+        "symbol": "Scheduler._execute_simple_step",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._execute_simple_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._execute_simple_step = _zero_v7335_scheduler_execute_simple_step_no_direct_mutation"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8323,
+        "symbol": "Scheduler.cleanup_task_queue_hygiene",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.cleanup_task_queue_hygiene = _zero_v724_cleanup_task_queue_hygiene"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8324,
+        "symbol": "Scheduler.tick",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler.tick",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.tick = _zero_v724_tick"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8515,
+        "symbol": "Scheduler.cleanup_task_queue_hygiene",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler.cleanup_task_queue_hygiene",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.cleanup_task_queue_hygiene = _zero_v726_cleanup_task_queue_hygiene"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8516,
+        "symbol": "Scheduler.create_task",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler.create_task",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.create_task = _zero_v726_create_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8517,
+        "symbol": "Scheduler.tick",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler.tick",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.tick = _zero_v726_tick"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8604,
+        "symbol": "Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(Scheduler, \"CODE_CHAIN_WORKFLOW_STEP_TYPES\", set())) | _ZERO_V731_CODE_CHAIN_WORKFLOW_STEP_TYPES"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8639,
+        "symbol": "Scheduler._run_simple_task_tick",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._run_simple_task_tick",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._run_simple_task_tick = _zero_v733_run_simple_task_tick"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8640,
+        "symbol": "Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.tasks.scheduler.Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "Scheduler.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(Scheduler, \"CODE_CHAIN_WORKFLOW_STEP_TYPES\", set())) | _ZERO_V733_CODE_CHAIN_WORKFLOW_STEP_TYPES"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9023,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v734_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9024,
+        "symbol": "Scheduler._sync_runner_result_and_requeue_if_ready",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._sync_runner_result_and_requeue_if_ready",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._sync_runner_result_and_requeue_if_ready = _zero_v734_sync_runner_result_and_requeue_if_ready"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9414,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v352_scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9579,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v7332_scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9784,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v7333_scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9950,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v7334_scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10166,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v7335_scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10352,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_v7336_scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10406,
+        "symbol": "Scheduler._try_force_repo_edit_at_create_task",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._try_force_repo_edit_at_create_task",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._try_force_repo_edit_at_create_task = _zero_v7337_scheduler_try_force_repo_edit_at_create_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10407,
+        "symbol": "Scheduler._create_task_record",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._create_task_record",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._create_task_record = _zero_v7337_scheduler_create_task_record"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10493,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v1"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10570,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v2"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10641,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v3"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10707,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v4"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10793,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v5"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10820,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v6"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10891,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v7"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10978,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v8"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11049,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v9"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11155,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v10"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11244,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v11"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11308,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v12"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11332,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v13"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11364,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v14"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11398,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v15"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 11432,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = _zero_scheduler_run_one_step_v16"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "source_line": 226,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = scheduler_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "scheduler_contract",
+        "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+        "source_line": 245,
+        "symbol": "Scheduler.run_one_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.tasks.scheduler.Scheduler.run_one_step",
+        "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+        "critical_chain": "scheduler_chain",
+        "critical_chain_order": 4,
+        "critical_chain_order_label": "4. scheduler_contract",
+        "depends_on_domains": [
+          "planner_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler.run_one_step = scheduler_run_one_step"
+      }
+    ],
+    "taskrunner_contract": [
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4589,
+        "symbol": "TaskRunner._run_one_step",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._run_one_step",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4624,
+        "symbol": "TaskRunner._determine_failure_type",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._determine_failure_type",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._determine_failure_type = _zero_v703_task_runner_determine_failure_type"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4669,
+        "symbol": "TaskRunner._determine_failure_type",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._determine_failure_type",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._determine_failure_type = _zero_v710_task_runner_determine_failure_type"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4686,
+        "symbol": "TaskRunner.READ_ONLY_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.READ_ONLY_STEP_TYPES",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.READ_ONLY_STEP_TYPES = set(getattr(TaskRunner, \"READ_ONLY_STEP_TYPES\", set())) | { \"code_chain_analyze\", \"code_chain_verify\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4696,
+        "symbol": "TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(TaskRunner, \"CODE_CHAIN_WORKFLOW_STEP_TYPES\", set())) | _ZERO_V731_TASK_RUNNER_CODE_CHAIN_WORKFLOW_STEP_TYPES"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4722,
+        "symbol": "TaskRunner._determine_failure_type",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._determine_failure_type",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._determine_failure_type = _zero_v731_task_runner_determine_failure_type"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5179,
+        "symbol": "TaskRunner.__init__",
+        "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.__init__",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "fold_constructor_wrapper_into_native_owner",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.__init__ = _zero_v810_taskrunner_init"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5180,
+        "symbol": "TaskRunner._persist_step_result_to_runtime_state",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._persist_step_result_to_runtime_state",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5476,
+        "symbol": "TaskRunner.run_task_adaptive",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_adaptive",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task_adaptive = _zero_run_task_adaptive"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5630,
+        "symbol": "TaskRunner.run_task_tick",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5643,
+        "symbol": "TaskRunner.run_task",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task = _taskrunner_consolidated_run_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5683,
+        "symbol": "TaskRunner.run_task_tick",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5692,
+        "symbol": "TaskRunner.run_task",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task = _stage3b_run_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5875,
+        "symbol": "TaskRunner.run_task_tick",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5889,
+        "symbol": "TaskRunner.run_task",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5982,
+        "symbol": "TaskRunner.run_task_tick",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5991,
+        "symbol": "TaskRunner.run_task",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 6036,
+        "symbol": "TaskRunner.run_task_tick",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task_tick",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "taskrunner_contract",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 6045,
+        "symbol": "TaskRunner.run_task",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.run_task",
+        "safe_removal_precondition": "Native TaskRunner owns task/tick execution, result persistence, and failure classification across scheduler boundaries.",
+        "critical_chain": "task_runner_chain",
+        "critical_chain_order": 5,
+        "critical_chain_order_label": "5. taskrunner_contract",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "runtime_gate_compatibility_bridge"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4"
+      }
+    ],
+    "step_executor_contract": [
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4196,
+        "symbol": "StepExecutor._register_builtin_handlers",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._register_builtin_handlers = _zero_v7_register_builtin_handlers"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4221,
+        "symbol": "StepExecutor.__init__",
+        "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "fold_constructor_wrapper_into_native_owner",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.__init__ = _zero_v703_step_executor_init"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4366,
+        "symbol": "StepExecutor._register_builtin_handlers",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._register_builtin_handlers = _zero_v710_register_builtin_handlers"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4576,
+        "symbol": "StepExecutor._register_builtin_handlers",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._register_builtin_handlers = _zero_v730_register_builtin_handlers"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 5840,
+        "symbol": "StepExecutor.__init__",
+        "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "fold_constructor_wrapper_into_native_owner",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.__init__ = _zero_v734_step_executor_init"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 6498,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7313_execute_step_with_runtime_execution_result"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 6867,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7329_execute_step_final_public_abi"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7044,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7330_execute_step_constitutional_probe"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7300,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7331_execute_step_selective_activation"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7365,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7332_execute_step_public_output_sanitizer"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 7403,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_v7333_execute_step_public_step_evidence_key_seal"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 8509,
+        "symbol": "StepExecutor.__init__",
+        "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "fold_constructor_wrapper_into_native_owner",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.__init__ = _zero_v813_step_executor_init"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 8731,
+        "symbol": "StepExecutor.__init__",
+        "why_blocker": "class-level constructor replacement changes runtime dependency ownership",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.__init__",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "fold_constructor_wrapper_into_native_owner",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.__init__ = _zero_operator_step_executor_init"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 8889,
+        "symbol": "StepExecutor._register_builtin_handlers",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._register_builtin_handlers",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._register_builtin_handlers = _zero_v2_step_executor_register_builtin_handlers"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 9072,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_direct_llm_execute_step_contract_seal"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "step_executor_contract",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 9622,
+        "symbol": "StepExecutor.execute_step",
+        "why_blocker": "replacement directly intercepts a named runtime execution or authority chain",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.execute_step",
+        "safe_removal_precondition": "Native StepExecutor owns handler registration, execution dispatch, and result adaptation with no class-level grafts.",
+        "critical_chain": "step_executor_chain",
+        "critical_chain_order": 6,
+        "critical_chain_order_label": "6. step_executor_contract",
+        "depends_on_domains": [
+          "taskrunner_contract",
+          "authority_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor.execute_step = _zero_boundary_execute_step"
+      }
+    ],
+    "repair_chain": [
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4222,
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {\"code_chain_repair\", \"autonomous_code_repair\"}"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4367,
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = {\"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_repair_preflight_failed\"}"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4577,
+        "symbol": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "StepExecutor.CODE_CHAIN_REPAIR_STEP_TYPES = { \"code_chain_analyze\", \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_verify\", \"code_chain_repair_preflight_failed\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 4587,
+        "symbol": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.step_executor.StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "StepExecutor.CODE_CHAIN_WORKFLOW_STEP_TYPES = set(getattr(StepExecutor, \"CODE_CHAIN_REPAIR_STEP_TYPES\", set())) | { \"code_chain_analyze\", \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_verify\", \"code_chain_repair_preflight_failed\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/step_executor.py",
+        "source_line": 8890,
+        "symbol": "StepExecutor._handle_autonomous_repair_chain_step",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.step_executor.StepExecutor._handle_autonomous_repair_chain_step",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "StepExecutor._handle_autonomous_repair_chain_step = _zero_v2_autonomous_repair_chain_handler"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4601,
+        "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.SIDE_EFFECT_STEP_TYPES = set(getattr(TaskRunner, \"SIDE_EFFECT_STEP_TYPES\", set())) | { \"code_chain_repair\", \"autonomous_code_repair\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4605,
+        "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES = {\"code_chain_repair\", \"autonomous_code_repair\"}"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4634,
+        "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.SIDE_EFFECT_STEP_TYPES = set(getattr(TaskRunner, \"SIDE_EFFECT_STEP_TYPES\", set())) | { \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_repair_preflight_failed\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4639,
+        "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES = set(getattr(TaskRunner, \"CODE_CHAIN_REPAIR_STEP_TYPES\", set())) | { \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_repair_preflight_failed\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4690,
+        "symbol": "TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.SIDE_EFFECT_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.SIDE_EFFECT_STEP_TYPES = set(getattr(TaskRunner, \"SIDE_EFFECT_STEP_TYPES\", set())) | { \"code_chain_repair\", \"autonomous_code_repair\", \"code_chain_repair_preflight_failed\", }"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4695,
+        "symbol": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.runtime.task_runner.TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "TaskRunner.CODE_CHAIN_REPAIR_STEP_TYPES = set(getattr(TaskRunner, \"CODE_CHAIN_REPAIR_STEP_TYPES\", set())) | _ZERO_V731_TASK_RUNNER_CODE_CHAIN_WORKFLOW_STEP_TYPES"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4983,
+        "symbol": "TaskRunner._zero_v800_build_observation",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_build_observation",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._zero_v800_build_observation = _zero_v800_build_observation"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4984,
+        "symbol": "TaskRunner._zero_v800_decide_from_observation",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_decide_from_observation",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._zero_v800_decide_from_observation = _zero_v800_decide_from_observation"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4985,
+        "symbol": "TaskRunner._zero_v800_last_step_type",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_last_step_type",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._zero_v800_last_step_type = _zero_v800_last_step_type"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4986,
+        "symbol": "TaskRunner._zero_v800_represents_failed_step_observation",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._zero_v800_represents_failed_step_observation",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._zero_v800_represents_failed_step_observation = _zero_v800_represents_failed_step_observation"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 4987,
+        "symbol": "TaskRunner._run_one_step",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.runtime.task_runner.TaskRunner._run_one_step",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8038,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v703_scheduler_is_repairable_failure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8040,
+        "symbol": "Scheduler.REPAIRABLE_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "Scheduler.REPAIRABLE_STEP_TYPES = set(getattr(Scheduler, \"REPAIRABLE_STEP_TYPES\", set())) | _ZERO_V703_BASE_REPAIRABLE_STEP_TYPES"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8514,
+        "symbol": "Scheduler._find_active_duplicate_repair_task",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._find_active_duplicate_repair_task",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8601,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v731_scheduler_is_repairable_failure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 8603,
+        "symbol": "Scheduler.REPAIRABLE_STEP_TYPES",
+        "why_blocker": "class-level routing allowlist changes scheduler/task_runner/step_executor execution selection",
+        "replacement_target": "core.tasks.scheduler.Scheduler.REPAIRABLE_STEP_TYPES",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "move_routing_state_into_native_class_definition",
+        "replacement_kind": "class_level_state_override",
+        "expression": "Scheduler.REPAIRABLE_STEP_TYPES = set(getattr(Scheduler, \"REPAIRABLE_STEP_TYPES\", set())) | _ZERO_V731_BASE_REPAIRABLE_STEP_TYPES"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9590,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v7332_is_repairable_failure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9798,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v7333_is_repairable_failure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 9964,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v7334_is_repairable_failure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10180,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v7335_is_repairable_failure"
+      },
+      {
+        "classification": "confirmed_blocker",
+        "domain": "repair_chain",
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 10366,
+        "symbol": "Scheduler._is_repairable_failure",
+        "why_blocker": "class-level executable replacement changes runtime execution, state transition, authority, or recovery behavior",
+        "replacement_target": "core.tasks.scheduler.Scheduler._is_repairable_failure",
+        "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+        "critical_chain": "recovery_chain",
+        "critical_chain_order": 7,
+        "critical_chain_order_label": "7. repair_chain",
+        "depends_on_domains": [
+          "scheduler_contract",
+          "taskrunner_contract",
+          "step_executor_contract"
+        ],
+        "stage11b_classification": "confirmed_blocker",
+        "stage11b_action": "plan_native_method_retirement",
+        "replacement_kind": "class_level_replacement",
+        "expression": "Scheduler._is_repairable_failure = _zero_v7336_is_repairable_failure"
+      }
+    ]
+  },
+  "compatibility_bridge": [
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6037,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "StepExecutor._attach_adapter_payload = _zero_v739_attach_adapter_payload"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6106,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "StepExecutor._attach_adapter_payload = _zero_v7310_attach_adapter_payload"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6166,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "StepExecutor._attach_adapter_payload = _zero_v7311_attach_adapter_payload"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/step_executor.py",
+      "source_line": 6194,
+      "symbol": "StepExecutor._attach_adapter_payload",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.runtime.step_executor.StepExecutor._attach_adapter_payload",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "StepExecutor._attach_adapter_payload = _zero_v7312_attach_adapter_payload"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5082,
+      "symbol": "TaskRunner._finalize_public_result",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._finalize_public_result",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5181,
+      "symbol": "TaskRunner._finalize_public_result",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._finalize_public_result",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "TaskRunner._finalize_public_result = _zero_v810_finalize_public_result"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/runtime/task_runner.py",
+      "source_line": 5645,
+      "symbol": "TaskRunner._runtime_gate_consolidated",
+      "why_blocker": "Bridge blocker: class state graft is compatibility debt but not a method replacement",
+      "replacement_target": "core.runtime.task_runner.TaskRunner._runtime_gate_consolidated",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "migrate_class_state_to_native_owner",
+      "replacement_kind": "class_level_state_override",
+      "expression": "TaskRunner._runtime_gate_consolidated = True"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7664,
+      "symbol": "Scheduler._resolve_step_path",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._resolve_step_path",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._resolve_step_path = staticmethod(resolve_step_path)"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7665,
+      "symbol": "Scheduler._resolve_read_path_with_fallback",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._resolve_read_path_with_fallback",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._resolve_read_path_with_fallback = staticmethod(resolve_read_path_with_fallback)"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7666,
+      "symbol": "Scheduler._needs_scheduler_path_resolution",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._needs_scheduler_path_resolution",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._needs_scheduler_path_resolution = staticmethod(needs_scheduler_path_resolution)"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7667,
+      "symbol": "Scheduler._normalize_step_scope",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._normalize_step_scope",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._normalize_step_scope = staticmethod(normalize_step_scope)"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7668,
+      "symbol": "Scheduler._resolve_guard_target_path",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._resolve_guard_target_path",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._resolve_guard_target_path = _scheduler_path_compat_resolve_guard_target_path"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7786,
+      "symbol": "Scheduler._extract_effective_status_and_answer",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._extract_effective_status_and_answer",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._extract_effective_status_and_answer = _scheduler_repo_state_compat_extract_effective_status_and_answer"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8039,
+      "symbol": "Scheduler._normalize_replan_metadata",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._normalize_replan_metadata",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._normalize_replan_metadata = _zero_v703_scheduler_normalize_replan_metadata"
+    },
+    {
+      "classification": "compatibility_bridge",
+      "domain": "runtime_gate_compatibility_bridge",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8602,
+      "symbol": "Scheduler._normalize_replan_metadata",
+      "why_blocker": "Bridge blocker: replacement normalizes path, payload, result, or metadata shape without owning the primary execution decision",
+      "replacement_target": "core.tasks.scheduler.Scheduler._normalize_replan_metadata",
+      "safe_removal_precondition": "All callers use one native runtime gate and canonical payload/result shape; bridge behavior is contract-tested before removal.",
+      "critical_chain": "runtime_gate_chain",
+      "critical_chain_order": 2,
+      "critical_chain_order_label": "2. runtime_gate_compatibility_bridge",
+      "depends_on_domains": [
+        "authority_contract"
+      ],
+      "stage11b_classification": "downgrade_to_compatibility_bridge",
+      "stage11b_action": "contract_then_move_shape_bridge_to_native_owner",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._normalize_replan_metadata = _zero_v731_scheduler_normalize_replan_metadata"
+    }
+  ],
+  "false_positive": [
+    {
+      "classification": "false_positive",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 7945,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_2_PRE_ENQUEUE_REPAIR_FINGERPRINT_GATE\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8041,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_0_QUEUE_HYGIENE\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8327,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_4_REPAIR_TASK_EXPIRATION_CLEANUP\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8518,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_2_6_REPAIR_ENQUEUE_LOCK_LIFECYCLE\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8605,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_2_REPAIRABLE_ALLOWLIST\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8641,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_3_WORKFLOW_TICK_ADVANCEMENT\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9025,
+      "symbol": "Scheduler.RETRYING_REPAIR_BRIDGE_VERSION",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.RETRYING_REPAIR_BRIDGE_VERSION",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.RETRYING_REPAIR_BRIDGE_VERSION = \"v7.3.4\""
+    },
+    {
+      "classification": "false_positive",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9026,
+      "symbol": "Scheduler.SCHEDULER_BUILD",
+      "why_blocker": "Not an executable blocker: class metadata/version marker does not itself replace executable runtime behavior",
+      "replacement_target": "core.tasks.scheduler.Scheduler.SCHEDULER_BUILD",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "false_positive",
+      "stage11b_action": "retain_as_non_behavioral_metadata",
+      "replacement_kind": "class_level_state_override",
+      "expression": "Scheduler.SCHEDULER_BUILD = \"DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_4_RETRYING_REPAIR_BRIDGE\""
+    }
+  ],
+  "non_mainline_issue": [
+    {
+      "classification": "non_mainline_issue",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8325,
+      "symbol": "Scheduler.get_queue_snapshot",
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "replacement_target": "core.tasks.scheduler.Scheduler.get_queue_snapshot",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "non_mainline_issue",
+      "stage11b_action": "track_in_domain_retirement_plan",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler.get_queue_snapshot = _zero_v724_get_queue_snapshot"
+    },
+    {
+      "classification": "non_mainline_issue",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 8326,
+      "symbol": "Scheduler.get_queue_rows",
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "replacement_target": "core.tasks.scheduler.Scheduler.get_queue_rows",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "non_mainline_issue",
+      "stage11b_action": "track_in_domain_retirement_plan",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler.get_queue_rows = _zero_v724_get_queue_rows"
+    },
+    {
+      "classification": "non_mainline_issue",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9343,
+      "symbol": "Scheduler.approve_review_item",
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "replacement_target": "core.tasks.scheduler.Scheduler.approve_review_item",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "non_mainline_issue",
+      "stage11b_action": "track_in_domain_retirement_plan",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler.approve_review_item = _zero_scheduler_approve_review_item"
+    },
+    {
+      "classification": "non_mainline_issue",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9344,
+      "symbol": "Scheduler.reject_review_item",
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "replacement_target": "core.tasks.scheduler.Scheduler.reject_review_item",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "non_mainline_issue",
+      "stage11b_action": "track_in_domain_retirement_plan",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler.reject_review_item = _zero_scheduler_reject_review_item"
+    },
+    {
+      "classification": "non_mainline_issue",
+      "domain": "scheduler_contract",
+      "source_file": "core/tasks/scheduler.py",
+      "source_line": 9381,
+      "symbol": "Scheduler.get_review_queue",
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "replacement_target": "core.tasks.scheduler.Scheduler.get_review_queue",
+      "safe_removal_precondition": "Native scheduler dispatch, queue transition, and task finalization paths pass ownership and mainline freeze suites.",
+      "critical_chain": "scheduler_chain",
+      "critical_chain_order": 4,
+      "critical_chain_order_label": "4. scheduler_contract",
+      "depends_on_domains": [
+        "planner_contract"
+      ],
+      "stage11b_classification": "non_mainline_issue",
+      "stage11b_action": "track_in_domain_retirement_plan",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler.get_review_queue = _zero_scheduler_get_review_queue"
+    },
+    {
+      "classification": "non_mainline_issue",
+      "domain": "repair_chain",
+      "source_file": "core/tasks/scheduler_core/runtime_overlay_helpers.py",
+      "source_line": 227,
+      "symbol": "Scheduler._attach_autonomous_repair_chain_summary",
+      "why_blocker": "Non-mainline ownership issue retained for closure: replacement is outside the named execution mainline but still affects scheduler/runtime ownership or observability",
+      "replacement_target": "core.tasks.scheduler.Scheduler._attach_autonomous_repair_chain_summary",
+      "safe_removal_precondition": "Native recovery owns repair eligibility, duplicate suppression, last-step observation, and repair workflow routing end to end.",
+      "critical_chain": "recovery_chain",
+      "critical_chain_order": 7,
+      "critical_chain_order_label": "7. repair_chain",
+      "depends_on_domains": [
+        "scheduler_contract",
+        "taskrunner_contract",
+        "step_executor_contract"
+      ],
+      "stage11b_classification": "non_mainline_issue",
+      "stage11b_action": "track_in_domain_retirement_plan",
+      "replacement_kind": "class_level_replacement",
+      "expression": "Scheduler._attach_autonomous_repair_chain_summary = attach_autonomous_repair_chain_summary"
+    }
+  ]
+}

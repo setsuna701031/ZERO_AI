@@ -1,0 +1,36 @@
+{
+  "stage": "Stage15A.2 — Gate Failure Closure Planning",
+  "closure_plan_count": 3,
+  "gate_to_clear_first": {
+    "failure_id": "S15A1-GF-001",
+    "reason": "It is the highest-risk failure and has the earliest Stage14-assigned remediation wave.",
+    "qualification": "Priority only; it is not executable while Wave 1 and Wave 2 remain unauthorized."
+  },
+  "smallest_executable_remediation_package": {
+    "package_id": "S15A2-RP-001",
+    "failure_id": "S15A1-GF-001",
+    "nominal_scope": "One scheduler ownership package covering the six evidenced call sites in core/tasks/scheduler.py and their single delegation-boundary validation contract.",
+    "current_executability": false,
+    "blocker": "No runtime remediation package is executable under the current authorization topology without separate gate-policy authority; this plan does not alter that policy."
+  },
+  "first_gate_remediation_wave": {
+    "wave": "Wave 3: scheduler direct-call seal",
+    "currently_reachable": false,
+    "prerequisites": [
+      "Wave 0 complete",
+      "Wave 1 complete",
+      "Wave 2 complete"
+    ]
+  },
+  "expected_wave1_authorization_condition": "All Stage15A invariant locks remain passing; S15A1-GF-001, S15A1-GF-002, and S15A1-GF-003 all satisfy their closure conditions; the limited ownership/blocker suites pass; and no new validation failure appears.",
+  "execution_topology_status": "execution_dependency_deadlock",
+  "artifact_consistency": "pass",
+  "production_runtime_touched": false,
+  "tests_touched": false,
+  "blockers_fixed": false,
+  "outputs": {
+    "plan": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2.json",
+    "summary": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/gate_failure_closure_plan_stage15a2_report.md"
+  }
+}

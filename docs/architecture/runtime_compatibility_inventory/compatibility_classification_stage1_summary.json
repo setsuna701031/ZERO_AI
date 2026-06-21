@@ -1,0 +1,133 @@
+{
+  "source_inventory_items": 1281,
+  "medium_items_classified": 355,
+  "classification_counts": {
+    "retire_candidate": 9,
+    "blocker_signal": 7,
+    "needs_contract": 330,
+    "keep": 9
+  },
+  "category_counts": {
+    "legacy_route": 9,
+    "migration_blocker": 7,
+    "fallback_planning_or_recovery": 62,
+    "migration_bridge": 9,
+    "runtime_core_compatibility": 268
+  },
+  "top_medium_files": [
+    [
+      "core/tasks/scheduler.py",
+      208
+    ],
+    [
+      "core/runtime/step_executor.py",
+      41
+    ],
+    [
+      "core/runtime/executor.py",
+      16
+    ],
+    [
+      "core/runtime/task_runner.py",
+      14
+    ],
+    [
+      "core/runtime/execution_authority.py",
+      12
+    ],
+    [
+      "core/agent/agent_loop.py",
+      11
+    ],
+    [
+      "core/agent/code_chain_controlled_self_edit_bridge.py",
+      10
+    ],
+    [
+      "core/planning/task_replanner.py",
+      8
+    ],
+    [
+      "core/tasks/planner_gateway_runtime.py",
+      8
+    ],
+    [
+      "core/planning/planner_contract_trace.py",
+      3
+    ],
+    [
+      "core/runtime/controlled_mutation_bridge.py",
+      3
+    ],
+    [
+      "core/planning/planner.py",
+      2
+    ],
+    [
+      "core/runtime/runtime_recovery_execution_contract.py",
+      2
+    ],
+    [
+      "core/operator/codex_operator.py",
+      1
+    ],
+    [
+      "core/operator/verification_runner.py",
+      1
+    ],
+    [
+      "core/planning/replanner.py",
+      1
+    ],
+    [
+      "core/runtime/aer_runtime_integration.py",
+      1
+    ],
+    [
+      "core/runtime/artifact_step_bridge.py",
+      1
+    ],
+    [
+      "core/runtime/execution_authority_handoff.py",
+      1
+    ],
+    [
+      "core/runtime/governed_engineering_batch.py",
+      1
+    ],
+    [
+      "core/runtime/planner_runtime_dispatch.py",
+      1
+    ],
+    [
+      "core/runtime/recovery_replay_closure.py",
+      1
+    ],
+    [
+      "core/runtime/runtime_native_scheduler.py",
+      1
+    ],
+    [
+      "core/runtime/runtime_plan_executor.py",
+      1
+    ],
+    [
+      "core/runtime/runtime_recovery_integration.py",
+      1
+    ]
+  ],
+  "target_hotspot_counts": {
+    "core/agent/agent_loop.py": 11,
+    "core/runtime/execution_authority.py": 12,
+    "core/runtime/step_executor.py": 41,
+    "core/runtime/task_runner.py": 14,
+    "core/tasks/scheduler.py": 208
+  },
+  "zero_patch_residue_count": 0,
+  "verification_passed": true,
+  "outputs": {
+    "classified": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\compatibility_classification_stage1.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\compatibility_classification_stage1_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\compatibility_classification_stage1_report.md"
+  }
+}

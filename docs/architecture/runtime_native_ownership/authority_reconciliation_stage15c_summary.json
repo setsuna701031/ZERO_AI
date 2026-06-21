@@ -1,0 +1,31 @@
+{
+  "stage": "Stage15C — Gate Authority Reconciliation",
+  "gf003_classification": "inventory_drift",
+  "runtime_bug": false,
+  "actual_runtime_owner": "core.runtime.task_runtime.project_runtime_status",
+  "expected_inventory_owner_files": [
+    "core/runtime/runtime_dispatcher.py",
+    "core/runtime/runtime_session_resume.py",
+    "core/runtime/runtime_state_machine.py",
+    "core/runtime/task_runtime.py",
+    "core/tasks/task_state.py"
+  ],
+  "observed_direct_writer_files": [
+    "core/runtime/task_runner.py"
+  ],
+  "canonical_projection_caller_coverage": "10 / 10 missing-baseline files",
+  "seal_rule_source": "tools/aer_ownership_migration_plan_stage14.py:155-175,664-673",
+  "failing_assertion_source": "tests/test_runtime_status_ownership_inventory.py:112",
+  "migration_plan_required": true,
+  "migration_plan_steps": 5,
+  "non_mainline_issue_reporting": "6 / 6 preserved",
+  "artifact_consistency": "pass",
+  "production_runtime_touched": false,
+  "tests_touched": false,
+  "stage15a_artifacts_touched": false,
+  "outputs": {
+    "reconciliation": "docs/architecture/runtime_native_ownership/authority_reconciliation_stage15c.json",
+    "summary": "docs/architecture/runtime_native_ownership/authority_reconciliation_stage15c_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/authority_reconciliation_stage15c_report.md"
+  }
+}

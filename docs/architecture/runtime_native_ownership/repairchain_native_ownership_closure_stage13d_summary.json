@@ -1,0 +1,191 @@
+{
+  "stage": "RepairChain Native Ownership Closure Stage13D",
+  "total_repair_items": 33,
+  "confirmed_blockers": 26,
+  "compatibility_bridge_count": 0,
+  "false_positive_count": 6,
+  "non_mainline_issue_count": 1,
+  "bucket_counts": {
+    "repair_execution": 12,
+    "duplicate_repair": 1,
+    "recovery_chain": 32,
+    "retry_chain": 15,
+    "repair_authority": 13,
+    "repair_session": 6,
+    "repair_lineage": 7,
+    "repair_step_executor_dependency": 5,
+    "compatibility_bridge": 0,
+    "non_mainline_issue": 1
+  },
+  "authority_dependencies": 13,
+  "lineage_dependencies": 6,
+  "runtime_session_dependencies": 5,
+  "recovery_chain_dependencies": 26,
+  "retry_chain_dependencies": 14,
+  "duplicate_repair_dependencies": 1,
+  "unlock_counts": {
+    "scheduler": 2,
+    "taskrunner": 3,
+    "stepexecutor": 5,
+    "repair": 26
+  },
+  "closure_order": [
+    {
+      "order": 1,
+      "node": "authority",
+      "blocked_by": [
+        "authority_contract"
+      ],
+      "unlocks": [
+        "execution"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "execution",
+      "blocked_by": [
+        "authority"
+      ],
+      "unlocks": [
+        "lineage"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "lineage",
+      "blocked_by": [
+        "execution",
+        "goal_lineage_contract"
+      ],
+      "unlocks": [
+        "runtime_session"
+      ]
+    },
+    {
+      "order": 4,
+      "node": "runtime_session",
+      "blocked_by": [
+        "lineage",
+        "runtime_session_ownership"
+      ],
+      "unlocks": [
+        "recovery"
+      ]
+    },
+    {
+      "order": 5,
+      "node": "recovery",
+      "blocked_by": [
+        "runtime_session",
+        "step_executor_contract"
+      ],
+      "unlocks": [
+        "retry"
+      ]
+    },
+    {
+      "order": 6,
+      "node": "retry",
+      "blocked_by": [
+        "recovery",
+        "scheduler_contract"
+      ],
+      "unlocks": [
+        "duplicate_repair"
+      ]
+    },
+    {
+      "order": 7,
+      "node": "duplicate_repair",
+      "blocked_by": [
+        "retry",
+        "scheduler_queue_ownership"
+      ],
+      "unlocks": [
+        "freeze_readiness"
+      ]
+    }
+  ],
+  "unresolved_ambiguities": 0,
+  "aer_closure_summary": {
+    "stage13a_mapped_confirmed": 45,
+    "stage13b_mapped_confirmed": 19,
+    "stage13c_mapped_confirmed": 26,
+    "stage13d_mapped_confirmed": 26,
+    "stage13d_new_distinct_mappings": 21,
+    "total_mapped_blockers": 111,
+    "remaining_unmapped_blockers": 2,
+    "remaining_unmapped_inventory": [
+      {
+        "source_file": "core/runtime/task_runner.py",
+        "source_line": 5449,
+        "symbol": "TaskRunner._build_taskrunner_authority_context",
+        "domain": "authority_contract"
+      },
+      {
+        "source_file": "core/tasks/scheduler.py",
+        "source_line": 7909,
+        "symbol": "Scheduler._plan_goal",
+        "domain": "planner_contract"
+      }
+    ],
+    "ownership_mapping_percent": 98.2,
+    "ownership_closure_percent": 0.0,
+    "freeze_readiness_percent": 0.0,
+    "freeze_blockers": 113,
+    "seal_blockers": 113,
+    "critical_suite_blockers": 33,
+    "remaining_native_ownership_leaks": 113,
+    "scheduler_impact": "2 scheduler dependency paths are mapped to RepairChain closure prerequisites.",
+    "taskrunner_impact": "3 TaskRunner dependency paths are mapped to RepairChain closure prerequisites.",
+    "stepexecutor_impact": "5 StepExecutor dependency paths are mapped; five RepairChain blockers overlap Stage13C ownership evidence.",
+    "repairchain_impact": "All 33 RepairChain items are inventoried; 26 are confirmed blockers and 21 add distinct AER mappings.",
+    "remaining_stages_before_aer_seal": "minimum 9 gated stages: remaining authority/planner mapping, seven RepairChain closure nodes, and freeze/seal validation"
+  },
+  "validation_results": {
+    "observed_on": "2026-06-21",
+    "generator": {
+      "status": "pass",
+      "passed": 1,
+      "failed": 0
+    },
+    "compileall": {
+      "status": "pass",
+      "passed": 1,
+      "failed": 0
+    },
+    "repair_chain_suites": {
+      "status": "fail",
+      "passed": 37,
+      "failed": 31,
+      "duration_seconds": 372.81,
+      "failure_summary": "30 repair runtime expectations observe blocked where retrying was expected; one native autonomous repair handler returned ok=false."
+    },
+    "ownership_suites": {
+      "status": "fail",
+      "passed": 69,
+      "failed": 2,
+      "subtests_passed": 7,
+      "duration_seconds": 27.05,
+      "failures": [
+        "tests/test_scheduler_runtime_ownership_closure.py::test_scheduler_constructs_one_endpoint_and_one_delegation_boundary",
+        "tests/test_runtime_status_ownership_inventory.py::test_runtime_status_ownership_inventory_is_explicit"
+      ]
+    },
+    "runtime_blocker_suites": {
+      "status": "pass",
+      "passed": 8,
+      "failed": 0,
+      "duration_seconds": 1.38
+    },
+    "total_test_passed": 114,
+    "total_test_failed": 33,
+    "failures_fixed": false
+  },
+  "production_runtime_touched": false,
+  "outputs": {
+    "inventory": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json",
+    "summary": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d_report.md"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "source_contract_items": 330,
+  "native_runtime_contract_items": 66,
+  "by_contract_domain": {
+    "authority_contract": 16,
+    "step_executor_contract": 38,
+    "taskrunner_contract": 12
+  },
+  "by_source_file_top": [
+    [
+      "core/runtime/step_executor.py",
+      41
+    ],
+    [
+      "core/runtime/execution_authority.py",
+      12
+    ],
+    [
+      "core/runtime/task_runner.py",
+      12
+    ],
+    [
+      "core/runtime/task_step_executor_adapter.py",
+      1
+    ]
+  ],
+  "by_assertion_hint": {
+    "execution_authority_is_explicit_and_enforced": 12,
+    "legacy_compatibility_path_has_native_owner_or_blocker": 53,
+    "planning_or_recovery_fallback_has_contract_evidence": 1
+  },
+  "zero_patch_residue_count": 0,
+  "zero_patch_residue": [],
+  "verification_passed": true,
+  "outputs": {
+    "extracted": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_native_contract_test_extraction_stage4.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_native_contract_test_extraction_stage4_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_native_contract_test_extraction_stage4_report.md"
+  }
+}

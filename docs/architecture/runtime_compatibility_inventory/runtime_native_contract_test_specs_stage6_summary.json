@@ -1,0 +1,26 @@
+{
+  "native_contract_test_specs": 66,
+  "owner_domain_counts": {
+    "runtime_authority": 16,
+    "step_executor": 38,
+    "task_runner": 12
+  },
+  "next_action_counts": {
+    "extract_native_authority_contract_test": 12,
+    "bind_compatibility_path_to_native_owner_test": 53,
+    "extract_planning_recovery_contract_test": 1
+  },
+  "suggested_test_file_counts": {
+    "tests/test_native_runtime_authority_contracts.py": 16,
+    "tests/test_native_step_executor_contracts.py": 38,
+    "tests/test_native_task_runner_contracts.py": 12
+  },
+  "zero_patch_residue_count": 0,
+  "zero_patch_residue": [],
+  "verification_passed": true,
+  "outputs": {
+    "specs": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_native_contract_test_specs_stage6.json",
+    "summary": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_native_contract_test_specs_stage6_summary.json",
+    "report": "E:\\zero_ai\\docs\\architecture\\runtime_compatibility_inventory\\runtime_native_contract_test_specs_stage6_report.md"
+  }
+}

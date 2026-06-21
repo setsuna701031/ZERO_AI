@@ -1,0 +1,112 @@
+{
+  "stage": "TaskRunner Dependency Closure Inventory Stage13B",
+  "taskrunner_total": 19,
+  "confirmed_blockers": 19,
+  "compatibility_bridge_count": 0,
+  "false_positive_count": 0,
+  "non_mainline_issue_count": 0,
+  "ownership_counts": {
+    "taskrunner_state_ownership": 2,
+    "taskrunner_execution_ownership": 14,
+    "taskrunner_continuation_ownership": 1,
+    "taskrunner_runtime_session_ownership": 2
+  },
+  "dependency_counts": {
+    "scheduler_dependencies": 13,
+    "step_executor_dependencies": 12,
+    "repair_chain_dependencies": 3
+  },
+  "marker_counts": {
+    "direct_step_executor_overlay": 2,
+    "goal_lineage_dependency": 12,
+    "runtime_session_dependency": 13
+  },
+  "scheduler_unlock_count": 1,
+  "scheduler_partial_unlock_count": 30,
+  "step_executor_dependency_count": 12,
+  "closure_order": [
+    {
+      "order": 1,
+      "node": "taskrunner_state_ownership",
+      "blocked_by": [],
+      "unlocks": [
+        "taskrunner_runtime_session_ownership"
+      ]
+    },
+    {
+      "order": 2,
+      "node": "taskrunner_runtime_session_ownership",
+      "blocked_by": [
+        "taskrunner_state_ownership"
+      ],
+      "unlocks": [
+        "taskrunner_scheduler_dependency"
+      ]
+    },
+    {
+      "order": 3,
+      "node": "taskrunner_scheduler_dependency",
+      "blocked_by": [
+        "scheduler_contract",
+        "taskrunner_runtime_session_ownership"
+      ],
+      "unlocks": [
+        "taskrunner_step_executor_dependency"
+      ]
+    },
+    {
+      "order": 4,
+      "node": "taskrunner_step_executor_dependency",
+      "blocked_by": [
+        "step_executor_contract",
+        "taskrunner_scheduler_dependency"
+      ],
+      "unlocks": [
+        "taskrunner_repair_chain_dependency",
+        "taskrunner_execution_ownership"
+      ]
+    },
+    {
+      "order": 5,
+      "node": "taskrunner_repair_chain_dependency",
+      "blocked_by": [
+        "repair_chain",
+        "taskrunner_step_executor_dependency"
+      ],
+      "unlocks": [
+        "taskrunner_execution_ownership"
+      ]
+    },
+    {
+      "order": 6,
+      "node": "taskrunner_execution_ownership",
+      "blocked_by": [
+        "taskrunner_scheduler_dependency",
+        "taskrunner_step_executor_dependency",
+        "taskrunner_repair_chain_dependency"
+      ],
+      "unlocks": [
+        "taskrunner_continuation_ownership"
+      ]
+    },
+    {
+      "order": 7,
+      "node": "taskrunner_continuation_ownership",
+      "blocked_by": [
+        "taskrunner_execution_ownership",
+        "goal_lineage_contract"
+      ],
+      "unlocks": [
+        "scheduler_contract"
+      ]
+    }
+  ],
+  "unresolved_ambiguity_count": 0,
+  "outside_domain_non_mainline_issue_count": 0,
+  "production_runtime_touched": false,
+  "outputs": {
+    "inventory": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json",
+    "summary": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b_summary.json",
+    "report": "docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b_report.md"
+  }
+}
