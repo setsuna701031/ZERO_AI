@@ -7,6 +7,18 @@ class FakeRepository:
         self.updated = []
 
     def load_goal(self, goal_id):
+        if goal_id not in self.records:
+            self.records[goal_id] = {
+                "goal_id": goal_id,
+                "root_goal_id": goal_id,
+                "source_goal_id": goal_id,
+                "goal_lineage_id": f"{goal_id}:lineage",
+                "branch_type": "root",
+                "branch_id": "root",
+                "session_id": f"goal-session:{goal_id}",
+                "runtime_session_id": f"runtime-session:{goal_id}",
+                "metadata": {},
+            }
         return self.records.get(goal_id)
 
     def save_goal(self, record):
@@ -24,7 +36,7 @@ class FakeRunner:
     def __init__(self, decisions):
         self.decisions = list(decisions)
 
-    def run_goal(self, goal_id):
+    def run_goal(self, goal_id, *, goal_lineage=None):
         decision = self.decisions.pop(0)
         return {
             "ok": decision == "complete",

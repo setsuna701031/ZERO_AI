@@ -229,7 +229,7 @@ def test_repair_chain_without_dispatcher_lineage_cannot_persist_finished_state()
 
     first = runner.run_task(_repair_task(), current_tick=1)
     assert first["ok"] is False
-    assert first["status"] == "retrying"
+    assert first["status"] == "blocked"
     assert first["error"]["type"] == "execution_authority_denied"
 
     reloaded = runtime.load_runtime_state(_repair_task())
@@ -240,9 +240,9 @@ def test_repair_chain_without_dispatcher_lineage_cannot_persist_finished_state()
     fourth = runner.run_task(_repair_task(), current_tick=4)
     final_json = _read_runtime_json()
 
-    assert second["status"] == third["status"] == "retrying"
+    assert second["status"] == third["status"] == "blocked"
     assert fourth["ok"] is False
-    assert fourth["status"] == "retrying"
+    assert fourth["status"] == "blocked"
     assert fourth["error"]["type"] == "execution_authority_denied"
     assert final_json["current_step_index"] == 0
     assert final_json["status"] in {"retrying", "blocked"}
@@ -293,7 +293,7 @@ def test_custom_repair_executor_cannot_run_without_dispatcher_lineage() -> None:
     failed_json = _read_runtime_json()
 
     assert result["ok"] is False
-    assert result["status"] == "retrying"
+    assert result["status"] == "blocked"
     assert result["error"]["type"] == "execution_authority_denied"
     assert failed_json["status"] in {"retrying", "blocked"}
     assert failed_json["current_step_index"] == 0
@@ -422,7 +422,7 @@ def test_invalid_repair_executor_cannot_reach_apply_without_dispatcher_lineage()
         state = json.loads(Path(_syntax_repair_task()["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert state["status"] in {"retrying", "blocked"}
         assert state["current_step_index"] == 0
@@ -455,7 +455,7 @@ def test_final_verify_executor_cannot_run_without_dispatcher_lineage() -> None:
         state = json.loads(Path(_syntax_repair_task(max_strategy_attempts=1)["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert results[-1]["ok"] is False
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe_path.read_text(encoding="utf-8") == broken_text
         assert state["status"] in {"retrying", "blocked"}
@@ -533,7 +533,7 @@ def test_successful_rollback_is_idempotent_on_later_tick() -> None:
         state_after_rerun = json.loads(Path(_syntax_repair_task(max_strategy_attempts=1)["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["action"] == "retry"
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert file_after_rollback == broken_text
         assert probe_path.read_text(encoding="utf-8") == file_after_rollback
         assert state_after_rerun["repair_context"]["rollback_result"] == state_after_rollback["repair_context"]["rollback_result"]
@@ -617,7 +617,7 @@ def test_shared_single_file_apply_without_dispatcher_lineage_is_blocked() -> Non
         state = json.loads(Path(_apply_task("shared_low_risk", step)["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert state["status"] in {"retrying", "blocked"}
         assert "runtime dispatcher live capability required" in state["last_error"]
@@ -742,7 +742,7 @@ def test_single_file_dependency_impact_does_not_run_without_dispatcher_lineage()
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert state["status"] in {"retrying", "blocked"}
         assert "runtime dispatcher live capability required" in state["last_error"]
@@ -785,7 +785,7 @@ def test_impacted_file_regression_does_not_run_without_dispatcher_lineage() -> N
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert state["status"] in {"retrying", "blocked"}
         assert "runtime dispatcher live capability required" in state["last_error"]
@@ -879,7 +879,7 @@ def test_multi_file_shared_apply_does_not_start_without_dispatcher_lineage() -> 
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert state["status"] in {"retrying", "blocked"}
         assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
@@ -912,7 +912,7 @@ def test_strategy_minimal_patch_without_dispatcher_lineage_does_not_apply() -> N
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert target.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n\ndef multiply(a, b):\n    return a * b\n"
         assert state["status"] in {"retrying", "blocked"}
@@ -947,7 +947,7 @@ def test_strategy_without_dispatcher_lineage_does_not_switch_or_finish() -> None
         try:
             results = _run_until_terminal(runner, task_factory)
             state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
-            assert results[-1]["status"] == "retrying"
+            assert results[-1]["status"] == "blocked"
             assert results[-1]["error"]["type"] == "execution_authority_denied"
             assert state["status"] in {"retrying", "blocked"}
             assert "runtime dispatcher live capability required" in state["last_error"]
@@ -983,7 +983,7 @@ def test_strategy_recording_executor_without_dispatcher_lineage_is_rejected() ->
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert not any(result.get("action") == "strategy_retry" for result in results)
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
         assert state["status"] in {"retrying", "blocked"}
@@ -1013,7 +1013,7 @@ def test_strategy_exhaustion_cannot_run_without_dispatcher_lineage() -> None:
         results = _run_until_terminal(runner, task_factory, max_ticks=16)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert state["status"] in {"retrying", "blocked"}
         assert state["repair_context"]["strategy"]["exhausted"] is False
@@ -1074,7 +1074,7 @@ def test_regression_py_compile_cannot_run_without_dispatcher_lineage() -> None:
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
         assert state["status"] in {"retrying", "blocked"}
@@ -1115,7 +1115,7 @@ def test_regression_verify_plan_cannot_run_without_dispatcher_lineage() -> None:
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
         assert result["ok"] is False
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert target.read_text(encoding="utf-8") == "VALUE = 1\n"
         assert state["status"] in {"retrying", "blocked"}
@@ -1153,7 +1153,7 @@ def test_v800_autonomous_engineering_runtime_records_denied_retry_session() -> N
     final = runner.run_task(_repair_task(), current_tick=4)
     final_session = final["runtime_state"]["engineering_session"]
 
-    assert final["status"] == "retrying"
+    assert final["status"] == "blocked"
     assert final["ok"] is False
     assert final["error"]["type"] == "execution_authority_denied"
     assert executor.calls == []
@@ -1181,7 +1181,7 @@ def test_v800_autonomous_engineering_runtime_does_not_exhaust_after_denial() -> 
     state = result["runtime_state"]
     session = state.get("engineering_session")
 
-    assert result["status"] == "retrying"
+    assert result["status"] == "blocked"
     assert result["error"]["type"] == "execution_authority_denied"
     assert executor.calls == []
     assert isinstance(session, dict)
@@ -1203,7 +1203,7 @@ def test_repair_session_graph_without_dispatcher_lineage_is_not_finished() -> No
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         session = state["repair_context"]["repair_session"]
@@ -1234,7 +1234,7 @@ def test_repair_session_graph_cannot_switch_strategy_without_dispatcher_lineage(
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe.read_text(encoding="utf-8") == "VALUE = 1\n"
         session = state["repair_context"]["repair_session"]
@@ -1280,7 +1280,7 @@ def test_repair_session_graph_cannot_plan_impacted_apply_without_dispatcher_line
         result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
         state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
         session = state["repair_context"]["repair_session"]
@@ -1320,7 +1320,7 @@ def test_repair_session_graph_persists_across_reload_without_duplicate_nodes() -
         final_state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
         final_node_ids = [node["node_id"] for node in final_state["repair_context"]["repair_session"]["nodes"]]
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         assert all(node_id in final_node_ids for node_id in mid_node_ids)
@@ -1372,7 +1372,7 @@ def test_engineering_goal_state_legacy_single_repair_requires_dispatcher_lineage
         results = _run_until_terminal(runner, task_factory)
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         goal_state = state["repair_context"]["engineering_goal_state"]
@@ -1422,7 +1422,7 @@ def test_engineering_goal_state_two_subgoals_remain_incomplete_after_denial() ->
     result = second_runner.run_task(copy.deepcopy(task), current_tick=2)
     final_state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-    assert result["status"] == "retrying"
+    assert result["status"] == "blocked"
     assert result["ok"] is False
     assert result["error"]["type"] == "execution_authority_denied"
     assert result.get("finished", False) is False
@@ -1485,7 +1485,7 @@ def test_engineering_goal_state_subgoal_failure_creates_replan_request() -> None
     result = TaskRunner(step_executor=StepExecutor(), task_runtime=runtime).run_task(task, current_tick=1)
     state = json.loads(Path(task["runtime_state_file"]).read_text(encoding="utf-8"))
 
-    assert result["status"] in {"failed", "retrying"}
+    assert result["status"] in {"failed", "retrying", "blocked"}
     goal_state = state["repair_context"]["engineering_goal_state"]
     if result["status"] == "retrying":
         # The first failure is retry-classified, but the failed subgoal state is already durable.
@@ -1543,7 +1543,7 @@ def test_repo_source_apply_without_dispatcher_lineage_stops_before_confirmation_
 
     proposal = state["repair_context"]["engineering_goal_state"]["replan_proposal"]
     assert result["ok"] is False
-    assert result["status"] == "retrying"
+    assert result["status"] == "blocked"
     assert result["error"]["type"] == "execution_authority_denied"
     assert "runtime dispatcher live capability required" in state["last_error"]
     assert not state["repair_context"].get("repo_impact")
@@ -1580,7 +1580,7 @@ def test_multi_file_plan_without_dispatcher_lineage_replans_without_apply() -> N
 
         proposal = state["repair_context"]["engineering_goal_state"]["replan_proposal"]
         assert result["ok"] is False
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert a_path.read_text(encoding="utf-8") == "VALUE = 1\n"
         assert b_path.read_text(encoding="utf-8") == "import proposal_plan_a\ndef broken(:\n"
@@ -1611,7 +1611,7 @@ def test_strategy_cannot_exhaust_without_dispatcher_lineage() -> None:
         state = json.loads(Path(task_factory()["runtime_state_file"]).read_text(encoding="utf-8"))
 
         proposal = state["repair_context"]["engineering_goal_state"]["replan_proposal"]
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
         assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         assert state["repair_context"]["strategy"]["exhausted"] is False
@@ -1657,7 +1657,7 @@ def test_replan_proposal_records_new_denied_retry_without_finishing() -> None:
         ]
 
         assert result["ok"] is False
-        assert result["status"] == "retrying"
+        assert result["status"] == "blocked"
         assert result["error"]["type"] == "execution_authority_denied"
         assert probe.read_text(encoding="utf-8") == "def add(a,b)\n    return a+b\n"
         assert second_state["repair_context"]["engineering_goal_state"]["replan_proposal"]["proposal_id"] != first_proposal["proposal_id"]
@@ -1944,7 +1944,7 @@ def test_boundary_corrupted_rollback_is_not_reached_without_dispatcher_lineage()
         assert "runtime dispatcher live capability required" in state_after_failure["last_error"]
         assert executor.calls == []
 
-        assert result_after_terminal["status"] == "retrying"
+        assert result_after_terminal["status"] == "blocked"
         assert result_after_terminal["error"]["type"] == "execution_authority_denied"
         assert state_after_rerun["status"] in {"retrying", "blocked"}
         assert not state_after_rerun["repair_context"].get("rollback_result")
@@ -1985,9 +1985,9 @@ def test_boundary_terminal_repair_task_does_not_duplicate_execution_log_after_re
         execution_log_after_rerun = state_after_rerun.get("execution_log", [])
         assert isinstance(execution_log_after_rerun, list)
 
-        assert results[-1]["status"] == "retrying"
+        assert results[-1]["status"] == "blocked"
         assert results[-1]["error"]["type"] == "execution_authority_denied"
-        assert rerun_result["status"] == "retrying"
+        assert rerun_result["status"] == "blocked"
         assert rerun_result["error"]["type"] == "execution_authority_denied"
 
         assert state_after_denial["status"] in {"retrying", "blocked", "denied"}

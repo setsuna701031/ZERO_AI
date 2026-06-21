@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Passive replan bookkeeping for adaptive engineering loops."""
 
@@ -6,7 +6,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from core.goals.goal_lineage_contract import extract_goal_lineage
+from core.goals.goal_lineage_contract import create_goal_branch_lineage, extract_goal_lineage
 
 REPLAN_RUNTIME_SCHEMA = "zero.replan_runtime.v2"
 _REPLAN_MUTATION_AUTHORITY = object()
@@ -30,26 +30,9 @@ def _mapping(value: Any) -> dict[str, Any]:
 
 def _identity_from_lineage(lineage: Mapping[str, Any] | None) -> dict[str, str]:
     data = _mapping(lineage)
-    goal_id = _text(data.get("goal_id"), _text(data.get("root_goal_id"), "goal"))
-    root_goal_id = _text(data.get("root_goal_id"), goal_id)
-    session_id = _text(data.get("session_id"), f"goal-session-{root_goal_id}")
-    runtime_session_id = _text(data.get("runtime_session_id"), f"goal-runtime-{root_goal_id}")
-    branch_id = _text(data.get("branch_id"), goal_id)
-    branch_type = _text(data.get("branch_type"), "root")
-    canonical = extract_goal_lineage(
-        {
-            **data,
-            "root_goal_id": root_goal_id,
-            "source_goal_id": _text(data.get("source_goal_id"), root_goal_id),
-            "goal_id": goal_id,
-            "branch_type": branch_type,
-            "branch_id": branch_id,
-            "session_id": session_id,
-            "runtime_session_id": runtime_session_id,
-        },
-        require_complete=True,
-        reject_conflicts=True,
-    )
+    if not data or not data.get("root_goal_id"):
+        return {}
+    canonical = extract_goal_lineage(data, require_complete=True, reject_conflicts=True)
     return {field: canonical[field] for field in (
         "root_goal_id", "source_goal_id", "goal_id", "goal_lineage_id", "branch_type",
         "branch_id", "session_id", "runtime_session_id",
@@ -100,6 +83,11 @@ class ReplanRuntime:
         goal_lineage: Mapping[str, Any] | None = None,
     ) -> "ReplanRuntime":
         identity = _identity_from_lineage(goal_lineage)
+        if not identity:
+            identity = {
+                "session_id": "session:replan",
+                "runtime_session_id": "runtime-session:replan",
+            }
         return cls(replan_count=replan_count, max_replans=max_replans, **identity)
 
     @property
@@ -109,9 +97,26 @@ class ReplanRuntime:
     def record_replan(self, replan_record: Mapping[str, Any]) -> "ReplanRuntime":
         if self.limit_reached:
             raise RuntimeError("replan_limit_reached")
+        record = _mapping(replan_record)
+        identity_changes: dict[str, Any] = {}
+        if self.root_goal_id:
+            branch_id = _text(record.get("branch_id") or record.get("request_id") or record.get("replan_request_id"))
+            if not branch_id:
+                raise ValueError("explicit_replan_branch_id_required")
+            branch = create_goal_branch_lineage(
+                self.to_dict(),
+                goal_id=self.goal_id,
+                branch_type="replan",
+                branch_id=branch_id,
+            )
+            identity_changes = {key: branch[key] for key in (
+                "root_goal_id", "source_goal_id", "goal_id", "goal_lineage_id",
+                "branch_type", "branch_id", "session_id", "runtime_session_id",
+            )}
         return self.replace(
             replan_count=self.replan_count + 1,
-            last_replan_record=_mapping(replan_record),
+            last_replan_record=record,
+            **identity_changes,
             _authority_token=_REPLAN_MUTATION_AUTHORITY,
         )
 

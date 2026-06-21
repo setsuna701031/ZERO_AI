@@ -10,7 +10,15 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 from core.runtime.persistent_queue_contract import duplicate_identity, extract_queue_lineage
 from core.runtime.runtime_status import normalize_runtime_status
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage, extract_runtime_identity
+from core.goals.goal_lineage_contract import (
+    RUNTIME_IDENTITY_GRAPH_FIELDS,
+    attach_goal_lineage,
+    attach_runtime_identity_graph,
+    canonical_runtime_identity_graph,
+    extract_goal_lineage,
+    extract_runtime_identity,
+)
+from core.runtime.runtime_execution_authority import validate_capability_provenance
 
 SESSION_STATUS_OPEN = "open"
 SESSION_STATUS_RESUMABLE = "resumable"
@@ -97,6 +105,11 @@ def _lineage_from_task(task: Mapping[str, Any]) -> dict[str, Any]:
         task.get("continuation_work_item") if isinstance(task.get("continuation_work_item"), Mapping) else {}
     )
     lineage = extract_goal_lineage(task, reject_conflicts=True)
+    identity_graph = task.get("runtime_identity_graph")
+    if isinstance(identity_graph, Mapping):
+        canonical_graph = canonical_runtime_identity_graph(identity_graph)
+        lineage.update({field: canonical_graph[field] for field in RUNTIME_IDENTITY_GRAPH_FIELDS if canonical_graph.get(field)})
+        lineage["runtime_identity_graph"] = canonical_graph
     lineage.update({
         "continuation_goal_id": _first_text(
             task.get("continuation_goal_id"),
@@ -203,6 +216,32 @@ def _validate_runtime_identity_boundary(task: Mapping[str, Any], *, session_id: 
             if explicit and lineage_value and explicit != lineage_value:
                 raise RuntimeSessionResumeStoreError("lineage_mismatch")
     return identity
+
+
+def _validate_identity_graph_boundary(task: Mapping[str, Any], *, session_id: str) -> dict[str, str] | None:
+    section = task.get("runtime_identity_graph")
+    if not isinstance(section, Mapping):
+        return None
+    try:
+        graph = canonical_runtime_identity_graph(section)
+    except ValueError as exc:
+        raise RuntimeSessionResumeStoreError(str(exc)) from exc
+    if graph.get("session_id") != session_id:
+        raise RuntimeSessionResumeStoreError("resume_session_identity_drift")
+    required = (
+        "root_goal_id", "source_goal_id", "goal_id", "goal_lineage_id",
+        "branch_type", "branch_id", "session_id", "runtime_session_id",
+        "execution_id", "capability_id",
+    )
+    missing = [field for field in required if not graph.get(field)]
+    if missing:
+        raise RuntimeSessionResumeStoreError("resume_identity_graph_missing_fields:" + ",".join(missing))
+    provenance_value = task.get("runtime_capability_provenance")
+    if provenance_value is not None:
+        provenance = validate_capability_provenance(provenance_value)
+        if provenance.capability_id != graph["capability_id"] or provenance.execution_id != graph["execution_id"]:
+            raise RuntimeSessionResumeStoreError("resume_capability_identity_drift")
+    return graph
 
 
 def normalize_task_status(value: Any) -> str:
@@ -371,15 +410,22 @@ class RuntimeSessionResume:
             if not isinstance(task, Mapping):
                 continue
             session_task = copy.deepcopy(dict(task))
+            if not include_terminal and is_terminal_task_status(session_task.get("status")):
+                continue
+            session_task.setdefault("session_id", normalized_session_id)
             runtime_identity = _validate_runtime_identity_boundary(
+                session_task,
+                session_id=normalized_session_id,
+            )
+            identity_graph = _validate_identity_graph_boundary(
                 session_task,
                 session_id=normalized_session_id,
             )
             if runtime_identity is not None:
                 session_task["session_id"] = runtime_identity["session_id"]
                 session_task["runtime_session_id"] = runtime_identity["runtime_session_id"]
-            elif not _clean_text(session_task.get("session_id")):
-                session_task["session_id"] = normalized_session_id
+            if identity_graph is not None:
+                session_task = attach_runtime_identity_graph(session_task, identity_graph)
             try:
                 canonical_lineage = extract_goal_lineage(session_task, reject_conflicts=True)
             except ValueError as exc:
@@ -394,6 +440,8 @@ class RuntimeSessionResume:
                     "branch_type", "branch_id", "session_id", "runtime_session_id",
                 )):
                     session_task = attach_goal_lineage(session_task, canonical_lineage)
+                elif runtime_identity is None and identity_graph is None:
+                    session_task.setdefault("session_id", normalized_session_id)
             snapshot = self.capture_task_snapshot(session_task)
             snapshot = self._resolve_snapshot_against_runtime_state(snapshot)
             if include_terminal or is_resumable_task_status(snapshot.status):
@@ -711,15 +759,6 @@ class RuntimeSessionResume:
             "fingerprint": stable_resume_fingerprint({"reason": reason}),
             "created_at": utc_timestamp(),
         }
-
-    def _new_session_id(self, *, tasks: Iterable[Mapping[str, Any]] | None, metadata: Mapping[str, Any] | None) -> str:
-        payload = {
-            "tasks": [extract_task_id(item) or dict(item) for item in tasks or [] if isinstance(item, Mapping)],
-            "metadata": dict(metadata or {}),
-            "time": utc_timestamp(),
-        }
-        return "runtime_session:" + stable_resume_fingerprint(payload)[:16]
-
 
 def build_runtime_resume_plan(tasks: Iterable[Mapping[str, Any]], *, workspace_root: str | Path = ".", storage_path: str | Path | None = None, session_id: str | None = None, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
     runtime = RuntimeSessionResume(workspace_root=workspace_root, storage_path=storage_path)
