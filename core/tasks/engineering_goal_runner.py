@@ -24,7 +24,13 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_runtime_contract import build_engineering_runtime_contract
 from core.tasks.engineering_planning_adapter import EngineeringPlanningOnlyAdapter
 from core.tasks.engineering_runtime_orchestrator import EngineeringRuntimeOrchestrator
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
+from core.goals.goal_lineage_contract import (
+    GOAL_LINEAGE_FIELDS,
+    attach_goal_lineage,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+    lineage_scope_matches,
+)
 
 
 ENGINEERING_GOAL_RUNNER_SCHEMA = "zero.engineering_goal_runner.v1"
@@ -53,7 +59,16 @@ def _runtime_goal_record(goal: Mapping[str, Any]) -> dict[str, Any]:
     record.setdefault("goal_id", goal_id)
     record.setdefault("summary", _clean_text(payload.get("goal"), goal_id))
     record.setdefault("status", "pending")
-    return record
+    explicit_identity = any(
+        record.get(field) or (isinstance(record.get("goal_lineage"), Mapping) and record["goal_lineage"].get(field))
+        for field in ("root_goal_id", "goal_lineage_id", "session_id", "runtime_session_id")
+    )
+    lineage = (
+        extract_goal_lineage(record, require_complete=True, reject_conflicts=True)
+        if explicit_identity
+        else create_root_goal_lineage(goal_id=goal_id)
+    )
+    return attach_goal_lineage(record, lineage)
 
 
 def _clean_list(value: Any) -> list[str]:
@@ -71,6 +86,13 @@ def _dependency_record_for_goal(goal: Mapping[str, Any]) -> dict[str, Any]:
         "prerequisite_goal_ids": _clean_list(goal.get("prerequisite_goal_ids") or payload.get("prerequisite_goal_ids")),
         "blocked_by_goal_ids": _clean_list(goal.get("blocked_by_goal_ids") or payload.get("blocked_by_goal_ids")),
     }
+
+
+def _runtime_result_has_governance_identity(value: Mapping[str, Any]) -> bool:
+    return bool(
+        isinstance(value.get("goal_lineage"), Mapping)
+        or any(value.get(field) for field in GOAL_LINEAGE_FIELDS if field != "goal_id")
+    )
 
 
 def _external_scheduler_override() -> Any | None:
@@ -140,7 +162,13 @@ class EngineeringGoalRunner:
         if goal is None:
             return self._not_found_result(target_goal_id)
         if goal_lineage is not None:
-            goal = attach_goal_lineage(goal, goal_lineage)
+            persisted_lineage = extract_goal_lineage(goal, require_complete=True, reject_conflicts=True)
+            requested_lineage = extract_goal_lineage(goal_lineage, require_complete=True, reject_conflicts=True)
+            if not lineage_scope_matches(persisted_lineage, requested_lineage):
+                raise ValueError("engineering_runner_governance_identity_conflict")
+            if persisted_lineage["goal_id"] != requested_lineage["goal_id"]:
+                raise ValueError("engineering_runner_goal_lineage_branch_conflict")
+            goal = attach_goal_lineage(goal, requested_lineage)
         request = self.build_runtime_request([goal], selected_goal_id=target_goal_id)
         mainline = self._run_work_package_mainline(goal)
         if mainline:
@@ -343,6 +371,25 @@ class EngineeringGoalRunner:
         issue_summary: Mapping[str, Any],
         execution_path_overrides: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
+        request_goals = runtime_request.get("goals") if isinstance(runtime_request.get("goals"), list) else []
+        request_goal = next(
+            (
+                item
+                for item in request_goals
+                if isinstance(item, Mapping) and _goal_id(item) == _clean_text(goal_id)
+            ),
+            None,
+        )
+        if request_goal is None:
+            raise ValueError("engineering_runner_governance_goal_missing")
+        lineage = extract_goal_lineage(request_goal, require_complete=True, reject_conflicts=True)
+        if _runtime_result_has_governance_identity(runtime_result):
+            result_lineage = extract_goal_lineage(runtime_result, require_complete=True, reject_conflicts=True)
+            if not lineage_scope_matches(lineage, result_lineage):
+                raise ValueError("engineering_runner_runtime_governance_identity_conflict")
+            if result_lineage["goal_id"] != lineage["goal_id"]:
+                raise ValueError("engineering_runner_runtime_goal_branch_conflict")
+
         runtime_contract = build_engineering_runtime_contract(
             goal_id=goal_id,
             action=action,
@@ -354,7 +401,7 @@ class EngineeringGoalRunner:
             adaptive_decision=adaptive_decision,
             issue_summary=issue_summary,
         )
-        result = {
+        result = attach_goal_lineage({
             "schema": ENGINEERING_GOAL_RUNNER_SCHEMA,
             "ok": bool(ok),
             "mode": "engineering_goal_runner",
@@ -383,7 +430,7 @@ class EngineeringGoalRunner:
                 "new_execution_path": False,
             },
             "updated_at": time.time(),
-        }
+        }, lineage)
         if isinstance(execution_path_overrides, Mapping):
             result["execution_path"].update(copy.deepcopy(dict(execution_path_overrides)))
             runtime_contract["execution_path"].update(copy.deepcopy(dict(execution_path_overrides)))

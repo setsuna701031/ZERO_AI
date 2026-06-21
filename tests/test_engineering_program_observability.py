@@ -15,9 +15,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 OBSERVABILITY_FILE = REPO_ROOT / "core/tasks/engineering_program_observability.py"
 
 
-def _attestation(goal_id: str):
-    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
-    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+def _save_complete(repository, goal_id: str, summary: str) -> None:
+    goal = repository.save_goal({"goal_id": goal_id, "summary": summary, "status": "pending"})
+    evidence = EvidenceValidator().validate(
+        EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now", metadata=goal["goal_lineage"])
+    )
+    attestation = GoalCompletionAuthority().complete_goal(
+        goal_id=goal_id,
+        evidence_refs=[evidence],
+        all_subgoals_completed=True,
+        goal_lineage=goal["goal_lineage"],
+    )
+    repository.update_goal(goal_id, {"status": "complete"}, completion_attestation=attestation)
 
 
 def _fixture(tmp_path: Path) -> EngineeringProgramObservability:
@@ -32,10 +41,7 @@ def _fixture(tmp_path: Path) -> EngineeringProgramObservability:
     for portfolio_id in ("portfolio_done", "portfolio_blocked", "portfolio_active"):
         program_repository.add_portfolio("program_1", portfolio_id)
 
-    goal_repository.save_goal(
-        {"goal_id": "goal_done", "summary": "Finished goal", "status": "complete"},
-        completion_attestation=_attestation("goal_done"),
-    )
+    _save_complete(goal_repository, "goal_done", "Finished goal")
     goal_repository.save_goal({"goal_id": "goal_blocked_1", "summary": "Blocked goal 1", "status": "blocked"})
     goal_repository.save_goal({"goal_id": "goal_blocked_2", "summary": "Blocked goal 2", "status": "blocked"})
     goal_repository.save_goal({"goal_id": "goal_active", "summary": "Active goal", "status": "pending"})

@@ -16,9 +16,18 @@ from core.tasks.engineering_program_repository import EngineeringProgramReposito
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _attestation(goal_id: str):
-    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
-    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+def _complete_goal(repository, goal_id: str) -> None:
+    goal = repository.save_goal({"goal_id": goal_id, "summary": goal_id, "status": "pending"})
+    evidence = EvidenceValidator().validate(
+        EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now", metadata=goal["goal_lineage"])
+    )
+    attestation = GoalCompletionAuthority().complete_goal(
+        goal_id=goal_id,
+        evidence_refs=[evidence],
+        all_subgoals_completed=True,
+        goal_lineage=goal["goal_lineage"],
+    )
+    repository.update_goal(goal_id, {"status": "complete"}, completion_attestation=attestation)
 
 
 class DecisionRunner:
@@ -26,7 +35,7 @@ class DecisionRunner:
         self.decisions = decisions
         self.calls: list[str] = []
 
-    def run_goal(self, goal_id: str) -> dict:
+    def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
         self.calls.append(goal_id)
         decision = self.decisions.get(goal_id, "complete")
         adaptive_decision = {
@@ -40,12 +49,15 @@ class DecisionRunner:
         }
         if decision == "complete":
             evidence = EvidenceValidator().validate(
-                EvidenceRecord(f"{goal_id}-evidence", goal_id, None, "test", "ok", "now")
+                EvidenceRecord(
+                    f"{goal_id}-evidence", goal_id, None, "test", "ok", "now", metadata=goal_lineage or {}
+                )
             )
             adaptive_decision["goal_completion_authority_result"] = GoalCompletionAuthority().complete_goal(
                 goal_id=goal_id,
                 evidence_refs=[evidence],
                 all_subgoals_completed=True,
+                goal_lineage=goal_lineage,
             )
         return {
             "ok": decision == "complete",
@@ -65,10 +77,10 @@ def test_program_advances_multiple_portfolios_and_reports_blocked_path(tmp_path)
         ("portfolio_2_done", "complete"),
         ("portfolio_2_ready", "pending"),
     ):
-        goal_repository.save_goal(
-            {"goal_id": goal_id, "summary": goal_id, "status": status},
-            completion_attestation=_attestation(goal_id) if status in {"complete", "completed"} else None,
-        )
+        if status in {"complete", "completed"}:
+            _complete_goal(goal_repository, goal_id)
+        else:
+            goal_repository.save_goal({"goal_id": goal_id, "summary": goal_id, "status": status})
 
     portfolio_repository.create_portfolio(
         {"portfolio_id": "portfolio_1", "name": "Blocked path", "goal_ids": ["portfolio_1_blocked"]}

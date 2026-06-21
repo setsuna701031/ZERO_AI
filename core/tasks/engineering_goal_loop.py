@@ -8,7 +8,6 @@ RuntimeOrchestrator.
 """
 
 import copy
-import inspect
 import time
 from pathlib import Path
 from typing import Any, Mapping
@@ -34,7 +33,13 @@ from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_coordinator import ReplanCoordinator
 from core.adaptive.replan_runtime import ReplanRuntime
 from core.goals.goal_completion_authority import is_accepted_goal_completion_result
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage
+from core.goals.goal_lineage_contract import (
+    GOAL_LINEAGE_FIELDS,
+    attach_goal_lineage,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+    lineage_scope_matches,
+)
 
 
 ENGINEERING_GOAL_LOOP_RESPONSIBILITY_MARKERS = {
@@ -165,22 +170,49 @@ class EngineeringGoalLoop:
         max_continuations: int | None = None,
         session_id: str | None = None,
         runtime_session_id: str | None = None,
+        goal_lineage: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         target_goal_id = _clean_text(goal_id)
-        resolved_session_id = _clean_text(session_id, f"goal-session-{target_goal_id}")
-        resolved_runtime_session_id = _clean_text(runtime_session_id, f"goal-runtime-session-{target_goal_id}")
-        current_lineage = extract_goal_lineage(
-            {
-                "root_goal_id": target_goal_id,
-                "source_goal_id": target_goal_id,
-                "goal_id": target_goal_id,
-                "branch_type": "root",
-                "branch_id": target_goal_id,
-                "session_id": resolved_session_id,
-                "runtime_session_id": resolved_runtime_session_id,
-            },
-            require_complete=True,
-        )
+        load_goal = getattr(self.repository, "load_goal", None)
+        persisted_goal = load_goal(target_goal_id) if callable(load_goal) else None
+        if isinstance(persisted_goal, Mapping):
+            current_lineage = extract_goal_lineage(
+                persisted_goal,
+                require_complete=True,
+                reject_conflicts=True,
+            )
+            if session_id is not None and current_lineage["session_id"] != _clean_text(session_id):
+                raise ValueError("engineering_loop_session_identity_conflict")
+            if (
+                runtime_session_id is not None
+                and current_lineage["runtime_session_id"] != _clean_text(runtime_session_id)
+            ):
+                raise ValueError("engineering_loop_runtime_session_identity_conflict")
+            if goal_lineage is not None:
+                requested_lineage = extract_goal_lineage(
+                    goal_lineage,
+                    require_complete=True,
+                    reject_conflicts=True,
+                )
+                if (
+                    requested_lineage["goal_id"] != target_goal_id
+                    or not lineage_scope_matches(current_lineage, requested_lineage)
+                ):
+                    raise ValueError("engineering_loop_goal_lineage_identity_conflict")
+        else:
+            current_lineage = (
+                extract_goal_lineage(
+                    goal_lineage,
+                    require_complete=True,
+                    reject_conflicts=True,
+                )
+                if goal_lineage is not None
+                else create_root_goal_lineage(
+                    goal_id=target_goal_id,
+                    session_id=session_id,
+                    runtime_session_id=runtime_session_id,
+                )
+            )
         cycle_limit = max(1, int(max_cycles or 1))
         replan_limit = max(0, int(max_replans or 0))
         continuation_limit = cycle_limit if max_continuations is None else max(0, int(max_continuations or 0))
@@ -199,10 +231,12 @@ class EngineeringGoalLoop:
             target_goal_id,
             continuation_count=0,
             max_continuations=continuation_limit,
+            goal_lineage=current_lineage,
         )
         replan_runtime = ReplanRuntime.start(
             replan_count=0,
             max_replans=replan_limit,
+            goal_lineage=current_lineage,
         )
 
         for cycle_index in range(cycle_limit):
@@ -328,29 +362,30 @@ class EngineeringGoalLoop:
         cycle_index: int = 0,
         goal_lineage: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
-        run_goal = self.runner.run_goal
-        parameters = inspect.signature(run_goal).parameters
-        runner_result = (
-            run_goal(_clean_text(goal_id), goal_lineage=goal_lineage)
-            if "goal_lineage" in parameters
-            else run_goal(_clean_text(goal_id))
+        lineage = (
+            extract_goal_lineage(goal_lineage, require_complete=True, reject_conflicts=True)
+            if goal_lineage
+            else create_root_goal_lineage(goal_id=goal_id)
         )
+        runner_result = self.runner.run_goal(_clean_text(goal_id), goal_lineage=lineage)
+        if isinstance(runner_result, Mapping) and (
+            isinstance(runner_result.get("goal_lineage"), Mapping)
+            or any(runner_result.get(field) for field in GOAL_LINEAGE_FIELDS if field != "goal_id")
+        ):
+            returned_lineage = extract_goal_lineage(
+                runner_result,
+                require_complete=True,
+                reject_conflicts=True,
+            )
+            if not lineage_scope_matches(lineage, returned_lineage):
+                raise ValueError("engineering_loop_runner_governance_identity_conflict")
+            if returned_lineage["goal_id"] != lineage["goal_id"]:
+                raise ValueError("engineering_loop_runner_goal_branch_conflict")
         runtime_contract = build_engineering_runtime_contract_from_result(runner_result)
         runtime_result = _as_mapping(runtime_contract.get("runtime_result"))
         adaptive = _as_mapping(runtime_contract.get("adaptive_decision"))
         decision = _clean_text(adaptive.get("decision"))
         root_cause = _as_mapping(adaptive.get("root_cause") or runtime_contract.get("runtime_root_cause"))
-        lineage = extract_goal_lineage(
-            goal_lineage
-            or {
-                "root_goal_id": goal_id,
-                "source_goal_id": goal_id,
-                "goal_id": goal_id,
-                "session_id": f"goal-session-{goal_id}",
-                "runtime_session_id": f"goal-session-{goal_id}",
-            },
-            require_complete=True,
-        )
         cycle = attach_goal_lineage({
             "schema": ENGINEERING_GOAL_LOOP_CYCLE_SCHEMA,
             "cycle_index": int(cycle_index),

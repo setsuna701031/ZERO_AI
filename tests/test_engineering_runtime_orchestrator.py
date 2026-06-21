@@ -3,6 +3,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from core.evidence import EvidenceRecord, EvidenceValidator
+from core.goals.goal_completion_authority import GoalCompletionAuthority
+from core.goals.goal_lineage_contract import attach_goal_lineage, create_root_goal_lineage
+
 from core.tasks.engineering_runtime_orchestrator import (
     ENGINEERING_RUNTIME_ORCHESTRATOR_SCHEMA,
     EngineeringRuntimeOrchestrator,
@@ -14,7 +18,7 @@ ORCHESTRATOR_FILE = REPO_ROOT / "core/tasks/engineering_runtime_orchestrator.py"
 
 
 def _goal(goal_id: str, *, status: str = "pending") -> dict:
-    return {
+    return attach_goal_lineage({
         "goal_id": goal_id,
         "priority": 1,
         "status": status,
@@ -26,7 +30,7 @@ def _goal(goal_id: str, *, status: str = "pending") -> dict:
             "package_id": goal_id,
             "goal": f"Goal {goal_id}",
         },
-    }
+    }, create_root_goal_lineage(goal_id=goal_id))
 
 
 class FakeScheduler:
@@ -105,7 +109,7 @@ class FakeContinuationCoordinator:
 
     def continue_goal(self, payload):
         self.calls.append(dict(payload))
-        return {
+        result = {
             "ok": self.goal_state == "completed",
             "terminal": self.goal_state in {"completed", "blocked", "cancelled"},
             "stopped_reason": self.goal_state,
@@ -115,6 +119,26 @@ class FakeContinuationCoordinator:
                 "task_buckets": {"pending": [], "running": [], "completed": [], "blocked": []},
             },
         }
+        if self.goal_state == "completed":
+            lineage = payload["goal_lineage"]
+            evidence = EvidenceValidator().validate(
+                EvidenceRecord(
+                    "orchestrator-evidence",
+                    payload["goal_id"],
+                    None,
+                    "test",
+                    "complete",
+                    "now",
+                    metadata={**lineage, "goal_lineage": lineage},
+                )
+            )
+            result["goal_completion_attestation"] = GoalCompletionAuthority().complete_goal(
+                goal_id=payload["goal_id"],
+                evidence_refs=[evidence],
+                all_subgoals_completed=True,
+                goal_lineage=lineage,
+            )
+        return result
 
 
 class FakeEvaluator:

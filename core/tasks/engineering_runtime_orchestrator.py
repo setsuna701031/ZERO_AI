@@ -19,6 +19,11 @@ from core.tasks.engineering_goal_lifecycle import EngineeringGoalLifecycle
 from core.tasks.engineering_goal_scheduler import EngineeringGoalScheduler
 from core.tasks.engineering_planning_loop import EngineeringPlanningLoop
 from core.tasks.goal_continuation_coordinator import GoalContinuationCoordinator
+from core.goals.goal_completion_authority import is_accepted_goal_completion_result
+from core.goals.goal_lineage_contract import (
+    attach_goal_lineage,
+    extract_goal_lineage,
+)
 
 
 ENGINEERING_RUNTIME_ORCHESTRATOR_SCHEMA = "zero.engineering_runtime_orchestrator.v1"
@@ -62,7 +67,8 @@ def _payload_for_goal(goal: Mapping[str, Any]) -> dict[str, Any]:
     payload.setdefault("engineering_goal_lifecycle", True)
     if "goal" not in payload:
         payload["goal"] = _clean_text(goal.get("summary") or goal.get("goal"), goal_id)
-    return payload
+    lineage = extract_goal_lineage(goal, require_complete=True, reject_conflicts=True)
+    return attach_goal_lineage(payload, lineage)
 
 
 def _trace_event(event: str, state: str, **fields: Any) -> dict[str, Any]:
@@ -194,7 +200,12 @@ class EngineeringRuntimeOrchestrator:
         self.max_iterations = max(1, int(max_iterations or 1))
 
     def run(self, goals: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-        records = [copy.deepcopy(dict(goal)) for goal in goals if isinstance(goal, Mapping)]
+        records: list[dict[str, Any]] = []
+        for goal in goals:
+            if not isinstance(goal, Mapping):
+                raise ValueError("engineering_runtime_goal_record_must_be_mapping")
+            lineage = extract_goal_lineage(goal, require_complete=True, reject_conflicts=True)
+            records.append(attach_goal_lineage(goal, lineage))
         trace: list[dict[str, Any]] = []
         iterations: list[dict[str, Any]] = []
         final_state = "idle"
@@ -284,6 +295,19 @@ class EngineeringRuntimeOrchestrator:
                 memory_summary=_as_mapping(planning_result.get("memory")),
             )
             decision_state = self._decision_state(evaluator_decision, planning_result, continuation_result)
+            if decision_state == "complete" and not is_accepted_goal_completion_result(
+                self._completion_attestation(continuation_result, lifecycle_result=None),
+                goal_id=selected_goal_id,
+                session_id=payload["session_id"],
+                goal_lineage=payload["goal_lineage"],
+            ):
+                decision_state = "blocked"
+                evaluator_decision = {
+                    **copy.deepcopy(dict(evaluator_decision)),
+                    "decision": "block",
+                    "reason": "engineering_runtime_completion_evidence_required",
+                    "governance_refusal": True,
+                }
             trace.append(
                 _trace_event(
                     "evaluator_decision",
@@ -341,7 +365,7 @@ class EngineeringRuntimeOrchestrator:
             final_state = "running"
             stop_reason = "iteration_limit_reached"
 
-        return {
+        result = {
             "schema": ENGINEERING_RUNTIME_ORCHESTRATOR_SCHEMA,
             "ok": final_state == "complete",
             "mode": "engineering_runtime_orchestrator",
@@ -371,19 +395,40 @@ class EngineeringRuntimeOrchestrator:
             },
             "updated_at": time.time(),
         }
+        if records:
+            latest_goal_id = _clean_text(iterations[-1].get("goal_id")) if iterations else ""
+            selected = next(
+                (record for record in records if _goal_id(record) == latest_goal_id),
+                records[0],
+            )
+            result = attach_goal_lineage(result, extract_goal_lineage(selected, require_complete=True))
+        return result
 
     def _schedule_next(self, records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-        if hasattr(self.scheduler, "schedule_next_goal"):
-            result = self.scheduler.schedule_next_goal(records)
-        else:
-            result = self.scheduler.run_next_goal(records, planning_loop=_PlanningLoopNotAvailable())
+        schedule_next_goal = getattr(self.scheduler, "schedule_next_goal", None)
+        if not callable(schedule_next_goal):
+            raise TypeError("engineering_runtime_scheduler_boundary_required")
+        result = schedule_next_goal(records)
         return copy.deepcopy(dict(result)) if isinstance(result, Mapping) else {}
 
     def _find_goal(self, records: Sequence[Mapping[str, Any]], goal_id: str) -> dict[str, Any]:
         for record in records:
             if _goal_id(record) == goal_id:
                 return copy.deepcopy(dict(record))
-        return {"goal_id": goal_id, "status": "pending", "payload": {"goal_id": goal_id}}
+        raise ValueError(f"engineering_runtime_selected_goal_missing:{goal_id}")
+
+    @staticmethod
+    def _completion_attestation(
+        continuation_result: Mapping[str, Any],
+        *,
+        lifecycle_result: Mapping[str, Any] | None,
+    ) -> Any:
+        for source in (continuation_result, lifecycle_result or {}):
+            for key in ("goal_completion_attestation", "goal_completion_authority_result"):
+                value = source.get(key) if isinstance(source, Mapping) else None
+                if value is not None:
+                    return value
+        return None
 
     def _decision_state(
         self,

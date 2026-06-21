@@ -15,6 +15,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.goals.goal_completion_authority import GoalCompletionResult, is_accepted_goal_completion_result
+from core.goals.goal_lineage_contract import (
+    GOAL_LINEAGE_FIELDS,
+    INVALID_IDENTITY_VALUES,
+    attach_goal_lineage,
+    canonical_runtime_identity_graph,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+)
 from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransition
 
@@ -49,6 +57,27 @@ def _safe_goal_id(value: str) -> str:
     return cleaned[:80] or "goal"
 
 
+def _assert_embedded_lineage_consistency(value: Mapping[str, Any], lineage: Mapping[str, Any]) -> None:
+    candidates: list[Mapping[str, Any]] = [value]
+    for container_key in ("goal_lineage", "metadata", "payload"):
+        container = value.get(container_key)
+        if isinstance(container, Mapping):
+            candidates.append(container)
+            nested = container.get("goal_lineage")
+            if isinstance(nested, Mapping):
+                candidates.append(nested)
+    for candidate in candidates:
+        for field in GOAL_LINEAGE_FIELDS:
+            raw = candidate.get(field)
+            if raw is None or str(raw).strip() == "":
+                continue
+            text = str(raw).strip()
+            if text.lower() in INVALID_IDENTITY_VALUES:
+                raise ValueError(f"invalid_runtime_identity_value:{field}")
+            if text != str(lineage[field]):
+                raise ValueError(f"engineering_goal_lineage_conflict:{field}")
+
+
 @dataclass(frozen=True)
 class EngineeringGoal:
     goal_id: str
@@ -60,6 +89,7 @@ class EngineeringGoal:
     description: str = ""
     payload: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    goal_lineage: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "EngineeringGoal":
@@ -76,6 +106,19 @@ class EngineeringGoal:
             raise ValueError("engineering_goal_requires_goal_id")
         if not summary:
             raise ValueError("engineering_goal_requires_summary")
+        explicit_lineage = bool(
+            isinstance(value.get("goal_lineage"), Mapping)
+            or any(value.get(field) for field in GOAL_LINEAGE_FIELDS if field != "goal_id")
+        )
+        if explicit_lineage:
+            lineage = extract_goal_lineage(value, require_complete=True, reject_conflicts=True)
+            canonical_graph = canonical_runtime_identity_graph(lineage)
+            lineage = {field: canonical_graph[field] for field in GOAL_LINEAGE_FIELDS}
+            if lineage["goal_id"] != goal_id:
+                raise ValueError("engineering_goal_lineage_goal_id_conflict")
+        else:
+            lineage = create_root_goal_lineage(goal_id=goal_id)
+        _assert_embedded_lineage_consistency(value, lineage)
         return cls(
             goal_id=goal_id,
             summary=summary,
@@ -86,6 +129,7 @@ class EngineeringGoal:
             description=_clean_text(value.get("description")),
             payload=payload,
             metadata=_as_mapping(value.get("metadata")),
+            goal_lineage=lineage,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -95,7 +139,7 @@ class EngineeringGoal:
         payload.setdefault("task_id", self.goal_id)
         payload.setdefault("package_id", self.goal_id)
         payload.setdefault("task_type", "engineering_task")
-        return {
+        return attach_goal_lineage({
             "schema": ENGINEERING_GOAL_RECORD_SCHEMA,
             "goal_id": self.goal_id,
             "summary": self.summary,
@@ -106,7 +150,7 @@ class EngineeringGoal:
             "description": self.description,
             "payload": payload,
             "metadata": copy.deepcopy(self.metadata),
-        }
+        }, self.goal_lineage)
 
 
 class EngineeringGoalRepository:
@@ -143,6 +187,8 @@ class EngineeringGoalRepository:
         if goal_record["status"] in {"complete", "completed"} and not is_accepted_goal_completion_result(
             completion_attestation,
             goal_id=goal_id,
+            session_id=goal_record["session_id"],
+            goal_lineage=goal_record["goal_lineage"],
         ):
             raise ValueError("canonical_completion_attestation_required")
         if goal_id in records:
@@ -175,13 +221,15 @@ class EngineeringGoalRepository:
         if target_status in {"complete", "completed"} and not is_accepted_goal_completion_result(
             completion_attestation,
             goal_id=target_goal_id,
+            session_id=existing["session_id"],
+            goal_lineage=existing["goal_lineage"],
         ):
             raise ValueError("canonical_completion_attestation_required")
         if target_status and target_status not in {"complete", "completed"} and target_status != existing.get("status"):
             transition = GoalTransition(
                 target_type="goal",
                 target_id=target_goal_id,
-                from_state=existing.get("status"),
+                from_state=("active" if existing.get("status") == "pending" else existing.get("status")),
                 to_state=target_status,
                 action={
                     "planned": "plan",
@@ -278,24 +326,25 @@ class EngineeringGoalRepository:
             return {}
         try:
             data = json.loads(self.storage_path.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid_engineering_goal_repository") from exc
         if isinstance(data, list):
             goals = data
         elif isinstance(data, Mapping):
             goals = data.get("goals")
         else:
-            goals = []
+            raise ValueError("invalid_engineering_goal_repository_shape")
+        if not isinstance(goals, list):
+            raise ValueError("invalid_engineering_goal_repository_goals")
         records: dict[str, dict[str, Any]] = {}
-        if isinstance(goals, list):
-            for item in goals:
-                if not isinstance(item, Mapping):
-                    continue
-                try:
-                    record = EngineeringGoal.from_mapping(item).as_dict()
-                except ValueError:
-                    continue
-                records[record["goal_id"]] = record
+        for index, item in enumerate(goals):
+            if not isinstance(item, Mapping):
+                raise ValueError(f"invalid_engineering_goal_record:{index}")
+            try:
+                record = EngineeringGoal.from_mapping(item).as_dict()
+            except ValueError as exc:
+                raise ValueError(f"invalid_engineering_goal_record:{index}:{exc}") from exc
+            records[record["goal_id"]] = record
         return records
 
     def _write_records(self, records: Mapping[str, Mapping[str, Any]]) -> None:

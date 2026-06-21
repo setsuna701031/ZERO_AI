@@ -98,7 +98,7 @@ class SchedulerBackedValidationRunner:
         self.result_history: list[dict[str, Any]] = []
         self._index = 0
 
-    def run_goal(self, goal_id: str) -> dict[str, Any]:
+    def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict[str, Any]:
         spec = self.task_specs[self._index]
         self._index += 1
         created = self.scheduler._create_task_record(

@@ -32,7 +32,7 @@ class StubRunner:
         self.decisions = list(decisions)
         self.calls: list[str] = []
 
-    def run_goal(self, goal_id: str) -> dict:
+    def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
         self.calls.append(goal_id)
         decision = self.decisions[min(len(self.calls) - 1, len(self.decisions) - 1)]
         adaptive_decision = dict(decision)
@@ -127,7 +127,7 @@ def test_rejected_completion_authority_remains_rejected(tmp_path) -> None:
 
 def test_complete_decision_does_not_create_accepted_authority_result(tmp_path) -> None:
     class CompleteWithoutAuthorityRunner:
-        def run_goal(self, goal_id: str) -> dict:
+        def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
             return {
                 "ok": True,
                 "goal_id": goal_id,
@@ -276,7 +276,7 @@ def test_goal_loop_does_not_mutate_runner_runtime_or_lifecycle_payloads(tmp_path
     }
 
     class SingleResultRunner:
-        def run_goal(self, goal_id: str) -> dict:
+        def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
             return runner_result
 
     before_runtime = {

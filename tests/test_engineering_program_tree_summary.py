@@ -18,9 +18,18 @@ from core.tasks.engineering_program_repository import EngineeringProgramReposito
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _attestation(goal_id: str):
-    evidence = EvidenceValidator().validate(EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now"))
-    return GoalCompletionAuthority().complete_goal(goal_id=goal_id, evidence_refs=[evidence], all_subgoals_completed=True)
+def _save_complete(repository, goal_id: str, summary: str) -> None:
+    goal = repository.save_goal({"goal_id": goal_id, "summary": summary, "status": "pending"})
+    evidence = EvidenceValidator().validate(
+        EvidenceRecord("seed-e", goal_id, None, "test", "ok", "now", metadata=goal["goal_lineage"])
+    )
+    attestation = GoalCompletionAuthority().complete_goal(
+        goal_id=goal_id,
+        evidence_refs=[evidence],
+        all_subgoals_completed=True,
+        goal_lineage=goal["goal_lineage"],
+    )
+    repository.update_goal(goal_id, {"status": "complete"}, completion_attestation=attestation)
 
 
 def _seed(
@@ -40,10 +49,7 @@ def _seed(
     program_repository.add_portfolio("program_1", "portfolio_alpha")
     program_repository.add_portfolio("program_1", "portfolio_beta")
 
-    goal_repository.save_goal(
-        {"goal_id": "goal_a", "summary": "Ship A", "status": "complete"},
-        completion_attestation=_attestation("goal_a"),
-    )
+    _save_complete(goal_repository, "goal_a", "Ship A")
     goal_repository.save_goal({"goal_id": "goal_b", "summary": "Ship B", "status": "pending"})
     goal_repository.save_goal({"goal_id": "goal_c", "summary": "Ship C", "status": "blocked"})
     portfolio_repository.add_goal_to_portfolio("portfolio_alpha", "goal_a")
