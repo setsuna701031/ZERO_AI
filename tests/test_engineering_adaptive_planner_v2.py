@@ -121,7 +121,7 @@ def test_v2_continuation_template_is_persisted_only_by_goal_loop(tmp_path) -> No
     assert repository.list_goals() == [repository.load_goal("goal_1")]
 
     class Runner:
-        def run_goal(self, goal_id: str) -> dict:
+        def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
             return {
                 "ok": True,
                 "goal_id": goal_id,

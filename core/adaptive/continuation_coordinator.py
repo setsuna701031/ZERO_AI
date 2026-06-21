@@ -15,7 +15,7 @@ from typing import Any, Mapping
 
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.goals.goal_completion_authority import is_accepted_goal_completion_result
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage, extract_runtime_identity
+from core.goals.goal_lineage_contract import attach_goal_lineage, create_goal_branch_lineage, extract_goal_lineage, extract_runtime_identity
 
 
 CONTINUATION_COORDINATOR_SCHEMA = "zero.continuation_coordinator.v1"
@@ -83,16 +83,11 @@ class ContinuationCoordinator:
         session_id = runtime_identity["session_id"]
         continuation_goal_id = self._continuation_goal_id(source_goal_id, resolved_cycle_index)
         parent_lineage = extract_goal_lineage(cycle_record)
-        lineage = extract_goal_lineage(
-            {
-                **parent_lineage,
-                "goal_id": continuation_goal_id,
-                "source_goal_id": source_goal_id,
-                "branch_type": "continuation",
-                "branch_id": continuation_goal_id,
-                "continuation_id": continuation_goal_id,
-            },
-            require_complete=True,
+        lineage = create_goal_branch_lineage(
+            parent_lineage,
+            goal_id=continuation_goal_id,
+            branch_type="continuation",
+            branch_id=continuation_goal_id,
         )
         evidence_refs = [
             _text(item.get("evidence_id"))
@@ -111,7 +106,7 @@ class ContinuationCoordinator:
         payload["goal_id"] = continuation_goal_id
         payload["task_id"] = continuation_goal_id
         payload["package_id"] = continuation_goal_id
-        payload["source_goal_id"] = source_goal_id
+        payload["source_goal_id"] = lineage["source_goal_id"]
         payload["continuation_goal_id"] = continuation_goal_id
         payload["continuation_task_id"] = continuation_goal_id
         payload["continuation_source_goal_id"] = source_goal_id
@@ -134,7 +129,7 @@ class ContinuationCoordinator:
                 "payload": payload,
                 "metadata": {
                     "source": "continuation_coordinator",
-                    "source_goal_id": source_goal_id,
+                    "source_goal_id": lineage["source_goal_id"],
                     "source_cycle_index": resolved_cycle_index,
                     **({"session_id": session_id} if session_id else {}),
                     "continuation_plan": plan,
@@ -154,7 +149,7 @@ class ContinuationCoordinator:
             "task_id": record["goal_id"],
             "continuation_goal_id": record["goal_id"],
             "continuation_task_id": record["goal_id"],
-            "source_goal_id": source_goal_id,
+            "source_goal_id": lineage["source_goal_id"],
             "cycle_index": resolved_cycle_index,
             **({"session_id": session_id} if session_id else {}),
             "evidence_ref": evidence_refs[0] if evidence_refs else "",

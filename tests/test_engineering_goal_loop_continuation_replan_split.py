@@ -1,9 +1,15 @@
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+from core.goals.goal_lineage_contract import attach_goal_lineage, create_root_goal_lineage
 
 
 class FakeRepository:
     def __init__(self) -> None:
-        self.records = {}
+        self.records = {
+            "goal_a": attach_goal_lineage(
+                {"goal_id": "goal_a", "summary": "Goal A", "metadata": {}},
+                create_root_goal_lineage(goal_id="goal_a"),
+            )
+        }
         self.updated = []
 
     def load_goal(self, goal_id):
@@ -24,7 +30,7 @@ class FakeRunner:
     def __init__(self, decisions):
         self.decisions = list(decisions)
 
-    def run_goal(self, goal_id):
+    def run_goal(self, goal_id, *, goal_lineage=None):
         decision = self.decisions.pop(0)
         return {
             "ok": decision == "complete",

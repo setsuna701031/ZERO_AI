@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from core.tasks.adaptive_persistence_gateway import AdaptivePersistenceGateway
+from core.goals.goal_lineage_contract import attach_goal_lineage, create_root_goal_lineage
 
 
 class FakeRepository:
     def __init__(self) -> None:
-        self.goals = {"goal_1": {"goal_id": "goal_1", "metadata": {}}}
+        self.goals = {"goal_1": attach_goal_lineage(
+            {"goal_id": "goal_1", "metadata": {}}, create_root_goal_lineage(goal_id="goal_1")
+        )}
         self.updates = []
 
     def update_goal(self, goal_id, patch):
@@ -29,7 +32,7 @@ class FakeEvidenceAuthority:
         result["evidence_id"] = record["decision_id"]
         return result
 
-    def get_goal_chain(self, goal_id):
+    def get_goal_chain(self, goal_id, **_kwargs):
         class Chain:
             def to_dict(self):
                 return {"goal_id": goal_id, "evidence_ids": ["decision_x"], "validated_count": 1}
@@ -37,7 +40,7 @@ class FakeEvidenceAuthority:
 
 
 def _cycle():
-    return {
+    return attach_goal_lineage({
         "goal_id": "goal_1",
         "cycle_index": 0,
         "runtime_state": "complete",
@@ -54,7 +57,7 @@ def _cycle():
         "replan_record": {},
         "adaptive_planning_record": {},
         "adaptive_replan_contract": {"loop_action": "complete"},
-    }
+    }, create_root_goal_lineage(goal_id="goal_1"))
 
 
 def test_gateway_persists_adaptive_record_and_decision_evidence(tmp_path):

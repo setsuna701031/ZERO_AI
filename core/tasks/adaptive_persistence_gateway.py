@@ -19,7 +19,7 @@ from core.evidence.decision_evidence import DecisionEvidenceRepository, build_de
 from core.evidence.evidence_authority import EvidenceAuthority
 from core.evidence.evidence_repository import EvidenceRepository
 from core.tasks.adaptive_planning_foundation import ADAPTIVE_PLANNING_RECORD_SCHEMA
-from core.goals.goal_lineage_contract import extract_goal_lineage
+from core.goals.goal_lineage_contract import extract_goal_lineage, lineage_scope_matches
 
 
 ADAPTIVE_PERSISTENCE_GATEWAY_SCHEMA = "zero.adaptive_persistence_gateway.v1"
@@ -82,7 +82,7 @@ class AdaptivePersistenceGateway:
         cycle["decision_reason"] = record["decision_reason"]
         cycle["replan_count"] = int(replan_count)
         cycle["continuation_count"] = int(continuation_count)
-        lineage = extract_goal_lineage(cycle)
+        lineage = extract_goal_lineage(cycle, require_complete=True, reject_conflicts=True)
 
         self.persist_goal_adaptive_metadata(cycle, record)
         decision_evidence = self.register_decision_evidence(cycle)
@@ -142,7 +142,19 @@ class AdaptivePersistenceGateway:
         if callable(update_goal):
             goal_id = _clean_text(cycle.get("goal_id"))
             load_goal = getattr(self.repository, "load_goal", None)
-            goal = load_goal(goal_id) if callable(load_goal) else {}
+            if not callable(load_goal):
+                raise TypeError("adaptive_persistence_requires_goal_repository_load")
+            goal = load_goal(goal_id)
+            if not isinstance(goal, Mapping):
+                raise ValueError("adaptive_persistence_goal_record_required")
+            persisted_lineage = extract_goal_lineage(
+                goal, require_complete=True, reject_conflicts=True
+            )
+            cycle_lineage = extract_goal_lineage(
+                cycle, require_complete=True, reject_conflicts=True
+            )
+            if not lineage_scope_matches(persisted_lineage, cycle_lineage):
+                raise ValueError("adaptive_persistence_goal_lineage_conflict")
             metadata = _as_mapping(_as_mapping(goal).get("metadata"))
             history = [
                 copy.deepcopy(dict(item))
@@ -162,6 +174,7 @@ class AdaptivePersistenceGateway:
             )
 
     def register_decision_evidence(self, cycle: Mapping[str, Any]) -> dict[str, Any]:
+        extract_goal_lineage(cycle, require_complete=True, reject_conflicts=True)
         decision_evidence = build_decision_evidence(
             cycle=cycle,
             continuation_work_item=_as_mapping(cycle.get("continuation_work_item")),
@@ -170,10 +183,7 @@ class AdaptivePersistenceGateway:
         register_decision_evidence = getattr(self.evidence_authority, "register_decision_evidence", None)
         if callable(register_decision_evidence):
             return copy.deepcopy(dict(register_decision_evidence(decision_evidence)))
-        save_evidence = getattr(self.decision_evidence_repository, "save", None)
-        if callable(save_evidence):
-            return copy.deepcopy(dict(save_evidence(decision_evidence)))
-        return copy.deepcopy(dict(decision_evidence))
+        raise TypeError("adaptive_persistence_requires_evidence_authority")
 
     def link_decision_evidence(self, cycle: dict[str, Any], decision_evidence: Mapping[str, Any]) -> None:
         update_goal = getattr(self.repository, "update_goal", None)

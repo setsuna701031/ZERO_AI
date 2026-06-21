@@ -11,7 +11,11 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
-from core.goals.goal_lineage_contract import extract_goal_lineage
+from core.goals.goal_lineage_contract import (
+    create_goal_branch_lineage,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+)
 
 CONTINUATION_RUNTIME_SCHEMA = "zero.continuation_runtime.v2"
 _CONTINUATION_MUTATION_AUTHORITY = object()
@@ -35,25 +39,10 @@ def _mapping(value: Any) -> dict[str, Any]:
 
 def _identity_from_lineage(current_goal_id: str, lineage: Mapping[str, Any] | None) -> dict[str, str]:
     data = _mapping(lineage)
-    goal_id = _text(data.get("goal_id"), current_goal_id)
-    root_goal_id = _text(data.get("root_goal_id"), goal_id)
-    session_id = _text(data.get("session_id"), f"goal-session-{root_goal_id}")
-    runtime_session_id = _text(data.get("runtime_session_id"), f"goal-runtime-{root_goal_id}")
-    branch_id = _text(data.get("branch_id"), goal_id)
-    branch_type = _text(data.get("branch_type"), "root")
-    canonical = extract_goal_lineage(
-        {
-            **data,
-            "root_goal_id": root_goal_id,
-            "source_goal_id": _text(data.get("source_goal_id"), root_goal_id),
-            "goal_id": goal_id,
-            "branch_type": branch_type,
-            "branch_id": branch_id,
-            "session_id": session_id,
-            "runtime_session_id": runtime_session_id,
-        },
-        require_complete=True,
-        reject_conflicts=True,
+    canonical = (
+        extract_goal_lineage(data, require_complete=True, reject_conflicts=True)
+        if data and data.get("root_goal_id")
+        else create_root_goal_lineage(goal_id=current_goal_id)
     )
     return {field: canonical[field] for field in (
         "root_goal_id", "source_goal_id", "goal_lineage_id", "branch_type",
@@ -127,11 +116,25 @@ class ContinuationRuntime:
             raise RuntimeError("continuation_limit_reached")
         item = _mapping(work_item)
         goal_id = _text(item.get("goal_id"), self.current_goal_id)
+        branch_id = _text(item.get("branch_id") or item.get("continuation_goal_id"), goal_id)
+        branch = create_goal_branch_lineage(
+            self.to_dict(),
+            goal_id=goal_id,
+            branch_type="continuation",
+            branch_id=branch_id,
+        )
         return self.replace(
             current_goal_id=goal_id,
             continuation_count=self.continuation_count + 1,
             last_continuation_goal_id=goal_id,
             last_work_item=item,
+            root_goal_id=branch["root_goal_id"],
+            source_goal_id=branch["source_goal_id"],
+            goal_lineage_id=branch["goal_lineage_id"],
+            branch_type=branch["branch_type"],
+            branch_id=branch["branch_id"],
+            session_id=branch["session_id"],
+            runtime_session_id=branch["runtime_session_id"],
             _authority_token=_CONTINUATION_MUTATION_AUTHORITY,
         )
 

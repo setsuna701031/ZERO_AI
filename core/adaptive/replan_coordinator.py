@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.adaptive.replan_runtime import ReplanRuntime
-from core.goals.goal_lineage_contract import attach_goal_lineage, extract_goal_lineage, extract_runtime_identity
+from core.goals.goal_lineage_contract import attach_goal_lineage, create_goal_branch_lineage, extract_goal_lineage, extract_runtime_identity
 
 
 REPLAN_COORDINATOR_SCHEMA = "zero.replan_coordinator.v1"
@@ -55,16 +55,11 @@ class ReplanCoordinator:
         task_id = f"replan:{source_goal_id}:{resolved_cycle_index}"
         replan_request_id = _text(request.get("request_id"), task_id)
         parent_lineage = extract_goal_lineage(cycle_record)
-        lineage = extract_goal_lineage(
-            {
-                **parent_lineage,
-                "goal_id": source_goal_id,
-                "source_goal_id": source_goal_id,
-                "branch_type": "replan",
-                "branch_id": replan_request_id,
-                "replan_request_id": replan_request_id,
-            },
-            require_complete=True,
+        lineage = create_goal_branch_lineage(
+            parent_lineage,
+            goal_id=source_goal_id,
+            branch_type="replan",
+            branch_id=replan_request_id,
         )
         evidence_refs = [
             _text(item.get("evidence_id"))
@@ -76,7 +71,7 @@ class ReplanCoordinator:
             "goal_id": source_goal_id,
             "task_id": task_id,
             "replan_request_id": replan_request_id,
-            "source_goal_id": source_goal_id,
+            "source_goal_id": lineage["source_goal_id"],
             "cycle_index": resolved_cycle_index,
             **({"session_id": session_id} if session_id else {}),
             "evidence_ref": evidence_refs[0] if evidence_refs else "",

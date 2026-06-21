@@ -63,7 +63,7 @@ class _Runner:
     def __init__(self, decision: str) -> None:
         self.decision = decision
 
-    def run_goal(self, goal_id: str) -> dict:
+    def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict:
         adaptive = {
             "decision": self.decision,
             "reason": f"{self.decision}_reason",

@@ -9,12 +9,16 @@ from core.goals.goal_completion_authority import (
 )
 from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+from core.goals.goal_lineage_contract import attach_goal_lineage, create_root_goal_lineage
 
 
 class FakeRepository:
     def __init__(self) -> None:
         self.records: dict[str, dict[str, Any]] = {
-            "goal-1": {"goal_id": "goal-1", "summary": "demo", "payload": {"goal": "demo"}}
+            "goal-1": attach_goal_lineage(
+                {"goal_id": "goal-1", "summary": "demo", "payload": {"goal": "demo"}},
+                create_root_goal_lineage(goal_id="goal-1"),
+            )
         }
 
     def load_goal(self, goal_id: str):
@@ -33,7 +37,7 @@ class FakeRunner:
         self.decisions = ["continue", "complete"]
         self.index = 0
 
-    def run_goal(self, goal_id: str) -> dict[str, Any]:
+    def run_goal(self, goal_id: str, *, goal_lineage=None) -> dict[str, Any]:
         decision = self.decisions[min(self.index, len(self.decisions) - 1)]
         self.index += 1
         progress = {
@@ -54,11 +58,15 @@ class FakeRunner:
             "adaptive_planning_record": {},
         }
         if decision == "complete":
-            evidence = EvidenceValidator().validate(EvidenceRecord("validated-demo", goal_id, None, "test", "ok", "now"))
+            evidence = EvidenceValidator().validate(EvidenceRecord(
+                "validated-demo", goal_id, None, "test", "ok", "now",
+                metadata={**goal_lineage, "goal_lineage": goal_lineage},
+            ))
             adaptive_decision["goal_completion_authority_result"] = GoalCompletionAuthority().complete_goal(
                 goal_id=goal_id,
                 evidence_refs=[evidence],
                 all_subgoals_completed=True,
+                goal_lineage=goal_lineage,
             )
         return {
             "goal_id": goal_id,
