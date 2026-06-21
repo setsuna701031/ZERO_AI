@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import copy
 import time
+from pathlib import Path
 from typing import Any, Dict, List
+
+from core.runtime.agent_execution_runtime import AgentExecutionRuntime
 
 
 SCHEMA = "zero.aer.planner_step_executor_adapter.v1"
@@ -271,55 +274,20 @@ class PlannerStepExecutorAdapter:
         context: Dict[str, Any],
         group_index: int,
     ) -> Dict[str, Any]:
-        for method_name in ("execute", "execute_step"):
-            method = getattr(self.step_executor, method_name, None)
-            if not callable(method):
-                continue
-
-            try:
-                result = method(
-                    step=copy.deepcopy(step),
-                    task=copy.deepcopy(task),
-                    context=copy.deepcopy(context),
-                    previous_result=None,
-                    step_index=group_index + 1,
-                    step_count=None,
-                )
-                return result if isinstance(result, dict) else {
-                    "ok": False,
-                    "status": "invalid_step_executor_result",
-                    "message": "StepExecutor returned non-dict result",
-                    "raw_result": copy.deepcopy(result),
-                }
-            except TypeError:
-                try:
-                    result = method(copy.deepcopy(step), copy.deepcopy(task), copy.deepcopy(context))
-                    return result if isinstance(result, dict) else {
-                        "ok": False,
-                        "status": "invalid_step_executor_result",
-                        "message": "StepExecutor returned non-dict result",
-                        "raw_result": copy.deepcopy(result),
-                    }
-                except Exception as exc:
-                    return {
-                        "ok": False,
-                        "status": "step_executor_exception",
-                        "message": f"{type(exc).__name__}: {exc}",
-                        "error": f"{type(exc).__name__}: {exc}",
-                    }
-            except Exception as exc:
-                return {
-                    "ok": False,
-                    "status": "step_executor_exception",
-                    "message": f"{type(exc).__name__}: {exc}",
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-
-        return {
-            "ok": False,
-            "status": "step_executor_method_missing",
-            "message": "StepExecutor has no execute/execute_step method",
-        }
+        runtime = (
+            self.step_executor
+            if isinstance(self.step_executor, AgentExecutionRuntime)
+            else AgentExecutionRuntime(
+                step_executor=self.step_executor,
+                workspace_root=Path(str(getattr(self.step_executor, "workspace_root", "workspace"))),
+            )
+        )
+        return runtime.run_step(
+            step=copy.deepcopy(step),
+            task=copy.deepcopy(task),
+            context=copy.deepcopy(context),
+            current_tick=0,
+        )
 
 
 __all__ = [

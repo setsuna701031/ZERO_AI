@@ -8,6 +8,7 @@ from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from tests.test_agent_loop_code_chain_controlled_self_edit_bridge import CodeFixPlanner
+from tests.authority_test_support import sealed_dispatch_task
 
 
 def test_agent_loop_code_chain_without_dispatcher_lineage_is_blocked(tmp_path: Path) -> None:
@@ -66,7 +67,7 @@ def test_valid_runtime_dispatcher_lineage_still_executes(tmp_path: Path) -> None
         "package_id": "package-a",
         "session_id": "session-a",
     }
-    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
+    task = sealed_dispatch_task(task)
     result = TaskRunner(step_executor=StepExecutor(workspace_root=tmp_path)).execute_owned_step(
         {"id": "step-a", "type": "command", "command": "echo allowed"},
         task=task,

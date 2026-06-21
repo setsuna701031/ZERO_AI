@@ -11,6 +11,11 @@ from core.runtime.persistent_runtime_orchestrator import (
     should_route_persistent_runtime,
 )
 from core.reports.engineering_report_contract import attach_engineering_report
+from core.goals.goal_lineage_contract import (
+    attach_goal_lineage,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+)
 
 
 SCHEMA = "zero.aer.planner_runtime_dispatch.v1"
@@ -151,6 +156,7 @@ def planner_result_to_persistent_runtime_task(
     user_input: str,
     planner_result: Dict[str, Any],
     task_id: str = "",
+    goal_lineage: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Convert a planner result into a PersistentRuntimeOrchestrator task.
 
@@ -238,8 +244,15 @@ def planner_result_to_persistent_runtime_task(
 
     planner_steps = _extract_steps_from_plan(plan)
 
-    return {
-        "id": _clean_text(task_id) or _safe_short_id(goal),
+    resolved_task_id = _clean_text(task_id) or _safe_short_id(goal)
+    lineage = (
+        extract_goal_lineage(goal_lineage, require_complete=True, reject_conflicts=True)
+        if isinstance(goal_lineage, dict)
+        else create_root_goal_lineage(goal_id=resolved_task_id)
+    )
+    return attach_goal_lineage({
+        "id": resolved_task_id,
+        "task_id": resolved_task_id,
         "goal": goal,
         "persistent_runtime": True,
         "aer_runtime": True,
@@ -259,7 +272,7 @@ def planner_result_to_persistent_runtime_task(
             "execution_gateway_remains_execution_endpoint": True,
             "short_task_id_for_windows_path_safety": True,
         },
-    }
+    }, lineage)
 
 
 def should_dispatch_planner_result_to_persistent_runtime(
@@ -321,10 +334,12 @@ class PlannerRuntimeDispatcher:
             }
         try:
             data = json.loads(self.dispatch_log_path.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid_planner_runtime_dispatch_log") from exc
         if not isinstance(data, dict):
-            data = {}
+            raise ValueError("invalid_planner_runtime_dispatch_log_shape")
+        if not isinstance(data.get("dispatches"), list):
+            raise ValueError("invalid_planner_runtime_dispatch_entries")
         data.setdefault("ok", True)
         data.setdefault("schema", SCHEMA)
         data.setdefault("dispatches", [])
@@ -364,6 +379,13 @@ class PlannerRuntimeDispatcher:
         task = planner_result_to_persistent_runtime_task(
             user_input=user_input,
             planner_result=planner_result,
+            goal_lineage=(
+                context.get("goal_lineage")
+                if isinstance(context, dict) and isinstance(context.get("goal_lineage"), dict)
+                else planner_result.get("goal_lineage")
+                if isinstance(planner_result.get("goal_lineage"), dict)
+                else None
+            ),
         )
         workspace_root = self.repo_root / "workspace"
         task["repo_root"] = str(self.repo_root)
