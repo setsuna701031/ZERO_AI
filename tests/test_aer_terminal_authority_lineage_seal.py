@@ -22,12 +22,12 @@ from core.tasks.work_package_scheduler import STATUS_COMPLETED, STATUS_FAILED, W
 from tests.test_aer_multifile_engineering_workflow_contract import MultiFileEngineeringPlanner
 from core.agent.agent_loop import AgentLoop
 from core.tools.tool_registry import ToolRegistry
+from tests.authority_test_support import sealed_dispatch_task
 
 
 def _task() -> dict:
     task = {"task_id": "task-a", "package_id": "package-a", "session_id": "session-a"}
-    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
-    return task
+    return sealed_dispatch_task(task)
 
 
 def test_taskrunner_rejects_completion_without_execution_lineage() -> None:

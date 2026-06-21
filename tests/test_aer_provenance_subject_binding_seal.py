@@ -17,12 +17,16 @@ from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_lifecycle_state_machine import EngineeringLifecycleStateMachine
 
 
-def _attestation(goal_id: str):
-    evidence = EvidenceValidator().validate(EvidenceRecord("e1", goal_id, None, "test", "ok", "now"))
+def _attestation(goal_id: str, *, goal_lineage=None):
+    evidence = EvidenceValidator().validate(EvidenceRecord(
+        "e1", goal_id, None, "test", "ok", "now",
+        metadata={**goal_lineage, "goal_lineage": goal_lineage} if goal_lineage else {},
+    ))
     return GoalCompletionAuthority().complete_goal(
         goal_id=goal_id,
         evidence_refs=[evidence],
         all_subgoals_completed=True,
+        goal_lineage=goal_lineage,
     )
 
 
@@ -79,7 +83,7 @@ def test_engineering_goal_repository_rejects_direct_completed_status(tmp_path) -
     repository = EngineeringGoalRepository(tmp_path)
     with pytest.raises(ValueError, match="canonical_completion_attestation_required"):
         repository.save_goal({"goal_id": "seeded-complete", "summary": "Goal", "status": "complete"})
-    repository.save_goal({"goal_id": "goal-1", "summary": "Goal"})
+    goal = repository.save_goal({"goal_id": "goal-1", "summary": "Goal"})
     with pytest.raises(ValueError, match="canonical_completion_attestation_required"):
         repository.update_goal("goal-1", {"status": "completed"})
     with pytest.raises(ValueError, match="canonical_completion_attestation_required"):
@@ -87,7 +91,7 @@ def test_engineering_goal_repository_rejects_direct_completed_status(tmp_path) -
     completed = repository.update_goal(
         "goal-1",
         {"status": "completed"},
-        completion_attestation=_attestation("goal-1"),
+        completion_attestation=_attestation("goal-1", goal_lineage=goal["goal_lineage"]),
     )
     assert completed["status"] == "completed"
 

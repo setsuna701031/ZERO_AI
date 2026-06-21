@@ -8,7 +8,6 @@ from enum import Enum
 class GoalState(str, Enum):
     CREATED = "created"
     PLANNED = "planned"
-    PENDING = "pending"
     ACTIVE = "active"
     BLOCKED = "blocked"
     RESUMABLE = "resumable"
@@ -50,6 +49,8 @@ def clean_target_type(value: str) -> str:
 
 def clean_lifecycle_state(target_type: str, value: GoalState | SubgoalState | str) -> str:
     raw = value.value if isinstance(value, (GoalState, SubgoalState)) else str(value or "").strip().lower()
+    if clean_target_type(target_type) == "goal" and raw == "pending":
+        raw = GoalState.PLANNED.value
     state_type = GoalState if clean_target_type(target_type) == "goal" else SubgoalState
     try:
         return state_type(raw).value

@@ -10,12 +10,13 @@ from core.runtime.runtime_authority_seal import (
 )
 from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
+from tests.authority_test_support import sealed_dispatch_task
 
 
 def _dispatcher_task(task_id: str = "task-a") -> dict:
     package_id = "package-a"
     session_id = "session-a"
-    return {
+    return sealed_dispatch_task({
         "task_id": task_id,
         "package_id": package_id,
         "session_id": session_id,
@@ -26,7 +27,7 @@ def _dispatcher_task(task_id: str = "task-a") -> dict:
                 "session_id": session_id,
             }
         ),
-    }
+    })
 
 
 def test_taskrunner_rejects_execution_without_live_dispatcher_capability(tmp_path: Path) -> None:

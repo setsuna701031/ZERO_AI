@@ -22,6 +22,15 @@ GOAL_LINEAGE_FIELDS = (
     "runtime_session_id",
 )
 
+RUNTIME_IDENTITY_GRAPH_FIELDS = (
+    *GOAL_LINEAGE_FIELDS,
+    "execution_id",
+    "capability_id",
+    "evidence_id",
+)
+
+INVALID_IDENTITY_VALUES = frozenset({"unknown", "default", "legacy", "runtime", "system"})
+
 RUNTIME_IDENTITY_FIELDS = (
     "session_id",
     "runtime_session_id",
@@ -34,6 +43,7 @@ SESSION_IDENTITY_FIELDS = (
 )
 
 _NESTED_KEYS = (
+    "runtime_identity_graph",
     "goal_lineage",
     "runtime_identity",
     "lineage",
@@ -81,6 +91,175 @@ def build_goal_lineage_id(*, root_goal_id: str, session_id: str = "", runtime_se
         separators=(",", ":"),
     )
     return "goal-lineage-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
+
+
+def create_root_goal_lineage(
+    *,
+    goal_id: str,
+    session_id: str | None = None,
+    runtime_session_id: str | None = None,
+) -> dict[str, str]:
+    """Canonical and sole root-lineage minting boundary."""
+    goal = _required_identity("goal_id", goal_id)
+    seed = hashlib.sha256(goal.encode("utf-8")).hexdigest()[:16]
+    session = _required_identity("session_id", session_id or f"goal-session:{seed}")
+    runtime_session = _required_identity(
+        "runtime_session_id", runtime_session_id or f"runtime-session:{seed}"
+    )
+    return {
+        "schema": GOAL_LINEAGE_SCHEMA,
+        "root_goal_id": goal,
+        "source_goal_id": goal,
+        "goal_id": goal,
+        "goal_lineage_id": build_goal_lineage_id(
+            root_goal_id=goal,
+            session_id=session,
+            runtime_session_id=runtime_session,
+        ),
+        "branch_type": "root",
+        "branch_id": goal,
+        "session_id": session,
+        "runtime_session_id": runtime_session,
+    }
+
+
+def create_goal_branch_lineage(
+    parent: Mapping[str, Any],
+    *,
+    goal_id: str,
+    branch_type: str,
+    branch_id: str,
+) -> dict[str, str]:
+    """Create an explicit branch linked to its immediate canonical parent."""
+    canonical = extract_goal_lineage(parent, require_complete=True, reject_conflicts=True)
+    kind = _required_identity("branch_type", branch_type)
+    if kind not in {"continuation", "replan"}:
+        raise ValueError("explicit_goal_branch_type_required")
+    child_goal = _required_identity("goal_id", goal_id)
+    child_branch = _required_identity("branch_id", branch_id)
+    return {
+        **canonical,
+        "source_goal_id": canonical["goal_id"],
+        "goal_id": child_goal,
+        "branch_type": kind,
+        "branch_id": child_branch,
+    }
+
+
+def canonical_runtime_identity_graph(
+    value: Mapping[str, Any] | None,
+    *,
+    require_complete: bool = False,
+) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        raise ValueError("runtime_identity_graph_requires_mapping")
+    sources = _sources(value)
+    graph = extract_goal_lineage(value, require_complete=require_complete, reject_conflicts=True)
+    for field in ("execution_id", "capability_id", "evidence_id"):
+        values = list(dict.fromkeys(_text(source.get(field)) for source in sources if _text(source.get(field))))
+        if len(values) > 1:
+            raise ValueError(f"runtime_identity_graph_conflict:{field}")
+        if values:
+            graph[field] = _required_identity(field, values[0])
+    if require_complete:
+        missing = [field for field in RUNTIME_IDENTITY_GRAPH_FIELDS if not _text(graph.get(field))]
+        if missing:
+            raise ValueError("runtime_identity_graph_missing_fields:" + ",".join(missing))
+    canonical = {
+        field: _required_identity(field, graph[field])
+        for field in RUNTIME_IDENTITY_GRAPH_FIELDS
+        if graph.get(field)
+    }
+    canonical["identity_graph_fingerprint"] = _identity_graph_fingerprint(canonical)
+    return canonical
+
+
+def bind_runtime_identity_graph(
+    value: Mapping[str, Any],
+    **bindings: Any,
+) -> dict[str, str]:
+    graph = canonical_runtime_identity_graph(value)
+    for field, raw in bindings.items():
+        if field not in {"execution_id", "capability_id", "evidence_id"}:
+            raise ValueError(f"runtime_identity_binding_not_allowed:{field}")
+        incoming = _required_identity(field, raw)
+        if graph.get(field) and graph[field] != incoming:
+            raise ValueError(f"runtime_identity_drift:{field}")
+        graph[field] = incoming
+    graph["identity_graph_fingerprint"] = _identity_graph_fingerprint(
+        {field: graph[field] for field in RUNTIME_IDENTITY_GRAPH_FIELDS if graph.get(field)}
+    )
+    return graph
+
+
+def build_runtime_execution_id(value: Mapping[str, Any], *, task_id: str) -> str:
+    lineage = extract_goal_lineage(value, require_complete=True, reject_conflicts=True)
+    task = _required_identity("task_id", task_id)
+    encoded = json.dumps(
+        {
+            "goal_lineage_id": lineage["goal_lineage_id"],
+            "session_id": lineage["session_id"],
+            "runtime_session_id": lineage["runtime_session_id"],
+            "branch_id": lineage["branch_id"],
+            "task_id": task,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "execution:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:24]
+
+
+def attach_runtime_identity_graph(target: Mapping[str, Any], graph: Mapping[str, Any]) -> dict[str, Any]:
+    canonical = canonical_runtime_identity_graph(graph)
+    result = copy.deepcopy(dict(target))
+    existing = result.get("runtime_identity_graph")
+    if isinstance(existing, Mapping):
+        current = canonical_runtime_identity_graph(existing)
+        for field in RUNTIME_IDENTITY_GRAPH_FIELDS:
+            if current.get(field) and canonical.get(field) and current[field] != canonical[field]:
+                raise ValueError(f"runtime_identity_drift:{field}")
+    result["runtime_identity_graph"] = canonical
+    for field in RUNTIME_IDENTITY_GRAPH_FIELDS:
+        if canonical.get(field):
+            explicit = _text(result.get(field))
+            if explicit and explicit != canonical[field]:
+                raise ValueError(f"runtime_identity_drift:{field}")
+            result[field] = canonical[field]
+    return result
+
+
+def assert_runtime_identity_graph_consistency(
+    *values: Mapping[str, Any],
+    require_complete: bool = False,
+) -> dict[str, str]:
+    graphs: list[dict[str, str]] = []
+    for value in values:
+        if not isinstance(value, Mapping):
+            continue
+        candidate = value.get("runtime_identity_graph") if isinstance(value.get("runtime_identity_graph"), Mapping) else value
+        if any(candidate.get(field) for field in RUNTIME_IDENTITY_GRAPH_FIELDS):
+            graphs.append(canonical_runtime_identity_graph(candidate, require_complete=require_complete))
+    if not graphs:
+        raise ValueError("runtime_identity_graph_required")
+    expected = graphs[0]
+    for graph in graphs[1:]:
+        for field in RUNTIME_IDENTITY_GRAPH_FIELDS:
+            if expected.get(field) and graph.get(field) and expected[field] != graph[field]:
+                raise ValueError(f"runtime_identity_drift:{field}")
+    return expected
+
+
+def _required_identity(field: str, value: Any) -> str:
+    text = _text(value)
+    if not text or text.lower() in INVALID_IDENTITY_VALUES:
+        raise ValueError(f"invalid_runtime_identity:{field}")
+    return text
+
+
+def _identity_graph_fingerprint(graph: Mapping[str, Any]) -> str:
+    payload = {field: _text(graph.get(field)) for field in RUNTIME_IDENTITY_GRAPH_FIELDS if _text(graph.get(field))}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def extract_runtime_identity(
@@ -249,10 +428,19 @@ __all__ = [
     "GOAL_LINEAGE_SCHEMA",
     "RUNTIME_IDENTITY_FIELDS",
     "RUNTIME_IDENTITY_SCHEMA",
+    "RUNTIME_IDENTITY_GRAPH_FIELDS",
+    "INVALID_IDENTITY_VALUES",
     "SESSION_IDENTITY_FIELDS",
     "attach_goal_lineage",
+    "attach_runtime_identity_graph",
+    "assert_runtime_identity_graph_consistency",
+    "bind_runtime_identity_graph",
     "build_goal_lineage_id",
+    "build_runtime_execution_id",
     "canonical_work_identity",
+    "canonical_runtime_identity_graph",
+    "create_goal_branch_lineage",
+    "create_root_goal_lineage",
     "extract_goal_lineage",
     "extract_runtime_identity",
     "lineage_scope_matches",
