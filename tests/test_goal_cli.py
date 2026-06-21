@@ -119,7 +119,12 @@ def test_goal_run_next_routes_through_scheduler(tmp_path, monkeypatch, capsys) -
     assert result.get("completed") is not True
     assert result.get("finished") is not True
     assert spy.calls
-    assert all(call == ("schedule_next_goal", None, [_goal("goal_1")]) for call in spy.calls)
+    assert all(call[0:2] == ("schedule_next_goal", None) for call in spy.calls)
+    scheduled_goal = spy.calls[0][2][0]
+    assert scheduled_goal["goal_id"] == "goal_1"
+    assert scheduled_goal["session_id"]
+    assert scheduled_goal["runtime_session_id"]
+    assert scheduled_goal["goal_lineage"]["goal_id"] == "goal_1"
 
 
 def test_goal_state_commands_route_through_scheduler(tmp_path, monkeypatch, capsys) -> None:

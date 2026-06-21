@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from tests.authority_test_support import sealed_dispatch_task
+
 
 def test_agentloop_forced_repo_edit_is_intent_only_and_does_not_write(
     tmp_path: Path,
@@ -85,12 +87,12 @@ def test_code_chain_bridge_delegates_through_runtime_dispatcher_with_scheduler_c
     scheduler = _make_scheduler(tmp_path, step_executor=recorder)
 
     result = scheduler._execute_simple_step(
-        task={
+        task=sealed_dispatch_task({
             "task_id": "task-code-chain-agentloop-bridge",
             "steps": [{"type": "code_chain_repair"}],
             "execution_authority": _execution_authority("mutation"),
             "authority_propagation_required": True,
-        },
+        }),
         step={
             "type": "code_chain_repair",
             "target_path": "workspace/shared/bridge.py",
@@ -114,7 +116,9 @@ def test_code_chain_bridge_delegates_through_runtime_dispatcher_with_scheduler_c
     assert authority_context["runtime_execution_capability"] is not None
     assert authority_context["execution_authority"]["authority_source"] == "runtime_dispatcher"
 
-    scheduler_context = authority_context["received_authority"]
+    dispatcher_context = authority_context["received_authority"]
+    assert dispatcher_context["authority_layer"] == "runtime"
+    scheduler_context = dispatcher_context["received_authority"]
     assert scheduler_context["authority_layer"] == "scheduler"
     assert scheduler_context["authority_policy"] == "scheduler_orchestration_only"
     assert scheduler_context["execution_authority_granted"] is False

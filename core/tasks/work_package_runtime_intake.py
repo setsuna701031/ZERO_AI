@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from core.tasks.work_package_model import WorkPackage
+from core.goals.goal_lineage_contract import (
+    GOAL_LINEAGE_FIELDS,
+    attach_goal_lineage,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+)
 
 
 INTAKE_SCHEMA = "zero.work_package.runtime_intake.v1"
@@ -74,8 +80,21 @@ def normalize_package(payload: Mapping[str, Any]) -> dict[str, Any]:
     if validation["errors"]:
         raise WorkPackageIntakeError(";".join(validation["errors"]))
     package_id = _stable_package_id(payload)
+    explicit_lineage = bool(
+        isinstance(payload.get("goal_lineage"), Mapping)
+        or any(payload.get(field) for field in GOAL_LINEAGE_FIELDS if field != "goal_id")
+    )
+    lineage = (
+        extract_goal_lineage(payload, require_complete=True, reject_conflicts=True)
+        if explicit_lineage
+        else create_root_goal_lineage(
+            goal_id=str(payload.get("goal_id") or package_id),
+            session_id=str(payload.get("session_id") or "") or None,
+            runtime_session_id=str(payload.get("runtime_session_id") or "") or None,
+        )
+    )
     created_at = str(payload.get("created_at") or _now())
-    return {
+    return attach_goal_lineage({
         "package_id": package_id,
         "title": str(payload.get("title") or "").strip(),
         "goal": str(payload.get("goal") or "").strip(),
@@ -92,7 +111,8 @@ def normalize_package(payload: Mapping[str, Any]) -> dict[str, Any]:
         "status": "queued",
         "created_at": created_at,
         "updated_at": created_at,
-        "session_id": str(payload.get("session_id") or f"session-{package_id}"),
+        "session_id": lineage["session_id"],
+        "runtime_session_id": lineage["runtime_session_id"],
         "task_id": str(payload.get("task_id") or f"task-{package_id}"),
         "current_step": int(payload.get("current_step") or 0),
         "progress": copy.deepcopy(
@@ -106,7 +126,7 @@ def normalize_package(payload: Mapping[str, Any]) -> dict[str, Any]:
             "intake_schema": INTAKE_SCHEMA,
             "contract_complete": validation["contract_complete"],
         },
-    }
+    }, lineage)
 
 
 def build_package_record(payload: Mapping[str, Any]) -> WorkPackage:

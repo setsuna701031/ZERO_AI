@@ -28,6 +28,14 @@ class WorkPackage:
     created_at: str
     updated_at: str
     session_id: str
+    runtime_session_id: str
+    goal_id: str
+    root_goal_id: str
+    source_goal_id: str
+    goal_lineage_id: str
+    branch_type: str
+    branch_id: str
+    goal_lineage: dict[str, Any]
     task_id: str
     current_step: int = 0
     progress: dict[str, Any] = field(default_factory=dict)
@@ -52,6 +60,14 @@ class WorkPackage:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "session_id": self.session_id,
+            "runtime_session_id": self.runtime_session_id,
+            "goal_id": self.goal_id,
+            "root_goal_id": self.root_goal_id,
+            "source_goal_id": self.source_goal_id,
+            "goal_lineage_id": self.goal_lineage_id,
+            "branch_type": self.branch_type,
+            "branch_id": self.branch_id,
+            "goal_lineage": copy.deepcopy(self.goal_lineage),
             "task_id": self.task_id,
             "current_step": self.current_step,
             "progress": copy.deepcopy(self.progress),
@@ -83,6 +99,16 @@ class WorkPackage:
             created_at=str(payload.get("created_at") or ""),
             updated_at=str(payload.get("updated_at") or ""),
             session_id=str(payload.get("session_id") or ""),
+            runtime_session_id=str(payload.get("runtime_session_id") or ""),
+            goal_id=str(payload.get("goal_id") or ""),
+            root_goal_id=str(payload.get("root_goal_id") or ""),
+            source_goal_id=str(payload.get("source_goal_id") or ""),
+            goal_lineage_id=str(payload.get("goal_lineage_id") or ""),
+            branch_type=str(payload.get("branch_type") or ""),
+            branch_id=str(payload.get("branch_id") or ""),
+            goal_lineage=copy.deepcopy(
+                payload.get("goal_lineage") if isinstance(payload.get("goal_lineage"), Mapping) else {}
+            ),
             task_id=str(payload.get("task_id") or ""),
             current_step=int(payload.get("current_step") or 0),
             progress=copy.deepcopy(

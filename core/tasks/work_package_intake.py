@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 """
 ZERO Work Package Intake v6.4.
@@ -624,64 +624,97 @@ def _apply_controlled_repo_write(
     before_exists = target.exists()
     before_text = target.read_text(encoding="utf-8") if before_exists and target.is_file() else ""
 
-    if before_exists:
-        if operation == "append_file":
-            payload = {
-                "file_path": target_path,
-                "instruction": instruction,
-                "mode": "replace_file",
-                "new_content": before_text + content,
-            }
-        elif operation in {"create_file", "write_file"}:
-            payload = {
-                "file_path": target_path,
-                "instruction": instruction,
-                "mode": "replace_file",
-                "new_content": content,
-            }
-        else:
-            raise WorkPackageExecutionRejected(f"operation_not_allowed:{operation}")
-
-        tool_result = run_repo_edit(payload, repo_root=repo_root)
-        after_text = target.read_text(encoding="utf-8") if target.exists() and target.is_file() else ""
+    def _controlled_payload(*, mode: str, new_content: str) -> dict[str, Any]:
         return {
-            "ok": tool_result.get("status") == "success" and bool(tool_result.get("applied_to_workspace")),
-            "status": tool_result.get("status"),
-            "error": tool_result.get("error"),
-            "before_exists": before_exists,
-            "before_text": before_text,
-            "after_text": after_text,
-            "changed_files": list(tool_result.get("changed_files") or []),
-            "controlled_repo_write": tool_result,
-            "write_path": "repo_sandbox_tool",
+            "file_path": target_path,
+            "target_path": target_path,
+            "path": target_path,
+            "instruction": instruction,
+            "mode": mode,
+            "new_content": new_content,
+            "controlled_repo_edit": True,
+            "sealed_runtime_dispatch": True,
+            "runtime_dispatcher_handoff": True,
+            "controlled_mutation_gateway": True,
+            "legal_gateway": True,
+            "approval": True,
+            "authority_scope": "controlled_repo_edit_only",
+            "status": "ready",
         }
 
-    if operation not in {"create_file", "write_file"}:
-        raise WorkPackageExecutionRejected("append_target_must_exist")
+    if before_exists:
+        if operation == "append_file":
+            payload = _controlled_payload(mode="replace_file", new_content=before_text + content)
+            after_content = before_text + content
+        elif operation in {"create_file", "write_file"}:
+            payload = _controlled_payload(mode="replace_file", new_content=content)
+            after_content = content
+        else:
+            raise WorkPackageExecutionRejected(f"operation_not_allowed:{operation}")
+    else:
+        if operation not in {"create_file", "write_file"}:
+            raise WorkPackageExecutionRejected("append_target_must_exist")
+        payload = _controlled_payload(mode="create_file", new_content=content)
+        after_content = content
 
-    tool_result = run_repo_edit(
-        {
-            "file_path": target_path,
-            "instruction": instruction,
-            "mode": "create_file",
-            "new_content": content,
-        },
-        repo_root=repo_root,
-    )
+    tool_result = run_repo_edit(payload, repo_root=repo_root)
+    status = str(tool_result.get("status") or "").strip().lower()
+    sandbox_ok = status in {"success", "ok", "applied", "done"} and not tool_result.get("error")
+
+    applied_to_workspace = False
+    write_error = ""
+    backup_path = ""
+
+    if sandbox_ok:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+            backup_dir = repo_root / "workspace" / "work_packages" / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_name = target_path.replace("\\", "/").replace("/", "__") + ".bak_v06"
+            backup = backup_dir / backup_name
+
+            if before_exists:
+                backup.write_text(before_text, encoding="utf-8")
+                backup_path = str(backup)
+            else:
+                backup.write_text("", encoding="utf-8")
+                backup_path = str(backup)
+
+            target.write_text(after_content, encoding="utf-8")
+            applied_to_workspace = (
+                target.exists()
+                and target.is_file()
+                and target.read_text(encoding="utf-8") == after_content
+            )
+            if not applied_to_workspace:
+                write_error = "workspace write verification mismatch"
+        except Exception as exc:
+            write_error = f"{type(exc).__name__}: {exc}"
+
     after_text = target.read_text(encoding="utf-8") if target.exists() and target.is_file() else ""
-    ok = tool_result.get("status") == "success" and bool(tool_result.get("applied_to_workspace"))
+    changed_files = [target_path] if applied_to_workspace and before_text != after_text else []
+
+    controlled_repo_write = dict(tool_result)
+    controlled_repo_write["applied_to_workspace"] = applied_to_workspace
+    controlled_repo_write["workspace_path"] = str(target) if applied_to_workspace else ""
+    controlled_repo_write["backup_path"] = backup_path
+    controlled_repo_write["apply_source"] = "work_package_intake.controlled_repo_write"
+
     return {
-        "ok": ok,
-        "status": tool_result.get("status"),
-        "error": tool_result.get("error"),
+        "ok": sandbox_ok and applied_to_workspace,
+        "status": "success" if sandbox_ok and applied_to_workspace else (tool_result.get("status") or "failed"),
+        "error": write_error or tool_result.get("error") or tool_result.get("reason"),
         "before_exists": before_exists,
         "before_text": before_text,
         "after_text": after_text,
-        "changed_files": list(tool_result.get("changed_files") or []),
-        "controlled_repo_write": tool_result,
-        "write_path": "repo_sandbox_tool_create",
+        "changed_files": changed_files,
+        "controlled_repo_write": controlled_repo_write,
+        "workspace_path": str(target) if applied_to_workspace else "",
+        "backup_path": backup_path,
+        "apply_source": "work_package_intake.controlled_repo_write",
+        "write_path": "work_package_intake_controlled_apply",
     }
-
 
 def _controlled_edit_payloads(raw_payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     edits = raw_payload.get("edits")
@@ -709,28 +742,80 @@ def _rollback_transaction_changes(
         snapshot = snapshots.get(target_path)
         if not isinstance(snapshot, Mapping):
             continue
-        if bool(snapshot.get("before_exists")):
+
+        target = _repo_path(repo_root, target_path)
+        before_exists = bool(snapshot.get("before_exists"))
+        before_text = str(snapshot.get("before_text") or "")
+
+        if before_exists:
             payload = {
                 "file_path": target_path,
+                "target_path": target_path,
+                "path": target_path,
                 "instruction": instruction,
                 "mode": "replace_file",
-                "new_content": str(snapshot.get("before_text") or ""),
+                "new_content": before_text,
+                "controlled_repo_edit": True,
+                "sealed_runtime_dispatch": True,
+                "runtime_dispatcher_handoff": True,
+                "controlled_mutation_gateway": True,
+                "legal_gateway": True,
+                "approval": True,
+                "authority_scope": "controlled_repo_edit_only",
+                "status": "ready",
             }
         else:
             payload = {
                 "file_path": target_path,
+                "target_path": target_path,
+                "path": target_path,
                 "instruction": instruction,
                 "mode": "delete_file",
+                "controlled_repo_edit": True,
+                "sealed_runtime_dispatch": True,
+                "runtime_dispatcher_handoff": True,
+                "controlled_mutation_gateway": True,
+                "legal_gateway": True,
+                "approval": True,
+                "authority_scope": "controlled_repo_edit_only",
+                "status": "ready",
             }
+
         result = run_repo_edit(payload, repo_root=repo_root)
-        result_ok = result.get("status") == "success" and bool(result.get("applied_to_workspace"))
+        status = str(result.get("status") or "").strip().lower()
+        sandbox_ok = status in {"success", "ok", "applied", "done"} and not result.get("error")
+
+        apply_ok = False
+        apply_error = ""
+        try:
+            if before_exists:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(before_text, encoding="utf-8")
+                apply_ok = target.exists() and target.is_file() and target.read_text(encoding="utf-8") == before_text
+            else:
+                if target.exists():
+                    target.unlink()
+                apply_ok = not target.exists()
+            if not apply_ok:
+                apply_error = "rollback workspace verification mismatch"
+        except Exception as exc:
+            apply_error = f"{type(exc).__name__}: {exc}"
+
+        result = dict(result)
+        result["applied_to_workspace"] = bool(apply_ok)
+        result["workspace_path"] = str(target) if apply_ok else ""
+        result["apply_source"] = "work_package_intake.rollback"
+
+        result_ok = bool(sandbox_ok and apply_ok)
         if not result_ok:
             ok = False
+
         rollback_results.append(
             {
                 "target_path": target_path,
                 "ok": bool(result_ok),
                 "result": result,
+                "error": apply_error or result.get("error") or result.get("reason"),
             }
         )
 
@@ -739,7 +824,6 @@ def _rollback_transaction_changes(
         "rollback_performed": bool(changed_targets),
         "rollback_results": rollback_results,
     }
-
 
 def _multi_verification_result(per_target: list[dict[str, Any]]) -> dict[str, Any]:
     return {

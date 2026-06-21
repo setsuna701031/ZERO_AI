@@ -47,6 +47,41 @@ class WorkPackagePlannerBridge:
         planned_at = _now()
         memory_context_used = self._related_memory_context(record)
         try:
+            validation_commands = self._validation_commands(record)
+            if validation_commands:
+                steps = self._validation_command_steps(
+                    identity=identity,
+                    commands=validation_commands,
+                )
+                validation = validate_step_contracts(steps)
+                errors = list(validation.get("errors") or [])
+                if errors:
+                    return self._failed_snapshot(
+                        identity,
+                        planned_at=planned_at,
+                        errors=errors,
+                        warnings=list(record.get("warnings") or []),
+                        planner_result={"source": "validation_commands_shortcut"},
+                        memory_context_used=memory_context_used,
+                    )
+
+                return self._planned_snapshot(
+                    identity=identity,
+                    planned_at=planned_at,
+                    warnings=list(record.get("warnings") or []),
+                    steps=steps,
+                    memory_context_used=memory_context_used,
+                    planner_summary={
+                        "intent": "validation_commands",
+                        "semantic_type": "work_package_validation",
+                        "execution_route": "deterministic_command_validation",
+                        "step_count": len(steps),
+                    },
+                    lifecycle_state=str(record.get("lifecycle_state") or "queued"),
+                    transition_history=copy.deepcopy(record.get("transition_history") or []),
+                    last_transition=copy.deepcopy(record.get("last_transition")),
+                )
+
             planner_result = self._invoke_planner(record, memory_context_used=memory_context_used)
             steps = copy.deepcopy(
                 planner_result.get("steps") if isinstance(planner_result.get("steps"), list) else []
@@ -68,45 +103,22 @@ class WorkPackagePlannerBridge:
                     memory_context_used=memory_context_used,
                 )
 
-            graph = self._task_graph(identity["task_id"], steps)
-            return {
-                "schema": WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA,
-                **identity,
-                "planning_status": "planned",
-                "planned_at": planned_at,
-                "warnings": list(record.get("warnings") or []),
-                "errors": [],
-                "memory_context_used": copy.deepcopy(memory_context_used),
-                "planner_summary": {
+            return self._planned_snapshot(
+                identity=identity,
+                planned_at=planned_at,
+                warnings=list(record.get("warnings") or []),
+                steps=steps,
+                memory_context_used=memory_context_used,
+                planner_summary={
                     "intent": planner_result.get("intent"),
                     "semantic_type": (planner_result.get("meta") or {}).get("semantic_type"),
                     "execution_route": (planner_result.get("meta") or {}).get("execution_route"),
                     "step_count": len(steps),
                 },
-                "task_graph": graph,
-                "task_graph_summary": {
-                    "node_count": len(graph["nodes"]),
-                    "edge_count": len(graph["edges"]),
-                    "root_task_id": identity["task_id"],
-                    "step_types": [str(step.get("type") or "") for step in steps],
-                },
-                "executable_steps": steps,
-                "runtime_queue_item": {
-                    **identity,
-                    "status": "queued",
-                    "lifecycle_state": str(record.get("lifecycle_state") or "queued"),
-                    "transition_history": copy.deepcopy(record.get("transition_history") or []),
-                    "last_transition": copy.deepcopy(record.get("last_transition")),
-                    "steps": copy.deepcopy(steps),
-                    "current_step_index": 0,
-                    "results": [],
-                    "runtime_owner": "RuntimeDispatcher",
-                    "taskrunner_required": True,
-                    "step_executor_endpoint_only": True,
-                    "direct_execution": False,
-                    "memory_context_used": copy.deepcopy(memory_context_used),
-                },
-            }
+                lifecycle_state=str(record.get("lifecycle_state") or "queued"),
+                transition_history=copy.deepcopy(record.get("transition_history") or []),
+                last_transition=copy.deepcopy(record.get("last_transition")),
+            )
         except Exception as exc:
             return self._failed_snapshot(
                 identity,
@@ -167,7 +179,6 @@ class WorkPackagePlannerBridge:
     ) -> dict[str, Any]:
         planner = self.planner
         if planner is None:
-            # Planner currently prints a version banner; keep operator/CLI JSON clean.
             with contextlib.redirect_stdout(io.StringIO()):
                 planner = Planner(workspace_root=self.workspace_root)
         context = {
@@ -211,6 +222,95 @@ class WorkPackagePlannerBridge:
             }
             for index, path in enumerate(target_files, start=1)
         ]
+
+    @staticmethod
+    def _validation_commands(package: Mapping[str, Any]) -> list[str]:
+        return [
+            str(item).strip()
+            for item in package.get("validation_commands") or []
+            if str(item).strip()
+        ]
+
+    def _validation_command_steps(
+        self,
+        *,
+        identity: Mapping[str, str],
+        commands: list[str],
+    ) -> list[dict[str, Any]]:
+        task_id = str(identity.get("task_id") or identity.get("package_id") or "work_package")
+        command_cwd = self._validation_command_cwd()
+        return [
+            {
+                "id": f"{task_id}_validation_{index}",
+                "type": "command",
+                "command": command,
+                "command_cwd": command_cwd,
+                "cwd": command_cwd,
+                "planner_contract_version": "planner_step_contract.v2",
+                "legacy_plan_contract": False,
+                "step_purpose": "work_package_validation_command",
+            }
+            for index, command in enumerate(commands, start=1)
+        ]
+
+    def _validation_command_cwd(self) -> str:
+        workspace = Path(self.workspace_root)
+        try:
+            resolved = workspace.resolve()
+        except Exception:
+            resolved = workspace
+
+        if resolved.name == "workspace":
+            return str(resolved.parent)
+        return str(resolved)
+
+    def _planned_snapshot(
+        self,
+        *,
+        identity: Mapping[str, str],
+        planned_at: str,
+        warnings: list[str],
+        steps: list[dict[str, Any]],
+        memory_context_used: list[dict[str, Any]],
+        planner_summary: Mapping[str, Any],
+        lifecycle_state: str,
+        transition_history: list[dict[str, Any]],
+        last_transition: Any,
+    ) -> dict[str, Any]:
+        graph = self._task_graph(str(identity.get("task_id") or ""), steps)
+        return {
+            "schema": WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA,
+            **copy.deepcopy(dict(identity)),
+            "planning_status": "planned",
+            "planned_at": planned_at,
+            "warnings": list(warnings),
+            "errors": [],
+            "memory_context_used": copy.deepcopy(memory_context_used),
+            "planner_summary": copy.deepcopy(dict(planner_summary)),
+            "task_graph": graph,
+            "task_graph_summary": {
+                "node_count": len(graph["nodes"]),
+                "edge_count": len(graph["edges"]),
+                "root_task_id": identity.get("task_id"),
+                "step_types": [str(step.get("type") or "") for step in steps],
+            },
+            "executable_steps": copy.deepcopy(steps),
+            "runtime_queue_item": {
+                **copy.deepcopy(dict(identity)),
+                "status": "queued",
+                "lifecycle_state": lifecycle_state,
+                "transition_history": copy.deepcopy(transition_history),
+                "last_transition": copy.deepcopy(last_transition),
+                "steps": copy.deepcopy(steps),
+                "current_step_index": 0,
+                "results": [],
+                "runtime_owner": "RuntimeDispatcher",
+                "taskrunner_required": True,
+                "step_executor_endpoint_only": True,
+                "direct_execution": False,
+                "memory_context_used": copy.deepcopy(memory_context_used),
+            },
+        }
 
     @staticmethod
     def _planner_request(package: Mapping[str, Any]) -> str:
@@ -278,8 +378,4 @@ class WorkPackagePlannerBridge:
         }
 
 
-__all__ = [
-    "WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA",
-    "WORK_PACKAGE_REPLAN_SCHEMA",
-    "WorkPackagePlannerBridge",
-]
+__all__ = ["WORK_PACKAGE_ADAPTIVE_PLAN_SCHEMA", "WORK_PACKAGE_REPLAN_SCHEMA", "WorkPackagePlannerBridge"]
