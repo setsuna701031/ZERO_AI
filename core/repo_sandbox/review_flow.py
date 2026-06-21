@@ -18,8 +18,10 @@ Safety boundary for auto-apply:
 
 from __future__ import annotations
 
+import difflib
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 try:
     from core.repo_sandbox.intent import build_repo_edit_payload, parse_code_edit_intent
@@ -38,9 +40,10 @@ except Exception:  # pragma: no cover
     run_code_edit_task = None  # type: ignore[assignment]
 
 try:
-    from core.repo_sandbox.review import apply_review, reject_review
+    from core.repo_sandbox.review import apply_review, create_review, reject_review
 except Exception:  # pragma: no cover
     apply_review = None  # type: ignore[assignment]
+    create_review = None  # type: ignore[assignment]
     reject_review = None  # type: ignore[assignment]
 
 
@@ -228,6 +231,63 @@ def run_code_edit_review_task(task_text: str, *, repo_root: str | Path = ".") ->
             "auto_applied": False,
             "review_skipped": True,
         }
+
+    if create_review is None:
+        return {
+            "status": "blocked",
+            "reason": "review authority unavailable",
+            "auto_applied": False,
+            "review_skipped": False,
+        }
+    root = Path(repo_root).resolve()
+    file_path = str(payload.get("file_path") or payload.get("path") or "").replace("\\", "/").strip()
+    target = (root / file_path).resolve()
+    workspace_root = (root / "workspace").resolve()
+    try:
+        target.relative_to(workspace_root)
+    except ValueError:
+        return {
+            "status": "blocked",
+            "reason": "review target must remain inside workspace",
+            "file_path": file_path,
+            "auto_applied": False,
+            "review_skipped": False,
+        }
+    old_text = str(payload.get("old_text") or payload.get("old_line") or "")
+    new_text = str(payload.get("new_text") or payload.get("new_line") or "")
+    if not target.exists():
+        return {"status": "blocked", "reason": "review target does not exist", "file_path": file_path}
+    original = target.read_text(encoding="utf-8")
+    if not old_text or old_text not in original:
+        return {"status": "blocked", "reason": "review old_text mismatch", "file_path": file_path}
+    modified = original.replace(old_text, new_text, 1)
+    review_id = f"review-{uuid4().hex[:12]}"
+    sandbox_path = root / "workspace" / "repo_sandbox" / review_id / file_path
+    sandbox_path.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_path.write_text(modified, encoding="utf-8")
+    diff = "".join(
+        difflib.unified_diff(
+            original.splitlines(keepends=True),
+            modified.splitlines(keepends=True),
+            fromfile=file_path,
+            tofile=file_path,
+        )
+    )
+    review_payload = {
+        **payload,
+        "file_path": file_path,
+        "sandbox_path": str(sandbox_path),
+        "_repo_root": str(root),
+    }
+    review = create_review(review_id, review_payload, diff=diff, reason="sealed review required")
+    return {
+        **review.to_dict(),
+        "status": "pending_review",
+        "sandbox_path": str(sandbox_path),
+        "auto_applied": False,
+        "review_skipped": False,
+        "requires_review": True,
+    }
 
     if run_repo_edit is not None:
         try:

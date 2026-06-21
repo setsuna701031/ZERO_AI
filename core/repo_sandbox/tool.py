@@ -236,15 +236,8 @@ class RepoEditTool:
                 status = "blocked"
                 error = report_result.blocked_reason
 
-            if status == "success":
-                apply_result = self._apply_session_content_back_to_workspace(session, request)
-                applied_to_workspace = bool(apply_result.get("applied"))
-                workspace_path = str(apply_result.get("workspace_path") or "")
-                backup_path = str(apply_result.get("backup_path") or "")
-                apply_source = str(apply_result.get("apply_source") or "")
-                if not applied_to_workspace:
-                    status = "failed"
-                    error = str(apply_result.get("error") or "failed to apply edited content back to workspace")
+            # RepoEditTool is a sandbox producer only. Applying its output is a
+            # separate reviewed/sealed mutation transition.
 
             return RepoEditToolResult(
                 status=status,
