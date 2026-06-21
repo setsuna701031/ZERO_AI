@@ -626,8 +626,6 @@ class PersistentRuntimeOrchestrator:
             return result
         snapshots = self._snapshots_from_record(record)
         candidate_tasks, terminal_guard_skipped = self._candidate_tasks_from_snapshots(snapshots)
-        if not candidate_tasks:
-            candidate_tasks = [task for task in tasks if self._is_resumable_repo_task(task)]
         candidate_tasks, repo_terminal_skipped = self._filter_terminal_runtime_state_tasks(candidate_tasks)
         terminal_guard_skipped.extend(repo_terminal_skipped)
 

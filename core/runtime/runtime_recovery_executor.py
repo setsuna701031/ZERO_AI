@@ -41,12 +41,28 @@ class RuntimeRecoveryExecutor:
 
     def recovery_resume_payload(self, session_id: str) -> dict[str, Any] | None:
         bridge = getattr(self, "operator_bridge", None)
-        if bridge is None:
-            return None
+        if bridge is not None:
+            try:
+                payload = bridge.build_resume_payload(session_id)
+                if payload is not None:
+                    return payload
+            except Exception:
+                pass
         try:
-            return bridge.build_resume_payload(session_id)
+            import builtins
+            failures = getattr(builtins, "_zero_operator_failure_registry_v14", {})
+            failed_step = failures.get(str(session_id)) if isinstance(failures, dict) else None
+            if failed_step:
+                return {
+                    "session_id": session_id,
+                    "failed_step": failed_step,
+                    "status": "resumable",
+                    "recovery_available": True,
+                    "source": "operator_recovery_payload_consolidated",
+                }
         except Exception:
-            return None
+            pass
+        return None
 
     def operator_resume_payload(self, session_id: str) -> dict[str, Any] | None:
         return self.recovery_resume_payload(session_id)

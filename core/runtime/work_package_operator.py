@@ -10,6 +10,7 @@ from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.work_package_queue import RuntimePackageQueue
 from core.tasks.work_package_runtime_intake import build_package_record
 from core.reports.engineering_report_contract import attach_engineering_report
+from core.goals.goal_lineage_contract import extract_goal_lineage
 
 
 class RuntimeWorkPackageOperator:
@@ -66,7 +67,9 @@ class RuntimeWorkPackageOperator:
                 pass
 
     def submit_package(self, payload: Mapping[str, Any]) -> dict[str, Any]:
-        record = self.queue.enqueue(build_package_record(payload))
+        package = build_package_record(payload)
+        extract_goal_lineage(package.to_dict(), require_complete=True, reject_conflicts=True)
+        record = self.queue.enqueue(package)
         if record.get("planning_status") in {"planned", "failed"}:
             return record
         snapshot = self.planner_bridge.plan_package(record)
@@ -84,6 +87,9 @@ class RuntimeWorkPackageOperator:
         return self.dispatcher.dispatch(package_id)
 
     def resume_session(self, package_id: str) -> dict[str, Any]:
+        extract_goal_lineage(
+            self.queue.status(package_id), require_complete=True, reject_conflicts=True
+        )
         return self.dispatcher.resume(package_id)
 
     def resume_interrupted_packages(self) -> dict[str, Any]:
@@ -139,6 +145,7 @@ class RuntimeWorkPackageOperator:
 
     def resume_package(self, package_id: str) -> dict[str, Any]:
         record = self.queue.status(package_id)
+        extract_goal_lineage(record, require_complete=True, reject_conflicts=True)
         if record.get("status") == "running" and record.get("runtime_lifecycle_state") == "executing":
             return self.resume_session(package_id)
         return self.queue.resume(package_id)

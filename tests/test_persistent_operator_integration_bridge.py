@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from core.runtime.operator_session import OPERATOR_SESSION_RESUMABLE
 from core.runtime.operator_integration_bridge import OperatorIntegrationBridge
 from core.runtime.persistent_operator import PersistentOperatorRuntime
+from tests.authority_test_support import owned_step_executor
 
 
 @dataclass
@@ -185,10 +186,11 @@ def test_step_executor_optional_bridge_records_outcome():
         pending_steps=[{"id": "verify-1", "type": "operator_verification"}],
         session_id="session-1",
     )
-    executor = StepExecutor(workspace_root="workspace", operator_bridge=bridge)
+    executor = owned_step_executor(workspace_root="workspace", operator_bridge=bridge)
 
     result = executor.execute_step(
         {"id": "verify-1", "type": "operator_verification", "command": "noop"},
+        task={"task_id": "task-1", "operator_session_id": "session-1"},
         context={"operator_session_id": "session-1"},
     )
     session = runtime.get_session("session-1")

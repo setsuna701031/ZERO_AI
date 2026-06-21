@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from core.runtime.operator_integration_bridge import OperatorIntegrationBridge
 from core.runtime.operator_session_bootstrap import OperatorSessionBootstrap
 from core.runtime.persistent_operator import PersistentOperatorRuntime
+from tests.authority_test_support import sealed_dispatch_task
 
 
 @dataclass
@@ -153,6 +154,7 @@ def test_missing_fields_do_not_crash():
 
 def test_bootstrap_session_id_flows_to_task_runtime_and_step_executor(tmp_path):
     from core.runtime.step_executor import StepExecutor
+    from core.runtime.task_runner import TaskRunner
     from core.runtime.task_runtime import TaskRuntime
 
     runtime = PersistentOperatorRuntime()
@@ -171,6 +173,25 @@ def test_bootstrap_session_id_flows_to_task_runtime_and_step_executor(tmp_path):
 
     result = bootstrap.ensure_session_for_task(task, context=context)
     session_id = result["operator_session_id"]
+    task.update(sealed_dispatch_task(task))
+    verification_step = {"id": "executor-step", "type": "operator_verification", "command": "noop"}
+    authority_context = TaskRunner(step_executor=StepExecutor())._build_taskrunner_authority_context(
+        task=task,
+        state={},
+        step=verification_step,
+        upstream_context=context,
+    )
+    context.update(
+        {
+            "authority_context": authority_context,
+            "runtime_authority_context": authority_context,
+            "runtime_execution_capability": authority_context["runtime_execution_capability"],
+            "runtime_identity_graph": task["runtime_identity_graph"],
+            "runtime_capability_provenance": task["runtime_capability_provenance"],
+            "runtime_authority_decision_id": task["runtime_authority_decision_id"],
+            "authority_propagation_required": True,
+        }
+    )
 
     task_runtime = TaskRuntime(workspace_root=str(tmp_path), operator_bridge=bridge)
     task_runtime.ensure_runtime_state(task)
@@ -178,7 +199,7 @@ def test_bootstrap_session_id_flows_to_task_runtime_and_step_executor(tmp_path):
 
     executor = StepExecutor(workspace_root=str(tmp_path), operator_bridge=bridge)
     step_result = executor.execute_step(
-        {"id": "executor-step", "type": "operator_verification", "command": "noop"},
+        verification_step,
         task=task,
         context=context,
     )

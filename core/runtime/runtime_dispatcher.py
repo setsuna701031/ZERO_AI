@@ -19,7 +19,21 @@ from core.runtime.runtime_system_capability import (
     RuntimeCapabilityClass,
     issue_runtime_system_capability,
 )
-from core.goals.goal_lineage_contract import GOAL_LINEAGE_FIELDS, extract_goal_lineage, extract_runtime_identity
+from core.runtime.runtime_execution_authority import (
+    capability_from_authority_decision,
+    propagate_runtime_capability,
+    validate_capability_provenance,
+)
+from core.runtime.runtime_execution_authority_policy import evaluate_execution_authority
+from core.goals.goal_lineage_contract import (
+    GOAL_LINEAGE_FIELDS,
+    attach_runtime_identity_graph,
+    bind_runtime_identity_graph,
+    build_runtime_execution_id,
+    canonical_runtime_identity_graph,
+    extract_goal_lineage,
+    extract_runtime_identity,
+)
 from core.runtime.persistent_queue_contract import classify_queue_failure, extract_queue_lineage, merge_queue_lineage
 from core.runtime.work_package_queue import (
     RuntimePackageQueue,
@@ -98,9 +112,18 @@ class RuntimeDispatcher:
     def dispatch(self, package_id: str, *, max_steps: int | None = None) -> dict[str, Any]:
         record = self.queue.claim(package_id)
         task = self._execution_task(record)
+        task = self._attach_execution_identity(task)
+        provenance = self._capability_provenance(task)
+        task.update(propagate_runtime_capability({}, provenance, stage="dispatcher"))
+        if task.get("runtime_identity_graph"):
+            graph = bind_runtime_identity_graph(
+                task["runtime_identity_graph"],
+                capability_id=provenance.capability_id,
+            )
+            task = attach_runtime_identity_graph(task, graph)
+        task["runtime_execution_capability"] = self._execution_capability(task)
+        task["runtime_system_capability"] = self._system_execution_capability(task)
         self.queue.start_execution_session(package_id, task=task)
-        task["runtime_execution_capability"] = self._execution_capability(record)
-        task["runtime_system_capability"] = self._system_execution_capability(record)
         return self._continue_execution(package_id, task=task, tick=0, max_steps=max_steps)
 
     def resume(self, package_id: str, *, max_steps: int | None = None) -> dict[str, Any]:
@@ -118,12 +141,54 @@ class RuntimeDispatcher:
         task["steps"] = steps
         task["current_step_index"] = int(active_graph.get("cursor") or 0)
         project_runtime_status(task, normalize_runtime_status("running"), owner="core/runtime/runtime_dispatcher.py")
-        task["runtime_execution_capability"] = self._execution_capability(
-            self.queue.status(package_id)
+        feedback = runtime_state.get("last_step_feedback") if isinstance(runtime_state.get("last_step_feedback"), Mapping) else {}
+        evidence = feedback.get("evidence") if isinstance(feedback.get("evidence"), Mapping) else {}
+        evidence_task = evidence.get("task") if isinstance(evidence.get("task"), Mapping) else {}
+        persisted_provenance = validate_capability_provenance(
+            task.get("runtime_capability_provenance")
+            or runtime_state.get("runtime_capability_provenance")
+            or evidence_task.get("runtime_capability_provenance")
         )
-        task["runtime_system_capability"] = self._system_execution_capability(
-            self.queue.status(package_id)
+        task.update(propagate_runtime_capability(task, persisted_provenance, stage="dispatcher"))
+        persisted_graph = (
+            task.get("runtime_identity_graph")
+            or runtime_state.get("runtime_identity_graph")
+            or evidence_task.get("runtime_identity_graph")
         )
+        if not persisted_graph:
+            raise RuntimePackageQueueError("resume_canonical_identity_graph_required")
+        graph = canonical_runtime_identity_graph(persisted_graph)
+        missing = [
+            field
+            for field in (*GOAL_LINEAGE_FIELDS, "execution_id", "capability_id")
+            if not graph.get(field)
+        ]
+        if missing:
+            raise RuntimePackageQueueError(
+                "resume_identity_graph_missing_fields:" + ",".join(missing)
+            )
+        admission_evidence_ref = str(
+            task.get("runtime_authority_decision_id")
+            or runtime_state.get("runtime_authority_decision_id")
+            or evidence_task.get("runtime_authority_decision_id")
+            or ""
+        ).strip()
+        if admission_evidence_ref != persisted_provenance.authority_decision_id:
+            raise RuntimePackageQueueError("resume_validated_admission_evidence_required")
+        if graph.get("capability_id") != persisted_provenance.capability_id:
+            raise RuntimePackageQueueError("resume_capability_identity_drift")
+        task_lineage = extract_goal_lineage(task, require_complete=True, reject_conflicts=True)
+        graph_lineage = extract_goal_lineage(graph, require_complete=True, reject_conflicts=True)
+        conflicts = [
+            field for field in GOAL_LINEAGE_FIELDS if task_lineage[field] != graph_lineage[field]
+        ]
+        if conflicts:
+            raise RuntimePackageQueueError(
+                "resume_goal_lineage_drift:" + ",".join(conflicts)
+            )
+        task = attach_runtime_identity_graph(task, graph)
+        task["runtime_execution_capability"] = self._execution_capability(task)
+        task["runtime_system_capability"] = self._system_execution_capability(task)
         self.queue.mark_session_resumed(package_id)
         return self._continue_execution(
             package_id,
@@ -287,6 +352,8 @@ class RuntimeDispatcher:
             task_id=str(record.get("task_id") or ""),
             session_id=str(record.get("session_id") or ""),
             package_id=str(record.get("package_id") or ""),
+            execution_id=str(record.get("execution_id") or ""),
+            capability_id=str(record.get("capability_id") or record.get("runtime_capability_id") or ""),
         )
 
     @staticmethod
@@ -303,6 +370,39 @@ class RuntimeDispatcher:
             scope=claims,
             lineage=claims,
         )
+
+    @staticmethod
+    def _capability_provenance(record: Mapping[str, Any]):
+        claims = {
+            "task_id": str(record.get("task_id") or ""),
+            "package_id": str(record.get("package_id") or ""),
+            "session_id": str(record.get("session_id") or ""),
+            "execution_id": str(record.get("execution_id") or ""),
+        }
+        decision = evaluate_execution_authority(
+            source="runtime_dispatcher",
+            action_type="issue_capability",
+            metadata={"side_effect": False, **claims},
+        )
+        return capability_from_authority_decision(
+            decision,
+            issuer="RuntimeExecutionAuthorityPolicy",
+            resource="runtime_task",
+            action="execute",
+            scope=claims,
+            lineage=claims,
+        )
+
+    @staticmethod
+    def _attach_execution_identity(task: Mapping[str, Any]) -> dict[str, Any]:
+        payload = copy.deepcopy(dict(task))
+        lineage = extract_goal_lineage(payload, require_complete=True, reject_conflicts=True)
+        execution_id = str(payload.get("execution_id") or "").strip() or build_runtime_execution_id(
+            lineage,
+            task_id=str(payload.get("task_id") or payload.get("id") or ""),
+        )
+        graph = bind_runtime_identity_graph(lineage, execution_id=execution_id)
+        return attach_runtime_identity_graph(payload, graph)
 
     def run_scheduler_boundary(
         self,
@@ -324,11 +424,25 @@ class RuntimeDispatcher:
                 "error": "runtime_dispatcher_task_identity_required",
                 "task": boundary_task,
             }
+        try:
+            boundary_task = self._attach_execution_identity(boundary_task)
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "executed": False,
+                "blocked": True,
+                "finished": False,
+                "completed": False,
+                "status": "blocked",
+                "error": f"runtime_dispatcher_canonical_lineage_required:{exc}",
+                "task": boundary_task,
+            }
         boundary_task["runtime_execution_capability"] = self._execution_capability(
             {
                 "task_id": task_id,
                 "session_id": str(boundary_task.get("session_id") or ""),
                 "package_id": str(boundary_task.get("package_id") or ""),
+                "execution_id": str(boundary_task.get("execution_id") or ""),
             }
         )
         boundary_task["runtime_system_capability"] = self._system_execution_capability(
@@ -338,6 +452,56 @@ class RuntimeDispatcher:
                 "package_id": str(boundary_task.get("package_id") or ""),
             }
         )
+        boundary_provenance = self._capability_provenance(
+            {
+                "task_id": task_id,
+                "session_id": str(boundary_task.get("session_id") or ""),
+                "package_id": str(boundary_task.get("package_id") or ""),
+                "execution_id": str(boundary_task.get("execution_id") or ""),
+            }
+        )
+        boundary_task.update(
+            propagate_runtime_capability(boundary_task, boundary_provenance, stage="dispatcher")
+        )
+        scheduler_authority = copy.deepcopy(boundary_task.get("authority_context", {}))
+        execution_authority = copy.deepcopy(boundary_task.get("execution_authority", {}))
+        authority_chain = (
+            copy.deepcopy(scheduler_authority.get("authority_chain", []))
+            if isinstance(scheduler_authority, Mapping)
+            else []
+        )
+        authority_chain.append(
+            {
+                "layer": "runtime_dispatcher",
+                "authority_role": "runtime_owner",
+                "execution_authority_granted": True,
+                "can_execute_privileged_step": True,
+            }
+        )
+        boundary_task["authority_context"] = {
+            "authority_phase": "runtime_dispatch",
+            "authority_layer": "runtime",
+            "authority_role": "runtime_owner",
+            "authority_source": "runtime_dispatcher",
+            "authority_policy": "owner_issued_runtime_execution_capability",
+            "authority_propagation_required": True,
+            "execution_authority_granted": True,
+            "can_execute_privileged_step": True,
+            "received_authority": scheduler_authority,
+            "execution_authority": execution_authority,
+            "authority_chain": authority_chain,
+        }
+        boundary_task["runtime_authority_context"] = copy.deepcopy(
+            boundary_task["authority_context"]
+        )
+        if boundary_task.get("runtime_identity_graph"):
+            boundary_task = attach_runtime_identity_graph(
+                boundary_task,
+                bind_runtime_identity_graph(
+                    boundary_task["runtime_identity_graph"],
+                    capability_id=boundary_provenance.capability_id,
+                ),
+            )
         boundary_task["runtime_dispatcher_handoff"] = {
             "runtime_owner": "RuntimeDispatcher",
             "capability_issuer": "RuntimeDispatcher",

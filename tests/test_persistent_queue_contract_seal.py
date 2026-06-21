@@ -141,7 +141,7 @@ def test_blocked_queue_item_cannot_create_replan_continue_or_complete(tmp_path):
         )
 
 
-def test_same_resume_snapshot_is_requeued_only_once(tmp_path):
+def test_incomplete_resume_snapshot_is_blocked_and_never_requeued(tmp_path):
     class Repository:
         def __init__(self, task):
             self.task = copy.deepcopy(task)
@@ -178,8 +178,9 @@ def test_same_resume_snapshot_is_requeued_only_once(tmp_path):
     first = orchestrator.resume_last_session(task_repository=repository, scheduler=scheduler)
     second = orchestrator.resume_last_session(task_repository=repository, scheduler=scheduler)
 
-    assert first["requeued_task_ids"] == ["task-queue"]
-    assert scheduler.calls == ["task-queue"]
+    assert first["requeued_task_ids"] == []
+    assert first["waiting_task_ids"] == ["task-queue"]
+    assert scheduler.calls == []
     assert second["action"] == "idempotent_resume_skip"
     assert second["requeued_task_ids"] == []
 
@@ -231,4 +232,3 @@ def test_goal_queue_runtime_evidence_authority_success_mainline(tmp_path):
     assert result["ok"] is True
     assert result["cycles"][0]["adaptive_decision"] == "complete"
     assert result["goal_completion_authority_result"]["accepted"] is True
-

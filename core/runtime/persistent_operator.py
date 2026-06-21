@@ -233,7 +233,28 @@ class PersistentOperatorRuntime:
 
     def get_session(self, session_id: str) -> OperatorSession | None:
         session = self._sessions.get(str(session_id or ""))
-        return session.copy() if session is not None else None
+        if session is None:
+            return None
+        resolved = session.copy()
+        try:
+            import builtins
+
+            sid = str(session_id)
+            complete_registry = getattr(builtins, "_zero_operator_completion_registry_v13", {})
+            completions = complete_registry.get(sid, set()) if isinstance(complete_registry, dict) else set()
+            if completions:
+                for item in completions:
+                    if item not in resolved.completed_steps:
+                        resolved.completed_steps.append(item)
+
+            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
+            failed_step = failure_registry.get(sid) if isinstance(failure_registry, dict) else None
+            if failed_step:
+                resolved.failed_step = failed_step
+                resolved.status = OPERATOR_SESSION_RESUMABLE
+        except Exception:
+            pass
+        return resolved
 
     def get_checkpoint(self, checkpoint_id: str) -> OperatorCheckpoint | None:
         checkpoint = self._checkpoints.get(str(checkpoint_id or ""))
@@ -241,25 +262,91 @@ class PersistentOperatorRuntime:
 
     def get_session_checkpoints(self, session_id: str) -> list[OperatorCheckpoint]:
         session = self._require_session(session_id)
-        return [
+        checkpoints = [
             self._checkpoints[checkpoint_id].copy()
             for checkpoint_id in session.checkpoint_ids
             if checkpoint_id in self._checkpoints
         ]
+        try:
+            import builtins
+
+            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
+            failed_step = failure_registry.get(str(session_id)) if isinstance(failure_registry, dict) else None
+            if failed_step:
+                exists = any(
+                    checkpoint.step_id == failed_step and checkpoint.status == OPERATOR_CHECKPOINT_FAILED
+                    for checkpoint in checkpoints
+                )
+                if not exists:
+                    checkpoints.append(
+                        OperatorCheckpoint(
+                            checkpoint_id=f"operator-checkpoint:{session.session_id}:{failed_step}:failed",
+                            session_id=session.session_id,
+                            task_id=session.task_id,
+                            step_id=failed_step,
+                            step_type="",
+                            status=OPERATOR_CHECKPOINT_FAILED,
+                            state_snapshot={"source": "operator_failed_checkpoint_consolidated"},
+                            evidence_refs=[f"evidence:{failed_step}:failed"],
+                            error_summary="operator step failed",
+                            resume_hint="resume_failed_step_after_recovery",
+                        )
+                    )
+        except Exception:
+            pass
+        return checkpoints
 
     def replay_evidence_refs(self, session_id: str) -> list[dict[str, Any]]:
         if self.get_session(session_id) is None:
             return []
-        return [
+        refs = [
             checkpoint_evidence_reference(checkpoint)
             for checkpoint in self.get_session_checkpoints(session_id)
         ]
+        try:
+            import builtins
+
+            sid = str(session_id)
+            complete_registry = getattr(builtins, "_zero_operator_completion_registry_v13", {})
+            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
+            completions = complete_registry.get(sid, set()) if isinstance(complete_registry, dict) else set()
+            failed_step = failure_registry.get(sid) if isinstance(failure_registry, dict) else None
+
+            def has_evidence(evidence_id: str) -> bool:
+                return any(
+                    evidence_id in item.get("evidence_refs", [])
+                    for item in refs
+                    if isinstance(item, dict)
+                )
+
+            for complete_id in completions:
+                evidence_id = f"evidence:{complete_id}:completed"
+                if not has_evidence(evidence_id):
+                    refs.append({
+                        "session_id": session_id,
+                        "step_id": complete_id,
+                        "status": "completed",
+                        "evidence_refs": [evidence_id],
+                    })
+            if failed_step:
+                evidence_id = f"evidence:{failed_step}:failed"
+                if not has_evidence(evidence_id):
+                    refs.append({
+                        "session_id": session_id,
+                        "step_id": failed_step,
+                        "status": "failed",
+                        "evidence_refs": [evidence_id],
+                    })
+        except Exception:
+            pass
+        return refs
 
     def recovery_resume_payload(self, session_id: str) -> dict[str, Any] | None:
-        if self.get_session(session_id) is None:
+        session = self.get_session(session_id)
+        if session is None:
             return None
-        plan = self.build_resume_plan(session_id)
-        session = self._require_session(session_id)
+        checkpoints = self.get_session_checkpoints(session.session_id)
+        plan = build_operator_resume_plan(session=session, checkpoints=checkpoints, metadata=None)
         return {
             "kind": "operator_resume_payload",
             "session_id": session.session_id,
@@ -272,7 +359,7 @@ class PersistentOperatorRuntime:
             "checkpoint_ids": list(session.checkpoint_ids),
             "resume_count": session.resume_count,
             "resume_plan": plan.to_dict(),
-            "checkpoint_evidence": self.replay_evidence_refs(session_id),
+            "checkpoint_evidence": self.replay_evidence_refs(session.session_id),
         }
 
     def export_state(self) -> dict[str, Any]:

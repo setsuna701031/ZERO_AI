@@ -40,6 +40,9 @@ class OperatorSessionBootstrap:
         existing_session_id = self.extract_session_id(task=task, context=context)
         if existing_session_id:
             self.attach_session_id(task=task, context=context, session_id=existing_session_id)
+            if isinstance(task, dict) and self.operator_bridge is not None:
+                task["_zero_operator_runtime_ref"] = getattr(self.operator_bridge, "operator_runtime", None)
+                task["_zero_operator_bootstrap_ref"] = self
             return {
                 "ok": True,
                 "created": False,
@@ -87,6 +90,9 @@ class OperatorSessionBootstrap:
             metadata=resolved_metadata,
         )
         self.attach_session_id(task=task, context=context, session_id=session.session_id)
+        if isinstance(task, dict):
+            task["_zero_operator_runtime_ref"] = getattr(bridge, "operator_runtime", None)
+            task["_zero_operator_bootstrap_ref"] = self
         return {
             "ok": True,
             "created": True,
