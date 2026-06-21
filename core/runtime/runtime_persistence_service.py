@@ -18,6 +18,11 @@ from typing import Any
 from core.runtime.runtime_capability_scope import RuntimeCapabilityScope
 from core.runtime.runtime_file_service import RuntimeFileService
 from core.runtime.runtime_transaction_context import merge_current_transaction_metadata
+from core.runtime.runtime_execution_authority import (
+    assert_runtime_capability_consistency,
+    propagate_runtime_capability,
+)
+from core.goals.goal_lineage_contract import assert_runtime_identity_graph_consistency
 
 
 class RuntimePersistenceService:
@@ -100,6 +105,14 @@ class RuntimePersistenceService:
                 **dict(metadata or {}),
             }
         )
+        capability_provenance = merged_metadata.get("runtime_capability_provenance")
+        if capability_provenance is not None:
+            merged_metadata = propagate_runtime_capability(
+                merged_metadata,
+                capability_provenance,
+                stage="mutation",
+            )
+            merged_metadata["runtime_persistence_capability_id"] = merged_metadata["runtime_capability_id"]
         merged_lineage = merge_current_transaction_metadata(
             {"lineage": dict(lineage or {})}
         ).get("lineage", dict(lineage or {}))
@@ -108,7 +121,7 @@ class RuntimePersistenceService:
         ).get("provenance", dict(provenance or {}))
 
         writer = getattr(self.file_service, "write_" + "text")
-        return writer(
+        result = writer(
             path=file_path,
             text=str(text),
             operation_type=operation_type,
@@ -125,6 +138,14 @@ class RuntimePersistenceService:
             },
             metadata=merged_metadata,
         )
+        if capability_provenance is not None:
+            result = {
+                **dict(result),
+                **propagate_runtime_capability({}, capability_provenance, stage="persistence"),
+            }
+        if merged_metadata.get("runtime_identity_graph"):
+            result["runtime_identity_graph"] = copy.deepcopy(merged_metadata["runtime_identity_graph"])
+        return result
 
     def write_json(
         self,
@@ -136,7 +157,16 @@ class RuntimePersistenceService:
         provenance: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        text = json.dumps(data, ensure_ascii=False, indent=2)
+        if isinstance(data, dict) and data.get("runtime_capability_id"):
+            assert_runtime_capability_consistency(data, metadata or {})
+        if (
+            isinstance(data, dict)
+            and data.get("runtime_identity_graph")
+            and isinstance(metadata, dict)
+            and metadata.get("runtime_identity_graph")
+        ):
+            assert_runtime_identity_graph_consistency(data, metadata, require_complete=True)
+        text = json.dumps(data, ensure_ascii=False, indent=2, default=_json_default)
         return self.write_text(
             file_path,
             text,
@@ -164,6 +194,14 @@ class RuntimePersistenceService:
                 **dict(metadata or {}),
             }
         )
+        capability_provenance = merged_metadata.get("runtime_capability_provenance")
+        if capability_provenance is not None:
+            merged_metadata = propagate_runtime_capability(
+                merged_metadata,
+                capability_provenance,
+                stage="mutation",
+            )
+            merged_metadata["runtime_persistence_capability_id"] = merged_metadata["runtime_capability_id"]
         merged_lineage = merge_current_transaction_metadata(
             {"lineage": dict(lineage or {})}
         ).get("lineage", dict(lineage or {}))
@@ -171,7 +209,7 @@ class RuntimePersistenceService:
             {"provenance": dict(provenance or {})}
         ).get("provenance", dict(provenance or {}))
 
-        return self.file_service.append_text(
+        result = self.file_service.append_text(
             path=file_path,
             text=str(text),
             reason=reason,
@@ -187,6 +225,14 @@ class RuntimePersistenceService:
             },
             metadata=merged_metadata,
         )
+        if capability_provenance is not None:
+            result = {
+                **dict(result),
+                **propagate_runtime_capability({}, capability_provenance, stage="persistence"),
+            }
+        if merged_metadata.get("runtime_identity_graph"):
+            result["runtime_identity_graph"] = copy.deepcopy(merged_metadata["runtime_identity_graph"])
+        return result
 
     def record_runtime_state(
         self,
@@ -205,6 +251,13 @@ class RuntimePersistenceService:
                 **dict(metadata or {}),
             }
         )
+        capability_provenance = merged_metadata.get("runtime_capability_provenance")
+        if capability_provenance is not None:
+            merged_metadata = propagate_runtime_capability(
+                merged_metadata,
+                capability_provenance,
+                stage="persistence",
+            )
         merged_lineage = merge_current_transaction_metadata(
             {"lineage": dict(lineage)}
         ).get("lineage", dict(lineage))
@@ -221,3 +274,10 @@ class RuntimePersistenceService:
             provenance={"source": self.source, **dict(merged_provenance)},
             metadata=merged_metadata,
         )
+
+
+def _json_default(value: Any) -> Any:
+    to_dict = getattr(value, "to_dict", None)
+    if callable(to_dict):
+        return to_dict()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")

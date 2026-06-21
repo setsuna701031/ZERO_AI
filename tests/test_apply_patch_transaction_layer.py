@@ -11,6 +11,7 @@ from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.tasks.execution_guard import ExecutionGuard
+from tests.authority_test_support import sealed_dispatch_task
 
 
 def _write(path: Path, text: str) -> None:
@@ -24,12 +25,11 @@ class _OwnedStepExecutor:
         self.runner = TaskRunner(step_executor=endpoint)
 
     def execute_step(self, step: dict, task: dict | None = None, **kwargs):
-        owned = dict(task or {})
-        task_id = str(owned.get("task_id") or "apply-patch-transaction-test")
-        package_id = str(owned.get("package_id") or "apply-patch-transaction-package")
-        session_id = str(owned.get("session_id") or "apply-patch-transaction-session")
-        owned.update({"task_id": task_id, "package_id": package_id, "session_id": session_id})
-        owned["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(owned)
+        owned = sealed_dispatch_task({
+            "task_id": "apply-patch-transaction-test",
+            "package_id": "apply-patch-transaction-package",
+            **dict(task or {}),
+        })
         return self.runner.execute_owned_step(step, task=owned, **kwargs)
 
     def has_handler(self, step_type: str) -> bool:

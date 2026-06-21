@@ -145,11 +145,16 @@ class AgentLoop:
                     except Exception:
                         pass
 
+        execution_workspace_root = (
+            kwargs.get("workspace_dir")
+            or getattr(step_executor, "workspace_root", None)
+            or (Path(str(kwargs.get("repo_root"))) / "workspace" if kwargs.get("repo_root") else "workspace")
+        )
         self.execution_runtime = kwargs.get("execution_runtime") or AgentExecutionRuntime(
             task_runner=task_runner,
             task_runtime=self.task_runtime,
             step_executor=step_executor,
-            workspace_root=kwargs.get("workspace_dir", "workspace"),
+            workspace_root=execution_workspace_root,
             replanner=self.replanner,
             verifier=self.verifier,
             debug=self.debug,

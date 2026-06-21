@@ -965,6 +965,13 @@ class ControlledRuntimeExecutionBoundaryTest(unittest.TestCase):
             timeout=20,
             metadata={
                 "operation": "subprocess",
+                "task_id": "controlled-boundary-runtime-request",
+                "step_id": "controlled-boundary-runtime-request:execute",
+                "authority_source": "runtime_dispatcher",
+                "runtime_session": "runtime-session:controlled-boundary",
+                "approval_state": "approved",
+                "policy_result": {"allowed": True, "source": "controlled_boundary_test"},
+                "trace_id": "trace:controlled-boundary-runtime-request",
                 "runtime_identity": {
                     "identity_id": "system:test_controlled_runtime_execution_boundary",
                     "identity_type": "TEST",
@@ -987,4 +994,3 @@ class ControlledRuntimeExecutionBoundaryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

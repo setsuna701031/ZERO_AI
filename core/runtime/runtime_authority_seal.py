@@ -17,6 +17,8 @@ class RuntimeExecutionCapability:
     package_id: str
     step_id: str = ""
     delegated: bool = False
+    execution_id: str = ""
+    capability_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -27,6 +29,8 @@ class RuntimeExecutionCapability:
             "step_id": self.step_id,
             "delegated": self.delegated,
             "authoritative": False,
+            "execution_id": self.execution_id,
+            "capability_id": self.capability_id,
         }
 
     def __deepcopy__(self, memo: dict[int, Any]) -> "RuntimeExecutionCapability":
@@ -75,6 +79,9 @@ class TerminalExecutionEvidence:
     package_id: str
     session_id: str
     step_id: str
+    execution_id: str = ""
+    capability_id: str = ""
+    evidence_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -84,6 +91,9 @@ class TerminalExecutionEvidence:
             "session_id": self.session_id,
             "step_id": self.step_id,
             "authoritative": False,
+            "execution_id": self.execution_id,
+            "capability_id": self.capability_id,
+            "evidence_id": self.evidence_id,
         }
 
     def __deepcopy__(self, memo: dict[int, Any]) -> "TerminalExecutionEvidence":
@@ -104,6 +114,8 @@ def _build_authority_boundary():
         task_id: str,
         session_id: str,
         package_id: str,
+        execution_id: str = "",
+        capability_id: str = "",
     ) -> RuntimeExecutionCapability:
         if token is not _RUNTIME_DISPATCHER_ISSUER_TOKEN:
             raise PermissionError("runtime_dispatcher_authority_required")
@@ -111,6 +123,8 @@ def _build_authority_boundary():
             task_id=str(task_id),
             session_id=str(session_id),
             package_id=str(package_id),
+            execution_id=str(execution_id),
+            capability_id=str(capability_id),
         )
         dispatch_capabilities[id(capability)] = capability
         return capability
@@ -133,6 +147,8 @@ def _build_authority_boundary():
             package_id=dispatch.package_id,
             step_id=str(step_id),
             delegated=True,
+            execution_id=dispatch.execution_id,
+            capability_id=dispatch.capability_id,
         )
         delegated_capabilities[id(delegated)] = delegated
         return delegated
@@ -161,6 +177,9 @@ def _build_authority_boundary():
             package_id=str(package_id),
             session_id=str(session_id),
             step_id=str(step_id),
+            execution_id=capability.execution_id,
+            capability_id=capability.capability_id,
+            evidence_id=f"evidence:{capability.execution_id}:{step_id}",
         )
         terminal_evidence[id(evidence)] = evidence
         return evidence

@@ -55,6 +55,11 @@ class RuntimeCapabilityToken:
     issued_at: str
     expires_at: str
     revoked_reason: str = ""
+    authority_decision_id: str = ""
+    scope: tuple[tuple[str, str], ...] = ()
+    lineage: tuple[tuple[str, str], ...] = ()
+    source: str = "legacy_token_manager"
+    execution_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -65,6 +70,11 @@ class RuntimeCapabilityToken:
             "issued_at": self.issued_at,
             "expires_at": self.expires_at,
             "revoked_reason": self.revoked_reason,
+            "authority_decision_id": self.authority_decision_id,
+            "scope": dict(self.scope),
+            "lineage": dict(self.lineage),
+            "source": self.source,
+            "execution_id": self.execution_id,
         }
 
 
@@ -109,14 +119,16 @@ class RuntimeCapabilityDecision:
 
 class RuntimeCapabilityTokenManager:
     """
-    Capability-based runtime authority manager.
+    Capability-token manager for runtime zones.
 
-    Runtime zones must possess valid capability tokens before accessing
-    privileged runtime operations.
+    This layer is not execution authority. It only issues and validates scoped
+    bearer tokens that may be used as proof after an execution-authority policy
+    decision has allowed the requested runtime operation.
     """
 
     def __init__(self) -> None:
         self.tokens: dict[str, RuntimeCapabilityToken] = {}
+        self.authority_decisions_issued: set[str] = set()
 
     def issue_token(
         self,
@@ -137,6 +149,49 @@ class RuntimeCapabilityTokenManager:
         self.tokens[token.token_id] = token
         return token
 
+    def issue_from_authority_decision(
+        self,
+        decision: Any,
+        *,
+        capability: str,
+        zone: str,
+        scope: dict[str, Any],
+        lineage: dict[str, Any],
+        expires_in_minutes: int = 60,
+    ) -> RuntimeCapabilityToken:
+        """Issue the sole token for one allowed authority decision."""
+        decision_id = str(getattr(decision, "decision_id", "") or "").strip()
+        if not bool(getattr(decision, "allowed", False)) or not decision_id:
+            raise PermissionError("allowed_authority_decision_required")
+        if decision_id in self.authority_decisions_issued:
+            raise PermissionError("capability_reissue_forbidden")
+        normalized_scope = tuple(sorted((str(key), str(value)) for key, value in scope.items()))
+        normalized_lineage = tuple(sorted((str(key), str(value)) for key, value in lineage.items()))
+        if not normalized_scope or not normalized_lineage or any(value == "*" for _, value in normalized_scope):
+            raise PermissionError("explicit_capability_scope_and_lineage_required")
+        execution_id = str(scope.get("execution_id") or lineage.get("execution_id") or "").strip()
+        if not execution_id:
+            raise PermissionError("capability_execution_identity_required")
+        token_id = "token-" + _stable_fingerprint(
+            {"decision_id": decision_id, "capability": capability, "zone": zone, "scope": normalized_scope, "lineage": normalized_lineage}
+        )[:16]
+        token = RuntimeCapabilityToken(
+            token_id=token_id,
+            capability=str(capability),
+            zone=str(zone),
+            status=TOKEN_ACTIVE,
+            issued_at=utc_timestamp(),
+            expires_at=future_timestamp(expires_in_minutes),
+            authority_decision_id=decision_id,
+            scope=normalized_scope,
+            lineage=normalized_lineage,
+            source="authority_decision",
+            execution_id=execution_id,
+        )
+        self.tokens[token.token_id] = token
+        self.authority_decisions_issued.add(decision_id)
+        return token
+
     def revoke_token(
         self,
         *,
@@ -153,6 +208,11 @@ class RuntimeCapabilityTokenManager:
             issued_at=token.issued_at,
             expires_at=token.expires_at,
             revoked_reason=reason,
+            authority_decision_id=token.authority_decision_id,
+            scope=token.scope,
+            lineage=token.lineage,
+            source=token.source,
+            execution_id=token.execution_id,
         )
 
         self.tokens[token_id] = revoked
@@ -196,6 +256,11 @@ class RuntimeCapabilityTokenManager:
                 issued_at=token.issued_at,
                 expires_at=token.expires_at,
                 revoked_reason=token.revoked_reason,
+                authority_decision_id=token.authority_decision_id,
+                scope=token.scope,
+                lineage=token.lineage,
+                source=token.source,
+                execution_id=token.execution_id,
             )
             self.tokens[token_id] = expired
 

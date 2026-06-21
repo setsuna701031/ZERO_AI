@@ -21,6 +21,8 @@ from core.runtime.runtime_system_capability import (
     RuntimeCapabilityClass,
     validate_runtime_system_capability,
 )
+from core.runtime.runtime_execution_authority import propagate_runtime_capability
+from core.goals.goal_lineage_contract import attach_runtime_identity_graph, canonical_runtime_identity_graph
 
 
 TERMINAL_STATUSES = {
@@ -217,6 +219,14 @@ class TaskRuntime:
 
     def save_runtime_state(self, task: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
         normalized = self._normalize_runtime_state(task, state if isinstance(state, dict) else {})
+        identity_graph = task.get("runtime_identity_graph") if isinstance(task, dict) else None
+        if identity_graph is not None:
+            normalized = attach_runtime_identity_graph(normalized, canonical_runtime_identity_graph(identity_graph))
+        capability_provenance = task.get("runtime_capability_provenance") if isinstance(task, dict) else None
+        if capability_provenance is not None:
+            normalized.update(
+                propagate_runtime_capability(normalized, capability_provenance, stage="persistence")
+            )
         if not str(normalized.get("runtime_owner") or "").strip():
             normalized = self._stamp_runtime_ownership(
                 normalized,
@@ -1406,6 +1416,17 @@ class TaskRuntime:
             "transition_history",
             "last_transition",
             "session_id",
+            "runtime_session_id",
+            "goal_id",
+            "root_goal_id",
+            "source_goal_id",
+            "goal_lineage_id",
+            "branch_id",
+            "branch_type",
+            "execution_id",
+            "capability_id",
+            "evidence_id",
+            "runtime_identity_graph",
             "operator_runtime_id",
             "evidence",
             "reason",
@@ -1446,6 +1467,17 @@ class TaskRuntime:
             "transition_history",
             "last_transition",
             "session_id",
+            "runtime_session_id",
+            "goal_id",
+            "root_goal_id",
+            "source_goal_id",
+            "goal_lineage_id",
+            "branch_id",
+            "branch_type",
+            "execution_id",
+            "capability_id",
+            "evidence_id",
+            "runtime_identity_graph",
             "operator_runtime_id",
             "evidence",
             "reason",
@@ -1779,6 +1811,17 @@ class TaskRuntime:
             "transition_history",
             "last_transition",
             "session_id",
+            "runtime_session_id",
+            "goal_id",
+            "root_goal_id",
+            "source_goal_id",
+            "goal_lineage_id",
+            "branch_id",
+            "branch_type",
+            "execution_id",
+            "capability_id",
+            "evidence_id",
+            "runtime_identity_graph",
             "operator_runtime_id",
             "evidence",
             "reason",
@@ -7058,6 +7101,18 @@ class TaskRuntime:
                 metadata={
                     "task_runtime": True,
                     "runtime_state_persistence": True,
+                    **(
+                        propagate_runtime_capability(
+                            {}, data.get("runtime_capability_provenance"), stage="mutation"
+                        )
+                        if isinstance(data, dict) and data.get("runtime_capability_provenance") is not None
+                        else {}
+                    ),
+                    **(
+                        {"runtime_identity_graph": data.get("runtime_identity_graph")}
+                        if isinstance(data, dict) and data.get("runtime_identity_graph") is not None
+                        else {}
+                    ),
                 },
             )
             return

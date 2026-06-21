@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from tests.authority_test_support import sealed_dispatch_task
 
 
 class _RecordingStepExecutor:
@@ -101,7 +102,7 @@ def test_scheduler_code_chain_path_accepts_live_dispatcher_capability(
         "execution_authority": _execution_authority(),
         "authority_propagation_required": True,
     }
-    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
+    task = sealed_dispatch_task(task)
 
     result = scheduler._execute_simple_step(
         task=task,
@@ -136,12 +137,12 @@ def test_scheduler_delegates_mutation_with_issued_capability_without_direct_writ
     target = tmp_path / "workspace" / "shared" / "illegal.txt"
 
     result = scheduler._execute_simple_step(
-        task={
+        task=sealed_dispatch_task({
             "task_id": "scheduler-orchestration",
             "task_dir": str(tmp_path / "tasks" / "scheduler-orchestration"),
             "execution_authority": _execution_authority(),
             "authority_propagation_required": True,
-        },
+        }),
         step={
             "type": "write_file",
             "path": "workspace/shared/illegal.txt",
@@ -230,7 +231,7 @@ def test_successful_governed_mutation_emits_sealed_runtime_evidence(
         "package_id": "sealed-runtime-evidence-package",
         "session_id": "sealed-runtime-evidence-session",
     }
-    task["runtime_execution_capability"] = RuntimeDispatcher._execution_capability(task)
+    task = sealed_dispatch_task(task)
 
     result = TaskRunner(step_executor=recorder).execute_owned_step(
         {

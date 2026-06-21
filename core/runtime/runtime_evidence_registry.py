@@ -234,6 +234,9 @@ def _summary_from_seal(source: Any) -> dict[str, Any]:
         "aggregate_status": "succeeded",
         "lineage": _lineage_items(refs),
         "events": {},
+        "runtime_capability_id": _safe_text(getattr(source, "runtime_capability_id", "")),
+        "runtime_authority_decision_id": _safe_text(getattr(source, "runtime_authority_decision_id", "")),
+        "runtime_identity_graph": copy.deepcopy(getattr(source, "runtime_identity_graph", {})),
     }
 
 
@@ -291,6 +294,9 @@ def _build_registry_payload(summary: dict[str, Any]) -> dict[str, Any]:
         "rollback_index": rollback_index,
         "failed_execution_index": failed_execution_index,
         "event_index": event_index,
+        "runtime_capability_id": _safe_text(safe.get("runtime_capability_id")),
+        "runtime_authority_decision_id": _safe_text(safe.get("runtime_authority_decision_id")),
+        "runtime_identity_graph": _mapping(safe.get("runtime_identity_graph")),
         "index_counts": {
             "executions": len(execution_index),
             "steps": len(step_index),

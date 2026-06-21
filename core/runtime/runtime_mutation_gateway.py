@@ -13,12 +13,6 @@ from core.runtime.runtime_capability_scope import RuntimeCapabilityScopeEvaluato
 from core.runtime.runtime_kernel_protection import RuntimeKernelProtection
 from core.runtime.runtime_mutation_policy import RuntimeMutationPolicy
 from core.runtime.runtime_mutation_policy import classify_mutation_risk
-from core.runtime.runtime_mutation_authority import (
-    CANONICAL_MUTATION_AUTHORITY,
-    MUTATION_AUTHORITY_ROLE,
-    build_mutation_authority_metadata,
-    issue_runtime_mutation_capability,
-)
 from core.runtime.runtime_mutation_transaction import (
     RuntimeMutationOperation,
     RuntimeMutationRequest,
@@ -50,6 +44,7 @@ from core.runtime.runtime_system_capability import (
     RuntimeSystemCapabilityError,
     validate_runtime_system_capability,
 )
+from core.runtime.runtime_execution_authority import propagate_runtime_capability
 
 
 APPROVED_MUTATION_OPERATIONS = {
@@ -107,25 +102,14 @@ class RuntimeMutationGateway:
                     status_reason=str(exc),
                     started_at=_utc_timestamp(),
                 )
-        request_metadata = merge_current_transaction_metadata({
-            **dict(request.metadata),
-            **build_mutation_authority_metadata(
-                issue_runtime_mutation_capability(
-                    issuer=CANONICAL_MUTATION_AUTHORITY,
-                    source="runtime_mutation_gateway",
-                    request_id=request.request_id,
-                    operation_type=request.operation_type,
-                    target_path=request.target_path,
-                    role=MUTATION_AUTHORITY_ROLE,
-                    allowed_operations=(request.operation_type,),
-                    allowed_targets=(str(request.target_path),),
-                    provenance=request.provenance,
-                    scope={"request_id": request.request_id, "target_path": request.target_path},
-                    lineage=request.lineage,
-                    metadata={"gateway": "canonical"},
-                )
-            ),
-        })
+        request_metadata = merge_current_transaction_metadata(dict(request.metadata))
+        capability_provenance = request_metadata.get("runtime_capability_provenance")
+        if capability_provenance is not None:
+            request_metadata = propagate_runtime_capability(
+                request_metadata,
+                capability_provenance,
+                stage="mutation",
+            )
         request_lineage = merge_current_transaction_metadata({"lineage": dict(request.lineage)}).get("lineage", dict(request.lineage))
         request_provenance = merge_current_transaction_metadata({"provenance": dict(request.provenance)}).get("provenance", dict(request.provenance))
         try:
@@ -140,20 +124,6 @@ class RuntimeMutationGateway:
             pass
         started_at = _utc_timestamp()
         transaction_id = f"runtime_mutation:{request.request_id}"
-        gateway_capability = issue_runtime_mutation_capability(
-            issuer=CANONICAL_MUTATION_AUTHORITY,
-            source="runtime_mutation_gateway",
-            request_id=request.request_id,
-            operation_type=request.operation_type,
-            target_path=request.target_path,
-            role=MUTATION_AUTHORITY_ROLE,
-            allowed_operations=(request.operation_type,),
-            allowed_targets=(str(request.target_path),),
-            provenance=request.provenance,
-            scope={"request_id": request.request_id, "target_path": request.target_path},
-            lineage=request.lineage,
-            metadata={"transaction_id": transaction_id},
-        )
         bind_current_mutation(transaction_id, metadata={"source": "runtime_mutation_gateway"})
         mutation_lifecycle_id = lifecycle_id_for_artifact("mutation", transaction_id)
         create_current_lifecycle_record(

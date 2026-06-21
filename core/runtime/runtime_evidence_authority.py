@@ -12,6 +12,16 @@ from core.runtime.runtime_authority_seal import (
     _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN,
     register_runtime_evidence_authority,
 )
+from core.runtime.runtime_execution_authority import (
+    assert_runtime_capability_consistency,
+    propagate_runtime_capability,
+    validate_capability_provenance,
+)
+from core.goals.goal_lineage_contract import (
+    attach_runtime_identity_graph,
+    bind_runtime_identity_graph,
+    canonical_runtime_identity_graph,
+)
 
 _COMPATIBILITY_KEYS = ("artifact_type", "compatible", "runtime_version", "abi_version", "reason", "migration_required", "metadata")
 
@@ -69,6 +79,8 @@ class RuntimeEvidenceAuthority:
         evidence_id: str,
         serializer: RuntimeSerializationAuthority | None = None,
         issuer_token: Any = None,
+        capability_provenance: Any = None,
+        identity_graph: Any = None,
     ) -> None:
         if issuer_token is not _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN:
             raise PermissionError("governed_runtime_evidence_owner_required")
@@ -104,11 +116,60 @@ class RuntimeEvidenceAuthority:
             "runtime_abi": [],
             "recovery": {},
         }
+        if capability_provenance is not None:
+            self._payload.update(
+                propagate_runtime_capability({}, capability_provenance, stage="evidence")
+            )
+        if identity_graph is not None:
+            graph = bind_runtime_identity_graph(identity_graph, evidence_id=evidence_id)
+            if capability_provenance is not None:
+                provenance = validate_capability_provenance(capability_provenance)
+                graph = bind_runtime_identity_graph(
+                    graph,
+                    execution_id=provenance.execution_id,
+                    capability_id=provenance.capability_id,
+                )
+            self._payload = attach_runtime_identity_graph(self._payload, graph)
         register_runtime_evidence_authority(issuer_token, self)
+
+    @property
+    def runtime_capability_id(self) -> str:
+        return str(self._payload.get("runtime_capability_id") or "")
+
+    @property
+    def runtime_authority_decision_id(self) -> str:
+        return str(self._payload.get("runtime_authority_decision_id") or "")
+
+    @property
+    def runtime_identity_graph(self) -> dict[str, Any]:
+        value = self._payload.get("runtime_identity_graph")
+        return copy.deepcopy(value) if isinstance(value, dict) else {}
 
     def update(self, *, issuer_token: Any = None, **values: Any) -> "RuntimeEvidenceAuthority":
         if issuer_token is not _GOVERNED_RUNTIME_EVIDENCE_ISSUER_TOKEN:
             raise PermissionError("governed_runtime_evidence_owner_required")
+        if self._payload.get("runtime_capability_id"):
+            protected = {
+                "runtime_capability_id",
+                "runtime_authority_decision_id",
+                "runtime_capability_provenance",
+                "runtime_identity_graph",
+                "execution_id",
+                "evidence_id",
+            }
+            for key in protected & values.keys():
+                expected = self._payload.get(key)
+                actual = values.get(key)
+                if key == "runtime_capability_provenance":
+                    assert_runtime_capability_consistency(expected, actual)
+                elif key == "runtime_identity_graph":
+                    if canonical_runtime_identity_graph(expected) != canonical_runtime_identity_graph(actual):
+                        raise PermissionError("runtime_evidence_identity_override_forbidden")
+                elif str(actual or "") != str(expected or ""):
+                    raise PermissionError("runtime_evidence_capability_override_forbidden")
+            for value in values.values():
+                if isinstance(value, dict) and value.get("runtime_capability_id"):
+                    assert_runtime_capability_consistency(self._payload, value)
         for key, value in values.items():
             if key == "runtime_compatibility":
                 self._payload[key] = _canonical_compatibility_reports(value)
@@ -183,6 +244,13 @@ class RuntimeEvidenceAuthority:
                 "runtime_compatibility": payload.get("runtime_compatibility") or [],
                 "runtime_abi": payload.get("runtime_abi") or [],
                 "runtime_seals": payload.get("runtime_seals") or [],
+                "runtime_capability_id": payload.get("runtime_capability_id", ""),
+                "runtime_authority_decision_id": payload.get("runtime_authority_decision_id", ""),
+                "runtime_capability_provenance": payload.get("runtime_capability_provenance"),
+                "runtime_capability_stage": payload.get("runtime_capability_stage", ""),
+                "runtime_identity_graph": payload.get("runtime_identity_graph"),
+                "execution_id": payload.get("execution_id", ""),
+                "evidence_id": payload.get("evidence_id", ""),
             },
         )
 

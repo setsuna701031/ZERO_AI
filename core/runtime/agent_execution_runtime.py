@@ -10,6 +10,14 @@ from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
+from core.runtime.runtime_execution_authority import propagate_runtime_capability
+from core.goals.goal_lineage_contract import (
+    attach_goal_lineage,
+    attach_runtime_identity_graph,
+    bind_runtime_identity_graph,
+    create_root_goal_lineage,
+    extract_goal_lineage,
+)
 
 
 def _fingerprint(value: Any) -> str:
@@ -99,7 +107,15 @@ class _RuntimeStepExecutorEndpoint:
         if runtime_context:
             kwargs = copy.deepcopy(kwargs)
             context = kwargs.get("context") if isinstance(kwargs.get("context"), dict) else {}
+            delegated_authority = (
+                context.get("authority_context")
+                if isinstance(context.get("authority_context"), dict)
+                else {}
+            )
             kwargs["context"] = {**copy.deepcopy(runtime_context), **copy.deepcopy(context)}
+            if delegated_authority:
+                kwargs["context"]["authority_context"] = copy.deepcopy(delegated_authority)
+                kwargs["context"]["runtime_authority_context"] = copy.deepcopy(delegated_authority)
         for method_name in ("execute_step", "execute"):
             method = getattr(self.endpoint, method_name, None)
             if not callable(method):
@@ -184,7 +200,25 @@ class AgentExecutionRuntime:
     ) -> dict[str, Any]:
         source = copy.deepcopy(task) if isinstance(task, dict) else {}
         task_id = str(source.get("task_id") or source.get("id") or "agent-runtime-" + _fingerprint(steps))
-        boundary_id = task_id + "-runtime-" + _fingerprint({"steps": steps, "tick": current_tick})
+        try:
+            source_lineage = extract_goal_lineage(
+                source, require_complete=True, reject_conflicts=True
+            )
+        except ValueError:
+            source_lineage = create_root_goal_lineage(
+                goal_id=str(source.get("goal_id") or task_id),
+                session_id=str(source.get("session_id") or "") or None,
+                runtime_session_id=str(source.get("runtime_session_id") or "") or None,
+            )
+        source = attach_goal_lineage(source, source_lineage)
+        boundary_id = task_id + "-runtime-" + _fingerprint(
+            {
+                "steps": steps,
+                "tick": current_tick,
+                "runtime_session_id": source_lineage["runtime_session_id"],
+                "workspace_root": str(self.workspace_root.resolve()),
+            }
+        )
         package_id = str(source.get("package_id") or source.get("work_package_id") or f"{boundary_id}:package")
         session_id = str(source.get("session_id") or source.get("runtime_session") or boundary_id)
         task_dir = self.workspace_root / "agent_execution_runtime" / boundary_id
@@ -202,18 +236,33 @@ class AgentExecutionRuntime:
                 "session_id": session_id,
             }
         )
+        identity_task = RuntimeDispatcher._attach_execution_identity(
+            {
+                **source,
+                "task_id": boundary_id,
+                "package_id": package_id,
+                "session_id": source_lineage["session_id"],
+            }
+        )
+        provenance = RuntimeDispatcher._capability_provenance(identity_task)
+        propagated = propagate_runtime_capability({}, provenance, stage="dispatcher")
+        identity_graph = bind_runtime_identity_graph(
+            identity_task["runtime_identity_graph"], capability_id=provenance.capability_id
+        )
         authority_context = {
             "authority_phase": "runtime_task_handoff",
             "authority_layer": "runtime",
             "authority_role": "runtime_owner",
             "authority_source": "runtime_dispatcher",
-            "authority_policy": "runtime_owner_task_admission",
+            "authority_policy": "owner_issued_runtime_execution_capability",
             "authority_propagation_required": True,
             "execution_authority_granted": True,
             "can_execute_privileged_step": True,
             "escalated": False,
             "execution_authority": copy.deepcopy(execution_authority),
             "runtime_execution_capability": runtime_execution_capability,
+            "runtime_identity_graph": identity_graph,
+            **propagated,
             "authority_chain": [
                 {
                     "layer": "runtime_dispatcher",
@@ -243,10 +292,14 @@ class AgentExecutionRuntime:
             "agent_runtime_context": runtime_context,
             "execution_authority": copy.deepcopy(execution_authority),
             "runtime_execution_capability": runtime_execution_capability,
+            "runtime_identity_graph": identity_graph,
+            **propagated,
             "authority_context": copy.deepcopy(authority_context),
             "runtime_authority_context": copy.deepcopy(authority_context),
             "authority_propagation_required": True,
         }
+        runtime_task = attach_goal_lineage(runtime_task, source_lineage)
+        runtime_task = attach_runtime_identity_graph(runtime_task, identity_graph)
         runner_result = self.run_task(runtime_task, current_tick=current_tick)
         runtime_state = runner_result.get("runtime_state") if isinstance(runner_result.get("runtime_state"), dict) else {}
         records = runtime_state.get("results") if isinstance(runtime_state.get("results"), list) else []
