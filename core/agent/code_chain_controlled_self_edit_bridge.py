@@ -160,6 +160,8 @@ def run_planner_owned_code_chain_bridge(
                     "runtime_owns_execution": False,
                     "runtime_dispatcher_required": True,
                     "runtime_dispatcher_lineage_required": True,
+                    "runtime_file_service_required": True,
+                    "runtime_mutation_gateway_required": True,
                     "step_executor_executes": False,
                 },
             },
