@@ -129,6 +129,8 @@ def _parser() -> argparse.ArgumentParser:
         cmd.add_argument("package_id")
         if name in {"summary", "report", "memory"}:
             cmd.add_argument("--json", action="store_true")
+        if name in {"summary", "report"}:
+            cmd.add_argument("--format", choices=("json", "markdown", "report"))
 
     sub.add_parser("memory-status")
 
@@ -164,15 +166,21 @@ def main(argv: list[str] | None = None) -> int:
 
         elif args.command == "summary":
             result = operator.package_summary(args.package_id)
-            if not args.json:
+            output_format = "json" if args.json else (args.format or "json")
+            if output_format in {"markdown", "report"}:
                 _print_readable_report(args.repo_root, args.package_id, result)
                 return 0
+            _print_json(result)
+            return 0
 
         elif args.command == "report":
             result = operator.package_report(args.package_id)
-            if not args.json:
+            output_format = "json" if args.json else (args.format or "report")
+            if output_format in {"markdown", "report"}:
                 _print_readable_report(args.repo_root, args.package_id, result)
                 return 0
+            _print_json(result)
+            return 0
 
         elif args.command == "memory":
             result = operator.package_memory(args.package_id)

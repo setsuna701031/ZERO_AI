@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
-from core.runtime.persistent_queue_contract import duplicate_identity, extract_queue_lineage
+from core.runtime.persistent_queue_contract import extract_queue_lineage
 from core.runtime.runtime_status import normalize_runtime_status
 from core.goals.goal_lineage_contract import (
     RUNTIME_IDENTITY_GRAPH_FIELDS,
@@ -410,6 +410,27 @@ class RuntimeSessionResume:
             if not isinstance(task, Mapping):
                 continue
             session_task = copy.deepcopy(dict(task))
+            declares_goal_lineage = any(
+                _clean_text(session_task.get(field))
+                for field in (
+                    "root_goal_id",
+                    "source_goal_id",
+                    "goal_lineage_id",
+                    "branch_type",
+                    "branch_id",
+                    "continuation_goal_id",
+                    "continuation_task_id",
+                    "replan_request_id",
+                )
+            ) or any(
+                isinstance(session_task.get(key), Mapping)
+                for key in (
+                    "goal_lineage",
+                    "continuation_work_item",
+                    "replan_record",
+                    "replan_request",
+                )
+            )
             if not include_terminal and is_terminal_task_status(session_task.get("status")):
                 continue
             if any(
@@ -458,6 +479,9 @@ class RuntimeSessionResume:
                     elif session_task.get("resume_session_id"):
                         session_task.pop("session_id", None)
                         session_task.pop("runtime_session_id", None)
+                elif declares_goal_lineage:
+                    session_task["status"] = normalize_runtime_status(TASK_STATUS_BLOCKED)
+                    session_task["identity_validation_error"] = "goal_lineage_incomplete"
                 elif runtime_identity is None and identity_graph is None:
                     session_task.setdefault("resume_session_id", normalized_session_id)
             snapshot = self.capture_task_snapshot(session_task)
@@ -506,18 +530,33 @@ class RuntimeSessionResume:
 
         record = self.get_record(session_id) if session_id else self.latest_record()
         if record is None:
-            return self._empty_resume_plan(reason="no_session_record")
+            return self._empty_resume_plan(
+                reason="no_session_record",
+                session_id=session_id,
+                metadata=metadata,
+            )
         if record.status in {SESSION_STATUS_RESUMED, SESSION_STATUS_FINALIZED}:
-            plan = self._empty_resume_plan(reason="session_already_resumed")
+            reason = (
+                "session_finalized"
+                if record.status == SESSION_STATUS_FINALIZED
+                else "session_already_resumed"
+            )
+            plan = self._empty_resume_plan(reason=reason, session_id=record.session_id)
             plan.update(
                 {
                     "action": "idempotent_resume_skip",
-                    "session_id": record.session_id,
                     "already_resumed": True,
+                    "session_finalized": record.status == SESSION_STATUS_FINALIZED,
                     "previous_resume_fingerprint": record.resume_plan.get("fingerprint"),
                 }
             )
             return plan
+        if record.status == SESSION_STATUS_EMPTY:
+            return self._empty_resume_plan(
+                reason="empty_resume",
+                session_id=record.session_id,
+                metadata=metadata,
+            )
 
         resolved_snapshots = [self._resolve_snapshot_against_runtime_state(item) for item in record.snapshots]
         snapshots = [item for item in resolved_snapshots if include_terminal or is_resumable_task_status(item.status)]
@@ -714,6 +753,8 @@ class RuntimeSessionResume:
     def _build_resume_plan_from_snapshots(self, snapshots: Iterable[RuntimeTaskResumeSnapshot]) -> dict[str, Any]:
         ordered, duplicate_ids = self._dedupe_snapshots_by_identity(snapshots)
         task_ids = [item.task_id for item in ordered]
+        if not task_ids:
+            return self._empty_resume_plan(reason="no_pending_tasks")
         blocked = [item.task_id for item in ordered if item.status in {TASK_STATUS_BLOCKED, TASK_STATUS_REVIEW_REQUIRED}]
         runnable = [item.task_id for item in ordered if item.status not in {TASK_STATUS_BLOCKED, TASK_STATUS_REVIEW_REQUIRED}]
         plan_payload = {
@@ -746,8 +787,7 @@ class RuntimeSessionResume:
         snapshots: Iterable[RuntimeTaskResumeSnapshot],
     ) -> tuple[list[RuntimeTaskResumeSnapshot], list[str]]:
         ordered: list[RuntimeTaskResumeSnapshot] = []
-        accepted_payloads: list[dict[str, Any]] = []
-        accepted_keys: set[tuple[str, str, str]] = set()
+        accepted_keys: set[tuple[str, ...]] = set()
         duplicate_ids: list[str] = []
         for item in snapshots or []:
             task_id = _clean_text(getattr(item, "task_id", ""))
@@ -773,36 +813,79 @@ class RuntimeSessionResume:
                     "next_runtime_request",
                 ):
                     identity_payload.pop(nested_key, None)
+            lineage = extract_goal_lineage(item.lineage or identity_payload)
+            lineage_key = tuple(
+                _clean_text(lineage.get(field))
+                for field in (
+                    "root_goal_id",
+                    "session_id",
+                    "runtime_session_id",
+                    "branch_type",
+                    "branch_id",
+                )
+            )
             identity_key = (
-                str(identity_payload.get("task_id") or task_id),
-                str(identity_payload.get("goal_id") or ""),
-                str(identity_payload.get("branch_id") or identity_payload.get("continuation_goal_id") or identity_payload.get("replan_request_id") or ""),
+                ("goal_lineage", *lineage_key)
+                if all(lineage_key)
+                else (
+                    "legacy_task",
+                    _clean_text(identity_payload.get("task_id") or task_id),
+                    _clean_text(identity_payload.get("goal_id")),
+                    _clean_text(
+                        identity_payload.get("branch_id")
+                        or identity_payload.get("continuation_goal_id")
+                        or identity_payload.get("replan_request_id")
+                    ),
+                )
             )
             if identity_key in accepted_keys:
                 duplicate_ids.append(task_id)
                 continue
             ordered.append(item)
             accepted_keys.add(identity_key)
-            accepted_payloads.append(identity_payload)
         return ordered, list(dict.fromkeys(duplicate_ids))
 
-def _project_session_resume_runtime_status(task_payload: dict[str, Any], runtime_status: Any) -> None:
-    task_payload["status"] = normalize_runtime_status(runtime_status)
-
-
-def _empty_resume_plan(self, *, reason: str) -> dict[str, Any]:
-        return {
+    def _empty_resume_plan(
+        self,
+        *,
+        reason: str,
+        session_id: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        normalized_reason = _clean_text(reason) or "empty_resume"
+        fingerprint_payload = {
+            "reason": normalized_reason,
+            "session_id": _clean_text(session_id),
+            "metadata": _copy_dict(metadata),
+        }
+        plan = {
             "ok": False,
             "action": "nothing_to_resume",
-            "reason": reason,
+            "reason": normalized_reason,
             "task_ids": [],
             "runnable_task_ids": [],
             "blocked_task_ids": [],
             "snapshot_count": 0,
+            "duplicate_task_ids": [],
+            "lineage_by_task_id": {},
             "status_counts": {},
-            "fingerprint": stable_resume_fingerprint({"reason": reason}),
+            "resume_policy": {
+                "terminal_tasks_excluded": True,
+                "blocked_tasks_preserved": True,
+                "scheduler_should_requeue_runnable": True,
+                "scheduler_should_keep_blocked_waiting": True,
+            },
+            "fingerprint": stable_resume_fingerprint(fingerprint_payload),
             "created_at": utc_timestamp(),
         }
+        if fingerprint_payload["session_id"]:
+            plan["session_id"] = fingerprint_payload["session_id"]
+        if fingerprint_payload["metadata"]:
+            plan["metadata"] = fingerprint_payload["metadata"]
+        return plan
+
+def _project_session_resume_runtime_status(task_payload: dict[str, Any], runtime_status: Any) -> None:
+    task_payload["status"] = normalize_runtime_status(runtime_status)
 
 def build_runtime_resume_plan(tasks: Iterable[Mapping[str, Any]], *, workspace_root: str | Path = ".", storage_path: str | Path | None = None, session_id: str | None = None, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
     runtime = RuntimeSessionResume(workspace_root=workspace_root, storage_path=storage_path)
