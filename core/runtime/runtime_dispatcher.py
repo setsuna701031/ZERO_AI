@@ -710,12 +710,13 @@ class RuntimeDispatcher:
         feedback: Mapping[str, Any],
     ) -> dict[str, Any]:
         next_task = copy.deepcopy(dict(task))
+        next_task["status"] = normalize_runtime_status("running")
         next_task["steps"] = [
             *copy.deepcopy(list(task.get("steps") or [])),
             *copy.deepcopy(appended_steps),
         ]
         next_task["current_step_index"] = int(feedback.get("current_step") or 0)
-        project_runtime_status(next_task, normalize_runtime_status("running"), owner="core/runtime/runtime_dispatcher.py")
+        project_runtime_status(next_task, next_task["status"], owner="core/runtime/runtime_dispatcher.py")
         next_task["replan_count"] = int(task.get("replan_count") or 0) + 1
         return next_task
 
@@ -728,8 +729,9 @@ class RuntimeDispatcher:
         next_task = copy.deepcopy(dict(task))
         result_task = result.get("task") if isinstance(result.get("task"), Mapping) else {}
         next_task.update(copy.deepcopy(dict(result_task)))
+        next_task["status"] = normalize_runtime_status("running")
         next_task["current_step_index"] = int(feedback.get("current_step") or 0)
-        project_runtime_status(next_task, normalize_runtime_status("running"), owner="core/runtime/runtime_dispatcher.py")
+        project_runtime_status(next_task, next_task["status"], owner="core/runtime/runtime_dispatcher.py")
         return next_task
 
 

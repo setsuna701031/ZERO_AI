@@ -455,7 +455,7 @@ def ensure_authority_metadata(
         or allowed_surface
         or allowed_action
         or allowed_registered_step
-        or provenance
+        or bool(provenance and (metadata_map.get("provenance") or context_map.get("provenance")))
     ):
         return normalized, validation
 

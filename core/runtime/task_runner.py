@@ -1101,6 +1101,76 @@ class TaskRunner:
             blockers = state.get("blockers") if isinstance(state.get("blockers"), list) else []
 
             if status in {"waiting", "waiting_blocker", "waiting_review", "blocked", "paused"}:
+                persisted_repair_context = state.get("repair_context")
+                repair_lineage_recheck = bool(
+                    status == "blocked"
+                    and isinstance(persisted_repair_context, dict)
+                    and not _repair_chain_has_live_dispatcher_capability(task)
+                )
+                if repair_lineage_recheck:
+                    steps = state.get("steps") if isinstance(state.get("steps"), list) else []
+                    step_index = self._safe_int(state.get("current_step_index"), 0)
+                    step = (
+                        steps[step_index]
+                        if 0 <= step_index < len(steps) and isinstance(steps[step_index], dict)
+                        else _taskrunner_select_current_step(task)
+                    )
+                    denial = {
+                        "ok": False,
+                        "executed": False,
+                        "blocked": True,
+                        "step_index": step_index,
+                        "step_type": str(step.get("type") or step.get("action") or ""),
+                        "error": {
+                            "type": "execution_authority_denied",
+                            "message": "runtime dispatcher live capability required before step execution",
+                            "retryable": False,
+                        },
+                    }
+                    recorded = self.runtime.record_step_failure(
+                        task=task,
+                        step=step,
+                        step_result=denial,
+                        current_tick=current_tick,
+                        status="blocked",
+                    )
+                    state = copy.deepcopy(recorded.get("runtime_state", state))
+                    self._ensure_execution_trace_defaults(task, state)
+                    denial_result = {
+                        "ok": False,
+                        "action": "retry",
+                        "failure_type": "execution_authority_denied",
+                        "error": copy.deepcopy(denial["error"]),
+                        "task": copy.deepcopy(task),
+                        "runtime_state": state,
+                        "status": "blocked",
+                        "last_result": denial,
+                        "execution_trace": copy.deepcopy(state.get("execution_trace", [])),
+                    }
+                    build_observation = getattr(self, "_zero_v800_build_observation", None)
+                    decide_observation = getattr(self, "_zero_v800_decide_from_observation", None)
+                    if callable(build_observation) and callable(decide_observation):
+                        observation = build_observation(
+                            task=task,
+                            result=denial_result,
+                            current_tick=current_tick,
+                        )
+                        observed = self.runtime.record_engineering_observation(
+                            task=task,
+                            observation=observation,
+                            current_tick=current_tick,
+                        )
+                        if isinstance(observed, dict) and isinstance(observed.get("runtime_state"), dict):
+                            denial_result["runtime_state"] = copy.deepcopy(observed["runtime_state"])
+                        decision = decide_observation(observation=observation, result=denial_result)
+                        decided = self.runtime.record_engineering_decision(
+                            task=task,
+                            decision=decision,
+                            current_tick=current_tick,
+                        )
+                        if isinstance(decided, dict) and isinstance(decided.get("runtime_state"), dict):
+                            denial_result["runtime_state"] = copy.deepcopy(decided["runtime_state"])
+                    return self._finalize_public_result(denial_result)
                 if next_action != "run_next_tick" or active_blocker_count > 0 or blockers:
                     return self._finalize_public_result({
                         "ok": True,
@@ -2442,12 +2512,20 @@ class TaskRunner:
             and result.get("executed") is False
         )
         if authority_denied:
+            denied_step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+            repair_chain_denied = bool(
+                str(task.get("repair_intent") or "").strip()
+                or isinstance(task.get("failed_step"), dict)
+                or denied_step_type.startswith("code_chain_")
+                or denied_step_type in {"apply_patch", "apply_unified_diff"}
+            )
+            authority_failure_status = "blocked" if repair_chain_denied else "retrying"
             failure_record_result = self.runtime.record_step_failure(
                 task=task,
                 step=step,
                 step_result=result,
                 current_tick=current_tick,
-                status="retrying",
+                status=authority_failure_status,
             )
             runtime_state = copy.deepcopy(failure_record_result.get("runtime_state", {}))
             self._safe_block_engineering_action(
@@ -2464,11 +2542,16 @@ class TaskRunner:
                 "ok": False,
                 "action": "retry",
                 "failure_type": "execution_authority_denied",
-                "failure_decision": {"retry": True, "replan": False, "fail": False, "wait": False},
+                "failure_decision": {
+                    "retry": True,
+                    "replan": False,
+                    "fail": False,
+                    "wait": False,
+                },
                 "error": copy.deepcopy(error_payload),
                 "task": copy.deepcopy(task),
                 "runtime_state": runtime_state,
-                "status": "retrying",
+                "status": authority_failure_status,
                 "last_result": copy.deepcopy(result),
                 "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
             }
@@ -6006,3 +6089,130 @@ if hasattr(TaskRunner, 'run_task'):
         return _zero_stage3b_taskrunner_record_operator_failure_v4(task, result)
 
     TaskRunner.run_task = _zero_stage3b_run_task_v4
+
+# Repair-chain dispatcher-lineage closure.  A repair task that has already
+# persisted an authority denial may re-enter through the blocked/waiting
+# lifecycle path on a later tick.  Preserve that denial as the public terminal
+# shape unless a live dispatcher-issued TaskRunner capability is present.
+
+def _repair_chain_has_live_dispatcher_capability(task):
+    if not isinstance(task, dict):
+        return False
+    step = _taskrunner_select_current_step(task)
+    task_id = str(task.get("task_id") or task.get("id") or "")
+    package_id = str(task.get("package_id") or task.get("work_package_id") or "")
+    session_id = str(task.get("session_id") or task.get("runtime_session") or "")
+    step_id = str(step.get("id") or step.get("step_id") or f"{task_id}:step")
+    for key in (
+        "runtime_execution_capability",
+        "dispatch_execution_capability",
+        "runtime_dispatch_capability",
+        "execution_capability",
+    ):
+        if is_taskrunner_execution_capability(
+            task.get(key),
+            task_id=task_id,
+            package_id=package_id,
+            session_id=session_id,
+            step_id=step_id,
+        ):
+            return True
+    return False
+
+
+def _is_explicit_repair_chain_task(task):
+    if not isinstance(task, dict):
+        return False
+    step = _taskrunner_select_current_step(task)
+    step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+    return bool(
+        str(task.get("repair_intent") or "").strip()
+        or isinstance(task.get("failed_step"), dict)
+        or isinstance(task.get("subgoals"), list)
+        or step_type.startswith("code_chain_")
+        or step_type in {"apply_patch", "apply_unified_diff"}
+    )
+
+
+def _repair_chain_dispatcher_denial_shape(result, task, *, repair_chain_task=None):
+    if not isinstance(result, dict) or not isinstance(task, dict):
+        return result
+    runtime_state = result.get("runtime_state")
+    if repair_chain_task is None:
+        repair_chain_task = _is_explicit_repair_chain_task(task)
+    if not repair_chain_task:
+        return result
+    if _repair_chain_has_live_dispatcher_capability(task):
+        return result
+
+    status = str(result.get("status") or "").strip().lower()
+    runtime_status = (
+        str(runtime_state.get("status") or "").strip().lower()
+        if isinstance(runtime_state, dict)
+        else ""
+    )
+    error = result.get("error")
+    error_type = error.get("type") if isinstance(error, dict) else ""
+    authority_path = (
+        error_type == "execution_authority_denied"
+        or status in {"blocked", "blocked_waiting", "retrying"}
+        or runtime_status in {"blocked", "blocked_waiting", "retrying"}
+    )
+    if not authority_path:
+        return result
+
+    denial = {
+        "type": "execution_authority_denied",
+        "message": "runtime dispatcher live capability required before step execution",
+        "retryable": False,
+    }
+    normalized = dict(result)
+    normalized["ok"] = False
+    normalized["action"] = "retry"
+    normalized["status"] = "blocked"
+    normalized["error"] = denial
+    normalized["reason"] = "runtime_dispatcher_live_capability_required"
+    normalized["blocked_reason"] = "runtime_dispatcher_live_capability_required"
+    if not isinstance(runtime_state, dict):
+        runtime_state = {}
+    else:
+        runtime_state = copy.deepcopy(runtime_state)
+    project_runtime_status(
+        runtime_state,
+        "blocked",
+        owner="core/runtime/task_runner.py",
+        reason="repair_chain_dispatcher_lineage_required",
+    )
+    runtime_state["blocked_reason"] = "runtime_dispatcher_live_capability_required"
+    normalized["runtime_state"] = runtime_state
+    return normalized
+
+
+_REPAIR_LINEAGE_BASE_RUN_TASK_TICK = TaskRunner.run_task_tick
+
+
+def _repair_lineage_run_task_tick(self, task, *args, **kwargs):
+    repair_chain_task = _is_explicit_repair_chain_task(task)
+    result = _REPAIR_LINEAGE_BASE_RUN_TASK_TICK(self, task, *args, **kwargs)
+    return _repair_chain_dispatcher_denial_shape(
+        result,
+        task,
+        repair_chain_task=repair_chain_task,
+    )
+
+
+TaskRunner.run_task_tick = _repair_lineage_run_task_tick
+
+if hasattr(TaskRunner, "run_task"):
+    _REPAIR_LINEAGE_BASE_RUN_TASK = TaskRunner.run_task
+
+    def _repair_lineage_run_task(self, task, *args, **kwargs):
+        repair_chain_task = _is_explicit_repair_chain_task(task)
+        result = _REPAIR_LINEAGE_BASE_RUN_TASK(self, task, *args, **kwargs)
+        return _repair_chain_dispatcher_denial_shape(
+            result,
+            task,
+            repair_chain_task=repair_chain_task,
+        )
+
+    TaskRunner.run_task = _repair_lineage_run_task

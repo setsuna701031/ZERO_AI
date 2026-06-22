@@ -429,7 +429,7 @@ class RuntimeSessionResume:
             try:
                 canonical_lineage = extract_goal_lineage(session_task, reject_conflicts=True)
             except ValueError as exc:
-                session_task["status"] = TASK_STATUS_BLOCKED
+                session_task["status"] = normalize_runtime_status(runtime_status)
                 session_task["identity_validation_error"] = str(exc)
                 nested_lineage = session_task.get("goal_lineage")
                 if isinstance(nested_lineage, Mapping):

@@ -707,6 +707,32 @@ def execute_runtime_request(
     workspace_root: str = "workspace",
     executor: Executor | None = None,
 ) -> ExecutionGatewayResult:
+    if not isinstance(request.metadata, dict) or not request.metadata:
+        authority_validation = {
+            "ok": False,
+            "reason": "missing_authority_metadata",
+            "missing_fields": ["task_id", "step_id", "authority_source", "runtime_session", "approval_state", "policy_result", "trace_id"],
+        }
+        metadata = {
+            **dict(request.metadata or {}),
+            "blocked": True,
+            "blocked_reason": "missing_authority_metadata",
+            "authority_validation": authority_validation,
+            "audit_event": {"reason": "missing_authority_metadata"},
+            "replay_event": {"decision": "blocked"},
+        }
+        return ExecutionGatewayResult(
+            command=tuple(request.command or ()),
+            shell=False,
+            timeout=request.timeout,
+            ok=False,
+            returncode=1,
+            stdout="",
+            stderr="missing_authority_metadata",
+            metadata=metadata,
+            risk_metadata={"authority_validation": authority_validation},
+        )
+
     normalized_metadata, authority_validation = ensure_authority_metadata(
         request.metadata,
         lineage=request.lineage,
