@@ -244,11 +244,20 @@ class PersistentOperatorRuntime:
             completions = complete_registry.get(sid, set()) if isinstance(complete_registry, dict) else set()
             if completions:
                 for item in completions:
+                    item = str(item)
+                    if item.startswith("task_") and item.endswith("-complete"):
+                        continue
                     if item not in resolved.completed_steps:
                         resolved.completed_steps.append(item)
 
             failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
             failed_step = failure_registry.get(sid) if isinstance(failure_registry, dict) else None
+            if (
+                isinstance(failed_step, str)
+                and failed_step.startswith("task_")
+                and failed_step.endswith("-fail")
+            ):
+                failed_step = None
             if failed_step:
                 resolved.failed_step = failed_step
                 resolved.status = OPERATOR_SESSION_RESUMABLE
@@ -463,3 +472,5 @@ def _safe_name(value: str) -> str:
 __all__ = [
     "PersistentOperatorRuntime",
 ]
+
+
