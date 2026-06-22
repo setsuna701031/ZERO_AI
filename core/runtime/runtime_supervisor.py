@@ -302,7 +302,15 @@ class RuntimeSupervisor:
 
         incident_type = str(incident.get("incident_type") or incident.get("type") or "runtime_unknown_incident")
         runtime_identity = extract_runtime_identity(incident, reject_conflicts=True)
-        source_session_id = str(runtime_identity.get("source_session_id") or "")
+        # A watchdog incident identifies the affected lease with session_id.
+        # source_session_id is preferred when a caller supplies it explicitly,
+        # but a plain session_id is itself the takeover target.
+        source_session_id = str(
+            runtime_identity.get("source_session_id")
+            or runtime_identity.get("session_id")
+            or runtime_identity.get("runtime_session_id")
+            or ""
+        )
         task_id = str(incident.get("task_id") or "")
         classification = self.policy.classify(incident)
 
