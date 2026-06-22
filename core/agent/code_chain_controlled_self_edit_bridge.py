@@ -117,62 +117,62 @@ def run_planner_owned_code_chain_bridge(
             },
         )
 
-    failure_reason = "legacy_runtime_dispatcher_migration_required"
-    executable_steps = prepare_steps_for_runtime(raw_steps)
-    execution = _execution_failure(failure_reason)
-    execution.update(
-        {
-            "executed": False,
-            "blocked": True,
-            "status": "migration_required",
-            "runtime_dispatcher_required": True,
-        }
-    )
-    review = reviewable_result(
-        ok=False,
-        task_id=task_id,
-        goal=text,
-        steps=executable_steps,
-        execution_result=execution,
-        failure_reason=failure_reason,
-    )
-    review["status"] = "blocked"
-    return _make_response(
-        agent=agent,
-        ok=False,
-        context=context,
-        route=route,
-        planner_result=planner_result,
-        plan={
-            "ok": True,
-            "planner_result": copy.deepcopy(planner_result),
-            "controlled_mutation_plan": copy.deepcopy(controlled_steps),
-            "steps": executable_steps,
-            "route_decision": copy.deepcopy(route_decision),
-            "planner_owned_intent_routing": not fallback_used,
-            "fallback_used": fallback_used,
-            "boundary": {
-                "agent_loop_routes_only": True,
-                "planner_produces_plan": True,
-                "step_executor_executes": False,
-                "runtime_dispatcher_required": True,
-                "legacy_runtime_dispatcher_migration_required": True,
-                "runtime_file_service_required": True,
-                "runtime_mutation_gateway_required": True,
+    execution_runtime = runtime_owner_from_agent(agent)
+    if execution_runtime is None or not hasattr(execution_runtime, "run_steps"):
+        failure_reason = "runtime_execution_owner_required"
+        executable_steps = prepare_steps_for_runtime(raw_steps)
+        execution = _execution_failure(failure_reason)
+        execution.update(
+            {
+                "executed": False,
+                "blocked": True,
+                "status": "runtime_owner_required",
+                "runtime_execution_owner_required": True,
+            }
+        )
+        review = reviewable_result(
+            ok=False,
+            task_id=task_id,
+            goal=text,
+            steps=executable_steps,
+            execution_result=execution,
+            failure_reason=failure_reason,
+        )
+        review["status"] = "blocked"
+        return _make_response(
+            agent=agent,
+            ok=False,
+            context=context,
+            route=route,
+            planner_result=planner_result,
+            plan={
+                "ok": True,
+                "planner_result": copy.deepcopy(planner_result),
+                "controlled_mutation_plan": copy.deepcopy(controlled_steps),
+                "steps": executable_steps,
+                "route_decision": copy.deepcopy(route_decision),
+                "planner_owned_intent_routing": not fallback_used,
+                "fallback_used": fallback_used,
+                "boundary": {
+                    "agent_loop_routes_only": True,
+                    "planner_produces_plan": True,
+                    "runtime_owns_execution": False,
+                    "runtime_execution_owner_required": True,
+                    "step_executor_executes": False,
+                },
             },
-        },
-        execution=execution,
-        final_answer=failure_reason,
-        error=failure_reason,
-        review=review,
-        extra={
-            "planner_owned_intent_routing": not fallback_used,
-            "code_chain_v1_fallback_used": fallback_used,
-            "controlled_mutation_plan_produced": True,
-            "status": "migration_required",
-            "blocked": True,
-        },
-    )
+            execution=execution,
+            final_answer=failure_reason,
+            error=failure_reason,
+            review=review,
+            extra={
+                "planner_owned_intent_routing": not fallback_used,
+                "code_chain_v1_fallback_used": fallback_used,
+                "controlled_mutation_plan_produced": True,
+                "status": "runtime_owner_required",
+                "blocked": True,
+            },
+        )
 
     first_attempt = execute_code_chain_attempt(
         execution_runtime=execution_runtime,
