@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+from core.tasks.work_package_scheduler import WorkPackageScheduler
 
 
 def _print_json(payload: Any) -> None:
@@ -145,8 +146,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "submit":
             payload = json.loads(Path(args.package_file).read_text(encoding="utf-8"))
             if _is_scheduler_work_package(payload):
-                payload = _scheduler_payload_to_runtime(payload)
-            result = operator.submit_package(payload)
+                result = WorkPackageScheduler(repo_root=args.repo_root).submit(payload)
+            else:
+                result = operator.submit_package(payload)
 
         elif args.command == "status":
             result = operator.package_status(args.package_id)
@@ -174,9 +176,6 @@ def main(argv: list[str] | None = None) -> int:
 
         elif args.command == "memory":
             result = operator.package_memory(args.package_id)
-            if not args.json:
-                _print_readable_report(args.repo_root, args.package_id, result)
-                return 0
 
         elif args.command == "memory-status":
             result = operator.memory_status()

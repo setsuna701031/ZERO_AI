@@ -48,7 +48,10 @@ class WorkPackagePlannerBridge:
         memory_context_used = self._related_memory_context(record)
         try:
             validation_commands = self._validation_commands(record)
-            if validation_commands:
+            # The deterministic shortcut is the default-planner fallback.  An
+            # explicitly injected planner must still receive the filtered
+            # memory context and remains authoritative for planning failures.
+            if validation_commands and self.planner is None:
                 steps = self._validation_command_steps(
                     identity=identity,
                     commands=validation_commands,
