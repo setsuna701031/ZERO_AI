@@ -698,8 +698,8 @@ class StepExecutor:
         aggregate_result = {
             "ok": True,
             "summary": "all steps executed",
-            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "step executed",
-            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "step executed",
+            "message": self._extract_step_message(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
+            "final_answer": self._extract_step_final_answer(last_result, failed=False) if isinstance(last_result, dict) else "執行完成",
             "step_count": total_steps,
             "completed_steps": total_steps,
             "failed_step": None,

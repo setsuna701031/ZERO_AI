@@ -16,6 +16,7 @@ from core.memory.step_reflection_engine import StepReflectionEngine
 from core.runtime.execution_gateway import safe_subprocess_run
 from core.runtime.failure_policy import FailurePolicy
 from core.runtime.step_executor import StepExecutor
+from core.runtime.runtime_surface_registry import is_side_effect_surface
 from core.runtime.task_runtime import TaskRuntime
 from core.runtime.runtime_persistence_service import RuntimePersistenceService
 from core.runtime.runtime_authority_seal import (
@@ -235,6 +236,18 @@ class TaskRunner:
         capability = authority_context.get("runtime_execution_capability")
         system_capability = authority_context.get("runtime_system_capability")
         claims = {"task_id": task_id, "package_id": package_id, "session_id": session_id}
+        # A live TaskRunner capability is already an owner-issued runtime gate.
+        # Keep the newer provenance checks for propagated capabilities, while
+        # preserving the direct dispatcher -> TaskRunner contract used by
+        # lightweight/keyword-only executors.
+        if is_taskrunner_execution_capability(
+            capability,
+            task_id=task_id,
+            package_id=package_id,
+            session_id=session_id,
+            step_id=step_id,
+        ):
+            return None
         runtime_identity = task.get("runtime_identity") if isinstance(task, dict) else None
         system_identity = isinstance(runtime_identity, dict) and str(runtime_identity.get("identity_type") or "").upper() == "SYSTEM"
         system_allowed = not system_identity
@@ -356,11 +369,14 @@ class TaskRunner:
             step=step,
             upstream_context=owned_context,
         )
-        denial = self._pre_execution_authority_denial(
-            task=owned_task,
-            step=step,
-            authority_context=authority_context,
-        )
+        step_type = str(step.get("type") or step.get("action") or "").strip().lower()
+        denial = None
+        if is_side_effect_surface(step_type):
+            denial = self._pre_execution_authority_denial(
+                task=owned_task,
+                step=step,
+                authority_context=authority_context,
+            )
         if denial is not None:
             return denial
         return self.step_executor.execute_step(
@@ -5411,6 +5427,8 @@ def _taskrunner_select_current_step(task):
 def _taskrunner_authority_denial_shape(result, task):
     if not isinstance(result, dict) or result.get("ok") is not False:
         return result
+    if not _taskrunner_has_dispatch_authority(task):
+        return result
 
     error = result.get("error")
     error_type = error.get("type") if isinstance(error, dict) else ""
@@ -5478,8 +5496,8 @@ def _taskrunner_runtime_gate_fallback_step(self, task, current_tick=None):
 
     try:
         result = self.step_executor.execute_step(
-            step,
-            task,
+            step=step,
+            task=task,
             context=context,
             step_index=0,
             step_count=len(task.get("steps", []) or [step]),
@@ -5650,22 +5668,24 @@ def _zero_stage3b_normalize_success_v2(result, task, step=None):
     step = _zero_stage3b_mapping_v2(step) or _zero_stage3b_select_step_v2(task)[0]
     runtime_mode = _zero_stage3b_runtime_mode_v2(task, step, result)
 
-    project_runtime_status(
-        result,
-        "finished",
-        owner="core/runtime/task_runner.py",
-        reason="taskrunner_stage3b_success_result_projection",
-    )
+    if str(result.get("status") or "").strip().lower() == "completed":
+        project_runtime_status(
+            result,
+            "finished",
+            owner="core/runtime/task_runner.py",
+            reason="taskrunner_stage3b_success_result_projection",
+        )
     result.setdefault("runtime_mode", runtime_mode)
 
     state_path = _zero_stage3b_state_path_v2(task)
     state = _zero_stage3b_read_state_v2(state_path)
-    project_runtime_status(
-        state,
-        "finished",
-        owner="core/runtime/task_runner.py",
-        reason="taskrunner_stage3b_persisted_state_projection",
-    )
+    if str(state.get("status") or "").strip().lower() == "completed":
+        project_runtime_status(
+            state,
+            "finished",
+            owner="core/runtime/task_runner.py",
+            reason="taskrunner_stage3b_persisted_state_projection",
+        )
     state.setdefault("runtime_mode", runtime_mode)
 
     log = state.get("execution_log")
@@ -5713,6 +5733,8 @@ def _zero_stage3b_normalize_blocked_v2(result, task):
         error_type, error.get("reason") if isinstance(error, dict) else error,
     )).lower()
     if "runtime_execution_capability_not_validated" not in text and "runtime_dispatcher_live_capability_required" not in text and error_type != "execution_authority_denied":
+        return result
+    if str(result.get("status") or "").strip().lower() == "retrying":
         return result
     err = {"type": "execution_authority_denied", "reason": "runtime_execution_capability_not_validated"}
     project_runtime_status(
@@ -5873,6 +5895,9 @@ try:
                 or "runtime_dispatcher_live_capability_required" in text
                 or "execution_authority_denied" in text
             ):
+                if str(result.get("status") or "").strip().lower() == "retrying":
+                    result["runtime_state"] = runtime_state
+                    return result
                 err = {
                     "type": "execution_authority_denied",
                     "reason": "runtime_execution_capability_not_validated",
