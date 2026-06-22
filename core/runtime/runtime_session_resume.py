@@ -412,7 +412,13 @@ class RuntimeSessionResume:
             session_task = copy.deepcopy(dict(task))
             if not include_terminal and is_terminal_task_status(session_task.get("status")):
                 continue
-            session_task.setdefault("session_id", normalized_session_id)
+            if any(
+                isinstance(session_task.get(key), dict)
+                for key in ("runtime_identity", "goal_lineage", "runtime_identity_graph")
+            ):
+                session_task.setdefault("resume_session_id", normalized_session_id)
+            else:
+                session_task.setdefault("session_id", normalized_session_id)
             runtime_identity = _validate_runtime_identity_boundary(
                 session_task,
                 session_id=normalized_session_id,
@@ -429,19 +435,31 @@ class RuntimeSessionResume:
             try:
                 canonical_lineage = extract_goal_lineage(session_task, reject_conflicts=True)
             except ValueError as exc:
-                session_task["status"] = normalize_runtime_status(runtime_status)
+                session_task["status"] = normalize_runtime_status(TASK_STATUS_BLOCKED)
                 session_task["identity_validation_error"] = str(exc)
                 nested_lineage = session_task.get("goal_lineage")
                 if isinstance(nested_lineage, Mapping):
                     session_task = attach_goal_lineage(session_task, nested_lineage)
+                    if runtime_identity is not None:
+                        session_task["session_id"] = runtime_identity["session_id"]
+                        session_task["runtime_session_id"] = runtime_identity["runtime_session_id"]
+                    elif session_task.get("resume_session_id"):
+                        session_task.pop("session_id", None)
+                        session_task.pop("runtime_session_id", None)
             else:
                 if all(canonical_lineage.get(field) for field in (
                     "root_goal_id", "source_goal_id", "goal_id", "goal_lineage_id",
                     "branch_type", "branch_id", "session_id", "runtime_session_id",
                 )):
                     session_task = attach_goal_lineage(session_task, canonical_lineage)
+                    if runtime_identity is not None:
+                        session_task["session_id"] = runtime_identity["session_id"]
+                        session_task["runtime_session_id"] = runtime_identity["runtime_session_id"]
+                    elif session_task.get("resume_session_id"):
+                        session_task.pop("session_id", None)
+                        session_task.pop("runtime_session_id", None)
                 elif runtime_identity is None and identity_graph is None:
-                    session_task.setdefault("session_id", normalized_session_id)
+                    session_task.setdefault("resume_session_id", normalized_session_id)
             snapshot = self.capture_task_snapshot(session_task)
             snapshot = self._resolve_snapshot_against_runtime_state(snapshot)
             if include_terminal or is_resumable_task_status(snapshot.status):
@@ -729,6 +747,7 @@ class RuntimeSessionResume:
     ) -> tuple[list[RuntimeTaskResumeSnapshot], list[str]]:
         ordered: list[RuntimeTaskResumeSnapshot] = []
         accepted_payloads: list[dict[str, Any]] = []
+        accepted_keys: set[tuple[str, str, str]] = set()
         duplicate_ids: list[str] = []
         for item in snapshots or []:
             task_id = _clean_text(getattr(item, "task_id", ""))
@@ -737,16 +756,41 @@ class RuntimeSessionResume:
             payload = copy.deepcopy(dict(item.task)) if isinstance(item.task, Mapping) else {}
             payload.setdefault("task_id", task_id)
             for key, value in extract_queue_lineage(item.lineage).items():
+                if key in {"session_id", "runtime_session_id"}:
+                    continue
                 payload.setdefault(key, copy.deepcopy(value))
-            duplicate, _ = duplicate_identity(payload, accepted_payloads)
-            if duplicate is not None:
+            if payload.get("resume_session_id"):
+                payload.pop("session_id", None)
+                payload.pop("runtime_session_id", None)
+            identity_payload = copy.deepcopy(payload)
+            if identity_payload.get("resume_session_id"):
+                for nested_key in (
+                    "runtime_identity",
+                    "goal_lineage",
+                    "runtime_identity_graph",
+                    "continuation_work_item",
+                    "replan_record",
+                    "next_runtime_request",
+                ):
+                    identity_payload.pop(nested_key, None)
+            identity_key = (
+                str(identity_payload.get("task_id") or task_id),
+                str(identity_payload.get("goal_id") or ""),
+                str(identity_payload.get("branch_id") or identity_payload.get("continuation_goal_id") or identity_payload.get("replan_request_id") or ""),
+            )
+            if identity_key in accepted_keys:
                 duplicate_ids.append(task_id)
                 continue
             ordered.append(item)
-            accepted_payloads.append(payload)
+            accepted_keys.add(identity_key)
+            accepted_payloads.append(identity_payload)
         return ordered, list(dict.fromkeys(duplicate_ids))
 
-    def _empty_resume_plan(self, *, reason: str) -> dict[str, Any]:
+def _project_session_resume_runtime_status(task_payload: dict[str, Any], runtime_status: Any) -> None:
+    task_payload["status"] = normalize_runtime_status(runtime_status)
+
+
+def _empty_resume_plan(self, *, reason: str) -> dict[str, Any]:
         return {
             "ok": False,
             "action": "nothing_to_resume",
