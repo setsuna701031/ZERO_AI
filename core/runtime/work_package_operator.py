@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -75,6 +77,19 @@ class RuntimeWorkPackageOperator:
         snapshot = self.planner_bridge.plan_package(record)
         return self.queue.record_planning(str(record["package_id"]), snapshot)
 
+    def intake_package(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        record = self.submit_package(payload)
+        package_id = str(record.get("package_id") or "")
+        return {
+            "schema": "zero.work_package.intake_result.v1",
+            "ok": True,
+            "package_id": package_id,
+            "status": record.get("status") or "queued",
+            "queue_path": str(self.queue.state_dir),
+            "record_path": str(self.queue.record_path(package_id)),
+            "record": record,
+        }
+
     def plan_package(self, package_id: str) -> dict[str, Any]:
         record = self.queue.status(package_id)
         snapshot = self.planner_bridge.plan_package(record)
@@ -107,7 +122,17 @@ class RuntimeWorkPackageOperator:
         return self.dispatcher.progress(package_id)
 
     def package_summary(self, package_id: str) -> dict[str, Any]:
-        progress = self.queue.runtime_progress(package_id)
+        status_fn = getattr(self.queue, "status", None)
+        if callable(status_fn):
+            record = status_fn(package_id)
+            progress = (
+                record.get("progress_snapshot")
+                if isinstance(record.get("progress_snapshot"), Mapping)
+                else self.queue.runtime_progress(package_id)
+            )
+        else:
+            record = {}
+            progress = self.queue.runtime_progress(package_id)
         task_graph = progress.get("task_graph_summary")
         last_transition = progress.get("last_transition")
         step_types = (
@@ -121,7 +146,6 @@ class RuntimeWorkPackageOperator:
         if step_types and completed_steps == 0 and failed_steps == 0:
             remaining_steps = len(step_types)
         return {
-            "ok": True,
             "package_id": str(progress.get("package_id") or package_id),
             "lifecycle_state": progress.get("lifecycle_state"),
             "planning_status": progress.get("planning_status"),
@@ -139,6 +163,108 @@ class RuntimeWorkPackageOperator:
 
     def package_report(self, package_id: str) -> dict[str, Any]:
         return attach_engineering_report(self.package_summary(package_id), report_type="work_package")
+
+    def run_validation_only(self, package_id: str) -> dict[str, Any]:
+        record = self.queue.status(package_id)
+        commands = [str(item) for item in record.get("validation_commands") or [] if str(item).strip()]
+        before_dirty = self._git_status_lines()
+        results: list[dict[str, Any]] = []
+        non_mainline_findings: list[dict[str, Any]] = []
+        for command in commands:
+            completed = subprocess.run(
+                command,
+                cwd=self.repo_root,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            stdout = completed.stdout or ""
+            stderr = completed.stderr or ""
+            results.append(
+                {
+                    "command": command,
+                    "exit_code": int(completed.returncode),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "ok": completed.returncode == 0,
+                }
+            )
+            for stream_name, stream in (("stdout", stdout), ("stderr", stderr)):
+                for line in stream.splitlines():
+                    lowered = line.lower()
+                    if "warning" in lowered or "unexpected" in lowered or "pollution" in lowered:
+                        non_mainline_findings.append(
+                            {
+                                "type": "validation_output_warning",
+                                "command": command,
+                                "stream": stream_name,
+                                "message": line.strip(),
+                            }
+                        )
+        after_dirty = self._git_status_lines()
+        new_dirty = [line for line in after_dirty if line not in before_dirty]
+        if new_dirty:
+            non_mainline_findings.append(
+                {
+                    "type": "unexpected_dirty_files",
+                    "files": new_dirty,
+                    "message": "Validation-only command changed repository status.",
+                }
+            )
+        remaining_failures = [
+            {
+                "command": item["command"],
+                "exit_code": item["exit_code"],
+                "stderr": item["stderr"],
+            }
+            for item in results
+            if not item["ok"]
+        ]
+        ok = bool(commands) and not remaining_failures
+        criteria = list(record.get("completion_criteria") or [])
+        validation_summary = {
+            "schema": "zero.work_package.validation_only_report.v1",
+            "package_id": package_id,
+            "objective": record.get("objective") or record.get("goal"),
+            "status": "validation_passed" if ok else "validation_failed",
+            "ok": ok,
+            "validation_results": copy.deepcopy(results),
+            "results": copy.deepcopy(results),
+            "remaining_failures": remaining_failures,
+            "non_mainline_findings": non_mainline_findings,
+            "completion_criteria_status": {
+                "criteria": criteria,
+                "met": ok and not remaining_failures,
+                "unmet": [] if ok else criteria,
+            },
+            "validation_only": True,
+            "repo_mutation_performed_by_zero": False,
+        }
+        self.queue.update_progress(
+            package_id,
+            {
+                "validation_summary": validation_summary,
+                "non_mainline_findings": non_mainline_findings,
+                "remaining_failures": remaining_failures,
+            },
+        )
+        return validation_summary
+
+    def _git_status_lines(self) -> list[str]:
+        try:
+            completed = subprocess.run(
+                ["git", "status", "--short"],
+                cwd=self.repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except (OSError, ValueError):
+            return []
+        if completed.returncode != 0:
+            return []
+        return [line.rstrip() for line in (completed.stdout or "").splitlines() if line.strip()]
 
     def pause_package(self, package_id: str) -> dict[str, Any]:
         return self.queue.pause(package_id)
@@ -170,6 +296,10 @@ def submit_package(payload: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).submit_package(payload)
 
 
+def intake_package(payload: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).intake_package(payload)
+
+
 def plan_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).plan_package(package_id)
 
@@ -180,6 +310,10 @@ def package_status(package_id: str, **kwargs: Any) -> dict[str, Any]:
 
 def run_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).run_package(package_id)
+
+
+def run_validation_only(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).run_validation_only(package_id)
 
 
 def package_progress(package_id: str, **kwargs: Any) -> dict[str, Any]:
@@ -219,6 +353,7 @@ def package_memory(package_id: str, **kwargs: Any) -> dict[str, Any] | None:
 __all__ = [
     "RuntimeWorkPackageOperator",
     "cancel_package",
+    "intake_package",
     "list_packages",
     "package_status",
     "package_progress",
@@ -229,5 +364,6 @@ __all__ = [
     "pause_package",
     "resume_package",
     "run_package",
+    "run_validation_only",
     "submit_package",
 ]

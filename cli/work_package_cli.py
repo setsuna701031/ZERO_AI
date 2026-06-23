@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+from core.tasks.work_package_runtime_intake import package_payload_from_text
 from core.tasks.work_package_scheduler import WorkPackageScheduler
 
 
@@ -71,11 +72,15 @@ def _print_readable_report(repo_root: str, package_id: str, fallback: dict[str, 
 
     status = data.get("final_status") or data.get("lifecycle_state") or progress.get("lifecycle_state") or "unknown"
     title = objective.get("title") or data.get("title") or ""
+    package_objective = data.get("objective") or objective.get("goal") or data.get("goal") or ""
+    validation_results = data.get("validation_results") or data.get("validation_summary", {}).get("results") if isinstance(data.get("validation_summary"), dict) else data.get("validation_results") or []
+    completion_status = data.get("completion_criteria_status") or {}
 
     print("# ZERO Work Package Report")
     print()
     print(f"Package: {package_id}")
     print(f"Title: {title}")
+    print(f"Objective: {package_objective}")
     print(f"Status: {status}")
     print(f"Memory: {data.get('memory_status') or 'committed' if status == 'completed' else data.get('memory_status') or ''}")
     print()
@@ -89,6 +94,12 @@ def _print_readable_report(repo_root: str, package_id: str, fallback: dict[str, 
     for cmd in tests.get("validation_commands") or data.get("validation_commands") or []:
         print(f"- {cmd}")
     if not (tests.get("validation_commands") or data.get("validation_commands")):
+        print("- None")
+    print()
+    print("## Validation Results")
+    for item in validation_results if isinstance(validation_results, list) else []:
+        print(f"- `{item.get('command')}` exit={item.get('exit_code')} ok={item.get('ok')}")
+    if not validation_results:
         print("- None")
     print()
     print("## Modified Files")
@@ -114,6 +125,14 @@ def _print_readable_report(repo_root: str, package_id: str, fallback: dict[str, 
         print(f"- {item}")
     if not remaining:
         print("- None")
+    print()
+    print("## Completion Criteria")
+    if isinstance(completion_status, dict):
+        print(f"- Met: {completion_status.get('met')}")
+        for item in completion_status.get("criteria") or []:
+            print(f"- {item}")
+    else:
+        print("- None")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -123,6 +142,14 @@ def _parser() -> argparse.ArgumentParser:
 
     submit = sub.add_parser("submit")
     submit.add_argument("package_file")
+
+    intake = sub.add_parser("intake")
+    intake_source = intake.add_mutually_exclusive_group(required=True)
+    intake_source.add_argument("--file")
+    intake_source.add_argument("--text")
+
+    run_validation = sub.add_parser("run-validation")
+    run_validation.add_argument("package_id")
 
     for name in ("status", "plan", "run", "progress", "summary", "report", "memory", "pause", "resume", "cancel"):
         cmd = sub.add_parser(name)
@@ -152,6 +179,18 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 result = operator.submit_package(payload)
 
+        elif args.command == "intake":
+            source_text = (
+                Path(args.file).read_text(encoding="utf-8")
+                if args.file
+                else str(args.text or "")
+            )
+            payload = package_payload_from_text(source_text)
+            result = operator.intake_package(payload)
+
+        elif args.command == "run-validation":
+            result = operator.run_validation_only(args.package_id)
+
         elif args.command == "status":
             result = operator.package_status(args.package_id)
 
@@ -170,16 +209,16 @@ def main(argv: list[str] | None = None) -> int:
             if output_format in {"markdown", "report"}:
                 _print_readable_report(args.repo_root, args.package_id, result)
                 return 0
-            _print_json(result)
+            _print_json({"ok": True, **result})
             return 0
 
         elif args.command == "report":
             result = operator.package_report(args.package_id)
-            output_format = "json" if args.json else (args.format or "report")
+            output_format = "json" if args.json else (args.format or "json")
             if output_format in {"markdown", "report"}:
                 _print_readable_report(args.repo_root, args.package_id, result)
                 return 0
-            _print_json(result)
+            _print_json({"ok": True, "result": result})
             return 0
 
         elif args.command == "memory":

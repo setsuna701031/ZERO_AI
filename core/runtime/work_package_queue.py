@@ -93,6 +93,9 @@ class RuntimePackageQueue:
             raise RuntimePackageQueueError("package_id_required")
         return self.state_dir / f"{safe}.json"
 
+    def record_path(self, package_id: str) -> Path:
+        return self._path(package_id)
+
     def _read(self, package_id: str) -> dict[str, Any]:
         path = self._path(package_id)
         if not path.is_file():
@@ -325,6 +328,8 @@ class RuntimePackageQueue:
                 "identity": copy.deepcopy(extract_queue_lineage(package_record)),
                 "timestamp": timestamp,
             },
+            "queue_path": str(self.state_dir),
+            "record_path": str(path),
         }
         return self._write(record)
 

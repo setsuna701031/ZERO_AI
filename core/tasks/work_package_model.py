@@ -16,13 +16,18 @@ WORK_PACKAGE_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 class WorkPackage:
     package_id: str
     title: str
+    objective: str
     goal: str
+    task_body: str
+    raw_request: str
     description: str
+    constraints: tuple[Any, ...]
     target_files: tuple[str, ...]
     requirements: tuple[Any, ...]
     hard_boundary: Any
     non_mainline_issue_reporting: Any
     validation_commands: tuple[str, ...]
+    completion_criteria: tuple[Any, ...]
     completion_report_format: Any
     status: str
     created_at: str
@@ -48,13 +53,18 @@ class WorkPackage:
             "schema": self.schema,
             "package_id": self.package_id,
             "title": self.title,
+            "objective": self.objective,
             "goal": self.goal,
+            "task_body": self.task_body,
+            "raw_request": self.raw_request,
             "description": self.description,
+            "constraints": copy.deepcopy(list(self.constraints)),
             "target_files": list(self.target_files),
             "requirements": copy.deepcopy(list(self.requirements)),
             "hard_boundary": copy.deepcopy(self.hard_boundary),
             "non_mainline_issue_reporting": copy.deepcopy(self.non_mainline_issue_reporting),
             "validation_commands": list(self.validation_commands),
+            "completion_criteria": copy.deepcopy(list(self.completion_criteria)),
             "completion_report_format": copy.deepcopy(self.completion_report_format),
             "status": self.status,
             "created_at": self.created_at,
@@ -83,8 +93,12 @@ class WorkPackage:
         return cls(
             package_id=str(payload.get("package_id") or ""),
             title=str(payload.get("title") or ""),
+            objective=str(payload.get("objective") or payload.get("goal") or ""),
             goal=str(payload.get("goal") or ""),
+            task_body=str(payload.get("task_body") or payload.get("description") or ""),
+            raw_request=str(payload.get("raw_request") or payload.get("task_body") or payload.get("description") or ""),
             description=str(payload.get("description") or ""),
+            constraints=tuple(copy.deepcopy(payload.get("constraints") or [])),
             target_files=tuple(str(item) for item in payload.get("target_files") or []),
             requirements=tuple(copy.deepcopy(payload.get("requirements") or [])),
             hard_boundary=copy.deepcopy(payload.get("hard_boundary")),
@@ -94,6 +108,7 @@ class WorkPackage:
             validation_commands=tuple(
                 str(item) for item in payload.get("validation_commands") or []
             ),
+            completion_criteria=tuple(copy.deepcopy(payload.get("completion_criteria") or [])),
             completion_report_format=copy.deepcopy(payload.get("completion_report_format")),
             status=status,
             created_at=str(payload.get("created_at") or ""),
