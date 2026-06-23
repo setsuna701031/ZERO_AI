@@ -191,8 +191,139 @@ def _print_task_table(
     for current_task_id, status, _meta, goal in rows:
         print(f"{current_task_id:<{task_id_width}}  {status:<{status_width}}  {goal}")
 
+
+def _graph_sort_key(item: Dict[str, Any]) -> Tuple[float, str]:
+    created = item.get("created_at") or item.get("last_seen_at") or item.get("first_seen_at") or 0
+    try:
+        created_value = float(created)
+    except Exception:
+        created_value = 0.0
+    return (created_value, json.dumps(item, sort_keys=True, default=str))
+
+
+def _graph_label(value: Any, *, max_width: int = 42) -> str:
+    text = _collapse_ws(value)
+    if not text:
+        return "-"
+    if text in {"None", "null", "[]", "{}", "[[]]", "[['fail']]"}:
+        return "<non-artifact>"
+    text = text.replace("\\", "/")
+    if "," in text and not text.startswith("[["):
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) > 1:
+            text = ", ".join(Path(part).name for part in parts)
+    elif text.startswith("[["):
+        return "<compound-plan>"
+    elif "/" in text:
+        parts = text.split("/")
+        if len(parts) >= 3 and parts[0] == "workspace" and parts[1] == "shared":
+            text = "shared/" + parts[-1]
+        elif len(parts) >= 2 and parts[0] == "workspace":
+            text = "workspace/" + parts[-1]
+    return _shorten_text(text, max_width=max_width)
+
+
+def _graph_task_label(value: Any) -> str:
+    text = _collapse_ws(value)
+    if not text:
+        return "-"
+    return _shorten_identifier(text, max_width=24)
+
+
+def _artifact_graph_summary(graph: Dict[str, Any]) -> Tuple[int, int, int]:
+    nodes = graph.get("nodes") if isinstance(graph, dict) else []
+    edges = graph.get("edges") if isinstance(graph, dict) else []
+    events = graph.get("events") if isinstance(graph, dict) else []
+    return (
+        len(nodes) if isinstance(nodes, list) else 0,
+        len(edges) if isinstance(edges, list) else 0,
+        len(events) if isinstance(events, list) else 0,
+    )
+
+
+def _print_artifact_graph_summary(graph: Dict[str, Any], *, limit: int = 12) -> None:
+    node_count, edge_count, event_count = _artifact_graph_summary(graph)
+    print("ZERO Artifact Graph")
+    print("")
+    print("summary:")
+    print(f"  nodes: {node_count}")
+    print(f"  edges: {edge_count}")
+    print(f"  events: {event_count}")
+    print("")
+
+    edges = graph.get("edges") if isinstance(graph, dict) else []
+    if not isinstance(edges, list) or not edges:
+        print("latest edges: none")
+        return
+
+    ordered = sorted((edge for edge in edges if isinstance(edge, dict)), key=_graph_sort_key)
+    visible = ordered[-limit:] if limit > 0 and len(ordered) > limit else ordered
+    if len(ordered) > len(visible):
+        print(f"latest edges: showing {len(visible)} of {len(ordered)}. Use `task graph --all` for all edges.")
+    else:
+        print("latest edges:")
+    print(f"{'from':<32}  {'to':<32}  {'operation':<24}  task")
+    print("-" * 106)
+    for edge in visible:
+        source = _graph_label(edge.get("from"), max_width=32)
+        target = _graph_label(edge.get("to"), max_width=32)
+        operation = _shorten_text(edge.get("operation") or edge.get("artifact_type") or "-", max_width=24)
+        task = _graph_task_label(edge.get("task_id"))
+        print(f"{source:<32}  {target:<32}  {operation:<24}  {task}")
+    print("")
+    print("Use `task graph nodes` for nodes, `task graph edges --all` for all edges, or `task graph json` for raw JSON.")
+
+
+def _print_artifact_graph_edges(graph: Dict[str, Any], *, limit: Optional[int] = 40) -> None:
+    edges = graph.get("edges") if isinstance(graph, dict) else []
+    if not isinstance(edges, list) or not edges:
+        print("ZERO Artifact Graph edges: none")
+        return
+    ordered = sorted((edge for edge in edges if isinstance(edge, dict)), key=_graph_sort_key)
+    total = len(ordered)
+    if limit is not None and limit > 0 and total > limit:
+        ordered = ordered[-limit:]
+        print(f"ZERO Artifact Graph edges: showing latest {len(ordered)} of {total}. Use `task graph edges --all` for all.")
+    else:
+        print(f"ZERO Artifact Graph edges: {len(ordered)}")
+    print(f"{'from':<36}  {'to':<36}  {'operation':<26}  task")
+    print("-" * 114)
+    for edge in ordered:
+        print(
+            f"{_graph_label(edge.get('from'), max_width=36):<36}  "
+            f"{_graph_label(edge.get('to'), max_width=36):<36}  "
+            f"{_shorten_text(edge.get('operation') or '-', max_width=26):<26}  "
+            f"{_graph_task_label(edge.get('task_id'))}"
+        )
+
+
+def _print_artifact_graph_nodes(graph: Dict[str, Any], *, limit: Optional[int] = 40) -> None:
+    nodes = graph.get("nodes") if isinstance(graph, dict) else []
+    if not isinstance(nodes, list) or not nodes:
+        print("ZERO Artifact Graph nodes: none")
+        return
+    ordered = sorted((node for node in nodes if isinstance(node, dict)), key=_graph_sort_key)
+    total = len(ordered)
+    if limit is not None and limit > 0 and total > limit:
+        ordered = ordered[-limit:]
+        print(f"ZERO Artifact Graph nodes: showing latest {len(ordered)} of {total}. Use `task graph nodes --all` for all.")
+    else:
+        print(f"ZERO Artifact Graph nodes: {len(ordered)}")
+    print(f"{'artifact':<44}  {'type':<28}  producer")
+    print("-" * 100)
+    for node in ordered:
+        artifact_label = _graph_label(node.get('artifact'), max_width=44)
+        if artifact_label in {"<non-artifact>", "<compound-plan>"}:
+            continue
+        print(
+            f"{artifact_label:<44}  "
+            f"{_shorten_text(node.get('artifact_type') or node.get('type') or '-', max_width=28):<28}  "
+            f"{_graph_task_label(node.get('producer_task_id'))}"
+        )
+
+
 def _try_handle_fast_task_graph(argv: List[str], repo_root: Path) -> bool:
-    if len(argv) not in {2, 3}:
+    if len(argv) < 2 or len(argv) > 4:
         return False
     if str(argv[0]).strip().lower() != "task":
         return False
@@ -201,15 +332,31 @@ def _try_handle_fast_task_graph(argv: List[str], repo_root: Path) -> bool:
     if action not in {"graph", "artifact-graph", "artifacts"}:
         return False
 
-    output_mode = str(argv[2]).strip().lower() if len(argv) == 3 else "text"
+    args = [str(item).strip().lower() for item in argv[2:]]
     graph_path = artifact_graph_path(shared_dir(repo_root))
     graph = read_json_file(graph_path)
+    if not isinstance(graph, dict):
+        graph = {"ok": False, "error": "artifact_graph.json not found"}
 
-    if output_mode in {"json", "--json"}:
-        _print_json(graph if isinstance(graph, dict) else {"ok": False, "error": "artifact_graph.json not found"})
+    if any(arg in {"json", "--json", "raw", "--raw"} for arg in args):
+        _print_json(graph)
         return True
 
-    print(format_artifact_graph(shared_dir(repo_root)))
+    show_all = any(arg == "--all" for arg in args)
+    mode = next((arg for arg in args if arg not in {"--all"}), "summary")
+    limit: Optional[int] = None if show_all else 40
+
+    if mode in {"nodes", "node"}:
+        _print_artifact_graph_nodes(graph, limit=limit)
+        return True
+    if mode in {"edges", "edge"}:
+        _print_artifact_graph_edges(graph, limit=limit)
+        return True
+    if mode in {"summary", "text", ""}:
+        _print_artifact_graph_summary(graph, limit=12 if not show_all else 10_000_000)
+        return True
+
+    print("Unknown task graph mode. Use `task graph`, `task graph edges`, `task graph nodes`, or `task graph json`.")
     return True
 
 
