@@ -74,32 +74,122 @@ def _empty_manual_ticks(count: int) -> Dict[str, Any]:
     }
 
 
-def _print_task_table(tasks: List[Dict[str, Any]]) -> None:
+def _collapse_ws(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _shorten_identifier(value: Any, *, max_width: int = 24) -> str:
+    text = _collapse_ws(value)
+    if len(text) <= max_width:
+        return text
+
+    # Keep task ids readable for humans while hiding runtime fingerprints by
+    # default.  Full ids are still available through `task list --verbose` or
+    # `task list --raw`.
+    if text.startswith("agent-runtime-"):
+        remainder = text.removeprefix("agent-runtime-")
+        left, sep, right = remainder.partition("-runtime-")
+        if sep:
+            left_tail = left[:8]
+            right_tail = right[-8:] if right else ""
+            return f"agent-{left_tail}…{right_tail}"
+
+    if text.startswith("planner_prt_") and "-runtime-" in text:
+        left, right = text.split("-runtime-", 1)
+        left_tail = left.replace("planner_prt_", "")[:8]
+        right_tail = right[-8:] if right else ""
+        return f"prt-{left_tail}…{right_tail}"
+
+    if max_width <= 8:
+        return text[:max_width]
+    head = max_width - 9
+    return f"{text[:head]}…{text[-8:]}"
+
+
+def _shorten_text(value: Any, *, max_width: int = 72) -> str:
+    text = _collapse_ws(value)
+    if len(text) <= max_width:
+        return text
+    return text[: max(1, max_width - 3)] + "..."
+
+
+def _task_sort_key(task: Dict[str, Any]) -> Tuple[float, str]:
+    created = task.get("created_at") or task.get("created") or task.get("timestamp") or 0
+    try:
+        created_value = float(created)
+    except Exception:
+        created_value = 0.0
+    return (created_value, str(task_id(task)))
+
+
+def _task_runtime_hint(task: Dict[str, Any]) -> str:
+    for key in (
+        "runtime_session_id",
+        "runtime_id",
+        "session_id",
+        "goal_lineage_id",
+        "package_id",
+    ):
+        value = task.get(key)
+        if value:
+            return _shorten_identifier(value, max_width=20)
+    return ""
+
+
+def _print_task_table(
+    tasks: List[Dict[str, Any]],
+    *,
+    verbose: bool = False,
+    raw: bool = False,
+    limit: Optional[int] = 40,
+) -> None:
     if not tasks:
         print("目前沒有 task。")
         return
 
-    rows: List[Tuple[str, str, str]] = []
-    for task in tasks:
-        current_task_id = task_id(task)
-        status = task_status(task) or "unknown"
-        goal = " ".join(task_goal(task).split())
+    ordered = sorted(tasks, key=_task_sort_key)
+    total_count = len(ordered)
+    if limit is not None and limit > 0 and total_count > limit:
+        ordered = ordered[-limit:]
+
+    if raw:
+        _print_json(ordered)
+        return
+
+    rows: List[Tuple[str, str, str, str]] = []
+    for task in ordered:
+        full_task_id = task_id(task)
+        display_task_id = full_task_id if verbose else _shorten_identifier(full_task_id, max_width=24)
+        status = _shorten_text(task_status(task) or "unknown", max_width=14)
+        goal = _shorten_text(task_goal(task), max_width=90 if verbose else 72)
         deps = task.get("depends_on")
         dep_suffix = ""
         if isinstance(deps, list) and deps:
-            dep_suffix = f" depends_on={','.join(str(item) for item in deps)}"
-        if len(goal) > 70:
-            goal = goal[:67] + "..."
-        rows.append((current_task_id, status, goal + dep_suffix))
+            dep_ids = [_shorten_identifier(item, max_width=18) for item in deps]
+            dep_suffix = f" depends_on={','.join(dep_ids)}"
+        meta = ""
+        if verbose:
+            meta = _task_runtime_hint(task)
+        rows.append((display_task_id, status, meta, goal + dep_suffix))
 
-    task_id_width = max(len("task_id"), min(28, max(len(row[0]) for row in rows)))
+    task_id_width = max(len("task_id"), min(32 if verbose else 24, max(len(row[0]) for row in rows)))
     status_width = max(len("status"), min(14, max(len(row[1]) for row in rows)))
+    meta_width = max(len("runtime"), min(20, max((len(row[2]) for row in rows), default=0))) if verbose else 0
+
+    if limit is not None and limit > 0 and total_count > len(ordered):
+        print(f"Showing latest {len(ordered)} of {total_count} tasks. Use `task list --all` or `task list --verbose --all` for more.")
+
+    if verbose:
+        print(f"{'task_id':<{task_id_width}}  {'status':<{status_width}}  {'runtime':<{meta_width}}  goal")
+        print("-" * max(96, task_id_width + status_width + meta_width + 12))
+        for current_task_id, status, meta, goal in rows:
+            print(f"{current_task_id:<{task_id_width}}  {status:<{status_width}}  {meta:<{meta_width}}  {goal}")
+        return
 
     print(f"{'task_id':<{task_id_width}}  {'status':<{status_width}}  goal")
     print("-" * max(80, task_id_width + status_width + 8))
-    for current_task_id, status, goal in rows:
+    for current_task_id, status, _meta, goal in rows:
         print(f"{current_task_id:<{task_id_width}}  {status:<{status_width}}  {goal}")
-
 
 def _try_handle_fast_task_graph(argv: List[str], repo_root: Path) -> bool:
     if len(argv) not in {2, 3}:
@@ -640,13 +730,44 @@ def _try_handle_fast_task_runtime_supervisor(argv: List[str], repo_root: Path) -
 
 
 def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
-    if len(argv) != 2:
+    if len(argv) < 2:
         return False
     if str(argv[0]).strip().lower() != "task":
         return False
     if str(argv[1]).strip().lower() != "list":
         return False
-    _print_task_table(read_tasks_index(repo_root))
+
+    options = [str(item).strip() for item in argv[2:] if str(item).strip()]
+    verbose = False
+    raw = False
+    limit: Optional[int] = 40
+
+    i = 0
+    while i < len(options):
+        option = options[i]
+        lowered = option.lower()
+        if lowered in {"--verbose", "-v", "verbose"}:
+            verbose = True
+        elif lowered in {"--raw", "--json", "json"}:
+            raw = True
+        elif lowered in {"--all", "all"}:
+            limit = None
+        elif lowered.startswith("--limit="):
+            try:
+                limit = max(1, int(lowered.split("=", 1)[1]))
+            except Exception:
+                limit = 40
+        elif lowered in {"--limit", "-n"} and i + 1 < len(options):
+            try:
+                limit = max(1, int(options[i + 1]))
+            except Exception:
+                limit = 40
+            i += 1
+        else:
+            return False
+        i += 1
+
+    _print_task_table(read_tasks_index(repo_root), verbose=verbose, raw=raw, limit=limit)
     return True
 
 
