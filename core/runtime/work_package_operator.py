@@ -8,9 +8,19 @@ from typing import Any, Mapping
 from core.memory.work_package_memory import WorkPackageMemoryStore
 from core.memory.memory_ownership_contract import memory_architecture_summary
 from core.planning.work_package_planner_bridge import WorkPackagePlannerBridge
+from core.runtime.execution_package_dispatch_bridge import (
+    execution_package_to_runtime_dispatch_request,
+)
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.work_package_queue import RuntimePackageQueue
 from core.tasks.work_package_runtime_intake import build_package_record
+from core.tasks.work_package_execution_package import (
+    build_execution_package,
+    build_proposal_approval,
+    proposal_id_for,
+    summarize_approval,
+    summarize_execution_package,
+)
 from core.reports.engineering_report_contract import attach_engineering_report
 from core.goals.goal_lineage_contract import extract_goal_lineage
 
@@ -201,6 +211,16 @@ class RuntimeWorkPackageOperator:
                 proposal_summary = proposal.get("proposal_summary")
             if isinstance(proposal_summary, Mapping):
                 result["proposal_summary"] = copy.deepcopy(dict(proposal_summary))
+            result["approval_status"] = summarize_approval(
+                record.get("proposal_approval")
+                if isinstance(record.get("proposal_approval"), Mapping)
+                else None
+            )
+            result["execution_package_summary"] = summarize_execution_package(
+                record.get("execution_package")
+                if isinstance(record.get("execution_package"), Mapping)
+                else None
+            )
         return attach_engineering_report(result, report_type="work_package")
 
     def propose_package(self, package_id: str) -> dict[str, Any]:
@@ -211,6 +231,78 @@ class RuntimeWorkPackageOperator:
         if isinstance(summary, Mapping):
             proposal["proposal_summary"] = copy.deepcopy(dict(summary))
         return proposal
+
+    def approve_proposal(self, package_id: str) -> dict[str, Any]:
+        record = self.queue.status(package_id)
+        proposal = (
+            copy.deepcopy(dict(record.get("execution_proposal")))
+            if isinstance(record.get("execution_proposal"), Mapping)
+            else self.propose_package(package_id)
+        )
+        approval = build_proposal_approval(proposal)
+        queue_record = self.queue.record_proposal_approval(package_id, approval)
+        return {
+            "schema": "zero.work_package.proposal_approval_result.v1",
+            "ok": True,
+            "package_id": package_id,
+            "approval": copy.deepcopy(approval),
+            "approval_status": copy.deepcopy(queue_record.get("approval_status") or {}),
+            "record_path": str(self.queue.record_path(package_id)),
+            "repo_mutation_performed_by_zero": False,
+        }
+
+    def execution_package(self, package_id: str) -> dict[str, Any]:
+        record = self.queue.status(package_id)
+        proposal = record.get("execution_proposal")
+        if not isinstance(proposal, Mapping):
+            proposal = self.propose_package(package_id)
+            record = self.queue.status(package_id)
+        approval = record.get("proposal_approval")
+        if not isinstance(approval, Mapping) or not approval.get("approved"):
+            raise PermissionError("proposal_approval_required")
+        if str(approval.get("proposal_id") or "") != proposal_id_for(proposal):
+            raise PermissionError("proposal_approval_mismatch")
+        execution_package = build_execution_package(
+            record=record,
+            proposal=proposal,
+            approval=approval,
+        )
+        queue_record = self.queue.record_execution_package(package_id, execution_package)
+        return {
+            "schema": "zero.work_package.execution_package_result.v1",
+            "ok": True,
+            "package_id": package_id,
+            "execution_package": execution_package,
+            "execution_package_summary": copy.deepcopy(
+                queue_record.get("execution_package_summary") or {}
+            ),
+            "record_path": str(self.queue.record_path(package_id)),
+            "repo_mutation_performed_by_zero": False,
+        }
+
+    def runtime_dispatch_request(self, package_id: str) -> dict[str, Any]:
+        record = self.queue.status(package_id)
+        execution_package = record.get("execution_package")
+        if not isinstance(execution_package, Mapping):
+            generated = self.execution_package(package_id)
+            execution_package = generated["execution_package"]
+            record = self.queue.status(package_id)
+        dispatch_request = execution_package_to_runtime_dispatch_request(
+            execution_package,
+            record=record,
+        )
+        queue_record = self.queue.record_runtime_dispatch_request(package_id, dispatch_request)
+        return {
+            "schema": "zero.work_package.runtime_dispatch_request_result.v1",
+            "ok": True,
+            "package_id": package_id,
+            "runtime_dispatch_request": dispatch_request,
+            "runtime_dispatch_request_summary": copy.deepcopy(
+                queue_record.get("runtime_dispatch_request_summary") or {}
+            ),
+            "record_path": str(self.queue.record_path(package_id)),
+            "repo_mutation_performed_by_zero": False,
+        }
 
     def _build_execution_proposal(self, record: Mapping[str, Any]) -> dict[str, Any]:
         package_id = _text(record.get("package_id"))
@@ -226,7 +318,7 @@ class RuntimeWorkPackageOperator:
             validation_commands=validation_commands,
             completion_criteria=completion_criteria,
         )
-        return {
+        proposal = {
             "schema": EXECUTION_PROPOSAL_SCHEMA,
             "package_id": package_id,
             "objective": objective,
@@ -246,6 +338,8 @@ class RuntimeWorkPackageOperator:
             "proposal_only": True,
             "repo_mutation_performed_by_zero": False,
         }
+        proposal["proposal_id"] = proposal_id_for(proposal)
+        return proposal
 
     def _proposal_steps(
         self,
@@ -451,6 +545,18 @@ def propose_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).propose_package(package_id)
 
 
+def approve_proposal(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).approve_proposal(package_id)
+
+
+def execution_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).execution_package(package_id)
+
+
+def runtime_dispatch_request(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).runtime_dispatch_request(package_id)
+
+
 def package_status(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).package_status(package_id)
 
@@ -499,7 +605,9 @@ def package_memory(package_id: str, **kwargs: Any) -> dict[str, Any] | None:
 
 __all__ = [
     "RuntimeWorkPackageOperator",
+    "approve_proposal",
     "cancel_package",
+    "execution_package",
     "intake_package",
     "list_packages",
     "package_status",
@@ -511,6 +619,7 @@ __all__ = [
     "propose_package",
     "pause_package",
     "resume_package",
+    "runtime_dispatch_request",
     "run_package",
     "run_validation_only",
     "submit_package",

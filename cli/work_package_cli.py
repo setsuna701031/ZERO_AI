@@ -69,6 +69,9 @@ def _print_readable_report(repo_root: str, package_id: str, fallback: dict[str, 
     evidence = data.get("execution_evidence_summary") if isinstance(data.get("execution_evidence_summary"), dict) else {}
     tests = data.get("test_result_summary") if isinstance(data.get("test_result_summary"), dict) else {}
     objective = data.get("original_objective") if isinstance(data.get("original_objective"), dict) else {}
+    proposal_summary = data.get("proposal_summary") or data.get("execution_proposal_summary")
+    approval_status = data.get("approval_status")
+    execution_package_summary = data.get("execution_package_summary")
 
     status = data.get("final_status") or data.get("lifecycle_state") or progress.get("lifecycle_state") or "unknown"
     title = objective.get("title") or data.get("title") or ""
@@ -89,6 +92,29 @@ def _print_readable_report(repo_root: str, package_id: str, fallback: dict[str, 
     print(f"- Failed steps: {tests.get('failed_steps', progress.get('failed_steps', 0))}")
     print(f"- Remaining steps: {progress.get('remaining_steps', 0)}")
     print(f"- Evidence count: {evidence.get('evidence_count', 0)}")
+    print()
+    print("## Proposal Summary")
+    if isinstance(proposal_summary, dict) and proposal_summary:
+        for key in sorted(proposal_summary):
+            print(f"- {key}: {proposal_summary.get(key)}")
+    else:
+        print("- None")
+    print()
+    print("## Approval Status")
+    if isinstance(approval_status, dict) and approval_status:
+        for key in sorted(approval_status):
+            print(f"- {key}: {approval_status.get(key)}")
+    else:
+        print("- approved: False")
+        print("- mutation_allowed: False")
+    print()
+    print("## Execution Package Summary")
+    if isinstance(execution_package_summary, dict) and execution_package_summary:
+        for key in sorted(execution_package_summary):
+            print(f"- {key}: {execution_package_summary.get(key)}")
+    else:
+        print("- created: False")
+        print("- mutation_allowed: False")
     print()
     print("## Validation Commands")
     for cmd in tests.get("validation_commands") or data.get("validation_commands") or []:
@@ -151,7 +177,7 @@ def _parser() -> argparse.ArgumentParser:
     run_validation = sub.add_parser("run-validation")
     run_validation.add_argument("package_id")
 
-    for name in ("status", "plan", "propose", "run", "progress", "summary", "report", "memory", "pause", "resume", "cancel"):
+    for name in ("status", "plan", "propose", "approve-proposal", "execution-package", "dispatch-request", "run", "progress", "summary", "report", "memory", "pause", "resume", "cancel"):
         cmd = sub.add_parser(name)
         cmd.add_argument("package_id")
         if name in {"summary", "report", "memory"}:
@@ -199,6 +225,15 @@ def main(argv: list[str] | None = None) -> int:
 
         elif args.command == "propose":
             result = operator.propose_package(args.package_id)
+
+        elif args.command == "approve-proposal":
+            result = operator.approve_proposal(args.package_id)
+
+        elif args.command == "execution-package":
+            result = operator.execution_package(args.package_id)
+
+        elif args.command == "dispatch-request":
+            result = operator.runtime_dispatch_request(args.package_id)
 
         elif args.command == "run":
             result = operator.run_package(args.package_id)

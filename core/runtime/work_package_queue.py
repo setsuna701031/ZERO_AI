@@ -21,6 +21,10 @@ from core.runtime.persistent_queue_contract import (
     merge_queue_lineage,
     queue_session_id,
 )
+from core.tasks.work_package_execution_package import (
+    summarize_approval,
+    summarize_execution_package,
+)
 
 
 QUEUE_SCHEMA = "zero.runtime.work_package_queue.v1"
@@ -485,6 +489,7 @@ class RuntimePackageQueue:
         record["execution_proposal"] = copy.deepcopy(dict(proposal))
         record["execution_proposal_summary"] = {
             "package_id": proposal.get("package_id"),
+            "proposal_id": proposal.get("proposal_id"),
             "objective": proposal.get("objective"),
             "proposed_step_count": len(proposal.get("proposed_steps") or []),
             "validation_command_count": len(
@@ -501,6 +506,69 @@ class RuntimePackageQueue:
         progress = dict(record.get("progress") or {})
         progress["execution_proposal_summary"] = copy.deepcopy(
             record["execution_proposal_summary"]
+        )
+        record["progress"] = progress
+        record["updated_at"] = _now()
+        record["progress_snapshot"] = self._progress_snapshot(record)
+        return self._write(record)
+
+    def record_proposal_approval(self, package_id: str, approval: Mapping[str, Any]) -> dict[str, Any]:
+        record = self._read(package_id)
+        approval_record = copy.deepcopy(dict(approval))
+        approval_record.setdefault("mutation_allowed", False)
+        record["proposal_approval"] = approval_record
+        record["approval_status"] = summarize_approval(approval_record)
+        progress = dict(record.get("progress") or {})
+        progress["approval_status"] = copy.deepcopy(record["approval_status"])
+        record["progress"] = progress
+        record["updated_at"] = _now()
+        record["progress_snapshot"] = self._progress_snapshot(record)
+        return self._write(record)
+
+    def record_execution_package(
+        self,
+        package_id: str,
+        execution_package: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        record = self._read(package_id)
+        package_record = copy.deepcopy(dict(execution_package))
+        package_record["mutation_allowed"] = bool(package_record.get("mutation_allowed"))
+        record["execution_package"] = package_record
+        record["execution_package_summary"] = summarize_execution_package(package_record)
+        progress = dict(record.get("progress") or {})
+        progress["execution_package_summary"] = copy.deepcopy(
+            record["execution_package_summary"]
+        )
+        record["progress"] = progress
+        record["updated_at"] = _now()
+        record["progress_snapshot"] = self._progress_snapshot(record)
+        return self._write(record)
+
+    def record_runtime_dispatch_request(
+        self,
+        package_id: str,
+        dispatch_request: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        record = self._read(package_id)
+        request = copy.deepcopy(dict(dispatch_request))
+        request["direct_execution"] = False
+        request["dispatch_payload_only"] = True
+        record["runtime_dispatch_request"] = request
+        record["runtime_dispatch_request_summary"] = {
+            "package_id": request.get("package_id"),
+            "runtime_endpoint": request.get("runtime_endpoint"),
+            "step_count": len(request.get("executable_steps") or []),
+            "mutation_allowed": bool(request.get("mutation_allowed")),
+            "required_operator_approval": bool(request.get("required_operator_approval")),
+            "non_mainline_reporting_enabled": bool(
+                request.get("non_mainline_reporting_enabled")
+            ),
+            "dispatch_payload_only": True,
+            "direct_execution": False,
+        }
+        progress = dict(record.get("progress") or {})
+        progress["runtime_dispatch_request_summary"] = copy.deepcopy(
+            record["runtime_dispatch_request_summary"]
         )
         record["progress"] = progress
         record["updated_at"] = _now()
