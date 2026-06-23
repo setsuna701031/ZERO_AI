@@ -1413,3 +1413,170 @@ Goal -> Replan -> Replan -> Continuation -> Resume -> Replan -> Completion,
 while preserving lineage, evidence, authority, and completion consistency across
 multiple cycles.
 ```
+
+---
+
+## 2026-06-23 - Runtime Authority Stack Closure
+
+Completed and committed the Runtime Authority Stack Closure.
+
+Purpose:
+
+```text
+authority envelope
+-> execution authority token
+-> authority context
+-> dispatch capability
+-> execution ownership migration
+-> runtime status ownership
+-> dispatcher status projection
+-> runtime status governance
+-> AER / inventory regression closure
+```
+
+This package closes the remaining authority / ownership / governance drift in
+the Runtime core after the Goal Lineage Coordination Seal. The runtime now has a
+clean authority stack where dispatch capability, execution authority,
+subprocess ownership, and runtime status projection are explicitly routed
+through canonical boundaries instead of legacy direct-write or direct-execution
+surfaces.
+
+Files added / updated in the final closure sequence:
+
+```text
+core/runtime/authority_envelope.py
+core/runtime/execution_authority_token.py
+core/runtime/authority_context.py
+core/runtime/runtime_dispatch_capability.py
+core/runtime/work_package_operator.py
+core/runtime/runtime_dispatcher.py
+core/runtime/runtime_session_resume.py
+tests/test_runtime_dispatch_capability.py
+```
+
+Final seal commit:
+
+```text
+d7020bb4 fix(runtime): close execution authority and status ownership seals
+```
+
+Recent authority-stack commits:
+
+```text
+5605b9bf feat(runtime): add authority envelope contract
+353c17e8 feat(runtime): add execution authority token contract
+b9552c97 feat(runtime): add authority context contract
+11ca8b96 feat(runtime): add dispatch capability contract
+d7020bb4 fix(runtime): close execution authority and status ownership seals
+```
+
+Boundary decisions sealed:
+
+```text
+Runtime Executor is the only Runtime subprocess surface.
+WorkPackageOperator must route subprocess execution through Runtime Executor.
+Scheduler remains orchestration only.
+Dispatcher may project canonical runtime status but must not become status owner.
+RuntimeSessionResume may restore canonical status through approved projection only.
+TaskRuntime / project_runtime_status remains the canonical runtime status boundary.
+Status projection must remain normalized with normalize_runtime_status(...).
+Execution ownership and runtime status ownership are separate contracts.
+```
+
+Validated checkpoints:
+
+```text
+python -m compileall core/runtime/work_package_operator.py core/runtime/runtime_dispatcher.py core/runtime/runtime_session_resume.py
+-> passed
+
+python -m pytest tests/test_execution_authority_closure.py tests/test_runtime_execution_ownership_migration_contract.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+-> 17 passed
+
+python -m pytest tests/test_runtime_dispatcher_status_authority_seal.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+-> 11 passed
+
+python -m compileall core cli tests
+-> passed
+
+python -m pytest tests -q -k "authority or ownership or governance or inventory"
+-> 702 passed
+-> 4798 deselected
+-> 15 subtests passed
+
+python -m pytest tests -q -k "aer"
+-> 127 passed
+-> 5373 deselected
+
+python -m pytest tests -q -k "aer and (inventory or migration or closure)"
+-> 27 passed
+-> 5473 deselected
+
+python -m pytest tests -q -k "inventory and not aer"
+-> 28 passed
+-> 5472 deselected
+```
+
+Additional mainline regression checkpoints verified during this closure:
+
+```text
+python -m pytest tests/test_runtime_dispatch_capability.py -q
+-> 9 passed
+
+python -m pytest tests -q -k "work_package or intake or validation or proposal or execution_package or dispatch_bridge or dispatch_contract or execution_envelope or authority_envelope or capability_reservation or authority_token or authority_context or dispatch_capability"
+-> 319 passed
+-> 5181 deselected
+
+python -m pytest tests/test_runtime_session_resume_seal_v1.py tests/test_scheduler_taskrunner_authority_propagation_contract.py -q
+-> 13 passed
+
+python -m pytest tests/test_runtime_supervisor_bridge_v1.py tests/test_runtime_supervisor_layer_v1.py tests/test_runtime_watchdog_lease_integration_v1.py -q
+-> 18 passed
+
+python -m pytest tests/test_work_package_intake_runtime_closure.py tests/test_work_package_engineering_session_resume.py tests/test_work_package_execution_package.py -q
+-> 22 passed
+
+python -m pytest tests/test_runtime_native_execution_dispatch_v1.py tests/test_runtime_native_scheduler_v1.py tests/test_runtime_native_agent_loop_seal_v1.py -q
+-> 11 passed
+```
+
+Non-mainline issue reporting:
+
+```text
+issues_found:
+- Pytest still reports unrelated skipped/xfail-style markers as "u" in selected suites.
+- Full all-tests regression was not rerun after this closure; targeted Runtime / AER / Inventory suites were run instead.
+- The branch remains ahead of origin/debug/persistent-runtime-contract and requires push when ready.
+
+issues_deferred:
+- Full `python -m pytest tests -q` all-suite run is deferred because targeted seal suites passed and the full run is time-consuming.
+- Remote push is deferred until the local milestone is reviewed.
+- Line-ending normalization remains deferred unless git diff --check or CI surfaces it as blocking.
+
+blocking_issues:
+- none
+```
+
+Engineering verdict:
+
+```text
+Runtime Authority Stack Closure: SEALED
+```
+
+Current local git state after commit:
+
+```text
+branch: debug/persistent-runtime-contract
+ahead_of_origin: 11 commits
+working_tree: clean
+```
+
+Next mainline direction:
+
+```text
+Move above Runtime Core stabilization into long-horizon engineering-loop
+validation:
+Engineering Goal Loop -> Controlled Repo Edit -> Verification -> Evidence ->
+Replan / Resume -> Completion,
+while preserving authority, ownership, status, AER, and inventory seals.
+```
+

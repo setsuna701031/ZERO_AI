@@ -1288,3 +1288,142 @@ Engineering verdict:
 ```text
 Goal Lineage Coordination Seal: SEALED
 ```
+
+---
+
+## 2026-06-23 - Runtime Authority Stack Closure
+
+ZERO has now sealed the Runtime Authority Stack across dispatch capability,
+execution ownership, runtime status ownership, status projection, AER, and
+inventory surfaces.
+
+Purpose:
+
+```text
+authority envelope
+-> execution authority token
+-> authority context
+-> dispatch capability
+-> execution ownership migration
+-> runtime status ownership
+-> dispatcher status projection
+-> AER / inventory closure
+```
+
+This milestone turns the recent Runtime authority work into a connected,
+validated stack instead of separate contract fragments. Runtime execution now
+routes through the canonical executor surface, status updates route through the
+canonical runtime-status boundary, and dispatcher / resume code keeps normalized
+status projection without becoming the status owner.
+
+Completed:
+
+- Authority envelope contract
+- Execution authority token contract
+- Authority context contract
+- Dispatch capability contract
+- Execution authority closure
+- Runtime execution ownership migration
+- Runtime status ownership seal
+- Runtime status write authority seal
+- Runtime dispatcher status authority seal
+- Work-package runtime regression validation
+- Native runtime regression validation
+- Supervisor / watchdog / resume regression validation
+- AER closure and inventory validation
+- non-AER inventory validation
+
+Boundary decision:
+
+```text
+Runtime Executor is the only Runtime subprocess surface.
+WorkPackageOperator must not call subprocess directly.
+Scheduler remains orchestration only.
+TaskRuntime / project_runtime_status owns runtime status writes.
+Dispatcher and resume paths may project canonical status only through approved boundaries.
+Status projection must remain normalized with normalize_runtime_status(...).
+AER and inventory suites must remain clean after Runtime authority changes.
+```
+
+Validated checkpoints:
+
+```text
+python -m compileall core cli tests
+-> passed
+
+python -m pytest tests/test_runtime_dispatch_capability.py -q
+-> 9 passed
+
+python -m pytest tests/test_execution_authority_closure.py tests/test_runtime_execution_ownership_migration_contract.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+-> 17 passed
+
+python -m pytest tests/test_runtime_dispatcher_status_authority_seal.py tests/test_runtime_status_ownership_inventory.py tests/test_runtime_status_write_authority_seal.py -q
+-> 11 passed
+
+python -m pytest tests -q -k "authority or ownership or governance or inventory"
+-> 702 passed
+-> 4798 deselected
+-> 15 subtests passed
+
+python -m pytest tests -q -k "aer"
+-> 127 passed
+-> 5373 deselected
+
+python -m pytest tests -q -k "aer and (inventory or migration or closure)"
+-> 27 passed
+-> 5473 deselected
+
+python -m pytest tests -q -k "inventory and not aer"
+-> 28 passed
+-> 5472 deselected
+```
+
+Supporting mainline checks:
+
+```text
+python -m pytest tests/test_runtime_session_resume_seal_v1.py tests/test_scheduler_taskrunner_authority_propagation_contract.py -q
+-> 13 passed
+
+python -m pytest tests/test_runtime_supervisor_bridge_v1.py tests/test_runtime_supervisor_layer_v1.py tests/test_runtime_watchdog_lease_integration_v1.py -q
+-> 18 passed
+
+python -m pytest tests/test_work_package_intake_runtime_closure.py tests/test_work_package_engineering_session_resume.py tests/test_work_package_execution_package.py -q
+-> 22 passed
+
+python -m pytest tests/test_runtime_native_execution_dispatch_v1.py tests/test_runtime_native_scheduler_v1.py tests/test_runtime_native_agent_loop_seal_v1.py -q
+-> 11 passed
+```
+
+Commit chain:
+
+```text
+5605b9bf feat(runtime): add authority envelope contract
+353c17e8 feat(runtime): add execution authority token contract
+b9552c97 feat(runtime): add authority context contract
+11ca8b96 feat(runtime): add dispatch capability contract
+d7020bb4 fix(runtime): close execution authority and status ownership seals
+```
+
+Current local state:
+
+```text
+branch: debug/persistent-runtime-contract
+working_tree: clean
+ahead_of_origin: 11 commits
+```
+
+Engineering verdict:
+
+```text
+Runtime Authority Stack Closure: SEALED
+```
+
+Next mainline direction:
+
+```text
+Shift from Runtime Core stabilization to long-horizon engineering-loop
+validation:
+Engineering Goal Loop -> Controlled Repo Edit -> Verification -> Evidence ->
+Replan / Resume -> Completion.
+```
+
