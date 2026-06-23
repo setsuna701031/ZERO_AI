@@ -480,6 +480,33 @@ class RuntimePackageQueue:
         record["progress_snapshot"] = self._progress_snapshot(record)
         return self._write(record)
 
+    def record_execution_proposal(self, package_id: str, proposal: Mapping[str, Any]) -> dict[str, Any]:
+        record = self._read(package_id)
+        record["execution_proposal"] = copy.deepcopy(dict(proposal))
+        record["execution_proposal_summary"] = {
+            "package_id": proposal.get("package_id"),
+            "objective": proposal.get("objective"),
+            "proposed_step_count": len(proposal.get("proposed_steps") or []),
+            "validation_command_count": len(
+                (proposal.get("validation_plan") or {}).get("commands") or []
+            )
+            if isinstance(proposal.get("validation_plan"), Mapping)
+            else 0,
+            "risk_flags": copy.deepcopy(proposal.get("risk_flags") or []),
+            "required_operator_approval": bool(proposal.get("required_operator_approval")),
+            "non_mainline_reporting_enabled": bool(
+                proposal.get("non_mainline_reporting_enabled")
+            ),
+        }
+        progress = dict(record.get("progress") or {})
+        progress["execution_proposal_summary"] = copy.deepcopy(
+            record["execution_proposal_summary"]
+        )
+        record["progress"] = progress
+        record["updated_at"] = _now()
+        record["progress_snapshot"] = self._progress_snapshot(record)
+        return self._write(record)
+
     def record_planning(self, package_id: str, planning_snapshot: Mapping[str, Any]) -> dict[str, Any]:
         record = self._read(package_id)
         if record["status"] in WORK_PACKAGE_TERMINAL_STATUSES:

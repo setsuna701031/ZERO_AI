@@ -151,7 +151,7 @@ def _parser() -> argparse.ArgumentParser:
     run_validation = sub.add_parser("run-validation")
     run_validation.add_argument("package_id")
 
-    for name in ("status", "plan", "run", "progress", "summary", "report", "memory", "pause", "resume", "cancel"):
+    for name in ("status", "plan", "propose", "run", "progress", "summary", "report", "memory", "pause", "resume", "cancel"):
         cmd = sub.add_parser(name)
         cmd.add_argument("package_id")
         if name in {"summary", "report", "memory"}:
@@ -196,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
 
         elif args.command == "plan":
             result = operator.plan_package(args.package_id)
+
+        elif args.command == "propose":
+            result = operator.propose_package(args.package_id)
 
         elif args.command == "run":
             result = operator.run_package(args.package_id)

@@ -15,6 +15,33 @@ from core.reports.engineering_report_contract import attach_engineering_report
 from core.goals.goal_lineage_contract import extract_goal_lineage
 
 
+EXECUTION_PROPOSAL_SCHEMA = "zero.work_package.execution_proposal.v1"
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return copy.deepcopy(value)
+    if isinstance(value, tuple):
+        return copy.deepcopy(list(value))
+    return [copy.deepcopy(value)]
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _non_mainline_enabled(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return bool(value.get("enabled", True))
+    if isinstance(value, bool):
+        return value
+    if value in (None, "", [], {}):
+        return True
+    return True
+
+
 class RuntimeWorkPackageOperator:
     """Stable operator surface. This module never calls the execution endpoint."""
 
@@ -80,6 +107,7 @@ class RuntimeWorkPackageOperator:
     def intake_package(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         record = self.submit_package(payload)
         package_id = str(record.get("package_id") or "")
+        proposal = self.propose_package(package_id)
         return {
             "schema": "zero.work_package.intake_result.v1",
             "ok": True,
@@ -87,6 +115,7 @@ class RuntimeWorkPackageOperator:
             "status": record.get("status") or "queued",
             "queue_path": str(self.queue.state_dir),
             "record_path": str(self.queue.record_path(package_id)),
+            "proposal": proposal,
             "record": record,
         }
 
@@ -162,7 +191,121 @@ class RuntimeWorkPackageOperator:
         }
 
     def package_report(self, package_id: str) -> dict[str, Any]:
-        return attach_engineering_report(self.package_summary(package_id), report_type="work_package")
+        result = self.package_summary(package_id)
+        status_fn = getattr(self.queue, "status", None)
+        if callable(status_fn):
+            record = status_fn(package_id)
+            proposal_summary = record.get("execution_proposal_summary")
+            if not isinstance(proposal_summary, Mapping):
+                proposal = self.propose_package(package_id)
+                proposal_summary = proposal.get("proposal_summary")
+            if isinstance(proposal_summary, Mapping):
+                result["proposal_summary"] = copy.deepcopy(dict(proposal_summary))
+        return attach_engineering_report(result, report_type="work_package")
+
+    def propose_package(self, package_id: str) -> dict[str, Any]:
+        record = self.queue.status(package_id)
+        proposal = self._build_execution_proposal(record)
+        queue_record = self.queue.record_execution_proposal(package_id, proposal)
+        summary = queue_record.get("execution_proposal_summary")
+        if isinstance(summary, Mapping):
+            proposal["proposal_summary"] = copy.deepcopy(dict(summary))
+        return proposal
+
+    def _build_execution_proposal(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        package_id = _text(record.get("package_id"))
+        objective = _text(record.get("objective") or record.get("goal") or record.get("title"))
+        requirements = _as_list(record.get("requirements"))
+        constraints = _as_list(record.get("constraints") or record.get("hard_boundary"))
+        validation_commands = [_text(item) for item in _as_list(record.get("validation_commands")) if _text(item)]
+        completion_criteria = _as_list(record.get("completion_criteria") or record.get("completion_report_format"))
+        proposed_steps = self._proposal_steps(record, requirements=requirements, objective=objective)
+        risk_flags = self._proposal_risk_flags(
+            requirements=requirements,
+            constraints=constraints,
+            validation_commands=validation_commands,
+            completion_criteria=completion_criteria,
+        )
+        return {
+            "schema": EXECUTION_PROPOSAL_SCHEMA,
+            "package_id": package_id,
+            "objective": objective,
+            "requirements": requirements,
+            "constraints": constraints,
+            "proposed_steps": proposed_steps,
+            "validation_plan": {
+                "commands": validation_commands,
+                "completion_criteria": completion_criteria,
+                "validation_only_supported": True,
+            },
+            "risk_flags": risk_flags,
+            "required_operator_approval": True,
+            "non_mainline_reporting_enabled": _non_mainline_enabled(
+                record.get("non_mainline_issue_reporting")
+            ),
+            "proposal_only": True,
+            "repo_mutation_performed_by_zero": False,
+        }
+
+    def _proposal_steps(
+        self,
+        record: Mapping[str, Any],
+        *,
+        requirements: list[Any],
+        objective: str,
+    ) -> list[dict[str, Any]]:
+        queue_item = record.get("runtime_queue_item")
+        raw_steps = queue_item.get("steps") if isinstance(queue_item, Mapping) else []
+        proposed: list[dict[str, Any]] = []
+        if isinstance(raw_steps, list) and raw_steps:
+            for index, step in enumerate(raw_steps, start=1):
+                if not isinstance(step, Mapping):
+                    continue
+                proposed.append(
+                    {
+                        "step_id": _text(step.get("id") or step.get("step_id") or f"step-{index}"),
+                        "type": _text(step.get("type") or step.get("action") or "work"),
+                        "summary": _text(
+                            step.get("description")
+                            or step.get("summary")
+                            or step.get("prompt")
+                            or step.get("path")
+                            or objective
+                        ),
+                        "mutation_allowed": False,
+                    }
+                )
+        if proposed:
+            return proposed
+        for index, requirement in enumerate(requirements or [objective], start=1):
+            proposed.append(
+                {
+                    "step_id": f"requirement-{index}",
+                    "type": "proposal_task",
+                    "summary": _text(requirement) or objective,
+                    "mutation_allowed": False,
+                }
+            )
+        return proposed
+
+    @staticmethod
+    def _proposal_risk_flags(
+        *,
+        requirements: list[Any],
+        constraints: list[Any],
+        validation_commands: list[str],
+        completion_criteria: list[Any],
+    ) -> list[str]:
+        flags: list[str] = []
+        if not requirements:
+            flags.append("missing_requirements")
+        if not constraints:
+            flags.append("missing_constraints")
+        if not validation_commands:
+            flags.append("missing_validation_commands")
+        if not completion_criteria:
+            flags.append("missing_completion_criteria")
+        return flags
 
     def run_validation_only(self, package_id: str) -> dict[str, Any]:
         record = self.queue.status(package_id)
@@ -304,6 +447,10 @@ def plan_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).plan_package(package_id)
 
 
+def propose_package(package_id: str, **kwargs: Any) -> dict[str, Any]:
+    return RuntimeWorkPackageOperator(**kwargs).propose_package(package_id)
+
+
 def package_status(package_id: str, **kwargs: Any) -> dict[str, Any]:
     return RuntimeWorkPackageOperator(**kwargs).package_status(package_id)
 
@@ -361,6 +508,7 @@ __all__ = [
     "package_summary",
     "package_memory",
     "plan_package",
+    "propose_package",
     "pause_package",
     "resume_package",
     "run_package",

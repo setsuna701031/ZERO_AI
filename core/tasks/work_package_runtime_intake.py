@@ -194,17 +194,86 @@ def package_payload_from_text(text: str) -> dict[str, Any]:
         parsed = None
     if isinstance(parsed, Mapping):
         return copy.deepcopy(dict(parsed))
+    extracted = _extract_sections_from_text(body)
     title = body.splitlines()[0].strip()[:120] or "Untitled work package"
     return {
         "title": title,
-        "objective": title,
+        "objective": extracted.get("objective") or title,
         "task_body": body,
         "raw_request": body,
+        "requirements": extracted.get("requirements") or [],
+        "constraints": extracted.get("constraints") or [],
+        "validation_commands": extracted.get("validation_commands") or [],
+        "completion_criteria": extracted.get("completion_criteria") or [],
+        "non_mainline_issue_reporting": extracted.get("non_mainline_issue_reporting")
+        or {"enabled": True, "mode": "report_all_non_mainline_findings"},
+    }
+
+
+def _extract_sections_from_text(text: str) -> dict[str, Any]:
+    sections: dict[str, list[str]] = {
+        "requirements": [],
         "constraints": [],
         "validation_commands": [],
         "completion_criteria": [],
-        "non_mainline_issue_reporting": {"enabled": True, "mode": "report_all_non_mainline_findings"},
     }
+    objective = ""
+    active: str | None = None
+    aliases = {
+        "objective": "objective",
+        "goal": "objective",
+        "requirements": "requirements",
+        "requirement": "requirements",
+        "constraints": "constraints",
+        "constraint": "constraints",
+        "validation_commands": "validation_commands",
+        "validation commands": "validation_commands",
+        "validation": "validation_commands",
+        "completion_criteria": "completion_criteria",
+        "completion criteria": "completion_criteria",
+        "acceptance": "completion_criteria",
+        "done": "completion_criteria",
+    }
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        key_part, sep, value_part = line.partition(":")
+        normalized_key = key_part.strip().lower().replace("-", " ").replace("_", " ")
+        mapped = aliases.get(normalized_key)
+        if sep and mapped:
+            value = value_part.strip()
+            active = mapped if mapped != "objective" else None
+            if mapped == "objective":
+                objective = value or objective
+            elif value:
+                sections[mapped].append(_strip_list_marker(value))
+            continue
+        if normalized_key in aliases and aliases[normalized_key] != "objective":
+            active = aliases[normalized_key]
+            continue
+        if active:
+            sections[active].append(_strip_list_marker(line))
+    return {
+        "objective": objective,
+        "requirements": [item for item in sections["requirements"] if item],
+        "constraints": [item for item in sections["constraints"] if item],
+        "validation_commands": [item for item in sections["validation_commands"] if item],
+        "completion_criteria": [item for item in sections["completion_criteria"] if item],
+        "non_mainline_issue_reporting": {
+            "enabled": True,
+            "mode": "report_all_non_mainline_findings",
+        },
+    }
+
+
+def _strip_list_marker(value: str) -> str:
+    text = value.strip()
+    while text[:1] in {"-", "*"}:
+        text = text[1:].strip()
+    if len(text) > 2 and text[0].isdigit() and text[1:2] in {".", ")"}:
+        text = text[2:].strip()
+    return text
 
 
 class WorkPackageIntake:
