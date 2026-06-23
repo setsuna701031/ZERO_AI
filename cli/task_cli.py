@@ -37,6 +37,24 @@ def _parse_task_run(argv: List[str]) -> Optional[int]:
     return max(1, count)
 
 
+def _parse_task_run_selector(argv: List[str]) -> Optional[str]:
+    if len(argv) < 3:
+        return None
+    if str(argv[0]).strip().lower() != "task":
+        return None
+    if str(argv[1]).strip().lower() != "run":
+        return None
+    selector = str(argv[2]).strip()
+    if not selector:
+        return None
+    lowered = selector.lower()
+    if lowered in {"latest", "newest", "last", "next", "oldest", "first"}:
+        return lowered
+    if selector.startswith("task_") or selector.startswith("agent-runtime-") or selector.startswith("planner_prt_"):
+        return selector
+    return None
+
+
 def _empty_tick_result(tick: int) -> Dict[str, Any]:
     return {
         "ok": True,
@@ -136,6 +154,91 @@ def _task_runtime_hint(task: Dict[str, Any]) -> str:
     return ""
 
 
+def _queued_status(task: Dict[str, Any]) -> str:
+    return str(task_status(task) or task.get("status") or "").strip().lower()
+
+
+def _has_executable_steps(task: Dict[str, Any]) -> bool:
+    steps = task.get("steps")
+    if not isinstance(steps, list) or not steps:
+        return False
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        step_type = str(step.get("type") or "").strip().lower()
+        if step_type:
+            return True
+    return False
+
+
+def _route_invalid_reason(task: Dict[str, Any]) -> str:
+    route = task.get("route")
+    if not isinstance(route, dict):
+        return ""
+    if route.get("ok") is False:
+        error = _collapse_ws(route.get("error"))
+        return "route failed" + (f": {error}" if error else "")
+    if route.get("component_contract_mismatch") is True:
+        error = _collapse_ws(route.get("error"))
+        return "router contract mismatch" + (f": {error}" if error else "")
+    return ""
+
+
+def _invalid_goal_reason(task: Dict[str, Any]) -> str:
+    goal = _collapse_ws(task_goal(task) or task.get("goal") or task.get("title"))
+    if not goal:
+        return "missing goal"
+    if goal.lower() in {"task name:", "task name", "untitled task", "new task"}:
+        return f"placeholder goal: {goal}"
+    return ""
+
+
+def _queued_invalid_reason(task: Dict[str, Any]) -> str:
+    if not isinstance(task, dict):
+        return "not a task record"
+
+    status = _queued_status(task)
+    if status not in {"queued", "ready", "retry", "retrying"}:
+        return ""
+
+    route_reason = _route_invalid_reason(task)
+    if route_reason:
+        return route_reason
+
+    # A queued record without hydrated steps is not automatically invalid.
+    # Legacy scheduler/runtime-owned records often appear this way in the task
+    # index and should be reported as stale/non-fast queued for inspection, not
+    # archived as broken zombies by the default cleanup path.
+    goal_reason = _invalid_goal_reason(task)
+    if goal_reason:
+        return goal_reason
+
+    result_exists = task.get("result_exists") is True
+    no_progress = not task.get("results") and not task.get("step_results") and not task.get("execution_log")
+    if result_exists and no_progress and task.get("fast_cli_path") is not True:
+        return "queued task already has result snapshot but no execution progress"
+
+    return ""
+
+
+def _display_task_status(task: Dict[str, Any]) -> str:
+    reason = _queued_invalid_reason(task)
+    if reason:
+        return "queued_invalid"
+    return str(task_status(task) or "unknown")
+
+
+def _find_task_by_id(tasks: List[Dict[str, Any]], selector: str) -> Optional[Dict[str, Any]]:
+    for task in tasks:
+        if isinstance(task, dict) and task_id(task) == selector:
+            return task
+    return None
+
+
+def _invalid_queued_tasks(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [task for task in tasks if isinstance(task, dict) and _queued_invalid_reason(task)]
+
+
 def _print_task_table(
     tasks: List[Dict[str, Any]],
     *,
@@ -160,7 +263,7 @@ def _print_task_table(
     for task in ordered:
         full_task_id = task_id(task)
         display_task_id = full_task_id if verbose else _shorten_identifier(full_task_id, max_width=24)
-        status = _shorten_text(task_status(task) or "unknown", max_width=14)
+        status = _shorten_text(_display_task_status(task), max_width=14)
         goal = _shorten_text(task_goal(task), max_width=90 if verbose else 72)
         deps = task.get("depends_on")
         dep_suffix = ""
@@ -919,6 +1022,290 @@ def _try_handle_fast_task_list(argv: List[str], repo_root: Path) -> bool:
 
 
 
+def _is_active_queued_status(status: str) -> bool:
+    return str(status or "").strip().lower() in {"queued", "ready", "retry", "retrying"}
+
+
+def _is_stale_queued_task(task: Dict[str, Any]) -> bool:
+    if not isinstance(task, dict):
+        return False
+    if _queued_invalid_reason(task):
+        return False
+    if not _is_active_queued_status(_queued_status(task)):
+        return False
+    # Fast CLI tasks are considered runnable by the fast selector, so they are
+    # not stale merely because they are old.  Non-fast queued records are
+    # scheduler/runtime-owned and should be inspected before cleanup.
+    if task.get("fast_cli_path") is True:
+        return False
+    return True
+
+
+def _task_audit_record(task: Dict[str, Any], *, reason: str = "") -> Dict[str, Any]:
+    return {
+        "task_id": task_id(task),
+        "status": task_status(task),
+        "display_status": _display_task_status(task),
+        "goal": _shorten_text(task_goal(task), max_width=120),
+        "created_at": task.get("created_at"),
+        "fast_cli_path": task.get("fast_cli_path"),
+        "reason": reason,
+    }
+
+
+def _task_inventory_audit(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    safe_tasks = [task for task in tasks if isinstance(task, dict)]
+    status_counts: Dict[str, int] = {}
+    for task in safe_tasks:
+        display_status = _display_task_status(task)
+        status_counts[display_status] = status_counts.get(display_status, 0) + 1
+
+    invalid_tasks = [
+        _task_audit_record(task, reason=_queued_invalid_reason(task))
+        for task in safe_tasks
+        if _queued_invalid_reason(task)
+    ]
+    stale_tasks = [
+        _task_audit_record(task, reason="non-fast queued task; inspect scheduler/runtime ownership before running or archiving")
+        for task in safe_tasks
+        if _is_stale_queued_task(task)
+    ]
+    runnable_fast = [
+        _task_audit_record(task, reason="runnable fast queued task")
+        for task in safe_tasks
+        if _is_fast_runnable_task(task)
+    ]
+
+    recommendations: List[str] = []
+    if invalid_tasks:
+        recommendations.append(f"archive {len(invalid_tasks)} invalid queued task(s)")
+    if stale_tasks:
+        recommendations.append(f"inspect {len(stale_tasks)} stale/non-fast queued task(s)")
+    if not recommendations:
+        recommendations.append("task inventory has no queued_invalid or stale queued records")
+
+    return {
+        "ok": True,
+        "mode": "task_inventory_audit_v1",
+        "total_count": len(safe_tasks),
+        "status_counts": status_counts,
+        "queued_invalid_count": len(invalid_tasks),
+        "stale_queued_count": len(stale_tasks),
+        "runnable_fast_queued_count": len(runnable_fast),
+        "queued_invalid_tasks": invalid_tasks,
+        "stale_queued_tasks": stale_tasks,
+        "runnable_fast_queued_tasks": runnable_fast,
+        "recommendations": recommendations,
+    }
+
+
+def _print_task_audit(payload: Dict[str, Any]) -> None:
+    print("ZERO Task Inventory Audit")
+    print("")
+    print(f"total: {payload.get('total_count', 0)}")
+    print("status_counts:")
+    counts = payload.get("status_counts")
+    if isinstance(counts, dict):
+        for status in sorted(counts):
+            print(f"  {status}: {counts[status]}")
+    print(f"queued_invalid: {payload.get('queued_invalid_count', 0)}")
+    print(f"stale_queued: {payload.get('stale_queued_count', 0)}")
+    print(f"runnable_fast_queued: {payload.get('runnable_fast_queued_count', 0)}")
+
+    invalid_tasks = payload.get("queued_invalid_tasks")
+    if isinstance(invalid_tasks, list) and invalid_tasks:
+        print("")
+        print("queued_invalid:")
+        for task in invalid_tasks[:20]:
+            print(f"- {task.get('task_id')}: {task.get('reason')}")
+
+    stale_tasks = payload.get("stale_queued_tasks")
+    if isinstance(stale_tasks, list) and stale_tasks:
+        print("")
+        print("stale/non-fast queued:")
+        for task in stale_tasks[:20]:
+            print(f"- {task.get('task_id')}: {task.get('goal')}")
+
+    recommendations = payload.get("recommendations")
+    if isinstance(recommendations, list) and recommendations:
+        print("")
+        print("recommendations:")
+        for item in recommendations:
+            print(f"- {item}")
+
+    print("")
+    print("Use `task audit --json` for raw details.")
+    print("Use `task cleanup --dry-run` before applying archive status changes.")
+
+
+def _try_handle_fast_task_audit(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) < 2:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"audit", "inventory", "health"}:
+        return False
+
+    args = {str(item).strip().lower() for item in argv[2:] if str(item).strip()}
+    if not args.issubset({"--json", "json", "--raw", "raw"}):
+        return False
+
+    payload = _task_inventory_audit(read_tasks_index(repo_root))
+    if args:
+        _print_json(payload)
+    else:
+        _print_task_audit(payload)
+    return True
+
+
+def _cleanup_target_tasks(tasks: List[Dict[str, Any]], *, include_stale: bool = False) -> List[Dict[str, Any]]:
+    targets: List[Dict[str, Any]] = []
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        if _queued_invalid_reason(task):
+            targets.append(task)
+            continue
+        if include_stale and _is_stale_queued_task(task):
+            targets.append(task)
+    return targets
+
+
+def _archive_status_for_task(task: Dict[str, Any]) -> str:
+    if _queued_invalid_reason(task):
+        return "archived_invalid"
+    return "archived_stale"
+
+
+def _task_cleanup_payload(tasks: List[Dict[str, Any]], *, include_stale: bool, apply: bool) -> Dict[str, Any]:
+    targets = _cleanup_target_tasks(tasks, include_stale=include_stale)
+    return {
+        "ok": True,
+        "mode": "task_cleanup_v1",
+        "apply": apply,
+        "include_stale": include_stale,
+        "target_count": len(targets),
+        "targets": [
+            {
+                "task_id": task_id(task),
+                "from_status": task_status(task),
+                "to_status": _archive_status_for_task(task),
+                "reason": _queued_invalid_reason(task) or "stale/non-fast queued task",
+                "goal": _shorten_text(task_goal(task), max_width=120),
+            }
+            for task in targets
+        ],
+        "message": "dry run only; no tasks were changed" if not apply else "archive status changes applied to tasks index",
+    }
+
+
+def _apply_task_cleanup(tasks: List[Dict[str, Any]], *, include_stale: bool) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    updated: List[Dict[str, Any]] = []
+    changed_count = 0
+    target_ids = {task_id(task) for task in _cleanup_target_tasks(tasks, include_stale=include_stale)}
+    for task in tasks:
+        if not isinstance(task, dict):
+            updated.append(task)
+            continue
+        current_id = task_id(task)
+        if current_id not in target_ids:
+            updated.append(task)
+            continue
+        next_task = dict(task)
+        previous_status = task_status(next_task)
+        reason = _queued_invalid_reason(next_task) or "stale/non-fast queued task"
+        next_task["status"] = _archive_status_for_task(next_task)
+        history = next_task.get("history")
+        if not isinstance(history, list):
+            history = []
+        next_task["history"] = list(history) + [next_task["status"]]
+        cleanup_meta = dict(next_task.get("cleanup") or {}) if isinstance(next_task.get("cleanup"), dict) else {}
+        cleanup_meta.update(
+            {
+                "archived_by": "task cleanup",
+                "archive_reason": reason,
+                "previous_status": previous_status,
+                "cleanup_schema": "zero.task_cleanup.v1",
+            }
+        )
+        next_task["cleanup"] = cleanup_meta
+        updated.append(next_task)
+        changed_count += 1
+
+    payload = _task_cleanup_payload(tasks, include_stale=include_stale, apply=True)
+    payload["changed_count"] = changed_count
+    return updated, payload
+
+
+def _print_task_cleanup(payload: Dict[str, Any]) -> None:
+    print("ZERO Task Cleanup")
+    print(f"ok: {str(bool(payload.get('ok'))).lower()}")
+    print(f"apply: {str(bool(payload.get('apply'))).lower()}")
+    print(f"include_stale: {str(bool(payload.get('include_stale'))).lower()}")
+    print(f"target_count: {payload.get('target_count', 0)}")
+    changed = payload.get("changed_count")
+    if changed is not None:
+        print(f"changed_count: {changed}")
+    targets = payload.get("targets")
+    if isinstance(targets, list) and targets:
+        print("targets:")
+        for item in targets[:30]:
+            print(f"- {item.get('task_id')}: {item.get('from_status')} -> {item.get('to_status')} ({item.get('reason')})")
+    message = payload.get("message")
+    if message:
+        print(f"message: {message}")
+    if not payload.get("apply"):
+        print("Run `task cleanup --apply` to archive queued_invalid tasks in tasks.json.")
+        print("Add `--include-stale` only after reviewing stale/non-fast queued tasks with `task audit`.")
+
+
+def _try_handle_fast_task_cleanup(argv: List[str], repo_root: Path) -> bool:
+    if len(argv) < 2:
+        return False
+    if str(argv[0]).strip().lower() != "task":
+        return False
+    if str(argv[1]).strip().lower() not in {"cleanup", "archive-stale"}:
+        return False
+
+    args = {str(item).strip().lower() for item in argv[2:] if str(item).strip()}
+    allowed = {"--dry-run", "dry-run", "--apply", "apply", "--json", "json", "--raw", "raw", "--include-stale", "include-stale"}
+    if not args.issubset(allowed):
+        return False
+
+    wants_json = bool(args.intersection({"--json", "json", "--raw", "raw"}))
+    apply = bool(args.intersection({"--apply", "apply"}))
+    dry_run = bool(args.intersection({"--dry-run", "dry-run"}))
+    include_stale = bool(args.intersection({"--include-stale", "include-stale"}))
+
+    if apply and dry_run:
+        payload = {
+            "ok": False,
+            "mode": "task_cleanup_v1",
+            "error": "choose either --dry-run or --apply, not both",
+        }
+        if wants_json:
+            _print_json(payload)
+        else:
+            _print_task_cleanup(payload)
+        return True
+
+    tasks = read_tasks_index(repo_root)
+    if not isinstance(tasks, list):
+        payload = {"ok": False, "mode": "task_cleanup_v1", "error": "tasks index is not a list"}
+    elif apply:
+        updated, payload = _apply_task_cleanup(tasks, include_stale=include_stale)
+        write_tasks_index(repo_root, updated)
+    else:
+        payload = _task_cleanup_payload(tasks, include_stale=include_stale, apply=False)
+
+    if wants_json:
+        _print_json(payload)
+    else:
+        _print_task_cleanup(payload)
+    return True
+
+
+
 
 def _try_handle_fast_task_drain(argv: List[str], repo_root: Path) -> bool:
     if len(argv) not in {2, 3}:
@@ -986,7 +1373,244 @@ def _has_legacy_scheduler_runnable_tasks(repo_root: Path) -> bool:
     return False
 
 
+def _is_fast_runnable_task(task: Dict[str, Any]) -> bool:
+    if not isinstance(task, dict):
+        return False
+    status = _queued_status(task)
+    if status not in {"queued", "ready", "retry", "retrying"}:
+        return False
+    if _queued_invalid_reason(task):
+        return False
+    return task.get("fast_cli_path") is True
+
+
+def _select_fast_runnable_task(tasks: List[Dict[str, Any]], selector: str) -> Optional[Dict[str, Any]]:
+    lowered = selector.lower()
+
+    if lowered not in {"latest", "newest", "last", "next", "oldest", "first"}:
+        exact = _find_task_by_id(tasks, selector)
+        if exact is None:
+            return None
+        return exact if _is_fast_runnable_task(exact) else None
+
+    candidates = [task for task in tasks if _is_fast_runnable_task(task)]
+    if not candidates:
+        return None
+
+    if lowered in {"latest", "newest", "last"}:
+        return sorted(candidates, key=_task_sort_key)[-1]
+    if lowered in {"next", "oldest", "first"}:
+        return sorted(candidates, key=_task_sort_key)[0]
+
+    return None
+
+
+def _reorder_selected_task_first(tasks: List[Dict[str, Any]], selected_task_id: str) -> List[Dict[str, Any]]:
+    selected: List[Dict[str, Any]] = []
+    rest: List[Dict[str, Any]] = []
+    for task in tasks:
+        if isinstance(task, dict) and task_id(task) == selected_task_id:
+            selected.append(task)
+        else:
+            rest.append(task)
+    return selected + rest
+
+
+def _task_run_wants_json(argv: List[str]) -> bool:
+    return any(str(item).strip().lower() in {"--json", "json", "--raw", "raw"} for item in argv[3:])
+
+
+def _selected_run_artifact(result: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    run_result = result.get("result")
+    if not isinstance(run_result, dict):
+        return {}
+    executed = run_result.get("executed_results")
+    if not isinstance(executed, list) or not executed:
+        return {}
+    first = executed[0]
+    if not isinstance(first, dict):
+        return {}
+
+    artifact = first.get("artifact")
+    if isinstance(artifact, dict) and artifact:
+        return artifact
+
+    step_execution = first.get("step_executor_artifact_execution")
+    if isinstance(step_execution, dict):
+        return {
+            "artifact_path": step_execution.get("artifact_path"),
+            "artifact_type": step_execution.get("artifact_type"),
+            "ok": step_execution.get("ok"),
+        }
+    return {}
+
+
+def _selected_run_goal(result: Dict[str, Any]) -> str:
+    run_result = result.get("result") if isinstance(result, dict) else None
+    if isinstance(run_result, dict):
+        executed = run_result.get("executed_results")
+        if isinstance(executed, list) and executed and isinstance(executed[0], dict):
+            goal = executed[0].get("goal")
+            if goal:
+                return str(goal)
+    return ""
+
+
+def _print_selected_task_run_result(result: Dict[str, Any]) -> None:
+    ok = bool(result.get("ok")) if isinstance(result, dict) else False
+    selector = result.get("selector") if isinstance(result, dict) else ""
+    selected = result.get("selected_task_id") if isinstance(result, dict) else ""
+
+    print("ZERO Task Run")
+    print(f"ok: {str(ok).lower()}")
+    if selector:
+        print(f"selector: {selector}")
+    if selected:
+        print(f"selected: {selected}")
+
+    if not ok:
+        error = result.get("error") if isinstance(result, dict) else "unknown error"
+        reason = result.get("reason") if isinstance(result, dict) else ""
+        hint = result.get("hint") if isinstance(result, dict) else ""
+        skipped_count = result.get("skipped_invalid_queued_count") if isinstance(result, dict) else 0
+        print(f"error: {error}")
+        if reason:
+            print(f"reason: {reason}")
+        if skipped_count:
+            print(f"skipped_invalid_queued_count: {skipped_count}")
+        if hint:
+            print(f"hint: {hint}")
+        print("Use `task run <selector> --json` for raw details.")
+        return
+
+    goal = _selected_run_goal(result)
+    if goal:
+        print(f"goal: {_shorten_text(goal, max_width=110)}")
+
+    artifact = _selected_run_artifact(result)
+    if artifact:
+        artifact_path = artifact.get("artifact_path") or artifact.get("output_path") or artifact.get("path")
+        artifact_type = artifact.get("artifact_type") or artifact.get("type")
+        if artifact_type:
+            print(f"artifact_type: {artifact_type}")
+        if artifact_path:
+            print(f"artifact: {_graph_label(artifact_path, max_width=96)}")
+
+    run_result = result.get("result") if isinstance(result, dict) else None
+    if isinstance(run_result, dict):
+        executed_count = run_result.get("executed_count")
+        blocked_count = run_result.get("blocked_count")
+        if executed_count is not None:
+            print(f"executed_count: {executed_count}")
+        if blocked_count:
+            print(f"blocked_count: {blocked_count}")
+
+    print("Use `task run <selector> --json` for raw runtime/evidence details.")
+
+
+def _run_selected_fast_task(repo_root: Path, selector: str) -> Dict[str, Any]:
+    tasks = read_tasks_index(repo_root)
+    if not isinstance(tasks, list):
+        return {
+            "ok": False,
+            "mode": "selected_task_run",
+            "selector": selector,
+            "error": "tasks index is not a list",
+        }
+
+    lowered = selector.lower()
+    explicit_task_id = lowered not in {"latest", "newest", "last", "next", "oldest", "first"}
+    skipped_invalid = _invalid_queued_tasks(tasks)
+
+    if explicit_task_id:
+        exact = _find_task_by_id(tasks, selector)
+        if exact is None:
+            return {
+                "ok": False,
+                "mode": "selected_task_run",
+                "selector": selector,
+                "error": "task id not found",
+                "hint": "Use `task list` to inspect known tasks.",
+            }
+
+        invalid_reason = _queued_invalid_reason(exact)
+        if invalid_reason:
+            return {
+                "ok": False,
+                "mode": "selected_task_run",
+                "selector": selector,
+                "selected_task_id": task_id(exact),
+                "error": "task is queued_invalid and cannot be run by task run",
+                "reason": invalid_reason,
+                "task_status": task_status(exact),
+                "hint": "This is a stale/zombie queued task. Inspect result.json/runtime_state.json or recreate the task.",
+            }
+
+        if not _is_fast_runnable_task(exact):
+            return {
+                "ok": False,
+                "mode": "selected_task_run",
+                "selector": selector,
+                "selected_task_id": task_id(exact),
+                "error": "task id exists but is not a queued fast task",
+                "reason": f"status={_queued_status(exact) or 'unknown'} fast_cli_path={exact.get('fast_cli_path')!r}",
+                "hint": "Use the full scheduler/runtime path for non-fast tasks, or recreate it as a fast CLI task.",
+            }
+
+    selected = _select_fast_runnable_task(tasks, selector)
+    if selected is None:
+        return {
+            "ok": False,
+            "mode": "selected_task_run",
+            "selector": selector,
+            "error": "no matching queued fast task",
+            "hint": "Use `task list` to inspect queued tasks, or create a new fast task before running `task run next` / `task run latest`.",
+            "skipped_invalid_queued_count": len(skipped_invalid),
+            "skipped_invalid_queued_tasks": [
+                {
+                    "task_id": task_id(task),
+                    "status": task_status(task),
+                    "reason": _queued_invalid_reason(task),
+                }
+                for task in skipped_invalid[:10]
+            ],
+        }
+
+    selected_task_id = task_id(selected)
+    write_tasks_index(repo_root, _reorder_selected_task_first(tasks, selected_task_id))
+    result = run_ingestion_tasks(repo_root, 1)
+    return {
+        "ok": True,
+        "mode": "selected_task_run",
+        "selector": selector,
+        "selected_task_id": selected_task_id,
+        "result": result,
+        "fast_cli_path": True,
+        "legacy_app_booted": False,
+        "skipped_invalid_queued_count": len(skipped_invalid),
+        "skipped_invalid_queued_tasks": [
+            {
+                "task_id": task_id(task),
+                "status": task_status(task),
+                "reason": _queued_invalid_reason(task),
+            }
+            for task in skipped_invalid[:10]
+        ],
+    }
+
+
 def _try_handle_fast_task_run(argv: List[str], repo_root: Path) -> bool:
+    selector = _parse_task_run_selector(argv)
+    if selector is not None:
+        result = _run_selected_fast_task(repo_root, selector)
+        if _task_run_wants_json(argv):
+            _print_json(result)
+        else:
+            _print_selected_task_run_result(result)
+        return True
+
     count = _parse_task_run(argv)
     if count is None:
         return False
@@ -1043,6 +1667,12 @@ def try_handle_fast_task_command(argv: List[str], *, repo_root: Path) -> bool:
         return True
 
     if _try_handle_fast_task_drain(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_audit(clean_argv, repo_root):
+        return True
+
+    if _try_handle_fast_task_cleanup(clean_argv, repo_root):
         return True
 
     if _try_handle_fast_task_run(clean_argv, repo_root):
