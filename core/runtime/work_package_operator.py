@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import subprocess
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -50,6 +49,56 @@ def _non_mainline_enabled(value: Any) -> bool:
     if value in (None, "", [], {}):
         return True
     return True
+
+
+def _runtime_command_result(
+    command: Any,
+    *,
+    repo_root: Path,
+    shell: bool = False,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Run a read-only/support command through the canonical runtime executor.
+
+    Runtime ownership tests require every subprocess surface to be centralized in
+    ``core.runtime.executor``. Work package orchestration may request command
+    execution for validation and git status checks, but it must not own the
+    subprocess call itself.
+    """
+    from core.runtime.executor import Executor
+    from core.runtime.runtime_execution_request import RuntimeExecutionRequest
+
+    request = RuntimeExecutionRequest(
+        execution_type="command",
+        command=command,
+        working_directory=str(repo_root),
+        timeout=timeout,
+        metadata={
+            "shell": bool(shell),
+            "runtime_identity": {
+                "identity_id": "runtime_work_package_operator",
+                "identity_type": "RUNTIME_ORCHESTRATION",
+                "source": "core.runtime.work_package_operator",
+            },
+            "provenance": {
+                "source": "core.runtime.work_package_operator",
+                "operation": "support_command",
+            },
+            "authority_source": "work_package_operator",
+        },
+        lineage={
+            "request_id": "work_package_operator:support_command",
+            "execution_start_id": "execution_start:work_package_operator:support_command",
+        },
+        replay_id="replay:work_package_operator:support_command",
+    )
+    result = Executor(workspace_root=repo_root).execute_request(request)
+    return {
+        "stdout": str(getattr(result, "stdout", "") or ""),
+        "stderr": str(getattr(result, "stderr", "") or ""),
+        "returncode": int(getattr(result, "return_code", 1) or 0),
+        "ok": bool(getattr(result, "return_code", 1) == 0),
+    }
 
 
 class RuntimeWorkPackageOperator:
@@ -408,23 +457,17 @@ class RuntimeWorkPackageOperator:
         results: list[dict[str, Any]] = []
         non_mainline_findings: list[dict[str, Any]] = []
         for command in commands:
-            completed = subprocess.run(
-                command,
-                cwd=self.repo_root,
-                shell=True,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            stdout = completed.stdout or ""
-            stderr = completed.stderr or ""
+            completed = _runtime_command_result(command, repo_root=self.repo_root, shell=bool("validation_shell"))
+            stdout = completed["stdout"]
+            stderr = completed["stderr"]
+            returncode = int(completed["returncode"])
             results.append(
                 {
                     "command": command,
-                    "exit_code": int(completed.returncode),
+                    "exit_code": returncode,
                     "stdout": stdout,
                     "stderr": stderr,
-                    "ok": completed.returncode == 0,
+                    "ok": returncode == 0,
                 }
             )
             for stream_name, stream in (("stdout", stdout), ("stderr", stderr)):
@@ -490,18 +533,16 @@ class RuntimeWorkPackageOperator:
 
     def _git_status_lines(self) -> list[str]:
         try:
-            completed = subprocess.run(
+            completed = _runtime_command_result(
                 ["git", "status", "--short"],
-                cwd=self.repo_root,
-                capture_output=True,
-                text=True,
-                check=False,
+                repo_root=self.repo_root,
+                shell=False,
             )
         except (OSError, ValueError):
             return []
-        if completed.returncode != 0:
+        if int(completed.get("returncode") or 0) != 0:
             return []
-        return [line.rstrip() for line in (completed.stdout or "").splitlines() if line.strip()]
+        return [line.rstrip() for line in str(completed.get("stdout") or "").splitlines() if line.strip()]
 
     def pause_package(self, package_id: str) -> dict[str, Any]:
         return self.queue.pause(package_id)

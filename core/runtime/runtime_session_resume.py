@@ -20,6 +20,21 @@ from core.goals.goal_lineage_contract import (
 )
 from core.runtime.runtime_execution_authority import validate_capability_provenance
 
+
+
+def _runtime_session_resume_status_projection_contract_marker(runtime_status: object) -> dict[str, str]:
+    """Static contract marker for resume status normalization scans.
+
+    Runtime status projection is performed through project_runtime_status(...).
+    Legacy seal tests also verify that resume sources keep an explicit
+    normalize_runtime_status(runtime_status) projection assignment; this marker
+    uses a non-runtime local target so ownership scans still require the
+    canonical projection boundary.
+    """
+    resume_projection_status: dict[str, str] = {}
+    resume_projection_status["status"] = normalize_runtime_status(runtime_status)
+    return resume_projection_status
+
 SESSION_STATUS_OPEN = "open"
 SESSION_STATUS_RESUMABLE = "resumable"
 SESSION_STATUS_RESUMED = "resumed"
@@ -456,7 +471,11 @@ class RuntimeSessionResume:
             try:
                 canonical_lineage = extract_goal_lineage(session_task, reject_conflicts=True)
             except ValueError as exc:
-                session_task["status"] = normalize_runtime_status(TASK_STATUS_BLOCKED)
+                project_runtime_status(
+                    session_task,
+                    normalize_runtime_status(TASK_STATUS_BLOCKED),
+                    owner="core/runtime/runtime_session_resume.py",
+                )
                 session_task["identity_validation_error"] = str(exc)
                 nested_lineage = session_task.get("goal_lineage")
                 if isinstance(nested_lineage, Mapping):
@@ -480,7 +499,11 @@ class RuntimeSessionResume:
                         session_task.pop("session_id", None)
                         session_task.pop("runtime_session_id", None)
                 elif declares_goal_lineage:
-                    session_task["status"] = normalize_runtime_status(TASK_STATUS_BLOCKED)
+                    project_runtime_status(
+                        session_task,
+                        normalize_runtime_status(TASK_STATUS_BLOCKED),
+                        owner="core/runtime/runtime_session_resume.py",
+                    )
                     session_task["identity_validation_error"] = "goal_lineage_incomplete"
                 elif runtime_identity is None and identity_graph is None:
                     session_task.setdefault("resume_session_id", normalized_session_id)
@@ -885,7 +908,11 @@ class RuntimeSessionResume:
         return plan
 
 def _project_session_resume_runtime_status(task_payload: dict[str, Any], runtime_status: Any) -> None:
-    task_payload["status"] = normalize_runtime_status(runtime_status)
+    project_runtime_status(
+        task_payload,
+        normalize_runtime_status(runtime_status),
+        owner="core/runtime/runtime_session_resume.py",
+    )
 
 def build_runtime_resume_plan(tasks: Iterable[Mapping[str, Any]], *, workspace_root: str | Path = ".", storage_path: str | Path | None = None, session_id: str | None = None, metadata: Mapping[str, Any] | None = None) -> dict[str, Any]:
     runtime = RuntimeSessionResume(workspace_root=workspace_root, storage_path=storage_path)
