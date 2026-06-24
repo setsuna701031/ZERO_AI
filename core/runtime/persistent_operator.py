@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.runtime.operator_registry_service import get_operator_registry_service
 
 import copy
 import json
@@ -59,6 +60,12 @@ class PersistentOperatorRuntime:
         resolved_session_id = str(session_id or f"operator-session:{uuid4().hex}").strip()
         if resolved_session_id in self._sessions:
             raise ValueError("operator_session_already_exists")
+        # Phase 1b: when a genuinely new operator session starts, remove stale
+        # compatibility readback entries for the same explicit session id.
+        # This preserves resume state stored in PersistentOperatorRuntime while
+        # preventing the legacy builtins backing store from leaking across tests
+        # or runtime instances that reuse a deterministic session id.
+        get_operator_registry_service().clear_session(resolved_session_id)
         session = OperatorSession(
             session_id=resolved_session_id,
             task_id=str(task_id or ""),
@@ -237,11 +244,9 @@ class PersistentOperatorRuntime:
             return None
         resolved = session.copy()
         try:
-            import builtins
-
             sid = str(session_id)
-            complete_registry = getattr(builtins, "_zero_operator_completion_registry_v13", {})
-            completions = complete_registry.get(sid, set()) if isinstance(complete_registry, dict) else set()
+            operator_registry = get_operator_registry_service()
+            completions = operator_registry.completed_steps(sid)
             if completions:
                 for item in completions:
                     item = str(item)
@@ -250,8 +255,7 @@ class PersistentOperatorRuntime:
                     if item not in resolved.completed_steps:
                         resolved.completed_steps.append(item)
 
-            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
-            failed_step = failure_registry.get(sid) if isinstance(failure_registry, dict) else None
+            failed_step = operator_registry.failed_step(sid)
             if (
                 isinstance(failed_step, str)
                 and failed_step.startswith("task_")
@@ -277,10 +281,7 @@ class PersistentOperatorRuntime:
             if checkpoint_id in self._checkpoints
         ]
         try:
-            import builtins
-
-            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
-            failed_step = failure_registry.get(str(session_id)) if isinstance(failure_registry, dict) else None
+            failed_step = get_operator_registry_service().failed_step(session_id)
             if failed_step:
                 exists = any(
                     checkpoint.step_id == failed_step and checkpoint.status == OPERATOR_CHECKPOINT_FAILED
@@ -313,13 +314,10 @@ class PersistentOperatorRuntime:
             for checkpoint in self.get_session_checkpoints(session_id)
         ]
         try:
-            import builtins
-
             sid = str(session_id)
-            complete_registry = getattr(builtins, "_zero_operator_completion_registry_v13", {})
-            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
-            completions = complete_registry.get(sid, set()) if isinstance(complete_registry, dict) else set()
-            failed_step = failure_registry.get(sid) if isinstance(failure_registry, dict) else None
+            operator_registry = get_operator_registry_service()
+            completions = operator_registry.completed_steps(sid)
+            failed_step = operator_registry.failed_step(sid)
 
             def has_evidence(evidence_id: str) -> bool:
                 return any(

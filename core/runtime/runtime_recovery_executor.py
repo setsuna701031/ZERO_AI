@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.runtime.operator_registry_service import get_operator_registry_service
 
 import copy
 from typing import Any, Callable
@@ -49,9 +50,7 @@ class RuntimeRecoveryExecutor:
             except Exception:
                 pass
         try:
-            import builtins
-            failures = getattr(builtins, "_zero_operator_failure_registry_v14", {})
-            failed_step = failures.get(str(session_id)) if isinstance(failures, dict) else None
+            failed_step = get_operator_registry_service().failed_step(session_id)
             if failed_step:
                 return {
                     "session_id": session_id,

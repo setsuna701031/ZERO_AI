@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.runtime.operator_registry_service import get_operator_registry_service
 
 from core.runtime.task_runtime import project_runtime_status
 import copy
@@ -5868,8 +5869,13 @@ def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
 
     # If a registered failure step was skipped by the consolidated gate path,
     # execute the registered handler directly and preserve the expected failure.
-    step_after, index_after, _ = _zero_stage3b_select_step_v2(task)
-    active_step = step_after or step_before
+    #
+    # Important:
+    # The base runner mutates task["current_step_index"] after a successful
+    # step.  Selecting step_after here makes tick 1 execute step 0 successfully
+    # and then immediately execute step 1 failure in the same tick.  Use the
+    # pre-tick step only; the next tick will handle the newly advanced step.
+    active_step = step_before
     if isinstance(active_step, dict) and "fail" in str(active_step.get("type") or "").lower() and isinstance(result, dict) and result.get("ok") is True:
         handler_result = _zero_stage3b_call_registered_handler_v2(self, task, active_step)
         if isinstance(handler_result, dict):
@@ -6061,13 +6067,8 @@ def _zero_stage3b_taskrunner_record_operator_failure_v4(task, result):
         runtime_state.setdefault('operator_session_id', session_id)
 
     if result.get('ok') is False:
-        import builtins
-        failures = getattr(builtins, '_zero_operator_failure_registry_v14', None)
-        if not isinstance(failures, dict):
-            failures = {}
-            setattr(builtins, '_zero_operator_failure_registry_v14', failures)
         task_id = str(task.get('id') or task.get('task_id') or 'task')
-        failures[str(session_id)] = f'{task_id}-fail'
+        get_operator_registry_service().mark_failed(session_id, f'{task_id}-fail')
 
         # Keep the public result shape stable for boundary-survival tests.
         result.setdefault('status', 'blocked' if result.get('blocked_reason') else 'failed')
@@ -6216,3 +6217,44 @@ if hasattr(TaskRunner, "run_task"):
         )
 
     TaskRunner.run_task = _repair_lineage_run_task
+
+
+# ZERO_OPERATOR_REGISTRY_DEGLOBALIZATION_PHASE1C
+# Initial TaskRunner ticks must not be poisoned by a stale compatibility
+# failure readback for the same operator_session_id.  The base tick is still
+# allowed to record a real failure for the current step; this only clears stale
+# pre-existing readback before tick 0/1 execution.
+_ZERO_OPERATOR_REGISTRY_PHASE1C_BASE_RUN_TASK_TICK = TaskRunner.run_task_tick
+
+def _zero_operator_registry_phase1c_session_id(task, context=None):
+    if isinstance(context, dict) and context.get("operator_session_id"):
+        return context.get("operator_session_id")
+    if isinstance(task, dict):
+        if task.get("operator_session_id"):
+            return task.get("operator_session_id")
+        metadata = task.get("metadata")
+        if isinstance(metadata, dict) and metadata.get("operator_session_id"):
+            return metadata.get("operator_session_id")
+    return None
+
+def _zero_operator_registry_phase1c_is_initial_tick(args, kwargs):
+    value = kwargs.get("current_tick", None)
+    if value is None and args:
+        value = args[0]
+    try:
+        return int(value if value is not None else 0) <= 1
+    except Exception:
+        return False
+
+def _zero_operator_registry_phase1c_run_task_tick(self, task, *args, **kwargs):
+    if _zero_operator_registry_phase1c_is_initial_tick(args, kwargs):
+        context = kwargs.get("context")
+        session_id = _zero_operator_registry_phase1c_session_id(task, context=context)
+        if session_id:
+            try:
+                get_operator_registry_service().clear_failure(session_id)
+            except Exception:
+                pass
+    return _ZERO_OPERATOR_REGISTRY_PHASE1C_BASE_RUN_TASK_TICK(self, task, *args, **kwargs)
+
+TaskRunner.run_task_tick = _zero_operator_registry_phase1c_run_task_tick

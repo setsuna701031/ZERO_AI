@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.runtime.operator_registry_service import get_operator_registry_service
 
 from core.runtime.task_runtime import project_runtime_status
 import copy
@@ -11318,14 +11319,8 @@ def _zero_scheduler_run_one_step_v13(self, *args, **kwargs):
     if isinstance(task, dict) and isinstance(result, dict) and result.get("ok") is True:
         session_id = task.get("operator_session_id")
         if session_id:
-            import builtins
-            registry = getattr(builtins, "_zero_operator_completion_registry_v13", None)
-            if not isinstance(registry, dict):
-                registry = {}
-                setattr(builtins, "_zero_operator_completion_registry_v13", registry)
-
             complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
-            registry.setdefault(str(session_id), set()).add(complete_id)
+            get_operator_registry_service().mark_complete(session_id, complete_id)
 
     return result
 
@@ -11342,22 +11337,13 @@ def _zero_scheduler_run_one_step_v14(self, *args, **kwargs):
     if isinstance(task, dict) and isinstance(result, dict):
         session_id = task.get("operator_session_id")
         if session_id:
-            import builtins
-            registry = getattr(builtins, "_zero_operator_completion_registry_v13", None)
-            if not isinstance(registry, dict):
-                registry = {}
-                setattr(builtins, "_zero_operator_completion_registry_v13", registry)
-
             task_id = str(task.get("id") or task.get("task_id") or "task")
+            operator_registry = get_operator_registry_service()
 
             if result.get("ok") is True:
-                registry.setdefault(str(session_id), set()).add(f"{task_id}-complete")
+                operator_registry.mark_complete(session_id, f"{task_id}-complete")
             elif result.get("ok") is False:
-                failed = getattr(builtins, "_zero_operator_failure_registry_v14", None)
-                if not isinstance(failed, dict):
-                    failed = {}
-                    setattr(builtins, "_zero_operator_failure_registry_v14", failed)
-                failed[str(session_id)] = f"{task_id}-fail"
+                operator_registry.mark_failed(session_id, f"{task_id}-fail")
 
     return result
 
@@ -11374,8 +11360,6 @@ def _zero_scheduler_run_one_step_v15(self, *args, **kwargs):
     if isinstance(task, dict) and isinstance(result, dict):
         session_id = task.get("operator_session_id")
         if session_id:
-            import builtins
-
             steps = task.get("steps") if isinstance(task.get("steps"), list) else []
             try:
                 idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
@@ -11387,11 +11371,7 @@ def _zero_scheduler_run_one_step_v15(self, *args, **kwargs):
             task_id = str(task.get("id") or task.get("task_id") or "task")
 
             if "fail" in step_type or "failure" in step_type:
-                failed = getattr(builtins, "_zero_operator_failure_registry_v14", None)
-                if not isinstance(failed, dict):
-                    failed = {}
-                    setattr(builtins, "_zero_operator_failure_registry_v14", failed)
-                failed[str(session_id)] = f"{task_id}-fail"
+                get_operator_registry_service().mark_failed(session_id, f"{task_id}-fail")
 
     return result
 
@@ -11408,24 +11388,11 @@ def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
     if isinstance(task, dict) and isinstance(result, dict) and result.get("ok") is True:
         session_id = task.get("operator_session_id")
         if session_id:
-            import builtins
-
             task_id = str(task.get("id") or task.get("task_id") or "task")
-            sid = str(session_id)
+            operator_registry = get_operator_registry_service()
 
-            completions = getattr(builtins, "_zero_operator_completion_registry_v13", {})
-            already_completed = (
-                isinstance(completions, dict)
-                and sid in completions
-                and bool(completions.get(sid))
-            )
-
-            if already_completed:
-                failures = getattr(builtins, "_zero_operator_failure_registry_v14", None)
-                if not isinstance(failures, dict):
-                    failures = {}
-                    setattr(builtins, "_zero_operator_failure_registry_v14", failures)
-                failures[sid] = f"{task_id}-fail"
+            if operator_registry.has_completion(session_id):
+                operator_registry.mark_failed(session_id, f"{task_id}-fail")
 
     return result
 

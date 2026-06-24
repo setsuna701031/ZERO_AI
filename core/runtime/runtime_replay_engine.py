@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.runtime.operator_registry_service import get_operator_registry_service
 
 import copy
 from dataclasses import dataclass, field, replace
@@ -252,11 +253,9 @@ class RuntimeReplayEngine:
         if not isinstance(refs, list):
             refs = []
         try:
-            import builtins
-            complete_registry = getattr(builtins, "_zero_operator_completion_registry_v13", {})
-            failure_registry = getattr(builtins, "_zero_operator_failure_registry_v14", {})
-            completions = complete_registry.get(str(session_id), set()) if isinstance(complete_registry, dict) else set()
-            failed_step = failure_registry.get(str(session_id)) if isinstance(failure_registry, dict) else None
+            operator_registry = get_operator_registry_service()
+            completions = operator_registry.completed_steps(session_id)
+            failed_step = operator_registry.failed_step(session_id)
 
             def has_evidence(evidence_id: str) -> bool:
                 return any(
