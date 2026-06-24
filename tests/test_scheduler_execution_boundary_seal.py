@@ -86,6 +86,7 @@ def test_scheduler_side_effect_reaches_endpoint_through_taskrunner(tmp_path: Pat
     assert endpoint.calls[0]["context"]["authority_context"]["authority_layer"] == "task_runner"
     assert [item["layer"] for item in endpoint.calls[0]["context"]["authority_context"]["authority_chain"]] == [
         "scheduler",
+        "runtime_dispatcher",
         "task_runner",
     ]
     _assert_path(result["execution_path"])

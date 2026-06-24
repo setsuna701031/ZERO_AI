@@ -145,7 +145,7 @@ def test_work_package_scheduler_accepts_live_dispatcher_authority(tmp_path: Path
     assert scheduler.run("package-a", completion_authority=authority)["status"] == STATUS_COMPLETED
 
 
-def test_agent_loop_dispatcher_lineage_reports_real_finished(tmp_path: Path) -> None:
+def test_agent_loop_dispatcher_lineage_reports_real_completed(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     shared = workspace / "shared"
     shared.mkdir(parents=True)
@@ -169,7 +169,7 @@ def test_agent_loop_dispatcher_lineage_reports_real_finished(tmp_path: Path) -> 
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
     assert multi["executed_group_count"] == 8
     assert runtime["executed_group_count"] == 8
     assert runtime["failure_count"] == 0

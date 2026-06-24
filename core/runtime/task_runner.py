@@ -1,4 +1,5 @@
 from __future__ import annotations
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 from core.runtime.operator_registry_service import get_operator_registry_service
 
 from core.runtime.task_runtime import project_runtime_status
@@ -2252,7 +2253,7 @@ class TaskRunner:
                 "error": prepare_result.get("reason") or prepared_state.get("last_error"),
                 "execution_trace": copy.deepcopy(prepared_state.get("execution_trace", [])),
             }
-        if str(prepared_state.get("status") or "").strip().lower() == "finished":
+        if canonical_runtime_status(prepared_state.get("status")) == "completed":
             return {
                 "ok": True,
                 "action": "already_finished",
@@ -2927,7 +2928,7 @@ class TaskRunner:
 
         new_status = str(new_state.get("status") or advance_result.get("status") or "running").strip().lower()
 
-        if new_status == "finished":
+        if canonical_runtime_status(new_status) == "completed":
             terminal_step = step if isinstance(step, dict) else {}
             finish_result = self.runtime.mark_finished(
                 task=task,
@@ -4803,7 +4804,7 @@ def _zero_v800_decide_from_observation(self: TaskRunner, *, observation: Dict[st
             "next_action": "wait_for_external_event",
         }
 
-    if status == "finished" or action in {"already_finished"}:
+    if canonical_runtime_status(status) == "completed" or action in {"already_finished"}:
         return {
             "decision": "finish",
             "phase": "finished",
@@ -5958,7 +5959,7 @@ try:
                     owner="core/runtime/task_runner.py",
                     reason="taskrunner_stage3b_runtime_state_normalization",
                 )
-            if result.get("status") == "finished":
+            if canonical_runtime_status(result.get("status")) == "completed":
                 project_runtime_status(
                     runtime_state,
                     "finished",

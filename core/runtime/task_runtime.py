@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
 import hashlib
 import json
@@ -2965,7 +2966,7 @@ class TaskRuntime:
         if not isinstance(context, dict):
             return
         session = self._normalize_repair_session(context.get("repair_session"))
-        final_status = "finished" if str(status or "").strip().lower() == "finished" else "failed"
+        final_status = "completed" if canonical_runtime_status(status) == "completed" else "failed"
         session["status"] = final_status
         session["finished_at"] = self._now()
         session["terminal_node_id"] = str(session.get("current_node_id") or session.get("terminal_node_id") or "")

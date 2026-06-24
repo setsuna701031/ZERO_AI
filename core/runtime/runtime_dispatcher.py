@@ -51,10 +51,51 @@ from core.tasks.scheduler_runtime_contract import (
 RUNTIME_DISPATCH_SCHEMA = "zero.runtime.work_package_dispatch.v1"
 RUNTIME_REPLAN_REQUEST_SCHEMA = "zero.runtime.work_package_replan_request.v1"
 RUNTIME_LIFECYCLE_STATES = frozenset(
-    {"planned", "claimed", "executing", "paused", "blocked", "failed", "completed"}
+    {"planned", "claimed", "executing", "paused", "blocked", "failed", "finished"}
 )
-RUNTIME_TERMINAL_STATES = frozenset({"failed", "completed"})
+RUNTIME_TERMINAL_STATES = frozenset({"failed", "finished"})
+RUNTIME_STATUS_ALIASES = {
+    "": "executing",
+    "active": "executing",
+    "running": "executing",
+    "started": "executing",
+    "complete": "finished",
+    "completed": "finished",
+    "done": "finished",
+    "ok": "finished",
+    "success": "finished",
+    "succeeded": "finished",
+    "executed": "finished",
+    "cancelled": "failed",
+    "canceled": "failed",
+    "error": "failed",
+    "exception": "failed",
+    "failure": "failed",
+    "waiting": "paused",
+}
 RUNTIME_TRANSITIONS = SCHEDULER_RUNTIME_TRANSITIONS
+
+
+def normalize_runtime_dispatcher_status(value: Any, *, default: str = "executing") -> str:
+    """Return the canonical RuntimeDispatcher lifecycle status.
+
+    RuntimeDispatcher persists lifecycle state, not generic execution-result
+    status.  Generic result aliases such as ``completed``/``done``/``success``
+    are accepted only at this boundary and are projected to the canonical
+    terminal runtime state ``finished``.
+    """
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not text:
+        text = str(default or "executing").strip().lower()
+    if text in RUNTIME_STATUS_ALIASES:
+        return RUNTIME_STATUS_ALIASES[text]
+    if text in RUNTIME_LIFECYCLE_STATES:
+        return text
+    normalized_default = str(default or "executing").strip().lower()
+    return RUNTIME_STATUS_ALIASES.get(
+        normalized_default,
+        normalized_default if normalized_default in RUNTIME_LIFECYCLE_STATES else "executing",
+    )
 
 
 def _now() -> str:
@@ -62,7 +103,17 @@ def _now() -> str:
 
 
 def validate_runtime_transition(from_state: str, to_state: str) -> bool:
-    return validate_scheduler_lifecycle_transition(from_state, to_state)
+    canonical_from = normalize_runtime_dispatcher_status(from_state, default="planned")
+    canonical_to = normalize_runtime_dispatcher_status(to_state, default="executing")
+    if canonical_from == canonical_to:
+        return True
+    if canonical_from in RUNTIME_LIFECYCLE_STATES and canonical_to in RUNTIME_LIFECYCLE_STATES:
+        if canonical_to in RUNTIME_TERMINAL_STATES:
+            return canonical_from not in RUNTIME_TERMINAL_STATES
+        if canonical_from in RUNTIME_TERMINAL_STATES:
+            return False
+        return True
+    return validate_scheduler_lifecycle_transition(canonical_from, canonical_to)
 
 
 
@@ -538,8 +589,12 @@ class RuntimeDispatcher:
             or task.get("current_step_index")
             or 0
         )
-        status = str(payload.get("status") or state.get("status") or "").lower()
-        ok = bool(payload.get("ok")) and status not in {"failed", "blocked", "cancelled"}
+        raw_status = str(payload.get("status") or state.get("status") or "").strip().lower()
+        status = normalize_runtime_dispatcher_status(
+            raw_status,
+            default="executing" if bool(payload.get("ok")) else "failed",
+        )
+        ok = bool(payload.get("ok")) and status not in {"failed", "blocked"}
         error = payload.get("error") or state.get("last_error")
         steps = task.get("steps") if isinstance(task.get("steps"), list) else []
         step = steps[tick] if tick < len(steps) and isinstance(steps[tick], Mapping) else {}
@@ -576,7 +631,7 @@ class RuntimeDispatcher:
             "ok": ok,
             "failed": not ok and next_action not in {"block"},
             "blocked": next_action == "block",
-            "runtime_status": status or ("executing" if ok else "failed"),
+            "runtime_status": status,
             "root_cause": "" if ok else str(error or "runtime_step_failed"),
             "evidence": payload,
             "output_summary": output_summary,
@@ -761,6 +816,7 @@ __all__ = [
     "RUNTIME_REPLAN_REQUEST_SCHEMA",
     "RUNTIME_LIFECYCLE_STATES",
     "RUNTIME_TERMINAL_STATES",
+    "normalize_runtime_dispatcher_status",
     "RuntimeDispatcher",
     "validate_runtime_transition",
 ]

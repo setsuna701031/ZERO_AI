@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
@@ -113,7 +114,7 @@ class ToolCallExecutor:
                 tool=result.tool,
                 args=args,
                 status=status,
-                ok=bool(result.ok and status == "success"),
+                ok=bool(result.ok and canonical_runtime_status(status) == "completed"),
                 output=output,
                 error=result.error or output.get("error"),
                 request_id=result.request_id,

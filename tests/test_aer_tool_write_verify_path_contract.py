@@ -112,7 +112,7 @@ def test_planner_tool_registry_read_write_verify_path(tmp_path: Path) -> None:
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
     assert multi["executed_group_count"] == 3
     assert runtime["executed_group_count"] == 3
     assert runtime["plan_group_count"] == 3

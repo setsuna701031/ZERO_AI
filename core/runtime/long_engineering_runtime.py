@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 from core.runtime.task_runtime import project_runtime_status
 import json
 import time
@@ -206,7 +207,7 @@ class LongEngineeringRuntime:
         result: Dict[str, Any],
     ) -> Dict[str, Any]:
         checkpoint = {
-            "ok": status == "finished",
+            "ok": canonical_runtime_status(status) == "completed",
             "schema": f"{SCHEMA}.checkpoint",
             "session_id": self.session_id,
             "task_id": self.task_id,

@@ -78,7 +78,7 @@ def test_agent_loop_planner_dispatch_calls_step_executor_adapter(tmp_path: Path)
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
     assert orchestrator["cycle_count"] == 1
 
 

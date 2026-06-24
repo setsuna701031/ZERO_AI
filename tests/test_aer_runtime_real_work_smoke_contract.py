@@ -158,7 +158,7 @@ def test_aer_runtime_real_work_read_write_verify_smoke(tmp_path: Path) -> None:
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
 
     # The real-work planner produced three steps; the bridge must deliver all
     # three to the StepExecutor endpoint through LongEngineeringRuntime groups.

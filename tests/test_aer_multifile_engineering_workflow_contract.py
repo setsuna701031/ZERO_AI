@@ -173,7 +173,7 @@ def test_aer_multifile_engineering_workflow_read_write_verify_artifact(tmp_path:
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
     assert multi["executed_group_count"] == 8
     assert runtime["executed_group_count"] == 8
     assert runtime["plan_group_count"] == 8

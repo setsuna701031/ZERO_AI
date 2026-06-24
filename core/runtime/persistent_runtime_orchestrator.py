@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 from core.runtime.task_runtime import project_runtime_status
 import copy
 import inspect
@@ -477,7 +478,7 @@ def _execute_persistent_runtime_task_with_executor(
             }
         )
 
-    terminal_status = "finished" if runtime_ok and runtime_status == "finished" else runtime_status
+    terminal_status = "completed" if runtime_ok and canonical_runtime_status(runtime_status) == "completed" else canonical_runtime_status(runtime_status)
     loop = {
         "ok": runtime_ok,
         "status": terminal_status,

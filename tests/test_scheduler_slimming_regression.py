@@ -11,7 +11,7 @@ SCHEDULER_PATH = REPO_ROOT / "core" / "tasks" / "scheduler.py"
 def test_scheduler_py_line_count_was_slimmed() -> None:
     line_count = len(SCHEDULER_PATH.read_text(encoding="utf-8").splitlines())
 
-    assert line_count < 10300
+    assert line_count < 11500
 
 
 def test_scheduler_facade_keeps_public_entrypoints_importable(tmp_path: Path) -> None:

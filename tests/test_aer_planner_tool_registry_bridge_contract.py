@@ -94,7 +94,7 @@ def test_planner_runtime_dispatch_reaches_real_tool_registry_read_file(tmp_path:
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
 
     runtime = orchestrator["multi_cycle_engineering_loop"]["cycle_results"][0]["runtime"]
     checkpoint_result = runtime["latest_checkpoint"]["result"]

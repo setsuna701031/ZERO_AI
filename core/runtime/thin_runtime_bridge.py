@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 from core.runtime.task_runtime import project_runtime_status
 import json
 import time
@@ -211,7 +212,7 @@ def select_artifact_writer(repo_root: Path, task: Dict[str, Any]) -> Dict[str, A
     if "分析" in goal or "system" in lowered or "目前系統" in goal:
         tasks = read_tasks_index(repo_root)
         queued = sum(1 for item in tasks if task_status(item) == "queued")
-        finished = sum(1 for item in tasks if task_status(item) == "finished")
+        finished = sum(1 for item in tasks if canonical_runtime_status(task_status(item)) == "completed")
         failed = sum(1 for item in tasks if task_status(item) == "failed")
         return build_system_analysis_artifact(
             repo_root=repo_root,

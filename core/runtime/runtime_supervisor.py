@@ -308,9 +308,15 @@ class RuntimeSupervisor:
         source_session_id = str(
             runtime_identity.get("source_session_id")
             or runtime_identity.get("session_id")
-            or runtime_identity.get("runtime_session_id")
+            or incident.get("session_id")
             or ""
         )
+        if not source_session_id and incident_type == "runtime_session_lease_expired":
+            source_session_id = str(
+                runtime_identity.get("runtime_session_id")
+                or incident.get("runtime_session_id")
+                or ""
+            )
         task_id = str(incident.get("task_id") or "")
         classification = self.policy.classify(incident)
 

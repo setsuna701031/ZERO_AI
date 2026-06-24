@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import copy
 import hashlib
 import json
@@ -204,7 +205,7 @@ class TraceReplayRuntime:
                 if event_type == "retry":
                     item["status"] = "pending"
                     scheduler_state["queue"].append(item)
-                elif event_type == "done":
+                elif canonical_runtime_status(event_type) == "completed":
                     item["status"] = "done"
                     scheduler_state["done"].append(item)
                 else:

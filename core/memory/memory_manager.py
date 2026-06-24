@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.runtime.runtime_status_canonicalization import canonical_runtime_status
 import json
 import re
 from datetime import datetime, timezone
@@ -104,7 +105,7 @@ class MemoryManager:
 
         for lesson in lessons:
             outcome = str(lesson.get("outcome", "")).strip().lower()
-            if outcome == "success":
+            if canonical_runtime_status(outcome) == "completed":
                 success_count += 1
             elif outcome == "failure":
                 failure_count += 1
@@ -231,7 +232,7 @@ class MemoryManager:
         if lesson.get("outcome") == "failure":
             score += 1
 
-        if lesson.get("outcome") == "success":
+        if canonical_runtime_status(lesson.get("outcome")) == "completed":
             score += 1
 
         return score

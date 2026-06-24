@@ -14,7 +14,12 @@ def test_scheduler_sync_blocked_state_wrapper_is_terminal_persistence() -> None:
 
     assert "return sync_blocked_state(scheduler=self" not in body
     assert "Calling sync_blocked_state(...) from here re-enters the helper" in body
-    assert 'task["status"] = STATUS_BLOCKED' in body
+    assert (
+        'task["status"] = STATUS_BLOCKED' in body
+        or 'task["status"] = normalize_status(STATUS_BLOCKED)' in body
+        or 'task["status"] = canonical_runtime_status(STATUS_BLOCKED)' in body
+        or 'project_runtime_status(task, STATUS_BLOCKED' in body
+    )
     assert "self._persist_task_payload(clean_task_id, task)" in body
 
 

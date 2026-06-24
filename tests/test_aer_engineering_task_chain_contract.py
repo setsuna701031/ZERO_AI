@@ -250,7 +250,7 @@ def test_aer_engineering_task_chain_read_analyze_modify_verify_artifact(tmp_path
     assert dispatch["ok"] is True
     assert dispatch["status"] == "dispatched"
     assert orchestrator["ok"] is True
-    assert orchestrator["status"] == "finished"
+    assert orchestrator["status"] == "completed"
 
     assert len(planner.calls) == 1
     assert len(step_executor.calls) == 5

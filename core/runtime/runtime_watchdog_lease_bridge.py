@@ -414,7 +414,10 @@ class RuntimeWatchdogLeaseBridge:
             session_id=session_id,
             task_id=str(session.get("task_id") or ""),
             runtime_session_id=runtime_identity.get("runtime_session_id", ""),
-            source_session_id=runtime_identity.get("source_session_id", ""),
+            source_session_id=(
+                runtime_identity.get("source_session_id")
+                or session_id
+            ),
             owner_id=str(session.get("owner_id") or ""),
             lease_id=str(session.get("lease_id") or ""),
             current_tick=int(current_tick),

@@ -148,6 +148,7 @@ class RuntimeStateMachine:
         },
         STATUS_BLOCKED: {
             STATUS_READY,
+            STATUS_RUNNING,
             STATUS_WAITING,
             STATUS_REPLANNING,
             STATUS_FAILED,
