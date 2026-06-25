@@ -7653,9 +7653,10 @@ class Scheduler(RuntimeTaskScheduler):
         if not m:
             return None
 
-        path = m.group(1).strip()
+        path = m.group(1)
         lowered = stripped.lower()
-        if any(x in lowered for x in ["read", "open", "show", "cat", "查看"]):
+
+        if any(x in lowered for x in ["read", "open", "show", "cat", "查看", "讀取", "打开", "開啟", "??"]):
             return {"type": "read_file", "path": path}
 
         return None
