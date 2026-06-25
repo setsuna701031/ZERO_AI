@@ -1,5 +1,7 @@
 from __future__ import annotations
 from core.runtime.scheduler_runtime_fallback import (
+    canonical_has_dispatch_authority,
+    canonical_has_granted_execution_authority,
     canonical_runtime_fallback_context,
     canonical_select_step,
     canonical_soft_gate_failure,
