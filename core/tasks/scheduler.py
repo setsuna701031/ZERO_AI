@@ -6114,7 +6114,7 @@ class Scheduler(RuntimeTaskScheduler):
             r"\bfix\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
             r"\brepair\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
             r"\bcorrect\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
-            r"(?:修復|修正|修理)\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:function|函式|功能)?\b",
+            r"(?:修復|修正|修改)\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:function|函式|函数)?\b",
             r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\b",
             r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
         ]
@@ -6848,9 +6848,9 @@ class Scheduler(RuntimeTaskScheduler):
             "contains",
             "equals",
             "exists",
-            "確認",
+            "????",
             "check",
-            "驗證",
+            "????",
         ]
 
         if any(marker in text for marker in shared_markers):
@@ -7453,15 +7453,15 @@ class Scheduler(RuntimeTaskScheduler):
             "extract action items",
             "todo",
             "to-do",
-            "行動項目",
-            "待辦事項",
+            "??謜??????",
+            "??祈????????",
         ]
         summary_keywords = [
             "summary",
             "summarize",
             "summarise",
             "???",
-            "總結",
+            "????",
         ]
 
         wants_action_items = any(keyword in lowered for keyword in action_keywords)
@@ -7575,12 +7575,12 @@ class Scheduler(RuntimeTaskScheduler):
         candidates = [
             "hello world python",
             "hello world ??python",
-            "寫一個 hello world python",
-            "建立 hello world python",
-            "做一個 hello world python",
+            "?雓?????hello world python",
+            "???? hello world python",
+            "?????hello world python",
             "python hello world",
-            "建立一個 hello.py 印出 hello world",
-            "hello.py 印出 hello world",
+            "?????鞊啣????hello.py ?????hello world",
+            "hello.py ?????hello world",
         ]
         return any(item in lowered for item in candidates)
 
@@ -7617,12 +7617,12 @@ class Scheduler(RuntimeTaskScheduler):
         stripped = str(text or "").strip()
 
         patterns = [
-            r"內容是\s*(.+)$",
-            r"內容為\s*(.+)$",
-            r"內容:\s*(.+)$",
-            r"內容：\s*(.+)$",
-            r"寫入\s*(.+)$",
-            r"放入\s*(.+)$",
+            r"????????(.+)$",
+            r"??????鞊?(.+)$",
+            r"????:\s*(.+)$",
+            r"?????雓?s*(.+)$",
+            r"?雓??頩??s*(.+)$",
+            r"????剁?\s*(.+)$",
             r"content is\s+(.+)$",
             r"content:\s*(.+)$",
             r"with content\s+(.+)$",
@@ -11391,9 +11391,10 @@ def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
             task_id = str(task.get("id") or task.get("task_id") or "task")
             operator_registry = get_operator_registry_service()
 
-            if operator_registry.has_completion(session_id):
+            if not operator_registry.has_completion(session_id):
                 operator_registry.mark_failed(session_id, f"{task_id}-fail")
 
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
+
