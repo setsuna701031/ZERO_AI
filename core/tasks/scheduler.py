@@ -1,4 +1,10 @@
 from __future__ import annotations
+from core.runtime.scheduler_runtime_fallback import (
+    canonical_runtime_fallback_context,
+    canonical_select_step,
+    canonical_soft_gate_failure,
+    canonicalize_fallback_result,
+)
 from core.runtime.operator_registry_service import get_operator_registry_service
 
 from core.runtime.task_runtime import project_runtime_status
@@ -10467,7 +10473,7 @@ _zero_prev_scheduler_run_one_step_v1 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v1(self, *args, **kwargs):
     result = _zero_prev_scheduler_run_one_step_v1(self, *args, **kwargs)
-    if not _zero_scheduler_soft_gate_failure(result):
+    if not canonical_soft_gate_failure(result, empty_text_is_soft_gate=True):
         return result
 
     task = kwargs.get("task")
@@ -10476,26 +10482,25 @@ def _zero_scheduler_run_one_step_v1(self, *args, **kwargs):
     if not isinstance(task, dict):
         return result
 
-    step = _zero_scheduler_select_step(task)
+    step = canonical_select_step(task)
     if not step:
         return result
 
-    context = {
-        "current_tick": kwargs.get("current_tick"),
-        "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
-        "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
-        "operator_session_id": task.get("operator_session_id"),
-    }
+    fallback = self._run_step_via_task_runner(
+        task=task,
+        step=step,
+        context=canonical_runtime_fallback_context(
+            task,
+            step,
+            current_tick=kwargs.get("current_tick"),
+        ),
+    )
 
-    fallback = self._run_step_via_task_runner(task=task, step=step, context=context)
-
-    if isinstance(fallback, dict):
-        fallback.setdefault("ok", True)
-        fallback.setdefault("status", "completed" if fallback.get("ok") else "failed")
-        fallback.setdefault("compatibility_seal", "scheduler_runtime_gate_fallback_v1")
-        return fallback
-
-    return result
+    fallback = canonicalize_fallback_result(
+        fallback,
+        compatibility_seal="scheduler_runtime_gate_fallback_v1",
+    )
+    return fallback if isinstance(fallback, dict) else result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v1
 

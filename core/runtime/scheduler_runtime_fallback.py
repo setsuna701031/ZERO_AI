@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 
-def canonical_soft_gate_failure(result: Any) -> bool:
+def canonical_soft_gate_failure(
+    result: Any,
+    *,
+    empty_text_is_soft_gate: bool = False,
+) -> bool:
     if not isinstance(result, dict):
         return False
     if result.get("ok") is not False:
@@ -15,14 +19,13 @@ def canonical_soft_gate_failure(result: Any) -> bool:
     ).lower()
 
     return (
-        not text
+        (empty_text_is_soft_gate and not text)
         or "runtime_dispatcher_live_capability_required" in text
         or "taskrunner_execution_capability_required" in text
         or "runtime_execution_capability_not_validated" in text
         or "capability" in text
         or "authority" in text
     )
-
 
 def canonical_select_step(task: Any) -> dict[str, Any]:
     if not isinstance(task, dict):
