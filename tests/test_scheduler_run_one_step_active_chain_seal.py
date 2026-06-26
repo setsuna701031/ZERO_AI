@@ -22,8 +22,7 @@ def test_scheduler_run_one_step_legacy_chain_before_operator_pipeline_is_preserv
     import core.tasks.scheduler as scheduler_module
 
     expected = {
-        "_zero_scheduler_base_run_one_step_v8": "_zero_scheduler_run_one_step_v7",
-        "_zero_scheduler_base_run_one_step_v7": "_zero_scheduler_run_one_step_v6",
+        "_zero_scheduler_base_run_one_step_v8": "_zero_scheduler_run_one_step_v6",
         "_zero_scheduler_base_run_one_step_v6": "_zero_scheduler_run_one_step_v5",
         "_zero_scheduler_base_run_one_step_v5": "_zero_scheduler_run_one_step_v4",
         "_zero_scheduler_base_run_one_step_v4": "_zero_scheduler_run_one_step_v3",
