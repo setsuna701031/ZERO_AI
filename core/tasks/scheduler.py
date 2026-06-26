@@ -10516,45 +10516,6 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v1
 
 # ZERO_CONSOLIDATED_SCHEDULER_RUNTIME_GATE_FALLBACK_V2
 
-def _zero_scheduler_has_dispatch_authority_v2(task):
-    if not isinstance(task, dict):
-        return False
-    authority = task.get("execution_authority")
-    if isinstance(authority, dict) and authority.get("execution_authority_granted") is True:
-        return True
-    for key in (
-        "runtime_execution_capability",
-        "dispatch_execution_capability",
-        "runtime_dispatch_capability",
-        "execution_capability",
-    ):
-        if task.get(key):
-            return True
-    return False
-
-def _zero_scheduler_soft_gate_failure_v2(result):
-    if not isinstance(result, dict) or result.get("ok") is not False:
-        return False
-    text = " ".join(str(result.get(k) or "") for k in ("reason", "error", "blocked_reason", "status")).lower()
-    return (
-        "runtime_dispatcher_live_capability_required" in text
-        or "taskrunner_execution_capability_required" in text
-        or "capability" in text
-        or "authority" in text
-    )
-
-def _zero_scheduler_select_step_v2(task):
-    steps = task.get("steps") if isinstance(task, dict) else None
-    if not isinstance(steps, list) or not steps:
-        return {}
-    try:
-        index = int(task.get("current_step_index", task.get("step_index", 0)))
-    except Exception:
-        index = 0
-    if index < 0 or index >= len(steps):
-        index = 0
-    return steps[index] if isinstance(steps[index], dict) else {}
-
 _zero_scheduler_base_run_one_step_v2 = globals().get("_zero_prev_scheduler_run_one_step_v1", Scheduler.run_one_step)
 
 def _zero_scheduler_run_one_step_v2(self, *args, **kwargs):
@@ -10588,36 +10549,6 @@ def _zero_scheduler_run_one_step_v2(self, *args, **kwargs):
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v2
 
 # ZERO_CONSOLIDATED_SCHEDULER_RUNTIME_GATE_FALLBACK_V3
-
-def _zero_scheduler_has_explicit_authority_v3(task):
-    if not isinstance(task, dict):
-        return False
-    authority = task.get("execution_authority")
-    return isinstance(authority, dict) and authority.get("execution_authority_granted") is True
-
-def _zero_scheduler_soft_gate_failure_v3(result):
-    if not isinstance(result, dict) or result.get("ok") is not False:
-        return False
-    text = " ".join(str(result.get(k) or "") for k in ("reason", "error", "blocked_reason", "status")).lower()
-    return (
-        "runtime_dispatcher_live_capability_required" in text
-        or "taskrunner_execution_capability_required" in text
-        or "runtime_execution_capability_not_validated" in text
-        or "capability" in text
-        or "authority" in text
-    )
-
-def _zero_scheduler_select_step_v3(task):
-    steps = task.get("steps") if isinstance(task, dict) else None
-    if not isinstance(steps, list) or not steps:
-        return {}
-    try:
-        index = int(task.get("current_step_index", task.get("step_index", 0)))
-    except Exception:
-        index = 0
-    if index < 0 or index >= len(steps):
-        index = 0
-    return steps[index] if isinstance(steps[index], dict) else {}
 
 _zero_scheduler_base_run_one_step_v3 = Scheduler.run_one_step
 
