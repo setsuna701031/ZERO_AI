@@ -6109,11 +6109,7 @@ class Scheduler(RuntimeTaskScheduler):
         return task
 
     def _extract_function_name_for_fix(self, text: str) -> str:
-        """Extract the target function name for deterministic fix tasks.
-
-        Priority order matters.  Phrases like "Fix the add function so..."
-        must resolve to "add", not the word after "function" ("so").
-        """
+        """Extract the target function name for deterministic fix tasks."""
         raw = str(text or "").strip()
         if not raw:
             return ""
@@ -6122,7 +6118,6 @@ class Scheduler(RuntimeTaskScheduler):
             r"\bfix\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
             r"\brepair\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
             r"\bcorrect\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
-            r"(?:修復|修正|修改)\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:function|函式|函数)?\b",
             r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\b",
             r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
         ]
@@ -6142,7 +6137,6 @@ class Scheduler(RuntimeTaskScheduler):
                 return candidate
 
         return ""
-
     def _try_plan_multi_function_fix(self, text: str) -> Optional[Dict[str, Any]]:
         """Plan a narrow deterministic multi-file function-fix task.
 
@@ -7461,8 +7455,8 @@ class Scheduler(RuntimeTaskScheduler):
             "extract action items",
             "todo",
             "to-do",
-            "??謜??????",
-            "??祈????????",
+            "????桀????????",
+            "???????????",
         ]
         summary_keywords = [
             "summary",
@@ -7583,11 +7577,11 @@ class Scheduler(RuntimeTaskScheduler):
         candidates = [
             "hello world python",
             "hello world ??python",
-            "?雓?????hello world python",
+            "????潸縐?????hello world python",
             "???? hello world python",
             "?????hello world python",
             "python hello world",
-            "?????鞊啣????hello.py ?????hello world",
+            "?????????????hello.py ?????hello world",
             "hello.py ?????hello world",
         ]
         return any(item in lowered for item in candidates)
@@ -7625,16 +7619,12 @@ class Scheduler(RuntimeTaskScheduler):
         stripped = str(text or "").strip()
 
         patterns = [
-            r"????????(.+)$",
-            r"??????鞊?(.+)$",
-            r"????:\s*(.+)$",
-            r"?????雓?s*(.+)$",
-            r"?雓??頩??s*(.+)$",
-            r"????剁?\s*(.+)$",
-            r"content is\s+(.+)$",
-            r"content:\s*(.+)$",
-            r"with content\s+(.+)$",
-        ]
+    r"\bfix\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
+    r"\brepair\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
+    r"\bcorrect\s+(?:the\s+)?([A-Za-z_][A-Za-z0-9_]*)\s+function\b",
+    r"\bfunction\s+([A-Za-z_][A-Za-z0-9_]*)\b",
+    r"\bdef\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+]
 
         for pattern in patterns:
             m = re.search(pattern, stripped, flags=re.IGNORECASE)
@@ -7658,11 +7648,25 @@ class Scheduler(RuntimeTaskScheduler):
         path = m.group(1)
         lowered = stripped.lower()
 
-        if any(x in lowered for x in ["read", "open", "show", "cat", "查看", "讀取", "打开", "開啟", "??"]):
+        read_keywords = (
+            "read",
+            "open",
+            "show",
+            "cat",
+            "讀",
+            "讀取",
+            "打開",
+            "開啟",
+            "顯示",
+            "查看",
+            "檢視",
+            "內容",
+        )
+
+        if any(keyword in lowered for keyword in read_keywords):
             return {"type": "read_file", "path": path}
 
         return None
-
     def _extract_file_path(self, *args, **kwargs):
         return _scheduler_path_parser_helper_extract_file_path(*args, **kwargs)
 
@@ -11313,18 +11317,93 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v12
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13
 
+def _zero_scheduler_task_from_args(args, kwargs):
+    return kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+
+
+def _zero_scheduler_task_id(task):
+    return str(task.get("id") or task.get("task_id") or "task")
+
+
+def _zero_scheduler_mark_operator_complete_if_ok(task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    get_operator_registry_service().mark_complete(
+        session_id,
+        f"{_zero_scheduler_task_id(task)}-complete",
+    )
+
+
+def _zero_scheduler_mark_operator_complete_or_failed(task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    task_id = _zero_scheduler_task_id(task)
+    operator_registry = get_operator_registry_service()
+
+    if result.get("ok") is True:
+        operator_registry.mark_complete(session_id, f"{task_id}-complete")
+    elif result.get("ok") is False:
+        operator_registry.mark_failed(session_id, f"{task_id}-fail")
+
+
+def _zero_scheduler_mark_failed_step_if_needed(task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+    try:
+        idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
+    except Exception:
+        idx = 0
+
+    step = steps[idx] if 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
+    step_type = str(step.get("type") or "").lower()
+
+    if "fail" in step_type or "failure" in step_type:
+        get_operator_registry_service().mark_failed(
+            session_id,
+            f"{_zero_scheduler_task_id(task)}-fail",
+        )
+
+
+def _zero_scheduler_mark_failed_if_ok_without_completion(task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    operator_registry = get_operator_registry_service()
+    if not operator_registry.has_completion(session_id):
+        operator_registry.mark_failed(
+            session_id,
+            f"{_zero_scheduler_task_id(task)}-fail",
+        )
+
+
 _zero_scheduler_base_run_one_step_v13 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v13(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v13(self, *args, **kwargs)
-
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    if isinstance(task, dict) and isinstance(result, dict) and result.get("ok") is True:
-        session_id = task.get("operator_session_id")
-        if session_id:
-            complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
-            get_operator_registry_service().mark_complete(session_id, complete_id)
-
+    _zero_scheduler_mark_operator_complete_if_ok(
+        _zero_scheduler_task_from_args(args, kwargs),
+        result,
+    )
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v13
@@ -11335,19 +11414,10 @@ _zero_scheduler_base_run_one_step_v14 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v14(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v14(self, *args, **kwargs)
-
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    if isinstance(task, dict) and isinstance(result, dict):
-        session_id = task.get("operator_session_id")
-        if session_id:
-            task_id = str(task.get("id") or task.get("task_id") or "task")
-            operator_registry = get_operator_registry_service()
-
-            if result.get("ok") is True:
-                operator_registry.mark_complete(session_id, f"{task_id}-complete")
-            elif result.get("ok") is False:
-                operator_registry.mark_failed(session_id, f"{task_id}-fail")
-
+    _zero_scheduler_mark_operator_complete_or_failed(
+        _zero_scheduler_task_from_args(args, kwargs),
+        result,
+    )
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v14
@@ -11358,24 +11428,10 @@ _zero_scheduler_base_run_one_step_v15 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v15(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v15(self, *args, **kwargs)
-
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    if isinstance(task, dict) and isinstance(result, dict):
-        session_id = task.get("operator_session_id")
-        if session_id:
-            steps = task.get("steps") if isinstance(task.get("steps"), list) else []
-            try:
-                idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
-            except Exception:
-                idx = 0
-
-            step = steps[idx] if 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
-            step_type = str(step.get("type") or "").lower()
-            task_id = str(task.get("id") or task.get("task_id") or "task")
-
-            if "fail" in step_type or "failure" in step_type:
-                get_operator_registry_service().mark_failed(session_id, f"{task_id}-fail")
-
+    _zero_scheduler_mark_failed_step_if_needed(
+        _zero_scheduler_task_from_args(args, kwargs),
+        result,
+    )
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v15
@@ -11386,18 +11442,12 @@ _zero_scheduler_base_run_one_step_v16 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v16(self, *args, **kwargs)
-
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    if isinstance(task, dict) and isinstance(result, dict) and result.get("ok") is True:
-        session_id = task.get("operator_session_id")
-        if session_id:
-            task_id = str(task.get("id") or task.get("task_id") or "task")
-            operator_registry = get_operator_registry_service()
-
-            if not operator_registry.has_completion(session_id):
-                operator_registry.mark_failed(session_id, f"{task_id}-fail")
-
+    _zero_scheduler_mark_failed_if_ok_without_completion(
+        _zero_scheduler_task_from_args(args, kwargs),
+        result,
+    )
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
+
 
