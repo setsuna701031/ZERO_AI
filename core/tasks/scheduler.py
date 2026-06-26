@@ -10857,7 +10857,7 @@ def _zero_scheduler_update_step_progress(task, result):
     update_step_progress(task, result)
 
 
-_zero_scheduler_base_run_one_step_v8 = _zero_scheduler_base_run_one_step_v7
+_zero_scheduler_base_run_one_step_v8 = _zero_scheduler_base_run_one_step_v6
 
 def _zero_scheduler_run_one_step_v8(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v8(self, *args, **kwargs)
