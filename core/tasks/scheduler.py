@@ -195,6 +195,7 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_autonomous_repair_chain_overlay,
     apply_boundary_authority_overlay,
 )
+from core.tasks.scheduler_core.scheduler_progress import update_step_progress
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -10891,15 +10892,7 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v7
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V8
 
 def _zero_scheduler_update_step_progress(task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return
-    try:
-        current = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
-    except Exception:
-        current = 0
-    result.setdefault("current_step_index", current)
-    result.setdefault("next_step_index", current + 1)
-    task["current_step_index"] = result["next_step_index"]
+    update_step_progress(task, result)
 
 
 _zero_scheduler_base_run_one_step_v8 = Scheduler.run_one_step
