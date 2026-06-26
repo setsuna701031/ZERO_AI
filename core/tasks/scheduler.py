@@ -11396,14 +11396,18 @@ def _zero_scheduler_mark_failed_if_ok_without_completion(task, result):
         )
 
 
+def _zero_scheduler_run_operator_completion_pipeline(task, result):
+    _zero_scheduler_mark_operator_complete_if_ok(task, result)
+    _zero_scheduler_mark_operator_complete_or_failed(task, result)
+    _zero_scheduler_mark_failed_step_if_needed(task, result)
+    _zero_scheduler_mark_failed_if_ok_without_completion(task, result)
+
+
 _zero_scheduler_base_run_one_step_v13 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v13(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v13(self, *args, **kwargs)
-    _zero_scheduler_mark_operator_complete_if_ok(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-    )
+    _zero_scheduler_mark_operator_complete_if_ok(_zero_scheduler_task_from_args(args, kwargs), result)
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v13
@@ -11414,10 +11418,7 @@ _zero_scheduler_base_run_one_step_v14 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v14(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v14(self, *args, **kwargs)
-    _zero_scheduler_mark_operator_complete_or_failed(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-    )
+    _zero_scheduler_mark_operator_complete_or_failed(_zero_scheduler_task_from_args(args, kwargs), result)
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v14
@@ -11428,10 +11429,7 @@ _zero_scheduler_base_run_one_step_v15 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v15(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v15(self, *args, **kwargs)
-    _zero_scheduler_mark_failed_step_if_needed(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-    )
+    _zero_scheduler_mark_failed_step_if_needed(_zero_scheduler_task_from_args(args, kwargs), result)
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v15
@@ -11442,12 +11440,7 @@ _zero_scheduler_base_run_one_step_v16 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v16(self, *args, **kwargs)
-    _zero_scheduler_mark_failed_if_ok_without_completion(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-    )
+    _zero_scheduler_mark_failed_if_ok_without_completion(_zero_scheduler_task_from_args(args, kwargs), result)
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
-
-
