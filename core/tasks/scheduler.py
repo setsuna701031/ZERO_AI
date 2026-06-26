@@ -11455,7 +11455,7 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v15
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILED_STEP_V16
 
-_zero_scheduler_base_run_one_step_v16 = Scheduler.run_one_step
+_zero_scheduler_base_run_one_step_v16 = _zero_scheduler_base_run_one_step_v13
 
 def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v16(self, *args, **kwargs)
