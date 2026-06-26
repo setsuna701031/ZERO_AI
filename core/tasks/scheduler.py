@@ -10779,60 +10779,6 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v6
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_SESSION_COMPLETION_V7
 
-def _zero_scheduler_record_operator_completion_v7(self, task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return
-    if result.get("ok") is not True:
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    task_id = str(task.get("id") or task.get("task_id") or "task")
-    complete_id = f"{task_id}-complete"
-
-    bridge = getattr(getattr(self, "step_executor", None), "operator_bridge", None) or getattr(self, "operator_bridge", None)
-    candidates = [
-        getattr(bridge, "operator_runtime", None),
-        getattr(bridge, "runtime", None),
-        getattr(bridge, "_runtime", None),
-        bridge,
-    ]
-
-    for runtime in candidates:
-        if runtime is None:
-            continue
-
-        session = None
-        get_session = getattr(runtime, "get_session", None)
-        if callable(get_session):
-            try:
-                session = get_session(session_id)
-            except Exception:
-                session = None
-
-        if session is None:
-            sessions = getattr(runtime, "sessions", None) or getattr(runtime, "_sessions", None)
-            if isinstance(sessions, dict):
-                session = sessions.get(session_id)
-
-        if session is None:
-            continue
-
-        completed = getattr(session, "completed_steps", None)
-        if isinstance(completed, list):
-            if complete_id not in completed:
-                completed.append(complete_id)
-            return
-
-        if isinstance(session, dict):
-            completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and complete_id not in completed:
-                completed.append(complete_id)
-            return
-
-
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V8
 
 def _zero_scheduler_update_step_progress(task, result):
