@@ -10675,7 +10675,7 @@ def _zero_scheduler_pick_step_v4(task):
         index = 0
     return steps[index] if isinstance(steps[index], dict) else {}
 
-_zero_scheduler_base_run_one_step_v4 = Scheduler.run_one_step
+_zero_scheduler_base_run_one_step_v4 = _zero_scheduler_run_one_step_v2
 
 def _zero_scheduler_run_one_step_v4(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v4(self, *args, **kwargs)
