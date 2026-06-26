@@ -196,7 +196,7 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_boundary_authority_overlay,
 )
 from core.tasks.scheduler_core.scheduler_progress import update_step_progress
-from core.tasks.scheduler_core.scheduler_completion import mark_completed_steps_fallback, task_from_args, task_id
+from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, task_from_args, task_id
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -10925,34 +10925,13 @@ def _zero_scheduler_mark_completed_steps_fallback(self, task, step_id):
     return mark_completed_steps_fallback(self, task, step_id)
 
 def _zero_scheduler_complete_operator(self, task, result, *, outcome="complete"):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return False
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return False
-
-    task_id = _zero_scheduler_task_id(task)
-    suffix = "complete" if outcome == "complete" else "fail"
-    step_id = f"{task_id}-{suffix}"
-
-    registry_applied = False
-    try:
-        operator_registry = get_operator_registry_service()
-        if outcome == "complete":
-            operator_registry.mark_complete(session_id, step_id)
-            registry_applied = True
-        elif outcome == "fail":
-            operator_registry.mark_failed(session_id, step_id)
-            registry_applied = True
-    except Exception:
-        registry_applied = False
-
-    fallback_applied = False
-    if outcome == "complete":
-        fallback_applied = _zero_scheduler_mark_completed_steps_fallback(self, task, step_id)
-
-    return registry_applied or fallback_applied
+    return complete_operator(
+        self,
+        task,
+        result,
+        outcome=outcome,
+        registry_factory=get_operator_registry_service,
+    )
 
 
 

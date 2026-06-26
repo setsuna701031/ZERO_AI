@@ -93,3 +93,40 @@ def mark_completed_steps_fallback(owner: Any, task: dict[str, Any], step_id: str
 
     return False
 
+def complete_operator(
+    owner: Any,
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    outcome: str = "complete",
+    registry_factory: Any,
+) -> bool:
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return False
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return False
+
+    computed_task_id = task_id(task)
+    suffix = "complete" if outcome == "complete" else "fail"
+    step_id = f"{computed_task_id}-{suffix}"
+
+    registry_applied = False
+    try:
+        operator_registry = registry_factory()
+        if outcome == "complete":
+            operator_registry.mark_complete(session_id, step_id)
+            registry_applied = True
+        elif outcome == "fail":
+            operator_registry.mark_failed(session_id, step_id)
+            registry_applied = True
+    except Exception:
+        registry_applied = False
+
+    fallback_applied = False
+    if outcome == "complete":
+        fallback_applied = mark_completed_steps_fallback(owner, task, step_id)
+
+    return registry_applied or fallback_applied
+
