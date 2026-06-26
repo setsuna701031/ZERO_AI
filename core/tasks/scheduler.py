@@ -196,6 +196,7 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_boundary_authority_overlay,
 )
 from core.tasks.scheduler_core.scheduler_progress import update_step_progress
+from core.tasks.scheduler_core.scheduler_runtime_fallback import direct_handler as runtime_fallback_direct_handler, has_explicit_authority as runtime_fallback_has_explicit_authority, pick_step as runtime_fallback_pick_step
 from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, mark_failed_if_ok_without_completion, mark_failed_step_if_needed, mark_operator_complete_if_ok, mark_operator_complete_or_failed, run_operator_completion_pipeline, task_from_args, task_id
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
@@ -10719,63 +10720,18 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v4
 # ZERO_CONSOLIDATED_SCHEDULER_EXPLICIT_AUTHORITY_DIRECT_HANDLER_V5
 
 def _zero_scheduler_pick_step_v5(task):
-    steps = task.get("steps") if isinstance(task, dict) else None
-    if not isinstance(steps, list) or not steps:
-        return {}
-    try:
-        index = int(task.get("current_step_index", task.get("step_index", 0)))
-    except Exception:
-        index = 0
-    if index < 0 or index >= len(steps):
-        index = 0
-    return steps[index] if isinstance(steps[index], dict) else {}
+    return runtime_fallback_pick_step(task)
 
 def _zero_scheduler_has_explicit_authority_v5(task):
-    authority = task.get("execution_authority") if isinstance(task, dict) else None
-    return isinstance(authority, dict)
+    return runtime_fallback_has_explicit_authority(task)
 
 def _zero_scheduler_direct_handler_v5(self, task, step, current_tick=None):
-    handlers = getattr(self.step_executor, "handlers", {})
-    handler = handlers.get(step.get("type")) if isinstance(handlers, dict) else None
-    if handler is None:
-        return None
-
-    authority = task.get("execution_authority")
-    if isinstance(authority, dict):
-        authority.setdefault("execution_authority_granted", True)
-        step.setdefault("execution_authority", authority)
-        step.setdefault("runtime_execution_authority", authority)
-        step.setdefault("authority_validation", authority.get("authority_validation", {"ok": True, "reason": "authority_metadata_valid"}))
-
-    context = {
-        "current_tick": current_tick,
-        "operator_session_id": task.get("operator_session_id"),
-        "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
-        "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
-    }
-
-    attempts = (
-        lambda: handler(step, task, context),
-        lambda: handler(step, task),
-        lambda: handler(task, step, context),
-        lambda: handler(task, step),
-        lambda: handler(step),
+    return runtime_fallback_direct_handler(
+        self,
+        task,
+        step,
+        current_tick=current_tick,
     )
-
-    last_error = None
-    for attempt in attempts:
-        try:
-            value = attempt()
-            if isinstance(value, dict):
-                value.setdefault("ok", True)
-                value.setdefault("status", "completed" if value.get("ok") else "failed")
-                value.setdefault("compatibility_seal", "scheduler_explicit_authority_direct_handler_v5")
-                return value
-        except TypeError as exc:
-            last_error = exc
-            continue
-
-    return {"ok": False, "error": str(last_error or "handler_call_failed")}
 
 _zero_scheduler_base_run_one_step_v5 = Scheduler.run_one_step
 
