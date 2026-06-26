@@ -10832,24 +10832,6 @@ def _zero_scheduler_record_operator_completion_v7(self, task, result):
                 completed.append(complete_id)
             return
 
-_zero_scheduler_base_run_one_step_v7 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v7(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v7(self, *args, **kwargs)
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-
-    if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
-        _zero_scheduler_update_step_progress(task, result)
-        _zero_scheduler_complete_operator(
-            self,
-            task,
-            result,
-            outcome="complete",
-        )
-
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v7
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V8
 
