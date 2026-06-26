@@ -10677,23 +10677,6 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v5
 
 # ZERO_CONSOLIDATED_SCHEDULER_EXPLICIT_AUTHORITY_RESULT_SHAPE_V6
 
-_zero_scheduler_base_run_one_step_v6 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v6(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v6(self, *args, **kwargs)
-
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-
-    if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
-        _zero_scheduler_update_step_progress(task, result)
-
-        if task.get("operator_session_id"):
-            result.setdefault("operator_session_id", task.get("operator_session_id"))
-
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v6
-
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_SESSION_COMPLETION_V7
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V8
@@ -10702,7 +10685,7 @@ def _zero_scheduler_update_step_progress(task, result):
     update_step_progress(task, result)
 
 
-_zero_scheduler_base_run_one_step_v8 = _zero_scheduler_base_run_one_step_v6
+_zero_scheduler_base_run_one_step_v8 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v8(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v8(self, *args, **kwargs)
@@ -10710,6 +10693,10 @@ def _zero_scheduler_run_one_step_v8(self, *args, **kwargs):
 
     if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
         _zero_scheduler_update_step_progress(task, result)
+
+        if task.get("operator_session_id"):
+            result.setdefault("operator_session_id", task.get("operator_session_id"))
+
         _zero_scheduler_complete_operator(self, task, result, outcome="complete")
 
     return result
