@@ -10650,20 +10650,6 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v4
 
 # ZERO_CONSOLIDATED_SCHEDULER_EXPLICIT_AUTHORITY_DIRECT_HANDLER_V5
 
-def _zero_scheduler_pick_step_v5(task):
-    return runtime_fallback_pick_step(task)
-
-def _zero_scheduler_has_explicit_authority_v5(task):
-    return runtime_fallback_has_explicit_authority(task)
-
-def _zero_scheduler_direct_handler_v5(self, task, step, current_tick=None):
-    return runtime_fallback_direct_handler(
-        self,
-        task,
-        step,
-        current_tick=current_tick,
-    )
-
 _zero_scheduler_base_run_one_step_v5 = Scheduler.run_one_step
 
 def _zero_scheduler_run_one_step_v5(self, *args, **kwargs):
@@ -10672,14 +10658,14 @@ def _zero_scheduler_run_one_step_v5(self, *args, **kwargs):
         return result
 
     task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    if not isinstance(task, dict) or not _zero_scheduler_has_explicit_authority_v5(task):
+    if not isinstance(task, dict) or not runtime_fallback_has_explicit_authority(task):
         return result
 
-    step = _zero_scheduler_pick_step_v5(task)
+    step = runtime_fallback_pick_step(task)
     if not step:
         return result
 
-    fallback = _zero_scheduler_direct_handler_v5(
+    fallback = runtime_fallback_direct_handler(
         self,
         task,
         step,
