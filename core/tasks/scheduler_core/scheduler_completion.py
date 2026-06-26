@@ -130,3 +130,72 @@ def complete_operator(
 
     return registry_applied or fallback_applied
 
+def mark_operator_complete_if_ok(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    registry_factory().mark_complete(
+        session_id,
+        f"{task_id(task)}-complete",
+    )
+
+
+def mark_operator_complete_or_failed(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    computed_task_id = task_id(task)
+    operator_registry = registry_factory()
+
+    if result.get("ok") is True:
+        operator_registry.mark_complete(session_id, f"{computed_task_id}-complete")
+    elif result.get("ok") is False:
+        operator_registry.mark_failed(session_id, f"{computed_task_id}-fail")
+
+
+def mark_failed_step_if_needed(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    steps = task.get("steps") if isinstance(task.get("steps"), list) else []
+    try:
+        idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
+    except Exception:
+        idx = 0
+
+    step = steps[idx] if 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
+    step_type = str(step.get("type") or "").lower()
+
+    if "fail" in step_type or "failure" in step_type:
+        registry_factory().mark_failed(
+            session_id,
+            f"{task_id(task)}-fail",
+        )
+

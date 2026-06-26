@@ -196,7 +196,7 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_boundary_authority_overlay,
 )
 from core.tasks.scheduler_core.scheduler_progress import update_step_progress
-from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, task_from_args, task_id
+from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, mark_failed_step_if_needed, mark_operator_complete_if_ok, mark_operator_complete_or_failed, task_from_args, task_id
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -10936,58 +10936,27 @@ def _zero_scheduler_complete_operator(self, task, result, *, outcome="complete")
 
 
 def _zero_scheduler_mark_operator_complete_if_ok(task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    get_operator_registry_service().mark_complete(
-        session_id,
-        f"{_zero_scheduler_task_id(task)}-complete",
+    return mark_operator_complete_if_ok(
+        task,
+        result,
+        registry_factory=get_operator_registry_service,
     )
 
 
 def _zero_scheduler_mark_operator_complete_or_failed(task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    task_id = _zero_scheduler_task_id(task)
-    operator_registry = get_operator_registry_service()
-
-    if result.get("ok") is True:
-        operator_registry.mark_complete(session_id, f"{task_id}-complete")
-    elif result.get("ok") is False:
-        operator_registry.mark_failed(session_id, f"{task_id}-fail")
+    return mark_operator_complete_or_failed(
+        task,
+        result,
+        registry_factory=get_operator_registry_service,
+    )
 
 
 def _zero_scheduler_mark_failed_step_if_needed(task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    steps = task.get("steps") if isinstance(task.get("steps"), list) else []
-    try:
-        idx = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
-    except Exception:
-        idx = 0
-
-    step = steps[idx] if 0 <= idx < len(steps) and isinstance(steps[idx], dict) else {}
-    step_type = str(step.get("type") or "").lower()
-
-    if "fail" in step_type or "failure" in step_type:
-        get_operator_registry_service().mark_failed(
-            session_id,
-            f"{_zero_scheduler_task_id(task)}-fail",
-        )
+    return mark_failed_step_if_needed(
+        task,
+        result,
+        registry_factory=get_operator_registry_service,
+    )
 
 
 def _zero_scheduler_mark_failed_if_ok_without_completion(task, result):
