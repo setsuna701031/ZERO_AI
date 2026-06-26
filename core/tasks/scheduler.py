@@ -196,6 +196,7 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_boundary_authority_overlay,
 )
 from core.tasks.scheduler_core.scheduler_progress import update_step_progress
+from core.tasks.scheduler_core.scheduler_completion import mark_completed_steps_fallback, task_from_args, task_id
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -10921,87 +10922,7 @@ def _zero_scheduler_task_id(task):
 
 
 def _zero_scheduler_mark_completed_steps_fallback(self, task, step_id):
-    if not isinstance(task, dict) or not step_id:
-        return False
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return False
-
-    def mark(session):
-        completed = getattr(session, "completed_steps", None)
-        if isinstance(completed, list):
-            if step_id not in completed:
-                completed.append(step_id)
-            return True
-
-        if isinstance(session, dict):
-            completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and step_id not in completed:
-                completed.append(step_id)
-            return True
-
-        return False
-
-    seen = set()
-
-    def scan(obj, depth=0):
-        if obj is None or depth > 8:
-            return False
-
-        oid = id(obj)
-        if oid in seen:
-            return False
-        seen.add(oid)
-
-        get_session = getattr(obj, "get_session", None)
-        if callable(get_session):
-            try:
-                session = get_session(session_id)
-                if session is not None and mark(session):
-                    return True
-            except Exception:
-                pass
-
-        if isinstance(obj, dict):
-            if session_id in obj and mark(obj[session_id]):
-                return True
-            values = list(obj.values())
-        else:
-            values = []
-            d = getattr(obj, "__dict__", None)
-            if isinstance(d, dict):
-                values.extend(d.values())
-
-            for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
-                sessions = getattr(obj, attr, None)
-                if isinstance(sessions, dict):
-                    session = sessions.get(session_id)
-                    if session is not None and mark(session):
-                        return True
-                    values.extend(sessions.values())
-
-        for value in values:
-            if scan(value, depth + 1):
-                return True
-
-        return False
-
-    roots = [
-        task.get("_zero_operator_runtime_ref"),
-        getattr(task.get("_zero_operator_bootstrap_ref"), "operator_runtime", None),
-        getattr(task.get("_zero_operator_bootstrap_ref"), "runtime", None),
-        task.get("operator_bridge"),
-        self,
-        getattr(self, "step_executor", None),
-        getattr(self, "operator_bridge", None),
-        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
-    ]
-
-    for root in roots:
-        if scan(root):
-            return True
-
-    return False
+    return mark_completed_steps_fallback(self, task, step_id)
 
 def _zero_scheduler_complete_operator(self, task, result, *, outcome="complete"):
     if not isinstance(task, dict) or not isinstance(result, dict):
