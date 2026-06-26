@@ -1,9 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 
-def test_scheduler_operator_failed_chain_v15_marks_failure_step(monkeypatch) -> None:
+def test_scheduler_operator_failed_pipeline_marks_failure_step(monkeypatch) -> None:
     import core.tasks.scheduler as scheduler_module
-    from core.tasks.scheduler import Scheduler
 
     calls = []
 
@@ -16,23 +15,20 @@ def test_scheduler_operator_failed_chain_v15_marks_failure_step(monkeypatch) -> 
         "get_operator_registry_service",
         lambda: FakeRegistry(),
     )
-    monkeypatch.setattr(
-        scheduler_module,
-        "_zero_scheduler_base_run_one_step_v15",
-        lambda self, *args, **kwargs: {"ok": False},
-    )
 
-    scheduler = Scheduler.__new__(Scheduler)
     task = {
         "id": "task-a",
         "operator_session_id": "session-a",
+        "steps": [{"type": "failure_handler"}],
         "current_step_index": 0,
-        "steps": [{"id": "step-a", "type": "failure"}],
     }
 
-    result = scheduler_module._zero_scheduler_run_one_step_v15(scheduler, task=task)
+    scheduler_module._zero_scheduler_run_operator_completion_pipeline(
+        task,
+        {"ok": False},
+        mode="failed_step",
+    )
 
-    assert result == {"ok": False}
     assert calls == [("session-a", "task-a-fail")]
 
 

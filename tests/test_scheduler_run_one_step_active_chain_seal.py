@@ -14,7 +14,7 @@ def test_scheduler_run_one_step_v16_may_wrap_v15_or_v12() -> None:
     # responsibilities are moved into the operator completion pipeline.
     assert scheduler_module._zero_scheduler_base_run_one_step_v16.__name__ in {
         "_zero_scheduler_run_one_step_v15",
-        "_zero_scheduler_run_one_step_v12",
+        "_zero_scheduler_run_one_step_v8",
     }
 
 
@@ -22,10 +22,6 @@ def test_scheduler_run_one_step_legacy_chain_before_operator_pipeline_is_preserv
     import core.tasks.scheduler as scheduler_module
 
     expected = {
-        "_zero_scheduler_base_run_one_step_v12": "_zero_scheduler_run_one_step_v11",
-        "_zero_scheduler_base_run_one_step_v11": "_zero_scheduler_run_one_step_v10",
-        "_zero_scheduler_base_run_one_step_v10": "_zero_scheduler_run_one_step_v9",
-        "_zero_scheduler_base_run_one_step_v9": "_zero_scheduler_run_one_step_v8",
         "_zero_scheduler_base_run_one_step_v8": "_zero_scheduler_run_one_step_v7",
         "_zero_scheduler_base_run_one_step_v7": "_zero_scheduler_run_one_step_v6",
         "_zero_scheduler_base_run_one_step_v6": "_zero_scheduler_run_one_step_v5",

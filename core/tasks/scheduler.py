@@ -10810,18 +10810,10 @@ def _zero_scheduler_run_one_step_v6(self, *args, **kwargs):
     task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
 
     if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
-        try:
-            current_index = int(task.get("current_step_index", task.get("step_index", 0)))
-        except Exception:
-            current_index = 0
-
-        result.setdefault("current_step_index", current_index)
-        result.setdefault("next_step_index", current_index + 1)
+        _zero_scheduler_update_step_progress(task, result)
 
         if task.get("operator_session_id"):
             result.setdefault("operator_session_id", task.get("operator_session_id"))
-
-        task["current_step_index"] = result["next_step_index"]
 
     return result
 
@@ -10889,9 +10881,7 @@ def _zero_scheduler_run_one_step_v7(self, *args, **kwargs):
     task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
 
     if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
-        result.setdefault("current_step_index", int(task.get("current_step_index", task.get("step_index", 0)) or 0))
-        result.setdefault("next_step_index", result["current_step_index"] + 1)
-        task["current_step_index"] = result["next_step_index"]
+        _zero_scheduler_update_step_progress(task, result)
         _zero_scheduler_record_operator_completion_v7(self, task, result)
 
     return result
@@ -10900,70 +10890,17 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v7
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V8
 
-def _zero_scheduler_find_session_v8(obj, session_id, seen=None):
-    if obj is None:
-        return None
-    if seen is None:
-        seen = set()
-    oid = id(obj)
-    if oid in seen:
-        return None
-    seen.add(oid)
-
-    get_session = getattr(obj, "get_session", None)
-    if callable(get_session):
-        try:
-            session = get_session(session_id)
-            if session is not None:
-                return session
-        except Exception:
-            pass
-
-    for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
-        value = getattr(obj, attr, None)
-        if isinstance(value, dict) and session_id in value:
-            return value[session_id]
-
-    for attr in ("operator_runtime", "runtime", "_runtime", "bridge", "_bridge", "operator_bridge"):
-        found = _zero_scheduler_find_session_v8(getattr(obj, attr, None), session_id, seen)
-        if found is not None:
-            return found
-
-    return None
-
-def _zero_scheduler_record_complete_v8(self, task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+def _zero_scheduler_update_step_progress(task, result):
+    if not isinstance(task, dict) or not isinstance(result, dict):
         return
+    try:
+        current = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
+    except Exception:
+        current = 0
+    result.setdefault("current_step_index", current)
+    result.setdefault("next_step_index", current + 1)
+    task["current_step_index"] = result["next_step_index"]
 
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
-
-    roots = [
-        getattr(self, "operator_bridge", None),
-        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
-        getattr(self, "step_executor", None),
-        self,
-    ]
-
-    for root in roots:
-        session = _zero_scheduler_find_session_v8(root, session_id)
-        if session is None:
-            continue
-
-        completed = getattr(session, "completed_steps", None)
-        if isinstance(completed, list):
-            if complete_id not in completed:
-                completed.append(complete_id)
-            return
-
-        if isinstance(session, dict):
-            completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and complete_id not in completed:
-                completed.append(complete_id)
-            return
 
 _zero_scheduler_base_run_one_step_v8 = Scheduler.run_one_step
 
@@ -10972,219 +10909,44 @@ def _zero_scheduler_run_one_step_v8(self, *args, **kwargs):
     task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
 
     if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
-        try:
-            current = int(task.get("current_step_index", task.get("step_index", 0)) or 0)
-        except Exception:
-            current = 0
-        result.setdefault("current_step_index", current)
-        result.setdefault("next_step_index", current + 1)
-        task["current_step_index"] = result["next_step_index"]
-        _zero_scheduler_record_complete_v8(self, task, result)
+        _zero_scheduler_update_step_progress(task, result)
+        _zero_scheduler_complete_operator(self, task, result, outcome="complete")
 
     return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
 
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V9
+# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13
 
-def _zero_scheduler_force_operator_completion_v9(self, task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return
-    if result.get("ok") is not True:
-        return
+def _zero_scheduler_task_from_args(args, kwargs):
+    return kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
 
+
+def _zero_scheduler_task_id(task):
+    return str(task.get("id") or task.get("task_id") or "task")
+
+
+
+def _zero_scheduler_mark_completed_steps_fallback(self, task, step_id):
+    if not isinstance(task, dict) or not step_id:
+        return False
     session_id = task.get("operator_session_id")
     if not session_id:
-        return
-
-    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
-
-    bridge = (
-        getattr(getattr(self, "step_executor", None), "operator_bridge", None)
-        or getattr(self, "operator_bridge", None)
-        or task.get("operator_bridge")
-    )
-
-    runtimes = []
-    if bridge is not None:
-        for name in ("operator_runtime", "runtime", "_runtime"):
-            value = getattr(bridge, name, None)
-            if value is not None:
-                runtimes.append(value)
-        runtimes.append(bridge)
-
-    for runtime in runtimes:
-        session = None
-
-        get_session = getattr(runtime, "get_session", None)
-        if callable(get_session):
-            try:
-                session = get_session(session_id)
-            except Exception:
-                session = None
-
-        if session is None:
-            for attr in ("sessions", "_sessions"):
-                sessions = getattr(runtime, attr, None)
-                if isinstance(sessions, dict):
-                    session = sessions.get(session_id)
-                    if session is not None:
-                        break
-
-        if session is None:
-            continue
-
-        completed = getattr(session, "completed_steps", None)
-        if isinstance(completed, list):
-            if complete_id not in completed:
-                completed.append(complete_id)
-            return
-
-        if isinstance(session, dict):
-            completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and complete_id not in completed:
-                completed.append(complete_id)
-            return
-
-_zero_scheduler_base_run_one_step_v9 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v9(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v9(self, *args, **kwargs)
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    _zero_scheduler_force_operator_completion_v9(self, task, result)
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v9
-
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V10
-
-def _zero_scheduler_force_operator_completion_v10(self, task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict):
-        return
-    if result.get("ok") is not True:
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+        return False
 
     def mark(session):
         completed = getattr(session, "completed_steps", None)
         if isinstance(completed, list):
-            if complete_id not in completed:
-                completed.append(complete_id)
+            if step_id not in completed:
+                completed.append(step_id)
             return True
 
         if isinstance(session, dict):
             completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and complete_id not in completed:
-                completed.append(complete_id)
+            if isinstance(completed, list) and step_id not in completed:
+                completed.append(step_id)
             return True
 
-        return False
-
-    # First: normal bridge/runtime paths.
-    roots = [
-        getattr(self, "operator_bridge", None),
-        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
-        getattr(self, "step_executor", None),
-        self,
-    ]
-
-    seen = set()
-
-    def scan(obj):
-        if obj is None:
-            return False
-        oid = id(obj)
-        if oid in seen:
-            return False
-        seen.add(oid)
-
-        get_session = getattr(obj, "get_session", None)
-        if callable(get_session):
-            try:
-                session = get_session(session_id)
-                if session is not None and mark(session):
-                    return True
-            except Exception:
-                pass
-
-        for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
-            sessions = getattr(obj, attr, None)
-            if isinstance(sessions, dict):
-                session = sessions.get(session_id)
-                if session is not None and mark(session):
-                    return True
-
-        for attr in ("operator_runtime", "runtime", "_runtime", "bridge", "_bridge", "operator_bridge"):
-            if scan(getattr(obj, attr, None)):
-                return True
-
-        return False
-
-    for root in roots:
-        if scan(root):
-            return
-
-    # Last resort for test/local runtime objects: find session by id in live objects.
-    try:
-        import gc
-
-        for obj in gc.get_objects():
-            try:
-                get_session = getattr(obj, "get_session", None)
-                if callable(get_session):
-                    session = get_session(session_id)
-                    if session is not None and mark(session):
-                        return
-
-                for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
-                    sessions = getattr(obj, attr, None)
-                    if isinstance(sessions, dict):
-                        session = sessions.get(session_id)
-                        if session is not None and mark(session):
-                            return
-            except Exception:
-                continue
-    except Exception:
-        return
-
-_zero_scheduler_base_run_one_step_v10 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v10(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v10(self, *args, **kwargs)
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    _zero_scheduler_force_operator_completion_v10(self, task, result)
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v10
-
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V11
-
-def _zero_scheduler_operator_completion_v11(self, task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
-
-    def mark(session):
-        completed = getattr(session, "completed_steps", None)
-        if isinstance(completed, list):
-            if complete_id not in completed:
-                completed.append(complete_id)
-            return True
-        if isinstance(session, dict):
-            completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and complete_id not in completed:
-                completed.append(complete_id)
-            return True
         return False
 
     seen = set()
@@ -11192,6 +10954,7 @@ def _zero_scheduler_operator_completion_v11(self, task, result):
     def scan(obj, depth=0):
         if obj is None or depth > 8:
             return False
+
         oid = id(obj)
         if oid in seen:
             return False
@@ -11231,6 +10994,10 @@ def _zero_scheduler_operator_completion_v11(self, task, result):
         return False
 
     roots = [
+        task.get("_zero_operator_runtime_ref"),
+        getattr(task.get("_zero_operator_bootstrap_ref"), "operator_runtime", None),
+        getattr(task.get("_zero_operator_bootstrap_ref"), "runtime", None),
+        task.get("operator_bridge"),
         self,
         getattr(self, "step_executor", None),
         getattr(self, "operator_bridge", None),
@@ -11239,90 +11006,40 @@ def _zero_scheduler_operator_completion_v11(self, task, result):
 
     for root in roots:
         if scan(root):
-            return
+            return True
 
-_zero_scheduler_base_run_one_step_v11 = Scheduler.run_one_step
+    return False
 
-def _zero_scheduler_run_one_step_v11(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v11(self, *args, **kwargs)
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    _zero_scheduler_operator_completion_v11(self, task, result)
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v11
-
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_V12
-
-_zero_scheduler_base_run_one_step_v12 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v12(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v12(self, *args, **kwargs)
-
-    task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
-        return result
+def _zero_scheduler_complete_operator(self, task, result, *, outcome="complete"):
+    if not isinstance(task, dict) or not isinstance(result, dict):
+        return False
 
     session_id = task.get("operator_session_id")
     if not session_id:
-        return result
+        return False
 
-    complete_id = f"{task.get('id') or task.get('task_id') or 'task'}-complete"
+    task_id = _zero_scheduler_task_id(task)
+    suffix = "complete" if outcome == "complete" else "fail"
+    step_id = f"{task_id}-{suffix}"
 
-    runtimes = [
-        task.get("_zero_operator_runtime_ref"),
-        getattr(task.get("_zero_operator_bootstrap_ref"), "operator_runtime", None),
-        getattr(task.get("_zero_operator_bootstrap_ref"), "runtime", None),
-        getattr(getattr(self, "step_executor", None), "operator_bridge", None),
-        getattr(self, "operator_bridge", None),
-    ]
+    registry_applied = False
+    try:
+        operator_registry = get_operator_registry_service()
+        if outcome == "complete":
+            operator_registry.mark_complete(session_id, step_id)
+            registry_applied = True
+        elif outcome == "fail":
+            operator_registry.mark_failed(session_id, step_id)
+            registry_applied = True
+    except Exception:
+        registry_applied = False
 
-    for runtime in runtimes:
-        if runtime is None:
-            continue
+    fallback_applied = False
+    if outcome == "complete":
+        fallback_applied = _zero_scheduler_mark_completed_steps_fallback(self, task, step_id)
 
-        session = None
-        get_session = getattr(runtime, "get_session", None)
-        if callable(get_session):
-            try:
-                session = get_session(session_id)
-            except Exception:
-                session = None
+    return registry_applied or fallback_applied
 
-        if session is None:
-            for attr in ("sessions", "_sessions", "operator_sessions", "_operator_sessions"):
-                sessions = getattr(runtime, attr, None)
-                if isinstance(sessions, dict):
-                    session = sessions.get(session_id)
-                    if session is not None:
-                        break
-
-        if session is None:
-            continue
-
-        completed = getattr(session, "completed_steps", None)
-        if isinstance(completed, list):
-            if complete_id not in completed:
-                completed.append(complete_id)
-            return result
-
-        if isinstance(session, dict):
-            completed = session.setdefault("completed_steps", [])
-            if isinstance(completed, list) and complete_id not in completed:
-                completed.append(complete_id)
-            return result
-
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v12
-
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13
-
-def _zero_scheduler_task_from_args(args, kwargs):
-    return kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
-
-
-def _zero_scheduler_task_id(task):
-    return str(task.get("id") or task.get("task_id") or "task")
 
 
 def _zero_scheduler_mark_operator_complete_if_ok(task, result):
@@ -11410,52 +11127,9 @@ def _zero_scheduler_run_operator_completion_pipeline(task, result, *, mode="all"
         _zero_scheduler_mark_failed_if_ok_without_completion(task, result)
 
 
-_zero_scheduler_base_run_one_step_v13 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v13(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v13(self, *args, **kwargs)
-    _zero_scheduler_run_operator_completion_pipeline(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-        mode="complete_if_ok",
-    )
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v13
-
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILURE_READBACK_V14
-
-_zero_scheduler_base_run_one_step_v14 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v14(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v14(self, *args, **kwargs)
-    _zero_scheduler_run_operator_completion_pipeline(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-        mode="complete_or_failed",
-    )
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v14
-
-# ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILED_STEP_V15
-
-_zero_scheduler_base_run_one_step_v15 = Scheduler.run_one_step
-
-def _zero_scheduler_run_one_step_v15(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v15(self, *args, **kwargs)
-    _zero_scheduler_run_operator_completion_pipeline(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-        mode="failed_step",
-    )
-    return result
-
-Scheduler.run_one_step = _zero_scheduler_run_one_step_v15
-
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILED_STEP_V16
 
-_zero_scheduler_base_run_one_step_v16 = _zero_scheduler_base_run_one_step_v13
+_zero_scheduler_base_run_one_step_v16 = _zero_scheduler_run_one_step_v8
 
 def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
     result = _zero_scheduler_base_run_one_step_v16(self, *args, **kwargs)
