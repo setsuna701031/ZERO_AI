@@ -199,3 +199,43 @@ def mark_failed_step_if_needed(
             f"{task_id(task)}-fail",
         )
 
+def mark_failed_if_ok_without_completion(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    registry_factory: Any,
+) -> None:
+    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
+        return
+
+    session_id = task.get("operator_session_id")
+    if not session_id:
+        return
+
+    operator_registry = registry_factory()
+    if not operator_registry.has_completion(session_id):
+        operator_registry.mark_failed(
+            session_id,
+            f"{task_id(task)}-fail",
+        )
+
+
+def run_operator_completion_pipeline(
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    mode: str = "all",
+    registry_factory: Any,
+) -> None:
+    if mode in {"all", "complete_if_ok"}:
+        mark_operator_complete_if_ok(task, result, registry_factory=registry_factory)
+
+    if mode in {"all", "complete_or_failed"}:
+        mark_operator_complete_or_failed(task, result, registry_factory=registry_factory)
+
+    if mode in {"all", "failed_step"}:
+        mark_failed_step_if_needed(task, result, registry_factory=registry_factory)
+
+    if mode in {"all", "missing_completion"}:
+        mark_failed_if_ok_without_completion(task, result, registry_factory=registry_factory)
+

@@ -196,7 +196,7 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
     apply_boundary_authority_overlay,
 )
 from core.tasks.scheduler_core.scheduler_progress import update_step_progress
-from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, mark_failed_step_if_needed, mark_operator_complete_if_ok, mark_operator_complete_or_failed, task_from_args, task_id
+from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, mark_failed_if_ok_without_completion, mark_failed_step_if_needed, mark_operator_complete_if_ok, mark_operator_complete_or_failed, run_operator_completion_pipeline, task_from_args, task_id
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -10960,33 +10960,20 @@ def _zero_scheduler_mark_failed_step_if_needed(task, result):
 
 
 def _zero_scheduler_mark_failed_if_ok_without_completion(task, result):
-    if not isinstance(task, dict) or not isinstance(result, dict) or result.get("ok") is not True:
-        return
-
-    session_id = task.get("operator_session_id")
-    if not session_id:
-        return
-
-    operator_registry = get_operator_registry_service()
-    if not operator_registry.has_completion(session_id):
-        operator_registry.mark_failed(
-            session_id,
-            f"{_zero_scheduler_task_id(task)}-fail",
-        )
+    return mark_failed_if_ok_without_completion(
+        task,
+        result,
+        registry_factory=get_operator_registry_service,
+    )
 
 
 def _zero_scheduler_run_operator_completion_pipeline(task, result, *, mode="all"):
-    if mode in {"all", "complete_if_ok"}:
-        _zero_scheduler_mark_operator_complete_if_ok(task, result)
-
-    if mode in {"all", "complete_or_failed"}:
-        _zero_scheduler_mark_operator_complete_or_failed(task, result)
-
-    if mode in {"all", "failed_step"}:
-        _zero_scheduler_mark_failed_step_if_needed(task, result)
-
-    if mode in {"all", "missing_completion"}:
-        _zero_scheduler_mark_failed_if_ok_without_completion(task, result)
+    return run_operator_completion_pipeline(
+        task,
+        result,
+        mode=mode,
+        registry_factory=get_operator_registry_service,
+    )
 
 
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_FAILED_STEP_V16
