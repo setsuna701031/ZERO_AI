@@ -10840,7 +10840,12 @@ def _zero_scheduler_run_one_step_v7(self, *args, **kwargs):
 
     if isinstance(result, dict) and result.get("ok") is True and isinstance(task, dict):
         _zero_scheduler_update_step_progress(task, result)
-        _zero_scheduler_record_operator_completion_v7(self, task, result)
+        _zero_scheduler_complete_operator(
+            self,
+            task,
+            result,
+            outcome="complete",
+        )
 
     return result
 
