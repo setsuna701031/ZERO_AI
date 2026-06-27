@@ -26,5 +26,5 @@ def test_scheduler_sync_blocked_state_wrapper_is_terminal_persistence() -> None:
 def test_scheduler_sync_blocked_state_still_imports_helper_for_external_callers() -> None:
     source = Path("core/tasks/scheduler.py").read_text(encoding="utf-8")
 
-    assert "from core.tasks.scheduler_core.repo_state_helpers import (" in source
+    assert "from core.tasks.scheduler_core.repo_blocked_state import (" in source
     assert "sync_blocked_state," in source

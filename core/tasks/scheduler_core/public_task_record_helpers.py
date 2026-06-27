@@ -11,7 +11,7 @@ from core.planning.replan_suggestion import (
     build_replan_suggestions,
     format_replan_suggestion_cli,
 )
-from core.tasks.scheduler_core.repo_state_helpers import sync_runtime_back_to_repo
+from core.tasks.scheduler_core.repo_runtime_sync import sync_runtime_back_to_repo
 
 
 def normalize_public_status_fields(

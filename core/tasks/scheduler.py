@@ -79,7 +79,14 @@ from core.tasks.scheduler_core.dispatch_runtime_router import (
     route_unblocked_state,
     route_worker_release,
 )
-from core.tasks.scheduler_core.repo_state_helpers import (
+from core.tasks.scheduler_core.repo_blocked_state import (
+    sync_blocked_state,
+    sync_unblocked_state,
+)
+from core.tasks.scheduler_core.repo_runtime_sync import (
+    sync_runtime_back_to_repo,
+)
+from core.tasks.scheduler_core.repo_task_state import (
     compact_runner_result,
     get_task_from_repo,
     list_repo_tasks,
@@ -87,9 +94,6 @@ from core.tasks.scheduler_core.repo_state_helpers import (
     mark_repo_task_finished,
     mark_repo_task_queued,
     mark_repo_task_with_adapter,
-    sync_blocked_state,
-    sync_runtime_back_to_repo,
-    sync_unblocked_state,
 )
 from core.tasks.scheduler_core.public_task_record_helpers import (
     build_public_task_record,
