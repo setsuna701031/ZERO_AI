@@ -213,6 +213,32 @@ from core.tasks.scheduler_core.scheduler_completion_pipeline import (
     _zero_scheduler_task_id as _completion_pipeline_task_id,
     run_zero_scheduler_run_one_step_v16 as _completion_pipeline_run_one_step_v16,
 )
+from core.tasks.scheduler_core.scheduler_dispatch_pipeline import (
+    apply_runtime_dispatch_gate_to_ready_queue as _dispatch_pipeline_apply_runtime_dispatch_gate_to_ready_queue,
+    build_scheduler_tick_result as _dispatch_pipeline_build_scheduler_tick_result,
+    promote_execution_trace as _dispatch_pipeline_promote_execution_trace,
+    tick as _dispatch_pipeline_tick,
+)
+from core.tasks.scheduler_core.runtime_dispatch_gate import (
+    active_runtime_gate_blockers as _runtime_dispatch_gate_active_blockers,
+    runtime_dispatch_gate_decision as _runtime_dispatch_gate_decision,
+)
+from core.tasks.scheduler_core.status_write_pipeline import (
+    cancel_ready_queue_task as _status_write_cancel_ready_queue_task,
+    can_requeue_task as _status_write_can_requeue_task,
+    emit_scheduler_evidence as _status_write_emit_scheduler_evidence,
+    queue_contains_task as _status_write_queue_contains_task,
+    repo_task_to_scheduled_task as _status_write_repo_task_to_scheduled_task,
+    sync_runner_result_and_requeue_if_ready as _status_write_sync_runner_result_and_requeue_if_ready,
+)
+from core.tasks.scheduler_core.scheduler_execution_pipeline import (
+    build_terminal_skip_runner_result as _execution_pipeline_build_terminal_skip_runner_result,
+    run_one_step as _execution_pipeline_run_one_step,
+)
+from core.tasks.scheduler_core.scheduler_replan_pipeline import (
+    apply_replan_task as _replan_pipeline_apply_replan_task,
+    preview_replan_task as _replan_pipeline_preview_replan_task,
+)
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -519,226 +545,18 @@ class Scheduler(RuntimeTaskScheduler):
     # ------------------------------------------------------------
 
     def tick(self, current_tick: Optional[int] = None) -> Dict[str, Any]:
-        self.current_tick = (
-            int(current_tick)
-            if current_tick is not None
-            else int(getattr(self, "current_tick", 0)) + 1
-        )
-
-        # v7.2.0: keep the scheduler queue readable and safe before each dispatch.
-        # This is intentionally hygiene-only: it expires stale repair/self-edit
-        # tasks, removes terminal/missing queue entries, and fails invalid repair
-        # tasks before they can consume worker slots.
-        try:
-            self.cleanup_task_queue_hygiene()
-        except Exception:
-            pass
-
-        self._unblock_tasks_if_dependencies_done()
-
-        all_executed_results: List[Dict[str, Any]] = []
-        total_dispatched = 0
-        last_synced: List[str] = []
-        rounds_used = 1
-
-        # v31: one dispatch round per tick
-        last_synced = self.rebuild_ready_queue()
-
-        # U package: scheduler-level runtime gate.
-        # The queue may contain a task whose persisted runtime_state is waiting
-        # for human review / blocker resolution.  Do not let the dispatcher
-        # bypass the blocker/review chain.
-        self._apply_runtime_dispatch_gate_to_ready_queue()
-
-        dispatch_results = self.dispatcher.dispatch_until_full()
-        if not dispatch_results:
-            return self._build_tick_result(
-                rounds_used=rounds_used,
-                total_dispatched=0,
-                last_synced=last_synced,
-                all_executed_results=[],
-            )
-
-        for dispatch_result in dispatch_results:
-            scheduled_task = getattr(dispatch_result, "task", None)
-            task_id = str(getattr(scheduled_task, "task_id", "") or "").strip()
-            if task_id:
-                self._emit_scheduler_evidence(
-                    "dequeued",
-                    task_id=task_id,
-                    queue_name="ready",
-                )
-
-        total_dispatched = len(dispatch_results)
-
-        round_executed = execute_dispatch_round(
-            scheduler=self,
-            dispatch_results=dispatch_results,
-            current_tick=self.current_tick,
-        )
-        if round_executed:
-            all_executed_results.extend(round_executed)
-
-        return self._build_tick_result(
-            rounds_used=rounds_used,
-            total_dispatched=total_dispatched,
-            last_synced=last_synced,
-            all_executed_results=all_executed_results,
-        )
+        return _dispatch_pipeline_tick(self, current_tick=current_tick)
 
     def _apply_runtime_dispatch_gate_to_ready_queue(self) -> Dict[str, Any]:
-        """Remove tasks from the ready queue when runtime_state says wait.
-
-        This is the scheduler-side safety gate for the existing
-        policy -> blocker -> review -> resume chain.  TaskRunner and
-        AgentLoop already respect blockers at execution time, but the
-        scheduler must also avoid dispatching tasks that are explicitly
-        waiting for an external event.
-        """
-        gated: List[Dict[str, Any]] = []
-        allowed: List[str] = []
-
-        try:
-            queued_rows = self.dispatcher.list_queued()
-        except Exception:
-            queued_rows = []
-
-        if not isinstance(queued_rows, list):
-            queued_rows = []
-
-        for row in queued_rows:
-            if not isinstance(row, dict):
-                continue
-
-            task_id = str(row.get("task_id") or "").strip()
-            if not task_id:
-                continue
-
-            task = self._get_task_from_repo(task_id)
-            if not isinstance(task, dict):
-                self._cancel_ready_queue_task(task_id)
-                gated.append({
-                    "task_id": task_id,
-                    "reason": "repo_task_missing",
-                })
-                continue
-
-            task = self._hydrate_task_from_workspace(task)
-            decision = self._runtime_dispatch_gate_decision(task)
-            if decision.get("allow"):
-                allowed.append(task_id)
-                continue
-
-            self._cancel_ready_queue_task(task_id)
-            gated.append({
-                "task_id": task_id,
-                "reason": decision.get("reason", "runtime_gate_blocked"),
-                "status": decision.get("status", ""),
-                "next_action": decision.get("next_action", ""),
-                "active_blocker_count": decision.get("active_blocker_count", 0),
-            })
-
-        return {
-            "ok": True,
-            "allowed_task_ids": allowed,
-            "gated_task_ids": [item.get("task_id") for item in gated if isinstance(item, dict)],
-            "gated": gated,
-        }
+        return _dispatch_pipeline_apply_runtime_dispatch_gate_to_ready_queue(self)
 
     def _runtime_dispatch_gate_decision(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(task, dict):
-            return {"allow": False, "reason": "invalid_task"}
-
-        status = str(task.get("status") or "").strip().lower()
-        next_action = str(task.get("next_action") or "").strip().lower()
-        review_status = str(task.get("review_status") or "").strip().lower()
-        waiting_reason = str(task.get("waiting_reason") or task.get("blocked_reason") or "").strip()
-
-        requires_review = bool(task.get("requires_review", False))
-        review_id = str(task.get("review_id") or "").strip()
-        review_payload = task.get("review_payload")
-        has_review_payload = isinstance(review_payload, dict) and bool(review_payload)
-
-        active_blocker_count = self._safe_int_for_runtime_gate(task.get("active_blocker_count"), 0)
-        active_blockers = self._active_runtime_gate_blockers(task.get("blockers"))
-        if active_blockers and active_blocker_count <= 0:
-            active_blocker_count = len(active_blockers)
-
-        if not review_status and (requires_review or review_id or has_review_payload or status == STATUS_REVIEW_REQUIRED):
-            review_status = "pending"
-
-        approved_review_statuses = {"approved", "accepted", "allowed", "cleared", "resolved"}
-        rejected_review_statuses = {"rejected", "denied", "declined", "cancelled", "canceled"}
-        pending_review_statuses = {"", "pending", "required", "requested", "waiting", "waiting_review", "review_required"}
-
-        review_approved = review_status in approved_review_statuses
-        review_rejected = review_status in rejected_review_statuses
-        review_pending = bool(requires_review or review_id or has_review_payload or status == STATUS_REVIEW_REQUIRED) and not review_approved and not review_rejected
-        if review_status in pending_review_statuses and (requires_review or review_id or has_review_payload or status == STATUS_REVIEW_REQUIRED):
-            review_pending = True
-
-        if status in TERMINAL_STATUSES:
-            return {
-                "allow": False,
-                "reason": "terminal_status",
-                "status": status,
-                "next_action": next_action,
-                "active_blocker_count": active_blocker_count,
-            }
-
-        if review_rejected:
-            return {
-                "allow": False,
-                "reason": "review_rejected",
-                "status": status or STATUS_REVIEW_REQUIRED,
-                "next_action": next_action or "finish",
-                "active_blocker_count": active_blocker_count,
-            }
-
-        if review_pending:
-            return {
-                "allow": False,
-                "reason": waiting_reason or "review_required",
-                "status": STATUS_REVIEW_REQUIRED,
-                "next_action": "wait_for_external_event",
-                "active_blocker_count": max(1, active_blocker_count),
-            }
-
-        if status in {"waiting", "waiting_review", "waiting_blocker", "blocked", "paused", STATUS_REVIEW_REQUIRED}:
-            if next_action != "run_next_tick" or active_blocker_count > 0 or active_blockers:
-                return {
-                    "allow": False,
-                    "reason": waiting_reason or "waiting_for_external_event",
-                    "status": status,
-                    "next_action": next_action or "wait_for_external_event",
-                    "active_blocker_count": active_blocker_count,
-                }
-
-        if next_action == "wait_for_external_event":
-            return {
-                "allow": False,
-                "reason": waiting_reason or "next_action_wait_for_external_event",
-                "status": status,
-                "next_action": next_action,
-                "active_blocker_count": active_blocker_count,
-            }
-
-        if active_blocker_count > 0 or active_blockers:
-            return {
-                "allow": False,
-                "reason": waiting_reason or "active_blockers_present",
-                "status": status,
-                "next_action": next_action,
-                "active_blocker_count": active_blocker_count,
-            }
-
-        return {
-            "allow": True,
-            "reason": "dispatch_allowed",
-            "status": status,
-            "next_action": next_action,
-            "active_blocker_count": 0,
-        }
+        return _runtime_dispatch_gate_decision(
+            self,
+            task,
+            terminal_statuses=TERMINAL_STATUSES,
+            status_review_required=STATUS_REVIEW_REQUIRED,
+        )
 
     def _build_scheduler_authority_context(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """Return scheduler orchestration authority without execution grant."""
@@ -794,31 +612,10 @@ class Scheduler(RuntimeTaskScheduler):
         }
 
     def _cancel_ready_queue_task(self, task_id: str) -> None:
-        try:
-            self.scheduler_queue.cancel(task_id)
-        except Exception:
-            pass
-        route_worker_release(self, task_id)
-        self._emit_scheduler_evidence(
-            "cancelled",
-            task_id=task_id,
-            queue_name="ready",
-            reason="ready_queue_cancel",
-        )
+        return _status_write_cancel_ready_queue_task(self, task_id)
 
     def _active_runtime_gate_blockers(self, blockers: Any) -> List[Dict[str, Any]]:
-        if not isinstance(blockers, list):
-            return []
-
-        resolved_statuses = {"resolved", "applied", "rejected", "cancelled", "canceled", "done", "cleared"}
-        active: List[Dict[str, Any]] = []
-        for item in blockers:
-            if not isinstance(item, dict):
-                continue
-            status = str(item.get("status") or "pending").strip().lower()
-            if status not in resolved_statuses:
-                active.append(copy.deepcopy(item))
-        return active
+        return _runtime_dispatch_gate_active_blockers(blockers)
 
     def _safe_int_for_runtime_gate(self, *args, **kwargs):
         return _scheduler_helper_safe_int_for_runtime_gate(*args, **kwargs)
@@ -830,37 +627,14 @@ class Scheduler(RuntimeTaskScheduler):
         last_synced: List[str],
         all_executed_results: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        result = build_tick_result(
-            scheduler=self,
+        return _dispatch_pipeline_build_scheduler_tick_result(
+            self,
             scheduler_build=SCHEDULER_BUILD,
             rounds_used=rounds_used,
             total_dispatched=total_dispatched,
             last_synced=last_synced,
             all_executed_results=all_executed_results,
         )
-
-        if not isinstance(result, dict):
-            return result
-
-        executed_results = result.get("executed_results")
-        if isinstance(executed_results, list):
-            promoted = self._promote_execution_trace_in_executed_results(executed_results)
-            result["executed_results"] = promoted
-
-            aggregated_trace: List[Dict[str, Any]] = []
-            for item in promoted:
-                if not isinstance(item, dict):
-                    continue
-                trace = item.get("execution_trace")
-                if isinstance(trace, list):
-                    aggregated_trace.extend(
-                        copy.deepcopy(event) for event in trace if isinstance(event, dict)
-                    )
-
-            if aggregated_trace:
-                result["execution_trace"] = aggregated_trace
-
-        return result
 
     # Runtime evidence ownership boundary:
     # Scheduler remains the event source for queue/dispatch lifecycle evidence.
@@ -874,38 +648,13 @@ class Scheduler(RuntimeTaskScheduler):
         queue_name: str = "ready",
         reason: Any = None,
     ) -> None:
-        adapter = getattr(self, "evidence_adapter", None)
-        if adapter is None:
-            return
-
-        phase_name = str(phase or "").strip().lower()
-        method_name = {
-            "enqueued": "emit_enqueued",
-            "dequeued": "emit_dequeued",
-            "dispatched": "emit_dispatched",
-            "requeued": "emit_requeued",
-            "cancelled": "emit_cancelled",
-        }.get(phase_name)
-        if not method_name:
-            return
-
-        method = getattr(adapter, method_name, None)
-        if not callable(method):
-            return
-
-        scheduler_id = str(getattr(self, "scheduler_id", "") or "scheduler")
-        clean_task_id = str(task_id or "").strip()
-        clean_queue_name = str(queue_name or "ready").strip() or "ready"
-        if not clean_task_id:
-            return
-
-        try:
-            if phase_name in {"requeued", "cancelled"}:
-                method(scheduler_id, clean_task_id, clean_queue_name, reason)
-            else:
-                method(scheduler_id, clean_task_id, clean_queue_name)
-        except Exception:
-            return
+        return _status_write_emit_scheduler_evidence(
+            self,
+            phase,
+            task_id=task_id,
+            queue_name=queue_name,
+            reason=reason,
+        )
 
     def _extract_execution_trace_from_payload(self, payload: Any) -> List[Dict[str, Any]]:
         return extract_execution_trace_from_payload(payload)
@@ -914,41 +663,23 @@ class Scheduler(RuntimeTaskScheduler):
         self,
         executed_results: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        return promote_execution_trace_in_executed_results(executed_results)
+        return _dispatch_pipeline_promote_execution_trace(executed_results)
 
     def _can_requeue_task(self, task_id: str) -> bool:
-        task = self._get_task_from_repo(task_id)
-        if not isinstance(task, dict):
-            return False
-
-        status = str(task.get("status") or "").strip().lower()
-        if status in TERMINAL_STATUSES:
-            return False
-
-        deps_ready, _ = self._task_dependencies_satisfied(task)
-        return deps_ready
+        return _status_write_can_requeue_task(
+            self,
+            task_id,
+            terminal_statuses=TERMINAL_STATUSES,
+        )
 
     def _queue_contains_task(self, task_id: str) -> bool:
-        try:
-            return bool(self.scheduler_queue.contains(str(task_id or "").strip()))
-        except Exception:
-            return False
+        return _status_write_queue_contains_task(self, task_id)
 
     def _repo_task_to_scheduled_task(self, task: Dict[str, Any]) -> ScheduledTask:
-        task_id = self._extract_task_id(task)
-        return ScheduledTask(
-            task_id=task_id,
-            title=str(task.get("title") or task.get("goal") or task_id),
-            priority=self._safe_int_for_runtime_gate(task.get("priority"), 0),
-            status=str(task.get("status") or STATUS_QUEUED),
-            retry_count=self._safe_int_for_runtime_gate(task.get("retry_count"), 0),
-            max_retries=self._safe_int_for_runtime_gate(task.get("max_retries"), 0),
-            payload=copy.deepcopy(task),
-            metadata={
-                "task_name": str(task.get("task_name") or task_id),
-                "scheduler_build": SCHEDULER_BUILD,
-            },
-            last_error=task.get("last_error"),
+        return _status_write_repo_task_to_scheduled_task(
+            self,
+            task,
+            scheduler_build=SCHEDULER_BUILD,
         )
 
     # ------------------------------------------------------------
@@ -1027,77 +758,12 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         current_tick: Optional[int] = None,
     ) -> Dict[str, Any]:
-        task = self._hydrate_task_from_workspace(task)
-        task = self._ensure_executable_steps_for_task(task)
-        task_id = self._extract_task_id(task)
-
-        current_status = str(task.get("status") or "").strip().lower()
-        if current_status in TERMINAL_STATUSES:
-            result = self._build_terminal_skip_runner_result(task=task)
-            result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
-            sync_runtime_back_to_repo_with_retry_collapse(scheduler=self, task=task, runner_result=result)
-            return self._compact_runner_result(result)
-
-        self._emit_scheduler_evidence(
-            "dispatched",
-            task_id=task_id,
-            queue_name="runtime",
-        )
-
-        if self._is_scheduler_owned_simple_step_task(task):
-            result = self._run_simple_task_tick(task=task, current_tick=current_tick)
-            last_step_result = result.get("last_step_result") if isinstance(result, dict) else {}
-            delegated_result = (
-                last_step_result.get("result")
-                if isinstance(last_step_result, dict) and isinstance(last_step_result.get("result"), dict)
-                else {}
-            )
-            execution_path = (
-                delegated_result.get("execution_path")
-                if isinstance(delegated_result.get("execution_path"), dict)
-                else {}
-            )
-            if (
-                isinstance(result, dict)
-                and str(result.get("action") or "").strip().lower() == "simple_step_failed"
-                and execution_path.get("step_executor_endpoint_only") is True
-            ):
-                result["ok"] = True
-                result["scheduler_dispatch_ok"] = True
-            result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
-            route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
-            public_task = copy.deepcopy(task)
-            for key in (
-                "status",
-                "current_step_index",
-                "steps_total",
-                "results",
-                "step_results",
-                "last_step_result",
-                "execution_log",
-                "final_answer",
-                "last_run_tick",
-                "finished_tick",
-                "last_failure_tick",
-            ):
-                if key in result:
-                    public_task[key] = copy.deepcopy(result[key])
-            result["task"] = copy.deepcopy(public_task)
-            result["runtime_state"] = copy.deepcopy(public_task)
-            return self._compact_runner_result(result)
-
-        loop_result = self._run_task_via_agent_loop_with_fallback_check(
+        return _execution_pipeline_run_one_step(
+            self,
             task=task,
             current_tick=current_tick,
+            terminal_statuses=TERMINAL_STATUSES,
         )
-        if loop_result is not None:
-            loop_result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=loop_result)
-            return self._compact_runner_result(loop_result)
-
-        result = self._run_simple_task_tick(task=task, current_tick=current_tick)
-        result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=result)
-        route_sync_runner_result_and_requeue_if_ready(self, task=task, runner_result=result)
-        return self._compact_runner_result(result)
 
     def _run_scheduler_owned_simple_task_until_stop(
         self,
@@ -1228,23 +894,7 @@ class Scheduler(RuntimeTaskScheduler):
         self,
         task: Dict[str, Any],
     ) -> Dict[str, Any]:
-        result = {
-            "ok": True,
-            "action": "terminal_skip",
-            "task_id": self._extract_task_id(task),
-            "status": str(task.get("status") or "").strip().lower(),
-            "final_answer": task.get("final_answer", ""),
-            "task": copy.deepcopy(task),
-        }
-        runtime = getattr(self, "task_runtime", None)
-        if runtime is not None and hasattr(runtime, "load_runtime_state"):
-            try:
-                runtime_state = runtime.load_runtime_state(task)
-                if isinstance(runtime_state, dict):
-                    result["runtime_state"] = copy.deepcopy(runtime_state)
-            except Exception:
-                pass
-        return result
+        return _execution_pipeline_build_terminal_skip_runner_result(self, task=task)
 
     def _read_repair_chain_orchestration_summary(
         self,
@@ -1974,23 +1624,12 @@ class Scheduler(RuntimeTaskScheduler):
         task: Dict[str, Any],
         runner_result: Dict[str, Any],
     ) -> None:
-        runner_result = self._attach_orchestration_summary_to_runner_result(task=task, runner_result=runner_result)
-        sync_runtime_back_to_repo_with_retry_collapse(scheduler=self, task=task, runner_result=runner_result)
-
-        refreshed_task = self._get_task_from_repo(self._extract_task_id(task))
-        if not isinstance(refreshed_task, dict):
-            return
-
-        refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
-        if refreshed_status in {"queued", STATUS_QUEUED, "retry", "ready"}:
-            requeued = route_enqueue_repo_task_if_ready(self, refreshed_task, overwrite=True)
-            if requeued:
-                self._emit_scheduler_evidence(
-                    "requeued",
-                    task_id=self._extract_task_id(refreshed_task),
-                    queue_name="ready",
-                    reason=refreshed_status,
-                )
+        return _status_write_sync_runner_result_and_requeue_if_ready(
+            self,
+            task=task,
+            runner_result=runner_result,
+            status_queued=STATUS_QUEUED,
+        )
 
     # ------------------------------------------------------------
     # simple fallback executor
@@ -2558,85 +2197,10 @@ class Scheduler(RuntimeTaskScheduler):
         }
 
     def apply_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        result = self._try_replan_task(task, apply=True)
-        if isinstance(result, dict):
-            result["mode"] = "replan_apply"
-            result["approved"] = bool(result.get("replanned"))
-            result["submitted"] = bool(result.get("replanned"))
-            result["queued"] = str(task.get("status") or "").strip().lower() == "queued"
-            result["ran"] = False
-        return result if isinstance(result, dict) else {
-            "ok": False,
-            "mode": "replan_apply",
-            "approved": False,
-            "submitted": False,
-            "queued": False,
-            "ran": False,
-            "error": "invalid apply result",
-        }
+        return _replan_pipeline_apply_replan_task(self, task)
 
     def preview_replan_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(task, dict):
-            return {
-                "ok": False,
-                "mode": "replan_preview",
-                "error": "invalid task payload",
-                "would_replan": False,
-                "dry_run": True,
-                "submitted": False,
-                "ran": False,
-            }
-
-        preview_task = copy.deepcopy(task)
-        original_steps = copy.deepcopy(preview_task.get("steps", [])) if isinstance(preview_task.get("steps"), list) else []
-        original_fingerprint = self._fingerprint_steps(original_steps)
-        budget = self._replan_budget_payload(preview_task)
-
-        result = self._try_replan_task(preview_task)
-        if not isinstance(result, dict):
-            result = {
-                "ok": False,
-                "replanned": False,
-                "decision": "error",
-                "summary": "invalid replan preview result",
-            }
-
-        preview_steps: List[Dict[str, Any]] = []
-        raw_replan = result.get("raw_replan_result")
-        plan = raw_replan.get("plan") if isinstance(raw_replan, dict) else None
-        if isinstance(plan, dict) and isinstance(plan.get("steps"), list):
-            preview_steps = copy.deepcopy(plan.get("steps"))
-        elif bool(result.get("replanned")) and isinstance(preview_task.get("steps"), list):
-            preview_steps = copy.deepcopy(preview_task.get("steps"))
-
-        preview_fingerprint = self._fingerprint_steps(preview_steps) if preview_steps else ""
-
-        return {
-            "ok": bool(result.get("ok", False)),
-            "mode": "replan_preview",
-            "dry_run": True,
-            "submitted": False,
-            "ran": False,
-            "task_id": str(preview_task.get("task_id") or preview_task.get("task_name") or ""),
-            "status": str(task.get("status") or ""),
-            "can_replan": bool(result.get("would_replan") or result.get("replanned")),
-            "would_replan": bool(result.get("would_replan") or result.get("replanned")),
-            "decision": str(result.get("decision") or ""),
-            "summary": str(result.get("summary") or ""),
-            "repairable": result.get("repairable", None),
-            "failed_step_type": str(result.get("failed_step_type") or self._get_failed_step_type(preview_task)),
-            "replan_count": int(result.get("replan_count", budget["replan_count"]) or 0),
-            "max_replans": int(result.get("max_replans", budget["max_replans"]) or 0),
-            "remaining_replans": int(result.get("remaining_replans", budget["remaining"]) or 0),
-            "original_plan_fingerprint": original_fingerprint,
-            "preview_plan_fingerprint": preview_fingerprint,
-            "same_plan": bool(preview_fingerprint and preview_fingerprint == original_fingerprint),
-            "preview_steps": preview_steps,
-            "preview_step_count": len(preview_steps),
-            "replan_trace": copy.deepcopy(preview_task.get("replan_trace", [])),
-            "raw_replan_result": copy.deepcopy(raw_replan) if isinstance(raw_replan, dict) else None,
-            "error": result.get("error"),
-        }
+        return _replan_pipeline_preview_replan_task(self, task)
 
     def _execute_simple_step(
         self,
