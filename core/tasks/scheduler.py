@@ -201,7 +201,18 @@ from core.tasks.scheduler_core.runtime_overlay_helpers import (
 )
 from core.tasks.scheduler_core.scheduler_progress import update_step_progress
 from core.tasks.scheduler_core.scheduler_runtime_fallback import direct_handler as runtime_fallback_direct_handler, has_explicit_authority as runtime_fallback_has_explicit_authority, pick_step as runtime_fallback_pick_step
-from core.tasks.scheduler_core.scheduler_completion import complete_operator, mark_completed_steps_fallback, mark_failed_if_ok_without_completion, mark_failed_step_if_needed, mark_operator_complete_if_ok, mark_operator_complete_or_failed, run_operator_completion_pipeline, task_from_args, task_id
+from core.tasks.scheduler_core.scheduler_completion_pipeline import (
+    _zero_scheduler_complete_operator as _completion_pipeline_complete_operator,
+    _zero_scheduler_mark_completed_steps_fallback as _completion_pipeline_mark_completed_steps_fallback,
+    _zero_scheduler_mark_failed_if_ok_without_completion as _completion_pipeline_mark_failed_if_ok_without_completion,
+    _zero_scheduler_mark_failed_step_if_needed as _completion_pipeline_mark_failed_step_if_needed,
+    _zero_scheduler_mark_operator_complete_if_ok as _completion_pipeline_mark_operator_complete_if_ok,
+    _zero_scheduler_mark_operator_complete_or_failed as _completion_pipeline_mark_operator_complete_or_failed,
+    _zero_scheduler_run_operator_completion_pipeline as _completion_pipeline_run_operator_completion_pipeline,
+    _zero_scheduler_task_from_args as _completion_pipeline_task_from_args,
+    _zero_scheduler_task_id as _completion_pipeline_task_id,
+    run_zero_scheduler_run_one_step_v16 as _completion_pipeline_run_one_step_v16,
+)
 from core.tasks.scheduler_core.create_task_intent_helpers import (
     build_forced_repo_edit_intent,
     is_repo_edit_intent_candidate,
@@ -10710,19 +10721,19 @@ Scheduler.run_one_step = _zero_scheduler_run_one_step_v8
 # ZERO_CONSOLIDATED_SCHEDULER_OPERATOR_COMPLETION_READBACK_V13
 
 def _zero_scheduler_task_from_args(args, kwargs):
-    return kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+    return _completion_pipeline_task_from_args(args, kwargs)
 
 
 def _zero_scheduler_task_id(task):
-    return str(task.get("id") or task.get("task_id") or "task")
+    return _completion_pipeline_task_id(task)
 
 
 
 def _zero_scheduler_mark_completed_steps_fallback(self, task, step_id):
-    return mark_completed_steps_fallback(self, task, step_id)
+    return _completion_pipeline_mark_completed_steps_fallback(self, task, step_id)
 
 def _zero_scheduler_complete_operator(self, task, result, *, outcome="complete"):
-    return complete_operator(
+    return _completion_pipeline_complete_operator(
         self,
         task,
         result,
@@ -10733,7 +10744,7 @@ def _zero_scheduler_complete_operator(self, task, result, *, outcome="complete")
 
 
 def _zero_scheduler_mark_operator_complete_if_ok(task, result):
-    return mark_operator_complete_if_ok(
+    return _completion_pipeline_mark_operator_complete_if_ok(
         task,
         result,
         registry_factory=get_operator_registry_service,
@@ -10741,7 +10752,7 @@ def _zero_scheduler_mark_operator_complete_if_ok(task, result):
 
 
 def _zero_scheduler_mark_operator_complete_or_failed(task, result):
-    return mark_operator_complete_or_failed(
+    return _completion_pipeline_mark_operator_complete_or_failed(
         task,
         result,
         registry_factory=get_operator_registry_service,
@@ -10749,7 +10760,7 @@ def _zero_scheduler_mark_operator_complete_or_failed(task, result):
 
 
 def _zero_scheduler_mark_failed_step_if_needed(task, result):
-    return mark_failed_step_if_needed(
+    return _completion_pipeline_mark_failed_step_if_needed(
         task,
         result,
         registry_factory=get_operator_registry_service,
@@ -10757,7 +10768,7 @@ def _zero_scheduler_mark_failed_step_if_needed(task, result):
 
 
 def _zero_scheduler_mark_failed_if_ok_without_completion(task, result):
-    return mark_failed_if_ok_without_completion(
+    return _completion_pipeline_mark_failed_if_ok_without_completion(
         task,
         result,
         registry_factory=get_operator_registry_service,
@@ -10765,7 +10776,7 @@ def _zero_scheduler_mark_failed_if_ok_without_completion(task, result):
 
 
 def _zero_scheduler_run_operator_completion_pipeline(task, result, *, mode="all"):
-    return run_operator_completion_pipeline(
+    return _completion_pipeline_run_operator_completion_pipeline(
         task,
         result,
         mode=mode,
@@ -10778,12 +10789,13 @@ def _zero_scheduler_run_operator_completion_pipeline(task, result, *, mode="all"
 _zero_scheduler_base_run_one_step_v16 = _zero_scheduler_run_one_step_v8
 
 def _zero_scheduler_run_one_step_v16(self, *args, **kwargs):
-    result = _zero_scheduler_base_run_one_step_v16(self, *args, **kwargs)
-    _zero_scheduler_run_operator_completion_pipeline(
-        _zero_scheduler_task_from_args(args, kwargs),
-        result,
-        mode="missing_completion",
+    return _completion_pipeline_run_one_step_v16(
+        self,
+        args,
+        kwargs,
+        base_run_one_step=_zero_scheduler_base_run_one_step_v16,
+        run_operator_completion_pipeline=_zero_scheduler_run_operator_completion_pipeline,
+        task_from_args_func=_zero_scheduler_task_from_args,
     )
-    return result
 
 Scheduler.run_one_step = _zero_scheduler_run_one_step_v16
