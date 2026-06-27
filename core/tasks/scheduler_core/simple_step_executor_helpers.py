@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 
 SIMPLE_RUNTIME_CONTRACT_VERSION = "simple_runtime_contract.v1"
 
+from .simple_step_text_helpers import _extract_text_deep, _legacy_template_detected
+
 
 def _step_contract_metadata(step: Dict[str, Any]) -> Dict[str, Any]:
     return {
@@ -83,55 +85,6 @@ def _resolve_previous_result_text_for_contract(scheduler, task: Dict[str, Any], 
     return True, previous_text, {}
 
 
-def _extract_text_deep(payload: Any, depth: int = 0) -> str:
-    if depth > 12 or payload is None:
-        return ""
-
-    if isinstance(payload, str):
-        return payload
-
-    if isinstance(payload, dict):
-        for key in (
-            "text",
-            "content",
-            "message",
-            "final_answer",
-            "response",
-            "answer",
-            "summary",
-            "summary_text",
-            "stdout",
-            "output_text",
-        ):
-            value = payload.get(key)
-            if isinstance(value, str):
-                return value
-
-        for nested_key in (
-            "result",
-            "raw",
-            "data",
-            "payload",
-            "output",
-            "previous_result",
-            "last_step_result",
-            "runtime_execution_result",
-            "adapter_payload",
-        ):
-            nested = payload.get(nested_key)
-            text = _extract_text_deep(nested, depth + 1)
-            if isinstance(text, str) and text:
-                return text
-
-    if isinstance(payload, list):
-        for item in reversed(payload):
-            text = _extract_text_deep(item, depth + 1)
-            if isinstance(text, str) and text:
-                return text
-
-    return ""
-
-
 def _render_simple_step_template(
     value: Any,
     *,
@@ -160,14 +113,6 @@ def _resolve_simple_runtime_output_path(
         shared_dir=scheduler.shared_dir,
         scope=step_scope,
     )
-
-
-def _legacy_template_detected(step: Dict[str, Any]) -> bool:
-    for key in ("content", "text", "body"):
-        value = step.get(key)
-        if isinstance(value, str) and "{{previous_result" in value:
-            return True
-    return False
 
 
 def prepare_simple_step_guard(
