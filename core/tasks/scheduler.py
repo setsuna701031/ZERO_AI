@@ -203,6 +203,9 @@ from core.tasks.scheduler_core.scheduler_runtime_fallback_overlays import (
 from core.tasks.scheduler_core.scheduler_final_tail_overlays import (
     install_scheduler_final_tail_overlays,
 )
+from core.tasks.scheduler_core.scheduler_create_task_compat import (
+    install_scheduler_create_task_compat,
+)
 from core.tasks.scheduler_core.scheduler_completion_pipeline import (
     _zero_scheduler_complete_operator as _completion_pipeline_complete_operator,
     _zero_scheduler_mark_completed_steps_fallback as _completion_pipeline_mark_completed_steps_fallback,
@@ -240,10 +243,6 @@ from core.tasks.scheduler_core.scheduler_execution_pipeline import (
 from core.tasks.scheduler_core.scheduler_replan_pipeline import (
     apply_replan_task as _replan_pipeline_apply_replan_task,
     preview_replan_task as _replan_pipeline_preview_replan_task,
-)
-from core.tasks.scheduler_core.create_task_intent_helpers import (
-    build_forced_repo_edit_intent,
-    is_repo_edit_intent_candidate,
 )
 from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
 from core.tasks.scheduler_execution_gateway import run_scheduler_step_execution_gateway
@@ -8696,44 +8695,13 @@ globals().update(
 
 # Create-task compatibility paths must create execution intent only.  Actual
 # mutation remains behind Scheduler -> RuntimeDispatcher -> TaskRunner -> StepExecutor.
-_ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK = Scheduler._try_force_repo_edit_at_create_task
-_ZERO_V7337_ORIGINAL_SCHEDULER_CREATE_TASK_RECORD = Scheduler._create_task_record
-
-
-def _zero_v7337_scheduler_try_force_repo_edit_at_create_task(self, goal: str) -> Optional[Dict[str, Any]]:
-    text = str(goal or "").strip()
-    if is_repo_edit_intent_candidate(text):
-        return build_forced_repo_edit_intent(text, queued_status=STATUS_QUEUED)
-    return _ZERO_V7337_ORIGINAL_SCHEDULER_TRY_FORCE_REPO_EDIT_AT_CREATE_TASK(self, goal)
-
-
-def _zero_v7337_scheduler_create_task_record(self, *args, **kwargs) -> Dict[str, Any]:
-    task = _ZERO_V7337_ORIGINAL_SCHEDULER_CREATE_TASK_RECORD(self, *args, **kwargs)
-    if not isinstance(task, dict):
-        return task
-    forced = task.get("last_step_result")
-    planner = task.get("planner_result")
-    if isinstance(planner, dict) and isinstance(planner.get("forced_repo_edit"), dict):
-        forced = planner.get("forced_repo_edit")
-    if isinstance(forced, dict) and forced.get("execution_intent_only"):
-        project_runtime_status(task, STATUS_QUEUED, owner="core/tasks/scheduler.py")
-        task["current_step_index"] = 0
-        task["finished_tick"] = None
-        task["final_answer"] = ""
-        task["results"] = []
-        task["step_results"] = []
-        task["last_step_result"] = None
-        task["execution_intent_only"] = True
-        task["mutation_executed"] = False
-        task["authority_context"] = self._build_scheduler_authority_context(task)
-        if isinstance(task.get("planner_result"), dict):
-            task["planner_result"]["execution_intent_only"] = True
-            task["planner_result"]["mutation_executed"] = False
-    return task
-
-
-Scheduler._try_force_repo_edit_at_create_task = _zero_v7337_scheduler_try_force_repo_edit_at_create_task
-Scheduler._create_task_record = _zero_v7337_scheduler_create_task_record
+globals().update(
+    install_scheduler_create_task_compat(
+        Scheduler,
+        global_lookup=lambda name, default=None: globals().get(name, default),
+        status_queued=STATUS_QUEUED,
+    )
+)
 
 
 # Facade compatibility overlays live in scheduler_core. Keep scheduler.py as
