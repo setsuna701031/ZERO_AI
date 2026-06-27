@@ -163,16 +163,21 @@ from core.tasks.scheduler_core.code_chain_tick_replay_bridge import (
     current_step_type as code_chain_replay_current_step_type,
     resolve_task_runner as code_chain_replay_resolve_task_runner,
 )
-from core.tasks.scheduler_core.retrying_repair_replay_state import (
-    prepare_retrying_repair_replay_state,
+from core.tasks.scheduler_core.retry_repair_helpers import (
+    _zero_v734_build_retry_repair_steps,
+    _zero_v734_extract_compile_target_from_step,
+    _zero_v734_extract_nested_dict,
+    _zero_v734_read_runtime_state,
+    _zero_v734_resolve_retry_compile_file,
+    _zero_v734_runtime_state_file_for_task,
+    _zero_v734_safe_now,
+    _zero_v734_synthesize_python_compile_fix,
+    _zero_v734_task_allows_auto_repair,
+    _zero_v734_write_runtime_state,
 )
-from core.tasks.scheduler_core.repair_injection_execution import (
-    execute_repair_injection_transaction,
-    safe_repair_injection_now,
-)
-from core.tasks.scheduler_core.repair_replay_continuation import (
-    build_already_injected_replay_continuation,
-    build_injected_replay_continuation,
+from core.tasks.scheduler_core.scheduler_retry_pipeline import (
+    _zero_v734_land_repair_steps,
+    install_retrying_repair_bridge,
 )
 from core.tasks.scheduler_core.command_planner import try_plan_command
 from core.tasks.scheduler_core.llm_step_helpers import (
@@ -8275,362 +8280,21 @@ SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 # sandbox Python compile-repair case, and it leaves broader Code Chain / repo
 # repair flows untouched.
 
-try:
-    READY_STATUSES.add("retrying")
-except Exception:
-    pass
-
-_ZERO_V734_ORIGINAL_RUN_ONE_STEP = Scheduler.run_one_step
-_ZERO_V734_ORIGINAL_SYNC_RUNNER_RESULT_AND_REQUEUE = Scheduler._sync_runner_result_and_requeue_if_ready
-
-
-def _zero_v734_safe_now() -> str:
-    return safe_repair_injection_now()
-
-
-def _zero_v734_extract_nested_dict(payload: Any, keys: List[str]) -> Dict[str, Any]:
-    current = payload
-    for key in keys:
-        if not isinstance(current, dict):
-            return {}
-        current = current.get(key)
-    return current if isinstance(current, dict) else {}
-
-
-def _zero_v734_extract_compile_target_from_step(step: Dict[str, Any]) -> str:
-    if not isinstance(step, dict):
-        return ""
-    for key in ("path", "target_path", "file_path"):
-        value = str(step.get(key) or "").strip()
-        if value.endswith(".py"):
-            return value
-
-    command = str(step.get("command") or step.get("cmd") or "").strip()
-    if not command:
-        return ""
-
-    # Accept common forms:
-    #   python -m py_compile broken_demo.py
-    #   py_compile broken_demo.py
-    match = re.search(r"py_compile\s+([^\s\"']+\.py)", command)
-    if match:
-        return match.group(1).strip().strip('"').strip("'")
-
-    match = re.search(r"([^\s\"']+\.py)", command)
-    if match:
-        return match.group(1).strip().strip('"').strip("'")
-
-    return ""
-
-
-def _zero_v734_resolve_retry_compile_file(task: Dict[str, Any], failed_step: Dict[str, Any]) -> Tuple[str, str, str]:
-    target = _zero_v734_extract_compile_target_from_step(failed_step)
-    if not target:
-        return "", "", ""
-
-    cwd = str(failed_step.get("command_cwd") or failed_step.get("cwd") or "").strip()
-    task_dir = str(task.get("task_dir") or "").strip()
-    sandbox_dir = str(task.get("sandbox_dir") or "").strip()
-
-    if not sandbox_dir and task_dir:
-        sandbox_dir = os.path.join(task_dir, "sandbox")
-
-    if not cwd:
-        cwd = sandbox_dir or task_dir or os.getcwd()
-
-    if os.path.isabs(target):
-        full_path = os.path.abspath(target)
-        rel_path = os.path.basename(target)
-    else:
-        full_path = os.path.abspath(os.path.join(cwd, target))
-        rel_path = target.replace("\\", "/").lstrip("./")
-
-    return full_path, rel_path, cwd
-
-
-def _zero_v734_synthesize_python_compile_fix(source: str) -> Tuple[bool, str, str]:
-    """Return (ok, fixed_source, reason) for a narrow safe syntax repair.
-
-    Current supported case:
-        def add(a,b):
-            return a +
-    becomes:
-        def add(a,b):
-            return a + b
-
-    The rule is deterministic and intentionally small.  It does not try to be a
-    general code generator.
-    """
-    if not isinstance(source, str) or not source.strip():
-        return False, source, "empty source"
-
-    lines = source.splitlines()
-    if not lines:
-        return False, source, "empty source lines"
-
-    fixed = list(lines)
-    changed = False
-
-    current_args: List[str] = []
-    for index, line in enumerate(lines):
-        def_match = re.match(r"^\s*def\s+[A-Za-z_]\w*\s*\(([^)]*)\)\s*:", line)
-        if def_match:
-            raw_args = def_match.group(1)
-            parsed_args: List[str] = []
-            for item in raw_args.split(","):
-                name = item.strip().split("=")[0].strip()
-                if ":" in name:
-                    name = name.split(":", 1)[0].strip()
-                if name and re.match(r"^[A-Za-z_]\w*$", name):
-                    parsed_args.append(name)
-            current_args = parsed_args
-            continue
-
-        return_match = re.match(r"^(\s*return\s+)([A-Za-z_]\w*)\s*\+\s*$", line)
-        if not return_match:
-            continue
-
-        left_name = return_match.group(2)
-        replacement_name = ""
-        for candidate in current_args:
-            if candidate != left_name:
-                replacement_name = candidate
-                break
-        if not replacement_name and len(current_args) >= 2:
-            replacement_name = current_args[1]
-        if not replacement_name:
-            replacement_name = "0"
-
-        fixed[index] = f"{return_match.group(1)}{left_name} + {replacement_name}"
-        changed = True
-
-    if not changed:
-        return False, source, "no supported incomplete return expression found"
-
-    fixed_source = "\n".join(fixed)
-    if source.endswith("\n"):
-        fixed_source += "\n"
-    return True, fixed_source, "fixed incomplete return expression"
-
-
-def _zero_v734_build_retry_repair_steps(
-    task: Dict[str, Any],
-    failed_step: Dict[str, Any],
-) -> Tuple[bool, List[Dict[str, Any]], Dict[str, Any]]:
-    full_path, rel_path, cwd = _zero_v734_resolve_retry_compile_file(task, failed_step)
-    if not full_path or not rel_path:
-        return False, [], {"reason": "compile target not found"}
-
-    try:
-        with open(full_path, "r", encoding="utf-8") as f:
-            source = f.read()
-    except Exception as exc:
-        return False, [], {
-            "reason": "failed to read compile target",
-            "path": full_path,
-            "error": f"{type(exc).__name__}: {exc}",
-        }
-
-    ok, fixed_source, reason = _zero_v734_synthesize_python_compile_fix(source)
-    if not ok:
-        return False, [], {
-            "reason": reason,
-            "path": full_path,
-        }
-
-    repair_id_base = "auto_repair_compile_syntax"
-    repair_steps = [
-        {
-            "id": f"{repair_id_base}_write",
-            "type": "write_file",
-            "path": rel_path,
-            "content": fixed_source,
-            "scope": "sandbox",
-            "command_cwd": cwd,
-            "repair_generated": True,
-            "repair_source": "scheduler_retrying_repair_bridge_v1",
-            "repair_reason": reason,
-        },
-        {
-            "id": f"{repair_id_base}_verify",
-            "type": "run_python",
-            "command": f"python -m py_compile {rel_path}",
-            "command_cwd": cwd,
-            "repair_generated": True,
-            "repair_source": "scheduler_retrying_repair_bridge_v1",
-            "repair_reason": "verify repaired python file compiles",
-        },
-    ]
-    return True, repair_steps, {
-        "reason": reason,
-        "path": full_path,
-        "relative_path": rel_path,
-        "cwd": cwd,
-        "original_content": source,
-        "fixed_content": fixed_source,
-    }
-
-
-def _zero_v734_task_allows_auto_repair(task: Dict[str, Any]) -> bool:
-    if not isinstance(task, dict):
-        return False
-
-    explicit_keys = (
-        "auto_repair",
-        "auto-repair",
-        "planner_autonomous_repair",
-        "autonomous_repair",
-        "repair_enabled",
+globals().update(
+    install_retrying_repair_bridge(
+        Scheduler,
+        ready_statuses=READY_STATUSES,
+        original_run_one_step_provider=lambda: globals().get("_ZERO_V734_ORIGINAL_RUN_ONE_STEP"),
+        original_sync_runner_result_and_requeue_provider=lambda: globals().get(
+            "_ZERO_V734_ORIGINAL_SYNC_RUNNER_RESULT_AND_REQUEUE"
+        ),
+        build_retry_repair_steps_provider=lambda: _zero_v734_build_retry_repair_steps,
+        read_runtime_state_provider=lambda: _zero_v734_read_runtime_state,
+        write_runtime_state_provider=lambda: _zero_v734_write_runtime_state,
+        allows_auto_repair_provider=lambda: _zero_v734_task_allows_auto_repair,
+        now_provider_provider=lambda: _zero_v734_safe_now,
     )
-    for key in explicit_keys:
-        if bool(task.get(key, False)):
-            return True
-
-    goal = str(task.get("goal") or task.get("title") or "").strip().lower()
-    if "auto repair" in goal or "autonomous repair" in goal:
-        return True
-
-    repair_context = task.get("repair_context")
-    if isinstance(repair_context, dict):
-        session = repair_context.get("repair_session")
-        if isinstance(session, dict) and bool(session.get("enabled")):
-            return True
-        strategy = repair_context.get("strategy")
-        if isinstance(strategy, dict) and strategy.get("current_strategy"):
-            return True
-
-    return False
-
-
-def _zero_v734_runtime_state_file_for_task(task: Dict[str, Any]) -> str:
-    if not isinstance(task, dict):
-        return ""
-    value = str(task.get("runtime_state_file") or "").strip()
-    if value:
-        return value
-    task_dir = str(task.get("task_dir") or "").strip()
-    if task_dir:
-        return os.path.join(task_dir, "runtime_state.json")
-    return ""
-
-
-def _zero_v734_read_runtime_state(task: Dict[str, Any]) -> Dict[str, Any]:
-    path = _zero_v734_runtime_state_file_for_task(task)
-    if not path or not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _zero_v734_write_runtime_state(task: Dict[str, Any], state: Dict[str, Any]) -> None:
-    path = _zero_v734_runtime_state_file_for_task(task)
-    if not path or not isinstance(state, dict):
-        return
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
-def _zero_v734_land_repair_steps(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
-    replay_state = prepare_retrying_repair_replay_state(
-        self,
-        task,
-        read_runtime_state=_zero_v734_read_runtime_state,
-        allows_auto_repair=_zero_v734_task_allows_auto_repair,
-    )
-    if replay_state.get("return_result") is not None:
-        return replay_state["return_result"]
-
-    task = replay_state["task"]
-    task_id = replay_state["task_id"]
-    runtime_state = replay_state.get("runtime_state")
-    if replay_state.get("delegate_original"):
-        return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
-
-    repair_context = replay_state["repair_context"]
-    already_injected = replay_state["already_injected"]
-    if already_injected["already_injected"]:
-        continuation = build_already_injected_replay_continuation(
-            task=task,
-            task_id=task_id,
-            already_injected=already_injected,
-            persist_task_payload=self._persist_task_payload,
-        )
-        enqueue_decision = continuation["enqueue_decision"]
-        if enqueue_decision["enqueue_ready"]:
-            self._enqueue_repo_task_if_ready(
-                continuation["enqueue_task"],
-                overwrite=enqueue_decision["overwrite"],
-            )
-        return continuation["result"]
-
-    steps = replay_state["steps"]
-    idx = replay_state["current_step_index"]
-    failed_step = replay_state["failed_step"]
-
-    transaction = execute_repair_injection_transaction(
-        task=task,
-        task_id=task_id,
-        runtime_state=runtime_state,
-        repair_context=repair_context,
-        steps=steps,
-        step_index=idx,
-        failed_step=failed_step,
-        current_tick=current_tick,
-        build_retry_repair_steps=_zero_v734_build_retry_repair_steps,
-        write_runtime_state=_zero_v734_write_runtime_state,
-        persist_task_payload=self._persist_task_payload,
-        status_failed=STATUS_FAILED,
-        now_provider=_zero_v734_safe_now,
-    )
-    continuation = build_injected_replay_continuation(transaction)
-    enqueue_decision = continuation["enqueue_decision"]
-    if enqueue_decision["enqueue_ready"]:
-        enqueue_task = continuation["enqueue_task"]
-        if isinstance(enqueue_task, dict):
-            self._enqueue_repo_task_if_ready(enqueue_task, overwrite=enqueue_decision["overwrite"])
-
-    return continuation["result"]
-
-
-def _zero_v734_run_one_step(self, task: Dict[str, Any], current_tick: Optional[int] = None) -> Dict[str, Any]:
-    try:
-        hydrated = self._hydrate_task_from_workspace(copy.deepcopy(task)) if isinstance(task, dict) else task
-    except Exception:
-        hydrated = task
-
-    status = str(hydrated.get("status") or "").strip().lower() if isinstance(hydrated, dict) else ""
-    if status in {"retrying", "retry"}:
-        return self._compact_runner_result(_zero_v734_land_repair_steps(self, hydrated, current_tick=current_tick))
-
-    return _ZERO_V734_ORIGINAL_RUN_ONE_STEP(self, task=task, current_tick=current_tick)
-
-
-def _zero_v734_sync_runner_result_and_requeue_if_ready(self, task: Dict[str, Any], runner_result: Dict[str, Any]) -> None:
-    _ZERO_V734_ORIGINAL_SYNC_RUNNER_RESULT_AND_REQUEUE(self, task=task, runner_result=runner_result)
-
-    try:
-        task_id = self._extract_task_id(task)
-        refreshed_task = self._get_task_from_repo(task_id)
-        if not isinstance(refreshed_task, dict):
-            return
-        refreshed_status = str(refreshed_task.get("status") or "").strip().lower()
-        if refreshed_status in {"retrying", "retry"}:
-            self._enqueue_repo_task_if_ready(refreshed_task, overwrite=True)
-    except Exception:
-        pass
-
-
-Scheduler.run_one_step = _zero_v734_run_one_step
-Scheduler._sync_runner_result_and_requeue_if_ready = _zero_v734_sync_runner_result_and_requeue_if_ready
-Scheduler.RETRYING_REPAIR_BRIDGE_VERSION = "v7.3.4"
+)
 Scheduler.SCHEDULER_BUILD = "DAG_EXECUTE_SAFETY_LOCK_V8_CODE_CHAIN_RUNTIME_INTEGRATION_V7_3_4_RETRYING_REPAIR_BRIDGE"
 SCHEDULER_BUILD = Scheduler.SCHEDULER_BUILD
 
