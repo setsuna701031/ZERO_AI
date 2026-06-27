@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 SIMPLE_RUNTIME_CONTRACT_VERSION = "simple_runtime_contract.v1"
 
 from .simple_step_text_helpers import _extract_text_deep, _legacy_template_detected
-from .simple_step_basic_handlers import handle_simple_ensure_file_step, handle_simple_noop_step
+from .simple_step_basic_handlers import handle_simple_ensure_file_step, handle_simple_noop_step, handle_simple_write_file_step
 
 
 def _step_contract_metadata(step: Dict[str, Any]) -> Dict[str, Any]:
@@ -208,53 +208,19 @@ def execute_simple_basic_step(
         )
 
     if step_type == "write_file":
-        raw_path = str(step.get("path") or "").strip()
-        if not raw_path:
-            raise ValueError("write_file step missing path")
-
-        if _legacy_template_detected(step):
-            return _contract_failure(
-                step=step,
-                error_type="legacy_contract_detected",
-                message="legacy previous_result template is not supported by simple runtime",
-            )
-
-        if bool(step.get("use_previous_text", False)):
-            ok, content, failure = _resolve_previous_result_text_for_contract(scheduler, task, step)
-            if not ok:
-                return failure
-        else:
-            content = step.get("content", "")
-
-        if content is None:
-            content = ""
-        content = _render_simple_step_template(
-            content,
-            scheduler=scheduler,
-            task=task,
-        )
-
-        full_path = _resolve_simple_runtime_output_path(
+        return handle_simple_write_file_step(
             scheduler,
-            raw_path=raw_path,
+            task=task,
+            step=step,
             task_dir=task_dir,
             step_scope=step_scope,
+            legacy_template_detected=_legacy_template_detected,
+            contract_failure=_contract_failure,
+            resolve_previous_result_text_for_contract=_resolve_previous_result_text_for_contract,
+            render_simple_step_template=_render_simple_step_template,
+            resolve_simple_runtime_output_path=_resolve_simple_runtime_output_path,
+            step_contract_metadata=_step_contract_metadata,
         )
-
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        return {
-            "type": "write_file",
-            "path": raw_path,
-            "full_path": full_path,
-            "scope": step_scope,
-            "bytes": len(content.encode("utf-8")),
-            "content": content,
-            "used_previous_text": bool(step.get("use_previous_text", False)),
-            **_step_contract_metadata(step),
-        }
 
     if step_type == "append_file":
         raw_path = str(step.get("path") or "").strip()
