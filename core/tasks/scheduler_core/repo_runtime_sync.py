@@ -84,37 +84,35 @@ def _select_effective_task_payload(task: Dict[str, Any], runner_result: Optional
     return effective
 
 
-def sync_runtime_back_to_repo(
-    scheduler: Any,
-    task: Dict[str, Any],
-    runner_result: Optional[Dict[str, Any]] = None,
-) -> None:
-    task_id = str(
+def _resolve_repo_runtime_task_id(task: Dict[str, Any]) -> str:
+    return str(
         task.get("task_id")
         or task.get("task_name")
         or task.get("id")
         or ""
     ).strip()
-    if not task_id:
-        return
 
-    effective_task = _select_effective_task_payload(task=task, runner_result=runner_result)
 
+def _load_repo_runtime_base_task(scheduler: Any, task_id: str, effective_task: Dict[str, Any]) -> Dict[str, Any]:
     repo_task = scheduler._get_task_from_repo(task_id)
     base_task = copy.deepcopy(repo_task if isinstance(repo_task, dict) else effective_task)
     base_task = scheduler._hydrate_task_from_workspace(base_task)
     _sync_loop_fields_into_merged(base_task, effective_task)
     _sync_review_fields_into_merged(base_task, effective_task)
+    return base_task
 
+
+def _load_repo_runtime_state_for_task(scheduler: Any, base_task: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     runtime_state = None
     if scheduler.task_runtime is not None and hasattr(scheduler.task_runtime, "load_runtime_state"):
         try:
             runtime_state = scheduler.task_runtime.load_runtime_state(base_task)
         except Exception:
             runtime_state = None
+    return runtime_state
 
-    merged = copy.deepcopy(base_task)
 
+def _merge_repo_runtime_state_fields(merged: Dict[str, Any], runtime_state: Optional[Dict[str, Any]]) -> None:
     if isinstance(runtime_state, dict):
         for key in (
             "status", "priority", "retry_count", "max_retries", "retry_delay", "next_retry_tick", "timeout_ticks",
@@ -132,9 +130,11 @@ def sync_runtime_back_to_repo(
         _sync_loop_fields_into_merged(merged, runtime_state)
         _sync_review_fields_into_merged(merged, runtime_state)
 
-    _sync_loop_fields_into_merged(merged, task)
-    _sync_review_fields_into_merged(merged, task)
 
+def _merge_repo_runtime_runner_result_fields(
+    merged: Dict[str, Any],
+    runner_result: Optional[Dict[str, Any]],
+) -> None:
     if isinstance(runner_result, dict):
         for key in (
             "status", "final_answer", "execution_log", "results", "step_results", "last_step_result",
@@ -152,6 +152,11 @@ def sync_runtime_back_to_repo(
             _sync_loop_fields_into_merged(merged, runner_task)
             _sync_review_fields_into_merged(merged, runner_task)
 
+
+def _apply_repo_runtime_replan_projection(
+    merged: Dict[str, Any],
+    runner_result: Optional[Dict[str, Any]],
+) -> None:
     if isinstance(runner_result, dict):
         replan_result = runner_result.get("replan_result")
         if isinstance(replan_result, dict) and bool(replan_result.get("replanned")):
@@ -179,6 +184,31 @@ def sync_runtime_back_to_repo(
             status_from_runner = str(runner_result.get("status") or "").strip().lower()
             if status_from_runner:
                 merged["status"] = status_from_runner
+
+
+def sync_runtime_back_to_repo(
+    scheduler: Any,
+    task: Dict[str, Any],
+    runner_result: Optional[Dict[str, Any]] = None,
+) -> None:
+    task_id = _resolve_repo_runtime_task_id(task)
+    if not task_id:
+        return
+
+    effective_task = _select_effective_task_payload(task=task, runner_result=runner_result)
+    base_task = _load_repo_runtime_base_task(
+        scheduler=scheduler,
+        task_id=task_id,
+        effective_task=effective_task,
+    )
+    runtime_state = _load_repo_runtime_state_for_task(scheduler=scheduler, base_task=base_task)
+    merged = copy.deepcopy(base_task)
+    _merge_repo_runtime_state_fields(merged=merged, runtime_state=runtime_state)
+
+    _sync_loop_fields_into_merged(merged, task)
+    _sync_review_fields_into_merged(merged, task)
+    _merge_repo_runtime_runner_result_fields(merged=merged, runner_result=runner_result)
+    _apply_repo_runtime_replan_projection(merged=merged, runner_result=runner_result)
 
     if not isinstance(merged.get("results"), list):
         merged["results"] = []
