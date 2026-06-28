@@ -49,6 +49,48 @@ def _zero_scheduler_pick_step_v4(task: Any) -> Dict[str, Any]:
     return _zero_scheduler_select_step(task)
 
 
+def _runtime_fallback_overlay_task_from_args(args: Any, kwargs: Dict[str, Any]) -> Any:
+    return kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+
+
+def _runtime_fallback_overlay_execute_runner(
+    scheduler: Any,
+    *,
+    task: Dict[str, Any],
+    step: Dict[str, Any],
+    current_tick: Any,
+    compatibility_seal: str,
+    original_result: Any,
+) -> Any:
+    fallback = scheduler._run_step_via_task_runner(
+        task=task,
+        step=step,
+        context=canonical_runtime_fallback_context(task, step, current_tick=current_tick),
+    )
+    fallback = canonicalize_fallback_result(fallback, compatibility_seal=compatibility_seal)
+    return fallback if isinstance(fallback, dict) else original_result
+
+
+def _runtime_fallback_overlay_apply_step_authority(task: Dict[str, Any], step: Dict[str, Any]) -> None:
+    authority = task.get("execution_authority")
+    step.setdefault("execution_authority", authority)
+    step.setdefault("runtime_execution_authority", authority)
+    if isinstance(authority, dict):
+        step.setdefault(
+            "authority_validation",
+            authority.get("authority_validation", {"ok": True, "reason": "authority_metadata_valid"}),
+        )
+
+
+def _runtime_fallback_overlay_build_context(task: Dict[str, Any], step: Dict[str, Any], current_tick: Any) -> Dict[str, Any]:
+    return {
+        "current_tick": current_tick,
+        "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
+        "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
+        "operator_session_id": task.get("operator_session_id"),
+    }
+
+
 def install_runtime_fallback_overlays(
     scheduler_cls: Any,
     *,
@@ -61,19 +103,20 @@ def install_runtime_fallback_overlays(
         result = base(self, *args, **kwargs)
         if not canonical_soft_gate_failure(result, empty_text_is_soft_gate=True):
             return result
-        task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+        task = _runtime_fallback_overlay_task_from_args(args, kwargs)
         if not isinstance(task, dict):
             return result
         step = canonical_select_step(task)
         if not step:
             return result
-        fallback = self._run_step_via_task_runner(
+        return _runtime_fallback_overlay_execute_runner(
+            self,
             task=task,
             step=step,
-            context=canonical_runtime_fallback_context(task, step, current_tick=kwargs.get("current_tick")),
+            current_tick=kwargs.get("current_tick"),
+            compatibility_seal="scheduler_runtime_gate_fallback_v1",
+            original_result=result,
         )
-        fallback = canonicalize_fallback_result(fallback, compatibility_seal="scheduler_runtime_gate_fallback_v1")
-        return fallback if isinstance(fallback, dict) else result
 
     scheduler_cls.run_one_step = _zero_scheduler_run_one_step_v1
     _zero_scheduler_base_run_one_step_v2 = _zero_prev_scheduler_run_one_step_v1
@@ -83,19 +126,20 @@ def install_runtime_fallback_overlays(
         result = base(self, *args, **kwargs)
         if not canonical_soft_gate_failure(result):
             return result
-        task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+        task = _runtime_fallback_overlay_task_from_args(args, kwargs)
         if not canonical_has_dispatch_authority(task):
             return result
         step = canonical_select_step(task)
         if not step:
             return result
-        fallback = self._run_step_via_task_runner(
+        return _runtime_fallback_overlay_execute_runner(
+            self,
             task=task,
             step=step,
-            context=canonical_runtime_fallback_context(task, step, current_tick=kwargs.get("current_tick")),
+            current_tick=kwargs.get("current_tick"),
+            compatibility_seal="scheduler_runtime_gate_fallback_v2",
+            original_result=result,
         )
-        fallback = canonicalize_fallback_result(fallback, compatibility_seal="scheduler_runtime_gate_fallback_v2")
-        return fallback if isinstance(fallback, dict) else result
 
     scheduler_cls.run_one_step = _zero_scheduler_run_one_step_v2
     _zero_scheduler_base_run_one_step_v3 = scheduler_cls.run_one_step
@@ -105,19 +149,20 @@ def install_runtime_fallback_overlays(
         result = base(self, *args, **kwargs)
         if not canonical_soft_gate_failure(result):
             return result
-        task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+        task = _runtime_fallback_overlay_task_from_args(args, kwargs)
         if not canonical_has_granted_execution_authority(task):
             return result
         step = canonical_select_step(task)
         if not step:
             return result
-        fallback = self._run_step_via_task_runner(
+        return _runtime_fallback_overlay_execute_runner(
+            self,
             task=task,
             step=step,
-            context=canonical_runtime_fallback_context(task, step, current_tick=kwargs.get("current_tick")),
+            current_tick=kwargs.get("current_tick"),
+            compatibility_seal="scheduler_runtime_gate_fallback_v3",
+            original_result=result,
         )
-        fallback = canonicalize_fallback_result(fallback, compatibility_seal="scheduler_runtime_gate_fallback_v3")
-        return fallback if isinstance(fallback, dict) else result
 
     scheduler_cls.run_one_step = _zero_scheduler_run_one_step_v3
     _zero_scheduler_base_run_one_step_v4 = _zero_scheduler_run_one_step_v2
@@ -127,26 +172,17 @@ def install_runtime_fallback_overlays(
         result = base(self, *args, **kwargs)
         if isinstance(result, dict) and result.get("ok") is not False:
             return result
-        task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+        task = _runtime_fallback_overlay_task_from_args(args, kwargs)
         if not _zero_scheduler_explicit_authority_v4(task):
             return result
         step = _zero_scheduler_pick_step_v4(task)
         if not step:
             return result
-        authority = task.get("execution_authority")
-        step.setdefault("execution_authority", authority)
-        step.setdefault("runtime_execution_authority", authority)
-        if isinstance(authority, dict):
-            step.setdefault("authority_validation", authority.get("authority_validation", {"ok": True, "reason": "authority_metadata_valid"}))
+        _runtime_fallback_overlay_apply_step_authority(task, step)
         fallback = self._run_step_via_task_runner(
             task=task,
             step=step,
-            context={
-                "current_tick": kwargs.get("current_tick"),
-                "runtime_mode": step.get("runtime_mode") or task.get("runtime_mode") or task.get("mode"),
-                "workspace_root": task.get("workspace_root") or task.get("workspace_dir"),
-                "operator_session_id": task.get("operator_session_id"),
-            },
+            context=_runtime_fallback_overlay_build_context(task, step, kwargs.get("current_tick")),
         )
         if isinstance(fallback, dict):
             fallback.setdefault("ok", True)
@@ -163,7 +199,7 @@ def install_runtime_fallback_overlays(
         result = base(self, *args, **kwargs)
         if isinstance(result, dict) and result.get("ok") is not False:
             return result
-        task = kwargs.get("task") if "task" in kwargs else (args[0] if args else None)
+        task = _runtime_fallback_overlay_task_from_args(args, kwargs)
         if not isinstance(task, dict) or not runtime_fallback_has_explicit_authority(task):
             return result
         step = runtime_fallback_pick_step(task)
