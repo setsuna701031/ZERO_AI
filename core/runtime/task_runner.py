@@ -59,6 +59,12 @@ from core.runtime.task_runner_target_helpers import (
     sync_target_repo_context,
     target_routed_context,
 )
+from core.runtime.task_runner_runtime_mode_helpers import (
+    apply_runtime_mode_to_step,
+    extract_runtime_mode_from_mapping,
+    normalize_runtime_mode,
+    resolve_runtime_mode,
+)
 from core.goals.goal_lineage_contract import (
     attach_runtime_identity_graph,
     bind_runtime_identity_graph,
@@ -1736,49 +1742,21 @@ class TaskRunner:
     # runtime mode propagation
     # ============================================================
 
+
     def _normalize_runtime_mode(self, value: Any) -> str:
-        text = str(value or "").strip().lower()
-        if text in {"execute", "replay", "audit", "repair_replay"}:
-            return text
-        return "execute"
+        return normalize_runtime_mode(value)
+
 
     def _extract_runtime_mode_from_mapping(self, value: Any) -> str:
-        if not isinstance(value, dict):
-            return ""
+        return extract_runtime_mode_from_mapping(value)
 
-        for key in ("runtime_mode", "mode", "execution_mode"):
-            raw = value.get(key)
-            if raw is not None and str(raw).strip():
-                return self._normalize_runtime_mode(raw)
-
-        runtime_context = value.get("runtime_context")
-        if isinstance(runtime_context, dict):
-            for key in ("runtime_mode", "mode", "execution_mode"):
-                raw = runtime_context.get(key)
-                if raw is not None and str(raw).strip():
-                    return self._normalize_runtime_mode(raw)
-
-        repair_context = value.get("repair_context")
-        if isinstance(repair_context, dict):
-            raw = repair_context.get("runtime_mode")
-            if raw is not None and str(raw).strip():
-                return self._normalize_runtime_mode(raw)
-
-        return ""
 
     def _resolve_runtime_mode(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any = None) -> str:
-        for payload in (step, state, task):
-            mode = self._extract_runtime_mode_from_mapping(payload)
-            if mode:
-                return mode
-        return "execute"
+        return resolve_runtime_mode(task=task, state=state, step=step)
+
 
     def _apply_runtime_mode_to_step(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> tuple[Dict[str, Any], str]:
-        runtime_mode = self._resolve_runtime_mode(task=task, state=state, step=step)
-        normalized_step = copy.deepcopy(step) if isinstance(step, dict) else {}
-        normalized_step["runtime_mode"] = runtime_mode
-        return normalized_step, runtime_mode
-
+        return apply_runtime_mode_to_step(task=task, state=state, step=step)
 
     # ============================================================
     # engineering execution action linkage
