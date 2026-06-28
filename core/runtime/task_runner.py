@@ -74,6 +74,14 @@ from core.runtime.task_runner_engineering_identity_helpers import (
     runtime_step_target,
 )
 from core.runtime.task_runner_changed_files_helpers import extract_changed_files_from_step_result
+
+from core.runtime.task_runner_engineering_action_runtime_helpers import (
+    safe_block_engineering_action,
+    safe_complete_engineering_action,
+    safe_fail_engineering_action,
+    safe_record_rollback_restore_action,
+    safe_update_current_engineering_action,
+)
 from core.goals.goal_lineage_contract import (
     attach_runtime_identity_graph,
     bind_runtime_identity_graph,
@@ -1795,110 +1803,64 @@ class TaskRunner:
         )
 
     def _safe_update_current_engineering_action(self, *, task: Dict[str, Any], step: Any, step_index: int, current_tick: int, trace_tick: int) -> None:
-        fn = getattr(self.runtime, "update_current_engineering_action", None)
-        if not callable(fn):
-            return
-        try:
-            fn(
-                task=task,
-                action_type=self._runtime_step_action_type(step),
-                target=self._runtime_step_target(step),
-                step_id=self._runtime_step_id(step, step_index),
-                action_id=self._runtime_action_id(task, step, step_index),
-                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
-                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
-            )
-        except Exception:
-            if self.debug:
-                traceback.print_exc()
+        return safe_update_current_engineering_action(
+            runtime=self.runtime,
+            debug=self.debug,
+            task=task,
+            step=step,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
 
     def _safe_complete_engineering_action(self, *, task: Dict[str, Any], step: Any, step_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
-        fn = getattr(self.runtime, "complete_engineering_action", None)
-        if not callable(fn):
-            return
-        try:
-            fn(
-                task=task,
-                action_type=self._runtime_step_action_type(step),
-                target=self._runtime_step_target(step),
-                step_id=self._runtime_step_id(step, step_index),
-                action_id=self._runtime_action_id(task, step, step_index),
-                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
-                result=copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result},
-                changed_files=self._extract_changed_files_from_step_result(step_result),
-                tick=trace_tick if trace_tick is not None else current_tick,
-                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
-            )
-        except Exception:
-            if self.debug:
-                traceback.print_exc()
+        return safe_complete_engineering_action(
+            runtime=self.runtime,
+            debug=self.debug,
+            task=task,
+            step=step,
+            step_result=step_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
 
     def _safe_fail_engineering_action(self, *, task: Dict[str, Any], step: Any, step_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
-        fn = getattr(self.runtime, "fail_engineering_action", None)
-        if not callable(fn):
-            return
-        try:
-            error = ""
-            if isinstance(step_result, dict):
-                error = self._stringify_failure_message(step_result.get("error") or step_result.get("message") or "")
-            fn(
-                task=task,
-                action_type=self._runtime_step_action_type(step),
-                target=self._runtime_step_target(step),
-                step_id=self._runtime_step_id(step, step_index),
-                action_id=self._runtime_action_id(task, step, step_index),
-                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
-                error=error,
-                result=copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result},
-                tick=trace_tick if trace_tick is not None else current_tick,
-                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
-            )
-        except Exception:
-            if self.debug:
-                traceback.print_exc()
+        return safe_fail_engineering_action(
+            runtime=self.runtime,
+            debug=self.debug,
+            task=task,
+            step=step,
+            step_result=step_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
 
     def _safe_block_engineering_action(self, *, task: Dict[str, Any], step: Any, step_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int, reason: str = "") -> None:
-        fn = getattr(self.runtime, "block_engineering_action", None)
-        if not callable(fn):
-            return
-        try:
-            resolved_reason = str(reason or "").strip()
-            if not resolved_reason and isinstance(step_result, dict):
-                resolved_reason = str(step_result.get("policy_reason") or step_result.get("error") or step_result.get("message") or "blocked")
-            fn(
-                task=task,
-                action_type=self._runtime_step_action_type(step),
-                target=self._runtime_step_target(step),
-                step_id=self._runtime_step_id(step, step_index),
-                action_id=self._runtime_action_id(task, step, step_index),
-                linked_session_node=self._runtime_linked_session_node(task, step_index=step_index, step=step),
-                reason=resolved_reason,
-                result=copy.deepcopy(step_result) if isinstance(step_result, dict) else {"raw_result": step_result},
-                tick=trace_tick if trace_tick is not None else current_tick,
-                metadata=self._runtime_action_metadata(step, step_index, current_tick, trace_tick),
-            )
-        except Exception:
-            if self.debug:
-                traceback.print_exc()
+        return safe_block_engineering_action(
+            runtime=self.runtime,
+            debug=self.debug,
+            task=task,
+            step=step,
+            step_result=step_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+            reason=reason,
+        )
 
     def _safe_record_rollback_restore_action(self, *, task: Dict[str, Any], step: Any, rollback_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
-        fn = getattr(self.runtime, "record_rollback_restore_action", None)
-        if not callable(fn):
-            return
-        try:
-            fn(
-                task=task,
-                target=self._runtime_step_target(step),
-                step_id=self._runtime_step_id(step, step_index) + ":rollback_restore",
-                action_id=self._runtime_action_id(task, step, step_index) + "_rollback_restore",
-                linked_session_node=self._runtime_linked_session_node(task, step, step_index),
-                result=copy.deepcopy(rollback_result) if isinstance(rollback_result, dict) else {},
-                changed_files=self._extract_changed_files_from_step_result(rollback_result),
-                tick=trace_tick if trace_tick is not None else current_tick,
-            )
-        except Exception:
-            if self.debug:
-                traceback.print_exc()
+        return safe_record_rollback_restore_action(
+            runtime=self.runtime,
+            debug=self.debug,
+            task=task,
+            step=step,
+            rollback_result=rollback_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            trace_tick=trace_tick,
+        )
 
     def _extract_changed_files_from_step_result(self, step_result: Any) -> List[str]:
         return extract_changed_files_from_step_result(step_result)
