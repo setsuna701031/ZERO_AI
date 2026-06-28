@@ -1,13 +1,21 @@
 from __future__ import annotations
 
-import copy
 from typing import Any, Dict, List
 
-from core.runtime.task_runtime import project_runtime_status
 from core.tools.execution_trace import ExecutionTrace
-from core.tasks.scheduler_core.trace_helpers import trace_step
 from core.tasks.scheduler_core.simple_runner_failure_signal import _extract_simple_step_failure_signal
+from core.tasks.scheduler_core.simple_runner_result_helpers import (
+    _build_simple_success_step_result,
+    _sync_simple_success_step_collections,
+)
+from core.tasks.scheduler_core.simple_runner_state_mutation_helpers import (
+    _apply_simple_queued_state,
+    _apply_simple_step_collections_to_task,
+    _apply_simple_success_advance,
+    _apply_simple_terminal_finished_state,
+)
 from core.tasks.scheduler_core.simple_runner_step_blocked_result import _handle_simple_step_blocked_or_failed_result
+from core.tasks.scheduler_core.trace_helpers import trace_step
 
 
 def _handle_simple_step_success(
@@ -44,32 +52,29 @@ def _handle_simple_step_success(
             failure_signal=failure_signal,
         )
 
-    normalized_step_result = {
-        "ok": True,
-        "step_index": current_step_index,
-        "step": copy.deepcopy(step),
-        "result": copy.deepcopy(step_result),
-    }
-
-    execution_log.append(
-        {
-            "tick": scheduler.current_tick,
-            "step_index": current_step_index,
-            "step": copy.deepcopy(step),
-            "ok": True,
-            "result": copy.deepcopy(step_result),
-        }
+    normalized_step_result = _build_simple_success_step_result(
+        current_step_index,
+        step,
+        step_result,
     )
-    results.append(copy.deepcopy(normalized_step_result))
-    step_results = copy.deepcopy(results)
-    last_step_result = copy.deepcopy(normalized_step_result)
+    step_results, last_step_result = _sync_simple_success_step_collections(
+        tick=scheduler.current_tick,
+        current_step_index=current_step_index,
+        step=step,
+        step_result=step_result,
+        execution_log=execution_log,
+        results=results,
+        normalized_step_result=normalized_step_result,
+    )
 
-    task["execution_log"] = execution_log
-    task["results"] = results
-    task["step_results"] = step_results
-    task["last_step_result"] = last_step_result
-    task["current_step_index"] = current_step_index + 1
-    task["last_run_tick"] = scheduler.current_tick
+    _apply_simple_step_collections_to_task(
+        task,
+        execution_log=execution_log,
+        results=results,
+        step_results=step_results,
+        last_step_result=last_step_result,
+    )
+    _apply_simple_success_advance(scheduler, task, current_step_index)
 
     trace_step(
         scheduler=scheduler,
@@ -87,10 +92,7 @@ def _handle_simple_step_success(
         final_answer = scheduler._build_simple_final_answer(
             [x.get("result", x) if isinstance(x, dict) else x for x in results]
         )
-        project_runtime_status(task, "finished", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
-        task["final_answer"] = final_answer
-        task["finished_tick"] = scheduler.current_tick
-        task["history"] = scheduler._append_history(task.get("history"), "finished")
+        _apply_simple_terminal_finished_state(scheduler, task, final_answer)
 
         scheduler._trace_status(
             trace=trace,
@@ -126,8 +128,7 @@ def _handle_simple_step_success(
             "finished_tick": scheduler.current_tick,
         }
 
-    project_runtime_status(task, "queued", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
-    task["history"] = scheduler._append_history(task.get("history"), "queued")
+    _apply_simple_queued_state(scheduler, task)
 
     scheduler._trace_status(
         trace=trace,
