@@ -1,41 +1,21 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, Optional
-
-from core.tasks.planner_gateway_runtime import run_scheduler_planner_gateway
-from core.tasks.scheduler_core import planner_normalization_helpers
+from typing import Any, Dict, List, Optional
 
 
-def _call_planner_like(
-    self,
-    planner: Any,
-    context: Dict[str, Any],
-    user_input: str,
-    route: Dict[str, Any],
-) -> Any:
-    if planner is None:
+def _normalize_external_plan(self, plan: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(plan, dict):
         return None
 
-    request = {
-        "context": context,
-        "user_input": user_input,
-        "route": route,
-        "goal": user_input,
-    }
-
-    def _contract_payload_to_external_plan(payload: Any) -> Optional[Dict[str, Any]]:
-        """Convert a valid planner contract payload into legacy external-plan shape.
-
-        Phase10-G-9 keeps the scheduler compatibility boundary intact:
-        gateway/contract output gets first chance only when it can be
-        represented as the existing external planner shape.  Otherwise the
-        raw legacy planner result is returned unchanged.
-        """
+    def _contract_payload_to_external_plan(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if not isinstance(payload, dict):
             return None
 
         if payload.get("is_valid") is False:
+            return None
+
+        if payload.get("scheduler_planner_runtime_ok") is False:
             return None
 
         action = str(payload.get("action") or "").strip().lower()
@@ -46,7 +26,7 @@ def _call_planner_like(
         target_path_text = str(target_path or "").strip()
         content_text = str(payload.get("content") or "")
         command_text = str(payload.get("command") or "").strip()
-        goal_text = str(payload.get("goal") or user_input or "").strip()
+        goal_text = str(payload.get("goal") or "").strip()
         reason_text = str(payload.get("reason") or "").strip()
 
         step: Dict[str, Any]
@@ -123,55 +103,35 @@ def _call_planner_like(
             },
         }
 
-    def _gateway_first_or_legacy(raw_plan: Any) -> Any:
-        try:
-            gateway_result = run_scheduler_planner_gateway(
-                lambda _request, _raw_plan=raw_plan: _raw_plan,
-                request,
-                legacy_payload=raw_plan if isinstance(raw_plan, dict) else None,
-                allow_legacy_fallback=True,
-            )
-        except Exception:
-            return raw_plan
+    contract_plan = _contract_payload_to_external_plan(plan)
+    if isinstance(contract_plan, dict):
+        return contract_plan
 
-        gateway_plan = _contract_payload_to_external_plan(getattr(gateway_result, "payload", None))
-        if isinstance(gateway_plan, dict):
-            return gateway_plan
+    steps = []
+    if isinstance(plan.get("steps"), list):
+        steps = copy.deepcopy(plan.get("steps", []))
+    elif isinstance(plan.get("plan"), dict) and isinstance(plan["plan"].get("steps"), list):
+        steps = copy.deepcopy(plan["plan"].get("steps", []))
 
-        # Compatibility rule: legacy external plans keep their original shape
-        # until the downstream scheduler normalizer is fully migrated.
-        return raw_plan
+    if not isinstance(steps, list) or not steps:
+        return None
 
-    for method_name in ("plan", "run", "__call__"):
-        method = getattr(planner, method_name, None)
-        if not callable(method):
+    normalized_steps: List[Dict[str, Any]] = []
+    for step in steps:
+        if not isinstance(step, dict):
             continue
+        step_type = str(step.get("type") or "").strip()
+        if not step_type:
+            continue
+        normalized_steps.append(copy.deepcopy(step))
 
-        candidate_calls = [
-            {"context": context, "user_input": user_input, "route": route},
-            {"context": context, "user_input": user_input},
-            {"context": context},
-            {"user_input": user_input, "route": route},
-            {"user_input": user_input},
-        ]
+    if not normalized_steps:
+        return None
 
-        for kwargs in candidate_calls:
-            try:
-                raw_plan = method(**kwargs)
-                return _gateway_first_or_legacy(raw_plan)
-            except TypeError:
-                continue
-            except Exception:
-                return None
-
-        try:
-            raw_plan = method(user_input)
-            return _gateway_first_or_legacy(raw_plan)
-        except Exception:
-            return None
-
-    return None
-
-
-def _normalize_external_plan(self, plan: Any) -> Optional[Dict[str, Any]]:
-    return planner_normalization_helpers._normalize_external_plan(self, plan)
+    return {
+        "planner_mode": str(plan.get("planner_mode") or "external_task_planner"),
+        "intent": str(plan.get("intent") or normalized_steps[0].get("type") or "task"),
+        "final_answer": str(plan.get("final_answer") or f"planned {len(normalized_steps)} steps"),
+        "steps": normalized_steps,
+        "meta": copy.deepcopy(plan.get("meta", {})) if isinstance(plan.get("meta"), dict) else {},
+    }
