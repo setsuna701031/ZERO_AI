@@ -83,6 +83,13 @@ from core.runtime.task_runner_engineering_action_runtime_helpers import (
     safe_update_current_engineering_action,
 )
 from core.runtime.task_runner_step_execution_prepare import prepare_step_execution
+from core.runtime.task_runner_step_result_pipeline import (
+    ensure_step_execution_trace,
+    extract_final_answer_from_step_result,
+    extract_trace_from_step_result,
+    persist_step_result_to_runtime_state,
+    trace_tick_for_step,
+)
 from core.goals.goal_lineage_contract import (
     attach_runtime_identity_graph,
     bind_runtime_identity_graph,
@@ -2635,63 +2642,15 @@ class TaskRunner:
         step_result: Dict[str, Any],
         step_index: int,
     ) -> Dict[str, Any]:
-        normalized = copy.deepcopy(step_result)
-
-        existing_trace = normalized.get("execution_trace")
-        if isinstance(existing_trace, list):
-            normalized["execution_trace"] = [copy.deepcopy(item) for item in existing_trace if isinstance(item, dict)]
-            return normalized
-
-        safe_step = copy.deepcopy(step) if isinstance(step, dict) else {}
-        error_payload = normalized.get("error") if isinstance(normalized.get("error"), dict) else {}
-        error_details = error_payload.get("details") if isinstance(error_payload.get("details"), dict) else {}
-        retry_payload = normalized.get("retry") if isinstance(normalized.get("retry"), dict) else {}
-
-        event: Dict[str, Any] = {
-            "step_index": self._safe_int(normalized.get("step_index", step_index), step_index),
-            "step_type": str(
-                normalized.get("step_type")
-                or safe_step.get("type")
-                or ""
-            ).strip().lower(),
-            "ok": bool(normalized.get("ok", False)),
-            "message": str(normalized.get("message") or ""),
-            "final_answer": str(normalized.get("final_answer") or ""),
-            "error_type": str(error_payload.get("type") or ""),
-            "classification": error_details.get("classification"),
-            "attempts": self._safe_int(retry_payload.get("attempts", 1), 1),
-            "max_attempts": self._safe_int(retry_payload.get("max_attempts", 1), 1),
-            "retry_used": bool(retry_payload.get("used", False)),
-        }
-
-        step_payload = normalized.get("step") if isinstance(normalized.get("step"), dict) else safe_step
-        if isinstance(step_payload, dict):
-            step_id = str(step_payload.get("id") or "").strip()
-            if step_id:
-                event["step_id"] = step_id
-
-        normalized["execution_trace"] = [event]
-
-        if isinstance(normalized.get("result"), dict):
-            normalized["result"]["execution_trace"] = copy.deepcopy(normalized["execution_trace"])
-
-        return normalized
+        return ensure_step_execution_trace(
+            step=step,
+            step_result=step_result,
+            step_index=step_index,
+            safe_int=self._safe_int,
+        )
 
     def _extract_trace_from_step_result(self, step_result: Any) -> List[Dict[str, Any]]:
-        if not isinstance(step_result, dict):
-            return []
-
-        trace = step_result.get("execution_trace")
-        if isinstance(trace, list):
-            return [copy.deepcopy(item) for item in trace if isinstance(item, dict)]
-
-        result_payload = step_result.get("result")
-        if isinstance(result_payload, dict):
-            nested_trace = result_payload.get("execution_trace")
-            if isinstance(nested_trace, list):
-                return [copy.deepcopy(item) for item in nested_trace if isinstance(item, dict)]
-
-        return []
+        return extract_trace_from_step_result(step_result)
 
     def _persist_step_result_to_runtime_state(
         self,
@@ -2702,69 +2661,17 @@ class TaskRunner:
         step_result: Dict[str, Any],
         current_tick: int,
     ) -> Dict[str, Any]:
-        self._ensure_execution_trace_defaults(task, state)
-
-        results = state.setdefault("results", [])
-        if not isinstance(results, list):
-            results = []
-            state["results"] = results
-
-        step_results = state.setdefault("step_results", [])
-        if not isinstance(step_results, list):
-            step_results = []
-            state["step_results"] = step_results
-
-        execution_log = state.setdefault("execution_log", [])
-        if not isinstance(execution_log, list):
-            execution_log = []
-            state["execution_log"] = execution_log
-
-        execution_trace = state.setdefault("execution_trace", [])
-        if not isinstance(execution_trace, list):
-            execution_trace = []
-            state["execution_trace"] = execution_trace
-
-        record = {
-            "step_index": self._safe_int(
-                step_result.get("step_index", state.get("current_step_index", 0)),
-                self._safe_int(state.get("current_step_index", 0), 0),
-            ),
-            "step": copy.deepcopy(step) if isinstance(step, dict) else None,
-            "result": copy.deepcopy(step_result),
-            "tick": current_tick,
-            "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
-        results.append(copy.deepcopy(record))
-        step_results.append(copy.deepcopy(record))
-        execution_log.append(copy.deepcopy(record))
-
-        incoming_trace = self._extract_trace_from_step_result(step_result)
-        if incoming_trace:
-            execution_trace.extend(copy.deepcopy(incoming_trace))
-
-        state["last_step_result"] = copy.deepcopy(step_result)
-        state["last_error"] = self._stringify_failure_message(step_result.get("error"))
-
-        result_payload = step_result.get("result")
-        if isinstance(result_payload, dict):
-            for key in ("message", "content", "text", "final_answer", "stdout"):
-                value = result_payload.get(key)
-                if isinstance(value, str) and value.strip():
-                    state["last_output"] = value.strip()
-                    break
-
-        if not state.get("last_output"):
-            for key in ("message", "content", "text", "final_answer", "stdout"):
-                value = step_result.get(key)
-                if isinstance(value, str) and value.strip():
-                    state["last_output"] = value.strip()
-                    break
-
-        state["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        state = self.runtime.save_runtime_state(task, state)
-        self._sync_runtime_state_back_to_task(task, state)
-        return state
+        return persist_step_result_to_runtime_state(
+            runtime=self.runtime,
+            task=task,
+            state=state,
+            step=step,
+            step_result=step_result,
+            current_tick=current_tick,
+            safe_int=self._safe_int,
+            ensure_execution_trace_defaults=self._ensure_execution_trace_defaults,
+            sync_runtime_state_back_to_task=self._sync_runtime_state_back_to_task,
+        )
 
     def _sync_runtime_state_back_to_task(self, task: Dict[str, Any], state: Dict[str, Any]) -> None:
         if not isinstance(task, dict) or not isinstance(state, dict):
@@ -2808,35 +2715,12 @@ class TaskRunner:
         step_index: int,
         current_tick: int,
     ) -> int:
-        """Return a stable task-local tick for trace.json events.
-
-        Scheduler/current_tick can be reused or reset across queue runs, especially
-        when `task run 2` advances multiple tasks.  For trace.json, the useful
-        display value is the task-local step order, so each task shows a clean
-        monotonic sequence: step 0 -> tick 1, step 1 -> tick 2, etc.
-        The original scheduler tick is still stored separately as scheduler_tick
-        on trace.json events that TaskRunner writes.
-        """
-        try:
-            idx = int(step_index)
-            if idx >= 0:
-                return idx + 1
-        except Exception:
-            pass
-
-        if isinstance(state, dict):
-            try:
-                idx = int(state.get("current_step_index", 0) or 0)
-                if idx >= 0:
-                    return idx + 1
-            except Exception:
-                pass
-
-        try:
-            tick = int(current_tick)
-            return tick if tick > 0 else 1
-        except Exception:
-            return 1
+        return trace_tick_for_step(
+            state=state,
+            step_index=step_index,
+            current_tick=current_tick,
+            safe_int=self._safe_int,
+        )
 
     # ============================================================
     # helpers
@@ -2858,22 +2742,7 @@ class TaskRunner:
         return None
 
     def _extract_final_answer_from_step_result(self, step_result: Optional[Dict[str, Any]]) -> str:
-        if not isinstance(step_result, dict):
-            return ""
-
-        for key in ("final_answer", "message", "content", "text", "stdout"):
-            value = step_result.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-        result_block = step_result.get("result")
-        if isinstance(result_block, dict):
-            for key in ("final_answer", "message", "content", "text", "stdout"):
-                value = result_block.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-
-        return ""
+        return extract_final_answer_from_step_result(step_result)
 
     def _should_convert_policy_block_to_review(self, result: Any) -> bool:
         if not isinstance(result, dict):
