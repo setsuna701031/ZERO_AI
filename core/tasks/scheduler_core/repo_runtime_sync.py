@@ -186,30 +186,7 @@ def _apply_repo_runtime_replan_projection(
                 merged["status"] = status_from_runner
 
 
-def sync_runtime_back_to_repo(
-    scheduler: Any,
-    task: Dict[str, Any],
-    runner_result: Optional[Dict[str, Any]] = None,
-) -> None:
-    task_id = _resolve_repo_runtime_task_id(task)
-    if not task_id:
-        return
-
-    effective_task = _select_effective_task_payload(task=task, runner_result=runner_result)
-    base_task = _load_repo_runtime_base_task(
-        scheduler=scheduler,
-        task_id=task_id,
-        effective_task=effective_task,
-    )
-    runtime_state = _load_repo_runtime_state_for_task(scheduler=scheduler, base_task=base_task)
-    merged = copy.deepcopy(base_task)
-    _merge_repo_runtime_state_fields(merged=merged, runtime_state=runtime_state)
-
-    _sync_loop_fields_into_merged(merged, task)
-    _sync_review_fields_into_merged(merged, task)
-    _merge_repo_runtime_runner_result_fields(merged=merged, runner_result=runner_result)
-    _apply_repo_runtime_replan_projection(merged=merged, runner_result=runner_result)
-
+def _normalize_repo_runtime_result_fields(merged: Dict[str, Any]) -> None:
     if not isinstance(merged.get("results"), list):
         merged["results"] = []
     if not isinstance(merged.get("step_results"), list):
@@ -230,6 +207,8 @@ def sync_runtime_back_to_repo(
     if merged.get("current_step_index") is None:
         merged["current_step_index"] = 0
 
+
+def _apply_repo_runtime_snapshot_defaults(scheduler: Any, merged: Dict[str, Any], task_id: str) -> None:
     merged["task_name"] = merged.get("task_name") or task_id
     merged["task_dir"] = merged.get("task_dir") or os.path.join(scheduler.tasks_root, task_id)
     merged["plan_file"] = merged.get("plan_file") or os.path.join(merged["task_dir"], "plan.json")
@@ -258,12 +237,55 @@ def sync_runtime_back_to_repo(
     if not isinstance(merged.get("review_payload"), dict):
         merged["review_payload"] = {}
 
+
+def _infer_repo_runtime_replan_result(runner_result: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     inferred_replan_result = None
     if isinstance(runner_result, dict):
         maybe_replan = runner_result.get("replan_result")
         if isinstance(maybe_replan, dict):
             inferred_replan_result = maybe_replan
+    return inferred_replan_result
 
+
+def _prepare_repo_runtime_public_payload(
+    scheduler: Any,
+    merged: Dict[str, Any],
+    runner_result: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    merged = scheduler._clear_stale_replan_fields(merged)
+    merged = scheduler._refresh_task_public_fields(merged)
+    merged = _downgrade_advisory_blocked_status(merged)
+    merged = build_repo_runtime_state_adapter_payload(merged=merged, runner_result=runner_result)
+    return merged
+
+
+def sync_runtime_back_to_repo(
+    scheduler: Any,
+    task: Dict[str, Any],
+    runner_result: Optional[Dict[str, Any]] = None,
+) -> None:
+    task_id = _resolve_repo_runtime_task_id(task)
+    if not task_id:
+        return
+
+    effective_task = _select_effective_task_payload(task=task, runner_result=runner_result)
+    base_task = _load_repo_runtime_base_task(
+        scheduler=scheduler,
+        task_id=task_id,
+        effective_task=effective_task,
+    )
+    runtime_state = _load_repo_runtime_state_for_task(scheduler=scheduler, base_task=base_task)
+    merged = copy.deepcopy(base_task)
+    _merge_repo_runtime_state_fields(merged=merged, runtime_state=runtime_state)
+
+    _sync_loop_fields_into_merged(merged, task)
+    _sync_review_fields_into_merged(merged, task)
+    _merge_repo_runtime_runner_result_fields(merged=merged, runner_result=runner_result)
+    _apply_repo_runtime_replan_projection(merged=merged, runner_result=runner_result)
+
+    _normalize_repo_runtime_result_fields(merged)
+    _apply_repo_runtime_snapshot_defaults(scheduler=scheduler, merged=merged, task_id=task_id)
+    inferred_replan_result = _infer_repo_runtime_replan_result(runner_result)
     merged = scheduler._backfill_replan_decision_fields(merged, replan_result=inferred_replan_result)
     merged = scheduler._infer_completion_fields(merged)
 
@@ -302,10 +324,11 @@ def sync_runtime_back_to_repo(
             if not str(merged.get("final_answer") or "").strip():
                 merged["final_answer"] = str(runner_result.get("final_answer") or "task finished")
 
-    merged = scheduler._clear_stale_replan_fields(merged)
-    merged = scheduler._refresh_task_public_fields(merged)
-    merged = _downgrade_advisory_blocked_status(merged)
-    merged = build_repo_runtime_state_adapter_payload(merged=merged, runner_result=runner_result)
+    merged = _prepare_repo_runtime_public_payload(
+        scheduler=scheduler,
+        merged=merged,
+        runner_result=runner_result,
+    )
     _save_runtime_state_from_merged(scheduler, merged)
     scheduler._persist_task_payload(
         task_id=task_id,
