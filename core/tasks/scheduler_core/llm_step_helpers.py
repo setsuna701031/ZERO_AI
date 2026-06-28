@@ -151,6 +151,124 @@ def _normalize_backend_failure(
     )
 
 
+def _execute_llm_backend(
+    *,
+    scheduler: Any,
+    task: Dict[str, Any],
+    step: Dict[str, Any],
+    request: Dict[str, Any],
+    mode: str,
+    input_binding: str,
+    input_text: str,
+) -> Dict[str, Any]:
+    step_executor = getattr(scheduler, "step_executor", None)
+    execute_step = getattr(step_executor, "execute_step", None) if step_executor is not None else None
+    if not callable(execute_step):
+        return llm_contract_error(
+            step=step,
+            mode=mode,
+            input_binding=input_binding,
+            error_type="llm_contract_mismatch",
+            message="llm backend must expose execute_step with structured step, task, context, step_index, and step_count",
+        )
+
+    return execute_step(
+        step=_contract_step(step, request),
+        task=task,
+        context={
+            "llm_contract": copy.deepcopy(request),
+            "file_content": input_text,
+            "input_text": input_text,
+        },
+        step_index=int((task or {}).get("current_step_index", 0) or 0) if isinstance(task, dict) else 0,
+        step_count=len((task or {}).get("steps", [])) if isinstance((task or {}).get("steps", []), list) else 1,
+    )
+
+
+def _validate_llm_backend_result(
+    *,
+    step: Dict[str, Any],
+    mode: str,
+    input_binding: str,
+    backend_result: Any,
+) -> Dict[str, Any]:
+    if not isinstance(backend_result, dict):
+        return llm_contract_error(
+            step=step,
+            mode=mode,
+            input_binding=input_binding,
+            error_type="llm_contract_mismatch",
+            message="llm backend must return a structured result object",
+        )
+
+    if _has_undeclared_deterministic_result(backend_result, step):
+        return llm_contract_error(
+            step=step,
+            mode=mode,
+            input_binding=input_binding,
+            error_type="llm_contract_mismatch",
+            message="deterministic llm path must be explicitly declared by the step contract",
+        )
+
+    if not bool(backend_result.get("ok", False)):
+        return _normalize_backend_failure(
+            step=step,
+            mode=mode,
+            input_binding=input_binding,
+            backend_result=backend_result,
+        )
+
+    final_text = _extract_text_deep(backend_result)
+    if not final_text.strip():
+        return llm_contract_error(
+            step=step,
+            mode=mode,
+            input_binding=input_binding,
+            error_type="llm_empty_output",
+            message="llm backend returned empty output",
+        )
+
+    return {
+        "ok": True,
+        "final_text": final_text,
+        "backend_result": backend_result,
+    }
+
+
+def _build_llm_success_payload(
+    *,
+    step: Dict[str, Any],
+    step_type: str,
+    mode: str,
+    input_binding: str,
+    prompt: str,
+    prompt_template: str,
+    input_text: str,
+    final_text: str,
+    backend_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    result_payload = copy.deepcopy(backend_result)
+    result_payload.update(llm_contract_metadata(step, mode=mode, input_binding=input_binding))
+
+    return {
+        "ok": True,
+        "type": step_type,
+        "action": "llm",
+        "mode": mode,
+        "llm_mode": mode,
+        "prompt": prompt,
+        "prompt_template": prompt_template,
+        "input_text": input_text,
+        "text": final_text,
+        "content": final_text,
+        "message": final_text,
+        "final_answer": final_text,
+        "result": result_payload,
+        "error": None,
+        **llm_contract_metadata(step, mode=mode, input_binding=input_binding),
+    }
+
+
 def execute_llm_step(
     scheduler: Any,
     task: Dict[str, Any],
@@ -194,82 +312,33 @@ def execute_llm_step(
         input_binding=input_binding,
     )
 
-    step_executor = getattr(scheduler, "step_executor", None)
-    execute_step = getattr(step_executor, "execute_step", None) if step_executor is not None else None
-    if not callable(execute_step):
-        return llm_contract_error(
-            step=safe_step,
-            mode=mode,
-            input_binding=input_binding,
-            error_type="llm_contract_mismatch",
-            message="llm backend must expose execute_step with structured step, task, context, step_index, and step_count",
-        )
-
-    backend_result = execute_step(
-        step=_contract_step(safe_step, request),
+    backend_result = _execute_llm_backend(
+        scheduler=scheduler,
         task=task,
-        context={
-            "llm_contract": copy.deepcopy(request),
-            "file_content": input_text,
-            "input_text": input_text,
-        },
-        step_index=int((task or {}).get("current_step_index", 0) or 0) if isinstance(task, dict) else 0,
-        step_count=len((task or {}).get("steps", [])) if isinstance((task or {}).get("steps", []), list) else 1,
+        step=safe_step,
+        request=request,
+        mode=mode,
+        input_binding=input_binding,
+        input_text=input_text,
     )
 
-    if not isinstance(backend_result, dict):
-        return llm_contract_error(
-            step=safe_step,
-            mode=mode,
-            input_binding=input_binding,
-            error_type="llm_contract_mismatch",
-            message="llm backend must return a structured result object",
-        )
+    validation = _validate_llm_backend_result(
+        step=safe_step,
+        mode=mode,
+        input_binding=input_binding,
+        backend_result=backend_result,
+    )
+    if validation.get("ok") is not True:
+        return validation
 
-    if _has_undeclared_deterministic_result(backend_result, safe_step):
-        return llm_contract_error(
-            step=safe_step,
-            mode=mode,
-            input_binding=input_binding,
-            error_type="llm_contract_mismatch",
-            message="deterministic llm path must be explicitly declared by the step contract",
-        )
-
-    if not bool(backend_result.get("ok", False)):
-        return _normalize_backend_failure(
-            step=safe_step,
-            mode=mode,
-            input_binding=input_binding,
-            backend_result=backend_result,
-        )
-
-    final_text = _extract_text_deep(backend_result)
-    if not final_text.strip():
-        return llm_contract_error(
-            step=safe_step,
-            mode=mode,
-            input_binding=input_binding,
-            error_type="llm_empty_output",
-            message="llm backend returned empty output",
-        )
-
-    result_payload = copy.deepcopy(backend_result)
-    result_payload.update(llm_contract_metadata(safe_step, mode=mode, input_binding=input_binding))
-
-    return {
-        "ok": True,
-        "type": step_type,
-        "action": "llm",
-        "mode": mode,
-        "llm_mode": mode,
-        "prompt": prompt,
-        "prompt_template": prompt_template,
-        "input_text": input_text,
-        "text": final_text,
-        "content": final_text,
-        "message": final_text,
-        "final_answer": final_text,
-        "result": result_payload,
-        "error": None,
-        **llm_contract_metadata(safe_step, mode=mode, input_binding=input_binding),
-    }
+    return _build_llm_success_payload(
+        step=safe_step,
+        step_type=step_type,
+        mode=mode,
+        input_binding=input_binding,
+        prompt=prompt,
+        prompt_template=prompt_template,
+        input_text=input_text,
+        final_text=str(validation.get("final_text") or ""),
+        backend_result=validation.get("backend_result") if isinstance(validation.get("backend_result"), dict) else {},
+    )
