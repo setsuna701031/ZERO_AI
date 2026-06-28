@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Dict, List
+
+from core.tools.execution_trace import ExecutionTrace
+from core.tasks.scheduler_core.simple_runner_state_mutation_helpers import (
+    _apply_simple_finished_task_state,
+)
 
 
 def _handle_simple_finished_task(
@@ -16,14 +21,15 @@ def _handle_simple_finished_task(
     step_results: List[Dict[str, Any]],
     last_step_result: Any,
 ) -> Dict[str, Any]:
-    project_runtime_status(task, "finished", owner="core/tasks/scheduler_core/simple_runner_helpers.py")
-    task["final_answer"] = str(task.get("final_answer") or scheduler._build_simple_final_answer(results))
-    task["finished_tick"] = scheduler.current_tick
-    task["last_run_tick"] = scheduler.current_tick
-    task["results"] = results
-    task["step_results"] = step_results
-    task["last_step_result"] = last_step_result
-    task["history"] = scheduler._append_history(task.get("history"), "finished")
+    final_answer = str(task.get("final_answer") or scheduler._build_simple_final_answer(results))
+    _apply_simple_finished_task_state(
+        scheduler,
+        task,
+        final_answer=final_answer,
+        results=results,
+        step_results=step_results,
+        last_step_result=last_step_result,
+    )
 
     scheduler._trace_status(
         trace=trace,

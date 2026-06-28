@@ -79,3 +79,41 @@ def _apply_simple_queued_state(
 ) -> None:
     project_runtime_status(task, "queued", owner=_SIMPLE_RUNNER_OWNER)
     task["history"] = scheduler._append_history(task.get("history"), "queued")
+
+
+def _apply_simple_finished_task_state(
+    scheduler,
+    task: Dict[str, Any],
+    *,
+    final_answer: str,
+    results: List[Dict[str, Any]],
+    step_results: List[Dict[str, Any]],
+    last_step_result: Any,
+) -> None:
+    project_runtime_status(task, "finished", owner=_SIMPLE_RUNNER_OWNER)
+    task["final_answer"] = final_answer
+    task["finished_tick"] = scheduler.current_tick
+    task["last_run_tick"] = scheduler.current_tick
+    task["results"] = results
+    task["step_results"] = step_results
+    task["last_step_result"] = last_step_result
+    task["history"] = scheduler._append_history(task.get("history"), "finished")
+
+
+def _apply_simple_invalid_step_failure_state(
+    scheduler,
+    task: Dict[str, Any],
+    *,
+    results: List[Dict[str, Any]],
+    step_results: List[Dict[str, Any]],
+    last_step_result: Any,
+) -> None:
+    project_runtime_status(task, "failed", owner=_SIMPLE_RUNNER_OWNER)
+    task["last_error"] = "invalid step type"
+    task["failure_message"] = "invalid step type"
+    task["last_failure_tick"] = scheduler.current_tick
+    task["last_run_tick"] = scheduler.current_tick
+    task["results"] = results
+    task["step_results"] = step_results
+    task["last_step_result"] = last_step_result
+    task["history"] = scheduler._append_history(task.get("history"), "failed")
