@@ -32,7 +32,7 @@ from core.runtime.runtime_authority_seal import (
 from core.runtime.audit_log import AuditLogger
 from core.runtime.repair_planner import RepairPlanner
 from core.runtime.repair_step_injector import RepairStepInjector
-from core.runtime.repair_observability import build_repair_chain_id, build_repair_observability
+from core.runtime.task_runner_repair_pipeline import maybe_inject_repair_steps_after_failure
 from core.runtime.repair_rollback import restore_repair_backup, should_rollback_after_failed_verify
 from core.runtime.runtime_system_capability import (
     RuntimeCapabilityClass,
@@ -84,10 +84,15 @@ from core.runtime.task_runner_engineering_action_runtime_helpers import (
 )
 from core.runtime.task_runner_step_execution_prepare import prepare_step_execution
 from core.runtime.task_runner_step_result_pipeline import (
-    ensure_step_execution_trace,
     extract_final_answer_from_step_result,
-    extract_trace_from_step_result,
     persist_step_result_to_runtime_state,
+)
+from core.runtime.task_runner_trace_pipeline import (
+    append_step_result_trace_json,
+    append_trace_json_event,
+    ensure_step_execution_trace,
+    extract_trace_from_step_result,
+    sync_repair_chain_summary_from_execution_log,
     trace_tick_for_step,
 )
 from core.runtime.task_runner_repair_prepare import (
@@ -2822,301 +2827,26 @@ class TaskRunner:
         current_tick: int,
         trace_tick: int,
     ) -> Optional[Dict[str, Any]]:
-        """
-        AER Repair Hook v1.
-
-        Convert an observed runtime failure into injected repair steps.
-
-        This is deliberately gated.  The runtime will only inject repair steps
-        when the task or failed step explicitly opts in with auto_repair=True.
-
-        Boundary:
-        - The hook does not call an LLM.
-        - The hook does not mutate target repo files directly.
-        - The hook only writes generated repair candidates into the normal task
-          sandbox flow via regular write_file/run_python/verify_file steps.
-        """
-        if not isinstance(task, dict) or not isinstance(state, dict):
-            return None
-        if not isinstance(step, dict) or not isinstance(step_result, dict):
-            return None
-        if bool(step_result.get("ok", False)):
-            return None
-
-        if bool(step.get("repair_injected")):
-            return None
-
-        if not bool(
-            task.get("auto_repair")
-            or task.get("enable_auto_repair")
-            or step.get("auto_repair")
-            or step.get("enable_auto_repair")
-        ):
-            return None
-
-        repair_context = state.setdefault("repair_context", {})
-        if not isinstance(repair_context, dict):
-            repair_context = {}
-            state["repair_context"] = repair_context
-
-        source_path = self._infer_repair_source_path(step=step, step_result=step_result)
-        repair_chain_id = build_repair_chain_id(
-            task=task,
-            source_path=source_path,
-            step_index=step_index,
-            current_tick=current_tick,
-        )
-        policy_decision_obj = FailurePolicy.decide_repair(
+        return maybe_inject_repair_steps_after_failure(
+            runtime=self.runtime,
+            repair_planner=self.repair_planner,
+            repair_step_injector=self.repair_step_injector,
+            audit=self.audit,
             task=task,
             state=state,
             step=step,
             step_result=step_result,
-            source_path=source_path,
-        )
-        policy_decision = (
-            policy_decision_obj.to_dict()
-            if hasattr(policy_decision_obj, "to_dict")
-            else copy.deepcopy(policy_decision_obj)
-        )
-        if not isinstance(policy_decision, dict):
-            policy_decision = {"allow": False, "action": "fail", "reason": "invalid repair policy decision"}
-
-        observability = build_repair_observability(
-            task=task,
-            step=step,
-            source_path=source_path,
             step_index=step_index,
             current_tick=current_tick,
-            policy_decision=policy_decision,
-            repair_chain_id=repair_chain_id,
+            trace_tick=trace_tick,
+            infer_repair_source_path=self._infer_repair_source_path,
+            read_repair_source_text=self._read_repair_source_text,
+            first_repair_action_path=self._first_repair_action_path,
+            safe_int=self._safe_int,
+            trace=self._trace,
+            stringify_failure_message=self._stringify_failure_message,
+            sync_runtime_state_back_to_task=self._sync_runtime_state_back_to_task,
         )
-        repair_context["last_repair_observability"] = copy.deepcopy(observability)
-        repair_context["last_repair_policy_decision"] = copy.deepcopy(policy_decision)
-        repair_context["last_repair_chain_id"] = repair_chain_id
-
-        self._trace(
-            task,
-            "repair_policy_decision",
-            {
-                "step_index": step_index,
-                "current_tick": current_tick,
-                "trace_tick": trace_tick,
-                **copy.deepcopy(observability),
-            },
-        )
-        self.audit.log_event(
-            task,
-            "repair_policy_decision",
-            {
-                "tick": trace_tick,
-                "scheduler_tick": current_tick,
-                "step_index": step_index,
-                **copy.deepcopy(observability),
-            },
-            source="repair_policy",
-        )
-
-        if not bool(policy_decision.get("allow", False)):
-            action = str(policy_decision.get("action") or "fail").strip().lower()
-            reason = str(policy_decision.get("reason") or "repair policy blocked")
-            state["repair_policy_decision"] = copy.deepcopy(policy_decision)
-            state["repair_observability"] = copy.deepcopy(observability)
-            if action == "review_required" or bool(policy_decision.get("requires_review")):
-                state = self.runtime.apply_runtime_transition(
-                    task,
-                    state,
-                    owner="task_runtime",
-                    action="repair_policy_review_required",
-                    updates={
-                        "status": "review_required",
-                        "next_action": "wait_for_external_event",
-                        "last_error": reason,
-                    },
-                )
-                state["requires_review"] = True
-            else:
-                state = self.runtime.apply_runtime_transition(
-                    task,
-                    state,
-                    owner="task_runtime",
-                    action="repair_policy_failed",
-                    updates={
-                        "status": "failed",
-                        "next_action": "finish",
-                        "last_error": reason,
-                    },
-                )
-            if bool(policy_decision.get("quarantine")):
-                state["repair_quarantine"] = {
-                    "active": True,
-                    "reason": reason,
-                    "repair_chain_id": repair_chain_id,
-                }
-            try:
-                state = self.runtime.save_runtime_state(task, state)
-            except Exception:
-                pass
-            self._trace(
-                task,
-                "repair_policy_blocked",
-                {
-                    "step_index": step_index,
-                    "current_tick": current_tick,
-                    "trace_tick": trace_tick,
-                    **copy.deepcopy(observability),
-                },
-            )
-            return {
-                "ok": False,
-                "policy_blocked": True,
-                "runtime_state": state,
-                "repair_policy_decision": copy.deepcopy(policy_decision),
-                "repair_chain_id": repair_chain_id,
-            }
-
-        max_injections = self._safe_int(task.get("max_repair_injections") or state.get("max_repair_injections"), 1)
-        if max_injections < 1:
-            max_injections = 1
-        prior_injections = repair_context.get("injections")
-        prior_count = len(prior_injections) if isinstance(prior_injections, list) else 0
-        if prior_count >= max_injections:
-            return None
-
-        source_text = self._read_repair_source_text(task=task, state=state, source_path=source_path)
-
-        try:
-            repair_plan = self.repair_planner.plan(
-                step_result=copy.deepcopy(step_result),
-                previous_result=copy.deepcopy(state.get("last_step_result")),
-                source_path=source_path,
-                source_text=source_text,
-                target_path="",
-            ).to_dict()
-        except Exception as exc:
-            repair_context["last_repair_plan_error"] = str(exc)
-            try:
-                self.runtime.save_runtime_state(task, state)
-            except Exception:
-                pass
-            return None
-
-        if not isinstance(repair_plan, dict) or not bool(repair_plan.get("ok", False)):
-            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
-            try:
-                self.runtime.save_runtime_state(task, state)
-            except Exception:
-                pass
-            return None
-
-        verify_command = ""
-        action_path = self._first_repair_action_path(repair_plan)
-        if action_path and action_path.lower().endswith(".py"):
-            verify_command = "python -m py_compile " + action_path
-
-        try:
-            injection = self.repair_step_injector.build_injection(
-                repair_plan=copy.deepcopy(repair_plan),
-                task=task,
-                failed_step=step,
-                failed_result=step_result,
-                verify_command=verify_command,
-                report_path=str(task.get("auto_repair_report_path") or "AER_AUTO_REPAIR_REPORT.md"),
-            ).to_dict()
-        except Exception as exc:
-            repair_context["last_repair_injection_error"] = str(exc)
-            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
-            try:
-                self.runtime.save_runtime_state(task, state)
-            except Exception:
-                pass
-            return None
-
-        if not isinstance(injection, dict) or not bool(injection.get("ok", False)):
-            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
-            repair_context["last_repair_injection"] = copy.deepcopy(injection)
-            try:
-                self.runtime.save_runtime_state(task, state)
-            except Exception:
-                pass
-            return None
-
-        injected_steps = injection.get("steps")
-        if not isinstance(injected_steps, list) or not injected_steps:
-            return None
-
-        try:
-            injected_state = self.repair_step_injector.inject_steps_into_state(
-                runtime_state=state,
-                injected_steps=injected_steps,
-                insert_after_index=step_index,
-            )
-        except Exception as exc:
-            repair_context["last_repair_injection_error"] = str(exc)
-            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
-            repair_context["last_repair_injection"] = copy.deepcopy(injection)
-            try:
-                self.runtime.save_runtime_state(task, state)
-            except Exception:
-                pass
-            return None
-
-        injected_state = self.runtime.apply_runtime_transition(
-            task,
-            injected_state,
-            owner="task_runtime",
-            action="repair_steps_injected",
-            updates={
-                "status": "running",
-                "next_action": "run_next_tick",
-                "last_error": self._stringify_failure_message(step_result.get("error")),
-            },
-        )
-        injected_state["last_repair_plan"] = copy.deepcopy(repair_plan)
-        injected_state["last_repair_injection"] = copy.deepcopy(injection)
-
-        repair_context = injected_state.setdefault("repair_context", {})
-        if isinstance(repair_context, dict):
-            repair_context["last_repair_plan"] = copy.deepcopy(repair_plan)
-            repair_context["last_repair_injection"] = copy.deepcopy(injection)
-            repair_context["last_repair_source_path"] = source_path
-            repair_context["last_repair_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        injected_state = self.runtime.save_runtime_state(task, injected_state)
-        self._sync_runtime_state_back_to_task(task, injected_state)
-
-        self._trace(
-            task,
-            "repair_steps_injected",
-            {
-                "step_index": step_index,
-                "current_tick": current_tick,
-                "trace_tick": trace_tick,
-                "source_path": source_path,
-                "repair_plan": copy.deepcopy(repair_plan),
-                "repair_injection": copy.deepcopy(injection),
-                "injected_step_count": len(injected_steps),
-            },
-        )
-        self.audit.log_event(
-            task,
-            "repair_steps_injected",
-            {
-                "tick": trace_tick,
-                "scheduler_tick": current_tick,
-                "step_index": step_index,
-                "source_path": source_path,
-                "classification": repair_plan.get("classification"),
-                "injected_step_count": len(injected_steps),
-            },
-            source="task_runner",
-        )
-
-        return {
-            "ok": True,
-            "runtime_state": injected_state,
-            "repair_plan": repair_plan,
-            "repair_injection": injection,
-        }
 
     def _build_repair_chain_id(
         self,
@@ -3532,82 +3262,10 @@ class TaskRunner:
         task: Any,
         runtime_state: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """
-        v2.2 Repair Chain Summary Persistence.
-
-        v2.1 already attaches repair_chain_consistency to each execution_log
-        entry.  TaskRuntime normalization may rebuild/trim repair_context, so the
-        chain summary must be restored from execution_log before public return
-        and before any final state save.
-
-        Source of truth:
-            runtime_state.execution_log[*].result.repair_chain_consistency
-
-        Destination:
-            runtime_state.repair_context.last_repair_chain_consistency
-            runtime_state.repair_context.repair_chain_consistency_history
-            runtime_state.repair_context.engineering_execution.*
-        """
-        if not isinstance(runtime_state, dict):
-            return runtime_state
-
-        execution_log = runtime_state.get("execution_log")
-        if not isinstance(execution_log, list) or not execution_log:
-            return runtime_state
-
-        latest_summary: Dict[str, Any] = {}
-        history: List[Dict[str, Any]] = []
-
-        for entry in execution_log:
-            if not isinstance(entry, dict):
-                continue
-            result_payload = entry.get("result")
-            if not isinstance(result_payload, dict):
-                continue
-            summary = result_payload.get("repair_chain_consistency")
-            if not isinstance(summary, dict):
-                continue
-
-            latest_step = summary.get("latest_step")
-            if isinstance(latest_step, dict):
-                history.append(copy.deepcopy(latest_step))
-
-            latest_summary = copy.deepcopy(summary)
-
-        if not latest_summary:
-            return runtime_state
-
-        # Prefer summary history if present; otherwise rebuild from latest_step
-        # entries collected from execution_log.
-        summary_history = latest_summary.get("history")
-        if isinstance(summary_history, list) and summary_history:
-            resolved_history = [copy.deepcopy(item) for item in summary_history if isinstance(item, dict)]
-        else:
-            resolved_history = history
-
-        repair_context = runtime_state.setdefault("repair_context", {})
-        if not isinstance(repair_context, dict):
-            repair_context = {}
-            runtime_state["repair_context"] = repair_context
-
-        repair_context["last_repair_chain_consistency"] = copy.deepcopy(latest_summary)
-        repair_context["repair_chain_consistency_history"] = copy.deepcopy(resolved_history[-100:])
-
-        engineering_execution = repair_context.setdefault("engineering_execution", {})
-        if isinstance(engineering_execution, dict):
-            engineering_execution["last_repair_chain_consistency"] = copy.deepcopy(latest_summary)
-            engineering_execution["repair_chain_consistency_status"] = str(latest_summary.get("status") or "")
-            engineering_execution["repair_chain_id"] = str(latest_summary.get("chain_id") or "")
-            engineering_execution["repair_chain_total_steps"] = latest_summary.get("total_steps")
-            engineering_execution["repair_chain_replay_verified_steps"] = latest_summary.get("replay_verified_steps")
-
-        if isinstance(task, dict):
-            task_repair_context = task.setdefault("repair_context", {})
-            if isinstance(task_repair_context, dict):
-                task_repair_context["last_repair_chain_consistency"] = copy.deepcopy(latest_summary)
-                task_repair_context["repair_chain_consistency_history"] = copy.deepcopy(resolved_history[-100:])
-
-        return runtime_state
+        return sync_repair_chain_summary_from_execution_log(
+            task=task,
+            runtime_state=runtime_state,
+        )
 
 
     def _finalize_public_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
@@ -3695,79 +3353,26 @@ class TaskRunner:
         step_index: int,
         current_tick: int,
     ) -> None:
-        safe_step = copy.deepcopy(step) if isinstance(step, dict) else {}
-        safe_result = copy.deepcopy(step_result) if isinstance(step_result, dict) else {}
-        trace_items = self._extract_trace_from_step_result(safe_result)
-
-        if not trace_items:
-            trace_items = [
-                {
-                    "step_index": step_index,
-                    "step_type": str(safe_step.get("type") or safe_result.get("step_type") or "").strip().lower(),
-                    "ok": bool(safe_result.get("ok", False)),
-                    "message": str(safe_result.get("message") or ""),
-                    "final_answer": str(safe_result.get("final_answer") or ""),
-                    "error_type": self._extract_error_type(safe_result),
-                    "attempts": 1,
-                    "max_attempts": 1,
-                    "retry_used": False,
-                }
-            ]
-
-        for item in trace_items:
-            if not isinstance(item, dict):
-                continue
-
-            data = copy.deepcopy(item)
-            data.setdefault("task_id", task.get("task_id") or task.get("id"))
-            data.setdefault("tick", current_tick)
-            data.setdefault("step_index", step_index)
-            data.setdefault("step_type", str(safe_step.get("type") or "").strip().lower())
-            data.setdefault("step_id", str(safe_step.get("id") or "").strip())
-
-            if "ok" not in data:
-                data["ok"] = bool(safe_result.get("ok", False))
-
-            if "error" not in data and safe_result.get("error"):
-                data["error"] = copy.deepcopy(safe_result.get("error"))
-
-            self._append_trace_json_event(task, "step_result", data)
+        append_step_result_trace_json(
+            task=task,
+            step=step,
+            step_result=step_result,
+            step_index=step_index,
+            current_tick=current_tick,
+            extract_error_type=self._extract_error_type,
+            append_trace_json_event=self._append_trace_json_event,
+        )
 
     def _append_trace_json_event(self, task: Dict[str, Any], event_type: str, data: Any) -> None:
-        try:
-            task_dir = self._resolve_task_dir_for_trace(task)
-            if not task_dir:
-                return
-
-            os.makedirs(task_dir, exist_ok=True)
-            trace_path = os.path.join(task_dir, "trace.json")
-
-            trace_payload = self._read_trace_json(trace_path)
-            events = trace_payload.setdefault("events", [])
-            if not isinstance(events, list):
-                events = []
-                trace_payload["events"] = events
-
-            events.append(
-                {
-                    "ts": datetime.now().timestamp(),
-                    "event_type": str(event_type or "event"),
-                    "data": self._make_json_safe(data),
-                }
-            )
-            trace_payload["trace_version"] = int(trace_payload.get("trace_version") or 1)
-            trace_payload["event_count"] = len(events)
-
-            self.persistence_service.write_json(
-                trace_path,
-                trace_payload,
-                reason="task_runner_event_trace_write",
-                lineage={"source": "task_runner", "trace_type": "event_trace"},
-                provenance={"source": "task_runner", "trace_path": trace_path},
-                metadata={"operation": "write_trace_json"},
-            )
-        except Exception:
-            pass
+        append_trace_json_event(
+            task=task,
+            event_type=event_type,
+            data=data,
+            persistence_service=self.persistence_service,
+            resolve_task_dir_for_trace=self._resolve_task_dir_for_trace,
+            read_trace_json=self._read_trace_json,
+            make_json_safe=self._make_json_safe,
+        )
 
     def _read_trace_json(self, trace_path: str) -> Dict[str, Any]:
         try:
