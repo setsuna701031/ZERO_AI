@@ -82,6 +82,7 @@ from core.runtime.task_runner_engineering_action_runtime_helpers import (
     safe_record_rollback_restore_action,
     safe_update_current_engineering_action,
 )
+from core.runtime.task_runner_step_execution_prepare import prepare_step_execution
 from core.goals.goal_lineage_contract import (
     attach_runtime_identity_graph,
     bind_runtime_identity_graph,
@@ -1870,86 +1871,21 @@ class TaskRunner:
     # ============================================================
 
     def _run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
-        state = self.runtime.load_runtime_state(task)
-        self._ensure_execution_trace_defaults(task, state)
-
-        steps = state.get("steps", [])
-        idx = int(state.get("current_step_index", 0) or 0)
-
-        if not isinstance(steps, list):
-            steps = []
-
-        if idx >= len(steps):
-            last_result = task.get("last_step_result") or state.get("last_step_result")
-            last_payload = last_result.get("result") if isinstance(last_result, dict) else {}
-            last_step = last_result.get("step") if isinstance(last_result, dict) else {}
-            finish_result = self.runtime.mark_finished(
-                task=task,
-                current_tick=current_tick,
-                final_answer=str(task.get("final_answer") or state.get("final_answer") or ""),
-                final_result=copy.deepcopy(task.get("last_step_result") or state.get("last_step_result")),
-                completion_authority=self._terminal_completion_authority(
-                    task=task,
-                    step=last_step,
-                    result=last_payload,
-                ),
-            )
-            runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
-            self._ensure_execution_trace_defaults(task, runtime_state)
-            return {
-                "ok": True,
-                "action": "already_finished",
-                "task": copy.deepcopy(task),
-                "runtime_state": runtime_state,
-                "status": "finished",
-                "final_answer": finish_result.get("final_answer", ""),
-                "task_completion_authority": finish_result.get("task_completion_authority"),
-            }
-
-        direct_block = self._maybe_block_direct_missing_subgoal_dependency(
+        prepared_execution = prepare_step_execution(
+            runtime=self.runtime,
             task=task,
-            state=state,
-            step_index=idx,
             current_tick=current_tick,
+            ensure_execution_trace_defaults=self._ensure_execution_trace_defaults,
+            maybe_block_direct_missing_subgoal_dependency=self._maybe_block_direct_missing_subgoal_dependency,
+            safe_block_engineering_action=self._safe_block_engineering_action,
+            terminal_completion_authority=self._terminal_completion_authority,
         )
-        if isinstance(direct_block, dict):
-            return direct_block
+        if not bool(prepared_execution.get("continue_execution", False)):
+            return prepared_execution.get("terminal_result")
 
-        prepare_result = self.runtime.prepare_current_subgoal(task=task, current_tick=current_tick)
-        prepared_state = copy.deepcopy(prepare_result.get("runtime_state", state))
-        self._ensure_execution_trace_defaults(task, prepared_state)
-        if not bool(prepare_result.get("ok", False)):
-            self._safe_block_engineering_action(
-                task=task,
-                step=steps[idx] if isinstance(steps, list) and 0 <= idx < len(steps) else {},
-                step_result=copy.deepcopy(prepare_result),
-                step_index=idx,
-                current_tick=current_tick,
-                trace_tick=current_tick,
-                reason=str(prepare_result.get("reason") or prepared_state.get("last_error") or "subgoal blocked"),
-            )
-            return {
-                "ok": False,
-                "action": "subgoal_blocked",
-                "task": copy.deepcopy(task),
-                "runtime_state": prepared_state,
-                "status": prepared_state.get("status", "blocked"),
-                "error": prepare_result.get("reason") or prepared_state.get("last_error"),
-                "execution_trace": copy.deepcopy(prepared_state.get("execution_trace", [])),
-            }
-        if canonical_runtime_status(prepared_state.get("status")) == "completed":
-            return {
-                "ok": True,
-                "action": "already_finished",
-                "task": copy.deepcopy(task),
-                "runtime_state": prepared_state,
-                "status": "finished",
-                "final_answer": str(prepared_state.get("final_answer") or ""),
-                "execution_trace": copy.deepcopy(prepared_state.get("execution_trace", [])),
-            }
-        state = prepared_state
-        steps = state.get("steps", []) if isinstance(state.get("steps"), list) else []
-        idx = int(state.get("current_step_index", idx) or idx)
+        state = prepared_execution["state"]
+        steps = prepared_execution["steps"]
+        idx = prepared_execution["step_index"]
 
         step, runtime_mode = self._apply_runtime_mode_to_step(
             task=task,
