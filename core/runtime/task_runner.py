@@ -73,6 +73,7 @@ from core.runtime.task_runner_engineering_identity_helpers import (
     runtime_step_id,
     runtime_step_target,
 )
+from core.runtime.task_runner_changed_files_helpers import extract_changed_files_from_step_result
 from core.goals.goal_lineage_contract import (
     attach_runtime_identity_graph,
     bind_runtime_identity_graph,
@@ -1900,30 +1901,7 @@ class TaskRunner:
                 traceback.print_exc()
 
     def _extract_changed_files_from_step_result(self, step_result: Any) -> List[str]:
-        files: List[str] = []
-
-        def _collect(value: Any) -> None:
-            if isinstance(value, str) and value.strip():
-                item = value.strip()
-                if item not in files:
-                    files.append(item)
-                return
-            if isinstance(value, list):
-                for child in value:
-                    _collect(child)
-                return
-            if isinstance(value, dict):
-                for key in ("changed_files", "modified_files", "created_files", "written_files", "files"):
-                    if key in value:
-                        _collect(value.get(key))
-
-        _collect(step_result)
-        if isinstance(step_result, dict):
-            for key in ("result", "rollback_result"):
-                payload = step_result.get(key)
-                if isinstance(payload, dict):
-                    _collect(payload)
-        return files
+        return extract_changed_files_from_step_result(step_result)
 
     # ============================================================
     # step execution
