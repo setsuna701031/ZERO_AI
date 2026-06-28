@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from core.runtime.task_runtime import project_runtime_status
 from core.tasks.scheduler_core.repo_blocked_state import (
     _advisory_transition_reason,
     _append_status_to_history,
@@ -42,6 +43,10 @@ from core.tasks.scheduler_core.repo_task_state import (
     mark_repo_task_queued,
     mark_repo_task_with_adapter,
 )
+
+
+def _project_repo_state_runtime_status(target: Dict[str, Any], status: Any) -> Dict[str, Any]:
+    return project_runtime_status(target, status, owner="core/tasks/scheduler_core/repo_state_helpers.py")
 
 
 def _repo_runtime_adapter_ok(payload: Dict[str, Any]) -> bool:

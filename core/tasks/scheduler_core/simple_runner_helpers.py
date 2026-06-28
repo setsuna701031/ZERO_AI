@@ -1,5 +1,9 @@
 ﻿from __future__ import annotations
 
+from typing import Any, Dict
+
+from core.runtime.task_runtime import project_runtime_status
+
 from .simple_runner_tick import _run_simple_task_tick
 from .simple_runner_state import _load_simple_task_state
 from .simple_runner_terminal import _handle_simple_terminal_task
@@ -10,6 +14,11 @@ from .simple_runner_step_exception import _handle_simple_step_exception
 from .simple_runner_failure_signal import _extract_simple_step_failure_signal
 from .simple_runner_step_blocked_result import _handle_simple_step_blocked_or_failed_result
 from .simple_runner_step_success import _handle_simple_step_success
+
+
+def _project_simple_runner_runtime_status(target: Dict[str, Any], status: Any) -> Dict[str, Any]:
+    return project_runtime_status(target, status, owner="core/tasks/scheduler_core/simple_runner_helpers.py")
+
 
 # public exports used by scheduler.py
 run_simple_task_tick = _run_simple_task_tick
