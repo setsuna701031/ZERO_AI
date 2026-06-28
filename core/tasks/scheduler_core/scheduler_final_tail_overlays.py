@@ -33,6 +33,36 @@ from core.tasks.scheduler_core.overlay_v7336 import (
 )
 
 
+def _scheduler_final_tail_normalized_inputs(task: Any, result: Any) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    return (
+        task if isinstance(task, dict) else {},
+        result if isinstance(result, dict) else {"raw_result": result},
+    )
+
+
+def _scheduler_final_tail_attach_fanout(task: Any, result: Any, attach: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Any:
+    if isinstance(result, dict):
+        result = attach(result)
+        for target in (task, result.get("task"), result.get("runtime_state")):
+            if isinstance(target, dict):
+                attach(target)
+    return result
+
+
+def _scheduler_final_tail_repairable_failure_wrapper(
+    *,
+    global_lookup: Callable[[str, Any], Any],
+    lookup_key: str,
+    original_repair: Any,
+    repairable_decision: Callable[[Any, Any, Any], Any],
+) -> Callable[[Any, Any], Any]:
+    def _scheduler_final_tail_is_repairable_failure(self, task):
+        original = global_lookup(lookup_key, original_repair)
+        return repairable_decision(task, original, self)
+
+    return _scheduler_final_tail_is_repairable_failure
+
+
 def install_scheduler_final_tail_overlays(
     scheduler_cls: Any,
     *,
@@ -44,19 +74,23 @@ def install_scheduler_final_tail_overlays(
     def _zero_v7332_scheduler_run_one_step(self, task, current_tick=None):
         base = global_lookup("_ZERO_V7332_ORIGINAL_SCHEDULER_RUN_ONE_STEP", original_run_v7332)
         result = base(self, task=task, current_tick=current_tick)
+        normalized_task, normalized_result = _scheduler_final_tail_normalized_inputs(task, result)
         return _zero_v7332_mark_constitutional_boundary(
             self,
-            task=task if isinstance(task, dict) else {},
-            runner_result=result if isinstance(result, dict) else {"raw_result": result},
+            task=normalized_task,
+            runner_result=normalized_result,
             status_review_required=status_review_required,
         )
 
     scheduler_cls.run_one_step = _zero_v7332_scheduler_run_one_step
     original_repair_v7332 = scheduler_cls._is_repairable_failure
 
-    def _zero_v7332_is_repairable_failure(self, task):
-        original = global_lookup("_ZERO_V7332_ORIGINAL_IS_REPAIRABLE_FAILURE", original_repair_v7332)
-        return _zero_v7332_repairable_decision(task, original, self)
+    _zero_v7332_is_repairable_failure = _scheduler_final_tail_repairable_failure_wrapper(
+        global_lookup=global_lookup,
+        lookup_key="_ZERO_V7332_ORIGINAL_IS_REPAIRABLE_FAILURE",
+        original_repair=original_repair_v7332,
+        repairable_decision=_zero_v7332_repairable_decision,
+    )
 
     scheduler_cls._is_repairable_failure = _zero_v7332_is_repairable_failure
 
@@ -65,19 +99,23 @@ def install_scheduler_final_tail_overlays(
     def _zero_v7333_scheduler_run_one_step(self, task, current_tick=None):
         base = global_lookup("_ZERO_V7333_ORIGINAL_SCHEDULER_RUN_ONE_STEP", original_run_v7333)
         result = base(self, task=task, current_tick=current_tick)
+        normalized_task, normalized_result = _scheduler_final_tail_normalized_inputs(task, result)
         return _zero_v7333_attach_governed_continuation(
             self,
-            task=task if isinstance(task, dict) else {},
-            runner_result=result if isinstance(result, dict) else {"raw_result": result},
+            task=normalized_task,
+            runner_result=normalized_result,
             status_review_required=status_review_required,
         )
 
     scheduler_cls.run_one_step = _zero_v7333_scheduler_run_one_step
     original_repair_v7333 = scheduler_cls._is_repairable_failure
 
-    def _zero_v7333_is_repairable_failure(self, task):
-        original = global_lookup("_ZERO_V7333_ORIGINAL_IS_REPAIRABLE_FAILURE", original_repair_v7333)
-        return _zero_v7333_repairable_decision(task, original, self)
+    _zero_v7333_is_repairable_failure = _scheduler_final_tail_repairable_failure_wrapper(
+        global_lookup=global_lookup,
+        lookup_key="_ZERO_V7333_ORIGINAL_IS_REPAIRABLE_FAILURE",
+        original_repair=original_repair_v7333,
+        repairable_decision=_zero_v7333_repairable_decision,
+    )
 
     scheduler_cls._is_repairable_failure = _zero_v7333_is_repairable_failure
 
@@ -86,19 +124,17 @@ def install_scheduler_final_tail_overlays(
     def _zero_v7334_scheduler_run_one_step(self, task, current_tick=None):
         base = global_lookup("_ZERO_V7334_ORIGINAL_SCHEDULER_RUN_ONE_STEP", original_run_v7334)
         result = base(self, task=task, current_tick=current_tick)
-        if isinstance(result, dict):
-            result = _zero_v7334_attach_self_repair_summary(result)
-            for target in (task, result.get("task"), result.get("runtime_state")):
-                if isinstance(target, dict):
-                    _zero_v7334_attach_self_repair_summary(target)
-        return result
+        return _scheduler_final_tail_attach_fanout(task, result, _zero_v7334_attach_self_repair_summary)
 
     scheduler_cls.run_one_step = _zero_v7334_scheduler_run_one_step
     original_repair_v7334 = scheduler_cls._is_repairable_failure
 
-    def _zero_v7334_is_repairable_failure(self, task):
-        original = global_lookup("_ZERO_V7334_ORIGINAL_IS_REPAIRABLE_FAILURE", original_repair_v7334)
-        return _zero_v7334_repairable_decision(task, original, self)
+    _zero_v7334_is_repairable_failure = _scheduler_final_tail_repairable_failure_wrapper(
+        global_lookup=global_lookup,
+        lookup_key="_ZERO_V7334_ORIGINAL_IS_REPAIRABLE_FAILURE",
+        original_repair=original_repair_v7334,
+        repairable_decision=_zero_v7334_repairable_decision,
+    )
 
     scheduler_cls._is_repairable_failure = _zero_v7334_is_repairable_failure
 
@@ -109,19 +145,17 @@ def install_scheduler_final_tail_overlays(
         result = base(self, task=task, current_tick=current_tick)
         if _zero_v7335_has_approved_execution_authority(task) and not _zero_v7335_is_repair_work(task):
             return result
-        if isinstance(result, dict):
-            result = _zero_v7335_attach_controlled_mutation_bridge(result)
-            for target in (task, result.get("task"), result.get("runtime_state")):
-                if isinstance(target, dict):
-                    _zero_v7335_attach_controlled_mutation_bridge(target)
-        return result
+        return _scheduler_final_tail_attach_fanout(task, result, _zero_v7335_attach_controlled_mutation_bridge)
 
     scheduler_cls.run_one_step = _zero_v7335_scheduler_run_one_step
     original_repair_v7335 = scheduler_cls._is_repairable_failure
 
-    def _zero_v7335_is_repairable_failure(self, task):
-        original = global_lookup("_ZERO_V7335_ORIGINAL_IS_REPAIRABLE_FAILURE", original_repair_v7335)
-        return _zero_v7335_repairable_decision(task, original, self)
+    _zero_v7335_is_repairable_failure = _scheduler_final_tail_repairable_failure_wrapper(
+        global_lookup=global_lookup,
+        lookup_key="_ZERO_V7335_ORIGINAL_IS_REPAIRABLE_FAILURE",
+        original_repair=original_repair_v7335,
+        repairable_decision=_zero_v7335_repairable_decision,
+    )
 
     scheduler_cls._is_repairable_failure = _zero_v7335_is_repairable_failure
 
@@ -130,19 +164,17 @@ def install_scheduler_final_tail_overlays(
     def _zero_v7336_scheduler_run_one_step(self, task, current_tick=None):
         base = global_lookup("_ZERO_V7336_ORIGINAL_SCHEDULER_RUN_ONE_STEP", original_run_v7336)
         result = base(self, task=task, current_tick=current_tick)
-        if isinstance(result, dict):
-            result = _zero_v7336_attach_verified_mutation_continuation(result)
-            for target in (task, result.get("task"), result.get("runtime_state")):
-                if isinstance(target, dict):
-                    _zero_v7336_attach_verified_mutation_continuation(target)
-        return result
+        return _scheduler_final_tail_attach_fanout(task, result, _zero_v7336_attach_verified_mutation_continuation)
 
     scheduler_cls.run_one_step = _zero_v7336_scheduler_run_one_step
     original_repair_v7336 = scheduler_cls._is_repairable_failure
 
-    def _zero_v7336_is_repairable_failure(self, task):
-        original = global_lookup("_ZERO_V7336_ORIGINAL_IS_REPAIRABLE_FAILURE", original_repair_v7336)
-        return _zero_v7336_repairable_decision(task, original, self)
+    _zero_v7336_is_repairable_failure = _scheduler_final_tail_repairable_failure_wrapper(
+        global_lookup=global_lookup,
+        lookup_key="_ZERO_V7336_ORIGINAL_IS_REPAIRABLE_FAILURE",
+        original_repair=original_repair_v7336,
+        repairable_decision=_zero_v7336_repairable_decision,
+    )
 
     scheduler_cls._is_repairable_failure = _zero_v7336_is_repairable_failure
 
