@@ -51,6 +51,14 @@ from core.runtime.task_runner_mutation_helpers import (
     build_repair_replay_validation,
     reconcile_mutation_boundary_result,
 )
+from core.runtime.task_runner_target_helpers import (
+    extract_target_repo_root_from_mapping,
+    normalize_target_repo_root,
+    resolve_step_cwd,
+    resolve_target_repo_root,
+    sync_target_repo_context,
+    target_routed_context,
+)
 from core.goals.goal_lineage_contract import (
     attach_runtime_identity_graph,
     bind_runtime_identity_graph,
@@ -1586,125 +1594,35 @@ class TaskRunner:
     # target repo routing
     # ============================================================
 
+
     def _normalize_target_repo_root(self, value: Any) -> str:
-        text = str(value or "").strip().strip('"').strip("'")
-        if not text:
-            return ""
-        text = os.path.expandvars(os.path.expanduser(text))
-        try:
-            text = os.path.abspath(text)
-        except Exception:
-            pass
-        if os.path.isdir(text):
-            return os.path.normpath(text)
-        return ""
+        return normalize_target_repo_root(value)
+
 
     def _extract_target_repo_root_from_mapping(self, value: Any) -> str:
-        if not isinstance(value, dict):
-            return ""
+        return extract_target_repo_root_from_mapping(value)
 
-        for key in (
-            "target_repo_root",
-            "target_root",
-            "repo_root",
-            "project_root",
-            "working_root",
-            "workspace_target_root",
-        ):
-            resolved = self._normalize_target_repo_root(value.get(key))
-            if resolved:
-                return resolved
-
-        for nested_key in ("config", "runtime_config", "engineering_config", "capability_execution"):
-            nested = value.get(nested_key)
-            if isinstance(nested, dict):
-                resolved = self._extract_target_repo_root_from_mapping(nested)
-                if resolved:
-                    return resolved
-
-        repair_context = value.get("repair_context")
-        if isinstance(repair_context, dict):
-            resolved = self._normalize_target_repo_root(repair_context.get("target_repo_root"))
-            if resolved:
-                return resolved
-            engineering_execution = repair_context.get("engineering_execution")
-            if isinstance(engineering_execution, dict):
-                resolved = self._normalize_target_repo_root(engineering_execution.get("target_repo_root"))
-                if resolved:
-                    return resolved
-
-        return ""
 
     def _resolve_target_repo_root(self, task: Dict[str, Any], state: Optional[Dict[str, Any]] = None) -> str:
-        resolved = self._extract_target_repo_root_from_mapping(task)
-        if resolved:
-            return resolved
+        return resolve_target_repo_root(task=task, state=state)
 
-        resolved = self._extract_target_repo_root_from_mapping(state)
-        if resolved:
-            return resolved
-
-        resolved = self._normalize_target_repo_root(os.environ.get("ZERO_TARGET_REPO_ROOT"))
-        if resolved:
-            return resolved
-
-        return ""
 
     def _sync_target_repo_context(self, task: Dict[str, Any], state: Dict[str, Any]) -> str:
-        target_repo_root = self._resolve_target_repo_root(task=task, state=state)
-        if not target_repo_root:
-            return ""
+        return sync_target_repo_context(task=task, state=state)
 
-        if isinstance(task, dict):
-            task["target_repo_root"] = target_repo_root
-
-        if isinstance(state, dict):
-            state["target_repo_root"] = target_repo_root
-            repair_context = state.setdefault("repair_context", {})
-            if isinstance(repair_context, dict):
-                repair_context["target_repo_root"] = target_repo_root
-                engineering_execution = repair_context.setdefault("engineering_execution", {})
-                if isinstance(engineering_execution, dict):
-                    engineering_execution["target_repo_root"] = target_repo_root
-                    engineering_execution["target_routing_version"] = "aer_v9_2_0"
-                    engineering_execution["last_target_routing_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        return target_repo_root
 
     def _resolve_step_cwd(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> str:
-        target_repo_root = self._resolve_target_repo_root(task=task, state=state)
+        return resolve_step_cwd(task=task, state=state, step=step)
 
-        if isinstance(step, dict):
-            for key in ("cwd", "working_dir", "workdir"):
-                value = str(step.get(key) or "").strip()
-                if not value:
-                    continue
-                expanded = os.path.expandvars(os.path.expanduser(value))
-                if os.path.isabs(expanded):
-                    return os.path.normpath(expanded)
-                if target_repo_root:
-                    return os.path.normpath(os.path.join(target_repo_root, expanded))
-                return os.path.normpath(expanded)
-
-        if target_repo_root:
-            return target_repo_root
-
-        return str(state.get("task_dir") or "")
 
     def _target_routed_context(self, *, task: Dict[str, Any], state: Dict[str, Any], step: Any) -> Dict[str, Any]:
-        target_repo_root = self._sync_target_repo_context(task=task, state=state)
-        cwd = self._resolve_step_cwd(task=task, state=state, step=step)
-        context = {
-            "cwd": cwd,
-            "task_dir": state.get("task_dir"),
-            "workspace_root": state.get("workspace_root") or getattr(self.runtime, "workspace_root", "workspace"),
-            "target_repo_root": target_repo_root,
-            "target_routing_enabled": bool(target_repo_root),
-        }
-        operator_session_id = self._operator_session_id_from_payloads(task, state)
-        if operator_session_id:
-            context["operator_session_id"] = operator_session_id
-        return context
+        return target_routed_context(
+            task=task,
+            state=state,
+            step=step,
+            workspace_root=getattr(self.runtime, "workspace_root", "workspace"),
+            operator_session_id_from_payloads=self._operator_session_id_from_payloads,
+        )
 
     def _operator_session_id_from_payloads(self, *payloads: Any) -> str:
         for payload in payloads:
