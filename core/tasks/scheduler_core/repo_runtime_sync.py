@@ -259,6 +259,73 @@ def _prepare_repo_runtime_public_payload(
     return merged
 
 
+def _persist_repo_runtime_payload(
+    scheduler: Any,
+    task_id: str,
+    merged: Dict[str, Any],
+    *,
+    completion_authority: Any,
+    completion_authorized: bool,
+) -> None:
+    _save_runtime_state_from_merged(scheduler, merged)
+    scheduler._persist_task_payload(
+        task_id=task_id,
+        task=merged,
+        completion_authority=completion_authority if completion_authorized else None,
+    )
+
+
+def _sync_repo_runtime_status_from_merged(
+    scheduler: Any,
+    task_id: str,
+    merged: Dict[str, Any],
+    *,
+    runner_result: Optional[Dict[str, Any]],
+    completion_authority: Any,
+    completion_authorized: bool,
+) -> None:
+    normalized_status = str(merged.get("status") or "").strip().lower()
+    if not normalized_status:
+        return
+
+    if (
+        normalized_status in {"finished", "done", "success", "completed", scheduler.STATUS_FINISHED}
+        and completion_authorized
+    ):
+        final_answer = merged.get("final_answer", "")
+        mark_repo_task_finished(
+            scheduler=scheduler,
+            task_id=task_id,
+            result=final_answer,
+            completion_authority=completion_authority,
+        )
+        return
+
+    if normalized_status in {"failed", "error", scheduler.STATUS_FAILED}:
+        final_error = str(
+            merged.get("last_error")
+            or merged.get("failure_message")
+            or (runner_result or {}).get("error")
+            or "task failed"
+        )
+        mark_repo_task_failed(scheduler=scheduler, task_id=task_id, error=final_error)
+        return
+
+    if normalized_status in {scheduler.STATUS_BLOCKED, "blocked"}:
+        blocked_reason = str(merged.get("blocked_reason") or "")
+        sync_blocked_state(scheduler=scheduler, task_id=task_id, blocked_reason=blocked_reason)
+        return
+
+    if normalized_status in {"queued", scheduler.STATUS_QUEUED, "ready", "retry"}:
+        queue_error = str(merged.get("last_error") or merged.get("failure_message") or "")
+        mark_repo_task_queued(scheduler=scheduler, task_id=task_id, error=queue_error)
+        return
+
+    if normalized_status in {"running"}:
+        sync_unblocked_state(scheduler=scheduler, task_id=task_id)
+        return
+
+
 def sync_runtime_back_to_repo(
     scheduler: Any,
     task: Dict[str, Any],
@@ -329,50 +396,18 @@ def sync_runtime_back_to_repo(
         merged=merged,
         runner_result=runner_result,
     )
-    _save_runtime_state_from_merged(scheduler, merged)
-    scheduler._persist_task_payload(
+    _persist_repo_runtime_payload(
+        scheduler=scheduler,
         task_id=task_id,
-        task=merged,
-        completion_authority=completion_authority if completion_authorized else None,
+        merged=merged,
+        completion_authority=completion_authority,
+        completion_authorized=completion_authorized,
     )
-
-    normalized_status = str(merged.get("status") or "").strip().lower()
-    if not normalized_status:
-        return
-
-    if (
-        normalized_status in {"finished", "done", "success", "completed", scheduler.STATUS_FINISHED}
-        and completion_authorized
-    ):
-        final_answer = merged.get("final_answer", "")
-        mark_repo_task_finished(
-            scheduler=scheduler,
-            task_id=task_id,
-            result=final_answer,
-            completion_authority=completion_authority,
-        )
-        return
-
-    if normalized_status in {"failed", "error", scheduler.STATUS_FAILED}:
-        final_error = str(
-            merged.get("last_error")
-            or merged.get("failure_message")
-            or (runner_result or {}).get("error")
-            or "task failed"
-        )
-        mark_repo_task_failed(scheduler=scheduler, task_id=task_id, error=final_error)
-        return
-
-    if normalized_status in {scheduler.STATUS_BLOCKED, "blocked"}:
-        blocked_reason = str(merged.get("blocked_reason") or "")
-        sync_blocked_state(scheduler=scheduler, task_id=task_id, blocked_reason=blocked_reason)
-        return
-
-    if normalized_status in {"queued", scheduler.STATUS_QUEUED, "ready", "retry"}:
-        queue_error = str(merged.get("last_error") or merged.get("failure_message") or "")
-        mark_repo_task_queued(scheduler=scheduler, task_id=task_id, error=queue_error)
-        return
-
-    if normalized_status in {"running"}:
-        sync_unblocked_state(scheduler=scheduler, task_id=task_id)
-        return
+    _sync_repo_runtime_status_from_merged(
+        scheduler=scheduler,
+        task_id=task_id,
+        merged=merged,
+        runner_result=runner_result,
+        completion_authority=completion_authority,
+        completion_authorized=completion_authorized,
+    )
