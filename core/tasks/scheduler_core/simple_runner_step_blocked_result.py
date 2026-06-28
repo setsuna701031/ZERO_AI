@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from core.runtime.task_runtime import project_runtime_status
 from core.tools.execution_trace import ExecutionTrace
+from core.tasks.scheduler_core.simple_runner_result_helpers import _build_simple_blocked_or_failed_payload
 from core.tasks.scheduler_core.trace_helpers import trace_step
 
 
@@ -111,27 +112,19 @@ def _handle_simple_step_blocked_or_failed_result(
     )
     scheduler._save_trace_for_task(task=task, trace=trace)
 
-    return {
-        "ok": False,
-        "action": action,
-        "tick": scheduler.current_tick,
-        "task_id": task_id,
-        "task_name": task_name,
-        "status": status,
-        "message": message,
-        "final_answer": "",
-        "error": copy.deepcopy(normalized_step_result["error"]),
-        "blocked": blocked,
-        "failed": not blocked,
-        "error_type": error_type,
-        "execution_log": execution_log,
-        "results": results,
-        "step_results": step_results,
-        "last_step_result": last_step_result,
-        "current_step_index": current_step_index,
-        "step_count": len(steps),
-        "steps_total": len(steps),
-        "last_run_tick": scheduler.current_tick,
-        "last_failure_tick": scheduler.current_tick if not blocked else None,
-    }
-
+    return _build_simple_blocked_or_failed_payload(
+        tick=scheduler.current_tick,
+        task_id=task_id,
+        task_name=task_name,
+        status=status,
+        message=message,
+        normalized_step_result=normalized_step_result,
+        blocked=blocked,
+        error_type=error_type,
+        execution_log=execution_log,
+        results=results,
+        step_results=step_results,
+        last_step_result=last_step_result,
+        current_step_index=current_step_index,
+        step_count=len(steps),
+    )

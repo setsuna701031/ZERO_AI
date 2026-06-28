@@ -6,6 +6,8 @@ from typing import Any, Dict, List
 from core.tools.execution_trace import ExecutionTrace
 from core.tasks.scheduler_core.simple_runner_result_helpers import (
     _build_simple_failed_step_result,
+    _build_simple_step_failed_payload,
+    _build_simple_step_replanned_payload,
     _sync_simple_failed_step_collections,
 )
 from core.tasks.scheduler_core.simple_runner_state_mutation_helpers import (
@@ -104,30 +106,23 @@ def _handle_simple_step_exception(
         )
         scheduler._save_trace_for_task(task=task, trace=trace)
 
-        return {
-            "ok": True,
-            "action": "simple_step_replanned",
-            "tick": scheduler.current_tick,
-            "task_id": task_id,
-            "task_name": task_name,
-            "status": "queued",
-            "message": replan_result.get("summary", "task replanned"),
-            "execution_log": execution_log,
-            "results": results,
-            "step_results": step_results,
-            "last_step_result": last_step_result,
-            "current_step_index": 0,
-            "step_count": new_steps_total,
-            "steps_total": new_steps_total,
-            "last_run_tick": scheduler.current_tick,
-            "last_failure_tick": scheduler.current_tick,
-            "replan_reason": task["replan_reason"],
-            "replan_decision": task.get("replan_decision", ""),
-            "replan_summary": task.get("replan_summary", ""),
-            "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-            "replan_repairable": task.get("replan_repairable", None),
-            "replan_result": replan_result,
-        }
+        return _build_simple_step_replanned_payload(
+            tick=scheduler.current_tick,
+            task_id=task_id,
+            task_name=task_name,
+            message=replan_result.get("summary", "task replanned"),
+            execution_log=execution_log,
+            results=results,
+            step_results=step_results,
+            last_step_result=last_step_result,
+            steps_total=new_steps_total,
+            replan_reason=task["replan_reason"],
+            replan_decision=task.get("replan_decision", ""),
+            replan_summary=task.get("replan_summary", ""),
+            replan_failed_step_type=task.get("replan_failed_step_type", ""),
+            replan_repairable=task.get("replan_repairable", None),
+            replan_result=replan_result,
+        )
 
     _apply_simple_terminal_failed_state(scheduler, task)
 
@@ -149,29 +144,23 @@ def _handle_simple_step_exception(
     )
     scheduler._save_trace_for_task(task=task, trace=trace)
 
-    return {
-        "ok": False,
-        "action": "simple_step_failed",
-        "tick": scheduler.current_tick,
-        "task_id": task_id,
-        "task_name": task_name,
-        "status": "failed",
-        "message": "step execution failed",
-        "error": str(error),
-        "execution_log": execution_log,
-        "results": results,
-        "step_results": step_results,
-        "last_step_result": last_step_result,
-        "current_step_index": current_step_index,
-        "step_count": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
-        "steps_total": len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0,
-        "last_run_tick": scheduler.current_tick,
-        "last_failure_tick": scheduler.current_tick,
-        "replan_decision": task.get("replan_decision", ""),
-        "replan_summary": task.get("replan_summary", ""),
-        "replan_failed_step_type": task.get("replan_failed_step_type", ""),
-        "replan_repairable": task.get("replan_repairable", None),
-        "replan_result": replan_result,
-    }
+    step_count = len(task.get("steps", [])) if isinstance(task.get("steps"), list) else 0
+    return _build_simple_step_failed_payload(
+        tick=scheduler.current_tick,
+        task_id=task_id,
+        task_name=task_name,
+        error=error,
+        execution_log=execution_log,
+        results=results,
+        step_results=step_results,
+        last_step_result=last_step_result,
+        current_step_index=current_step_index,
+        step_count=step_count,
+        replan_decision=task.get("replan_decision", ""),
+        replan_summary=task.get("replan_summary", ""),
+        replan_failed_step_type=task.get("replan_failed_step_type", ""),
+        replan_repairable=task.get("replan_repairable", None),
+        replan_result=replan_result,
+    )
 
 
