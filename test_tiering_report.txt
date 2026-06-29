@@ -46,21 +46,42 @@ Selection Guidance
 ------------------
 Smoke:
   python -m pytest -m smoke -q
+  python tools/regression_runner.py smoke
 
 Contract:
-  python -m pytest -m contract -q
+  python -m pytest -m "contract and not slow and not integration and not external and not llm" -q
+  python tools/regression_runner.py contract
 
 Fast local:
   python -m pytest tests -q -m "not integration and not external and not llm and not slow"
+  python tools/regression_runner.py fast
 
 Integration:
   python -m pytest -m integration -q
+  python tools/regression_runner.py integration
 
 LLM/External:
   python -m pytest -m "llm or external" -q
+  python tools/regression_runner.py llm --confirm-external
 
 Nightly:
   python -m pytest tests -q
+  python tools/regression_runner.py nightly --confirm-nightly
+
+Runner Dry Runs
+---------------
+The standard entry point supports --dry-run for every tier:
+  python tools/regression_runner.py smoke --dry-run
+  python tools/regression_runner.py contract --dry-run
+  python tools/regression_runner.py fast --dry-run
+  python tools/regression_runner.py integration --dry-run
+  python tools/regression_runner.py llm --dry-run
+  python tools/regression_runner.py nightly --dry-run
+
+Guardrails:
+- nightly refuses to execute unless --confirm-nightly is passed.
+- llm refuses to execute unless --confirm-external is passed.
+- dry-run prints the command without requiring confirmation or running pytest.
 
 Validation Notes
 ----------------
