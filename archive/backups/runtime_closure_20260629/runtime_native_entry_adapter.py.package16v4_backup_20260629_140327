@@ -179,26 +179,6 @@ def run_runtime_native_entry(mainline: Any, value: Any) -> Dict[str, Any]:
     return RuntimeNativeEntryAdapter(mainline).run(value)
 
 
-def run_via_runtime_native_mainline(**kwargs: Any) -> Any:
-    runner = kwargs.get("runner")
-    if callable(runner):
-        return runner()
-
-    mainline = kwargs.get("mainline")
-    payload = kwargs.get("payload")
-    if payload is None:
-        payload = kwargs.get("request")
-    if payload is None:
-        payload = kwargs.get("task")
-    if payload is None:
-        payload = kwargs
-
-    if mainline is not None:
-        return run_runtime_native_entry(mainline, payload)
-
-    return RuntimeNativeEntryAdapter().run(payload)
-
-
 __all__ = [
     "RuntimeNativeEntryAdapter",
     "RuntimeNativeEntryRequest",
@@ -207,5 +187,4 @@ __all__ = [
     "normalize_runtime_native_entry_result",
     "normalize_runtime_native_status",
     "run_runtime_native_entry",
-    "run_via_runtime_native_mainline",
 ]

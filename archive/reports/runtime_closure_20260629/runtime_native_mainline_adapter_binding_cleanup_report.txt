@@ -1,0 +1,25 @@
+Package17 Runtime Native Mainline Adapter Binding Cleanup Report
+
+root: E:\zero_ai
+mainline: core\runtime\runtime_native_mainline.py
+test: tests\test_runtime_native_mainline_adapter_binding_cleanup.py
+
+Completed:
+- removed Package16 adapter binding marker block
+- removed duplicate Package17 adapter binding marker block if present
+- installed exactly one Package17 import-safe adapter binding
+- added cleanup seal test
+
+Not touched:
+- Scheduler
+- TaskRunner
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+
+Validation:
+python -m compileall core/runtime tests
+python -m pytest tests/test_runtime_native_mainline_adapter_binding_cleanup.py tests/test_runtime_native_compatibility_adapter_extraction.py tests/test_runtime_native_compatibility_entry_semantics.py tests/test_runtime_route_registry_admission.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting:
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

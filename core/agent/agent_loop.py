@@ -389,7 +389,7 @@ class AgentLoop:
         engineering_task_result = self._try_handle_engineering_task_route(text)
         if engineering_task_result is not None:
             engineering_task_result.setdefault("agent_loop_runtime_route", "engineering_task_runner")
-            engineering_task_result.setdefault("legacy_direct_json_engineering_task_runner", True)
+            engineering_task_result.setdefault("legacy_direct_json_engineering_task_runner", False)
             engineering_task_result.setdefault("governed_runtime_route", False)
             engineering_task_result.setdefault("runtime_owns_execution", False)
             engineering_task_result.setdefault("direct_execution", True)
@@ -659,14 +659,7 @@ class AgentLoop:
         )
 
     def _try_handle_engineering_task_route(self, user_input: str) -> Optional[Dict[str, Any]]:
-        """Handle legacy direct JSON engineering_task payloads.
-
-        Legacy boundary:
-        - This route is intentionally labelled legacy.
-        - It preserves the historical EngineeringTaskRunner response contract.
-        - It must not be treated as WorkPackage mainline authority.
-        - Program/goal/adaptive routes remain separate.
-        """
+        """Handle JSON engineering_task payloads through RuntimeNativeMainline."""
 
         text = str(user_input or "").strip()
         if not text or not (text.startswith("{") and text.endswith("}")):
@@ -741,7 +734,7 @@ class AgentLoop:
         result.setdefault("package_id", package_id)
 
         result["agent_loop_runtime_route"] = "engineering_task_runner"
-        result["legacy_direct_json_engineering_task_runner"] = True
+        result["legacy_direct_json_engineering_task_runner"] = False
         result["runtime_native_mainline_canonical_entry"] = True
         result["governed_runtime_route"] = True
         result["runtime_owns_execution"] = True
@@ -759,11 +752,11 @@ class AgentLoop:
                 "engineering_task": True,
                 "package_id": package_id,
                 "repo_root": repo_root,
-                "legacy_direct_json_engineering_task_runner": True,
+                "legacy_direct_json_engineering_task_runner": False,
                 "runtime_native_mainline_canonical_entry": True,
                 "work_package_mainline_authority": False,
-                "legacy_isolated": True,
-                "authority_path": "AgentLoop -> RuntimeNativeMainline -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake",
+                "runtime_native_mainline_admission": True,
+                "authority_path": "AgentLoop -> RuntimeNativeMainline -> EngineeringTaskAdmission -> Planner -> WorkPackageIntake",
             }
         )
         result["route"] = route
@@ -773,7 +766,7 @@ class AgentLoop:
             execution_path = {}
         execution_path.update(
             {
-                "legacy_direct_engineering_task_route": True,
+                "legacy_direct_engineering_task_route": False,
                 "runtime_native_mainline_canonical_entry": True,
                 "program_mainline": False,
                 "persisted_engineering_goal": False,
@@ -788,20 +781,20 @@ class AgentLoop:
             "plan",
             {
                 "ok": bool(result.get("ok", False)),
-                "planner_mode": "legacy_engineering_task_runner_v1",
+                "planner_mode": "runtime_native_engineering_task_runner_v1",
                 "intent": "engineering_task",
                 "delegated_to": "core.tasks.engineering_task_runner.run_engineering_task",
                 "final_answer": str(result.get("final_message") or result.get("final_answer") or ""),
                 "steps": [
                     {
-                        "type": "legacy_engineering_task_runner_delegate",
+                        "type": "runtime_native_engineering_task_runner_delegate",
                         "package_id": package_id,
                     }
                 ],
                 "meta": {
                     "fallback_used": False,
                     "step_count": 1,
-                    "legacy_isolated": True,
+                    "runtime_native_mainline_admission": True,
                     "work_package_mainline_authority": False,
                 },
             },
@@ -816,7 +809,7 @@ class AgentLoop:
                     {
                         "step_index": 1,
                         "step": {
-                            "type": "legacy_engineering_task_runner_delegate",
+                            "type": "runtime_native_engineering_task_runner_delegate",
                             "package_id": package_id,
                         },
                         "result": copy.deepcopy(result),

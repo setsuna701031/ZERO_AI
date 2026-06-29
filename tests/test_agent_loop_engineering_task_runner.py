@@ -289,7 +289,7 @@ def test_agent_loop_routes_engineering_goal_payload_to_engineering_task_runner(t
     assert response["goal_lifecycle"]["goal_state"] == "next_task_generated"
     assert response["result_bundle"]["goal_lifecycle"]["goal_id"] == "agent_loop_goal_lifecycle"
     assert response["route"]["authority_path"] == (
-        "AgentLoop -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake"
+        "AgentLoop -> RuntimeNativeMainline -> EngineeringTaskAdmission -> Planner -> WorkPackageIntake"
     )
 
 
@@ -349,7 +349,7 @@ def test_real_engineering_task_enters_agent_loop_and_returns_verified_aer_bundle
     assert response["mode"] == "engineering_task_runner"
     assert response["agent_loop_runtime_route"] == "engineering_task_runner"
     assert response["route"]["authority_path"] == (
-        "AgentLoop -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake"
+        "AgentLoop -> RuntimeNativeMainline -> EngineeringTaskAdmission -> Planner -> WorkPackageIntake"
     )
 
     bundle = response["result_bundle"]
@@ -378,7 +378,7 @@ def test_multi_step_engineering_task_enters_agent_loop_and_completes_with_result
     assert response["mode"] == "engineering_task_runner"
     assert response["agent_loop_runtime_route"] == "engineering_task_runner"
     assert response["route"]["authority_path"] == (
-        "AgentLoop -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake"
+        "AgentLoop -> RuntimeNativeMainline -> EngineeringTaskAdmission -> Planner -> WorkPackageIntake"
     )
 
     bundle = response["result_bundle"]
@@ -796,7 +796,7 @@ def test_goal_only_engineering_task_decomposes_into_executable_steps(tmp_path: P
     assert response["mode"] == "engineering_task_runner"
     assert response["agent_loop_runtime_route"] == "engineering_task_runner"
     assert response["route"]["authority_path"] == (
-        "AgentLoop -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake"
+        "AgentLoop -> RuntimeNativeMainline -> EngineeringTaskAdmission -> Planner -> WorkPackageIntake"
     )
     assert response["requirement_summary"]["schema"] == "zero.engineering_task.requirement_summary.v1"
 

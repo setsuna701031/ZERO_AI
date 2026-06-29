@@ -1,0 +1,20 @@
+Package25 Inventory Path Refresh Report
+
+root: E:\zero_ai
+report: taskrunner_registry_direct_admission_inventory.txt
+test: tests\test_taskrunner_registry_direct_admission_inventory.py
+
+Completed:
+- normalized inventory report paths to forward slash format
+- refreshed inventory test without changing TaskRunner code
+
+Not touched:
+- core/runtime/task_runner.py
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+
+Validation:
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q

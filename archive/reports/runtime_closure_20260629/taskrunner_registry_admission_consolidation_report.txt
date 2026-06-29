@@ -1,0 +1,25 @@
+Package24 TaskRunner Registry Admission Consolidation Report
+
+root: E:\zero_ai
+task_runner: core\runtime\task_runner.py
+test: tests\test_taskrunner_registry_admission_consolidation.py
+
+Completed:
+- installed one TaskRunner registry admission helper
+- installed owned-step and tick helper wrappers
+- bound helper methods to TaskRunner when TaskRunner class exists
+- added consolidation seal tests
+
+Not touched:
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation:
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting:
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

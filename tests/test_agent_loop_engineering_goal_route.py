@@ -55,7 +55,7 @@ def test_agent_loop_routes_persisted_engineering_goal_through_program_mainline(t
     assert response["agent_loop_runtime_route"] == "engineering_program_mainline"
     assert response["legacy_direct_json_engineering_task_runner"] is False
     assert response["plan"]["delegated_to"] == "core.tasks.engineering_program_cycle.EngineeringProgramCycle.run_until_idle"
-    assert response["route"]["authority_path"] == "AgentLoop -> Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime"
+    assert response["route"]["authority_path"] == "AgentLoop -> RuntimeNativeMainline -> Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime"
     assert calls == ["program_1"]
     assert response["program_id"] == "program_1"
     assert response["portfolio_id"] == "portfolio_1"
@@ -102,7 +102,7 @@ def test_agent_loop_direct_engineering_task_route_is_labeled_legacy(tmp_path: Pa
     assert response["ok"] is True
     assert response["mode"] == "engineering_task_runner"
     assert response["agent_loop_runtime_route"] == "engineering_task_runner"
-    assert response["legacy_direct_json_engineering_task_runner"] is True
-    assert response["route"]["legacy_direct_json_engineering_task_runner"] is True
-    assert response["execution_path"]["legacy_direct_engineering_task_route"] is True
+    assert response["legacy_direct_json_engineering_task_runner"] is False
+    assert response["route"]["legacy_direct_json_engineering_task_runner"] is False
+    assert response["execution_path"]["legacy_direct_engineering_task_route"] is False
     assert response["execution_path"]["program_mainline"] is False

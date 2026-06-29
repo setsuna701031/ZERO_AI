@@ -1,0 +1,512 @@
+TaskRunner AER Closure Inventory
+
+generated_at: 2026-06-29T14:20:45
+root: E:\zero_ai
+
+Target Files
+- core/runtime/task_runner.py exists: True
+- tests/test_aer_mainline_closure_seal.py exists: True
+
+File Sizes
+- task_runner.py lines: 5375
+- test_aer_mainline_closure_seal.py lines: 190
+
+Token Inventory
+- run_observer
+  task_runner count: 0
+  aer seal test count: 4
+    line 14:     calls = _patch_registry_run_observer(monkeypatch)
+    line 38:     calls = _patch_registry_run_observer(monkeypatch)
+    line 80:     calls = _patch_registry_run_observer(monkeypatch)
+    line 129: def _patch_registry_run_observer(monkeypatch):
+- registry
+  task_runner count: 25
+    line 3: [registry path] from core.runtime.operator_registry_service import get_operator_registry_service
+    line 21: [registry path] from core.runtime.runtime_surface_registry import is_side_effect_surface
+    line 270: [registry path]         from core.runtime.runtime_route_registry import default_runtime_route_registry
+    line 282: [registry path]         registry = default_runtime_route_registry()
+    line 283: [registry path]         registry.register(
+    line 288: [registry path]         return registry.run(
+    line 1640: [registry path]                     "registry_operation": execution_result.registry_operation,
+    line 1732: [registry path]         capability_registry_hint = (
+    line 1733: [registry path]             state.get("capability_registry_hint")
+    line 1734: [registry path]             if isinstance(state.get("capability_registry_hint"), dict)
+    line 1735: [registry path]             else task.get("capability_registry_hint")
+    line 1745: [registry path]         if isinstance(capability_registry_hint, dict):
+    line 1746: [registry path]             built_route["capability_registry_hint"] = copy.deepcopy(capability_registry_hint)
+    line 2825: [registry path]         task["capability_registry_hint"] = copy.deepcopy(
+    line 2826: [registry path]             safe_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+    line 3438: [registry path]             task["capability_registry_hint"] = copy.deepcopy(
+    line 3439: [registry path]                 safe_runtime_state.get("capability_registry_hint", task.get("capability_registry_hint", {}))
+    line 5186: [registry path]         get_operator_registry_service().mark_failed(session_id, f'{task_id}-fail')
+    line 5344: [function] def _zero_operator_registry_phase1c_session_id(task, context=None):
+    line 5355: [function] def _zero_operator_registry_phase1c_is_initial_tick(args, kwargs):
+    line 5364: [function] def _zero_operator_registry_phase1c_run_task_tick(self, task, *args, **kwargs):
+    line 5365: [registry path]     if _zero_operator_registry_phase1c_is_initial_tick(args, kwargs):
+    line 5367: [registry path]         session_id = _zero_operator_registry_phase1c_session_id(task, context=context)
+    line 5370: [registry path]                 get_operator_registry_service().clear_failure(session_id)
+    line 5375: [registry path] TaskRunner.run_task_tick = _zero_operator_registry_phase1c_run_task_tick
+  aer seal test count: 18
+    line 13: def test_aer_work_package_cli_mainline_uses_registry_and_preserves_metadata(monkeypatch, tmp_path: Path) -> None:
+    line 14:     calls = _patch_registry_run_observer(monkeypatch)
+    line 31:     assert result["runtime_route_registry_admission"] is True
+    line 37: def test_scheduler_tick_and_run_one_step_are_registry_admitted(monkeypatch, tmp_path: Path) -> None:
+    line 38:     calls = _patch_registry_run_observer(monkeypatch)
+    line 72:     assert tick_result["runtime_route_registry_admission"] is True
+    line 74:     assert step_result["runtime_route_registry_admission"] is True
+    line 79: def test_taskrunner_execute_owned_step_and_tick_admissions_use_registry(monkeypatch, tmp_path: Path) -> None:
+    line 80:     calls = _patch_registry_run_observer(monkeypatch)
+    line 107:     assert execute_result["runtime_route_registry_admission"] is True
+    line 110:     assert tick_admission_result["runtime_route_registry_admission"] is True
+    line 116: def test_read_only_control_surface_does_not_use_registry(monkeypatch, tmp_path: Path) -> None:
+    line 117:     def fail_registry_run(*args: Any, **kwargs: Any) -> Any:
+    line 120:     monkeypatch.setattr("core.runtime.runtime_route_registry.RuntimeRouteRegistry.run", fail_registry_run)
+    line 129: def _patch_registry_run_observer(monkeypatch):
+    line 140:         result.setdefault("runtime_route_registry_admission", True)
+    line 145:         route.setdefault("runtime_route_registry_admission", True)
+    line 150:     monkeypatch.setattr("core.runtime.runtime_route_registry.RuntimeRouteRegistry.run", fake_run)
+- RuntimeRouteRegistry
+  task_runner count: 0
+  aer seal test count: 3
+    line 118:         raise AssertionError("read-only/control route should not use RuntimeRouteRegistry")
+    line 120:     monkeypatch.setattr("core.runtime.runtime_route_registry.RuntimeRouteRegistry.run", fail_registry_run)
+    line 150:     monkeypatch.setattr("core.runtime.runtime_route_registry.RuntimeRouteRegistry.run", fake_run)
+- execute_owned_step
+  task_runner count: 10
+    line 298: [reference]         if entrypoint.endswith(".execute_owned_step"):
+    line 300: [reference]         if entrypoint.endswith(".execute_owned_steps"):
+    line 448: [function]     def execute_owned_step(
+    line 462: [reference]                 entrypoint="core.runtime.task_runner.TaskRunner.execute_owned_step",
+    line 463: [reference]                 runner=lambda: self.execute_owned_step(
+    line 473: [reference]                 goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner execute_owned_step"),
+    line 517: [function]     def execute_owned_steps(
+    line 528: [reference]                 entrypoint="core.runtime.task_runner.TaskRunner.execute_owned_steps",
+    line 529: [reference]                 runner=lambda: self.execute_owned_steps(
+    line 536: [reference]                 goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner execute_owned_steps"),
+  aer seal test count: 2
+    line 79: def test_taskrunner_execute_owned_step_and_tick_admissions_use_registry(monkeypatch, tmp_path: Path) -> None:
+    line 87:     execute_result = task_runner_module.TaskRunner.execute_owned_step(
+- tick
+  task_runner count: 244
+    line 96: [reference]     trace_tick_for_step,
+    line 302: [reference]         if entrypoint.endswith(".run_task_tick"):
+    line 637: [reference]         current_tick: int,
+    line 638: [reference]         trace_tick: int,
+    line 681: [reference]             "current_tick": current_tick,
+    line 682: [reference]             "trace_tick": trace_tick,
+    line 747: [reference]                     "current_tick": entry.get("tick", current_tick),
+    line 748: [reference]                     "trace_tick": entry.get("tick", trace_tick),
+    line 843: [reference]         current_tick: int,
+    line 844: [reference]         trace_tick: int,
+    line 851: [reference]             current_tick=current_tick,
+    line 852: [reference]             trace_tick=trace_tick,
+    line 865: [reference]         current_tick: int,
+    line 866: [reference]         trace_tick: int,
+    line 890: [reference]             "current_tick": current_tick,
+    line 891: [reference]             "trace_tick": trace_tick,
+    line 901: [reference]             current_tick=current_tick,
+    line 902: [reference]             trace_tick=trace_tick,
+    line 912: [reference]             current_tick=current_tick,
+    line 913: [reference]             trace_tick=trace_tick,
+    line 954: [reference]         current_tick: int,
+    line 955: [reference]         trace_tick: int,
+    line 1001: [reference]             "tick": trace_tick if trace_tick is not None else current_tick,
+    line 1007: [reference]             "tick": trace_tick if trace_tick is not None else current_tick,
+    line 1035: [reference]             current_tick=current_tick,
+    line 1036: [reference]             trace_tick=trace_tick,
+    line 1053: [reference]             current_tick=current_tick,
+    line 1054: [reference]             trace_tick=trace_tick,
+    line 1066: [reference]         current_tick: int,
+    line 1067: [reference]         trace_tick: int,
+    line 1074: [reference]             current_tick=current_tick,
+    line 1075: [reference]             trace_tick=trace_tick,
+    line 1082: [function]     def run_task_tick(
+    line 1085: [reference]         current_tick: int,
+    line 1091: [reference]                 entrypoint="core.runtime.task_runner.TaskRunner.run_task_tick",
+    line 1092: [reference]                 runner=lambda: self.run_task_tick(
+    line 1094: [reference]                     current_tick=current_tick,
+    line 1098: [reference]                 goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner run_task_tick"),
+    line 1104: [comment]             # the previous loop explicitly requested run_next_tick.
+    line 1144: [reference]                         current_tick=current_tick,
+    ... 204 more task_runner hits
+  aer seal test count: 21
+    line 37: def test_scheduler_tick_and_run_one_step_are_registry_admitted(monkeypatch, tmp_path: Path) -> None:
+    line 42:         "_dispatch_pipeline_tick",
+    line 43:         lambda self, current_tick=None: {
+    line 45:             "mode": "tick",
+    line 52:         lambda self, task, current_tick=None, terminal_statuses=None: {
+    line 56:             "current_tick": current_tick,
+    line 64:     tick_result = scheduler_module.Scheduler.tick(scheduler, current_tick=3)
+    line 68:         current_tick=4,
+    line 72:     assert tick_result["runtime_route_registry_admission"] is True
+    line 73:     assert tick_result["completion"]["scheduler_completion_marker"] is True
+    line 79: def test_taskrunner_execute_owned_step_and_tick_admissions_use_registry(monkeypatch, tmp_path: Path) -> None:
+    line 94:     tick_admission_result = task_runner_module.TaskRunner._run_via_runtime_native_mainline(
+    line 96:         entrypoint="core.runtime.task_runner.TaskRunner.run_task_tick",
+    line 99:             "route_marker": "task-tick",
+    line 100:             "completion": {"taskrunner_tick_completion_marker": True},
+    line 102:         request={"task_id": "task-2", "goal": "tick"},
+    line 103:         goal="tick",
+    line 110:     assert tick_admission_result["runtime_route_registry_admission"] is True
+    line 111:     assert tick_admission_result["runtime_route_key"] == RuntimeRouteKeys.TASK_RUNNER_TICK
+    line 112:     assert tick_admission_result["route_marker"] == "task-tick"
+    line 113:     assert tick_admission_result["completion"]["taskrunner_tick_completion_marker"] is True
+- owned
+  task_runner count: 37
+    line 298: [reference]         if entrypoint.endswith(".execute_owned_step"):
+    line 300: [reference]         if entrypoint.endswith(".execute_owned_steps"):
+    line 308: [reference]         """Construct the owned TaskRunner/StepExecutor pair at one workspace boundary."""
+    line 318: [reference]         """Configure TaskRunner and its owned execution endpoint."""
+    line 448: [function]     def execute_owned_step(
+    line 459: [authority path]         """Execute one step through the TaskRunner-owned authority boundary."""
+    line 462: [reference]                 entrypoint="core.runtime.task_runner.TaskRunner.execute_owned_step",
+    line 463: [reference]                 runner=lambda: self.execute_owned_step(
+    line 473: [reference]                 goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner execute_owned_step"),
+    line 475: [reference]         owned_task = copy.deepcopy(task) if isinstance(task, dict) else {}
+    line 476: [reference]         owned_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    line 478: [reference]             owned_task.get("task_id")
+    line 479: [reference]             or owned_task.get("id")
+    line 480: [reference]             or owned_task.get("task_name")
+    line 481: [reference]             or "taskrunner-owned-step"
+    line 483: [reference]         owned_task.setdefault("task_id", task_id)
+    line 485: [reference]             task=owned_task,
+    line 488: [reference]             upstream_context=owned_context,
+    line 494: [reference]                 task=owned_task,
+    line 502: [reference]             task=owned_task,
+    line 504: [reference]                 **owned_context,
+    line 517: [function]     def execute_owned_steps(
+    line 528: [reference]                 entrypoint="core.runtime.task_runner.TaskRunner.execute_owned_steps",
+    line 529: [reference]                 runner=lambda: self.execute_owned_steps(
+    line 536: [reference]                 goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner execute_owned_steps"),
+    line 538: [reference]         owned_task = copy.deepcopy(task) if isinstance(task, dict) else {}
+    line 539: [reference]         owned_context = copy.deepcopy(context) if isinstance(context, dict) else {}
+    line 541: [reference]             owned_task.get("task_id")
+    line 542: [reference]             or owned_task.get("id")
+    line 543: [reference]             or owned_task.get("task_name")
+    line 544: [reference]             or "taskrunner-owned-batch"
+    line 546: [reference]         owned_task.setdefault("task_id", task_id)
+    line 550: [reference]                 owned_task.get("runtime_execution_capability"),
+    line 571: [reference]             "runtime_system_capability": owned_task.get("runtime_system_capability"),
+    line 575: [reference]             task=owned_task,
+    line 577: [reference]                 **owned_context,
+    line 1433: [evidence path]         a live TerminalExecutionEvidence object issued from TaskRunner-owned
+  aer seal test count: 2
+    line 79: def test_taskrunner_execute_owned_step_and_tick_admissions_use_registry(monkeypatch, tmp_path: Path) -> None:
+    line 87:     execute_result = task_runner_module.TaskRunner.execute_owned_step(
+- admit
+  task_runner count: 0
+  aer seal test count: 1
+    line 37: def test_scheduler_tick_and_run_one_step_are_registry_admitted(monkeypatch, tmp_path: Path) -> None:
+- admitted
+  task_runner count: 0
+  aer seal test count: 1
+    line 37: def test_scheduler_tick_and_run_one_step_are_registry_admitted(monkeypatch, tmp_path: Path) -> None:
+- authority
+  task_runner count: 175
+    line 24: [authority path] from core.runtime.runtime_authority_seal import (
+    line 28: [authority path]     is_task_completion_authority,
+    line 30: [authority path]     issue_task_completion_authority,
+    line 43: [authority path] from core.runtime.runtime_execution_authority_gate import enforce_execution_authority
+    line 44: [authority path] from core.runtime.runtime_execution_authority import (
+    line 49: [authority path] from core.runtime.taskrunner_authority_contract import build_taskrunner_authority_context
+    line 121: [function] def _zero_runtime_authority_for_step(task, step, *, endpoint="step_executor"):
+    line 125: [authority path]     existing = task.get("execution_authority")
+    line 126: [authority path]     if isinstance(existing, dict) and existing.get("execution_authority_granted") is True:
+    line 139: [authority path]             "source": "taskrunner_scheduler_step_authority_v1",
+    line 168: [authority path]         "schema": "zero.runtime.execution_authority.v1",
+    line 169: [authority path]         "is_execution_authority": True,
+    line 170: [authority path]         "execution_authority_granted": True,
+    line 171: [authority path]         "authority_policy": "taskrunner_scheduler_step_authority_v1",
+    line 173: [authority path]         "provenance": {"source": "taskrunner_scheduler_step_authority_v1"},
+    line 178: [authority path]         "authority_scope_id": str(task.get("authority_scope_id") or f"authority:{task_id}"),
+    line 180: [authority path]         "execution_authority_endpoint": endpoint,
+    line 181: [authority path]         "target_execution_authority_endpoint": "step_executor",
+    line 184: [authority path]         "authority_validation": {
+    line 186: [authority path]             "reason": "authority_metadata_valid",
+    line 188: [authority path]             "compatibility_seal": "taskrunner_scheduler_step_authority_v1",
+    line 193: [function] def _zero_attach_step_authority(task, step, *, endpoint="step_executor"):
+    line 199: [authority path]     authority = _zero_runtime_authority_for_step(task, step, endpoint=endpoint)
+    line 201: [authority path]     task.setdefault("execution_authority", authority)
+    line 202: [authority path]     task.setdefault("runtime_execution_authority", authority)
+    line 203: [authority path]     task.setdefault("runtime_identity", authority["runtime_identity"])
+    line 205: [authority path]     step.setdefault("execution_authority", authority)
+    line 206: [authority path]     step.setdefault("runtime_execution_authority", authority)
+    line 207: [authority path]     step.setdefault("runtime_identity", authority["runtime_identity"])
+    line 326: [function]     def _pre_execution_authority_denial(
+    line 331: [authority path]         authority_context: Dict[str, Any],
+    line 338: [authority path]         capability = authority_context.get("runtime_execution_capability")
+    line 339: [authority path]         system_capability = authority_context.get("runtime_system_capability")
+    line 356: [authority path]         capability_provenance = authority_context.get("runtime_capability_provenance")
+    line 361: [authority path]             assert_runtime_capability_consistency(task, authority_context, capability_provenance)
+    line 362: [authority path]             graph_value = task.get("runtime_identity_graph") or authority_context.get("runtime_identity_graph")
+    line 413: [authority path]             "authority_phase": "pre_execution",
+    line 414: [authority path]             "authority_layer": "task_runner",
+    line 415: [authority path]             "authority_policy": "owner_issued_runtime_execution_capability",
+    line 416: [authority path]             "authority_required": True,
+    ... 135 more task_runner hits
+  aer seal test count: 5
+    line 23:             "evidence": {"authority_metadata": {"sealed": True}},
+    line 34:     assert result["evidence"]["authority_metadata"]["sealed"] is True
+    line 85:     runner._build_taskrunner_authority_context = lambda **kwargs: {"authority_phase": "test"}
+    line 109:     assert execute_result["authority"]["sealed"] is True
+    line 174:             "authority": {"sealed": True},
+- evidence
+  task_runner count: 12
+    line 27: [evidence path]     issue_terminal_execution_evidence,
+    line 1428: [evidence path]         terminal_evidence: Any = None,
+    line 1430: [evidence path]         """Seal terminal completion behind live TaskRunner execution evidence.
+    line 1434: [evidence path]         execution lineage; missing, serialized, or synthetic evidence is
+    line 1450: [evidence path]                 evidence=terminal_evidence,
+    line 1462: [evidence path]             raise PermissionError("successful_terminal_execution_evidence_required")
+    line 1474: [evidence path]         evidence = issue_terminal_execution_evidence(
+    line 1488: [evidence path]                         evidence_id=evidence.evidence_id,
+    line 1497: [evidence path]             evidence=evidence,
+    line 1505: [evidence path]         terminal_evidence = kwargs.pop("terminal_evidence", None)
+    line 1515: [evidence path]                 evidence=terminal_evidence,
+    line 1531: [evidence path]                 "error": "terminal_execution_evidence_required",
+  aer seal test count: 4
+    line 23:             "evidence": {"authority_metadata": {"sealed": True}},
+    line 34:     assert result["evidence"]["authority_metadata"]["sealed"] is True
+    line 57:             "evidence": {"scheduler_step_evidence": True},
+    line 76:     assert step_result["evidence"]["scheduler_step_evidence"] is True
+- repair
+  task_runner count: 212
+    line 33: [repair/rollback path] from core.runtime.repair_planner import RepairPlanner
+    line 34: [repair/rollback path] from core.runtime.repair_step_injector import RepairStepInjector
+    line 35: [repair/rollback path] from core.runtime.task_runner_repair_pipeline import maybe_inject_repair_steps_after_failure
+    line 36: [repair/rollback path] from core.runtime.repair_rollback import restore_repair_backup, should_rollback_after_failed_verify
+    line 51: [repair/rollback path]     build_repair_replay_validation,
+    line 95: [repair/rollback path]     sync_repair_chain_summary_from_execution_log,
+    line 98: [repair/rollback path] from core.runtime.task_runner_repair_prepare import (
+    line 99: [repair/rollback path]     first_repair_action_path,
+    line 100: [repair/rollback path]     infer_repair_source_path,
+    line 101: [repair/rollback path]     read_repair_source_text,
+    line 226: [repair/rollback path]     SIDE_EFFECT_STEP_TYPES = {"command", "write_file", "delete_file", "call_api", "shell", "run_python", "code_chain_repair", "autonomous_code_repair"}
+    line 255: [repair/rollback path]         self.repair_planner = RepairPlanner()
+    line 256: [repair/rollback path]         self.repair_step_injector = RepairStepInjector()
+    line 608: [function]     def _is_autonomous_repair_mutation_step(self, step: Any) -> bool:
+    line 613: [repair/rollback path]             "code_chain_repair",
+    line 614: [repair/rollback path]             "autonomous_code_repair",
+    line 621: [function]     def _is_self_repair_mutation_step(self, step: Any) -> bool:
+    line 625: [repair/rollback path]         return step_type in {"code_chain_repair", "autonomous_code_repair"}
+    line 629: [function]     def _build_repair_chain_consistency_record(
+    line 640: [repair/rollback path]         if not self._is_autonomous_repair_mutation_step(step):
+    line 643: [repair/rollback path]         repair_context = state.setdefault("repair_context", {}) if isinstance(state, dict) else {}
+    line 644: [repair/rollback path]         if not isinstance(repair_context, dict):
+    line 645: [repair/rollback path]             repair_context = {}
+    line 647: [repair/rollback path]                 state["repair_context"] = repair_context
+    line 650: [repair/rollback path]         repair_session = repair_context.get("repair_session")
+    line 651: [repair/rollback path]         if isinstance(repair_session, dict):
+    line 652: [repair/rollback path]             chain_id = str(repair_session.get("chain_id") or repair_session.get("session_id") or repair_session.get("id") or "").strip()
+    line 656: [repair/rollback path]                 task.get("repair_chain_id")
+    line 660: [repair/rollback path]                 or "repair_chain"
+    line 665: [repair/rollback path]         replay_validation = step_result.get("repair_replay_validation") if isinstance(step_result.get("repair_replay_validation"), dict) else {}
+    line 666: [repair/rollback path]         autonomous_repair = step_result.get("autonomous_repair_mutation") if isinstance(step_result.get("autonomous_repair_mutation"), dict) else {}
+    line 673: [repair/rollback path]             "participant_kind": "autonomous_self_repair" if self._is_self_repair_mutation_step(step) else "governed_mutation",
+    line 675: [repair/rollback path]             "mutation_id": str(mutation_boundary.get("mutation_id") or autonomous_repair.get("mutation_id") or ""),
+    line 696: [repair/rollback path]                 existing = result_payload.get("repair_chain_consistency")
+    line 704: [repair/rollback path]                 existing_repair = result_payload.get("autonomous_repair_mutation")
+    line 707: [repair/rollback path]                 existing_replay = result_payload.get("repair_replay_validation")
+    line 711: [comment]                 # autonomous repair mutation.  apply_patch/apply_unified_diff
+    line 721: [repair/rollback path]                 if isinstance(existing_repair, dict):
+    line 722: [repair/rollback path]                     inferred_step_type = str(existing_repair.get("step_type") or inferred_step_type).strip().lower()
+    line 723: [repair/rollback path]                     inferred_kind = str(existing_repair.get("kind") or inferred_kind).strip() or inferred_kind
+    ... 172 more task_runner hits
+  aer seal test count: 0
+- rollback
+  task_runner count: 41
+    line 36: [repair/rollback path] from core.runtime.repair_rollback import restore_repair_backup, should_rollback_after_failed_verify
+    line 82: [repair/rollback path]     safe_record_rollback_restore_action,
+    line 712: [comment]                 # rollback must be counted as part of the same chain.
+    line 791: [repair/rollback path]             status = "chain_has_rollback_or_failure"
+    line 1018: [repair/rollback path]                 rollback_on_failure=True,
+    line 1824: [function]     def _attach_system_rollback_capability(task: Dict[str, Any]) -> None:
+    line 1829: [repair/rollback path]         task["runtime_rollback_capability"] = issue_runtime_system_capability(
+    line 1833: [repair/rollback path]             action="rollback",
+    line 1988: [function]     def _safe_record_rollback_restore_action(self, *, task: Dict[str, Any], step: Any, rollback_result: Dict[str, Any], step_index: int, current_tick: int, trace_tick: int) -> None:
+    line 1989: [repair/rollback path]         return safe_record_rollback_restore_action(
+    line 1994: [repair/rollback path]             rollback_result=rollback_result,
+    line 2435: [repair/rollback path]             rollback_result = None
+    line 2436: [repair/rollback path]             if self._should_rollback_after_failed_verify(step=step, step_result=result, state=state):
+    line 2437: [repair/rollback path]                 self._attach_system_rollback_capability(task)
+    line 2438: [repair/rollback path]                 rollback_result = restore_repair_backup(
+    line 2444: [repair/rollback path]                 state = copy.deepcopy(rollback_result.get("runtime_state", state))
+    line 2446: [repair/rollback path]                 if bool(rollback_result.get("ok", False)):
+    line 2447: [repair/rollback path]                     self._safe_record_rollback_restore_action(
+    line 2450: [repair/rollback path]                         rollback_result=rollback_result,
+    line 2470: [repair/rollback path]                             "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+    line 2478: [repair/rollback path]                 rollback = repair_context.get("rollback") if isinstance(repair_context, dict) else None
+    line 2479: [repair/rollback path]                 if isinstance(rollback, dict) and bool(rollback.get("restore_available")):
+    line 2480: [repair/rollback path]                     rollback_result = self.runtime.rollback_last_apply(
+    line 2485: [repair/rollback path]                     state = copy.deepcopy(rollback_result.get("runtime_state", state))
+    line 2565: [repair/rollback path]             if isinstance(rollback_result, dict):
+    line 2566: [repair/rollback path]                 fail_result["rollback_result"] = copy.deepcopy(rollback_result.get("rollback_result"))
+    line 2593: [repair/rollback path]                 "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")) if isinstance(rollback_result, dict) else None,
+    line 2625: [repair/rollback path]                 self._attach_system_rollback_capability(task)
+    line 2626: [repair/rollback path]                 rollback_result = restore_repair_backup(
+    line 2632: [repair/rollback path]                 runtime_state = copy.deepcopy(rollback_result.get("runtime_state", new_state))
+    line 2634: [repair/rollback path]                 if bool(rollback_result.get("ok", False)):
+    line 2635: [repair/rollback path]                     self._safe_record_rollback_restore_action(
+    line 2638: [repair/rollback path]                         rollback_result=rollback_result,
+    line 2658: [repair/rollback path]                             "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+    line 2671: [repair/rollback path]                     "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+    line 2996: [function]     def _should_rollback_after_failed_verify(self, *, step: Any, step_result: Any, state: Any) -> bool:
+    line 2997: [repair/rollback path]         return should_rollback_after_failed_verify(
+    line 3821: [comment] # not bypass rollback, regression verification, scope gate, or strategy retry.
+    line 3861: [repair/rollback path]     rollback_result = repair_context.get("rollback_result") if isinstance(repair_context.get("rollback_result"), dict) else result.get("rollback_result")
+    line 3891: [repair/rollback path]         "rollback_result": copy.deepcopy(rollback_result) if isinstance(rollback_result, dict) else {},
+    ... 1 more task_runner hits
+  aer seal test count: 0
+- legacy
+  task_runner count: 0
+  aer seal test count: 0
+- compat
+  task_runner count: 8
+    line 188: [authority path]             "compatibility_seal": "taskrunner_scheduler_step_authority_v1",
+    line 1360: [comment]     # compatibility entrypoints
+    line 3100: [legacy/compat path]         if not self._syntax_strategy_compat_marker_present():
+    line 3139: [function]     def _syntax_strategy_compat_marker_present(self) -> bool:
+    line 3581: [comment] # - New tasks should already be fixed by Scheduler v7.0.2; this is a compatibility guard.
+    line 4181: [legacy/compat path] except Exception:  # pragma: no cover - staged rollout compatibility
+    line 4714: [legacy/compat path]         result.setdefault("compatibility_seal", "taskrunner_runtime_gate_consolidated")
+    line 5338: [comment] # Initial TaskRunner ticks must not be poisoned by a stale compatibility
+  aer seal test count: 0
+- compatibility
+  task_runner count: 6
+    line 188: [authority path]             "compatibility_seal": "taskrunner_scheduler_step_authority_v1",
+    line 1360: [comment]     # compatibility entrypoints
+    line 3581: [comment] # - New tasks should already be fixed by Scheduler v7.0.2; this is a compatibility guard.
+    line 4181: [legacy/compat path] except Exception:  # pragma: no cover - staged rollout compatibility
+    line 4714: [legacy/compat path]         result.setdefault("compatibility_seal", "taskrunner_runtime_gate_consolidated")
+    line 5338: [comment] # Initial TaskRunner ticks must not be poisoned by a stale compatibility
+  aer seal test count: 0
+- closure
+  task_runner count: 2
+    line 4330: [authority path]     Authority closure must protect privileged execution, but the document
+    line 5209: [comment] # Repair-chain dispatcher-lineage closure.  A repair task that has already
+  aer seal test count: 0
+
+Function Inventory
+- line 121: _zero_runtime_authority_for_step
+- line 193: _zero_attach_step_authority
+- line 259: _runtime_native_mainline_active
+- line 262: _run_via_runtime_native_mainline
+- line 274: delegated_runner
+- line 295: _runtime_route_key_for_entrypoint
+- line 326: _pre_execution_authority_denial
+- line 448: execute_owned_step
+- line 517: execute_owned_steps
+- line 589: _build_mutation_runtime_integration
+- line 608: _is_autonomous_repair_mutation_step
+- line 621: _is_self_repair_mutation_step
+- line 629: _build_repair_chain_consistency_record
+- line 836: _build_repair_replay_validation
+- line 856: _attach_autonomous_repair_mutation_metadata
+- line 1082: run_task_tick
+- line 1361: run_one_tick
+- line 1376: run_one_step
+- line 1391: run_task
+- line 1406: run
+- line 1454: _terminal_completion_authority
+- line 1539: _resolve_max_auto_ticks
+- line 1589: _maybe_run_enabled_capability
+- line 1806: _build_taskrunner_authority_context
+- line 1824: _attach_system_rollback_capability
+- line 1898: _normalize_runtime_mode
+- line 1902: _extract_runtime_mode_from_mapping
+- line 1906: _resolve_runtime_mode
+- line 1910: _apply_runtime_mode_to_step
+- line 1917: _runtime_step_action_type
+- line 1920: _runtime_step_target
+- line 1923: _runtime_step_id
+- line 1926: _runtime_action_id
+- line 1929: _runtime_linked_session_node
+- line 1932: _runtime_action_metadata
+- line 1988: _safe_record_rollback_restore_action
+- line 2007: _run_one_step
+- line 2782: _persist_step_result_to_runtime_state
+- line 2803: _sync_runtime_state_back_to_task
+- line 2838: _trace_tick_for_step
+- line 2936: _maybe_inject_repair_steps_after_failure
+- line 2968: _build_repair_chain_id
+- line 2980: _infer_repair_source_path
+- line 2983: _read_repair_source_text
+- line 2993: _first_repair_action_path
+- line 2996: _should_rollback_after_failed_verify
+- line 3139: _syntax_strategy_compat_marker_present
+- line 3147: _run_regression_verify_phase
+- line 3337: _compact_runtime_state_for_public_payload
+- line 3376: _sync_repair_chain_summary_from_execution_log
+- line 3586: _zero_v702_runner_normalize_rel_path
+- line 3593: _zero_v702_runner_extract_workspace_py_path
+- line 3600: _zero_v702_runner_looks_like_autonomous_repair
+- line 3612: _zero_v702_runner_repair_task_steps_if_needed
+- line 3662: _zero_v702_task_runner_run_one_step
+- line 3701: _zero_v703_task_runner_determine_failure_type
+- line 3741: _zero_v710_task_runner_determine_failure_type
+- line 3794: _zero_v731_task_runner_determine_failure_type
+- line 4014: _zero_v800_task_runner_run_one_step
+- line 4095: _zero_v801_public_runtime_value
+- line 4109: _zero_v801_task_runner_finalize_public_result
+- line 4190: _zero_v810_taskrunner_init
+- line 4201: _zero_v810_persist_step_result_to_runtime_state
+- line 4301: _zero_boundary_extract_authority_context
+- line 4314: _zero_boundary_extract_execution_authority
+- line 4410: _zero_boundary_build_document_execution_authority
+- line 4434: _zero_boundary_build_taskrunner_authority_context
+- line 4540: _zero_run_task_adaptive
+- line 4565: _taskrunner_result_text
+- line 4579: _taskrunner_is_soft_authority_gate_failure
+- line 4593: _taskrunner_has_dispatch_authority
+- line 4610: _taskrunner_select_current_step
+- line 4626: _taskrunner_authority_denial_shape
+- line 4682: _taskrunner_runtime_gate_fallback_step
+- line 4721: _taskrunner_consolidated_run_task_tick
+- line 4735: _taskrunner_consolidated_run_task
+- line 4752: _stage3b_taskrunner_enrich_success_result
+- line 4784: _stage3b_run_task_tick
+- line 4793: _stage3b_run_task
+- line 4821: _zero_stage3b_runtime_mode_v2
+- line 4981: _zero_stage3b_run_task_tick_v2
+- line 5014: _zero_stage3b_run_task_v2
+- line 5032: _zero_stage3b_runtime_state_from_task_v3
+- line 5052: _zero_stage3b_normalize_taskrunner_result_v3
+- line 5145: _zero_stage3b_run_task_tick_v3
+- line 5154: _zero_stage3b_run_task_v3
+- line 5168: _zero_stage3b_taskrunner_record_operator_failure_v4
+- line 5194: _zero_stage3b_run_task_tick_v4
+- line 5203: _zero_stage3b_run_task_v4
+- line 5214: _repair_chain_has_live_dispatcher_capability
+- line 5239: _is_explicit_repair_chain_task
+- line 5253: _repair_chain_dispatcher_denial_shape
+- line 5310: _repair_lineage_run_task_tick
+- line 5325: _repair_lineage_run_task
+- line 5344: _zero_operator_registry_phase1c_session_id
+- line 5355: _zero_operator_registry_phase1c_is_initial_tick
+- line 5364: _zero_operator_registry_phase1c_run_task_tick
+
+Classification
+- current mainline: TaskRunner AER closure, focusing on registry admission for owned step execution and tick paths
+- likely closure target: make execute_owned_step and tick paths explicitly registry-admitted through one helper
+- likely test driver: tests/test_aer_mainline_closure_seal.py
+- avoid scope creep: do not touch Scheduler, AgentLoop, CLI, RuntimeRouteRegistry, or Runtime Native marker blocks
+
+Recommended Package24
+- add a small TaskRunner registry admission helper if missing
+- route owned-step execution and tick observer paths through that helper
+- add/refresh TaskRunner AER closure seal for helper use and import safety
+- keep validation local and targeted first
+
+Not touched
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

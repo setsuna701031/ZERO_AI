@@ -1,0 +1,46 @@
+TaskRunner Registry Legacy Cleanup Phase1 Report
+
+generated_at: 2026-06-29T14:31:24
+root: E:\zero_ai
+target: core/runtime/task_runner.py
+
+Cleanup Guard
+- installed _zero_taskrunner_registry_legacy_cleanup_guard_v28
+- guard blocks execute/tick admission bypass when _aer_registry_admit is unavailable
+- guard is bound to TaskRunner as _zero_registry_legacy_cleanup_guard when TaskRunner exists
+
+Remaining direct registry calls
+- before count: 1
+- after count: 1
+  - line 283 | function=_run_via_runtime_native_mainline | owner=registry | method=register | classification=review_before_migration | source=registry.register(             route_key,             lambda _request, _workspace_root, _goal: delegated_runner,             {"entrypoint": entrypoint, "component": "TaskRunner"},         )
+
+Cleanup classification after phase1
+- candidate_for_unified_admission count: 0
+- already_unified count: 0
+- preserve_for_specialized_flow count: 0
+- review_before_migration count: 1
+  - line 283 function=_run_via_runtime_native_mainline method=register
+
+Preserved specialized paths
+- repair remains preserved until repair-specific AER seal exists
+- rollback remains preserved until rollback payload semantics are sealed
+- evidence remains preserved until evidence authority semantics are sealed
+- authority/checkpoint/recovery paths remain preserved unless separately sealed
+
+No blind deletion
+- Package28 does not delete repair/rollback/evidence registry paths.
+- Package28 adds a bypass guard first, so Package29 can safely delete only proven duplicate paths.
+
+Not touched
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_legacy_cleanup_phase1.py tests/test_taskrunner_registry_legacy_cleanup_inventory.py tests/test_taskrunner_registry_callsite_migration.py tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

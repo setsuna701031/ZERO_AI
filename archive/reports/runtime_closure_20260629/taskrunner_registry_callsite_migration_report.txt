@@ -1,0 +1,25 @@
+Package26 TaskRunner Registry Callsite Migration Report
+
+root: E:\zero_ai
+task_runner: core\runtime\task_runner.py
+test: tests\test_taskrunner_registry_callsite_migration.py
+
+Completed:
+- installed execute_owned_step wrapper that admits through the Package24 unified helper before delegating
+- installed tick wrapper that admits through the Package24 unified helper before delegating
+- kept repair/rollback/evidence paths unchanged
+- added focused callsite migration tests
+
+Not touched:
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation:
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_callsite_migration.py tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting:
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

@@ -771,37 +771,3 @@ class RuntimeNativeMainline:
         if not text:
             raise RuntimeNativeMainlineRejected(f"{field_name}_required")
         return text
-
-# ZERO_PACKAGE22_RUNTIME_NATIVE_COMPATIBILITY_CALL_COMPACTION_BEGIN
-try:
-    import core.runtime.runtime_native_entry_adapter as _zero_runtime_native_entry_adapter
-
-    def _zero_runtime_native_mainline_call_adapter(_zero_name, *args, **kwargs):
-        return getattr(_zero_runtime_native_entry_adapter, _zero_name)(*args, **kwargs)
-
-    def _zero_runtime_native_mainline_admit_legacy_request(self, payload):
-        return _zero_runtime_native_mainline_call_adapter("run_" + "runtime_" + "native_" + "entry", self, payload)
-
-    def _zero_runtime_native_mainline_normalize_legacy_request(self, payload):
-        return _zero_runtime_native_mainline_call_adapter("normalize_" + "runtime_" + "native_" + "entry_" + "request", payload)
-
-    def _zero_runtime_native_mainline_retire_legacy_entry(self, payload):
-        return _zero_runtime_native_mainline_call_adapter("run_" + "runtime_" + "native_" + "entry", self, payload)
-
-    def _zero_runtime_native_mainline_dispatch_legacy_entry(self, payload):
-        return _zero_runtime_native_mainline_call_adapter("run_" + "runtime_" + "native_" + "entry", self, payload)
-
-    for _zero_cls_name in ("RuntimeNativeMainLine", "RuntimeNativeMainline", "RuntimeNativeMainlineV1"):
-        _zero_cls = globals().get(_zero_cls_name)
-        if isinstance(_zero_cls, type):
-            for _zero_method_name, _zero_method in (
-                ("admit_legacy_request", _zero_runtime_native_mainline_admit_legacy_request),
-                ("normalize_legacy_request", _zero_runtime_native_mainline_normalize_legacy_request),
-                ("retire_legacy_entry", _zero_runtime_native_mainline_retire_legacy_entry),
-                ("dispatch_legacy_entry", _zero_runtime_native_mainline_dispatch_legacy_entry),
-            ):
-                if not hasattr(_zero_cls, _zero_method_name):
-                    setattr(_zero_cls, _zero_method_name, _zero_method)
-except Exception:
-    pass
-# ZERO_PACKAGE22_RUNTIME_NATIVE_COMPATIBILITY_CALL_COMPACTION_END

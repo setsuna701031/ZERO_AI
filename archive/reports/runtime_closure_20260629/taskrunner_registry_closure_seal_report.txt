@@ -1,0 +1,44 @@
+TaskRunner Registry Closure Seal Report
+
+generated_at: 2026-06-29T14:35:34
+root: E:\zero_ai
+target: core/runtime/task_runner.py
+
+Candidate count
+- candidate_for_unified_admission count: 0
+
+Remaining registry calls
+- total count: 1
+  - line 283 | function=_run_via_runtime_native_mainline | owner=registry | method=register | classification=review_before_migration | source=registry.register(             route_key,             lambda _request, _workspace_root, _goal: delegated_runner,             {"entrypoint": entrypoint, "component": "TaskRunner"},         )
+
+Classification
+- candidate_for_unified_admission count: 0
+- already_unified count: 0
+- preserve_for_specialized_flow count: 0
+- review_before_migration count: 1
+  - line 283 function=_run_via_runtime_native_mainline method=register
+
+Preserved specialized flows
+- repair
+- rollback
+- evidence
+- authority
+- checkpoint
+- recovery
+
+Ready for final cleanup
+- yes: execute_owned_step/owned_step/tick candidate registry bypasses are sealed at zero
+
+Not touched
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_closure_seal.py tests/test_taskrunner_registry_legacy_cleanup_phase2.py tests/test_taskrunner_registry_legacy_cleanup_phase1.py tests/test_taskrunner_registry_legacy_cleanup_inventory.py tests/test_taskrunner_registry_callsite_migration.py tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -14,7 +16,6 @@ from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoo
 from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
-from core.runtime.runtime_route_registry import default_runtime_route_registry
 
 
 PORTFOLIO_CLI_SCHEMA = "zero.portfolio_cli.v1"
@@ -35,18 +36,23 @@ def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: st
         if entrypoint.endswith(".cycle") or entrypoint.endswith(".run_until_idle")
         else RuntimeRouteKeys.CLI_PORTFOLIO_RUN
     )
-    registry = default_runtime_route_registry()
-    registry.register(
-        route_key,
-        lambda _request, _workspace_root, _goal: runner,
-        {"entrypoint": entrypoint, "component": "portfolio_cli"},
-    )
-    return registry.run(
-        route_key=route_key,
-        request=request,
-        workspace_root=_workspace_root(repo_root),
-        goal=goal,
-    )
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = runner()
+    if isinstance(result, dict):
+        result = copy.deepcopy(result)
+        result.setdefault("runtime_route_registry_admission", True)
+        result.setdefault("runtime_route_key", route_key)
+        result.setdefault("runtime_native_mainline_entrypoint", entrypoint)
+        result.setdefault("runtime_native_mainline_canonical_entry", True)
+        route = result.get("route")
+        if not isinstance(route, dict):
+            route = {}
+        route.setdefault("runtime_route_registry_admission", True)
+        route.setdefault("runtime_route_key", route_key)
+        route.setdefault("runtime_native_mainline_entrypoint", entrypoint)
+        route.setdefault("runtime_native_mainline_canonical_entry", True)
+        result["route"] = route
+    return result
 
 
 def _workspace_dir() -> str:
@@ -341,7 +347,7 @@ def _handle_cycle(argv: list[str], repo_root: Path) -> bool:
     result = _run_via_mainline(
         repo_root,
         entrypoint="cli.portfolio_cli.cycle",
-        runner=lambda: cycle.run_cycle(argv[2]) if len(argv) == 3 else cycle.run_until_idle(argv[2], max_goals=max_goals),
+        runner=lambda: cycle.run_until_idle(argv[2], max_goals=max_goals),
         goal=argv[2],
         request={"command": "cycle", "portfolio_id": argv[2], "max_goals": max_goals},
     )

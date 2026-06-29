@@ -1,0 +1,126 @@
+Runtime Native Mainline Compatibility Inventory
+
+generated_at: 2026-06-29T14:14:19
+root: E:\zero_ai
+mainline: core\runtime\runtime_native_mainline.py
+adapter: core\runtime\runtime_native_entry_adapter.py
+
+Marked Blocks
+- ZERO_PACKAGE16_RUNTIME_NATIVE_ENTRY_ADAPTER_BINDING_BEGIN count: 0
+- ZERO_PACKAGE16_RUNTIME_NATIVE_ENTRY_ADAPTER_BINDING_END count: 0
+- ZERO_PACKAGE17_RUNTIME_NATIVE_ENTRY_ADAPTER_BINDING_BEGIN count: 0
+- ZERO_PACKAGE17_RUNTIME_NATIVE_ENTRY_ADAPTER_BINDING_END count: 0
+- ZERO_PACKAGE18_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_BEGIN count: 0
+- ZERO_PACKAGE18_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_END count: 0
+- ZERO_PACKAGE19_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_PHASE2_BEGIN count: 1
+- ZERO_PACKAGE19_RUNTIME_NATIVE_COMPATIBILITY_RETIREMENT_PHASE2_END count: 1
+
+Token Inventory
+- normalize_runtime_native_entry_request
+  mainline count: 2
+    line 778: [adapter import alias]         normalize_runtime_native_entry_request as _zero_normalize_runtime_native_entry_request,
+    line 786: [reference]         return _zero_normalize_runtime_native_entry_request(payload)
+  adapter count: 5
+    line 74: def normalize_runtime_native_entry_request(value: Any) -> Dict[str, Any]:
+    line 129:     return normalize_runtime_native_entry_request(payload)
+    line 161:         return normalize_runtime_native_entry_request(value)
+    line 164:         request = normalize_runtime_native_entry_request(value)
+    line 206:     "normalize_runtime_native_entry_request",
+- run_runtime_native_entry
+  mainline count: 4
+    line 779: [adapter import alias]         run_runtime_native_entry as _zero_run_runtime_native_entry,
+    line 783: [reference]         return _zero_run_runtime_native_entry(self, payload)
+    line 789: [reference]         return _zero_run_runtime_native_entry(self, payload)
+    line 792: [reference]         return _zero_run_runtime_native_entry(self, payload)
+  adapter count: 3
+    line 178: def run_runtime_native_entry(mainline: Any, value: Any) -> Dict[str, Any]:
+    line 197:         return run_runtime_native_entry(mainline, payload)
+    line 209:     "run_runtime_native_entry",
+- run_via_runtime_native_mainline
+  mainline count: 0
+  adapter count: 2
+    line 182: def run_via_runtime_native_mainline(**kwargs: Any) -> Any:
+    line 210:     "run_via_runtime_native_mainline",
+- legacy
+  mainline count: 14
+    line 38: [compatibility text] MAINLINE_MODE_LEGACY_ADAPTER = "legacy_adapter"
+    line 504: [compatibility text]     def run_legacy_request(
+    line 516: [compatibility text]             raise RuntimeNativeMainlineRejected("legacy_request_goal_required")
+    line 525: [compatibility text]             metadata={"legacy_request": copy.deepcopy(payload)},
+    line 537: [compatibility text]         """Canonical admission wrapper for legacy entrypoints.
+    line 593: [compatibility text]             path.setdefault("legacy_behavior_preserved", True)
+    line 782: [bridge helper]     def _zero_runtime_native_mainline_admit_legacy_request(self, payload):
+    line 785: [bridge helper]     def _zero_runtime_native_mainline_normalize_legacy_request(self, payload):
+    line 788: [bridge helper]     def _zero_runtime_native_mainline_retire_legacy_entry(self, payload):
+    line 791: [bridge helper]     def _zero_runtime_native_mainline_dispatch_legacy_entry(self, payload):
+    line 798: [compatibility text]                 ("admit_legacy_request", _zero_runtime_native_mainline_admit_legacy_request),
+    line 799: [compatibility text]                 ("normalize_legacy_request", _zero_runtime_native_mainline_normalize_legacy_request),
+    line 800: [compatibility text]                 ("retire_legacy_entry", _zero_runtime_native_mainline_retire_legacy_entry),
+    line 801: [compatibility text]                 ("dispatch_legacy_entry", _zero_runtime_native_mainline_dispatch_legacy_entry),
+  adapter count: 0
+- compatibility
+  mainline count: 8
+    line 528: [compatibility text]     def run_compatibility_entry(
+    line 547: [compatibility text]         compatibility_metadata = {
+    line 548: [compatibility text]             "runtime_native_mainline_compatibility_wrapper": True,
+    line 549: [compatibility text]             "compatibility_entrypoint": entrypoint,
+    line 586: [compatibility text]             result_payload.setdefault("runtime_native_mainline_compatibility_wrapper", True)
+    line 605: [compatibility text]             metadata=compatibility_metadata,
+    line 610: [compatibility text]                 "runtime_native_mainline_compatibility_entry_failed"
+    line 612: [compatibility text]                 else "runtime_native_mainline_compatibility_entry_completed"
+  adapter count: 0
+- dispatch
+  mainline count: 2
+    line 791: [bridge helper]     def _zero_runtime_native_mainline_dispatch_legacy_entry(self, payload):
+    line 801: [compatibility text]                 ("dispatch_legacy_entry", _zero_runtime_native_mainline_dispatch_legacy_entry),
+  adapter count: 2
+    line 133:     for name in ("run_native", "run_entry", "run_request", "run", "execute", "submit", "admit", "dispatch"):
+    line 172:     dispatch = run
+- admit_legacy_request
+  mainline count: 2
+    line 782: [bridge helper]     def _zero_runtime_native_mainline_admit_legacy_request(self, payload):
+    line 798: [compatibility text]                 ("admit_legacy_request", _zero_runtime_native_mainline_admit_legacy_request),
+  adapter count: 0
+- normalize_legacy_request
+  mainline count: 2
+    line 785: [bridge helper]     def _zero_runtime_native_mainline_normalize_legacy_request(self, payload):
+    line 799: [compatibility text]                 ("normalize_legacy_request", _zero_runtime_native_mainline_normalize_legacy_request),
+  adapter count: 0
+- retire_legacy_entry
+  mainline count: 2
+    line 788: [bridge helper]     def _zero_runtime_native_mainline_retire_legacy_entry(self, payload):
+    line 800: [compatibility text]                 ("retire_legacy_entry", _zero_runtime_native_mainline_retire_legacy_entry),
+  adapter count: 0
+- dispatch_legacy_entry
+  mainline count: 2
+    line 791: [bridge helper]     def _zero_runtime_native_mainline_dispatch_legacy_entry(self, payload):
+    line 801: [compatibility text]                 ("dispatch_legacy_entry", _zero_runtime_native_mainline_dispatch_legacy_entry),
+  adapter count: 0
+
+Function Inventory
+- line 504: run_legacy_request
+- line 528: run_compatibility_entry
+- line 782: _zero_runtime_native_mainline_admit_legacy_request
+- line 785: _zero_runtime_native_mainline_normalize_legacy_request
+- line 788: _zero_runtime_native_mainline_retire_legacy_entry
+- line 791: _zero_runtime_native_mainline_dispatch_legacy_entry
+
+Classification
+- active bridge: Package19 marker block in core/runtime/runtime_native_mainline.py
+- compatibility owner: core/runtime/runtime_native_entry_adapter.py
+- current phase2 failure driver: mainline token count for normalize_runtime_native_entry_request exceeded the Package19 test threshold
+- recommended next package: Package21 should remove redundant mainline token references only after confirming they are not required by the active bridge
+
+Not touched
+- Scheduler
+- TaskRunner
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_runtime_native_mainline_compatibility_inventory.py tests/test_runtime_native_mainline_compatibility_retirement_phase2.py tests/test_runtime_native_mainline_compatibility_retirement_phase1.py tests/test_runtime_native_mainline_adapter_binding_cleanup.py tests/test_runtime_native_compatibility_adapter_extraction.py tests/test_runtime_native_compatibility_entry_semantics.py tests/test_runtime_route_registry_admission.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

@@ -1,0 +1,43 @@
+TaskRunner Registry Direct Admission Inventory
+
+generated_at: 2026-06-29T14:25:21
+root: E:\zero_ai
+target: core/runtime/task_runner.py
+
+Package24 Helper Presence
+- _zero_taskrunner_registry_admit_aer_closure_v24 count: 4
+- _zero_taskrunner_registry_admit_owned_step_v24 count: 2
+- _zero_taskrunner_registry_admit_tick_v24 count: 2
+- _aer_registry_admit count: 2
+- _registry_admit_owned_step count: 4
+- _registry_admit_tick count: 4
+
+Direct Registry Call Inventory
+total_direct_registry_calls: 1
+- line 283 | function=_run_via_runtime_native_mainline | owner=registry | method=register | source=registry.register(             route_key,             lambda _request, _workspace_root, _goal: delegated_runner,             {"entrypoint": entrypoint, "component": "TaskRunner"},         )
+
+Classification
+- Package24 installed the unified TaskRunner admission helper.
+- Package25 does not rewrite call sites blindly; it records exact direct registry call sites for the next reduction package.
+- Calls in execute_owned_step/tick-related functions are the first Package26 migration candidates.
+- Calls in repair/rollback/evidence paths must be reviewed before replacement because they may carry specialized payload semantics.
+
+Recommended Package26
+- migrate direct registry calls in execute_owned_step and tick paths to _aer_registry_admit or the Package24 wrapper helpers
+- preserve payload shape verified by tests/test_aer_mainline_closure_seal.py
+- add a focused seal that monkeypatches _aer_registry_admit and proves owned-step/tick paths enter it
+- keep repair/rollback registry calls unchanged until separately sealed
+
+Not touched
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

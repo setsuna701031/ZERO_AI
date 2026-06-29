@@ -2004,15 +2004,23 @@ class TaskRunner:
     # step execution
     # ============================================================
 
-    def _execute_current_runtime_step(
-        self,
-        *,
-        task: Dict[str, Any],
-        state: Dict[str, Any],
-        steps: List[Dict[str, Any]],
-        idx: int,
-        current_tick: int,
-    ) -> Dict[str, Any]:
+    def _run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+        prepared_execution = prepare_step_execution(
+            runtime=self.runtime,
+            task=task,
+            current_tick=current_tick,
+            ensure_execution_trace_defaults=self._ensure_execution_trace_defaults,
+            maybe_block_direct_missing_subgoal_dependency=self._maybe_block_direct_missing_subgoal_dependency,
+            safe_block_engineering_action=self._safe_block_engineering_action,
+            terminal_completion_authority=self._terminal_completion_authority,
+        )
+        if not bool(prepared_execution.get("continue_execution", False)):
+            return prepared_execution.get("terminal_result")
+
+        state = prepared_execution["state"]
+        steps = prepared_execution["steps"]
+        idx = prepared_execution["step_index"]
+
         step, runtime_mode = self._apply_runtime_mode_to_step(
             task=task,
             state=state,
@@ -2188,121 +2196,7 @@ class TaskRunner:
             },
             source="policy_layer",
         )
-        return {
-            "state": state,
-            "steps": steps,
-            "idx": idx,
-            "step": step,
-            "runtime_mode": runtime_mode,
-            "trace_tick": trace_tick,
-            "result": result,
-            "error_payload": error_payload,
-        }
 
-    def _prepare_runtime_step_context(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
-        prepared_execution = prepare_step_execution(
-            runtime=self.runtime,
-            task=task,
-            current_tick=current_tick,
-            ensure_execution_trace_defaults=self._ensure_execution_trace_defaults,
-            maybe_block_direct_missing_subgoal_dependency=self._maybe_block_direct_missing_subgoal_dependency,
-            safe_block_engineering_action=self._safe_block_engineering_action,
-            terminal_completion_authority=self._terminal_completion_authority,
-        )
-        if not bool(prepared_execution.get("continue_execution", False)):
-            return {
-                "continue_execution": False,
-                "terminal_result": prepared_execution.get("terminal_result"),
-            }
-
-        return {
-            "continue_execution": True,
-            "state": prepared_execution["state"],
-            "steps": prepared_execution["steps"],
-            "idx": prepared_execution["step_index"],
-        }
-
-    def _commit_runtime_state(
-        self,
-        *,
-        task: Dict[str, Any],
-        commit_result: Dict[str, Any],
-        default_state: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        state_source = commit_result.get("runtime_state", default_state or {})
-        runtime_state = copy.deepcopy(state_source)
-        self._ensure_execution_trace_defaults(task, runtime_state)
-        return runtime_state
-
-    def _runtime_step_result_payload(
-        self,
-        *,
-        ok: bool,
-        action: str,
-        task: Dict[str, Any],
-        runtime_state: Dict[str, Any],
-        status: Optional[str] = None,
-        step_result: Optional[Dict[str, Any]] = None,
-        include_last_result: bool = True,
-        **fields: Any,
-    ) -> Dict[str, Any]:
-        payload = {
-            "ok": ok,
-            "action": action,
-            "task": copy.deepcopy(task),
-            "runtime_state": runtime_state,
-            "status": status if status is not None else runtime_state.get("status", "running"),
-        }
-        if include_last_result:
-            payload["last_result"] = copy.deepcopy(step_result)
-        payload.update(fields)
-        payload["execution_trace"] = copy.deepcopy(runtime_state.get("execution_trace", []))
-        return payload
-
-    def _handle_runtime_step_success(
-        self,
-        *,
-        task: Dict[str, Any],
-        state: Dict[str, Any],
-        steps: List[Dict[str, Any]],
-        idx: int,
-        step: Any,
-        result: Dict[str, Any],
-        current_tick: int,
-        trace_tick: int,
-    ) -> Dict[str, Any]:
-        advance_result = self.runtime.advance_step(
-            task=task,
-            step_result=result,
-            current_tick=current_tick,
-        )
-        self._safe_complete_engineering_action(
-            task=task,
-            step=step,
-            step_result=result,
-            step_index=idx,
-            current_tick=current_tick,
-            trace_tick=trace_tick,
-        )
-        new_state = self._commit_runtime_state(task=task, commit_result=advance_result)
-        return {
-            "state": new_state,
-            "advance_result": advance_result,
-        }
-
-    def _handle_runtime_step_failure(
-        self,
-        *,
-        task: Dict[str, Any],
-        state: Dict[str, Any],
-        steps: List[Dict[str, Any]],
-        idx: int,
-        step: Any,
-        result: Dict[str, Any],
-        error_payload: Any,
-        current_tick: int,
-        trace_tick: int,
-    ) -> Optional[Dict[str, Any]]:
         if self._should_convert_policy_block_to_review(result):
             review_id = self._build_policy_review_id(task=task, step_index=idx, current_tick=current_tick)
             review_payload = {
@@ -2334,7 +2228,8 @@ class TaskRunner:
                 review_payload=review_payload,
                 reason=str(review_payload.get("policy_reason") or "policy blocked action"),
             )
-            runtime_state = self._commit_runtime_state(task=task, commit_result=wait_result)
+            runtime_state = copy.deepcopy(wait_result.get("runtime_state", {}))
+            self._ensure_execution_trace_defaults(task, runtime_state)
 
             self.audit.log_event(
                 task,
@@ -2353,19 +2248,19 @@ class TaskRunner:
                 source="policy_layer",
             )
 
-            return self._runtime_step_result_payload(
-                ok=True,
-                action="blocked_for_review",
-                task=task,
-                runtime_state=runtime_state,
-                status=runtime_state.get("status", "waiting_review"),
-                include_last_result=False,
-                next_action=runtime_state.get("next_action", "wait_for_external_event"),
-                requires_review=True,
-                review_id=runtime_state.get("review_id", review_id),
-                review_payload=copy.deepcopy(runtime_state.get("review_payload", review_payload)),
-                blockers=copy.deepcopy(runtime_state.get("blockers", [])),
-            )
+            return {
+                "ok": True,
+                "action": "blocked_for_review",
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": runtime_state.get("status", "waiting_review"),
+                "next_action": runtime_state.get("next_action", "wait_for_external_event"),
+                "requires_review": True,
+                "review_id": runtime_state.get("review_id", review_id),
+                "review_payload": copy.deepcopy(runtime_state.get("review_payload", review_payload)),
+                "blockers": copy.deepcopy(runtime_state.get("blockers", [])),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
 
         authority_denied = bool(
             isinstance(error_payload, dict)
@@ -2388,7 +2283,7 @@ class TaskRunner:
                 current_tick=current_tick,
                 status=authority_failure_status,
             )
-            runtime_state = self._commit_runtime_state(task=task, commit_result=failure_record_result)
+            runtime_state = copy.deepcopy(failure_record_result.get("runtime_state", {}))
             self._safe_block_engineering_action(
                 task=task,
                 step=step,
@@ -2398,22 +2293,24 @@ class TaskRunner:
                 trace_tick=trace_tick,
                 reason="runtime_dispatcher_live_capability_required",
             )
-            return self._runtime_step_result_payload(
-                ok=False,
-                action="retry",
-                task=task,
-                runtime_state=runtime_state,
-                status=authority_failure_status,
-                step_result=result,
-                failure_type="execution_authority_denied",
-                failure_decision={
+            self._ensure_execution_trace_defaults(task, runtime_state)
+            return {
+                "ok": False,
+                "action": "retry",
+                "failure_type": "execution_authority_denied",
+                "failure_decision": {
                     "retry": True,
                     "replan": False,
                     "fail": False,
                     "wait": False,
                 },
-                error=copy.deepcopy(error_payload),
-            )
+                "error": copy.deepcopy(error_payload),
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": authority_failure_status,
+                "last_result": copy.deepcopy(result),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
 
         if not result.get("ok") and self._should_advance_failed_step_observation(
             step=step,
@@ -2436,290 +2333,282 @@ class TaskRunner:
                 step_result=result,
                 current_tick=current_tick,
             )
-            runtime_state = self._commit_runtime_state(task=task, commit_result=advance_result)
-            return self._runtime_step_result_payload(
-                ok=True,
-                action="step_failed_observed",
+            runtime_state = copy.deepcopy(advance_result.get("runtime_state", {}))
+            self._ensure_execution_trace_defaults(task, runtime_state)
+            return {
+                "ok": True,
+                "action": "step_failed_observed",
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": runtime_state.get("status", "running"),
+                "last_result": copy.deepcopy(result),
+                "current_step_index": runtime_state.get("current_step_index", idx + 1),
+                "steps_total": runtime_state.get("steps_total", len(steps)),
+                "error": result.get("error"),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
+
+        if not result.get("ok"):
+            failure_type = self._determine_failure_type(step, result)
+            decision = FailurePolicy.decide(failure_type)
+
+            failure_decision = {
+                "retry": decision.retry,
+                "replan": decision.replan,
+                "fail": decision.fail,
+                "wait": decision.wait,
+            }
+
+            failure_status = "running"
+            if decision.retry:
+                failure_status = "retrying"
+            elif decision.replan and self.replanner:
+                failure_status = "replanning"
+
+            failure_record_result = self.runtime.record_step_failure(
                 task=task,
-                runtime_state=runtime_state,
-                status=runtime_state.get("status", "running"),
+                step=step,
                 step_result=result,
-                current_step_index=runtime_state.get("current_step_index", idx + 1),
-                steps_total=runtime_state.get("steps_total", len(steps)),
-                error=result.get("error"),
-            )
-
-        if result.get("ok"):
-            return None
-
-        failure_type = self._determine_failure_type(step, result)
-        decision = FailurePolicy.decide(failure_type)
-
-        failure_decision = {
-            "retry": decision.retry,
-            "replan": decision.replan,
-            "fail": decision.fail,
-            "wait": decision.wait,
-        }
-
-        failure_status = "running"
-        if decision.retry:
-            failure_status = "retrying"
-        elif decision.replan and self.replanner:
-            failure_status = "replanning"
-
-        failure_record_result = self.runtime.record_step_failure(
-            task=task,
-            step=step,
-            step_result=result,
-            current_tick=current_tick,
-            status=failure_status,
-        )
-        state = self._commit_runtime_state(task=task, commit_result=failure_record_result)
-        self._safe_fail_engineering_action(
-            task=task,
-            step=step,
-            step_result=result,
-            step_index=idx,
-            current_tick=current_tick,
-            trace_tick=trace_tick,
-        )
-
-        repair_injection_result = self._maybe_inject_repair_steps_after_failure(
-            task=task,
-            state=state,
-            step=step,
-            step_result=result,
-            step_index=idx,
-            current_tick=current_tick,
-            trace_tick=trace_tick,
-        )
-        if isinstance(repair_injection_result, dict) and repair_injection_result.get("policy_blocked"):
-            runtime_state = self._commit_runtime_state(
-                task=task,
-                commit_result=repair_injection_result,
-                default_state=state,
-            )
-            return self._runtime_step_result_payload(
-                ok=False,
-                action="repair_policy_blocked",
-                task=task,
-                runtime_state=runtime_state,
-                status=runtime_state.get("status", "failed"),
-                step_result=result,
-                failure_type=failure_type,
-                failure_decision=failure_decision,
-                repair_policy_decision=copy.deepcopy(repair_injection_result.get("repair_policy_decision", {})),
-                error=runtime_state.get("last_error", "repair policy blocked"),
-                current_step_index=runtime_state.get("current_step_index", idx),
-                steps_total=runtime_state.get("steps_total"),
-            )
-
-        if isinstance(repair_injection_result, dict) and repair_injection_result.get("ok"):
-            runtime_state = self._commit_runtime_state(
-                task=task,
-                commit_result=repair_injection_result,
-                default_state=state,
-            )
-            return self._runtime_step_result_payload(
-                ok=True,
-                action="repair_steps_injected",
-                task=task,
-                runtime_state=runtime_state,
-                status=runtime_state.get("status", "running"),
-                step_result=result,
-                failure_type=failure_type,
-                failure_decision=failure_decision,
-                repair_policy_decision=copy.deepcopy(repair_injection_result.get("repair_policy_decision", {})),
-                repair_chain_id=repair_injection_result.get("repair_chain_id", ""),
-                repair_plan=copy.deepcopy(repair_injection_result.get("repair_plan")),
-                repair_injection=copy.deepcopy(repair_injection_result.get("repair_injection")),
-                current_step_index=runtime_state.get("current_step_index", idx + 1),
-                steps_total=runtime_state.get("steps_total"),
-            )
-
-        rollback_result = None
-        if self._should_rollback_after_failed_verify(step=step, step_result=result, state=state):
-            self._attach_system_rollback_capability(task)
-            rollback_result = restore_repair_backup(
-                runtime=self.runtime,
-                task=task,
                 current_tick=current_tick,
-                verify_error=result.get("error") or result.get("message"),
+                status=failure_status,
             )
-            state = self._commit_runtime_state(task=task, commit_result=rollback_result, default_state=state)
-            if bool(rollback_result.get("ok", False)):
-                self._safe_record_rollback_restore_action(
-                    task=task,
-                    step=step,
-                    rollback_result=rollback_result,
-                    step_index=idx,
-                    current_tick=current_tick,
-                    trace_tick=trace_tick,
-                )
-                strategy_result = self.runtime.advance_repair_strategy_after_failure(
-                    task=task,
-                    current_tick=current_tick,
-                    failure_reason=result.get("error") or result.get("message"),
-                )
-                strategy_state = self._commit_runtime_state(
-                    task=task,
-                    commit_result=strategy_result,
-                    default_state=state,
-                )
-                if strategy_result.get("ok"):
-                    return self._runtime_step_result_payload(
-                        ok=True,
-                        action="strategy_retry",
-                        task=task,
-                        runtime_state=strategy_state,
-                        status="running",
-                        step_result=result,
-                        rollback_result=copy.deepcopy(rollback_result.get("rollback_result")),
-                        next_strategy=strategy_result.get("next_strategy"),
-                        current_step_index=strategy_state.get("current_step_index"),
-                    )
-                state = strategy_state
-        elif self._is_apply_step(step):
-            repair_context = state.get("repair_context") if isinstance(state, dict) else {}
-            rollback = repair_context.get("rollback") if isinstance(repair_context, dict) else None
-            if isinstance(rollback, dict) and bool(rollback.get("restore_available")):
-                rollback_result = self.runtime.rollback_last_apply(
+            state = copy.deepcopy(failure_record_result.get("runtime_state", {}))
+            self._safe_fail_engineering_action(
+                task=task,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+            )
+            self._ensure_execution_trace_defaults(task, state)
+
+            repair_injection_result = self._maybe_inject_repair_steps_after_failure(
+                task=task,
+                state=state,
+                step=step,
+                step_result=result,
+                step_index=idx,
+                current_tick=current_tick,
+                trace_tick=trace_tick,
+            )
+            if isinstance(repair_injection_result, dict) and repair_injection_result.get("policy_blocked"):
+                runtime_state = copy.deepcopy(repair_injection_result.get("runtime_state", state))
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                return {
+                    "ok": False,
+                    "action": "repair_policy_blocked",
+                    "failure_type": failure_type,
+                    "failure_decision": failure_decision,
+                    "repair_policy_decision": copy.deepcopy(repair_injection_result.get("repair_policy_decision", {})),
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": runtime_state.get("status", "failed"),
+                    "error": runtime_state.get("last_error", "repair policy blocked"),
+                    "last_result": copy.deepcopy(result),
+                    "current_step_index": runtime_state.get("current_step_index", idx),
+                    "steps_total": runtime_state.get("steps_total"),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
+
+            if isinstance(repair_injection_result, dict) and repair_injection_result.get("ok"):
+                runtime_state = copy.deepcopy(repair_injection_result.get("runtime_state", state))
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                return {
+                    "ok": True,
+                    "action": "repair_steps_injected",
+                    "failure_type": failure_type,
+                    "failure_decision": failure_decision,
+                    "repair_policy_decision": copy.deepcopy(repair_injection_result.get("repair_policy_decision", {})),
+                    "repair_chain_id": repair_injection_result.get("repair_chain_id", ""),
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": runtime_state.get("status", "running"),
+                    "last_result": copy.deepcopy(result),
+                    "repair_plan": copy.deepcopy(repair_injection_result.get("repair_plan")),
+                    "repair_injection": copy.deepcopy(repair_injection_result.get("repair_injection")),
+                    "current_step_index": runtime_state.get("current_step_index", idx + 1),
+                    "steps_total": runtime_state.get("steps_total"),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
+
+            rollback_result = None
+            if self._should_rollback_after_failed_verify(step=step, step_result=result, state=state):
+                self._attach_system_rollback_capability(task)
+                rollback_result = restore_repair_backup(
+                    runtime=self.runtime,
                     task=task,
                     current_tick=current_tick,
                     verify_error=result.get("error") or result.get("message"),
                 )
-                state = self._commit_runtime_state(task=task, commit_result=rollback_result, default_state=state)
+                state = copy.deepcopy(rollback_result.get("runtime_state", state))
+                self._ensure_execution_trace_defaults(task, state)
+                if bool(rollback_result.get("ok", False)):
+                    self._safe_record_rollback_restore_action(
+                        task=task,
+                        step=step,
+                        rollback_result=rollback_result,
+                        step_index=idx,
+                        current_tick=current_tick,
+                        trace_tick=trace_tick,
+                    )
+                    strategy_result = self.runtime.advance_repair_strategy_after_failure(
+                        task=task,
+                        current_tick=current_tick,
+                        failure_reason=result.get("error") or result.get("message"),
+                    )
+                    strategy_state = copy.deepcopy(strategy_result.get("runtime_state", state))
+                    self._ensure_execution_trace_defaults(task, strategy_state)
+                    if strategy_result.get("ok"):
+                        return {
+                            "ok": True,
+                            "action": "strategy_retry",
+                            "task": copy.deepcopy(task),
+                            "runtime_state": strategy_state,
+                            "status": "running",
+                            "last_result": copy.deepcopy(result),
+                            "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+                            "next_strategy": strategy_result.get("next_strategy"),
+                            "current_step_index": strategy_state.get("current_step_index"),
+                            "execution_trace": copy.deepcopy(strategy_state.get("execution_trace", [])),
+                        }
+                    state = strategy_state
+            elif self._is_apply_step(step):
+                repair_context = state.get("repair_context") if isinstance(state, dict) else {}
+                rollback = repair_context.get("rollback") if isinstance(repair_context, dict) else None
+                if isinstance(rollback, dict) and bool(rollback.get("restore_available")):
+                    rollback_result = self.runtime.rollback_last_apply(
+                        task=task,
+                        current_tick=current_tick,
+                        verify_error=result.get("error") or result.get("message"),
+                    )
+                    state = copy.deepcopy(rollback_result.get("runtime_state", state))
+                    self._ensure_execution_trace_defaults(task, state)
 
-        self._trace(
-            task,
-            "failure_decision",
-            {
-                "failure_type": failure_type,
-                "decision": failure_decision,
-                "error": result.get("error"),
-                "step_index": idx,
-            },
-        )
-        self.audit.log_event(
-            task,
-            "failure_decision",
-            {
-                "failure_type": failure_type,
-                "decision": copy.deepcopy(failure_decision),
-                "error": copy.deepcopy(result.get("error")),
-                "step_index": idx,
-            },
-            source="task_runner",
-        )
-
-        if decision.retry:
-            runtime_state = self.runtime.load_runtime_state(task)
-            self._ensure_execution_trace_defaults(task, runtime_state)
-            return self._runtime_step_result_payload(
-                ok=False,
-                action="retry",
-                task=task,
-                runtime_state=runtime_state,
-                status="retrying",
-                step_result=result,
-                failure_type=failure_type,
-                failure_decision=failure_decision,
-                error=result.get("error"),
+            self._trace(
+                task,
+                "failure_decision",
+                {
+                    "failure_type": failure_type,
+                    "decision": failure_decision,
+                    "error": result.get("error"),
+                    "step_index": idx,
+                },
+            )
+            self.audit.log_event(
+                task,
+                "failure_decision",
+                {
+                    "failure_type": failure_type,
+                    "decision": copy.deepcopy(failure_decision),
+                    "error": copy.deepcopy(result.get("error")),
+                    "step_index": idx,
+                },
+                source="task_runner",
             )
 
-        if decision.replan and self.replanner:
-            try:
-                self.replanner.replan(
-                    goal=state.get("goal"),
-                    failed_step=step,
-                    reason=result.get("error"),
-                )
-            except Exception as e:
-                self._trace(
-                    task,
-                    "replan_failed",
-                    {
-                        "error": str(e),
-                        "step_index": idx,
-                    },
-                )
+            if decision.retry:
+                runtime_state = self.runtime.load_runtime_state(task)
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                return {
+                    "ok": False,
+                    "action": "retry",
+                    "failure_type": failure_type,
+                    "failure_decision": failure_decision,
+                    "error": result.get("error"),
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": "retrying",
+                    "last_result": copy.deepcopy(result),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
 
-            runtime_state = self.runtime.load_runtime_state(task)
-            self._ensure_execution_trace_defaults(task, runtime_state)
-            return self._runtime_step_result_payload(
-                ok=False,
-                action="replan",
+            if decision.replan and self.replanner:
+                try:
+                    self.replanner.replan(
+                        goal=state.get("goal"),
+                        failed_step=step,
+                        reason=result.get("error"),
+                    )
+                except Exception as e:
+                    self._trace(
+                        task,
+                        "replan_failed",
+                        {
+                            "error": str(e),
+                            "step_index": idx,
+                        },
+                    )
+
+                runtime_state = self.runtime.load_runtime_state(task)
+                self._ensure_execution_trace_defaults(task, runtime_state)
+                return {
+                    "ok": False,
+                    "action": "replan",
+                    "failure_type": failure_type,
+                    "failure_decision": failure_decision,
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": "replanning",
+                    "last_result": copy.deepcopy(result),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
+
+            fail_result = self.runtime.mark_failed(
                 task=task,
-                runtime_state=runtime_state,
-                status="replanning",
-                step_result=result,
+                current_tick=current_tick,
                 failure_type=failure_type,
-                failure_decision=failure_decision,
+                failure_message=str(state.get("last_error") or self._stringify_failure_message(result.get("error"))),
             )
 
-        fail_result = self.runtime.mark_failed(
-            task=task,
-            current_tick=current_tick,
-            failure_type=failure_type,
-            failure_message=str(state.get("last_error") or self._stringify_failure_message(result.get("error"))),
-        )
+            fail_result["failure_decision"] = failure_decision
+            if isinstance(rollback_result, dict):
+                fail_result["rollback_result"] = copy.deepcopy(rollback_result.get("rollback_result"))
+            runtime_state = copy.deepcopy(fail_result.get("runtime_state", {}))
+            self._ensure_execution_trace_defaults(task, runtime_state)
+            self._append_trace_json_event(
+                task,
+                "task_failed",
+                {
+                    "task_id": task.get("task_id") or task.get("id"),
+                    "tick": trace_tick,
+                    "scheduler_tick": current_tick,
+                    "step_index": idx,
+                    "failure_type": failure_type,
+                    "error": result.get("error"),
+                    "status": "failed",
+                },
+            )
 
-        fail_result["failure_decision"] = failure_decision
-        if isinstance(rollback_result, dict):
-            fail_result["rollback_result"] = copy.deepcopy(rollback_result.get("rollback_result"))
-        runtime_state = self._commit_runtime_state(task=task, commit_result=fail_result)
-        self._append_trace_json_event(
-            task,
-            "task_failed",
-            {
-                "task_id": task.get("task_id") or task.get("id"),
-                "tick": trace_tick,
-                "scheduler_tick": current_tick,
-                "step_index": idx,
+            return {
+                "ok": False,
+                "action": "step_failed",
                 "failure_type": failure_type,
-                "error": result.get("error"),
+                "failure_decision": failure_decision,
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
                 "status": "failed",
-            },
-        )
+                "error": result.get("error"),
+                "last_result": copy.deepcopy(result),
+                "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")) if isinstance(rollback_result, dict) else None,
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
 
-        return self._runtime_step_result_payload(
-            ok=False,
-            action="step_failed",
+        advance_result = self.runtime.advance_step(
             task=task,
-            runtime_state=runtime_state,
-            status="failed",
             step_result=result,
-            failure_type=failure_type,
-            failure_decision=failure_decision,
-            error=result.get("error"),
-            rollback_result=copy.deepcopy(rollback_result.get("rollback_result")) if isinstance(rollback_result, dict) else None,
+            current_tick=current_tick,
         )
-
-    def _commit_runtime_step_result(
-        self,
-        *,
-        task: Dict[str, Any],
-        state: Dict[str, Any],
-        steps: List[Dict[str, Any]],
-        idx: int,
-        step: Any,
-        result: Dict[str, Any],
-        current_tick: int,
-        trace_tick: int,
-    ) -> Dict[str, Any]:
-        success = self._handle_runtime_step_success(
+        self._safe_complete_engineering_action(
             task=task,
-            state=state,
-            steps=steps,
-            idx=idx,
             step=step,
-            result=result,
+            step_result=result,
+            step_index=idx,
             current_tick=current_tick,
             trace_tick=trace_tick,
         )
-        new_state = success["state"]
-        advance_result = success["advance_result"]
+        new_state = copy.deepcopy(advance_result.get("runtime_state", {}))
+        self._ensure_execution_trace_defaults(task, new_state)
         if self._is_apply_step(step):
             regression_result = self._run_regression_verify_phase(
                 task=task,
@@ -2732,7 +2621,7 @@ class TaskRunner:
                     regression_result=regression_result,
                     current_tick=current_tick,
                 )
-                new_state = self._commit_runtime_state(task=task, commit_result=recorded, default_state=new_state)
+                new_state = copy.deepcopy(recorded.get("runtime_state", new_state))
                 self._attach_system_rollback_capability(task)
                 rollback_result = restore_repair_backup(
                     runtime=self.runtime,
@@ -2740,11 +2629,8 @@ class TaskRunner:
                     current_tick=current_tick,
                     verify_error=str(regression_result.get("error") or "regression verification failed"),
                 )
-                runtime_state = self._commit_runtime_state(
-                    task=task,
-                    commit_result=rollback_result,
-                    default_state=new_state,
-                )
+                runtime_state = copy.deepcopy(rollback_result.get("runtime_state", new_state))
+                self._ensure_execution_trace_defaults(task, runtime_state)
                 if bool(rollback_result.get("ok", False)):
                     self._safe_record_rollback_restore_action(
                         task=task,
@@ -2759,42 +2645,40 @@ class TaskRunner:
                         current_tick=current_tick,
                         failure_reason=str(regression_result.get("error") or "regression verification failed"),
                     )
-                    strategy_state = self._commit_runtime_state(
-                        task=task,
-                        commit_result=strategy_result,
-                        default_state=runtime_state,
-                    )
+                    strategy_state = copy.deepcopy(strategy_result.get("runtime_state", runtime_state))
+                    self._ensure_execution_trace_defaults(task, strategy_state)
                     if strategy_result.get("ok"):
-                        return self._runtime_step_result_payload(
-                            ok=True,
-                            action="strategy_retry",
-                            task=task,
-                            runtime_state=strategy_state,
-                            status="running",
-                            include_last_result=False,
-                            regression_verify=copy.deepcopy(regression_result),
-                            rollback_result=copy.deepcopy(rollback_result.get("rollback_result")),
-                            next_strategy=strategy_result.get("next_strategy"),
-                        )
+                        return {
+                            "ok": True,
+                            "action": "strategy_retry",
+                            "task": copy.deepcopy(task),
+                            "runtime_state": strategy_state,
+                            "status": "running",
+                            "regression_verify": copy.deepcopy(regression_result),
+                            "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+                            "next_strategy": strategy_result.get("next_strategy"),
+                            "execution_trace": copy.deepcopy(strategy_state.get("execution_trace", [])),
+                        }
                     runtime_state = strategy_state
-                return self._runtime_step_result_payload(
-                    ok=False,
-                    action="regression_verify_failed",
-                    task=task,
-                    runtime_state=runtime_state,
-                    status="failed",
-                    step_result=result,
-                    error=runtime_state.get("last_error") or regression_result.get("error"),
-                    regression_verify=copy.deepcopy(regression_result),
-                    rollback_result=copy.deepcopy(rollback_result.get("rollback_result")),
-                )
+                return {
+                    "ok": False,
+                    "action": "regression_verify_failed",
+                    "task": copy.deepcopy(task),
+                    "runtime_state": runtime_state,
+                    "status": "failed",
+                    "error": runtime_state.get("last_error") or regression_result.get("error"),
+                    "regression_verify": copy.deepcopy(regression_result),
+                    "rollback_result": copy.deepcopy(rollback_result.get("rollback_result")),
+                    "last_result": copy.deepcopy(result),
+                    "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+                }
             if regression_result is not None:
                 recorded = self.runtime.record_regression_verify(
                     task=task,
                     regression_result=regression_result,
                     current_tick=current_tick,
                 )
-                new_state = self._commit_runtime_state(task=task, commit_result=recorded, default_state=new_state)
+                new_state = copy.deepcopy(recorded.get("runtime_state", new_state))
 
         new_status = str(new_state.get("status") or advance_result.get("status") or "running").strip().lower()
 
@@ -2811,7 +2695,7 @@ class TaskRunner:
                     result=result,
                 ),
             )
-            runtime_state = self._commit_runtime_state(task=task, commit_result=finish_result)
+            runtime_state = copy.deepcopy(finish_result.get("runtime_state", {}))
             runtime_state = self._mark_syntax_function_rewrite_completion_if_needed(
                 task=task,
                 state=runtime_state,
@@ -2843,65 +2727,30 @@ class TaskRunner:
                 },
                 source="task_runner",
             )
-            return self._runtime_step_result_payload(
-                ok=True,
-                action="task_finished",
-                task=task,
-                runtime_state=runtime_state,
-                status="finished",
-                step_result=result,
-                final_answer=finish_result.get("final_answer", ""),
-                task_completion_authority=finish_result.get("task_completion_authority"),
-            )
+            return {
+                "ok": True,
+                "action": "task_finished",
+                "task": copy.deepcopy(task),
+                "runtime_state": runtime_state,
+                "status": "finished",
+                "last_result": copy.deepcopy(result),
+                "final_answer": finish_result.get("final_answer", ""),
+                "task_completion_authority": finish_result.get("task_completion_authority"),
+                "execution_trace": copy.deepcopy(runtime_state.get("execution_trace", [])),
+            }
 
-        return self._runtime_step_result_payload(
-            ok=True,
-            action="step_completed",
-            task=task,
-            runtime_state=new_state,
-            status=new_status or "running",
-            step_result=result,
-            current_step_index=new_state.get("current_step_index", idx + 1),
-            steps_total=new_state.get("steps_total", len(steps)),
-            final_answer=str(new_state.get("final_answer") or ""),
-        )
-
-    def _run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
-        context = self._prepare_runtime_step_context(task, current_tick)
-        if not bool(context.get("continue_execution", False)):
-            return context.get("terminal_result")
-
-        execution = self._execute_current_runtime_step(
-            task=task,
-            state=context["state"],
-            steps=context["steps"],
-            idx=context["idx"],
-            current_tick=current_tick,
-        )
-        failure_result = self._handle_runtime_step_failure(
-            task=task,
-            state=execution["state"],
-            steps=execution["steps"],
-            idx=execution["idx"],
-            step=execution["step"],
-            result=execution["result"],
-            error_payload=execution["error_payload"],
-            current_tick=current_tick,
-            trace_tick=execution["trace_tick"],
-        )
-        if failure_result is not None:
-            return failure_result
-
-        return self._commit_runtime_step_result(
-            task=task,
-            state=execution["state"],
-            steps=execution["steps"],
-            idx=execution["idx"],
-            step=execution["step"],
-            result=execution["result"],
-            current_tick=current_tick,
-            trace_tick=execution["trace_tick"],
-        )
+        return {
+            "ok": True,
+            "action": "step_completed",
+            "task": copy.deepcopy(task),
+            "runtime_state": new_state,
+            "status": new_status or "running",
+            "last_result": copy.deepcopy(result),
+            "current_step_index": new_state.get("current_step_index", idx + 1),
+            "steps_total": new_state.get("steps_total", len(steps)),
+            "final_answer": str(new_state.get("final_answer") or ""),
+            "execution_trace": copy.deepcopy(new_state.get("execution_trace", [])),
+        }
 
     # ============================================================
     # execution trace helpers

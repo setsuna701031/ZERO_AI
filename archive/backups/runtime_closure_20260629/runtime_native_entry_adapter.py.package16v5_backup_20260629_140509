@@ -180,6 +180,11 @@ def run_runtime_native_entry(mainline: Any, value: Any) -> Dict[str, Any]:
 
 
 def run_via_runtime_native_mainline(**kwargs: Any) -> Any:
+    """Compatibility delegate used by legacy AgentLoop/native entry semantics.
+
+    The function intentionally accepts **kwargs because existing tests and
+    wrapper call sites monkeypatch this exact module-level symbol.
+    """
     runner = kwargs.get("runner")
     if callable(runner):
         return runner()

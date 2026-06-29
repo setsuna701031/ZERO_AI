@@ -1,0 +1,54 @@
+TaskRunner Registry Legacy Cleanup Inventory
+
+generated_at: 2026-06-29T14:29:45
+root: E:\zero_ai
+target: core/runtime/task_runner.py
+
+Package24/26 Helper Presence
+- _zero_taskrunner_registry_admit_aer_closure_v24 count: 5
+- _zero_taskrunner_registry_admit_owned_step_v24 count: 2
+- _zero_taskrunner_registry_admit_tick_v24 count: 2
+- _zero_taskrunner_registry_callsite_admit_v26 count: 3
+- _zero_taskrunner_registry_callsite_wrap_execute_owned_step_v26 count: 2
+- _zero_taskrunner_registry_callsite_wrap_tick_v26 count: 2
+- _aer_registry_admit count: 3
+- _registry_admit_owned_step count: 4
+- _registry_admit_tick count: 4
+- _zero_package26_registry_callsite_migration_installed count: 1
+
+Remaining Direct Registry Calls
+total_remaining_direct_registry_calls: 1
+- line 283 | function=_run_via_runtime_native_mainline | owner=registry | method=register | classification=review_before_migration | source=registry.register(             route_key,             lambda _request, _workspace_root, _goal: delegated_runner,             {"entrypoint": entrypoint, "component": "TaskRunner"},         )
+
+Cleanup Classification
+- candidate_for_unified_admission count: 0
+- already_unified count: 0
+- preserve_for_specialized_flow count: 0
+- review_before_migration count: 1
+  - line 283 function=_run_via_runtime_native_mainline method=register
+
+Preserved specialized paths
+- repair: preserve until repair-specific AER seal exists
+- rollback: preserve until rollback payload semantics are sealed
+- evidence: preserve until evidence authority semantics are sealed
+- audit/authority/recovery/checkpoint: preserve unless separately inventoried and sealed
+
+Recommended Package28
+- migrate only candidate_for_unified_admission call sites
+- do not change preserve_for_specialized_flow call sites
+- add a seal that fails if execute_owned_step/tick bypass _aer_registry_admit
+- update inventory after migration so remaining calls are only preserve/review classes
+
+Not touched
+- Scheduler
+- AgentLoop
+- CLI
+- RuntimeRouteRegistry
+- Runtime Native marker chain
+
+Validation
+python -m compileall core/runtime tests
+python -m pytest tests/test_taskrunner_registry_legacy_cleanup_inventory.py tests/test_taskrunner_registry_callsite_migration.py tests/test_taskrunner_registry_direct_admission_inventory.py tests/test_taskrunner_registry_admission_consolidation.py tests/test_taskrunner_aer_closure_inventory.py tests/test_aer_mainline_closure_seal.py -q
+
+Non-mainline issue reporting
+Any unrelated issue discovered during validation must be reported explicitly and not silently skipped.

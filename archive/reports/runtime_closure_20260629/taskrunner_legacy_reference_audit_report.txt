@@ -1,0 +1,816 @@
+TaskRunner Legacy Reference Audit
+
+repo_root: E:\zero_ai
+target: core\runtime\task_runner.py
+candidates: 16
+
+================================================================================
+Summary
+================================================================================
+A_no_non_definition_references: 0
+B_tests_or_tools_only: 0
+C_production_references_exist: 16
+
+A: A = no non-definition references found; deletion candidate after targeted tests
+
+B: B = only tests/tools references found; update references before deletion
+
+C: C = production reference exists; do not delete yet
+- _stage3b_run_task
+- _stage3b_run_task_tick
+- _taskrunner_consolidated_run_task
+- _taskrunner_consolidated_run_task_tick
+- _zero_stage3b_run_task_tick_v2
+- _zero_stage3b_run_task_tick_v3
+- _zero_stage3b_run_task_tick_v4
+- _zero_stage3b_run_task_v2
+- _zero_stage3b_run_task_v3
+- _zero_stage3b_run_task_v4
+- _zero_v702_task_runner_run_one_step
+- _zero_v800_task_runner_run_one_step
+- _zero_v801_task_runner_finalize_public_result
+- _zero_v810_finalize_public_result
+- _zero_v810_persist_step_result_to_runtime_state
+- _zero_v810_taskrunner_init
+
+================================================================================
+Candidate Details
+================================================================================
+
+- _stage3b_run_task
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 189
+  non_definition_refs: 187
+  references:
+    - taskrunner_aer_closure_inventory.txt:467 [production; reference] - line 4784: _stage3b_run_task_tick
+    - taskrunner_aer_closure_inventory.txt:468 [production; reference] - line 4793: _stage3b_run_task
+    - taskrunner_aer_closure_inventory.txt:470 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
+    - taskrunner_aer_closure_inventory.txt:471 [production; reference] - line 5014: _zero_stage3b_run_task_v2
+    - taskrunner_aer_closure_inventory.txt:474 [production; reference] - line 5145: _zero_stage3b_run_task_tick_v3
+    - taskrunner_aer_closure_inventory.txt:475 [production; reference] - line 5154: _zero_stage3b_run_task_v3
+    - taskrunner_aer_closure_inventory.txt:477 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
+    - taskrunner_aer_closure_inventory.txt:478 [production; reference] - line 5203: _zero_stage3b_run_task_v4
+    - taskrunner_runtime_caller_analysis_report.txt:61 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:62 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:76 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:77 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:88 [production; reference] <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:89 [production; reference] <- _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:112 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:113 [production; reference] <- _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:115 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:116 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:130 [production; reference] <- _stage3b_run_task [line 4793]
+    - taskrunner_runtime_caller_analysis_report.txt:131 [production; reference] <- _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:272 [production; reference] - _stage3b_run_task [line 4793]
+    - taskrunner_runtime_caller_analysis_report.txt:279 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:289 [production; reference] <- _stage3b_run_task [line 4793]
+    - taskrunner_runtime_caller_analysis_report.txt:290 [production; reference] <- _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:315 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:332 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:333 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:340 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:341 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:353 [production; reference] <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:354 [production; reference] <- _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:365 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:375 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:382 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:389 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:398 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:405 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:430 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:431 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:445 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:446 [production; reference] <- _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:593 [production; reference] - _stage3b_run_task [line 4793]
+    - taskrunner_runtime_caller_analysis_report.txt:594 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:597 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:598 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:599 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:600 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:601 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:602 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:613 [production; reference] - _stage3b_run_task [line 4793]
+    - taskrunner_runtime_caller_analysis_report.txt:614 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:624 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:625 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:626 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:627 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:628 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:629 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:676 [production; reference] - _stage3b_run_task [line 4793]
+    - taskrunner_runtime_caller_analysis_report.txt:677 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:685 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:686 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:687 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:688 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:689 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:690 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_call_graph_report.txt:2142 [production; reference] - line 4793: _stage3b_run_task
+    - taskrunner_runtime_call_graph_report.txt:2146 [production; reference] - line 4784: _stage3b_run_task_tick
+    - taskrunner_runtime_call_graph_report.txt:2195 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
+    - taskrunner_runtime_call_graph_report.txt:2203 [production; reference] - line 5145: _zero_stage3b_run_task_tick_v3
+    - taskrunner_runtime_call_graph_report.txt:2207 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
+    - taskrunner_runtime_call_graph_report.txt:2211 [production; reference] - line 5014: _zero_stage3b_run_task_v2
+    - taskrunner_runtime_call_graph_report.txt:2217 [production; reference] - line 5154: _zero_stage3b_run_task_v3
+    - taskrunner_runtime_call_graph_report.txt:2221 [production; reference] - line 5203: _zero_stage3b_run_task_v4
+    - taskrunner_runtime_inventory_report.txt:691 [production; reference] - line 4784: function _stage3b_run_task_tick
+    - taskrunner_runtime_inventory_report.txt:725 [production; reference] - line 4981: function _zero_stage3b_run_task_tick_v2
+    - taskrunner_runtime_inventory_report.txt:753 [production; reference] - line 5145: function _zero_stage3b_run_task_tick_v3
+    - taskrunner_runtime_inventory_report.txt:772 [production; reference] - line 5194: function _zero_stage3b_run_task_tick_v4
+    - core/runtime/task_runner.py:4784 [production; reference] def _stage3b_run_task_tick(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:4788 [production; reference] TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - core/runtime/task_runner.py:4793 [production; definition] def _stage3b_run_task(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:4797 [production; reference] TaskRunner.run_task = _stage3b_run_task
+    - core/runtime/task_runner.py:4981 [production; reference] def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5009 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - core/runtime/task_runner.py:5014 [production; reference] def _zero_stage3b_run_task_v2(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5023 [production; reference] TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - core/runtime/task_runner.py:5145 [production; reference] def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5149 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - core/runtime/task_runner.py:5154 [production; reference] def _zero_stage3b_run_task_v3(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5158 [production; reference] TaskRunner.run_task = _zero_stage3b_run_task_v3
+    - core/runtime/task_runner.py:5194 [production; reference] def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5198 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - core/runtime/task_runner.py:5203 [production; reference] def _zero_stage3b_run_task_v4(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5207 [production; reference] TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1399 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1420 [production; reference] "expression": "TaskRunner.run_task = _stage3b_run_task"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1441 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1462 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1483 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1504 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1525 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1546 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:961 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:978 [production; reference] "expression": "TaskRunner.run_task = _stage3b_run_task",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:995 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1012 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1029 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1046 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1063 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1080 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4710 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4727 [production; reference] "expression": "TaskRunner.run_task = _stage3b_run_task",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4744 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4761 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4778 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4795 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4812 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4829 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:130 [production; reference] - `core/runtime/task_runner.py:5683` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:131 [production; reference] - `core/runtime/task_runner.py:5692` `BLOCKER` `task_runner` — TaskRunner.run_task = _stage3b_run_task
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:132 [production; reference] - `core/runtime/task_runner.py:5875` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:133 [production; reference] - `core/runtime/task_runner.py:5889` `BLOCKER` `task_runner` — TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:134 [production; reference] - `core/runtime/task_runner.py:5982` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:135 [production; reference] - `core/runtime/task_runner.py:5991` `BLOCKER` `task_runner` — TaskRunner.run_task = _zero_stage3b_run_task_v3
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:136 [production; reference] - `core/runtime/task_runner.py:6036` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:137 [production; reference] - `core/runtime/task_runner.py:6045` `BLOCKER` `task_runner` — TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13347 [production; reference] "text": "def _stage3b_run_task_tick(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13374 [production; reference] "text": "TaskRunner.run_task_tick = _stage3b_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13401 [production; reference] "text": "def _stage3b_run_task(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13428 [production; reference] "text": "TaskRunner.run_task = _stage3b_run_task"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13644 [production; reference] "text": "def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13671 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13698 [production; reference] "text": "def _zero_stage3b_run_task_v2(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13725 [production; reference] "text": "TaskRunner.run_task = _zero_stage3b_run_task_v2"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14031 [production; reference] "text": "def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14058 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14085 [production; reference] "text": "def _zero_stage3b_run_task_v3(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14112 [production; reference] "text": "TaskRunner.run_task = _zero_stage3b_run_task_v3"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14247 [production; reference] "text": "def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14274 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14301 [production; reference] "text": "def _zero_stage3b_run_task_v4(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14328 [production; reference] "text": "TaskRunner.run_task = _zero_stage3b_run_task_v4"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2029 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2043 [production; reference] "expression": "TaskRunner.run_task = _stage3b_run_task",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2057 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2071 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2085 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2099 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2127 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2141 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:133 [production; reference] - `core/runtime/task_runner.py:5692` `BLOCKER` — TaskRunner.run_task = _stage3b_run_task
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:134 [production; reference] - `core/runtime/task_runner.py:5889` `BLOCKER` — TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:135 [production; reference] - `core/runtime/task_runner.py:5991` `BLOCKER` — TaskRunner.run_task = _zero_stage3b_run_task_v3
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:136 [production; reference] - `core/runtime/task_runner.py:6045` `BLOCKER` — TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:141 [production; reference] - `core/runtime/task_runner.py:5683` `BLOCKER` — TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:142 [production; reference] - `core/runtime/task_runner.py:5875` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:143 [production; reference] - `core/runtime/task_runner.py:5982` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:144 [production; reference] - `core/runtime/task_runner.py:6036` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:637 [production; reference] "assignment_rhs:_stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:702 [production; reference] "assignment_rhs:_stage3b_run_task",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:767 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:840 [production; reference] "assignment_rhs:_zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:912 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:978 [production; reference] "assignment_rhs:_zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:1044 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:1109 [production; reference] "assignment_rhs:_zero_stage3b_run_task_v4",
+    - tools/taskrunner_legacy_reference_audit.py:13 [tool; reference] "_stage3b_run_task",
+    - tools/taskrunner_legacy_reference_audit.py:14 [tool; reference] "_stage3b_run_task_tick",
+    - tools/taskrunner_legacy_reference_audit.py:17 [tool; reference] "_zero_stage3b_run_task_tick_v2",
+    - tools/taskrunner_legacy_reference_audit.py:18 [tool; reference] "_zero_stage3b_run_task_tick_v3",
+    - tools/taskrunner_legacy_reference_audit.py:19 [tool; reference] "_zero_stage3b_run_task_tick_v4",
+    - tools/taskrunner_legacy_reference_audit.py:20 [tool; reference] "_zero_stage3b_run_task_v2",
+    - tools/taskrunner_legacy_reference_audit.py:21 [tool; reference] "_zero_stage3b_run_task_v3",
+    - tools/taskrunner_legacy_reference_audit.py:22 [tool; reference] "_zero_stage3b_run_task_v4",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:43 [tool; reference] def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:47 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:52 [tool; reference] def _zero_stage3b_run_task_v4(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:56 [tool; reference] TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification.py:41 [tool; reference] def _stage3b_run_task_tick(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification.py:45 [tool; reference] TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification.py:50 [tool; definition] def _stage3b_run_task(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification.py:54 [tool; reference] TaskRunner.run_task = _stage3b_run_task
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:165 [tool; reference] def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:188 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:193 [tool; reference] def _zero_stage3b_run_task_v2(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:202 [tool; reference] TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:96 [tool; reference] def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:100 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:105 [tool; reference] def _zero_stage3b_run_task_v3(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:109 [tool; reference] TaskRunner.run_task = _zero_stage3b_run_task_v3
+
+- _stage3b_run_task_tick
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 97
+  non_definition_refs: 95
+  references:
+    - taskrunner_aer_closure_inventory.txt:467 [production; reference] - line 4784: _stage3b_run_task_tick
+    - taskrunner_aer_closure_inventory.txt:470 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
+    - taskrunner_aer_closure_inventory.txt:474 [production; reference] - line 5145: _zero_stage3b_run_task_tick_v3
+    - taskrunner_aer_closure_inventory.txt:477 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
+    - taskrunner_runtime_caller_analysis_report.txt:61 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:76 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:88 [production; reference] <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:112 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:115 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:131 [production; reference] <- _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:279 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:290 [production; reference] <- _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:315 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:332 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:340 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:353 [production; reference] <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:365 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:375 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:382 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:430 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:445 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:594 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:597 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:598 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:599 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:614 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:624 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:625 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:626 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:677 [production; reference] - _stage3b_run_task_tick [line 4784]
+    - taskrunner_runtime_caller_analysis_report.txt:685 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:686 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:687 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_call_graph_report.txt:2146 [production; reference] - line 4784: _stage3b_run_task_tick
+    - taskrunner_runtime_call_graph_report.txt:2195 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
+    - taskrunner_runtime_call_graph_report.txt:2203 [production; reference] - line 5145: _zero_stage3b_run_task_tick_v3
+    - taskrunner_runtime_call_graph_report.txt:2207 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
+    - taskrunner_runtime_inventory_report.txt:691 [production; reference] - line 4784: function _stage3b_run_task_tick
+    - taskrunner_runtime_inventory_report.txt:725 [production; reference] - line 4981: function _zero_stage3b_run_task_tick_v2
+    - taskrunner_runtime_inventory_report.txt:753 [production; reference] - line 5145: function _zero_stage3b_run_task_tick_v3
+    - taskrunner_runtime_inventory_report.txt:772 [production; reference] - line 5194: function _zero_stage3b_run_task_tick_v4
+    - core/runtime/task_runner.py:4784 [production; definition] def _stage3b_run_task_tick(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:4788 [production; reference] TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - core/runtime/task_runner.py:4981 [production; reference] def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5009 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - core/runtime/task_runner.py:5145 [production; reference] def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5149 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - core/runtime/task_runner.py:5194 [production; reference] def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5198 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1399 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1441 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1483 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1525 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:961 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:995 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1029 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1063 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4710 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4744 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4778 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4812 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:130 [production; reference] - `core/runtime/task_runner.py:5683` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:132 [production; reference] - `core/runtime/task_runner.py:5875` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:134 [production; reference] - `core/runtime/task_runner.py:5982` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:136 [production; reference] - `core/runtime/task_runner.py:6036` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13347 [production; reference] "text": "def _stage3b_run_task_tick(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13374 [production; reference] "text": "TaskRunner.run_task_tick = _stage3b_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13644 [production; reference] "text": "def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13671 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14031 [production; reference] "text": "def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14058 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14247 [production; reference] "text": "def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14274 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2029 [production; reference] "expression": "TaskRunner.run_task_tick = _stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2057 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2085 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2127 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:141 [production; reference] - `core/runtime/task_runner.py:5683` `BLOCKER` — TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:142 [production; reference] - `core/runtime/task_runner.py:5875` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:143 [production; reference] - `core/runtime/task_runner.py:5982` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:144 [production; reference] - `core/runtime/task_runner.py:6036` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:637 [production; reference] "assignment_rhs:_stage3b_run_task_tick",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:767 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:912 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:1044 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v4",
+    - tools/taskrunner_legacy_reference_audit.py:14 [tool; reference] "_stage3b_run_task_tick",
+    - tools/taskrunner_legacy_reference_audit.py:17 [tool; reference] "_zero_stage3b_run_task_tick_v2",
+    - tools/taskrunner_legacy_reference_audit.py:18 [tool; reference] "_zero_stage3b_run_task_tick_v3",
+    - tools/taskrunner_legacy_reference_audit.py:19 [tool; reference] "_zero_stage3b_run_task_tick_v4",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:43 [tool; reference] def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:47 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification.py:41 [tool; definition] def _stage3b_run_task_tick(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification.py:45 [tool; reference] TaskRunner.run_task_tick = _stage3b_run_task_tick
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:165 [tool; reference] def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:188 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:96 [tool; reference] def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:100 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+
+- _taskrunner_consolidated_run_task
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 50
+  non_definition_refs: 48
+  references:
+    - taskrunner_aer_closure_inventory.txt:464 [production; reference] - line 4721: _taskrunner_consolidated_run_task_tick
+    - taskrunner_aer_closure_inventory.txt:465 [production; reference] - line 4735: _taskrunner_consolidated_run_task
+    - taskrunner_runtime_caller_analysis_report.txt:79 [production; reference] <- _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:80 [production; reference] <- _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:82 [production; reference] <- _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:83 [production; reference] <- _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:91 [production; reference] <- _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:92 [production; reference] <- _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:294 [production; reference] - _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:303 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:595 [production; reference] - _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:596 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:616 [production; reference] - _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:617 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:678 [production; reference] - _taskrunner_consolidated_run_task [line 4735]
+    - taskrunner_runtime_caller_analysis_report.txt:679 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_call_graph_report.txt:2154 [production; reference] - line 4735: _taskrunner_consolidated_run_task
+    - taskrunner_runtime_call_graph_report.txt:2160 [production; reference] - line 4721: _taskrunner_consolidated_run_task_tick
+    - taskrunner_runtime_inventory_report.txt:665 [production; reference] - line 4721: function _taskrunner_consolidated_run_task_tick
+    - taskrunner_runtime_inventory_report.txt:674 [production; reference] - line 4735: function _taskrunner_consolidated_run_task
+    - core/runtime/task_runner.py:4721 [production; reference] def _taskrunner_consolidated_run_task_tick(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:4730 [production; reference] TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - core/runtime/task_runner.py:4735 [production; definition] def _taskrunner_consolidated_run_task(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:4743 [production; reference] TaskRunner.run_task = _taskrunner_consolidated_run_task
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1357 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1378 [production; reference] "expression": "TaskRunner.run_task = _taskrunner_consolidated_run_task"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:910 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:927 [production; reference] "expression": "TaskRunner.run_task = _taskrunner_consolidated_run_task",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:953 [production; reference] "context_before": "5643:         TaskRunner.run_task = _taskrunner_consolidated_run_task\n5644: ",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4659 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4676 [production; reference] "expression": "TaskRunner.run_task = _taskrunner_consolidated_run_task",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4702 [production; reference] "context_before": "5643:         TaskRunner.run_task = _taskrunner_consolidated_run_task\n5644: ",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:127 [production; reference] - `core/runtime/task_runner.py:5630` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:128 [production; reference] - `core/runtime/task_runner.py:5643` `BLOCKER` `task_runner` — TaskRunner.run_task = _taskrunner_consolidated_run_task
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13050 [production; reference] "text": "def _taskrunner_consolidated_run_task_tick(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13113 [production; reference] "text": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13140 [production; reference] "text": "def _taskrunner_consolidated_run_task(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13203 [production; reference] "text": "TaskRunner.run_task = _taskrunner_consolidated_run_task"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1987 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2001 [production; reference] "expression": "TaskRunner.run_task = _taskrunner_consolidated_run_task",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:132 [production; reference] - `core/runtime/task_runner.py:5643` `BLOCKER` — TaskRunner.run_task = _taskrunner_consolidated_run_task
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:140 [production; reference] - `core/runtime/task_runner.py:5630` `BLOCKER` — TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:495 [production; reference] "assignment_rhs:_taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:566 [production; reference] "assignment_rhs:_taskrunner_consolidated_run_task",
+    - tools/taskrunner_legacy_reference_audit.py:15 [tool; reference] "_taskrunner_consolidated_run_task",
+    - tools/taskrunner_legacy_reference_audit.py:16 [tool; reference] "_taskrunner_consolidated_run_task_tick",
+    - tools/archive/runtime_governance_closure/consolidate_zero_runtime_taskrunner_stage3b.py:263 [tool; reference] def _taskrunner_consolidated_run_task_tick(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/consolidate_zero_runtime_taskrunner_stage3b.py:272 [tool; reference] TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - tools/archive/runtime_governance_closure/consolidate_zero_runtime_taskrunner_stage3b.py:277 [tool; definition] def _taskrunner_consolidated_run_task(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/consolidate_zero_runtime_taskrunner_stage3b.py:285 [tool; reference] TaskRunner.run_task = _taskrunner_consolidated_run_task
+
+- _taskrunner_consolidated_run_task_tick
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 24
+  non_definition_refs: 22
+  references:
+    - taskrunner_aer_closure_inventory.txt:464 [production; reference] - line 4721: _taskrunner_consolidated_run_task_tick
+    - taskrunner_runtime_caller_analysis_report.txt:80 [production; reference] <- _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:83 [production; reference] <- _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:92 [production; reference] <- _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:303 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:596 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:617 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_caller_analysis_report.txt:679 [production; reference] - _taskrunner_consolidated_run_task_tick [line 4721]
+    - taskrunner_runtime_call_graph_report.txt:2160 [production; reference] - line 4721: _taskrunner_consolidated_run_task_tick
+    - taskrunner_runtime_inventory_report.txt:665 [production; reference] - line 4721: function _taskrunner_consolidated_run_task_tick
+    - core/runtime/task_runner.py:4721 [production; definition] def _taskrunner_consolidated_run_task_tick(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:4730 [production; reference] TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1357 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:910 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4659 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:127 [production; reference] - `core/runtime/task_runner.py:5630` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13050 [production; reference] "text": "def _taskrunner_consolidated_run_task_tick(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13113 [production; reference] "text": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1987 [production; reference] "expression": "TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:140 [production; reference] - `core/runtime/task_runner.py:5630` `BLOCKER` — TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:495 [production; reference] "assignment_rhs:_taskrunner_consolidated_run_task_tick",
+    - tools/taskrunner_legacy_reference_audit.py:16 [tool; reference] "_taskrunner_consolidated_run_task_tick",
+    - tools/archive/runtime_governance_closure/consolidate_zero_runtime_taskrunner_stage3b.py:263 [tool; definition] def _taskrunner_consolidated_run_task_tick(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/consolidate_zero_runtime_taskrunner_stage3b.py:272 [tool; reference] TaskRunner.run_task_tick = _taskrunner_consolidated_run_task_tick
+
+- _zero_stage3b_run_task_tick_v2
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 28
+  non_definition_refs: 26
+  references:
+    - taskrunner_aer_closure_inventory.txt:470 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
+    - taskrunner_runtime_caller_analysis_report.txt:61 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:76 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:115 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:315 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:332 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:340 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:365 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:430 [production; reference] <- _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:597 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:624 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_caller_analysis_report.txt:685 [production; reference] - _zero_stage3b_run_task_tick_v2 [line 4981]
+    - taskrunner_runtime_call_graph_report.txt:2195 [production; reference] - line 4981: _zero_stage3b_run_task_tick_v2
+    - taskrunner_runtime_inventory_report.txt:725 [production; reference] - line 4981: function _zero_stage3b_run_task_tick_v2
+    - core/runtime/task_runner.py:4981 [production; definition] def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5009 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1441 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:995 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4744 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:132 [production; reference] - `core/runtime/task_runner.py:5875` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13644 [production; reference] "text": "def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13671 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2057 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:142 [production; reference] - `core/runtime/task_runner.py:5875` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:767 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v2",
+    - tools/taskrunner_legacy_reference_audit.py:17 [tool; reference] "_zero_stage3b_run_task_tick_v2",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:165 [tool; definition] def _zero_stage3b_run_task_tick_v2(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:188 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v2
+
+- _zero_stage3b_run_task_tick_v3
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 23
+  non_definition_refs: 21
+  references:
+    - taskrunner_aer_closure_inventory.txt:474 [production; reference] - line 5145: _zero_stage3b_run_task_tick_v3
+    - taskrunner_runtime_caller_analysis_report.txt:88 [production; reference] <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:353 [production; reference] <- _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:375 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:598 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:625 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_caller_analysis_report.txt:686 [production; reference] - _zero_stage3b_run_task_tick_v3 [line 5145]
+    - taskrunner_runtime_call_graph_report.txt:2203 [production; reference] - line 5145: _zero_stage3b_run_task_tick_v3
+    - taskrunner_runtime_inventory_report.txt:753 [production; reference] - line 5145: function _zero_stage3b_run_task_tick_v3
+    - core/runtime/task_runner.py:5145 [production; definition] def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5149 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1483 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1029 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4778 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:134 [production; reference] - `core/runtime/task_runner.py:5982` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14031 [production; reference] "text": "def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14058 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2085 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:143 [production; reference] - `core/runtime/task_runner.py:5982` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:912 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v3",
+    - tools/taskrunner_legacy_reference_audit.py:18 [tool; reference] "_zero_stage3b_run_task_tick_v3",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:96 [tool; definition] def _zero_stage3b_run_task_tick_v3(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:100 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v3
+
+- _zero_stage3b_run_task_tick_v4
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 23
+  non_definition_refs: 21
+  references:
+    - taskrunner_aer_closure_inventory.txt:477 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
+    - taskrunner_runtime_caller_analysis_report.txt:112 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:382 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:445 [production; reference] <- _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:599 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:626 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_caller_analysis_report.txt:687 [production; reference] - _zero_stage3b_run_task_tick_v4 [line 5194]
+    - taskrunner_runtime_call_graph_report.txt:2207 [production; reference] - line 5194: _zero_stage3b_run_task_tick_v4
+    - taskrunner_runtime_inventory_report.txt:772 [production; reference] - line 5194: function _zero_stage3b_run_task_tick_v4
+    - core/runtime/task_runner.py:5194 [production; definition] def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5198 [production; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1525 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1063 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4812 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:136 [production; reference] - `core/runtime/task_runner.py:6036` `BLOCKER` `task_runner` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14247 [production; reference] "text": "def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14274 [production; reference] "text": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2127 [production; reference] "expression": "TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:144 [production; reference] - `core/runtime/task_runner.py:6036` `BLOCKER` — TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:1044 [production; reference] "assignment_rhs:_zero_stage3b_run_task_tick_v4",
+    - tools/taskrunner_legacy_reference_audit.py:19 [tool; reference] "_zero_stage3b_run_task_tick_v4",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:43 [tool; definition] def _zero_stage3b_run_task_tick_v4(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:47 [tool; reference] TaskRunner.run_task_tick = _zero_stage3b_run_task_tick_v4
+
+- _zero_stage3b_run_task_v2
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 26
+  non_definition_refs: 24
+  references:
+    - taskrunner_aer_closure_inventory.txt:471 [production; reference] - line 5014: _zero_stage3b_run_task_v2
+    - taskrunner_runtime_caller_analysis_report.txt:62 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:77 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:116 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:333 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:341 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:389 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:431 [production; reference] <- _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:600 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:627 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_caller_analysis_report.txt:688 [production; reference] - _zero_stage3b_run_task_v2 [line 5014]
+    - taskrunner_runtime_call_graph_report.txt:2211 [production; reference] - line 5014: _zero_stage3b_run_task_v2
+    - core/runtime/task_runner.py:5014 [production; definition] def _zero_stage3b_run_task_v2(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5023 [production; reference] TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1462 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1012 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4761 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:133 [production; reference] - `core/runtime/task_runner.py:5889` `BLOCKER` `task_runner` — TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13698 [production; reference] "text": "def _zero_stage3b_run_task_v2(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:13725 [production; reference] "text": "TaskRunner.run_task = _zero_stage3b_run_task_v2"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2071 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v2",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:134 [production; reference] - `core/runtime/task_runner.py:5889` `BLOCKER` — TaskRunner.run_task = _zero_stage3b_run_task_v2
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:840 [production; reference] "assignment_rhs:_zero_stage3b_run_task_v2",
+    - tools/taskrunner_legacy_reference_audit.py:20 [tool; reference] "_zero_stage3b_run_task_v2",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:193 [tool; definition] def _zero_stage3b_run_task_v2(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v2.py:202 [tool; reference] TaskRunner.run_task = _zero_stage3b_run_task_v2
+
+- _zero_stage3b_run_task_v3
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 22
+  non_definition_refs: 20
+  references:
+    - taskrunner_aer_closure_inventory.txt:475 [production; reference] - line 5154: _zero_stage3b_run_task_v3
+    - taskrunner_runtime_caller_analysis_report.txt:89 [production; reference] <- _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:354 [production; reference] <- _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:398 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:601 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:628 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_caller_analysis_report.txt:689 [production; reference] - _zero_stage3b_run_task_v3 [line 5154]
+    - taskrunner_runtime_call_graph_report.txt:2217 [production; reference] - line 5154: _zero_stage3b_run_task_v3
+    - core/runtime/task_runner.py:5154 [production; definition] def _zero_stage3b_run_task_v3(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5158 [production; reference] TaskRunner.run_task = _zero_stage3b_run_task_v3
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1504 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1046 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4795 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:135 [production; reference] - `core/runtime/task_runner.py:5991` `BLOCKER` `task_runner` — TaskRunner.run_task = _zero_stage3b_run_task_v3
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14085 [production; reference] "text": "def _zero_stage3b_run_task_v3(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14112 [production; reference] "text": "TaskRunner.run_task = _zero_stage3b_run_task_v3"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2099 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v3",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:135 [production; reference] - `core/runtime/task_runner.py:5991` `BLOCKER` — TaskRunner.run_task = _zero_stage3b_run_task_v3
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:978 [production; reference] "assignment_rhs:_zero_stage3b_run_task_v3",
+    - tools/taskrunner_legacy_reference_audit.py:21 [tool; reference] "_zero_stage3b_run_task_v3",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:105 [tool; definition] def _zero_stage3b_run_task_v3(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_verification_v3.py:109 [tool; reference] TaskRunner.run_task = _zero_stage3b_run_task_v3
+
+- _zero_stage3b_run_task_v4
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 22
+  non_definition_refs: 20
+  references:
+    - taskrunner_aer_closure_inventory.txt:478 [production; reference] - line 5203: _zero_stage3b_run_task_v4
+    - taskrunner_runtime_caller_analysis_report.txt:113 [production; reference] <- _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:405 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:446 [production; reference] <- _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:602 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:629 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_caller_analysis_report.txt:690 [production; reference] - _zero_stage3b_run_task_v4 [line 5203]
+    - taskrunner_runtime_call_graph_report.txt:2221 [production; reference] - line 5203: _zero_stage3b_run_task_v4
+    - core/runtime/task_runner.py:5203 [production; definition] def _zero_stage3b_run_task_v4(self, task, *args, **kwargs):
+    - core/runtime/task_runner.py:5207 [production; reference] TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1546 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:1080 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4829 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:137 [production; reference] - `core/runtime/task_runner.py:6045` `BLOCKER` `task_runner` — TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14301 [production; reference] "text": "def _zero_stage3b_run_task_v4(self, task, *args, **kwargs):"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:14328 [production; reference] "text": "TaskRunner.run_task = _zero_stage3b_run_task_v4"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:2141 [production; reference] "expression": "TaskRunner.run_task = _zero_stage3b_run_task_v4",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:136 [production; reference] - `core/runtime/task_runner.py:6045` `BLOCKER` — TaskRunner.run_task = _zero_stage3b_run_task_v4
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:1109 [production; reference] "assignment_rhs:_zero_stage3b_run_task_v4",
+    - tools/taskrunner_legacy_reference_audit.py:22 [tool; reference] "_zero_stage3b_run_task_v4",
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:52 [tool; definition] def _zero_stage3b_run_task_v4(self, task, *args, **kwargs):
+    - tools/archive/runtime_governance_closure/fix_stage3b_taskrunner_operator_failure_v4.py:56 [tool; reference] TaskRunner.run_task = _zero_stage3b_run_task_v4
+
+- _zero_v702_task_runner_run_one_step
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 23
+  non_definition_refs: 22
+  references:
+    - taskrunner_aer_closure_inventory.txt:444 [production; reference] - line 3662: _zero_v702_task_runner_run_one_step
+    - taskrunner_runtime_caller_analysis_report.txt:481 [production; reference] <- _zero_v702_task_runner_run_one_step [line 3662]
+    - taskrunner_runtime_caller_analysis_report.txt:486 [production; reference] - _zero_v702_task_runner_run_one_step [line 3662]
+    - taskrunner_runtime_caller_analysis_report.txt:603 [production; reference] - _zero_v702_task_runner_run_one_step [line 3662]
+    - taskrunner_runtime_caller_analysis_report.txt:640 [production; reference] - _zero_v702_task_runner_run_one_step [line 3662]
+    - taskrunner_runtime_caller_analysis_report.txt:699 [production; reference] - _zero_v702_task_runner_run_one_step [line 3662]
+    - taskrunner_runtime_call_graph_report.txt:2260 [production; reference] - line 3662: _zero_v702_task_runner_run_one_step
+    - taskrunner_runtime_call_graph_report.txt:2389 [production; reference] - line 3662: _zero_v702_task_runner_run_one_step
+    - taskrunner_runtime_inventory_report.txt:539 [production; reference] - line 3662: function _zero_v702_task_runner_run_one_step
+    - core/runtime/task_runner.py:3662 [production; definition] def _zero_v702_task_runner_run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+    - core/runtime/task_runner.py:3680 [production; reference] TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step
+    - docs/execution_gateway_preflight_audit.md:162 [production; reference] - `core\runtime\task_runner.py`:3772 — `task_runner` — `def _zero_v702_task_runner_run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:`
+    - docs/execution_gateway_preflight_audit.md:163 [production; reference] - `core\runtime\task_runner.py`:3790 — `task_runner` — `TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step`
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1168 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:519 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4285 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:104 [production; reference] - `core/runtime/task_runner.py:4589` `BLOCKER` `task_runner` — TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:11250 [production; reference] "text": "def _zero_v702_task_runner_run_one_step(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:11286 [production; reference] "text": "TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1665 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:355 [production; reference] - `core/runtime/task_runner.py:4589` `BLOCKER` `task_runner` `TaskRunner._run_one_step` — TaskRunner._run_one_step = _zero_v702_task_runner_run_one_step
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:80 [production; reference] "assignment_rhs:_zero_v702_task_runner_run_one_step",
+    - tools/taskrunner_legacy_reference_audit.py:23 [tool; reference] "_zero_v702_task_runner_run_one_step",
+
+- _zero_v800_task_runner_run_one_step
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 38
+  non_definition_refs: 37
+  references:
+    - taskrunner_aer_closure_inventory.txt:448 [production; reference] - line 4014: _zero_v800_task_runner_run_one_step
+    - taskrunner_runtime_caller_analysis_report.txt:496 [production; reference] <- _zero_v800_task_runner_run_one_step [line 4014]
+    - taskrunner_runtime_caller_analysis_report.txt:507 [production; reference] <- _zero_v800_task_runner_run_one_step [line 4014]
+    - taskrunner_runtime_caller_analysis_report.txt:547 [production; reference] - _zero_v800_task_runner_run_one_step [line 4014]
+    - taskrunner_runtime_caller_analysis_report.txt:604 [production; reference] - _zero_v800_task_runner_run_one_step [line 4014]
+    - taskrunner_runtime_caller_analysis_report.txt:648 [production; reference] - _zero_v800_task_runner_run_one_step [line 4014]
+    - taskrunner_runtime_caller_analysis_report.txt:703 [production; reference] - _zero_v800_task_runner_run_one_step [line 4014]
+    - taskrunner_runtime_call_graph_report.txt:2296 [production; reference] - line 4014: _zero_v800_task_runner_run_one_step
+    - taskrunner_runtime_call_graph_report.txt:2392 [production; reference] - line 4014: _zero_v800_task_runner_run_one_step
+    - taskrunner_runtime_inventory_report.txt:591 [production; reference] - line 4014: function _zero_v800_task_runner_run_one_step
+    - core/runtime/task_runner.py:4014 [production; definition] def _zero_v800_task_runner_run_one_step(self: TaskRunner, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+    - core/runtime/task_runner.py:4078 [production; reference] TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step
+    - docs/execution_gateway_preflight_audit.md:170 [production; reference] - `core\runtime\task_runner.py`:4124 — `task_runner` — `def _zero_v800_task_runner_run_one_step(self: TaskRunner, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:`
+    - docs/execution_gateway_preflight_audit.md:171 [production; reference] - `core\runtime\task_runner.py`:4188 — `task_runner` — `TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step`
+    - docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:4833 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/aer_ownership_migration_plan_stage14.json:4834 [production; reference] "ast_function:core/runtime/task_runner.py::_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1304 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1313 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1322 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1331 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1340 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1378 [production; reference] "assignment_rhs": "_zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1408 [production; reference] "assignment_rhs:_zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:1409 [production; reference] "ast_function:core/runtime/task_runner.py::_zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/repairchain_native_ownership_closure_stage13d.json:3358 [production; reference] "assignment_rhs": "_zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2238 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:767 [production; reference] "context_after": "4986: TaskRunner._zero_v800_represents_failed_step_observation = _zero_v800_represents_failed_step_observation\n4987: TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:784 [production; reference] "context_after": "4987: TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step\n4988: ",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:791 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4533 [production; reference] "context_after": "4986: TaskRunner._zero_v800_represents_failed_step_observation = _zero_v800_represents_failed_step_observation\n4987: TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4550 [production; reference] "context_after": "4987: TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step\n4988: ",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4557 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:120 [production; reference] - `core/runtime/task_runner.py:4987` `BLOCKER` `task_runner` — TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:11853 [production; reference] "text": "def _zero_v800_task_runner_run_one_step(self: TaskRunner, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12060 [production; reference] "text": "TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1889 [production; reference] "expression": "TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:371 [production; reference] - `core/runtime/task_runner.py:4987` `BLOCKER` `task_runner` `TaskRunner._run_one_step` — TaskRunner._run_one_step = _zero_v800_task_runner_run_one_step
+    - tools/taskrunner_legacy_reference_audit.py:24 [tool; reference] "_zero_v800_task_runner_run_one_step",
+
+- _zero_v801_task_runner_finalize_public_result
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 21
+  non_definition_refs: 20
+  references:
+    - taskrunner_aer_closure_inventory.txt:450 [production; reference] - line 4109: _zero_v801_task_runner_finalize_public_result
+    - taskrunner_runtime_caller_analysis_report.txt:558 [production; reference] <- _zero_v801_task_runner_finalize_public_result [line 4109]
+    - taskrunner_runtime_caller_analysis_report.txt:562 [production; reference] - _zero_v801_task_runner_finalize_public_result [line 4109]
+    - taskrunner_runtime_caller_analysis_report.txt:605 [production; reference] - _zero_v801_task_runner_finalize_public_result [line 4109]
+    - taskrunner_runtime_caller_analysis_report.txt:650 [production; reference] - _zero_v801_task_runner_finalize_public_result [line 4109]
+    - taskrunner_runtime_caller_analysis_report.txt:704 [production; reference] - _zero_v801_task_runner_finalize_public_result [line 4109]
+    - taskrunner_runtime_call_graph_report.txt:2311 [production; reference] - line 4109: _zero_v801_task_runner_finalize_public_result
+    - taskrunner_runtime_inventory_report.txt:612 [production; reference] - line 4109: function _zero_v801_task_runner_finalize_public_result
+    - core/runtime/task_runner.py:4109 [production; definition] def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:
+    - core/runtime/task_runner.py:4173 [production; reference] TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result
+    - docs/execution_gateway_preflight_audit.md:172 [production; reference] - `core\runtime\task_runner.py`:4219 — `task_runner` — `def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:`
+    - docs/execution_gateway_preflight_audit.md:173 [production; reference] - `core\runtime\task_runner.py`:4283 — `task_runner` — `TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result`
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2561 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:808 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4574 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:121 [production; reference] - `core/runtime/task_runner.py:5082` `BLOCKER` `task_runner` — TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12132 [production; reference] "text": "def _zero_v801_task_runner_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12222 [production; reference] "text": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1903 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:372 [production; reference] - `core/runtime/task_runner.py:5082` `BLOCKER` `task_runner` `TaskRunner._finalize_public_result` — TaskRunner._finalize_public_result = _zero_v801_task_runner_finalize_public_result
+    - tools/taskrunner_legacy_reference_audit.py:25 [tool; reference] "_zero_v801_task_runner_finalize_public_result",
+
+- _zero_v810_finalize_public_result
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 19
+  non_definition_refs: 18
+  references:
+    - taskrunner_runtime_caller_analysis_report.txt:569 [production; reference] - _zero_v810_finalize_public_result [line 4250]
+    - taskrunner_runtime_caller_analysis_report.txt:606 [production; reference] - _zero_v810_finalize_public_result [line 4250]
+    - taskrunner_runtime_caller_analysis_report.txt:651 [production; reference] - _zero_v810_finalize_public_result [line 4250]
+    - taskrunner_runtime_call_graph_report.txt:2316 [production; reference] - line 4250: _zero_v810_finalize_public_result
+    - core/runtime/task_runner.py:4250 [production; definition] def _zero_v810_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:
+    - core/runtime/task_runner.py:4272 [production; reference] TaskRunner._finalize_public_result = _zero_v810_finalize_public_result
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:2581 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v810_finalize_public_result"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:835 [production; reference] "context_after": "5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state\n5181: TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:852 [production; reference] "context_after": "5181: TaskRunner._finalize_public_result = _zero_v810_finalize_public_result\n5182: ",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:859 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4601 [production; reference] "context_after": "5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state\n5181: TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4618 [production; reference] "context_after": "5181: TaskRunner._finalize_public_result = _zero_v810_finalize_public_result\n5182: ",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4625 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:124 [production; reference] - `core/runtime/task_runner.py:5181` `BLOCKER` `task_runner` — TaskRunner._finalize_public_result = _zero_v810_finalize_public_result
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12321 [production; reference] "text": "def _zero_v810_finalize_public_result(self: TaskRunner, result: Dict[str, Any]) -> Dict[str, Any]:"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12375 [production; reference] "text": "TaskRunner._finalize_public_result = _zero_v810_finalize_public_result"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1945 [production; reference] "expression": "TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:375 [production; reference] - `core/runtime/task_runner.py:5181` `BLOCKER` `task_runner` `TaskRunner._finalize_public_result` — TaskRunner._finalize_public_result = _zero_v810_finalize_public_result
+    - tools/taskrunner_legacy_reference_audit.py:26 [tool; reference] "_zero_v810_finalize_public_result",
+
+- _zero_v810_persist_step_result_to_runtime_state
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 24
+  non_definition_refs: 23
+  references:
+    - taskrunner_aer_closure_inventory.txt:452 [production; reference] - line 4201: _zero_v810_persist_step_result_to_runtime_state
+    - taskrunner_runtime_caller_analysis_report.txt:576 [production; reference] - _zero_v810_persist_step_result_to_runtime_state [line 4201]
+    - taskrunner_runtime_caller_analysis_report.txt:607 [production; reference] - _zero_v810_persist_step_result_to_runtime_state [line 4201]
+    - taskrunner_runtime_caller_analysis_report.txt:652 [production; reference] - _zero_v810_persist_step_result_to_runtime_state [line 4201]
+    - taskrunner_runtime_caller_analysis_report.txt:705 [production; reference] - _zero_v810_persist_step_result_to_runtime_state [line 4201]
+    - taskrunner_runtime_call_graph_report.txt:2319 [production; reference] - line 4201: _zero_v810_persist_step_result_to_runtime_state
+    - taskrunner_runtime_call_graph_report.txt:2397 [production; reference] - line 4201: _zero_v810_persist_step_result_to_runtime_state
+    - taskrunner_runtime_inventory_report.txt:622 [production; reference] - line 4201: function _zero_v810_persist_step_result_to_runtime_state
+    - core/runtime/task_runner.py:4201 [production; definition] def _zero_v810_persist_step_result_to_runtime_state(
+    - core/runtime/task_runner.py:4271 [production; reference] TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1315 [production; reference] "expression": "TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:835 [production; reference] "context_after": "5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state\n5181: TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:842 [production; reference] "expression": "TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:868 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4601 [production; reference] "context_after": "5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state\n5181: TaskRunner._finalize_public_result = _zero_v810_finalize_public_result",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4608 [production; reference] "expression": "TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4634 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:123 [production; reference] - `core/runtime/task_runner.py:5180` `BLOCKER` `task_runner` — TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12285 [production; reference] "text": "def _zero_v810_persist_step_result_to_runtime_state("
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12366 [production; reference] "text": "TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1931 [production; reference] "expression": "TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:374 [production; reference] - `core/runtime/task_runner.py:5180` `BLOCKER` `task_runner` `TaskRunner._persist_step_result_to_runtime_state` — TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:377 [production; reference] "assignment_rhs:_zero_v810_persist_step_result_to_runtime_state",
+    - tools/taskrunner_legacy_reference_audit.py:27 [tool; reference] "_zero_v810_persist_step_result_to_runtime_state",
+
+- _zero_v810_taskrunner_init
+  classification: C
+  explanation: C = production reference exists; do not delete yet
+  total_refs: 22
+  non_definition_refs: 21
+  references:
+    - taskrunner_aer_closure_inventory.txt:451 [production; reference] - line 4190: _zero_v810_taskrunner_init
+    - taskrunner_runtime_caller_analysis_report.txt:583 [production; reference] - _zero_v810_taskrunner_init [line 4190]
+    - taskrunner_runtime_caller_analysis_report.txt:608 [production; reference] - _zero_v810_taskrunner_init [line 4190]
+    - taskrunner_runtime_caller_analysis_report.txt:653 [production; reference] - _zero_v810_taskrunner_init [line 4190]
+    - taskrunner_runtime_caller_analysis_report.txt:706 [production; reference] - _zero_v810_taskrunner_init [line 4190]
+    - taskrunner_runtime_call_graph_report.txt:2325 [production; reference] - line 4190: _zero_v810_taskrunner_init
+    - core/runtime/task_runner.py:4190 [production; definition] def _zero_v810_taskrunner_init(self: TaskRunner, *args: Any, **kwargs: Any) -> None:
+    - core/runtime/task_runner.py:4270 [production; reference] TaskRunner.__init__ = _zero_v810_taskrunner_init
+    - docs/architecture/runtime_native_ownership/runtime_blocker_domain_split_stage12.json:1294 [production; reference] "expression": "TaskRunner.__init__ = _zero_v810_taskrunner_init"
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:825 [production; reference] "expression": "TaskRunner.__init__ = _zero_v810_taskrunner_init",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:851 [production; reference] "context_before": "5178: \n5179: TaskRunner.__init__ = _zero_v810_taskrunner_init",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:868 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4591 [production; reference] "expression": "TaskRunner.__init__ = _zero_v810_taskrunner_init",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4617 [production; reference] "context_before": "5178: \n5179: TaskRunner.__init__ = _zero_v810_taskrunner_init",
+    - docs/architecture/runtime_native_ownership/runtime_blocker_validation.json:4634 [production; reference] "context_before": "5179: TaskRunner.__init__ = _zero_v810_taskrunner_init\n5180: TaskRunner._persist_step_result_to_runtime_state = _zero_v810_persist_step_result_to_runtime_state",
+    - docs/architecture/runtime_native_ownership/runtime_compatibility_bridge_report.md:122 [production; reference] - `core/runtime/task_runner.py:5179` `BLOCKER` `task_runner` — TaskRunner.__init__ = _zero_v810_taskrunner_init
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12267 [production; reference] "text": "def _zero_v810_taskrunner_init(self: TaskRunner, *args: Any, **kwargs: Any) -> None:"
+    - docs/architecture/runtime_native_ownership/runtime_native_ownership_inventory.json:12357 [production; reference] "text": "TaskRunner.__init__ = _zero_v810_taskrunner_init"
+    - docs/architecture/runtime_native_ownership/runtime_replacement_inventory.json:1917 [production; reference] "expression": "TaskRunner.__init__ = _zero_v810_taskrunner_init",
+    - docs/architecture/runtime_native_ownership/runtime_replacement_report.md:373 [production; reference] - `core/runtime/task_runner.py:5179` `BLOCKER` `task_runner` `TaskRunner.__init__` — TaskRunner.__init__ = _zero_v810_taskrunner_init
+    - docs/architecture/runtime_native_ownership/taskrunner_native_ownership_closure_stage13b.json:328 [production; reference] "assignment_rhs:_zero_v810_taskrunner_init",
+    - tools/taskrunner_legacy_reference_audit.py:28 [tool; reference] "_zero_v810_taskrunner_init",
+
+================================================================================
+Suggested Package 35 Plan
+================================================================================
+- Remove only A-class candidates first.
+- Do not remove B-class candidates until tests/tools references are updated or confirmed archival.
+- Do not remove C-class candidates.
+- After cleanup, run targeted py_compile and TaskRunner/AER seal tests.
+
+================================================================================
+Validation
+================================================================================
+- This package only scans references. No runtime behavior was changed.
+- Long validation remains local-only.
+- Non-mainline issues must be reported explicitly.
