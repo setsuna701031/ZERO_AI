@@ -1,5 +1,10 @@
 from core.adaptive.adaptive_replan_state_machine import AdaptiveReplanStateMachine
 from core.tasks.adaptive_replan_contract import build_adaptive_replan_contract
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _cycle(decision: str) -> dict:

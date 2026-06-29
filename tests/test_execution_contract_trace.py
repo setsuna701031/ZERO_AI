@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 
 from core.tasks.execution_contract_trace import (
+
     build_execution_contract_trace_event,
     load_execution_contract_trace,
     summarize_execution_contract_trace,
     trace_execution_contract_payload,
     write_execution_contract_trace_event,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_build_trace_event_from_valid_execution_step():

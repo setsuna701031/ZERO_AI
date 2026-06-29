@@ -1,10 +1,15 @@
 from core.runtime.runtime_incident import RuntimeIncidentLayer
 from core.runtime.runtime_replay_recovery import (
+
     REPLAY_RECOVERY_STATUS_BLOCKED,
     REPLAY_RECOVERY_STATUS_CONTINUABLE,
     REPLAY_RECOVERY_STATUS_FAILED,
     reconstruct_runtime_failure_from_replay,
 )
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_replay_recovery_reconstructs_and_verifies_runtime_failure():

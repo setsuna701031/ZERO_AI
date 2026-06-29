@@ -3,11 +3,14 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.snapshot_loader.execution_gateway_integration import (
+
     build_execution_gateway_integration_summary,
     build_gateway_request,
     execute_gateway_action,
     execute_gateway_request,
 )
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_build_gateway_request_contract() -> None:

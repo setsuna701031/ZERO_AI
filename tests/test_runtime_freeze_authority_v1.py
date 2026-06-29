@@ -3,12 +3,15 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.runtime_freeze import (
+
     RuntimeExecutionFrozen,
     RuntimeFreezeAuthority,
     RuntimeFreezeState,
     enforce_runtime_not_frozen,
     evaluate_runtime_freeze,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_runtime_freeze_authority_allows_unfrozen_runtime() -> None:

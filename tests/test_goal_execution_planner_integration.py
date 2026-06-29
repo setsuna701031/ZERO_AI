@@ -3,6 +3,7 @@ from pathlib import Path
 
 from core.agent.agent_loop import AgentLoop
 from core.goals import (
+
     GoalExecutionContext,
     GoalExecutionPlanner,
     GoalExecutionPolicy,
@@ -12,6 +13,10 @@ from core.goals import (
     PersistentSubgoal,
 )
 from core.planning.planner import Planner
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 class CapturingTrace:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_recovery_orchestrator import RuntimeRecoveryOrchestrator
 from core.runtime.runtime_session_lease import (
+
     RuntimeSessionLeaseRegistry,
     SESSION_STATUS_TRANSFERRED,
 )
@@ -12,6 +13,10 @@ from core.runtime.runtime_watchdog_lease_bridge import (
     BRIDGE_INCIDENT_TYPE_SESSION_ZOMBIE,
     RuntimeWatchdogLeaseBridge,
 )
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_watchdog_lease_bridge_registers_and_heartbeats(tmp_path):

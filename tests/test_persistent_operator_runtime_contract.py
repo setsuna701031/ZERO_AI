@@ -1,6 +1,7 @@
 import json
 
 from core.runtime.operator_checkpoint import (
+
     OPERATOR_CHECKPOINT_COMPLETED,
     OPERATOR_CHECKPOINT_FAILED,
     OperatorCheckpoint,
@@ -13,6 +14,10 @@ from core.runtime.operator_session import (
     OperatorSession,
 )
 from core.runtime.persistent_operator import PersistentOperatorRuntime
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_session_can_be_created():

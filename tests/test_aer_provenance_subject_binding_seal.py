@@ -7,6 +7,7 @@ import core.goals.goal_completion_authority as completion_authority_module
 from core.evidence import EvidenceChain, EvidenceRecord, EvidenceRepository, EvidenceValidator
 from core.goals import GoalRepository, PersistentGoal
 from core.goals.goal_completion_authority import (
+
     GoalCompletionAuthority,
     GoalCompletionResult,
     is_accepted_goal_completion_result,
@@ -15,6 +16,8 @@ from core.program.engineering_program_state_machine import EngineeringProgramSta
 from core.session.engineering_session_state_machine import EngineeringSessionStateMachine
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_lifecycle_state_machine import EngineeringLifecycleStateMachine
+pytestmark = [pytest.mark.contract]
+
 
 
 def _attestation(goal_id: str, *, goal_lineage=None):

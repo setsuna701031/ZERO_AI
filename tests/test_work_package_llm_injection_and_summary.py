@@ -14,6 +14,11 @@ from core.runtime.task_runner import TaskRunner
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.runtime.work_package_queue import RuntimePackageQueue
 from services.system_boot import ZeroSystem
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.external, pytest.mark.llm]
+
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_execution_result_is_canonical_immutable_mapping():

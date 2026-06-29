@@ -3,10 +3,13 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.snapshot_loader.runtime_seal import (
+
     build_runtime_seal,
     build_runtime_seal_summary,
     verify_runtime_seal,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_build_runtime_seal_contract() -> None:

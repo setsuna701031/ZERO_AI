@@ -10,6 +10,11 @@ from core.runtime.task_runtime import TaskRuntime
 from core.runtime.step_executor import StepExecutor
 from core.tasks.scheduler import Scheduler
 from core.tasks.execution_guard import ExecutionGuard
+import pytest
+
+pytestmark = [pytest.mark.external]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

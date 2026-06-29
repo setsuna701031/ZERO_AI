@@ -12,6 +12,11 @@ from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.scheduler import Scheduler
 from core.tasks.task_repository import TaskRepository
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 
 
 GOAL = "Build a minimal deterministic todo text-processing utility."

@@ -3,9 +3,12 @@ from __future__ import annotations
 import pytest
 
 from core.engineering.governed_apply_wrapper import (
+
     build_governed_apply_request,
     validate_governed_apply_request_contract,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_governed_apply_request_wraps_ready_mutation_without_applying() -> None:

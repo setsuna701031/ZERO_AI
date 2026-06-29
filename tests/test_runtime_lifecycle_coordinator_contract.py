@@ -3,9 +3,14 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_lifecycle_coordinator import (
+
     RuntimeLifecycleCoordinator,
     RuntimeLifecycleRecord,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 class RuntimeLifecycleCoordinatorContractTest(unittest.TestCase):

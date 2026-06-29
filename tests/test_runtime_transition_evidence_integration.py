@@ -6,12 +6,17 @@ from pathlib import Path
 
 from core.runtime.runtime_evidence_surface import list_evidence, register_evidence
 from core.runtime.runtime_transition_evidence import (
+
     RUNTIME_TRANSITION_EVIDENCE_SCHEMA,
     build_runtime_transition_evidence,
     export_runtime_transition_evidence,
 )
 from core.runtime.runtime_transition_record import RuntimeTransitionRecord
 from core.runtime.runtime_transition_result import build_runtime_transition_result
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_runtime_transition_evidence_exports_and_registers_surface_index(tmp_path: Path) -> None:

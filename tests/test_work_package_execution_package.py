@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+pytestmark = [pytest.mark.integration, pytest.mark.llm]
+
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

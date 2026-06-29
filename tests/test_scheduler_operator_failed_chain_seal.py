@@ -1,4 +1,9 @@
 from __future__ import annotations
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_scheduler_operator_failed_pipeline_marks_failure_step(monkeypatch) -> None:

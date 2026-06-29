@@ -1,5 +1,10 @@
 from core.adaptive.replan_coordinator import ReplanCoordinator
 from core.adaptive.replan_runtime import ReplanRuntime
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_replan_runtime_has_no_record_creation_authority() -> None:

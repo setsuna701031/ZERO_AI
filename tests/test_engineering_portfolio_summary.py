@@ -11,6 +11,11 @@ from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoordinator
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

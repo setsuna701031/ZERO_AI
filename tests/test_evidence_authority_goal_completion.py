@@ -8,6 +8,11 @@ from core.evidence.evidence_collector import EvidenceCollector
 from core.evidence.evidence_contract import EvidenceContract
 from core.evidence.evidence_repository import EvidenceRepository
 from core.evidence.evidence_validator import EvidenceValidator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _contract() -> EvidenceContract:

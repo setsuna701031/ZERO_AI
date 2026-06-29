@@ -6,6 +6,9 @@ from core.agent.agent_loop import AgentLoop
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 from core.runtime.runtime_route_registry import RuntimeRouteRegistry, default_runtime_route_registry
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_registry_register_get_has_route() -> None:

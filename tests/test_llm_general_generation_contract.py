@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.system import llm_client
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.external, pytest.mark.llm]
+
+
 
 
 def test_general_generation_budget_prevents_short_artifact_cutoff(monkeypatch) -> None:

@@ -8,10 +8,15 @@ from core.runtime.runtime_evidence_surface import list_evidence, register_eviden
 from core.runtime.runtime_recovery_evidence import export_runtime_recovery_evidence
 from core.runtime.runtime_recovery_state import RuntimeRecoveryExecutionResult
 from core.runtime.runtime_transition_evidence import (
+
     build_runtime_transition_evidence,
     export_runtime_transition_evidence,
 )
 from core.runtime.runtime_transition_record import RuntimeTransitionRecord
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_recovery_report_evidence_exports_existing_payload(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.runtime_memory_engine import (
+
     RuntimeMemoryKind,
     assert_memory_non_authoritative,
     build_memory_window,
@@ -18,6 +19,10 @@ from core.runtime.runtime_memory_index import (
     query_memory_by_trace,
     query_memory_by_transaction,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_query_by_trace_id() -> None:

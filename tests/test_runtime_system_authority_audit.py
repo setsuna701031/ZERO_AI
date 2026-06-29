@@ -7,12 +7,15 @@ import pytest
 
 from core.runtime.runtime_mutation_guard import RuntimeMutationGuard, RuntimeMutationRejected
 from core.runtime.runtime_ownership import (
+
     RuntimeAction,
     RuntimeOwner,
     RuntimeResource,
     can_access,
     system_authority_rules,
 )
+pytestmark = [pytest.mark.contract]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 

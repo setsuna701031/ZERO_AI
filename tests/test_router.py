@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from core.agent.agent_component_invoker import call_router
 from core.system.router import Router
+import pytest
+
+pytestmark = [pytest.mark.llm]
+
+
 
 
 def test_router_accepts_legacy_positional_contract() -> None:

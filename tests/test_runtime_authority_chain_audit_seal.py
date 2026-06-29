@@ -4,6 +4,11 @@ from core.adaptive.continuation_coordinator import ContinuationCoordinator
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.evidence import EvidenceRecord, EvidenceValidator
 from core.goals.goal_completion_authority import GoalCompletionAuthority
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class _Repository:

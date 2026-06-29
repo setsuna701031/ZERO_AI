@@ -3,12 +3,15 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.runtime_system_capability import (
+
     RuntimeCapabilityClass,
     RuntimeSystemCapabilityError,
     SYSTEM_CAPABILITY_INVENTORY,
     issue_runtime_system_capability,
     validate_runtime_system_capability,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_system_permission_inventory_has_every_required_class_and_no_admin_grant() -> None:

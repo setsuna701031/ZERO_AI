@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.tasks.adaptive_replan_contract import build_adaptive_replan_contract
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _cycle(decision: str) -> dict[str, object]:

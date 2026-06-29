@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.runtime.execution_gateway import safe_subprocess_run
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_gateway_neutral_success_does_not_freeze() -> None:

@@ -4,9 +4,14 @@ import json
 from pathlib import Path
 
 from core.runtime.persistent_engineering_session import (
+
     PersistentEngineeringSession,
     create_persistent_engineering_session_from_runtime_result,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def read_json(path: str) -> dict:

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from core.runtime.mutation_audit import (
+
     build_mutation_audit_record,
     create_audit_event,
 )
@@ -25,6 +26,10 @@ from core.runtime.runtime_transition_evidence import (
     export_runtime_transition_evidence,
 )
 from core.runtime.runtime_transition_record import RuntimeTransitionRecord
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_mutation_audit_evidence_exports_existing_payload(tmp_path: Path) -> None:

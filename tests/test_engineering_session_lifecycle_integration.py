@@ -1,4 +1,9 @@
 from core.session.session_coordinator import SessionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_session_coordinator_attaches_session_state():

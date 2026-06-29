@@ -8,12 +8,17 @@ import sys
 from pathlib import Path
 
 from core.memory.memory_ownership_contract import (
+
     MEMORY_MODULES,
     audit_memory_control_boundaries,
     memory_architecture_summary,
 )
 from core.memory.work_package_memory import WorkPackageMemoryStore
 from core.planning.work_package_planner_bridge import WorkPackagePlannerBridge
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

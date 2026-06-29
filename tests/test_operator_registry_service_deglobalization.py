@@ -4,10 +4,15 @@ import builtins
 from pathlib import Path
 
 from core.runtime.operator_registry_service import (
+
     OPERATOR_COMPLETION_REGISTRY_KEY,
     OPERATOR_FAILURE_REGISTRY_KEY,
     get_operator_registry_service,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def _clear_legacy_registries() -> None:

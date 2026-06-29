@@ -12,10 +12,13 @@ import pytest
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.runtime.work_package_queue import RuntimePackageQueue, RuntimePackageQueueError
 from core.runtime.runtime_authority_seal import (
+
     _RUNTIME_DISPATCHER_ISSUER_TOKEN,
     issue_work_package_completion_authority,
 )
 from core.tasks.work_package_runtime_intake import build_package_record, validate_package
+pytestmark = [pytest.mark.integration]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

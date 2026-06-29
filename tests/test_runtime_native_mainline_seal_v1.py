@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_native_mainline_full_migration_seal(tmp_path):

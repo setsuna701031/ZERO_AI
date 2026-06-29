@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_recovery_orchestrator import RuntimeRecoveryOrchestrator
 from core.runtime.runtime_session_lease import (
+
     RuntimeSessionLeaseRegistry,
     SESSION_STATUS_TRANSFERRED,
 )
@@ -9,6 +10,10 @@ from core.runtime.runtime_supervisor import RuntimeSupervisor
 from core.runtime.runtime_supervisor_bridge import RuntimeSupervisorBridge
 from core.runtime.runtime_watchdog import RuntimeWatchdog
 from core.runtime.runtime_watchdog_lease_bridge import RuntimeWatchdogLeaseBridge
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def build_runtime_fabric(tmp_path, *, ttl=2, zombie_after=20):

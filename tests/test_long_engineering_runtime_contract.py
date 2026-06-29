@@ -4,10 +4,15 @@ import json
 from pathlib import Path
 
 from core.runtime.long_engineering_runtime import (
+
     execute_long_engineering_runtime,
     find_latest_long_runtime_recovery,
     resume_long_engineering_runtime,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def read_json(path: str) -> dict:

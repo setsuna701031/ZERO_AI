@@ -4,6 +4,7 @@ from core.runtime.aer_runtime_integration import AERRuntimeIntegration
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_native_agent_loop import RuntimeNativeAgentLoop
 from core.runtime.runtime_ownership_isolation_fabric import (
+
     CAPABILITY_EXECUTE,
     CAPABILITY_READ,
     CAPABILITY_WRITE,
@@ -15,6 +16,10 @@ from core.runtime.runtime_supervisor import RuntimeSupervisor
 from core.runtime.runtime_supervisor_bridge import RuntimeSupervisorBridge
 from core.runtime.runtime_watchdog import RuntimeWatchdog
 from core.runtime.runtime_watchdog_lease_bridge import RuntimeWatchdogLeaseBridge
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_runtime_native_agent_loop_full_aer_mainline(tmp_path):

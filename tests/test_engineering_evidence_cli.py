@@ -8,6 +8,11 @@ from pathlib import Path
 
 from cli import evidence_cli
 from core.tasks.engineering_evidence_repository import EngineeringEvidenceRepository
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

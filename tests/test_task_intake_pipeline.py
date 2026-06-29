@@ -13,10 +13,13 @@ from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_runner import TaskRunner
 from core.runtime.runtime_evidence_surface import list_evidence, register_evidence
 from core.tasks.task_intake_contract import (
+
     TaskIntakeRequest,
     run_task_intake_pipeline,
 )
 from core.tasks.task_repository import TaskRepository
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_task_intake_pipeline_accepts_engineering_task_and_tracks_outputs(

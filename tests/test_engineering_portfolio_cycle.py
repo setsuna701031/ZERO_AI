@@ -8,6 +8,11 @@ from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoordinator
 from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 
 
 def _attestation(goal_id: str, goal_lineage=None):

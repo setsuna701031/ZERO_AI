@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.runtime.runtime_authority_source_closure import (
+
     CANONICAL_EXECUTION_AUTHORITY_SOURCE,
     NON_MAINLINE_REPORTING_RULES,
     OBSERVED_NON_MAINLINE_AUTHORITY_SURFACES,
@@ -11,6 +12,10 @@ from core.runtime.runtime_authority_source_closure import (
 )
 from core.runtime.runtime_capability_tokens import RuntimeCapabilityTokenManager
 from core.runtime.runtime_execution_authority_policy import RuntimeExecutionAuthorityPolicy
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

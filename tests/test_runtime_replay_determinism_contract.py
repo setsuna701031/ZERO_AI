@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.runtime_replay_freeze import (
+
     ReplayMode,
     assert_replay_is_deterministic,
     create_replay_run,
@@ -12,6 +13,10 @@ from core.runtime.runtime_transaction_registry import (
     create_transaction,
     list_transactions,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_same_input_log_produces_same_normalized_digest() -> None:

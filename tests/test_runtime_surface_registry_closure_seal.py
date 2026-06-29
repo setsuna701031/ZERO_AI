@@ -13,6 +13,11 @@ import core.runtime.task_runner as task_runner_module
 import core.tasks.scheduler as scheduler_module
 from core.agent.agent_loop import AgentLoop
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_agent_loop_wave1_and_wave2_entries_are_registry_admitted(monkeypatch, tmp_path: Path) -> None:

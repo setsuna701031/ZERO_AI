@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import json
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_missing_trust_policy_store_rejects() -> None:

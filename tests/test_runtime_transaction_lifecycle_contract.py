@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.runtime_transaction_registry import (
+
     RuntimeTransactionState,
     assert_transaction_lifecycle_valid,
     create_transaction,
@@ -17,6 +18,8 @@ from core.runtime.runtime_transaction_registry import (
     record_verification,
     transaction_to_dict,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_transaction_state_order_cannot_skip() -> None:

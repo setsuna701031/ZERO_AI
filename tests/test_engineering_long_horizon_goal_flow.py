@@ -8,6 +8,11 @@ from pathlib import Path
 
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

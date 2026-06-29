@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from core.runtime.runtime_authority import (
+
     RuntimeAuthorityScope,
     RuntimeIdentity,
     default_human_authority_scope,
@@ -16,6 +17,10 @@ from core.runtime.runtime_capability_scope import (
 from core.runtime.runtime_kernel_protection import RuntimeKernelProtection
 from core.runtime.runtime_mutation_gateway import RuntimeMutationGateway
 from core.runtime.runtime_mutation_transaction import RuntimeMutationRequest
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 class RuntimeAuthorityGovernanceContractTest(unittest.TestCase):

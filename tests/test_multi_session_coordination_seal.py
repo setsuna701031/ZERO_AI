@@ -9,6 +9,7 @@ from core.evidence.evidence_authority import EvidenceAuthority
 from core.evidence.evidence_repository import EvidenceRepository
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.runtime.runtime_authority_seal import (
+
     _RUNTIME_DISPATCHER_ISSUER_TOKEN,
     is_work_package_completion_authority,
     issue_work_package_completion_authority,
@@ -18,6 +19,8 @@ from core.runtime.runtime_session_resume import RuntimeSessionResume
 from core.runtime.work_package_queue import RuntimePackageQueue
 from core.runtime.work_package_queue import RuntimePackageQueueError
 from core.tasks.scheduler_core.task_scheduler_queue import ScheduledTask, TaskSchedulerQueue
+pytestmark = [pytest.mark.contract]
+
 
 
 def _work(session_id: str, *, kind: str = "continuation") -> dict:

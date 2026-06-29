@@ -3,6 +3,11 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class RuntimeTransactionCoordinatorContractTest(unittest.TestCase):

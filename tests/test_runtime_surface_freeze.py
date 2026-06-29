@@ -5,11 +5,16 @@ from typing import Any
 
 from core.runtime.execution_authority import ensure_authority_metadata, validate_authority_metadata
 from core.runtime.runtime_surface_registry import (
+
     RuntimeSurfaceRisk,
     assert_surface_requires_authority,
     classify_runtime_surface,
     is_side_effect_surface,
 )
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 MUTATION_SURFACES = {

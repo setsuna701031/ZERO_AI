@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.reports.engineering_report_contract import (
+
     NOT_SAFE_TO_PUSH,
     PUSH_AFTER_REVIEW,
     SAFE_TO_PUSH,
@@ -12,6 +13,10 @@ from core.reports.engineering_report_formatter import format_engineering_report
 from core.runtime.planner_runtime_dispatch import dispatch_planner_result_to_persistent_runtime
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.tasks.engineering_task_runner import run_engineering_task
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_engineering_report_contains_all_operator_usable_sections() -> None:

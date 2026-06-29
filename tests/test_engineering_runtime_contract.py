@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from core.tasks.engineering_runtime_contract import (
+
     ENGINEERING_RUNTIME_CONTRACT_SCHEMA,
     build_engineering_runtime_contract,
     build_engineering_runtime_contract_from_result,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_build_runtime_contract_is_passive_boundary() -> None:

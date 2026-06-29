@@ -1,5 +1,10 @@
 from core.adaptive.continuation_coordinator import ContinuationCoordinator
 from core.adaptive.continuation_runtime import ContinuationRuntime
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class FakeRepository:

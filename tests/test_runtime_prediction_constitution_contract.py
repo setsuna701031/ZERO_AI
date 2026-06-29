@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_burnin_runner import run_prediction_burnin, run_simulation_burnin
 from core.runtime.runtime_constitution_freeze import (
+
     RuntimeInvariant,
     assert_prediction_invariant,
     assert_simulation_invariant,
@@ -9,6 +10,10 @@ from core.runtime.runtime_constitution_freeze import (
 )
 from core.runtime.runtime_prediction_engine import predict_mutation_impact
 from core.runtime.runtime_simulation_engine import simulate_runtime_step
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_constitution_rejects_prediction_as_authority() -> None:

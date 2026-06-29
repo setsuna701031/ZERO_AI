@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_ownership_isolation_fabric import (
+
     AUTHORITY_ALLOW,
     AUTHORITY_DENY,
     CAPABILITY_EXECUTE,
@@ -12,6 +13,10 @@ from core.runtime.runtime_ownership_isolation_fabric import (
 )
 from core.runtime.runtime_recovery_orchestrator import RuntimeRecoveryOrchestrator
 from core.runtime.runtime_transaction_fabric import RuntimeTransactionFabric
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_runtime_ownership_isolation_mainline(tmp_path):

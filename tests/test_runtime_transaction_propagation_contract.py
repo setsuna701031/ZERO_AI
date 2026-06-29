@@ -3,11 +3,16 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_transaction_context import (
+
     RuntimeTransactionContext,
     clear_current_transaction,
     merge_current_transaction_metadata,
     set_current_transaction,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 class RuntimeTransactionPropagationContractTest(unittest.TestCase):

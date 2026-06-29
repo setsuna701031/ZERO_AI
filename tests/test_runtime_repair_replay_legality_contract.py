@@ -1,7 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
+
+import pytest
+
+pytestmark = [pytest.mark.contract]
 
 def test_replay_like_external_records_cannot_be_used_as_execution_evidence() -> None:
     from core.runtime.runtime_evidence_consumer import RuntimeEvidenceConsumer

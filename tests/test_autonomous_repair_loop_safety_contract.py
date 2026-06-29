@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.autonomous_repair_loop import (
+
     AutonomousRepairState,
     assert_repair_loop_bounded,
     apply_repair_action,
@@ -15,6 +16,10 @@ from core.runtime.autonomous_repair_loop import (
 )
 from core.runtime.runtime_evidence_freeze import assert_evidence_does_not_grant_authority
 from core.runtime.runtime_transaction_registry import get_transaction
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_max_attempts_bounds_loop() -> None:

@@ -4,6 +4,11 @@ from core.adaptive import AdaptiveRuntimeResume, MemoryAwareReplanner
 from core.memory import IssueMemory, MemoryRepository
 from core.runtime.task_runner import TaskRunner
 from core.runtime.task_runtime import TaskRuntime
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 class SequenceExecutor:

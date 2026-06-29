@@ -3,9 +3,12 @@ from __future__ import annotations
 import pytest
 
 from core.engineering.verification_evidence import (
+
     build_verification_evidence_bundle,
     validate_verification_evidence_contract,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_verification_evidence_bundle_records_passed_verification() -> None:

@@ -3,10 +3,13 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.runtime_seal import (
+
     RuntimeSealAuthorityRejected,
     build_runtime_seal_authority_state,
     enforce_runtime_seal_authority,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_runtime_seal_authority_locks_runtime() -> None:

@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 from tests.authority_test_support import sealed_dispatch_task
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class _RecordingStepExecutor:

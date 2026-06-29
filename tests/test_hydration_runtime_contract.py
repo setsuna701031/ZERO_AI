@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _make_scheduler(tmp_path: Path) -> Scheduler:

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_direct_fake_evidence_blob_is_rejected_by_loader() -> None:

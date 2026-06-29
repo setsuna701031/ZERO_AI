@@ -11,6 +11,11 @@ from core.planning.work_package_planner_bridge import WorkPackagePlannerBridge
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.runtime.work_package_queue import RuntimePackageQueue
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

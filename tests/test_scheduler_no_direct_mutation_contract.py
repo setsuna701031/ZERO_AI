@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_scheduler_write_file_surface_delegates_to_step_executor(

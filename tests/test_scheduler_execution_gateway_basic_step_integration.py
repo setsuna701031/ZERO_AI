@@ -4,6 +4,11 @@ from pathlib import Path
 
 import core.tasks.scheduler as scheduler_module
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 class AllowGuard:

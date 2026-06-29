@@ -5,6 +5,11 @@ import sys
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

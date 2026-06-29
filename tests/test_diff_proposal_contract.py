@@ -3,10 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.engineering.diff_proposal import (
+
     build_diff_proposal,
     validate_diff_proposal_contract,
 )
 from core.engineering.repo_scan import build_impacted_file_plan
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_diff_proposal_is_read_only_and_requires_approval(

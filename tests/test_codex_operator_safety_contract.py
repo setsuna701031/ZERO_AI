@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 
 from core.operator.codex_operator import (
+
     CodexOperatorState,
     apply_operator_edit_plan,
     invoke_autonomous_repair,
@@ -18,6 +19,10 @@ from core.operator import verification_runner
 from core.runtime.execution_authority import normalize_authority_metadata, validate_authority_metadata
 from core.runtime.runtime_constitution_freeze import assert_prediction_invariant, assert_simulation_invariant
 from core.runtime.runtime_transaction_registry import list_transactions
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 def test_operator_context_cannot_grant_authority() -> None:

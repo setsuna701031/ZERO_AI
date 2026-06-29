@@ -9,11 +9,14 @@ from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.runtime_authority_seal import is_dispatch_execution_capability
 from core.runtime.work_package_queue import RuntimePackageQueue, RuntimePackageQueueError
 from core.tasks.scheduler_runtime_contract import (
+
     SchedulerRuntimeContractError,
     seal_scheduler_runtime_contract,
     validate_scheduler_lifecycle_transition,
     validate_scheduler_runtime_contract,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def _authority() -> dict:

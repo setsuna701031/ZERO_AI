@@ -1,9 +1,14 @@
 from core.runtime.runtime_loop_continuation import (
+
     LOOP_CONTINUATION_STATUS_BLOCKED,
     LOOP_CONTINUATION_STATUS_RESUMED,
     LOOP_CONTINUATION_STATUS_SKIPPED,
     prepare_runtime_loop_continuation_after_failure,
 )
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 class FakeTaskRuntime:

@@ -7,6 +7,11 @@ from core.runtime.task_runtime import TaskRuntime
 from core.session.engineering_session_state_machine import EngineeringSessionStateMachine
 from core.session.engineering_session_validator import EngineeringSessionValidator
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _lifecycle_payload() -> dict:

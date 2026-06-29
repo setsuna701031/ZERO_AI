@@ -5,9 +5,14 @@ from pathlib import Path
 
 from core.runtime.long_engineering_runtime import execute_long_engineering_runtime
 from core.runtime.recovery_replay_closure import (
+
     close_latest_recovery_replay,
     run_multi_cycle_engineering_loop,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def read_json(path: str) -> dict:

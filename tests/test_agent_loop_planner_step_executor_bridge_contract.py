@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.agent.agent_loop import AgentLoop
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class DummyPlanner:

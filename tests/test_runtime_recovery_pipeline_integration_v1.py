@@ -1,11 +1,16 @@
 from core.runtime.runtime_journal import RuntimeJournal
 from core.runtime.runtime_recovery_pipeline import (
+
     PIPELINE_STATUS_BLOCKED,
     PIPELINE_STATUS_READY_TO_CONTINUE,
     PIPELINE_STATUS_REVIEW_REQUIRED,
     RuntimeRecoveryPipeline,
     run_runtime_failure_recovery,
 )
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_pipeline_turns_simple_failure_into_continuable_runtime_patch():

@@ -1,5 +1,10 @@
 from core.adaptive.adaptive_loop_contract import build_adaptive_loop_contract
 from core.adaptive.adaptive_loop_state import classify_adaptive_loop_state
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_loop_contract_marks_continuation_as_next_cycle_allowed() -> None:

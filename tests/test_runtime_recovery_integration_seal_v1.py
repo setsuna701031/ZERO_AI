@@ -1,9 +1,14 @@
 from core.runtime.runtime_recovery_integration import (
+
     INTEGRATION_STATUS_BLOCKED,
     INTEGRATION_STATUS_READY_TO_CONTINUE,
     INTEGRATION_STATUS_REVIEW_REQUIRED,
     seal_runtime_recovery_integration,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 def test_recovery_integration_ready_to_continue():

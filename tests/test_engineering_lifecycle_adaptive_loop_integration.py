@@ -1,4 +1,9 @@
 from core.tasks.engineering_lifecycle_state_machine import EngineeringLifecycleStateMachine
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_engineering_lifecycle_evaluates_cycle_after_adaptive_loop_contract():

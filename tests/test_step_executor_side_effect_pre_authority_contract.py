@@ -3,6 +3,11 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 from typing import Any
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.llm]
+
+
 
 
 SIDE_EFFECT_STEPS = {

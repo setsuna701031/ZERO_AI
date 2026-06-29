@@ -4,6 +4,11 @@ import ast
 from pathlib import Path
 
 from core.runtime.controlled_mutation_bridge import execute_controlled_mutation_probe
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

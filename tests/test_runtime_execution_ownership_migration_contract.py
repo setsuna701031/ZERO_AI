@@ -1,10 +1,14 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import importlib
 import sys
 from pathlib import Path
 
+
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MIGRATED_SURFACES = (

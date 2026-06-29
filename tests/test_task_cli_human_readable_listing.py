@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from cli.task_cli import _print_task_table
+import pytest
+
+pytestmark = [pytest.mark.llm]
+
+
 
 
 def test_task_list_default_hides_runtime_fingerprints_and_limits(capsys) -> None:

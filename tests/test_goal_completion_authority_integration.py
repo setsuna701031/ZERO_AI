@@ -4,6 +4,11 @@ from core.goals.goal_completion_authority import GoalCompletionAuthority, GoalCo
 from core.goals.goal_state_machine import GoalStateMachine
 from core.goals.goal_transition import GoalTransitionResult
 from core.evidence import EvidenceRecord, EvidenceValidator
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
+
 
 
 def _validated_evidence():

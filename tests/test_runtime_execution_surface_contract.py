@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.runtime.runtime_execution_result import build_runtime_execution_result
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_legal_execution_can_set_executed_true() -> None:

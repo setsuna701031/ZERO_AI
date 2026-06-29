@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.runtime_session_resume import (
+
     RESUMABLE_TASK_STATUSES,
     RuntimeSessionResume,
     is_resumable_task_status,
@@ -11,6 +12,10 @@ from core.runtime.runtime_task_continuation import RuntimeTaskContinuation
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_runtime_session_resume_contract_seal(tmp_path):

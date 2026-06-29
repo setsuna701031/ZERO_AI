@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.llm]
+
+
 
 
 def test_normalize_task_schema_caps_results_without_deep_runtime_payload(tmp_path) -> None:

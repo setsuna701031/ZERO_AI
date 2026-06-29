@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from core.runtime.runtime_execution_result import build_runtime_execution_result
 from core.runtime.runtime_recovery_readiness import (
+
     CANONICAL_RECOVERY_READINESS_FIELDS,
     build_runtime_recovery_readiness_fields,
 )
 from core.runtime.runtime_transaction_context import build_transaction_boundary_metadata
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def _legal_payload() -> dict:

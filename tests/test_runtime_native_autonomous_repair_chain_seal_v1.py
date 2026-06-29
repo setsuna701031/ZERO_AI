@@ -4,6 +4,11 @@ from core.runtime.runtime_native_autonomous_repair_chain import RuntimeNativeAut
 from core.runtime.runtime_native_code_mutation_loop import RuntimeNativeCodeMutationLoop
 from core.runtime.runtime_native_git_patch_pipeline import RuntimeNativeGitPatchPipeline
 from core.runtime.runtime_native_targeted_pytest_planner import RuntimeNativeTargetedPytestPlanner
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_native_autonomous_repair_chain_seal(tmp_path):

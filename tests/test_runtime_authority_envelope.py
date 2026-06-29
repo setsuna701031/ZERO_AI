@@ -7,9 +7,12 @@ from pathlib import Path
 import pytest
 
 from core.runtime.runtime_authority_envelope import (
+
     RUNTIME_AUTHORITY_ENVELOPE_SCHEMA,
     execution_envelope_to_authority_envelope,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

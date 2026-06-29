@@ -8,6 +8,11 @@ import cli.work_package_cli as work_package_cli
 import core.runtime.task_runner as task_runner_module
 import core.tasks.scheduler as scheduler_module
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
+import pytest
+
+pytestmark = [pytest.mark.smoke, pytest.mark.contract]
+
+
 
 
 def test_aer_work_package_cli_mainline_uses_registry_and_preserves_metadata(monkeypatch, tmp_path: Path) -> None:

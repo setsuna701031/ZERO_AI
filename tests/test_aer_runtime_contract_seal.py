@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from core.runtime.runtime_contract_seal import (
+
     REQUIRED_CONTRACT_CHAINS,
     build_runtime_contract_seal,
 )
@@ -26,6 +27,10 @@ from core.runtime.runtime_transition_evidence import (
     export_runtime_transition_evidence,
 )
 from core.runtime.runtime_transition_record import RuntimeTransitionRecord
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 def test_runtime_contract_seal_fails_when_any_chain_is_missing(tmp_path: Path) -> None:

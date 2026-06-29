@@ -5,6 +5,11 @@ from core.evidence.evidence_authority import EvidenceAuthority
 from core.evidence.evidence_repository import EvidenceRepository
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.goals.goal_lineage_contract import extract_goal_lineage
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _lineage(root: str, *, session: str, runtime: str) -> dict[str, str]:

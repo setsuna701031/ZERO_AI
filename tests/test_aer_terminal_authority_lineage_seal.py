@@ -10,6 +10,7 @@ from core.evidence.evidence_record import EvidenceRecord
 from core.evidence.evidence_validator import EvidenceValidator
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.runtime.runtime_authority_seal import (
+
     _RUNTIME_DISPATCHER_ISSUER_TOKEN,
     is_work_package_completion_authority,
     issue_work_package_completion_authority,
@@ -23,6 +24,8 @@ from tests.test_aer_multifile_engineering_workflow_contract import MultiFileEngi
 from core.agent.agent_loop import AgentLoop
 from core.tools.tool_registry import ToolRegistry
 from tests.authority_test_support import sealed_dispatch_task
+pytestmark = [pytest.mark.contract]
+
 
 
 def _task() -> dict:

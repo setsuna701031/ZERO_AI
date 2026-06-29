@@ -1,6 +1,9 @@
 import pytest
 
 from core.adaptive import AdaptiveExecutionContract
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_execution_contract_contains_required_fields() -> None:

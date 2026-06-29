@@ -1,4 +1,9 @@
 from core.tasks.work_package_execution_guard import validate_execute_target
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_execute_requires_workspace_scope():

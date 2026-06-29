@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 NOW = datetime(2026, 5, 25, 12, 0, 0, tzinfo=UTC)

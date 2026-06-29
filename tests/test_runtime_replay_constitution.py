@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import asdict
 import json
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _manager_with_session():

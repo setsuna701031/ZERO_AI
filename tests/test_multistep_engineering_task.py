@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 from core.planning.planner import Planner
 from core.runtime.multistep_task_report import (
+
     build_multistep_task_report,
     export_multistep_task_report_evidence,
 )
@@ -15,6 +16,10 @@ from core.runtime.runtime_evidence_surface import list_evidence, register_eviden
 from core.runtime.step_executor import StepExecutor
 from tests.authority_test_support import owned_step_executor
 from core.tasks.task_repository import TaskRepository
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_multistep_engineering_task_runs_real_planner_runtime_and_artifacts(

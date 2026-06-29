@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from core.tasks.execution_contract import (
+
     EXECUTION_CONTRACT_VERSION,
     normalize_execution_step,
     sanitize_execution_step,
     validate_execution_step,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_missing_step_becomes_noop_with_warning():

@@ -4,6 +4,11 @@ from pathlib import Path
 from core.agent.agent_loop import AgentLoop
 from core.goals import GoalRepository
 from core.planning.planner import Planner
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 class RepositoryAwarePlanner:

@@ -1,4 +1,9 @@
 from core.program.program_coordinator import ProgramCoordinator
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_program_coordinator_attaches_program_state_from_session() -> None:

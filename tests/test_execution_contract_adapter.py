@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from core.tasks.execution_contract_adapter import (
+
     adapt_execution_step,
     export_runtime_execution_step,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_adapter_accepts_direct_step():

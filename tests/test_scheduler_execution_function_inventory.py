@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 TARGET = Path("core/tasks/scheduler.py")

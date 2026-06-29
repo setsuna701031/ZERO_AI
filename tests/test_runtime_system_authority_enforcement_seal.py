@@ -8,12 +8,15 @@ import pytest
 from core.runtime.runtime_boundary import RuntimeBoundary, RuntimeBoundaryRejected
 from core.runtime.runtime_mutation_guard import RuntimeMutationGuard, RuntimeMutationRejected
 from core.runtime.runtime_ownership import (
+
     RuntimeAction,
     RuntimeOwner,
     RuntimeResource,
     can_access,
     system_authority_rules,
 )
+pytestmark = [pytest.mark.contract]
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_OWNERSHIP_FILE = ROOT / "core/runtime/runtime_ownership.py"

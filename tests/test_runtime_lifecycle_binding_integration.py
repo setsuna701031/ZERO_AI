@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_lifecycle_context import (
+
     clear_current_lifecycle_coordinator,
     create_current_lifecycle_record,
     get_current_lifecycle_coordinator,
@@ -17,6 +18,10 @@ from core.runtime.runtime_lifecycle_context import (
 from core.runtime.runtime_lifecycle_coordinator import RuntimeLifecycleCoordinator
 from core.runtime.runtime_transaction_context import clear_current_transaction, transaction_scope
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 class RuntimeLifecycleBindingIntegrationTest(unittest.TestCase):

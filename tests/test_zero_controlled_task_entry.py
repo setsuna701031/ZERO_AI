@@ -3,6 +3,11 @@ from __future__ import annotations
 from core.runtime.execution_gateway import safe_subprocess_run
 from core.runtime.runtime_execution_session import RuntimeExecutionSessionManager
 from core.runtime.runtime_replay_engine import RuntimeReplayEngine
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_zero_controlled_task_entry_success_path() -> None:

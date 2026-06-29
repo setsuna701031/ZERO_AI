@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.execution_gateway import build_runtime_execution_request
 from core.runtime.governed_runtime_execution_session import (
+
     build_governed_runtime_execution_session_report,
 )
 from core.runtime.runtime_authority import build_authority_metadata
@@ -12,6 +13,10 @@ from core.runtime.runtime_transaction_context import (
     merge_current_transaction_metadata,
     transaction_context,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 CANONICAL_AUTHORITY_FIELDS = {

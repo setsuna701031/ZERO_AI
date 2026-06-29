@@ -1,6 +1,9 @@
 import pytest
 
 from core.goals import GoalStatus, PersistentGoal, PersistentSubgoal
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_create_goal_and_subgoal_contracts() -> None:

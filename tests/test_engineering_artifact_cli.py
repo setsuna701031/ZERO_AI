@@ -8,6 +8,11 @@ from pathlib import Path
 
 from cli import artifact_cli
 from core.tasks.engineering_artifact_repository import EngineeringArtifactRepository
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

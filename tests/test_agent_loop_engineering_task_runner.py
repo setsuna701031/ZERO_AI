@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 
 from core.agent.agent_loop import AgentLoop
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _engineering_payload(

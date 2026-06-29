@@ -7,9 +7,12 @@ from pathlib import Path
 import pytest
 
 from core.runtime.runtime_dispatch_contract import (
+
     RUNTIME_DISPATCH_CONTRACT_SCHEMA,
     runtime_dispatch_request_to_contract,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

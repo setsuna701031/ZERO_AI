@@ -8,12 +8,15 @@ import pytest
 
 from core.runtime.runtime_evidence_surface import list_evidence
 from core.runtime.runtime_execution_authority_evidence import (
+
     RUNTIME_EXECUTION_AUTHORITY_EVIDENCE_SCHEMA,
 )
 from core.runtime.runtime_execution_authority_gate import (
     RuntimeExecutionAuthorityDenied,
     RuntimeExecutionAuthorityGate,
 )
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 def test_scheduler_direct_execution_is_blocked_with_evidence(tmp_path: Path) -> None:

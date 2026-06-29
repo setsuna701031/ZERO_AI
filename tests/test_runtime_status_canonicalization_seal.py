@@ -5,6 +5,9 @@ import pytest
 from core.runtime.runtime_state_machine import RuntimeStateMachine
 from core.runtime.runtime_transition_policy import RuntimeTransitionPolicyError
 from core.runtime.task_runtime import TaskRuntime
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _task(tmp_path, *, task_id: str = "status-canon") -> dict:

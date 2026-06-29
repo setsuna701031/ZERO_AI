@@ -7,6 +7,11 @@ from typing import Any, Dict, List
 from core.agent.agent_loop import AgentLoop
 from core.runtime.step_executor import StepExecutor
 from core.tools.tool_registry import ToolRegistry
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class MultiFileEngineeringPlanner:

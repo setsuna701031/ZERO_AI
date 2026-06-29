@@ -12,6 +12,11 @@ from cli import program_cli
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
 from core.tasks.engineering_program_coordinator import EngineeringProgramCoordinator
 from core.tasks.engineering_program_repository import EngineeringProgramRepository
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

@@ -4,6 +4,11 @@ from core.runtime.runtime_native_code_mutation_loop import RuntimeNativeCodeMuta
 from core.runtime.runtime_native_engineering_session import RuntimeNativeEngineeringSession
 from core.runtime.runtime_native_git_patch_pipeline import RuntimeNativeGitPatchPipeline
 from core.runtime.runtime_native_repo_engineering_surface import RuntimeNativeRepoEngineeringSurface
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_native_git_patch_pipeline_seal(tmp_path):

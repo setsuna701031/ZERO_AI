@@ -3,11 +3,16 @@ from __future__ import annotations
 import inspect
 
 from core.runtime.runtime_evidence_registry import (
+
     get_evidence_type,
     list_evidence_types,
     normalize_evidence_type,
     register_evidence_type,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_builtin_evidence_types_exist() -> None:

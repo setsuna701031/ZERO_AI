@@ -1,4 +1,9 @@
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class FakeRepository:

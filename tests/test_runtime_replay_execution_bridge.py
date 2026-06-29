@@ -5,6 +5,11 @@ import pathlib
 import subprocess
 
 from core.runtime.task_runtime import TaskRuntime
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.external, pytest.mark.slow]
+
+
 
 
 def _runtime(tmp_path):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from core.goals.goal_lineage_contract import (
+
     attach_goal_lineage,
     canonical_work_identity,
     extract_goal_lineage,
@@ -10,6 +11,8 @@ from core.goals.goal_lineage_contract import (
     runtime_identity_matches,
 )
 from core.runtime.runtime_session_resume import RuntimeSessionResume
+pytestmark = [pytest.mark.contract]
+
 
 
 def _lineage(

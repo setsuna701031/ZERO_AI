@@ -3,6 +3,11 @@ from pathlib import Path
 
 from core.adaptive import AdaptivePlanner
 from core.goals import GoalRepository, GoalStateMachine, PersistentGoal, PersistentSubgoal
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_state_machine_rejection_waits_for_user() -> None:

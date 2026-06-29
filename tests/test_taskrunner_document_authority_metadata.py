@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from core.runtime.task_runner import TaskRunner
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_document_pipeline_shared_write_does_not_synthesize_authority_metadata() -> None:

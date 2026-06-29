@@ -4,6 +4,11 @@ from pathlib import Path
 from typing import Any
 
 from tests.authority_test_support import sealed_dispatch_task
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_agentloop_forced_repo_edit_is_intent_only_and_does_not_write(

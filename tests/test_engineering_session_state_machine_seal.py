@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.session.engineering_session_state import (
+
     ACTIVE_ENGINEERING_SESSION_STATES,
     BLOCKED_REVIEW_ENGINEERING_SESSION_STATES,
     INITIAL_ENGINEERING_SESSION_STATES,
@@ -12,6 +13,10 @@ from core.session.engineering_session_state_machine import (
 )
 from core.session.engineering_session_transition import ENGINEERING_SESSION_TRANSITION_SCHEMA
 from core.session.engineering_session_validator import EngineeringSessionValidator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def _record(from_state: str = "created", to_state: str = "active", **changes: object) -> dict[str, object]:

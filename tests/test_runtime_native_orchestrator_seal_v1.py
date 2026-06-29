@@ -4,6 +4,11 @@ from core.runtime.runtime_native_execution_dispatch import RuntimeNativeExecutio
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
 from core.runtime.runtime_native_multisession_coordination import RuntimeNativeMultiSessionCoordination
 from core.runtime.runtime_native_scheduler import RuntimeNativeScheduler
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def build_orchestrator_stack(tmp_path):

@@ -13,6 +13,9 @@ from core.tasks.engineering_goal_lifecycle import EngineeringGoalLifecycle
 from core.tasks.scheduler_core.dispatch_finalize import build_finalize_decision
 from core.tasks.scheduler_core.task_scheduler_queue import ScheduledTask, TaskSchedulerQueue
 from core.tasks.task_repository import TaskRepository
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_forged_allowed_source_step_executor_authority_dict_is_rejected(tmp_path: Path) -> None:

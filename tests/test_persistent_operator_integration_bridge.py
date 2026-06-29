@@ -4,6 +4,11 @@ from core.runtime.operator_session import OPERATOR_SESSION_RESUMABLE
 from core.runtime.operator_integration_bridge import OperatorIntegrationBridge
 from core.runtime.persistent_operator import PersistentOperatorRuntime
 from tests.authority_test_support import owned_step_executor
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 @dataclass

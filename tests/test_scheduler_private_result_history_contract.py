@@ -5,6 +5,11 @@ from pathlib import Path
 
 from core.tasks.scheduler import Scheduler
 from core.tasks.task_repository import TaskRepository
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.llm]
+
+
 
 
 def test_public_snapshot_compaction_does_not_truncate_private_result_history(tmp_path: Path) -> None:

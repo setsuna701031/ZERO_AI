@@ -1,4 +1,9 @@
 from __future__ import annotations
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_scheduler_run_one_step_active_layer_is_v16() -> None:

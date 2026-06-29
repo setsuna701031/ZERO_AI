@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 from pathlib import Path
@@ -6,6 +6,10 @@ from pathlib import Path
 import core.runtime.runtime_dispatcher as runtime_dispatcher_module
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
 
+
+import pytest
+
+pytestmark = [pytest.mark.contract]
 
 ROOT = Path(__file__).resolve().parents[1]
 

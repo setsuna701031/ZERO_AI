@@ -3,10 +3,13 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.runtime_self_protection import (
+
     RuntimeSelfProtectionState,
     RuntimeUnlockAuthority,
     RuntimeUnlockRejected,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_runtime_unlock_authority_approves_clean_runtime() -> None:

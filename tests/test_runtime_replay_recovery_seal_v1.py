@@ -1,4 +1,5 @@
 from core.runtime.runtime_replay_engine import (
+
     RuntimeReplayIntegrityRecord,
     RuntimeReplaySession,
 )
@@ -16,6 +17,10 @@ from core.runtime.runtime_replay_recovery_seal import (
     REPLAY_RECOVERY_SEAL_REVIEW_REQUIRED,
     RuntimeReplayRecoverySealBuilder,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def _replay(

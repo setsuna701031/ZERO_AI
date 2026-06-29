@@ -4,6 +4,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from core.agent.agent_loop import AgentLoop
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class RealWorkPlanner:

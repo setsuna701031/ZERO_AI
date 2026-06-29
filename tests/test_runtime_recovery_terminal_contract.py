@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.runtime_recovery_freeze import (
+
     assert_recovery_does_not_overwrite_source_transaction,
     assert_recovery_terminal_state,
     build_recovery_decision,
@@ -17,6 +18,10 @@ from core.runtime.runtime_recovery_freeze import (
     transaction_recovery_lineage,
 )
 from core.runtime.runtime_transaction_registry import create_transaction, get_transaction, record_apply, record_commit, record_verification
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_committed_recovery_requires_verified_success() -> None:

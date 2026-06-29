@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 STEP_EXECUTOR_PATH = Path("core/runtime/step_executor.py")

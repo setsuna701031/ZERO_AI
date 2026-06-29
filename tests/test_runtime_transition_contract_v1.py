@@ -1,4 +1,5 @@
 from core.runtime.runtime_state_names import (
+
     SESSION_BLOCKED,
     SESSION_FAILED,
     SESSION_RESTORED,
@@ -11,6 +12,10 @@ from core.runtime.runtime_transition_contract import (
     is_runtime_transition_allowed,
     validate_runtime_transition,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_running_to_blocked_allowed():

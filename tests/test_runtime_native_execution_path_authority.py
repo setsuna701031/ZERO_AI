@@ -8,6 +8,11 @@ from core.runtime.runtime_native_execution_authority import runtime_native_execu
 from core.runtime.runtime_native_execution_dispatch import RuntimeDispatchRecord
 from core.runtime.runtime_native_mainline import RuntimeNativeMainlineRunResult
 from core.runtime.runtime_native_scheduler import RuntimeNativeScheduleItem
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

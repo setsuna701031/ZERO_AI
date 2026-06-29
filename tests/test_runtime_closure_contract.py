@@ -8,6 +8,9 @@ from core.runtime.runtime_execution_result import build_runtime_execution_result
 from core.runtime.runtime_lifecycle_context import propagate_lifecycle_status
 from core.runtime.runtime_lifecycle_coordinator import RuntimeLifecycleCoordinator
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_finalized_execution_rejects_overwrite_attempt() -> None:

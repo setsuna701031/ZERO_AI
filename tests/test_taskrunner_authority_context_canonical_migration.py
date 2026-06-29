@@ -5,6 +5,11 @@ from pathlib import Path
 from core.goals.goal_lineage_contract import create_root_goal_lineage
 from core.runtime.runtime_dispatcher import RuntimeDispatcher
 from core.runtime.task_runner import TaskRunner
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_taskrunner_authority_builder_is_not_runtime_overlaid() -> None:

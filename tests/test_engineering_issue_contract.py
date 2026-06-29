@@ -7,6 +7,9 @@ from pathlib import Path
 import pytest
 
 from core.tasks.engineering_issue_contract import EngineeringIssueReport, validate_issue_reports_allow_success
+pytestmark = [pytest.mark.contract]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

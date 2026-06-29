@@ -3,6 +3,11 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_runtime_workflow_session_contract_imports_when_run_directly(tmp_path: Path) -> None:

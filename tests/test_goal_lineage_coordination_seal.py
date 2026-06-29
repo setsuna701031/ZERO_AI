@@ -11,6 +11,7 @@ from core.evidence.evidence_authority import EvidenceAuthority
 from core.evidence.evidence_repository import EvidenceRepository
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.goals.goal_lineage_contract import (
+
     attach_goal_lineage,
     canonical_work_identity,
     extract_goal_lineage,
@@ -19,6 +20,10 @@ from core.runtime.runtime_session_resume import RuntimeSessionResume
 from core.runtime.persistent_runtime_orchestrator import PersistentRuntimeOrchestrator
 from core.runtime.work_package_queue import RuntimePackageQueue
 from core.tasks.scheduler_core.task_scheduler_queue import ScheduledTask, TaskSchedulerQueue
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def _lineage(root: str, *, session: str, branch_type: str = "root", branch_id: str | None = None, goal: str | None = None):

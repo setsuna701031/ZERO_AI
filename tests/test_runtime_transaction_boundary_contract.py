@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.governed_runtime_execution_session import (
+
     build_governed_runtime_execution_session_report,
 )
 from core.runtime.repair_transaction_execution_bridge import build_executable_repair_transaction
@@ -10,6 +11,10 @@ from core.runtime.runtime_transaction_context import (
     transaction_context,
     RuntimeTransactionContext,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 CANONICAL_TRANSACTION_FIELDS = {

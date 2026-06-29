@@ -6,6 +6,7 @@ from pathlib import Path
 
 from core.runtime.runtime_evidence_surface import list_evidence
 from core.runtime.runtime_ownership_evidence import (
+
     RUNTIME_OWNERSHIP_EVIDENCE_SCHEMA,
     export_runtime_ownership_evidence,
 )
@@ -14,6 +15,10 @@ from core.runtime.runtime_ownership_scan import (
     scan_default_runtime_ownership_surfaces,
     scan_runtime_ownership_paths,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 def test_ownership_scan_detects_direct_scheduler_execution_write_and_mutation(

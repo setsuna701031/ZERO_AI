@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from core.planning.planner_contract_adapter import (
+
     adapt_planner_result,
     export_runtime_safe_payload,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_adapter_accepts_direct_planner_payload():

@@ -9,6 +9,11 @@ from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
 from core.tasks.engineering_program_cycle import EngineeringProgramCycle
 from core.tasks.engineering_program_repository import EngineeringProgramRepository
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_agent_loop_routes_persisted_engineering_goal_through_program_mainline(tmp_path: Path, monkeypatch) -> None:

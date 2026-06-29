@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from core.evidence.evidence_chain import EvidenceChain
 from core.evidence.evidence_record import EvidenceRecord
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _record(evidence_id: str, state: str) -> EvidenceRecord:

@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from core.agent.agent_loop import AgentLoop
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

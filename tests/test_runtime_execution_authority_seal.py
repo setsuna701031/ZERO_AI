@@ -4,6 +4,9 @@ import pytest
 
 from core.runtime.execution_authority import normalize_authority_metadata, validate_authority_metadata
 from core.runtime.runtime_execution_authority_gate import RuntimeExecutionAuthorityDenied, enforce_execution_authority
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_compatibility_metadata_cannot_become_execution_authority() -> None:

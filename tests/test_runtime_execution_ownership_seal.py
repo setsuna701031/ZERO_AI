@@ -14,6 +14,7 @@ from core.evidence import EvidenceRecord, EvidenceValidator, is_provenance_valid
 from core.evidence.evidence_authority import EvidenceAuthority
 from core.evidence.evidence_repository import EvidenceRepository
 from core.goals.goal_completion_authority import (
+
     GoalCompletionAuthority,
     is_accepted_goal_completion_result,
 )
@@ -21,6 +22,8 @@ from core.goals.goal_repository import GoalRepository
 from core.runtime.runtime_session_resume import RuntimeSessionResume, RuntimeSessionResumeStoreError
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.tasks.engineering_goal_repository import EngineeringGoalRepository
+pytestmark = [pytest.mark.contract]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

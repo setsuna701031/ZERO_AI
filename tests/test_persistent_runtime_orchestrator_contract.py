@@ -4,9 +4,14 @@ import json
 from pathlib import Path
 
 from core.runtime.persistent_runtime_orchestrator import (
+
     run_persistent_runtime_orchestrator,
     should_route_persistent_runtime,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def read_json(path: str) -> dict:

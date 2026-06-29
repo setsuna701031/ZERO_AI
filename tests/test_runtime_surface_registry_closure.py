@@ -10,6 +10,9 @@ import core.runtime.task_runner as task_runner_module
 import core.tasks.scheduler as scheduler_module
 from core.runtime.runtime_route_keys import RuntimeRouteKeys
 from core.runtime.runtime_route_registry import RuntimeRouteRegistry
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_cli_execution_route_goes_through_runtime_route_registry(monkeypatch, tmp_path: Path) -> None:

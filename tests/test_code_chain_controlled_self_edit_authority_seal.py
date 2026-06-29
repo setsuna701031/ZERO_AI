@@ -5,8 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from core.agent.code_chain_controlled_self_edit_bridge import (
+
     run_planner_owned_code_chain_bridge,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

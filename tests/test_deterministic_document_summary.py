@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from core.runtime.deterministic_document_summary import (
+
     deterministic_plain_text_summary,
     install_deterministic_summary_handler,
 )
 from services.system_boot import boot_system
+import pytest
+
+pytestmark = [pytest.mark.llm]
+
 
 
 def test_deterministic_plain_text_summary_keeps_short_input() -> None:

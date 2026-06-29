@@ -4,6 +4,11 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_parallel_task_repository_writers_preserve_both_tasks(tmp_path: Path) -> None:

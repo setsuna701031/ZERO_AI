@@ -2,12 +2,17 @@ from __future__ import annotations
 
 from core.runtime.execution_gateway import build_runtime_execution_request
 from core.runtime.governed_runtime_execution_session import (
+
     build_governed_runtime_execution_session_report,
 )
 from core.runtime.runtime_consistency import build_runtime_state_consistency
 from core.runtime.runtime_execution_result import build_runtime_execution_result
 from core.runtime.runtime_execution_session import RuntimeExecutionSessionManager
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 CANONICAL_CONSISTENCY_FIELDS = {

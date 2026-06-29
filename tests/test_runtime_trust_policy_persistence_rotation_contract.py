@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_missing_trust_policy_rejects_distributed_evidence() -> None:

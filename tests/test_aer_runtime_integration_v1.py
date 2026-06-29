@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from core.runtime.aer_runtime_integration import (
+
     AER_INTEGRATION_STATUS_COMPLETED,
     AER_INTEGRATION_STATUS_FAILED,
     AER_INTEGRATION_STATUS_RECOVERED,
@@ -17,6 +18,8 @@ from core.runtime.runtime_ownership_isolation_fabric import (
     RuntimeOwnershipIsolationFabric,
 )
 from core.runtime.runtime_recovery_orchestrator import RuntimeRecoveryOrchestrator
+pytestmark = [pytest.mark.integration]
+
 
 
 def build_integration(tmp_path):

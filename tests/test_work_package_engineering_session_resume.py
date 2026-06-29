@@ -13,6 +13,11 @@ from core.runtime.runtime_session_resume import RuntimeSessionResume
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.runtime.work_package_queue import RuntimePackageQueue
 from services.system_boot import ZeroSystem
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_scheduler_authority_context_is_orchestration_only(tmp_path: Path) -> None:

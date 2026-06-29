@@ -3,6 +3,11 @@ from __future__ import annotations
 from core.runtime.runtime_native_execution_dispatch import RuntimeNativeExecutionDispatch
 from core.runtime.runtime_native_mainline import RuntimeNativeMainline
 from core.runtime.runtime_native_scheduler import RuntimeNativeScheduler
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_native_execution_dispatch_migration_seal(tmp_path):

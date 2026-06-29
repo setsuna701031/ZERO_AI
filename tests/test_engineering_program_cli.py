@@ -7,6 +7,11 @@ import sys
 from pathlib import Path
 
 from cli import program_cli
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

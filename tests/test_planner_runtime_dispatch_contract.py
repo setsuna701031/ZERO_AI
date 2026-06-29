@@ -4,10 +4,15 @@ import json
 from pathlib import Path
 
 from core.runtime.planner_runtime_dispatch import (
+
     dispatch_planner_result_to_persistent_runtime,
     planner_result_to_persistent_runtime_task,
     should_dispatch_planner_result_to_persistent_runtime,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def read_json(path: str) -> dict:

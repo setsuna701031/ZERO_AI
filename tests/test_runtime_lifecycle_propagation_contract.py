@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from core.runtime.runtime_lifecycle_context import (
+
     propagate_lifecycle_status,
     validate_lifecycle_status_propagation,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_lifecycle_propagation_allows_queued_running_finished_flow() -> None:

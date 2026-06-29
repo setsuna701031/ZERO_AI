@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.engineering.approval_envelope import (
+
     build_approval_envelope,
     build_governed_apply_eligibility,
     build_verification_profile,
@@ -11,6 +12,10 @@ from core.engineering.approval_envelope import (
 )
 from core.engineering.diff_proposal import build_diff_proposal
 from core.engineering.repo_scan import build_impacted_file_plan
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_approval_envelope_is_read_only_and_not_execution_authority(

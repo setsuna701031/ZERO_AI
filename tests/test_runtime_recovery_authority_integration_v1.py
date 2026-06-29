@@ -1,10 +1,15 @@
 from core.runtime.runtime_recovery_authority import (
+
     AUTHORITY_APPLY_STATUS_APPLIED,
     AUTHORITY_APPLY_STATUS_BLOCKED,
     AUTHORITY_APPLY_STATUS_REVIEW_REQUIRED,
     apply_recovery_pipeline_transition,
     run_recovery_pipeline_and_apply_transition,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
 
 
 class FakeTaskRuntime:

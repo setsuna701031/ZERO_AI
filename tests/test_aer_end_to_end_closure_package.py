@@ -5,6 +5,11 @@ from pathlib import Path
 
 from core.agent.agent_loop import AgentLoop
 from core.planning.planner import Planner
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
+
+
 
 
 def _aer_task_payload(

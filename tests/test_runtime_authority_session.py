@@ -1,5 +1,10 @@
 from core.session.engineering_session_runtime import EngineeringSessionRuntime
 from core.session.session_progression_coordinator import SessionProgressionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class FakeAdaptiveLoopCoordinator:

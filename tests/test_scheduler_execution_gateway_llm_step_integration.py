@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import core.tasks.scheduler as scheduler_module
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.llm]
+
+
 
 
 class AllowGuard:

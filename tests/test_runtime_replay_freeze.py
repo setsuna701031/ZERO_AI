@@ -3,12 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.runtime.runtime_replay_freeze import (
+
     ReplayMode,
     create_replay_run,
     replay_read_only,
 )
 from core.runtime.runtime_surface_registry import classify_runtime_surface
 from core.runtime.runtime_transaction_registry import create_transaction, list_transactions
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 def test_replay_read_is_read_only_and_does_not_require_authority() -> None:

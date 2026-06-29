@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from core.evidence.evidence_collector import EvidenceCollector
 from core.evidence.evidence_contract import EvidenceContract
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _contract() -> EvidenceContract:

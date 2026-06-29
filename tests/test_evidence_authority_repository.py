@@ -4,6 +4,11 @@ from pathlib import Path
 
 from core.evidence.evidence_record import EvidenceRecord
 from core.evidence.evidence_repository import EvidenceRepository
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _record(evidence_id: str, state: str = "validated") -> EvidenceRecord:

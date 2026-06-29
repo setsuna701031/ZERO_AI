@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from core.runtime.runtime_evidence_freeze import (
+
     RuntimeEvidenceKind,
     assert_evidence_does_not_grant_authority,
     assert_evidence_is_queryable,
@@ -14,6 +15,10 @@ from core.runtime.runtime_evidence_freeze import (
     normalize_evidence_snapshot,
 )
 from core.runtime.runtime_transaction_registry import list_transactions
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_evidence_is_queryable_by_task_id() -> None:

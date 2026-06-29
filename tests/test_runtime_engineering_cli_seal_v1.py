@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 
 from core.runtime.runtime_engineering_cli import main
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_cli_engineering_command_surface_seal(capsys, tmp_path):

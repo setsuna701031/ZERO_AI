@@ -1,4 +1,9 @@
 from core.tasks.goal_loop_terminal_coordinator import GoalLoopTerminalCoordinator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 class Runtime:

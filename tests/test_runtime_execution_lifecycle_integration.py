@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from core.runtime.runtime_execution_lifecycle import (
+
     begin_execution_lifecycle,
     begin_execution_rollback,
     commit_execution_lifecycle,
@@ -24,6 +25,10 @@ from core.runtime.runtime_transaction_context import (
     transaction_scope,
 )
 from core.runtime.runtime_transaction_coordinator import RuntimeTransactionCoordinator
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 class RuntimeExecutionLifecycleIntegrationTest(unittest.TestCase):

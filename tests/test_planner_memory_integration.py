@@ -6,6 +6,11 @@ from core.agent.agent_loop import AgentLoop
 from core.memory import MemoryRepository, TaskMemory
 from core.planning.planner import Planner
 from core.system.llm_planner import LLMPlanner
+import pytest
+
+pytestmark = [pytest.mark.integration, pytest.mark.llm]
+
+
 
 
 class CapturingLLM:

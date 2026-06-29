@@ -3,6 +3,11 @@ from __future__ import annotations
 import sys
 
 from core.runtime.execution_gateway import safe_subprocess_run
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_safe_subprocess_run_success_list_command() -> None:

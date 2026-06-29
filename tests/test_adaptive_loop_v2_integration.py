@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.goals.goal_completion_authority import (
+
     GOAL_COMPLETION_AUTHORITY_OWNER,
     GOAL_COMPLETION_RESULT_SCHEMA,
     GoalCompletionAuthority,
@@ -10,6 +11,10 @@ from core.goals.goal_completion_authority import (
 from core.evidence import EvidenceRecord, EvidenceValidator
 from core.tasks.engineering_goal_loop import EngineeringGoalLoop
 from core.goals.goal_lineage_contract import attach_goal_lineage, create_root_goal_lineage
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
 
 
 class FakeRepository:

@@ -3,6 +3,11 @@ from __future__ import annotations
 from core.tasks.runtime_audit_artifact import build_runtime_audit_artifact
 from core.tasks.runtime_audit_registry import RuntimeAuditRegistry
 from core.tasks.runtime_replay_snapshot import build_runtime_replay_snapshot
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _artifact(task_id: str, status: str, goal: str = "") -> dict:

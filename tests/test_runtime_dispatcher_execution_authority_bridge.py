@@ -10,6 +10,9 @@ from core.runtime.step_executor import StepExecutor
 from core.runtime.task_runner import TaskRunner
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
 from core.runtime.work_package_queue import RuntimePackageQueue
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _authority(source: str = "runtime_dispatcher") -> dict:

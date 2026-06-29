@@ -3,6 +3,11 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from typing import Any
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _load_app_legacy() -> Any:

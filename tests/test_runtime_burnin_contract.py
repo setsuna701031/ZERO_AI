@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.runtime_burnin_runner import (
+
     assert_burnin_stable,
     run_evidence_burnin,
     run_recovery_burnin,
@@ -13,6 +14,10 @@ from core.runtime.runtime_constitution_freeze import (
     create_constitution_snapshot,
     normalize_constitution_snapshot,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_replay_digest_stable_across_repeated_runs() -> None:

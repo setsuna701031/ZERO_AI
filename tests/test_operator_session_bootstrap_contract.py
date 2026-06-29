@@ -4,6 +4,11 @@ from core.runtime.operator_integration_bridge import OperatorIntegrationBridge
 from core.runtime.operator_session_bootstrap import OperatorSessionBootstrap
 from core.runtime.persistent_operator import PersistentOperatorRuntime
 from tests.authority_test_support import sealed_dispatch_task
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 @dataclass

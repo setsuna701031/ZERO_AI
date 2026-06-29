@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from core.runtime.runtime_native_code_mutation_loop import RuntimeNativeCodeMutationLoop
 from core.runtime.runtime_native_repo_engineering_surface import RuntimeNativeRepoEngineeringSurface
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_native_repo_engineering_surface_seal(tmp_path):

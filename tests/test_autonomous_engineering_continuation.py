@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _snapshot(classification: str, *, safe: bool = False, reason: str = "") -> dict:

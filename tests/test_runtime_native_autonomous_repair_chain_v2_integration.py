@@ -3,6 +3,11 @@ from pathlib import Path
 
 from core.runtime.runtime_native_autonomous_repair_chain import RuntimeNativeAutonomousRepairChain
 from core.runtime.step_executor import StepExecutor
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 class FakeMutationRecord:

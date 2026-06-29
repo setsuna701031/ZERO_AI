@@ -3,6 +3,7 @@ from __future__ import annotations
 from core.runtime.autonomous_repair_loop import normalize_repair_loop_result, run_autonomous_repair_loop
 from core.runtime.runtime_constitution_freeze import record_runtime_invariant_violation
 from core.runtime.runtime_memory_engine import (
+
     RuntimeMemoryKind,
     append_runtime_memory,
     assert_memory_non_authoritative,
@@ -14,6 +15,10 @@ from core.runtime.runtime_memory_engine import (
     retrieve_replay_window,
 )
 from core.runtime.runtime_recovery_freeze import create_recovery_attempt, record_recovery_terminal_failure
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_repeated_failure_retrieves_prior_repair_memory() -> None:

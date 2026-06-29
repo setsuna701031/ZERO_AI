@@ -1,5 +1,10 @@
 import json
 import requests
+import pytest
+
+pytestmark = [pytest.mark.external, pytest.mark.llm]
+
+
 
 url = "http://127.0.0.1:5000/chat"
 

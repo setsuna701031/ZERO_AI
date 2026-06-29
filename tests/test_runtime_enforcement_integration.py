@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _coordinator_with_verified_record(lifecycle_id: str = "life-enforce"):

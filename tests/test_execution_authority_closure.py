@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import pytest
+
+pytestmark = [pytest.mark.contract, pytest.mark.integration]
+
+
 
 
 def test_runtime_execution_request_missing_authority_metadata_is_blocked(tmp_path: Path) -> None:

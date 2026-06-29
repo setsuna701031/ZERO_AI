@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.operator.codex_operator import (
+
     CodexOperatorState,
     finalize_operator_run,
     get_operator_run,
@@ -9,6 +10,10 @@ from core.operator.codex_operator import (
     run_codex_style_operator,
 )
 from core.runtime.runtime_transaction_registry import list_transactions
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_task_intent_repo_scan_plan_apply_verify_summary_flow() -> None:

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from core.runtime.governed_runtime_execution_session import (
+
     build_governed_runtime_execution_session_report,
 )
 from core.runtime.runtime_execution_result import build_runtime_execution_result
 from core.runtime.runtime_execution_session import RuntimeExecutionSessionManager
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 CANONICAL_EVIDENCE_FIELDS = {

@@ -3,6 +3,11 @@ from __future__ import annotations
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_recovery_orchestrator import RuntimeRecoveryOrchestrator
 from core.runtime.runtime_transaction_fabric import RuntimeTransactionFabric
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_transaction_fabric_full_execution_recovery_consistency_mainline(tmp_path):

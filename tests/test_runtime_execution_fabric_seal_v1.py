@@ -7,6 +7,11 @@ from core.runtime.runtime_supervisor import RuntimeSupervisor
 from core.runtime.runtime_supervisor_bridge import RuntimeSupervisorBridge
 from core.runtime.runtime_watchdog import RuntimeWatchdog
 from core.runtime.runtime_watchdog_lease_bridge import RuntimeWatchdogLeaseBridge
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_execution_fabric_full_recovery_resume_mainline(tmp_path):

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from core.evidence.evidence_record import EvidenceRecord
 from core.evidence.evidence_validator import EvidenceValidator
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def _pending_record() -> EvidenceRecord:

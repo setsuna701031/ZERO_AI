@@ -5,6 +5,9 @@ import pytest
 from core.goals import GoalRepository, GoalStateMachine, PersistentGoal, PersistentSubgoal
 from core.goals.goal_completion_authority import GoalCompletionAuthority
 from core.evidence import EvidenceRecord, EvidenceValidator
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def test_repository_uses_state_machine_when_provided(tmp_path: Path) -> None:

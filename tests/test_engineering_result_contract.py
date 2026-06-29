@@ -3,10 +3,13 @@ from __future__ import annotations
 import pytest
 
 from core.tasks.engineering_result_contract import (
+
     EngineeringResultContractError,
     normalize_engineering_result_contract,
     validate_engineering_result_contract,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 def _base_result(**overrides):

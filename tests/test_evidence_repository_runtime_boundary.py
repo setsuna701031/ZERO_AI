@@ -1,5 +1,10 @@
 import ast
 from pathlib import Path
+import pytest
+
+pytestmark = [pytest.mark.integration]
+
+
 
 
 def _imports(path: Path) -> set[str]:

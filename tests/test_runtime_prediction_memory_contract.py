@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.runtime.runtime_memory_engine import (
+
     RuntimeMemoryKind,
     append_runtime_memory,
     compact_memory_window,
@@ -17,6 +18,10 @@ from core.runtime.runtime_prediction_engine import (
     predict_stabilization_probability,
     predict_mutation_impact,
 )
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def test_repeated_failure_prediction_retrieves_prior_failure_memory() -> None:

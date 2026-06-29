@@ -3,6 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from core.tasks.scheduler import Scheduler
+import pytest
+
+pytestmark = [pytest.mark.llm]
+
+
 
 
 def _scheduler(workspace_dir: str = "E:/zero_ai") -> Scheduler:

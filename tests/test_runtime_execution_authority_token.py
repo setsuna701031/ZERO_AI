@@ -7,9 +7,12 @@ from pathlib import Path
 import pytest
 
 from core.runtime.runtime_execution_authority_token import (
+
     RUNTIME_EXECUTION_AUTHORITY_TOKEN_SCHEMA,
     capability_reservation_to_execution_authority_token,
 )
+pytestmark = [pytest.mark.contract]
+
 
 
 ROOT = Path(__file__).resolve().parents[1]

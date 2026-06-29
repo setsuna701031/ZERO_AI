@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from core.runtime.agent_execution_runtime import AgentExecutionRuntime
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
+
 
 
 def test_runtime_task_handoff_carries_complete_runtime_owner_authority() -> None:

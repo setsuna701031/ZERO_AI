@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -7,6 +7,8 @@ import pytest
 from core.adaptive.continuation_runtime import ContinuationRuntime
 from core.adaptive.replan_runtime import ReplanRuntime
 
+
+pytestmark = [pytest.mark.contract]
 
 LINEAGE = {
     "root_goal_id": "root-goal",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from core.runtime.runtime_execution_fabric import RuntimeExecutionFabric
 from core.runtime.runtime_ownership_isolation_fabric import (
+
     AUTHORITY_ALLOW,
     AUTHORITY_DENY,
     CAPABILITY_EXECUTE,
@@ -16,6 +17,10 @@ from core.runtime.runtime_supervisor_bridge import RuntimeSupervisorBridge
 from core.runtime.runtime_transaction_fabric import RuntimeTransactionFabric
 from core.runtime.runtime_watchdog import RuntimeWatchdog
 from core.runtime.runtime_watchdog_lease_bridge import RuntimeWatchdogLeaseBridge
+import pytest
+
+pytestmark = [pytest.mark.contract]
+
 
 
 def build_core(tmp_path):
