@@ -1,0 +1,208 @@
+Package 41: Regression Performance Inventory
+Date: 2026-06-29
+
+Scope
+-----
+Goal: identify likely root causes for slow `pytest tests -q`, high CPU load, and accidental LLM/Ollama/GPU triggering.
+Method: static scan of tests/ for subprocess, Ollama/LLM/generate, recursive workspace scans, sleep/timeout, git clone/init, and network/local server patterns.
+No formal code, runtime logic, tests, app.py, cli, or runtime behavior was modified.
+Full `pytest tests -q`, compileall, and LLM/Ollama integration were not run.
+
+Pytest Configuration Observations
+---------------------------------
+pytest.ini defines markers: runtime, integration, external, legacy, get_session, sessions, operator_sessions.
+pytest.ini currently ignores several known non-unit files, including:
+- tests/test_chat.py
+- tests/test_llm_tool_decision.py
+- tests/test_router.py
+
+Static Scan Summary
+-------------------
+Files with at least one slow-test signal: 111
+Signal counts by file:
+- subprocess / safe_subprocess_run / Popen / os.system family: 77
+- LLM/Ollama/generate/provider signal: 16
+- recursive workspace/repo scan signal: 24
+- sleep/timeout/wait signal: 14
+- git repo creation or git command signal: 3
+- network/http/local server signal: 5
+
+Likely Root Cause
+-----------------
+The slow/full-suite behavior is likely not a single test. It is an accumulation of:
+1. Many pytest-collected CLI/subprocess tests that spawn Python, app.py, git, or command gateways.
+2. Repo-wide static inventory tests that scan large portions of the workspace with rglob/os.walk style patterns.
+3. LLM/Ollama contract tests that are mostly mocked, but are not consistently marked and are mixed into the normal collection taxonomy.
+4. External/local-server tests such as tests/test_chat.py, currently ignored rather than marked external.
+5. Long validation/integration scenarios under tests/validation and work-package/runtime replay files.
+
+Classification
+--------------
+
+Fast unit/contract candidates
+These are appropriate for smoke/contract lanes when selected narrowly:
+- tests/test_aer_mainline_closure_seal.py
+- tests/runtime_contracts/test_task_runner_contracts.py
+- tests/runtime_contracts/test_step_executor_contracts.py
+- tests/runtime_contracts/test_runtime_authority_contracts.py
+- tests/test_runtime_route_keys.py
+- tests/test_scheduler_queue_formatting_helpers.py
+- tests/test_scheduler_dispatch_result_helpers.py
+- tests/test_scheduler_parser_helpers.py
+- tests/test_task_paths_windows_mkdir_guard.py
+- tests/test_verification_evidence_bundle_contract.py
+- tests/test_evidence_record.py
+
+Integration
+These exercise multiple modules, persistence, CLI flows, long lifecycle paths, or runtime orchestration and should not be part of the default fast lane:
+- tests/test_agent_loop_constitutional_integration.py
+- tests/test_adaptive_loop_v2_integration.py
+- tests/test_adaptive_planner_goal_state_integration.py
+- tests/test_aer_runtime_integration_v1.py
+- tests/test_aer_runtime_integration_seal_v1.py
+- tests/test_engineering_issue_summary_integration.py
+- tests/test_execution_gateway_integration.py
+- tests/test_goal_execution_planner_integration.py
+- tests/test_persistent_operator_integration_bridge.py
+- tests/test_runtime_loop_continuation_integration_v1.py
+- tests/test_runtime_recovery_evidence_integration.py
+- tests/test_runtime_recovery_integration_seal_v1.py
+- tests/test_runtime_replay_recovery_integration_v1.py
+- tests/test_scheduler_execution_gateway_integration.py
+- tests/validation/test_long_running_engineering_goal_v1.py
+- tests/validation/test_long_running_engineering_goal_v2.py
+
+LLM/Ollama
+Unmarked LLM/Ollama-related tests found by static scan:
+- tests/test_llm_general_generation_contract.py
+- tests/test_work_package_llm_injection_and_summary.py
+- tests/test_scheduler_execution_gateway_llm_step_integration.py
+- tests/test_planner_memory_integration.py
+- tests/test_deterministic_document_summary.py
+- tests/test_scheduler_planner_adapter_helpers.py
+- tests/test_scheduler_private_result_history_contract.py
+- tests/test_scheduler_public_snapshot_results_cap.py
+- tests/test_step_executor_side_effect_pre_authority_contract.py
+- tests/test_task_cli_human_readable_listing.py
+- tests/test_work_package_adaptive_planning_bridge.py
+- tests/test_router.py
+- tests/run_l4_lifecycle_smoke.py
+- tests/run_l4_tool_decision_smoke.py
+- tests/run_l5_tool_decision_core_smoke.py
+- tests/run_trace_replay_smoke.py
+
+Notes:
+- tests/test_llm_general_generation_contract.py monkeypatches llm_client.requests and should not call Ollama, but it still constructs an Ollama-style client and should be marked as llm or contract-llm.
+- tests/test_work_package_llm_injection_and_summary.py uses fake LLM injection and AST checks, but includes Ollama/LocalLLMClient guardrails and CLI subprocesses.
+- tests/test_chat.py is an external local-server test that posts to http://127.0.0.1:5000/chat; it is ignored in pytest.ini, but lacks an external marker.
+
+Workspace scan heavy
+Static tests that scan source trees or repo surfaces and can add CPU cost in full regression:
+- tests/test_aer_execution_authority_inventory.py
+- tests/test_agent_loop_constitutional_integration.py
+- tests/test_autonomous_engineering_continuation.py
+- tests/test_controlled_mutation_bridge_landing.py
+- tests/test_evidence_repository_runtime_boundary.py
+- tests/test_execution_authority_closure.py
+- tests/test_main_execution_constitutional_probe.py
+- tests/test_mutation_gateway_mainline_guard.py
+- tests/test_repair_execution_boundary_guard.py
+- tests/test_runtime_boundary_imports.py
+- tests/test_runtime_execution_governance_enforcement.py
+- tests/test_runtime_execution_ownership_migration_contract.py
+- tests/test_runtime_kernel_protection_enforcement.py
+- tests/test_runtime_mutation_authority_boundaries.py
+- tests/test_runtime_mutation_bypass_enforcement.py
+- tests/test_runtime_recovery_constitution.py
+- tests/test_runtime_replay_constitution.py
+- tests/test_runtime_state_bypass_enforcement.py
+- tests/test_runtime_status_ownership_inventory.py
+- tests/test_runtime_status_write_authority_seal.py
+- tests/test_runtime_surface_freeze.py
+- tests/test_scheduler_constitutional_integration.py
+- tests/test_self_repair_boundary_governance.py
+- tests/test_work_package_llm_injection_and_summary.py
+
+Subprocess/CLI heavy
+Representative high-cost pytest-collected files:
+- tests/test_runtime_replay_execution_bridge.py
+- tests/test_controlled_runtime_execution_boundary.py
+- tests/test_runtime_execution_governance_enforcement.py
+- tests/test_runtime_execution_ownership_migration_contract.py
+- tests/test_runtime_mainline_freeze_contract.py
+- tests/test_runtime_topology_freeze_gate.py
+- tests/test_runtime_autonomous_dispatch.py
+- tests/test_task_repository_parallel_locking.py
+- tests/test_work_package_adaptive_planning_bridge.py
+- tests/test_work_package_adaptive_runtime_feedback.py
+- tests/test_work_package_cli.py
+- tests/test_work_package_engineering_session_resume.py
+- tests/test_work_package_execution_package.py
+- tests/test_work_package_memory_closure.py
+- tests/test_engineering_artifact_cli.py
+- tests/test_engineering_evidence_cli.py
+- tests/test_engineering_goal_cli.py
+- tests/test_engineering_portfolio_cli.py
+- tests/test_engineering_program_cli.py
+- tests/test_engineering_program_tree_summary.py
+- tests/test_engineering_runtime_execution_closure.py
+- tests/test_memory_architecture_contract.py
+- tests/test_zero_controlled_task_entry.py
+
+Standalone smoke scripts
+These are under tests/ but named run_*_smoke.py, so they are not normal pytest test files. They are still regression-cost candidates if invoked by custom runners:
+- tests/run_l4_lifecycle_smoke.py
+- tests/run_github_commit_tool_call_smoke.py
+- tests/run_hybrid_demo_smoke.py
+- tests/run_document_task_smoke.py
+- tests/run_document_pipeline_identity_smoke.py
+- tests/run_semantic_task_smoke.py
+- tests/run_trace_replay_smoke.py
+- tests/run_web_search_tool_call_smoke.py
+- tests/run_regression_contracts.py
+- tests/run_mainline_smoke.py
+
+Unmarked Integration / LLM / External Candidates
+------------------------------------------------
+No marker changes were made in this package.
+Recommended marker additions in a future dedicated package:
+- Add `@pytest.mark.external` to tests/test_chat.py if it remains as a pytest file.
+- Add a new `llm` marker in pytest.ini or use `integration` for tests with LLM/Ollama semantics:
+  tests/test_llm_general_generation_contract.py
+  tests/test_work_package_llm_injection_and_summary.py
+  tests/test_scheduler_execution_gateway_llm_step_integration.py
+  tests/test_planner_memory_integration.py
+  tests/test_deterministic_document_summary.py
+- Add `integration` marker to CLI/subprocess-heavy pytest files listed above, especially work_package, engineering_*_cli, runtime_autonomous_dispatch, runtime_replay_execution_bridge, and validation long-running goal tests.
+- Add `runtime` or `integration` marker to repo-wide static inventory tests if they remain in the full regression suite.
+
+Suggested Test Commands
+-----------------------
+Smoke, current Package 41 verification:
+  python -m pytest tests/test_aer_mainline_closure_seal.py -q
+
+Fast contract lane:
+  python -m pytest tests/test_aer_mainline_closure_seal.py tests/runtime_contracts -q
+
+Runtime contract lane without LLM/external:
+  python -m pytest tests/runtime_contracts tests/test_runtime_route_keys.py tests/test_scheduler_queue_formatting_helpers.py -q
+
+Integration lane after markers are applied:
+  python -m pytest -m integration -q
+
+External/local-server lane:
+  python -m pytest -m external -q
+
+LLM/Ollama lane after adding an llm marker:
+  python -m pytest -m llm -q
+
+Full regression excluding slow classes after markers are applied:
+  python -m pytest tests -q -m "not integration and not external and not llm"
+
+Non-mainline Issues
+-------------------
+- tests/test_chat.py contains mojibake/corrupted payload text and performs an external HTTP request at import/module execution time. It is ignored by pytest.ini, but should still be converted to a marked/skipped test or moved out of pytest collection.
+- pytest.ini does not define an `llm` marker, so LLM/Ollama-semantic contract tests cannot be cleanly excluded with marker expressions today.
+- Many subprocess-heavy tests lack `integration` markers, making default `pytest tests -q` vulnerable to high CPU and slow process spawning.
+- tests/test_runtime_replay_execution_bridge.py is very large and includes many monkeypatched subprocess/timeout paths; even if mocked, it is a likely CPU hotspot during collection and execution.
+- tests/validation long-running goal tests are not marked integration/slow despite their scope.
