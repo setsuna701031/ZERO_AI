@@ -16,6 +16,8 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_program_observability import EngineeringProgramObservability
 from core.tasks.engineering_program_repository import EngineeringProgramRepository
 from core.tasks.engineering_program_state import EngineeringProgramState
+from core.runtime.runtime_route_keys import RuntimeRouteKeys
+from core.runtime.runtime_route_registry import default_runtime_route_registry
 
 
 PROGRAM_CLI_SCHEMA = "zero.program_cli.v1"
@@ -28,6 +30,26 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+
+
+def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
+    route_key = (
+        RuntimeRouteKeys.CLI_PROGRAM_CYCLE
+        if entrypoint.endswith(".cycle") or entrypoint.endswith(".run_until_idle")
+        else RuntimeRouteKeys.CLI_PROGRAM_RUN
+    )
+    registry = default_runtime_route_registry()
+    registry.register(
+        route_key,
+        lambda _request, _workspace_root, _goal: runner,
+        {"entrypoint": entrypoint, "component": "program_cli"},
+    )
+    return registry.run(
+        route_key=route_key,
+        request=request,
+        workspace_root=_workspace_root(repo_root),
+        goal=goal,
+    )
 
 
 def _workspace_dir() -> str:
@@ -257,7 +279,13 @@ def _handle_remove_portfolio(argv: list[str], repo_root: Path) -> bool:
 def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 3 or argv[1] != "run-next":
         return False
-    result = _program_coordinator(repo_root).run_next_portfolio(argv[2])
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.program_cli.run_next",
+        runner=lambda: _program_coordinator(repo_root).run_next_portfolio(argv[2]),
+        goal=argv[2],
+        request={"command": "run-next", "program_id": argv[2]},
+    )
     result = apply_engineering_issue_summary(result, repo_root=repo_root, issue_reporter=_issue_reporter(repo_root))
     _print_json({"schema": PROGRAM_CLI_SCHEMA, "ok": bool(result.get("ok")), "program_run": result})
     return True
@@ -273,7 +301,13 @@ def _handle_cycle(argv: list[str], repo_root: Path) -> bool:
         except ValueError:
             _print_json({"schema": PROGRAM_CLI_SCHEMA, "ok": False, "error": "invalid_max_portfolios", "program_id": argv[2]})
             return True
-    result = _program_coordinator(repo_root).run_program_cycle(argv[2], max_portfolios=max_portfolios)
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.program_cli.cycle",
+        runner=lambda: _program_coordinator(repo_root).run_program_cycle(argv[2], max_portfolios=max_portfolios),
+        goal=argv[2],
+        request={"command": "cycle", "program_id": argv[2], "max_portfolios": max_portfolios},
+    )
     result = apply_engineering_issue_summary(result, repo_root=repo_root, issue_reporter=_issue_reporter(repo_root))
     _print_json({"schema": PROGRAM_CLI_SCHEMA, "ok": bool(result.get("ok")), "program_cycle": result})
     return True
@@ -289,7 +323,13 @@ def _handle_run_until_idle(argv: list[str], repo_root: Path) -> bool:
         except ValueError:
             _print_json({"schema": PROGRAM_CLI_SCHEMA, "ok": False, "error": "invalid_max_portfolios", "program_id": argv[2]})
             return True
-    result = _program_cycle(repo_root).run_until_idle(argv[2], max_portfolios=max_portfolios)
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.program_cli.run_until_idle",
+        runner=lambda: _program_cycle(repo_root).run_until_idle(argv[2], max_portfolios=max_portfolios),
+        goal=argv[2],
+        request={"command": "run-until-idle", "program_id": argv[2], "max_portfolios": max_portfolios},
+    )
     _print_json({"schema": PROGRAM_CLI_SCHEMA, "ok": bool(result.get("ok")), "program_cycle": _cycle_summary(result)})
     return True
 

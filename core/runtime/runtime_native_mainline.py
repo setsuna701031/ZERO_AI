@@ -221,6 +221,7 @@ class RuntimeNativeMainlineRejected(RuntimeError):
 
 PlannerFn = Callable[[str, dict[str, Any]], dict[str, Any]]
 StepRunnerFn = Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]]
+CompatibilityRunnerFn = Callable[[], Any]
 
 
 class RuntimeNativeMainline:
@@ -523,6 +524,100 @@ class RuntimeNativeMainline:
             task_id=str(payload.get("task_id") or ""),
             metadata={"legacy_request": copy.deepcopy(payload)},
         )
+
+    def run_compatibility_entry(
+        self,
+        *,
+        entrypoint: str,
+        runner: CompatibilityRunnerFn,
+        request: dict[str, Any] | None = None,
+        goal: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        """Canonical admission wrapper for legacy entrypoints.
+
+        This preserves existing runtime behavior by delegating to the supplied
+        callable after the request has entered RuntimeNativeMainline.
+        """
+        if not self._booted:
+            self.boot()
+
+        entrypoint = self._validate_text("entrypoint", entrypoint)
+        payload = _copy_dict(request)
+        compatibility_metadata = {
+            "runtime_native_mainline_compatibility_wrapper": True,
+            "compatibility_entrypoint": entrypoint,
+            **copy.deepcopy(metadata or {}),
+        }
+        run_goal = str(
+            goal
+            or payload.get("goal")
+            or payload.get("prompt")
+            or payload.get("task")
+            or payload.get("task_id")
+            or entrypoint
+        ).strip()
+        run_id = "runtime-native-mainline-compat-" + stable_mainline_fingerprint(
+            {
+                "entrypoint": entrypoint,
+                "goal": run_goal,
+                "sequence": len(self._runs) + 1,
+            }
+        )[:16]
+
+        try:
+            raw_result = runner()
+            result_payload = copy.deepcopy(raw_result) if isinstance(raw_result, dict) else {"ok": bool(raw_result), "result": copy.deepcopy(raw_result)}
+            ok = bool(result_payload.get("ok", True))
+            status = MAINLINE_STATUS_COMPLETED if ok else MAINLINE_STATUS_FAILED
+        except Exception as exc:
+            result_payload = {
+                "ok": False,
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+            }
+            raw_result = None
+            status = MAINLINE_STATUS_FAILED
+            raised_exception = exc
+        else:
+            raised_exception = None
+
+        if isinstance(result_payload, dict):
+            result_payload.setdefault("runtime_native_mainline_entrypoint", entrypoint)
+            result_payload.setdefault("runtime_native_mainline_compatibility_wrapper", True)
+            result_payload.setdefault("runtime_native_mainline_canonical_entry", True)
+            path = result_payload.get("execution_path")
+            if not isinstance(path, dict):
+                path = {}
+            path.setdefault("runtime_native_mainline_entrypoint", entrypoint)
+            path.setdefault("runtime_native_mainline_canonical_entry", True)
+            path.setdefault("legacy_behavior_preserved", True)
+            result_payload["execution_path"] = path
+            if isinstance(raw_result, dict):
+                raw_result = result_payload
+
+        result = RuntimeNativeMainlineRunResult(
+            run_id=run_id,
+            status=status,
+            goal=run_goal,
+            runtime_id=self.config.runtime_id,
+            source_session_id=self.config.source_session_id,
+            final_result=result_payload,
+            metadata=compatibility_metadata,
+        )
+        self._store_result(result)
+        self._append_event(
+            (
+                "runtime_native_mainline_compatibility_entry_failed"
+                if status == MAINLINE_STATUS_FAILED
+                else "runtime_native_mainline_compatibility_entry_completed"
+            ),
+            run_id=run_id,
+            payload={"entrypoint": entrypoint, "result": result.to_dict()},
+        )
+        self.save()
+        if raised_exception is not None:
+            raise raised_exception
+        return raw_result
 
     def health(self) -> dict[str, Any]:
         if not self._booted:

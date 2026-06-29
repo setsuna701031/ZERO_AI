@@ -1,0 +1,48 @@
+Runtime Surface Registry Closure Seal
+
+Scope
+- Seal tests only.
+- No runtime code changes unless a Package 8 minimal bug is found.
+- Covered surfaces:
+  - AgentLoop wave1 runtime entries
+  - AgentLoop wave2 runtime/code-chain entries
+  - CLI execution-producing admissions
+  - Scheduler public tick admission
+  - TaskRunner public run/tick admission
+  - control/read-only paths that must not use RuntimeRouteRegistry
+
+Seal assertions
+- Execution-producing surfaces enter RuntimeRouteRegistry before RuntimeNativeMainline.run_compatibility_entry.
+- Legacy callables remain intact and are still the final runner behind registry admission.
+- Dict results preserve existing payload and add registry metadata.
+- Existing route/final result markers are preserved in representative AgentLoop, CLI, Scheduler, and TaskRunner paths.
+- Read-only/status/list/inspect/cancel paths do not trigger RuntimeRouteRegistry.
+
+Representative routed surfaces confirmed by tests
+- AgentLoop wave1:
+  - persistent runtime route -> RuntimeRouteKeys.PERSISTENT_RUNTIME
+- AgentLoop wave2:
+  - planner-owned code chain route -> RuntimeRouteKeys.PLANNER_OWNED_CODE_CHAIN
+- CLI:
+  - task run -> RuntimeRouteKeys.CLI_TASK_RUN
+  - task drain -> RuntimeRouteKeys.CLI_TASK_DRAIN
+  - work_package run -> RuntimeRouteKeys.CLI_WORK_PACKAGE_RUN
+  - control submit -> RuntimeRouteKeys.CLI_CONTROL_SUBMIT
+  - goal run -> RuntimeRouteKeys.CLI_GOAL_RUN
+  - portfolio cycle -> RuntimeRouteKeys.CLI_PORTFOLIO_CYCLE
+  - program cycle -> RuntimeRouteKeys.CLI_PROGRAM_CYCLE
+- Scheduler:
+  - Scheduler.tick -> RuntimeRouteKeys.SCHEDULER_TICK
+- TaskRunner:
+  - TaskRunner.run / run_task_tick -> RuntimeRouteKeys.TASK_RUNNER_TICK
+
+Direct paths intentionally not routed
+- control inspect/list/cancel
+- status/read-only/report/list/monitor style commands
+- cleanup and inventory/report commands
+
+Non-mainline notes
+- No new non-mainline runtime issue was found while adding the seal tests.
+- Existing out-of-scope notes remain in runtime_surface_registry_closure_non_mainline_issues.txt.
+- The seal does not claim StepExecutor/ExecutionFabric internals are registry surfaces; they remain execution machinery behind admitted routes.
+

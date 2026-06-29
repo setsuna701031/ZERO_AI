@@ -7,12 +7,46 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+from core.runtime.runtime_route_keys import RuntimeRouteKeys
+from core.runtime.runtime_route_registry import default_runtime_route_registry
 from core.tasks.work_package_runtime_intake import package_payload_from_text
 from core.tasks.work_package_scheduler import WorkPackageScheduler
 
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def _workspace_root(repo_root: str) -> Path:
+    workspace = Path(os.environ.get("ZERO_WORKSPACE", "workspace"))
+    root = Path(repo_root)
+    return workspace if workspace.is_absolute() else root / workspace
+
+
+def _run_via_mainline(repo_root: str, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
+    route_key = _route_key_for_entrypoint(entrypoint)
+    registry = default_runtime_route_registry()
+    registry.register(
+        route_key,
+        lambda _request, _workspace_root, _goal: runner,
+        {"entrypoint": entrypoint, "component": "work_package_cli"},
+    )
+    return registry.run(
+        route_key=route_key,
+        request=request,
+        workspace_root=_workspace_root(repo_root),
+        goal=goal,
+    )
+
+
+def _route_key_for_entrypoint(entrypoint: str) -> str:
+    if entrypoint.endswith(".run"):
+        return RuntimeRouteKeys.CLI_WORK_PACKAGE_RUN
+    if entrypoint.endswith(".run_validation"):
+        return RuntimeRouteKeys.CLI_WORK_PACKAGE_VALIDATION
+    if entrypoint.endswith(".dispatch_request"):
+        return RuntimeRouteKeys.CLI_WORK_PACKAGE_DISPATCH_REQUEST
+    return RuntimeRouteKeys.CLI_WORK_PACKAGE_SUBMIT
 
 
 def _is_scheduler_work_package(payload: Any) -> bool:
@@ -201,9 +235,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "submit":
             payload = json.loads(Path(args.package_file).read_text(encoding="utf-8"))
             if _is_scheduler_work_package(payload):
-                result = WorkPackageScheduler(repo_root=args.repo_root).submit(payload)
+                result = _run_via_mainline(
+                    args.repo_root,
+                    entrypoint="cli.work_package_cli.submit_scheduler_package",
+                    runner=lambda: WorkPackageScheduler(repo_root=args.repo_root).submit(payload),
+                    goal=str(payload.get("goal") or payload.get("title") or payload.get("package_id") or "work_package_submit"),
+                    request=payload,
+                )
             else:
-                result = operator.submit_package(payload)
+                result = _run_via_mainline(
+                    args.repo_root,
+                    entrypoint="cli.work_package_cli.submit",
+                    runner=lambda: operator.submit_package(payload),
+                    goal=str(payload.get("goal") or payload.get("title") or payload.get("package_id") or "work_package_submit"),
+                    request=payload,
+                )
 
         elif args.command == "intake":
             source_text = (
@@ -212,10 +258,22 @@ def main(argv: list[str] | None = None) -> int:
                 else str(args.text or "")
             )
             payload = package_payload_from_text(source_text)
-            result = operator.intake_package(payload)
+            result = _run_via_mainline(
+                args.repo_root,
+                entrypoint="cli.work_package_cli.intake",
+                runner=lambda: operator.intake_package(payload),
+                goal=str(payload.get("goal") or payload.get("title") or "work_package_intake"),
+                request=payload,
+            )
 
         elif args.command == "run-validation":
-            result = operator.run_validation_only(args.package_id)
+            result = _run_via_mainline(
+                args.repo_root,
+                entrypoint="cli.work_package_cli.run_validation",
+                runner=lambda: operator.run_validation_only(args.package_id),
+                goal=args.package_id,
+                request={"package_id": args.package_id, "command": "run-validation"},
+            )
 
         elif args.command == "status":
             result = operator.package_status(args.package_id)
@@ -233,10 +291,22 @@ def main(argv: list[str] | None = None) -> int:
             result = operator.execution_package(args.package_id)
 
         elif args.command == "dispatch-request":
-            result = operator.runtime_dispatch_request(args.package_id)
+            result = _run_via_mainline(
+                args.repo_root,
+                entrypoint="cli.work_package_cli.dispatch_request",
+                runner=lambda: operator.runtime_dispatch_request(args.package_id),
+                goal=args.package_id,
+                request={"package_id": args.package_id, "command": "dispatch-request"},
+            )
 
         elif args.command == "run":
-            result = operator.run_package(args.package_id)
+            result = _run_via_mainline(
+                args.repo_root,
+                entrypoint="cli.work_package_cli.run",
+                runner=lambda: operator.run_package(args.package_id),
+                goal=args.package_id,
+                request={"package_id": args.package_id, "command": "run"},
+            )
 
         elif args.command == "progress":
             result = operator.package_progress(args.package_id)

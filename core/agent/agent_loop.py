@@ -307,7 +307,18 @@ class AgentLoop:
             planner_owned["agent_loop_runtime_route"] = "planner_owned_code_chain"
             return planner_owned
 
-        controlled_bridge = _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, text)
+        controlled_bridge = None
+        if _zero_v826_code_fix_bridge_candidate(text) and callable(globals().get("_zero_v824_call_planner_like")):
+            from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+            controlled_bridge = self._run_via_runtime_route_registry(
+                route_key=RuntimeRouteKeys.CODE_CHAIN_CONTROLLED_SELF_EDIT,
+                entrypoint="core.agent.agent_loop.AgentLoop.code_chain_controlled_self_edit_bridge_route",
+                runner=lambda: _zero_v826_agent_try_code_chain_controlled_self_edit_bridge(self, text),
+                request={"user_input": text, "route": "code_chain_controlled_self_edit_bridge"},
+                goal=text,
+                workspace_root=Path(_zero_v826_repo_root_from_agent(self)) / "workspace",
+            )
         if controlled_bridge is not None:
             controlled_bridge["agent_loop_runtime_route"] = "code_chain_controlled_self_edit_bridge"
             return controlled_bridge
@@ -315,7 +326,20 @@ class AgentLoop:
         if _zero_v710_looks_like_repair_intent(text):
             decision = _zero_v710_repair_scope_decision(text)
             if not bool(decision.get("ok")):
-                preflight = _zero_v710_make_preflight_response(self, text, decision)
+                from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+                preflight = self._run_via_runtime_route_registry(
+                    route_key=RuntimeRouteKeys.REPAIR_PREFLIGHT,
+                    entrypoint="core.agent.agent_loop.AgentLoop.repair_preflight_route",
+                    runner=lambda: _zero_v710_make_preflight_response(self, text, decision),
+                    request={
+                        "user_input": text,
+                        "route": "code_chain_repair_preflight",
+                        "decision": copy.deepcopy(decision),
+                    },
+                    goal=text,
+                    workspace_root=Path(_zero_v826_repo_root_from_agent(self)) / "workspace",
+                )
                 preflight["agent_loop_runtime_route"] = "code_chain_repair_preflight"
                 return preflight
 
@@ -335,10 +359,23 @@ class AgentLoop:
                 "execution_route": "planner_autonomous_repair_code_chain",
                 "target_path": target_path,
             }
-            result = self._run_task_mode(
-                context=context,
-                user_input=text,
-                route=route,
+            from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+            result = self._run_via_runtime_route_registry(
+                route_key=RuntimeRouteKeys.AUTONOMOUS_REPAIR,
+                entrypoint="core.agent.agent_loop.AgentLoop.autonomous_repair_route",
+                runner=lambda: self._run_task_mode(
+                    context=context,
+                    user_input=text,
+                    route=route,
+                ),
+                request={
+                    "user_input": text,
+                    "route": copy.deepcopy(route),
+                    "context": copy.deepcopy(context),
+                },
+                goal=text,
+                workspace_root=Path(_zero_v826_repo_root_from_agent(self)) / "workspace",
             )
             if isinstance(result, dict):
                 result["agent_loop_runtime_route"] = "planner_autonomous_repair"
@@ -412,6 +449,7 @@ class AgentLoop:
             from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
             from core.tasks.engineering_program_cycle import EngineeringProgramCycle
             from core.tasks.engineering_program_repository import EngineeringProgramRepository
+            from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
             goal_repository = EngineeringGoalRepository(repo_root)
             portfolio_repository = EngineeringPortfolioRepository(repo_root)
@@ -458,13 +496,22 @@ class AgentLoop:
                 )
             portfolio = portfolio_repository.add_goal_to_portfolio(portfolio_id, goal["goal_id"])
             program = program_repository.add_portfolio(program_id, portfolio_id)
-            program_result = EngineeringProgramCycle(
+            program_cycle = EngineeringProgramCycle(
                 repo_root=repo_root,
                 program_repository=program_repository,
                 portfolio_repository=portfolio_repository,
-            ).run_until_idle(
-                program_id,
-                max_portfolios=int(payload.get("max_portfolios") or 1),
+            )
+            max_portfolios = int(payload.get("max_portfolios") or 1)
+            program_result = self._run_via_runtime_route_registry(
+                route_key=RuntimeRouteKeys.ENGINEERING_GOAL,
+                entrypoint="core.agent.agent_loop.AgentLoop.engineering_goal_route",
+                runner=lambda: program_cycle.run_until_idle(
+                    program_id,
+                    max_portfolios=max_portfolios,
+                ),
+                request=payload,
+                goal=summary,
+                workspace_root=Path(repo_root) / "workspace",
             )
         except Exception as exc:
             goal = {"goal_id": goal_id, "summary": summary}
@@ -492,8 +539,9 @@ class AgentLoop:
         adaptive_decision = copy.deepcopy(program_result.get("adaptive_decision") or {})
         selected_goal = copy.deepcopy(program_result.get("selected_goal") or {})
         execution_path = {
-            "route": "AgentLoop -> Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime",
+            "route": "AgentLoop -> RuntimeNativeMainline -> Program -> Portfolio -> Goal -> Adaptive Planner -> Runtime",
             "agent_loop_routes_only": True,
+            "runtime_native_mainline_canonical_entry": True,
             "program_owns_strategic_sequencing": True,
             "portfolio_owns_goal_selection": True,
             "goal_owns_adaptive_continuation": True,
@@ -660,8 +708,16 @@ class AgentLoop:
 
         try:
             from core.tasks.engineering_task_runner import run_engineering_task
+            from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
-            result = run_engineering_task(payload, repo_root=repo_root)
+            result = self._run_via_runtime_route_registry(
+                route_key=RuntimeRouteKeys.ENGINEERING_TASK,
+                entrypoint="core.agent.agent_loop.AgentLoop.engineering_task_route",
+                runner=lambda: run_engineering_task(payload, repo_root=repo_root),
+                request=payload,
+                goal=str(payload.get("goal") or payload.get("summary") or package_id),
+                workspace_root=Path(repo_root) / "workspace",
+            )
             if not isinstance(result, dict):
                 result = {
                     "ok": False,
@@ -685,10 +741,11 @@ class AgentLoop:
         result.setdefault("package_id", package_id)
 
         result["agent_loop_runtime_route"] = "engineering_task_runner"
-        result["legacy_direct_json_engineering_task_runner"] = bool(1)
-        result["governed_runtime_route"] = False
-        result["runtime_owns_execution"] = False
-        result["direct_execution"] = True
+        result["legacy_direct_json_engineering_task_runner"] = True
+        result["runtime_native_mainline_canonical_entry"] = True
+        result["governed_runtime_route"] = True
+        result["runtime_owns_execution"] = True
+        result["direct_execution"] = False
         result["agent_loop_owns_execution"] = False
 
         route = result.get("route")
@@ -702,10 +759,11 @@ class AgentLoop:
                 "engineering_task": True,
                 "package_id": package_id,
                 "repo_root": repo_root,
-                "legacy_direct_json_engineering_task_runner": bool(1),
+                "legacy_direct_json_engineering_task_runner": True,
+                "runtime_native_mainline_canonical_entry": True,
                 "work_package_mainline_authority": False,
                 "legacy_isolated": True,
-                "authority_path": "AgentLoop -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake",
+                "authority_path": "AgentLoop -> RuntimeNativeMainline -> LegacyEngineeringTaskAdmission -> Planner -> WorkPackageIntake",
             }
         )
         result["route"] = route
@@ -716,10 +774,11 @@ class AgentLoop:
         execution_path.update(
             {
                 "legacy_direct_engineering_task_route": True,
+                "runtime_native_mainline_canonical_entry": True,
                 "program_mainline": False,
                 "persisted_engineering_goal": False,
                 "direct_goal_runner_bypass": False,
-                "runtime_owns_execution": False,
+                "runtime_owns_execution": True,
                 "work_package_mainline_authority": False,
             }
         )
@@ -825,17 +884,28 @@ class AgentLoop:
             autonomous_fields = {"title", "goal", "description", "target_files", "requirements"}
             autonomous_contract = autonomous_fields.issubset(work_package_payload)
             if autonomous_contract:
-                operator = self.work_package_operator
-                operator_root = str(getattr(operator, "repo_root", "") or "")
-                if operator is None or (repo_root and operator_root and Path(operator_root).resolve() != Path(repo_root).resolve()):
-                    from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+                from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
-                    operator = RuntimeWorkPackageOperator(repo_root=repo_root, llm_client=self.llm_client)
-                submitted = operator.submit_package(work_package_payload)
-                if submitted.get("planning_status") == "planned":
-                    result = operator.run_package(str(submitted.get("package_id") or ""))
-                else:
-                    result = submitted
+                def run_autonomous_work_package():
+                    operator = self.work_package_operator
+                    operator_root = str(getattr(operator, "repo_root", "") or "")
+                    if operator is None or (repo_root and operator_root and Path(operator_root).resolve() != Path(repo_root).resolve()):
+                        from core.runtime.work_package_operator import RuntimeWorkPackageOperator
+
+                        operator = RuntimeWorkPackageOperator(repo_root=repo_root, llm_client=self.llm_client)
+                    submitted = operator.submit_package(work_package_payload)
+                    if submitted.get("planning_status") == "planned":
+                        return operator.run_package(str(submitted.get("package_id") or ""))
+                    return submitted
+
+                result = self._run_via_runtime_route_registry(
+                    route_key=RuntimeRouteKeys.WORK_PACKAGE,
+                    entrypoint="core.agent.agent_loop.AgentLoop.work_package_route",
+                    runner=run_autonomous_work_package,
+                    request=payload,
+                    goal=str(work_package_payload.get("goal") or work_package_payload.get("title") or "work_package"),
+                    workspace_root=Path(repo_root) / "workspace",
+                )
                 schedule_record = {
                     "schema": "zero.runtime.work_package_agent_dispatch.v1",
                     "package_id": result.get("package_id"),
@@ -845,8 +915,16 @@ class AgentLoop:
                 }
             else:
                 from core.tasks.work_package_intake import submit_work_package
+                from core.runtime.runtime_route_keys import RuntimeRouteKeys
 
-                result = submit_work_package(work_package_payload, repo_root=repo_root)
+                result = self._run_via_runtime_route_registry(
+                    route_key=RuntimeRouteKeys.WORK_PACKAGE,
+                    entrypoint="core.agent.agent_loop.AgentLoop.work_package_intake_route",
+                    runner=lambda: submit_work_package(work_package_payload, repo_root=repo_root),
+                    request=payload,
+                    goal=str(work_package_payload.get("goal") or work_package_payload.get("title") or "work_package"),
+                    workspace_root=Path(repo_root) / "workspace",
+                )
                 schedule_record = {
                     "schema": "zero.controlled.work_package_agent_dispatch.v1",
                     "package_id": result.get("package_id"),
@@ -915,10 +993,10 @@ class AgentLoop:
             "package_id": package_id,
             "repo_root": repo_root,
             "authority_path": (
-                "AgentLoop -> RuntimeWorkPackageOperator -> RuntimeDispatcher "
+                "AgentLoop -> RuntimeNativeMainline -> RuntimeWorkPackageOperator -> RuntimeDispatcher "
                 "-> TaskRunner -> StepExecutor"
                 if schedule_record.get("gateway") == "RuntimeDispatcher"
-                else "AgentLoop -> WorkPackageIntake -> run_repo_edit"
+                else "AgentLoop -> RuntimeNativeMainline -> WorkPackageIntake -> run_repo_edit"
             ),
             "work_package_gateway": (
                 "runtime_dispatcher"
@@ -3105,13 +3183,110 @@ class AgentLoop:
         return "forced repo edit completed"
 
 
+    def _runtime_native_mainline_active(self) -> bool:
+        return bool(getattr(self, "_runtime_native_mainline_delegate_active", False))
+
+    def _run_via_runtime_native_mainline(
+        self,
+        *,
+        entrypoint: str,
+        runner: Any,
+        request: Optional[Dict[str, Any]] = None,
+        goal: str = "",
+        workspace_root: Any = None,
+    ) -> Any:
+        from core.runtime.runtime_native_entry_adapter import run_via_runtime_native_mainline
+
+        previous = self._runtime_native_mainline_active()
+
+        def delegated_runner():
+            self._runtime_native_mainline_delegate_active = True
+            try:
+                return runner()
+            finally:
+                self._runtime_native_mainline_delegate_active = previous
+
+        root = (
+            workspace_root
+            or self.extra_kwargs.get("workspace_dir")
+            or self.extra_kwargs.get("workspace_root")
+            or "workspace"
+        )
+        return run_via_runtime_native_mainline(
+            entrypoint=entrypoint,
+            runner=delegated_runner,
+            workspace_root=root,
+            request=request,
+            goal=goal,
+            metadata={"component": "AgentLoop"},
+        )
+
+    def _run_via_runtime_route_registry(
+        self,
+        *,
+        route_key: str,
+        entrypoint: str,
+        runner: Any,
+        request: Optional[Dict[str, Any]] = None,
+        goal: str = "",
+        workspace_root: Any = None,
+    ) -> Any:
+        from core.runtime.runtime_route_registry import default_runtime_route_registry
+
+        previous = self._runtime_native_mainline_active()
+
+        def delegated_runner():
+            self._runtime_native_mainline_delegate_active = True
+            try:
+                return runner()
+            finally:
+                self._runtime_native_mainline_delegate_active = previous
+
+        root = (
+            workspace_root
+            or self.extra_kwargs.get("workspace_dir")
+            or self.extra_kwargs.get("workspace_root")
+            or "workspace"
+        )
+        registry = default_runtime_route_registry()
+        registry.register(
+            route_key,
+            lambda _request, _workspace_root, _goal: delegated_runner,
+            {
+                "entrypoint": entrypoint,
+                "component": "AgentLoop",
+            },
+        )
+        return registry.run(
+            route_key=route_key,
+            request=request,
+            workspace_root=root,
+            goal=goal,
+        )
+
+
     def run_task_loop(
         self,
         task: Dict[str, Any],
         current_tick: int = 0,
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.agent.agent_loop.AgentLoop.run_task_loop",
+                runner=lambda: self.run_task_loop(
+                    task=task,
+                    current_tick=current_tick,
+                    user_input=user_input,
+                    original_plan=original_plan,
+                    _runtime_native_mainline_delegate=True,
+                ),
+                request=copy.deepcopy(task) if isinstance(task, dict) else {},
+                goal=str((task or {}).get("goal") or user_input or "agent_loop run_task_loop"),
+            )
         try:
             effective_task = self._normalize_task_input(task)
         except Exception as e:
@@ -3278,12 +3453,15 @@ class AgentLoop:
         current_tick: int = 0,
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
         return self.run_task_loop(
             task=task,
             current_tick=current_tick,
             user_input=user_input,
             original_plan=original_plan,
+            _runtime_native_mainline_delegate=_runtime_native_mainline_delegate,
         )
 
     def run_task_until_terminal(
@@ -7152,13 +7330,22 @@ def _zero_v823_agent_try_persistent_runtime_route(self, user_input: str) -> Opti
             pass
 
     try:
-        orchestrator_payload = _zero_v823_run_persistent_runtime_orchestrator(
-            repo_root=_zero_v823_repo_root_from_agent(self),
-            task=task,
-            context=context,
-            result={},
-            executor=None,
-            force=True,
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+        orchestrator_payload = self._run_via_runtime_route_registry(
+            route_key=RuntimeRouteKeys.PERSISTENT_RUNTIME,
+            entrypoint="core.agent.agent_loop.AgentLoop.persistent_runtime_route",
+            runner=lambda: _zero_v823_run_persistent_runtime_orchestrator(
+                repo_root=_zero_v823_repo_root_from_agent(self),
+                task=task,
+                context=context,
+                result={},
+                executor=None,
+                force=True,
+            ),
+            request=copy.deepcopy(task),
+            goal=str(task.get("goal") or text or "persistent_runtime"),
+            workspace_root=Path(_zero_v823_repo_root_from_agent(self)) / "workspace",
         )
     except Exception as exc:
         orchestrator_payload = {
@@ -7506,14 +7693,23 @@ def _zero_v824_agent_try_planner_runtime_dispatch_route(self, user_input: str) -
         return None
 
     try:
-        dispatch_payload = _zero_v824_dispatch_planner_result_to_persistent_runtime(
-            repo_root=_zero_v824_repo_root_from_agent(self),
-            user_input=text,
-            planner_result=marked_plan,
-            context=context,
-            result={},
-            executor=None,
-            force=True,
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+        dispatch_payload = self._run_via_runtime_route_registry(
+            route_key=RuntimeRouteKeys.PLANNER_RUNTIME,
+            entrypoint="core.agent.agent_loop.AgentLoop.planner_runtime_dispatch_route",
+            runner=lambda: _zero_v824_dispatch_planner_result_to_persistent_runtime(
+                repo_root=_zero_v824_repo_root_from_agent(self),
+                user_input=text,
+                planner_result=marked_plan,
+                context=context,
+                result={},
+                executor=None,
+                force=True,
+            ),
+            request=copy.deepcopy(marked_plan),
+            goal=str(marked_plan.get("goal") or text or "planner_runtime_dispatch"),
+            workspace_root=Path(_zero_v824_repo_root_from_agent(self)) / "workspace",
         )
     except Exception as exc:
         dispatch_payload = {
@@ -7705,14 +7901,23 @@ def _zero_v825_agent_try_planner_runtime_dispatch_route(self, user_input: str) -
     executor_adapter = _zero_v825_build_planner_step_executor_adapter(self)
 
     try:
-        dispatch_payload = dispatch_func(
-            repo_root=repo_root_func(self),
-            user_input=text,
-            planner_result=marked_plan,
-            context=context,
-            result={},
-            executor=executor_adapter,
-            force=True,
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+        dispatch_payload = self._run_via_runtime_route_registry(
+            route_key=RuntimeRouteKeys.PLANNER_RUNTIME,
+            entrypoint="core.agent.agent_loop.AgentLoop.planner_step_executor_bridge_route",
+            runner=lambda: dispatch_func(
+                repo_root=repo_root_func(self),
+                user_input=text,
+                planner_result=marked_plan,
+                context=context,
+                result={},
+                executor=executor_adapter,
+                force=True,
+            ),
+            request=copy.deepcopy(marked_plan),
+            goal=str(marked_plan.get("goal") or text or "planner_runtime_dispatch"),
+            workspace_root=Path(repo_root_func(self)) / "workspace",
         )
     except Exception as exc:
         dispatch_payload = {
@@ -8250,12 +8455,21 @@ def _zero_v827_agent_try_planner_owned_code_chain(self, user_input: str) -> Opti
     if callable(persistent_candidate) and bool(persistent_candidate(user_input)):
         return None
     if callable(runner):
-        routed = runner(
-            agent=self,
-            user_input=user_input,
-            call_planner_like=call_planner if callable(call_planner) else None,
-            fallback_candidate=fallback_candidate if callable(fallback_candidate) else None,
-            fallback_enabled=False,
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+        routed = self._run_via_runtime_route_registry(
+            route_key=RuntimeRouteKeys.PLANNER_OWNED_CODE_CHAIN,
+            entrypoint="core.agent.agent_loop.AgentLoop.planner_owned_code_chain_route",
+            runner=lambda: runner(
+                agent=self,
+                user_input=user_input,
+                call_planner_like=call_planner if callable(call_planner) else None,
+                fallback_candidate=fallback_candidate if callable(fallback_candidate) else None,
+                fallback_enabled=False,
+            ),
+            request={"user_input": str(user_input or ""), "route": "planner_owned_code_chain"},
+            goal=str(user_input or "planner_owned_code_chain"),
+            workspace_root=Path(_zero_v826_repo_root_from_agent(self)) / "workspace",
         )
         if routed is not None:
             return routed

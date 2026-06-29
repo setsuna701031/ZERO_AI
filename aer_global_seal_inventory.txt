@@ -1,0 +1,241 @@
+AER Global Seal Inventory
+========================================
+Status: Package 14
+Date: 2026-06-29
+
+============================================================
+1. Runtime Admission / Surface Seals (Completed)
+============================================================
+
+[PASS]
+
+RuntimeNativeMainline compatibility entry
+RuntimeRouteRegistry admission
+Runtime Route Keys canonicalization
+Runtime Route Registry default records
+Runtime Surface Registry closure
+Runtime Surface Registry closure seal
+Legacy Surface Follow-up seal
+AER Mainline closure seal
+
+Covered public execution surfaces
+
+- AgentLoop engineering_goal
+- AgentLoop work_package
+- AgentLoop planner_runtime
+- AgentLoop persistent_runtime
+- AgentLoop planner_owned_code_chain
+- AgentLoop repair_preflight
+- AgentLoop autonomous_repair
+- CLI execution commands
+- Scheduler.tick
+- Scheduler.run_one_step
+- TaskRunner.execute_owned_step
+- TaskRunner.run_task_tick
+
+============================================================
+2. Intentionally NOT Routed
+============================================================
+
+These remain direct by design.
+
+Control
+
+- inspect
+- list
+- monitor
+- cancel
+- status
+
+Read-only
+
+- inventory
+- report
+- evidence viewer
+- seal viewer
+
+Reason
+
+These commands never produce execution and therefore are intentionally
+excluded from RuntimeRouteRegistry admission.
+
+============================================================
+3. Execution Machinery Protected
+============================================================
+
+No migration performed inside
+
+- StepExecutor
+- ExecutionFabric
+- Scheduler execution pipeline
+- TaskRunner execution pipeline
+- Planner execution pipeline
+- Repair execution pipeline
+
+Migration only changes admission surfaces.
+
+============================================================
+4. Authority / Completion / Evidence
+============================================================
+
+Verified
+
+Runtime admission metadata
+
+runtime_route_registry_admission
+
+runtime_route_key
+
+completion metadata preserved
+
+authority metadata preserved
+
+evidence metadata preserved
+
+delegate recursion protection
+
+exception re-raise semantics
+
+non-dict passthrough
+
+============================================================
+5. Global Seal Coverage
+============================================================
+
+Current seal suites
+
+test_runtime_surface_registry_closure.py
+
+test_runtime_surface_registry_closure_seal.py
+
+test_runtime_entry_migration_wave1.py
+
+test_runtime_entry_migration_wave2.py
+
+test_runtime_route_registry_admission.py
+
+test_runtime_route_keys.py
+
+test_legacy_surface_followup_seals.py
+
+test_aer_mainline_closure_seal.py
+
+============================================================
+6. Remaining Legacy Admission Candidates
+============================================================
+
+No critical execution surface remains outside
+RuntimeRouteRegistry admission.
+
+Remaining items are
+
+- internal helpers
+- compatibility overlays
+- private delegates
+
+These are implementation details and not public execution surfaces.
+
+============================================================
+7. Release Candidate Validation
+============================================================
+
+Required
+
+python -m compileall core/runtime core/tasks core/agent cli tests
+
+python -m pytest ^
+tests/test_runtime_surface_registry_closure.py ^
+tests/test_runtime_surface_registry_closure_seal.py ^
+tests/test_legacy_surface_followup_seals.py ^
+tests/test_aer_mainline_closure_seal.py -q
+
+Expected
+
+All passing.
+
+============================================================
+8. Non-mainline Notes
+============================================================
+
+Known existing dirty files were intentionally preserved.
+
+No Scheduler execution logic rewritten.
+
+No TaskRunner execution machinery rewritten.
+
+No StepExecutor logic rewritten.
+
+No ExecutionFabric changes.
+
+No Planner execution algorithm changes.
+
+Admission layer migration only.
+
+============================================================
+9. Migration Status
+============================================================
+
+Package 1
+Mainline compatibility wrapper
+COMPLETE
+
+Package 2
+Compatibility semantics
+COMPLETE
+
+Package 3
+Runtime Route Registry
+COMPLETE
+
+Package 4
+Canonical Route Keys
+COMPLETE
+
+Package 5
+Wave1 migration
+COMPLETE
+
+Package 6
+Wave2 migration
+COMPLETE
+
+Package 7
+Migration inventory
+COMPLETE
+
+Package 8
+Surface registry closure
+COMPLETE
+
+Package 9
+Closure seal
+COMPLETE
+
+Package 10~13
+AER closure verification
+COMPLETE
+
+Package 14
+Global inventory
+COMPLETE
+
+============================================================
+Overall Status
+============================================================
+
+Runtime admission migration:
+COMPLETE
+
+Public execution surfaces:
+SEALED
+
+Compatibility semantics:
+SEALED
+
+Registry admission:
+SEALED
+
+Legacy execution machinery:
+PRESERVED
+
+Ready for next architecture phase.

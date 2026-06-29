@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.artifacts.registry import artifact_graph_path, format_artifact_graph, read_json_file
+from core.runtime.runtime_route_keys import RuntimeRouteKeys
+from core.runtime.runtime_route_registry import default_runtime_route_registry
 from core.runtime.thin_runtime_bridge import drain_ingestion_tasks, run_ingestion_tasks
 from core.tasks.task_index import (
     read_tasks_index,
@@ -20,6 +22,22 @@ from core.tasks.task_index import (
 
 def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+
+
+def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: Dict[str, Any] | None = None) -> Any:
+    route_key = RuntimeRouteKeys.CLI_TASK_DRAIN if entrypoint.endswith(".drain") else RuntimeRouteKeys.CLI_TASK_RUN
+    registry = default_runtime_route_registry()
+    registry.register(
+        route_key,
+        lambda _request, _workspace_root, _goal: runner,
+        {"entrypoint": entrypoint, "component": "task_cli"},
+    )
+    return registry.run(
+        route_key=route_key,
+        request=request,
+        workspace_root=shared_dir(repo_root).parent,
+        goal=goal,
+    )
 
 
 def _parse_task_run(argv: List[str]) -> Optional[int]:
@@ -1321,7 +1339,15 @@ def _try_handle_fast_task_drain(argv: List[str], repo_root: Path) -> bool:
     except Exception:
         max_rounds = 50
 
-    _print_json(drain_ingestion_tasks(repo_root, max_rounds=max_rounds))
+    _print_json(
+        _run_via_mainline(
+            repo_root,
+            entrypoint="cli.task_cli.drain",
+            runner=lambda: drain_ingestion_tasks(repo_root, max_rounds=max_rounds),
+            goal="task drain",
+            request={"command": "drain", "max_rounds": max_rounds},
+        )
+    )
     return True
 
 
@@ -1580,7 +1606,13 @@ def _run_selected_fast_task(repo_root: Path, selector: str) -> Dict[str, Any]:
 
     selected_task_id = task_id(selected)
     write_tasks_index(repo_root, _reorder_selected_task_first(tasks, selected_task_id))
-    result = run_ingestion_tasks(repo_root, 1)
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.task_cli.run_selected",
+        runner=lambda: run_ingestion_tasks(repo_root, 1),
+        goal=selected_task_id,
+        request={"command": "run", "selector": selector, "selected_task_id": selected_task_id},
+    )
     return {
         "ok": True,
         "mode": "selected_task_run",
@@ -1618,7 +1650,13 @@ def _try_handle_fast_task_run(argv: List[str], repo_root: Path) -> bool:
     if _has_legacy_scheduler_runnable_tasks(repo_root):
         return False
 
-    ingestion_result = run_ingestion_tasks(repo_root, count)
+    ingestion_result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.task_cli.run",
+        runner=lambda: run_ingestion_tasks(repo_root, count),
+        goal="task run",
+        request={"command": "run", "count": count},
+    )
     if ingestion_result is not None:
         _print_json(ingestion_result)
         return True

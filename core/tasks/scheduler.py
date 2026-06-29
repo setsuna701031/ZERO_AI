@@ -524,6 +524,52 @@ class Scheduler(RuntimeTaskScheduler):
     # Compatibility entry points
     # ------------------------------------------------------------
 
+    def _runtime_native_mainline_active(self) -> bool:
+        return bool(getattr(self, "_runtime_native_mainline_delegate_active", False))
+
+    def _run_via_runtime_native_mainline(
+        self,
+        *,
+        entrypoint: str,
+        runner: Any,
+        request: Optional[Dict[str, Any]] = None,
+        goal: str = "",
+    ) -> Any:
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+        from core.runtime.runtime_route_registry import default_runtime_route_registry
+
+        previous = self._runtime_native_mainline_active()
+
+        def delegated_runner():
+            self._runtime_native_mainline_delegate_active = True
+            try:
+                return runner()
+            finally:
+                self._runtime_native_mainline_delegate_active = previous
+
+        route_key = self._runtime_route_key_for_entrypoint(entrypoint)
+        registry = default_runtime_route_registry()
+        registry.register(
+            route_key,
+            lambda _request, _workspace_root, _goal: delegated_runner,
+            {"entrypoint": entrypoint, "component": "Scheduler"},
+        )
+        return registry.run(
+            route_key=route_key,
+            request=request,
+            workspace_root=self.workspace_dir,
+            goal=goal,
+        )
+
+    def _runtime_route_key_for_entrypoint(self, entrypoint: str) -> str:
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+        if entrypoint.endswith(".tick"):
+            return RuntimeRouteKeys.SCHEDULER_TICK
+        if entrypoint.endswith(".run_one_step"):
+            return RuntimeRouteKeys.SCHEDULER_RUN_STEP
+        return RuntimeRouteKeys.SCHEDULER_SUBMIT_TASK
+
     def run_next(self) -> Dict[str, Any]:
         return self.tick()
 
@@ -561,7 +607,22 @@ class Scheduler(RuntimeTaskScheduler):
     # Scheduler tick
     # ------------------------------------------------------------
 
-    def tick(self, current_tick: Optional[int] = None) -> Dict[str, Any]:
+    def tick(
+        self,
+        current_tick: Optional[int] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
+    ) -> Dict[str, Any]:
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.tasks.scheduler.Scheduler.tick",
+                runner=lambda: self.tick(
+                    current_tick=current_tick,
+                    _runtime_native_mainline_delegate=True,
+                ),
+                request={"current_tick": current_tick},
+                goal="scheduler tick",
+            )
         return _dispatch_pipeline_tick(self, current_tick=current_tick)
 
     def _apply_runtime_dispatch_gate_to_ready_queue(self) -> Dict[str, Any]:
@@ -774,13 +835,25 @@ class Scheduler(RuntimeTaskScheduler):
         self,
         task: Dict[str, Any],
         current_tick: Optional[int] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
-        return _execution_pipeline_run_one_step(
-            self,
-            task=task,
-            current_tick=current_tick,
-            terminal_statuses=TERMINAL_STATUSES,
-        )
+        def delegated_run_one_step() -> Dict[str, Any]:
+            return _execution_pipeline_run_one_step(
+                self,
+                task=task,
+                current_tick=current_tick,
+                terminal_statuses=TERMINAL_STATUSES,
+            )
+
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.tasks.scheduler.Scheduler.run_one_step",
+                runner=delegated_run_one_step,
+                request=copy.deepcopy(task) if isinstance(task, dict) else {},
+                goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "scheduler run_one_step"),
+            )
+        return delegated_run_one_step()
 
     def _run_scheduler_owned_simple_task_until_stop(
         self,
@@ -4011,8 +4084,25 @@ class Scheduler(RuntimeTaskScheduler):
         retry_delay: int = 0,
         timeout_ticks: int = 0,
         depends_on: Optional[List[str]] = None,
+        _runtime_native_mainline_delegate: bool = False,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.tasks.scheduler.Scheduler.submit_task",
+                runner=lambda: self.submit_task(
+                    goal=goal,
+                    priority=priority,
+                    max_retries=max_retries,
+                    retry_delay=retry_delay,
+                    timeout_ticks=timeout_ticks,
+                    depends_on=depends_on,
+                    _runtime_native_mainline_delegate=True,
+                    **copy.deepcopy(kwargs),
+                ),
+                request={"goal": goal, **copy.deepcopy(kwargs)},
+                goal=goal,
+            )
         # v7.2.2: same pre-enqueue gate for submit_task().
         gate = self._pre_enqueue_repair_fingerprint_gate(goal=goal, kwargs=kwargs)
         if isinstance(gate, dict) and gate.get("suppress"):
@@ -4041,7 +4131,7 @@ class Scheduler(RuntimeTaskScheduler):
                     self._register_repair_fingerprint_for_task(fingerprint, task)
 
         task_id = str(created.get("task_name") or "").strip()
-        submit_result = self.submit_existing_task(task_id)
+        submit_result = self.submit_existing_task(task_id, _runtime_native_mainline_delegate=True)
         merged = copy.deepcopy(created)
         if isinstance(submit_result, dict):
             merged.update(
@@ -4053,7 +4143,22 @@ class Scheduler(RuntimeTaskScheduler):
             )
         return merged
 
-    def submit_existing_task(self, task_id: str) -> Dict[str, Any]:
+    def submit_existing_task(
+        self,
+        task_id: str,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
+    ) -> Dict[str, Any]:
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.tasks.scheduler.Scheduler.submit_existing_task",
+                runner=lambda: self.submit_existing_task(
+                    task_id,
+                    _runtime_native_mainline_delegate=True,
+                ),
+                request={"task_id": task_id},
+                goal=str(task_id or "scheduler submit_existing_task"),
+            )
         if not isinstance(task_id, str) or not task_id.strip():
             return {
                 "ok": False,
@@ -7462,12 +7567,16 @@ def _zero_v726_create_task(
     return result
 
 
-def _zero_v726_tick(self, current_tick=None):
+def _zero_v726_tick(self, current_tick=None, *, _runtime_native_mainline_delegate: bool = False):
     try:
         self.cleanup_task_queue_hygiene(max_queued_age_seconds=1800, expire_legacy_self_edit=True, fingerprint_pending_ttl_seconds=1)
     except Exception:
         pass
-    return _ZERO_V724_ORIGINAL_TICK(self, current_tick=current_tick)
+    return _ZERO_V724_ORIGINAL_TICK(
+        self,
+        current_tick=current_tick,
+        _runtime_native_mainline_delegate=_runtime_native_mainline_delegate,
+    )
 
 
 Scheduler._find_active_duplicate_repair_task = _zero_v726_find_active_duplicate_repair_task

@@ -1,0 +1,237 @@
+AER Mainline Closure Inventory
+
+Scope
+- Based on uploaded current files and prior Package 7/8/9/10/11 outputs.
+- Report only. No runtime code changes.
+- This inventory classifies execution-producing paths versus read-only/control paths for final AER closure planning.
+
+Canonical target path
+Surface / AgentLoop
+-> RuntimeRouteRegistry
+-> RuntimeNativeMainline.run_compatibility_entry
+-> RuntimeDispatcher / Scheduler
+-> TaskRunner
+-> StepExecutor / ExecutionFabric
+-> Operator completion / evidence
+
+
+1. Canonical AER mainline paths
+
+Confirmed canonical admission chain:
+- RuntimeRouteRegistry.run(route_key, request, workspace_root, goal)
+  - resolves RuntimeRouteRecord
+  - creates registry_runner
+  - calls RuntimeNativeMainline.with_workspace(root)
+  - enters RuntimeNativeMainline.run_compatibility_entry(...)
+  - adds runtime_route_registry_admission / runtime_route_key metadata for dict results
+  - preserves non-dict return values
+  - relies on RuntimeNativeMainline compatibility semantics for exception re-raise
+
+Confirmed RuntimeNativeMainline core:
+- RuntimeNativeMainline.boot initializes recovery, lease, watchdog, supervisor, execution fabric, transaction fabric, ownership fabric, AER integration, and RuntimeNativeAgentLoop.
+- RuntimeNativeMainline.run_goal owns runtime-native execution flow and authority checks.
+- RuntimeNativeMainline.run_compatibility_entry is the required compatibility/admission wrapper for migrated legacy surfaces.
+
+Confirmed Scheduler/TaskRunner surface wrappers:
+- Scheduler public wrapper path:
+  Scheduler public method -> Scheduler._run_via_runtime_native_mainline -> RuntimeRouteRegistry -> RuntimeNativeMainline.run_compatibility_entry -> delegated legacy body.
+- TaskRunner public wrapper path:
+  TaskRunner public method -> TaskRunner._run_via_runtime_native_mainline -> RuntimeRouteRegistry -> RuntimeNativeMainline.run_compatibility_entry -> delegated legacy body.
+
+Important boundary:
+- RuntimeRouteRegistry is admission, not execution machinery.
+- Legacy callables still own behavior.
+- RuntimeDispatcher/Scheduler/TaskRunner/StepExecutor internals remain execution machinery behind admitted routes.
+
+
+2. Registry-admitted surfaces
+
+AgentLoop admissions:
+- ENGINEERING_GOAL
+  - AgentLoop engineering goal route.
+  - Legacy callable retained: EngineeringProgramCycle.run_until_idle.
+- ENGINEERING_TASK
+  - AgentLoop engineering task route.
+  - Legacy callable retained: core.tasks.engineering_task_runner.run_engineering_task.
+- WORK_PACKAGE
+  - AgentLoop work package route.
+  - Legacy callables retained: RuntimeWorkPackageOperator submit/run path and work_package_intake.submit_work_package.
+- PERSISTENT_RUNTIME
+  - AgentLoop persistent runtime route.
+- PLANNER_RUNTIME
+  - AgentLoop planner runtime dispatch and planner step executor bridge.
+- PLANNER_OWNED_CODE_CHAIN
+  - AgentLoop planner-owned code chain.
+- CODE_CHAIN_CONTROLLED_SELF_EDIT
+  - AgentLoop controlled self-edit bridge.
+- REPAIR_PREFLIGHT
+  - Execution-producing repair preflight response admission.
+  - Pure preflight decision remains direct.
+- AUTONOMOUS_REPAIR
+  - AgentLoop autonomous repair route.
+
+CLI execution-producing admissions:
+- CLI_TASK_RUN
+- CLI_TASK_DRAIN
+- CLI_WORK_PACKAGE_SUBMIT
+- CLI_WORK_PACKAGE_RUN
+- CLI_WORK_PACKAGE_VALIDATION
+- CLI_WORK_PACKAGE_DISPATCH_REQUEST
+- CLI_CONTROL_SUBMIT
+- CLI_GOAL_RUN
+- CLI_GOAL_LOOP
+- CLI_PORTFOLIO_RUN
+- CLI_PORTFOLIO_CYCLE
+- CLI_PROGRAM_RUN
+- CLI_PROGRAM_CYCLE
+
+Scheduler / TaskRunner public execution admissions:
+- SCHEDULER_TICK
+- SCHEDULER_RUN_STEP
+- SCHEDULER_SUBMIT_TASK
+- TASK_RUNNER_RUN
+- TASK_RUNNER_TICK
+- TASK_RUNNER_EXECUTE_STEP
+- TASK_RUNNER_EXECUTE_STEPS
+
+Seal status:
+- Package 9 surface seal covered AgentLoop / CLI / Scheduler / TaskRunner representative surfaces.
+- Package 11 follow-up seals covered key variants and fixed Scheduler.run_one_step delegate recursion.
+- Latest targeted validation reported:
+  - compileall passed
+  - surface closure + surface closure seal + follow-up seals passed
+  - 20 passed in 2.23s
+
+
+3. RuntimeNativeMainline-only compatibility paths
+
+These are not failures. They are compatibility callables behind registry or runtime-internal mainline paths.
+
+Keep:
+- Legacy callables retained behind RuntimeRouteRegistry.
+- RuntimeNativeMainline.run_goal / run_legacy_request for native runtime operations.
+- RuntimeNativeMainline boot/setup for recovery, lease, watchdog, supervisor, execution fabric, transaction fabric, ownership fabric, AER integration, RuntimeNativeAgentLoop.
+
+Watch:
+- Any future new public execution-producing surface must register a route key and enter via RuntimeRouteRegistry.
+- Do not add new public direct RuntimeNativeMainline-only admission helpers unless explicitly marked internal compatibility.
+
+
+4. Remaining legacy/direct execution bypasses
+
+No confirmed public execution-producing bypass remains in uploaded closure evidence after Package 11.
+
+Remaining direct internals that must not be misclassified as bypass:
+- RuntimeDispatcher.run_scheduler_boundary.
+- Scheduler._run_step_via_task_runner.
+- Scheduler._run_scheduler_owned_simple_task_until_stop.
+- Scheduler._run_task_via_agent_loop and fallback/yield helpers.
+- TaskRunner internal _run_one_step.
+- TaskRunner mutation boundary integration.
+- TaskRunner terminal evidence/completion sealing.
+- StepExecutor.
+- ExecutionFabric.
+
+Known legacy-tail zones:
+- Scheduler code-chain workflow tick advancement / repair bridge compatibility tail remains direct internally.
+- This is machinery behind admitted Scheduler routes and should not be routed as a surface without a dedicated tail migration phase.
+
+
+5. Read-only/control paths intentionally direct
+
+Keep direct; do not wrap in RuntimeRouteRegistry:
+- control inspect / monitor / list / evidence
+- work_package status / progress / summary / report / memory / memory-status / list
+- goal list / status / deps
+- portfolio list / show / state / summary
+- program list / show / state / summary / tree / observability
+- task graph / list / audit
+
+Control/state mutation paths intentionally direct:
+- control cancel
+- work_package pause / resume / cancel
+- goal pause / resume / cancel / defer
+- task cleanup / archive-stale
+
+Smoke/task creators intentionally direct:
+- task dag-smoke
+- mutation-smoke / controlled-mutation-smoke
+- source-mutation-smoke
+- mutation-transaction-smoke
+- engineering-batch-smoke
+- runtime-plan-smoke
+- runtime-session-smoke / runtime-session-resume
+- runtime-session-finalize / recovery-finalize
+- runtime-supervisor-smoke
+
+Reason:
+- These are not execution-producing runtime admissions.
+- Some create queued records or mutate control state, but they do not own the execution run path.
+
+
+6. Completion/evidence authority paths
+
+Confirmed authority concepts from uploaded files:
+- Scheduler imports operator registry service and completion pipeline helpers.
+- TaskRunner imports operator registry service, runtime authority seal helpers, audit log, runtime persistence, mutation helpers, trace pipeline, and completion/evidence-related helpers.
+- TaskRunner remains the execution owner behind admitted routes for step execution, authority validation, runtime state persistence, trace, terminal evidence, and completion sealing.
+- StepExecutor / ExecutionFabric remain endpoint machinery and should not be retired as surfaces.
+
+Closure classification:
+- Admission closure is complete.
+- Completion/evidence authority closure should be tested separately as end-to-end AER mainline behavior, not by routing more internals through registry.
+
+
+7. Next seal tests needed
+
+Recommended Package 13:
+AER Mainline Closure Seal
+
+Goal:
+- One focused end-to-end seal proving the canonical AER path from public surface to admitted runtime execution and completion/evidence markers.
+- Do not add new runtime components.
+- Do not retire legacy callables.
+- Do not route StepExecutor/ExecutionFabric internals.
+
+Suggested tests:
+1. CLI work-package execution path:
+   CLI helper -> RuntimeRouteRegistry -> RuntimeNativeMainline -> RuntimeWorkPackageOperator/Dispatcher compatibility runner.
+   Assert registry/mainline metadata remains and legacy result shape is preserved.
+2. Scheduler execution path:
+   Scheduler.tick or run_one_step -> registry -> mainline -> delegated scheduler body.
+   Assert no recursion and completion/evidence hooks are not bypassed.
+3. TaskRunner execution path:
+   TaskRunner execute_owned_step/execute_owned_steps -> registry -> mainline -> delegated body.
+   Assert authority context and terminal result shape remain.
+4. Negative seals:
+   read-only/status/control paths do not call RuntimeRouteRegistry.
+5. Failure semantics:
+   exception from legacy callable re-raises through registry/mainline.
+   non-dict result returns unchanged.
+6. Evidence/completion smoke:
+   Use monkeypatch/fake registry/operator/evidence hooks to assert the same completion/evidence call points remain reachable after registry admission.
+
+Suggested targeted validation:
+- python -m compileall core/runtime core/tasks core/agent cli tests
+- python -m pytest tests/test_aer_mainline_closure_seal.py tests/test_runtime_surface_registry_closure.py tests/test_runtime_surface_registry_closure_seal.py tests/test_legacy_surface_followup_seals.py -q
+
+Do not run full pytest unless explicitly requested locally.
+
+
+8. Non-mainline issue notes
+
+Existing known dirty/untracked state:
+- Prior packages intentionally left multiple modified/untracked files.
+- Evidence file modifications were reported as pre-existing in earlier packages.
+- This inventory does not clean, rollback, or normalize working tree state.
+
+Observed non-mainline risks:
+- Scheduler has legacy tail monkey-patch zones and compatibility overlays. These should be treated as future tail migration candidates only after dedicated replay/retry verification.
+- RuntimeRouteRegistry default records use unsupported default runners until a surface temporarily binds the actual legacy callable. This is intentional admission-surface design, not a bypass.
+- Read-only/control paths are intentionally direct and should not be forced through registry.
+- Legacy response fields and route markers must remain for compatibility during retirement.
+
+Closure conclusion
+- Runtime Admission Migration: CLOSED.
+- RuntimeRouteRegistry surface closure: CLOSED after Package 11 validation.
+- AER mainline closure should now move to end-to-end seal mode, not more routing work.

@@ -13,6 +13,8 @@ from core.tasks.engineering_goal_repository import EngineeringGoalRepository
 from core.tasks.engineering_goal_runner import EngineeringGoalRunner
 from core.tasks.engineering_goal_scheduler import EngineeringGoalScheduler
 from core.tasks.engineering_issue_reporter import EngineeringIssueReporter
+from core.runtime.runtime_route_keys import RuntimeRouteKeys
+from core.runtime.runtime_route_registry import default_runtime_route_registry
 
 
 GOAL_CLI_SCHEMA = "zero.goal_cli.v1"
@@ -74,6 +76,22 @@ def _goal_loop(repo_root: Path) -> EngineeringGoalLoop:
 
 def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+
+
+def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
+    route_key = RuntimeRouteKeys.CLI_GOAL_LOOP if entrypoint.endswith(".loop") else RuntimeRouteKeys.CLI_GOAL_RUN
+    registry = default_runtime_route_registry()
+    registry.register(
+        route_key,
+        lambda _request, _workspace_root, _goal: runner,
+        {"entrypoint": entrypoint, "component": "goal_cli"},
+    )
+    return registry.run(
+        route_key=route_key,
+        request=request,
+        workspace_root=_workspace_root(repo_root),
+        goal=goal,
+    )
 
 
 def _clean_text(value: Any, default: str = "") -> str:
@@ -416,7 +434,13 @@ def _handle_status(argv: list[str], repo_root: Path) -> bool:
 def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 2 or argv[1] != "run-next":
         return False
-    result = _runner(repo_root).run_next_goal()
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.goal_cli.run_next",
+        runner=lambda: _runner(repo_root).run_next_goal(),
+        goal="goal run-next",
+        request={"command": "run-next"},
+    )
     _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
     return True
 
@@ -424,7 +448,13 @@ def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
 def _handle_run(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 3 or argv[1] != "run":
         return False
-    result = _runner(repo_root).run_goal(argv[2])
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.goal_cli.run",
+        runner=lambda: _runner(repo_root).run_goal(argv[2]),
+        goal=argv[2],
+        request={"command": "run", "goal_id": argv[2]},
+    )
     _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "runner_result": _summarize_runner_result(result)})
     return True
 
@@ -439,7 +469,13 @@ def _handle_loop(argv: list[str], repo_root: Path) -> bool:
         except ValueError:
             _print_json({"schema": GOAL_CLI_SCHEMA, "ok": False, "error": "invalid_max_cycles", "goal_id": argv[2]})
             return True
-    result = _goal_loop(repo_root).run_until_terminal(argv[2], max_cycles=max_cycles)
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.goal_cli.loop",
+        runner=lambda: _goal_loop(repo_root).run_until_terminal(argv[2], max_cycles=max_cycles),
+        goal=argv[2],
+        request={"command": "loop", "goal_id": argv[2], "max_cycles": max_cycles},
+    )
     _print_json({"schema": GOAL_CLI_SCHEMA, "ok": bool(result.get("ok")), "cycles_summary": _summarize_loop_result(result)})
     return True
 

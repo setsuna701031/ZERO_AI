@@ -13,6 +13,8 @@ from core.tasks.engineering_issue_summary import apply_engineering_issue_summary
 from core.tasks.engineering_portfolio_coordinator import EngineeringPortfolioCoordinator
 from core.tasks.engineering_portfolio_cycle import EngineeringPortfolioCycle
 from core.tasks.engineering_portfolio_repository import EngineeringPortfolioRepository
+from core.runtime.runtime_route_keys import RuntimeRouteKeys
+from core.runtime.runtime_route_registry import default_runtime_route_registry
 
 
 PORTFOLIO_CLI_SCHEMA = "zero.portfolio_cli.v1"
@@ -25,6 +27,26 @@ def _clean_text(value: Any, default: str = "") -> str:
 
 def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True, default=str))
+
+
+def _run_via_mainline(repo_root: Path, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any] | None = None) -> Any:
+    route_key = (
+        RuntimeRouteKeys.CLI_PORTFOLIO_CYCLE
+        if entrypoint.endswith(".cycle") or entrypoint.endswith(".run_until_idle")
+        else RuntimeRouteKeys.CLI_PORTFOLIO_RUN
+    )
+    registry = default_runtime_route_registry()
+    registry.register(
+        route_key,
+        lambda _request, _workspace_root, _goal: runner,
+        {"entrypoint": entrypoint, "component": "portfolio_cli"},
+    )
+    return registry.run(
+        route_key=route_key,
+        request=request,
+        workspace_root=_workspace_root(repo_root),
+        goal=goal,
+    )
 
 
 def _workspace_dir() -> str:
@@ -293,7 +315,13 @@ def _handle_remove_goal(argv: list[str], repo_root: Path) -> bool:
 def _handle_run_next(argv: list[str], repo_root: Path) -> bool:
     if len(argv) != 3 or argv[1] != "run-next":
         return False
-    result = _coordinator(repo_root).run_next_goal(argv[2])
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.portfolio_cli.run_next",
+        runner=lambda: _coordinator(repo_root).run_next_goal(argv[2]),
+        goal=argv[2],
+        request={"command": "run-next", "portfolio_id": argv[2]},
+    )
     result = apply_engineering_issue_summary(result, repo_root=repo_root, issue_reporter=_issue_reporter(repo_root))
     _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": bool(result.get("ok")), "coordinator_result": _coordinator_summary(result)})
     return True
@@ -310,7 +338,13 @@ def _handle_cycle(argv: list[str], repo_root: Path) -> bool:
             _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": False, "error": "invalid_max_goals", "portfolio_id": argv[2]})
             return True
     cycle = _portfolio_cycle(repo_root)
-    result = cycle.run_cycle(argv[2]) if len(argv) == 3 else cycle.run_until_idle(argv[2], max_goals=max_goals)
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.portfolio_cli.cycle",
+        runner=lambda: cycle.run_cycle(argv[2]) if len(argv) == 3 else cycle.run_until_idle(argv[2], max_goals=max_goals),
+        goal=argv[2],
+        request={"command": "cycle", "portfolio_id": argv[2], "max_goals": max_goals},
+    )
     _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": bool(result.get("ok")), "cycle_summary": _cycle_summary(result)})
     return True
 
@@ -325,7 +359,13 @@ def _handle_run_until_idle(argv: list[str], repo_root: Path) -> bool:
         except ValueError:
             _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": False, "error": "invalid_max_goals", "portfolio_id": argv[2]})
             return True
-    result = _portfolio_cycle(repo_root).run_until_idle(argv[2], max_goals=max_goals)
+    result = _run_via_mainline(
+        repo_root,
+        entrypoint="cli.portfolio_cli.run_until_idle",
+        runner=lambda: _portfolio_cycle(repo_root).run_until_idle(argv[2], max_goals=max_goals),
+        goal=argv[2],
+        request={"command": "run-until-idle", "portfolio_id": argv[2], "max_goals": max_goals},
+    )
     _print_json({"schema": PORTFOLIO_CLI_SCHEMA, "ok": bool(result.get("ok")), "cycle_summary": _cycle_summary(result)})
     return True
 

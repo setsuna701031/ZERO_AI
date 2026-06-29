@@ -7,10 +7,27 @@ from typing import Any, List, Optional
 
 from core.control.decision_evidence_viewer import DecisionEvidenceViewer
 from core.control.task_control_api import TaskControlAPI
+from core.runtime.runtime_route_keys import RuntimeRouteKeys
+from core.runtime.runtime_route_registry import default_runtime_route_registry
 
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+
+
+def _run_via_mainline(args: Any, *, entrypoint: str, runner: Any, goal: str, request: dict[str, Any]) -> Any:
+    registry = default_runtime_route_registry()
+    registry.register(
+        RuntimeRouteKeys.CLI_CONTROL_SUBMIT,
+        lambda _request, _workspace_root, _goal: runner,
+        {"entrypoint": entrypoint, "component": "control_cli"},
+    )
+    return registry.run(
+        route_key=RuntimeRouteKeys.CLI_CONTROL_SUBMIT,
+        request=request,
+        workspace_root=args.workspace,
+        goal=goal,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,11 +70,22 @@ def main(argv: Optional[List[str]] = None, *, api: Any = None) -> int:
     control = api or TaskControlAPI.with_workspace(args.workspace)
 
     if args.action == "submit":
-        result = control.submit_task(
-            title=args.title,
-            instruction=args.instruction,
-            task_type=args.task_type,
-            mode=args.mode,
+        result = _run_via_mainline(
+            args,
+            entrypoint="cli.control_cli.submit",
+            runner=lambda: control.submit_task(
+                title=args.title,
+                instruction=args.instruction,
+                task_type=args.task_type,
+                mode=args.mode,
+            ),
+            goal=args.instruction or args.title,
+            request={
+                "title": args.title,
+                "instruction": args.instruction,
+                "task_type": args.task_type,
+                "mode": args.mode,
+            },
         )
     elif args.action == "inspect":
         result = control.inspect_task(args.task_id)

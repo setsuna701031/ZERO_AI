@@ -256,6 +256,53 @@ class TaskRunner:
         self.repair_step_injector = RepairStepInjector()
         self.mutation_runtime = self._build_mutation_runtime_integration()
 
+    def _runtime_native_mainline_active(self) -> bool:
+        return bool(getattr(self, "_runtime_native_mainline_delegate_active", False))
+
+    def _run_via_runtime_native_mainline(
+        self,
+        *,
+        entrypoint: str,
+        runner: Any,
+        request: Optional[Dict[str, Any]] = None,
+        goal: str = "",
+    ) -> Any:
+        from core.runtime.runtime_route_registry import default_runtime_route_registry
+
+        previous = self._runtime_native_mainline_active()
+
+        def delegated_runner():
+            self._runtime_native_mainline_delegate_active = True
+            try:
+                return runner()
+            finally:
+                self._runtime_native_mainline_delegate_active = previous
+
+        route_key = self._runtime_route_key_for_entrypoint(entrypoint)
+        registry = default_runtime_route_registry()
+        registry.register(
+            route_key,
+            lambda _request, _workspace_root, _goal: delegated_runner,
+            {"entrypoint": entrypoint, "component": "TaskRunner"},
+        )
+        return registry.run(
+            route_key=route_key,
+            request=request,
+            workspace_root=getattr(self.runtime, "workspace_root", "workspace"),
+            goal=goal,
+        )
+
+    def _runtime_route_key_for_entrypoint(self, entrypoint: str) -> str:
+        from core.runtime.runtime_route_keys import RuntimeRouteKeys
+
+        if entrypoint.endswith(".execute_owned_step"):
+            return RuntimeRouteKeys.TASK_RUNNER_EXECUTE_STEP
+        if entrypoint.endswith(".execute_owned_steps"):
+            return RuntimeRouteKeys.TASK_RUNNER_EXECUTE_STEPS
+        if entrypoint.endswith(".run_task_tick"):
+            return RuntimeRouteKeys.TASK_RUNNER_TICK
+        return RuntimeRouteKeys.TASK_RUNNER_RUN
+
     @classmethod
     def for_workspace(cls, workspace_root: Any, **kwargs: Any) -> "TaskRunner":
         """Construct the owned TaskRunner/StepExecutor pair at one workspace boundary."""
@@ -407,8 +454,24 @@ class TaskRunner:
         previous_result: Any = None,
         step_index: int = 0,
         step_count: int = 1,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
         """Execute one step through the TaskRunner-owned authority boundary."""
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.runtime.task_runner.TaskRunner.execute_owned_step",
+                runner=lambda: self.execute_owned_step(
+                    step,
+                    task=task,
+                    context=context,
+                    previous_result=previous_result,
+                    step_index=step_index,
+                    step_count=step_count,
+                    _runtime_native_mainline_delegate=True,
+                ),
+                request=copy.deepcopy(task) if isinstance(task, dict) else {},
+                goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner execute_owned_step"),
+            )
         owned_task = copy.deepcopy(task) if isinstance(task, dict) else {}
         owned_context = copy.deepcopy(context) if isinstance(context, dict) else {}
         task_id = str(
@@ -457,8 +520,21 @@ class TaskRunner:
         *,
         task: Optional[Dict[str, Any]] = None,
         context: Optional[Dict[str, Any]] = None,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
         """Execute a batch through a TaskRunner-issued batch capability."""
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.runtime.task_runner.TaskRunner.execute_owned_steps",
+                runner=lambda: self.execute_owned_steps(
+                    steps,
+                    task=task,
+                    context=context,
+                    _runtime_native_mainline_delegate=True,
+                ),
+                request=copy.deepcopy(task) if isinstance(task, dict) else {},
+                goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner execute_owned_steps"),
+            )
         owned_task = copy.deepcopy(task) if isinstance(task, dict) else {}
         owned_context = copy.deepcopy(context) if isinstance(context, dict) else {}
         task_id = str(
@@ -1003,7 +1079,24 @@ class TaskRunner:
     # main loop
     # ============================================================
 
-    def run_task_tick(self, task: Dict[str, Any], current_tick: int) -> Dict[str, Any]:
+    def run_task_tick(
+        self,
+        task: Dict[str, Any],
+        current_tick: int,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
+    ) -> Dict[str, Any]:
+        if not _runtime_native_mainline_delegate and not self._runtime_native_mainline_active():
+            return self._run_via_runtime_native_mainline(
+                entrypoint="core.runtime.task_runner.TaskRunner.run_task_tick",
+                runner=lambda: self.run_task_tick(
+                    task=task,
+                    current_tick=current_tick,
+                    _runtime_native_mainline_delegate=True,
+                ),
+                request=copy.deepcopy(task) if isinstance(task, dict) else {},
+                goal=str((task or {}).get("goal") or (task or {}).get("task_id") or "taskrunner run_task_tick"),
+            )
         try:
             # Q package: persistence/resume gate.
             # Load the saved runtime state before mutating it so a restarted
@@ -1271,8 +1364,14 @@ class TaskRunner:
         current_tick: int = 0,
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
-        return self.run_task_tick(task=task, current_tick=current_tick)
+        return self.run_task_tick(
+            task=task,
+            current_tick=current_tick,
+            _runtime_native_mainline_delegate=_runtime_native_mainline_delegate,
+        )
 
     def run_one_step(
         self,
@@ -1280,8 +1379,14 @@ class TaskRunner:
         current_tick: int = 0,
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
-        return self.run_task_tick(task=task, current_tick=current_tick)
+        return self.run_task_tick(
+            task=task,
+            current_tick=current_tick,
+            _runtime_native_mainline_delegate=_runtime_native_mainline_delegate,
+        )
 
     def run_task(
         self,
@@ -1289,8 +1394,14 @@ class TaskRunner:
         current_tick: int = 0,
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
-        return self.run_task_tick(task=task, current_tick=current_tick)
+        return self.run_task_tick(
+            task=task,
+            current_tick=current_tick,
+            _runtime_native_mainline_delegate=_runtime_native_mainline_delegate,
+        )
 
     def run(
         self,
@@ -1298,8 +1409,14 @@ class TaskRunner:
         current_tick: int = 0,
         user_input: str = "",
         original_plan: Optional[Dict[str, Any]] = None,
+        *,
+        _runtime_native_mainline_delegate: bool = False,
     ) -> Dict[str, Any]:
-        return self.run_task_tick(task=task, current_tick=current_tick)
+        return self.run_task_tick(
+            task=task,
+            current_tick=current_tick,
+            _runtime_native_mainline_delegate=_runtime_native_mainline_delegate,
+        )
 
     def complete_task(
         self,
